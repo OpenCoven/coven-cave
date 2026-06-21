@@ -323,6 +323,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
               <Icon
                 name={unreadCount > 0 ? "ph:bell-fill" : "ph:bell"}
                 width={20}
+              />
             </span>
             <span className="sidebar-foot-label">Notifications</span>
             {unreadCount > 0 ? (
