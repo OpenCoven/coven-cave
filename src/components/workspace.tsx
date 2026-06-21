@@ -9,7 +9,7 @@ import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-m
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { BoardView } from "@/components/board-view";
 import { JournalView } from "@/components/journal/journal-view";
-import { CalendarView } from "@/components/calendar-view";
+import { CalendarView, type CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
@@ -204,6 +204,8 @@ export function Workspace() {
   // show a per-familiar count when a familiar is scoped, and the grand total
   // only when "All familiars" is selected.
   const [openTaskCards, setOpenTaskCards] = useState<{ familiarId: string | null }[]>([]);
+  // Board cards carrying an endDate, surfaced as read-only deadline markers on the calendar.
+  const [boardDeadlines, setBoardDeadlines] = useState<CalendarDeadline[]>([]);
   const [enrichingTasks, setEnrichingTasks] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
   const [inboxPrefs, setInboxPrefs] = useState<InboxPrefs>({
@@ -855,10 +857,31 @@ export function Workspace() {
       const res = await fetch("/api/board", { cache: "no-store" });
       const json = await res.json();
       if (json.ok && Array.isArray(json.cards)) {
-        const open = (json.cards as Array<{ status?: string; familiarId?: string | null }>)
-          .filter((c) => c.status !== "done")
-          .map((c) => ({ familiarId: c.familiarId ?? null }));
-        setOpenTaskCards(open);
+        const cards = json.cards as Array<{
+          id?: string;
+          title?: string;
+          status?: string;
+          familiarId?: string | null;
+          endDate?: string | null;
+        }>;
+        setOpenTaskCards(
+          cards
+            .filter((c) => c.status !== "done")
+            .map((c) => ({ familiarId: c.familiarId ?? null })),
+        );
+        // Open cards with a due date become read-only calendar deadline markers
+        // (a shipped/"done" task is no longer an upcoming deadline).
+        setBoardDeadlines(
+          cards
+            .filter((c) => c.id && c.endDate && c.status !== "done")
+            .map((c) => ({
+              id: c.id as string,
+              title: c.title?.trim() || "Untitled task",
+              date: c.endDate as string,
+              familiarId: c.familiarId ?? null,
+              status: c.status,
+            })),
+        );
       }
     } catch {
       /* keep last value on transient failure */
@@ -1810,6 +1833,12 @@ export function Workspace() {
         items={inboxItems}
         familiars={familiars}
         activeFamiliarId={calendarFamiliarId}
+        deadlines={boardDeadlines}
+        onOpenDeadline={(id) => {
+          setMode("board");
+          window.dispatchEvent(new Event("cave:board:reload"));
+          window.location.hash = `card-${id}`;
+        }}
         onAddEntry={(defaults) => {
           openReminderModal(
             defaults?.title ?? "",

@@ -16,6 +16,18 @@ import { useIsMobile } from "@/lib/use-viewport";
 
 type ViewMode = "agenda" | "day" | "week" | "month";
 
+/** A read-only board task deadline overlaid on the calendar. Sourced from board
+ *  cards that carry an `endDate`, so weekly planning includes task due-dates and
+ *  not just inbox reminders. */
+export type CalendarDeadline = {
+  id: string;
+  title: string;
+  /** Board endDate — "YYYY-MM-DD" or ISO. Treated as an all-day due marker. */
+  date: string;
+  familiarId: string | null;
+  status?: string;
+};
+
 type Props = {
   items: InboxItem[];
   familiars: Familiar[];
@@ -33,6 +45,10 @@ type Props = {
   onDismiss?: (id: string) => void;
   /** Snooze an item until the given ISO timestamp. */
   onSnooze?: (id: string, untilIso: string) => void;
+  /** Read-only board task deadlines (cards with an endDate) overlaid on the grid. */
+  deadlines?: CalendarDeadline[];
+  /** Open the board card behind a deadline marker. */
+  onOpenDeadline?: (id: string) => void;
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -219,16 +235,20 @@ function EmptyScheduleState({
 
 function AgendaView({
   items,
+  deadlines,
   anchor,
   onAddEntry,
   onOpenItem,
   onReschedule,
+  onOpenDeadline,
 }: {
   items: InboxItem[];
+  deadlines?: CalendarDeadline[];
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
+  onOpenDeadline?: (id: string) => void;
 }) {
   const [showPast, setShowPast] = useState(false);
 
@@ -242,20 +262,28 @@ function AgendaView({
 
   // Group items by date, then filter / sort based on showPast.
   const groups = useMemo(() => {
-    const map = new Map<string, { date: Date; items: InboxItem[] }>();
+    const map = new Map<string, { date: Date; items: InboxItem[]; deadlines: CalendarDeadline[] }>();
+    const ensure = (d: Date) => {
+      const key = startOfDay(d).toISOString();
+      if (!map.has(key)) map.set(key, { date: startOfDay(d), items: [], deadlines: [] });
+      return map.get(key)!;
+    };
     for (const item of items) {
       const d = itemDate(item);
       if (!d) continue;
-      const key = startOfDay(d).toISOString();
-      if (!map.has(key)) map.set(key, { date: startOfDay(d), items: [] });
-      map.get(key)!.items.push(item);
+      ensure(d).items.push(item);
+    }
+    for (const dl of deadlines ?? []) {
+      const d = deadlineDate(dl);
+      if (!d) continue;
+      ensure(d).deadlines.push(dl);
     }
     return Array.from(map.values())
       .filter((g) => showPast ? true : g.date >= startOfDay(anchor))
       .sort((a, b) => showPast
         ? b.date.getTime() - a.date.getTime()
         : a.date.getTime() - b.date.getTime());
-  }, [items, anchor, showPast]);
+  }, [items, deadlines, anchor, showPast]);
 
   if (groups.length === 0) {
     return (
@@ -298,7 +326,9 @@ function AgendaView({
           </button>
         </div>
       ) : null}
-      {groups.map(({ date, items: groupItems }) => (
+      {groups.map(({ date, items: groupItems, deadlines: groupDeadlines }) => {
+        const total = groupItems.length + groupDeadlines.length;
+        return (
         <div key={date.toISOString()}>
           <div className="mb-2 flex items-center gap-2 rounded-md border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-3 py-1.5">
             <span
@@ -311,10 +341,13 @@ function AgendaView({
               {agendaDayLabel(date)}
             </span>
             <span className="ml-auto font-mono text-[11px] text-[var(--text-secondary)] opacity-80">
-              {groupItems.length} item{groupItems.length !== 1 ? "s" : ""}
+              {total} item{total !== 1 ? "s" : ""}
             </span>
           </div>
           <div className="flex flex-col gap-1">
+            {groupDeadlines.map((d) => (
+              <DeadlineChip key={d.id} deadline={d} onOpen={onOpenDeadline} />
+            ))}
             {[...groupItems]
               .sort((a, b) => {
                 const ta = new Date(a.fireAt ?? a.createdAt).getTime();
@@ -330,7 +363,8 @@ function AgendaView({
               ))}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -387,6 +421,91 @@ function AllDayStrip({
             )}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** Parse a board deadline date ("YYYY-MM-DD") as LOCAL midnight so it lands on
+ *  the intended calendar day regardless of timezone. */
+function deadlineDate(d: CalendarDeadline): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d.date);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const dt = new Date(d.date);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function DeadlineChip({
+  deadline,
+  onOpen,
+  size = "sm",
+}: {
+  deadline: CalendarDeadline;
+  onOpen?: (id: string) => void;
+  size?: "sm" | "xs";
+}) {
+  const done = deadline.status === "done";
+  return (
+    <button
+      type="button"
+      data-calendar-deadline="true"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen?.(deadline.id);
+      }}
+      title={`${deadline.title} — task deadline`}
+      className={`focus-ring-inset flex w-full items-center gap-1 truncate rounded border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/12 px-1.5 py-0.5 text-left transition-colors hover:bg-[var(--color-warning)]/20 ${size === "xs" ? "text-[9px]" : "text-[10px]"}`}
+    >
+      <Icon name="ph:clock-countdown" width={size === "xs" ? 9 : 11} className="shrink-0 text-[var(--color-warning)]" aria-hidden />
+      <span className={`truncate text-[var(--text-primary)] ${done ? "line-through opacity-70" : ""}`}>{deadline.title}</span>
+    </button>
+  );
+}
+
+const MAX_DEADLINES_VISIBLE = 3;
+
+function DeadlineStrip({
+  columns,
+  onOpen,
+  onMore,
+}: {
+  columns: { date: Date; deadlines: CalendarDeadline[] }[];
+  onOpen?: (id: string) => void;
+  onMore?: (day: Date) => void;
+}) {
+  if (columns.every((c) => c.deadlines.length === 0)) return null;
+  const multi = columns.length > 1;
+  return (
+    <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
+      <div className="sticky left-0 z-10 flex w-12 shrink-0 items-center justify-end border-r border-[var(--border-hairline)] bg-[var(--bg-panel)] py-1 pr-1.5">
+        <span className="text-[9px] uppercase tracking-wider text-[var(--text-secondary)] leading-tight text-right">
+          Due
+        </span>
+      </div>
+      <div
+        className={`flex flex-1 divide-x divide-[var(--border-hairline)] ${
+          multi ? "min-w-[560px]" : "min-w-[180px]"
+        }`}
+      >
+        {columns.map((col, i) => {
+          const cap = multi ? MAX_DEADLINES_VISIBLE : col.deadlines.length;
+          return (
+            <div key={i} className="flex-1 min-w-[80px] flex flex-col gap-0.5 p-1">
+              {col.deadlines.slice(0, cap).map((d) => (
+                <DeadlineChip key={d.id} deadline={d} onOpen={onOpen} size="xs" />
+              ))}
+              {col.deadlines.length > cap && (
+                <button
+                  onClick={() => onMore?.(col.date)}
+                  className="focus-ring-inset text-[9px] text-[var(--text-muted)] px-1 hover:text-[var(--color-warning)] transition-colors text-left w-full"
+                  title={`${col.deadlines.length - cap} more deadlines`}
+                >
+                  +{col.deadlines.length - cap} more
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -586,16 +705,20 @@ function TimeGrid({
 
 function DayView({
   items,
+  deadlines,
   anchor,
   onAddEntry,
   onOpenItem,
   onReschedule,
+  onOpenDeadline,
 }: {
   items: InboxItem[];
+  deadlines?: CalendarDeadline[];
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
+  onOpenDeadline?: (id: string) => void;
 }) {
   const today = new Date();
 
@@ -613,6 +736,14 @@ function DayView({
       return d && isSameDay(d, anchor) && !isAllDay(it);
     }),
     [items, anchor]
+  );
+
+  const dayDeadlines = useMemo(
+    () => (deadlines ?? []).filter((d) => {
+      const dd = deadlineDate(d);
+      return dd && isSameDay(dd, anchor);
+    }),
+    [deadlines, anchor],
   );
 
   const columns = useMemo(() => [{
@@ -634,6 +765,13 @@ function DayView({
           {fmtDateHeading(anchor)}
         </h2>
       </div>
+      {/* Task deadlines (read-only, from the board) */}
+      {dayDeadlines.length > 0 && (
+        <DeadlineStrip
+          columns={[{ date: anchor, deadlines: dayDeadlines }]}
+          onOpen={onOpenDeadline}
+        />
+      )}
       {/* All-day strip */}
       {allDayItems.length > 0 && (
         <AllDayStrip
@@ -653,16 +791,20 @@ function DayView({
 
 function WeekView({
   items,
+  deadlines,
   anchor,
   onAddEntry,
   onOpenItem,
   onReschedule,
+  onOpenDeadline,
 }: {
   items: InboxItem[];
+  deadlines?: CalendarDeadline[];
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
+  onOpenDeadline?: (id: string) => void;
 }) {
   const weekStart = startOfWeek(anchor);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -689,6 +831,16 @@ function WeekView({
       }),
     }));
   }, [items, days]);
+
+  const deadlineColumns = useMemo(() => {
+    return days.map((day) => ({
+      date: day,
+      deadlines: (deadlines ?? []).filter((d) => {
+        const dd = deadlineDate(d);
+        return dd && isSameDay(dd, day);
+      }),
+    }));
+  }, [deadlines, days]);
 
 
   return (
@@ -730,6 +882,10 @@ function WeekView({
           ))}
         </div>
       </div>
+      {/* Task deadlines (read-only, from the board) */}
+      {deadlineColumns.some((c) => c.deadlines.length > 0) && (
+        <DeadlineStrip columns={deadlineColumns} onOpen={onOpenDeadline} />
+      )}
       {/* All-day strip */}
       {allDayColumns.some((c) => c.items.length > 0) && (
         <AllDayStrip columns={allDayColumns} onOpenItem={onOpenItem} />
@@ -745,16 +901,20 @@ function WeekView({
 
 function MonthView({
   items,
+  deadlines,
   anchor,
   onOpenItem,
   onDayClick,
   onAddEntry,
+  onOpenDeadline,
 }: {
   items: InboxItem[];
+  deadlines?: CalendarDeadline[];
   anchor: Date;
   onOpenItem?: (item: InboxItem) => void;
   onDayClick?: (day: Date) => void;
   onAddEntry?: (opts: { fireAt: string }) => void;
+  onOpenDeadline?: (id: string) => void;
 }) {
   const today = new Date();
   const monthStart = startOfMonth(anchor);
@@ -774,6 +934,18 @@ function MonthView({
     }
     return map;
   }, [items]);
+
+  const deadlinesByDay = useMemo(() => {
+    const map = new Map<string, CalendarDeadline[]>();
+    for (const d of deadlines ?? []) {
+      const dd = deadlineDate(d);
+      if (!dd) continue;
+      const key = startOfDay(dd).toISOString();
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(d);
+    }
+    return map;
+  }, [deadlines]);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden px-2 pb-3 sm:px-4 sm:pb-4">
@@ -795,6 +967,7 @@ function MonthView({
             {cells.map((day, i) => {
               const key = startOfDay(day).toISOString();
               const dayItems = byDay.get(key) ?? [];
+              const dayDeadlines = deadlinesByDay.get(key) ?? [];
               const isCurrentMonth = day.getMonth() === anchor.getMonth();
               const isToday = isSameDay(day, today);
 
@@ -843,6 +1016,9 @@ function MonthView({
                     {day.getDate()}
                   </span>
                   <div className="flex flex-col gap-0.5 overflow-hidden">
+                    {dayDeadlines.slice(0, 2).map((d) => (
+                      <DeadlineChip key={d.id} deadline={d} onOpen={onOpenDeadline} size="xs" />
+                    ))}
                     {dayItems.slice(0, 3).map((item) => {
                       const done = item.status === "done";
                       return (
@@ -1131,7 +1307,7 @@ function ItemDetailPanel({
 
 // ─── Main CalendarView ────────────────────────────────────────────────────────
 
-export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, onOpenItem, onReschedule, onComplete, onDismiss, onSnooze }: Props) {
+export function CalendarView({ items, familiars, activeFamiliarId, deadlines, onAddEntry, onOpenItem, onReschedule, onComplete, onDismiss, onSnooze, onOpenDeadline }: Props) {
   const isMobile = useIsMobile();
   // SSR returns false from useIsMobile, so initial render is always "week"
   // on the server; the effect below snaps to agenda on mount when the
@@ -1160,6 +1336,16 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
       // "gone"; done items stay (rendered with a completed treatment).
       ).filter((it) => it.status !== "dismissed"),
     [items, activeFamiliarId],
+  );
+
+  // Mirror the items hard-scope for deadlines, so a scoped familiar's calendar
+  // only shows that familiar's task due-dates.
+  const scopedDeadlines = useMemo(
+    () =>
+      activeFamiliarId == null
+        ? (deadlines ?? [])
+        : (deadlines ?? []).filter((d) => d.familiarId === activeFamiliarId),
+    [deadlines, activeFamiliarId],
   );
 
   useEffect(() => {
@@ -1323,36 +1509,44 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
         {viewMode === "agenda" && (
           <AgendaView
             items={scopedItems}
+            deadlines={scopedDeadlines}
             anchor={anchor}
             onAddEntry={onAddEntry}
             onReschedule={onReschedule}
             onOpenItem={(item) => setSelectedItem(item)}
+            onOpenDeadline={onOpenDeadline}
           />
         )}
         {viewMode === "day" && (
           <DayView
             items={scopedItems}
+            deadlines={scopedDeadlines}
             anchor={anchor}
             onAddEntry={onAddEntry}
             onReschedule={onReschedule}
             onOpenItem={(item) => setSelectedItem(item)}
+            onOpenDeadline={onOpenDeadline}
           />
         )}
         {viewMode === "week" && (
           <WeekView
             items={scopedItems}
+            deadlines={scopedDeadlines}
             anchor={anchor}
             onAddEntry={onAddEntry}
             onReschedule={onReschedule}
             onOpenItem={(item) => setSelectedItem(item)}
+            onOpenDeadline={onOpenDeadline}
           />
         )}
         {viewMode === "month" && (
           <MonthView
             items={scopedItems}
+            deadlines={scopedDeadlines}
             anchor={anchor}
             onOpenItem={(item) => setSelectedItem(item)}
             onAddEntry={onAddEntry}
+            onOpenDeadline={onOpenDeadline}
             onDayClick={(day) => {
               setAnchor(day);
               setViewMode("day");
