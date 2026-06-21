@@ -66,4 +66,12 @@ assert.match(
 // are JavaScript text and must be previewable + editable, not rejected.
 assert.match(source, /"\.mjs",[\s\S]*?"\.cjs",/, ".mjs and .cjs are previewable/editable text extensions");
 
+// Code preview should include common docs/log/project text files, not only
+// source files.
+assert.match(
+  source,
+  /"\.markdown",[\s\S]*?"\.log",[\s\S]*?"\.out",[\s\S]*?"\.err",[\s\S]*?"\.trace",[\s\S]*?"\.diff",[\s\S]*?"\.patch",[\s\S]*?"\.csv",[\s\S]*?"\.tsv"/,
+  "markdown aliases, logs, diffs, and delimited text files are previewable/editable text extensions",
+);
+
 console.log("project-file route.test.ts: ok");

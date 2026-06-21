@@ -88,7 +88,7 @@ struct CodeEditorView: View {
                     .disabled(!isEditable)
             } else {
                 ScrollView {
-                    MarkdownWebView(markdown: codeMarkdown(for: loaded), height: $previewHeight)
+                    MarkdownWebView(markdown: previewMarkdown(for: loaded), height: $previewHeight)
                         .frame(height: max(previewHeight, 1))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
@@ -103,6 +103,13 @@ struct CodeEditorView: View {
                     .padding(6)
             }
         }
+    }
+
+    private func previewMarkdown(for loaded: FileContent) -> String {
+        if isMarkdownDocument(name) {
+            return loaded.content ?? text
+        }
+        return codeMarkdown(for: loaded)
     }
 
     private func codeMarkdown(for loaded: FileContent) -> String {
@@ -121,6 +128,13 @@ struct CodeEditorView: View {
             fence.append("`")
         }
         return fence
+    }
+
+    private func isMarkdownDocument(_ filename: String) -> Bool {
+        switch URL(fileURLWithPath: filename).pathExtension.lowercased() {
+        case "md", "markdown", "mdx": return true
+        default: return false
+        }
     }
 
     private func languageForCodeFence(_ filename: String) -> String {
@@ -156,7 +170,7 @@ struct CodeEditorView: View {
         case "zig": return "zig"
         case "diff", "patch": return "diff"
         case "sql": return "sql"
-        case "txt", "text": return "text"
+        case "txt", "text", "log", "out", "err", "trace": return "text"
         default: return "text"
         }
     }

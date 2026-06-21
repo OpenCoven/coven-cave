@@ -105,7 +105,7 @@ assert.match(
 const swiftCodeEditorView = read("apps/ios/CovenCave/CovenCave/Views/CodeEditorView.swift");
 assert.match(
   swiftCodeEditorView,
-  /MarkdownWebView\(markdown: codeMarkdown\(for: loaded\), height: \$previewHeight\)/,
+  /MarkdownWebView\(markdown: previewMarkdown\(for: loaded\), height: \$previewHeight\)/,
   "native SwiftUI code editor should render read-only text through the bundled markdown highlighter",
 );
 assert.match(

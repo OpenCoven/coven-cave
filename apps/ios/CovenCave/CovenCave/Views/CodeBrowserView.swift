@@ -244,10 +244,15 @@ func fileIcon(_ name: String) -> String {
     case "swift", "ts", "tsx", "js", "jsx", "mjs", "cjs", "rs", "go", "py", "rb",
          "c", "h", "cpp", "hpp", "java", "kt", "lua", "zig":
         return "chevron.left.forwardslash.chevron.right"
-    case "json", "yaml", "yml", "toml", "xml", "ini", "conf", "cfg", "lock":
+    case "json", "yaml", "yml", "toml", "xml", "ini", "conf", "cfg", "lock",
+         "plist", "pbxproj", "xcconfig", "gradle", "properties", "csv", "tsv":
         return "doc.text.fill"
-    case "md", "mdx", "txt":
+    case "md", "markdown", "mdx":
         return "doc.richtext"
+    case "txt", "text", "log", "out", "err", "trace":
+        return "doc.plaintext"
+    case "diff", "patch":
+        return "plusminus"
     case "png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp":
         return "photo"
     case "css", "html":

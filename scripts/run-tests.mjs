@@ -464,6 +464,7 @@ export const SUITES = {
   mobile: [
     "src/lib/mobile-access-token.test.ts",
     "src/lib/mobile-handoff.test.ts",
+    "scripts/ios-code-viewer.test.mjs",
     "scripts/mobile-tailscale.test.mjs",
     "scripts/mobile-tailscale-native.test.mjs",
     "src/components/mobile-handoff.test.ts",
