@@ -1969,6 +1969,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [turns],
   );
 
+  // Voice-call grouping + a turn.id → index map for the timestamp-gap logic.
+  // Memoized on `turns` so it's rebuilt only when the transcript changes — NOT
+  // on every composer keystroke / caret move / hover, which all re-render
+  // ChatView but leave `turns` untouched (this was an O(n) rebuild per render).
+  const { groupedTurns, turnIndexMap } = useMemo(() => {
+    type VoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
+    type SingleItem = { kind: "single"; turn: Turn };
+    const grouped: Array<VoiceGroup | SingleItem> = [];
+    for (const turn of turns) {
+      if (turn.voiceCallId) {
+        const last = grouped[grouped.length - 1];
+        if (last && last.kind === "call" && last.callId === turn.voiceCallId) {
+          last.turns.push(turn);
+          const firstAt = Date.parse(last.turns[0].createdAt);
+          const lastAt = Date.parse(last.turns[last.turns.length - 1].createdAt);
+          last.durationSec = Math.max(0, Math.floor((lastAt - firstAt) / 1000));
+        } else {
+          grouped.push({ kind: "call", callId: turn.voiceCallId, turns: [turn], durationSec: 0 });
+        }
+      } else {
+        grouped.push({ kind: "single", turn });
+      }
+    }
+    const turnIndexMap = new Map<string, number>();
+    for (let idx = 0; idx < turns.length; idx++) turnIndexMap.set(turns[idx].id, idx);
+    return { groupedTurns: grouped, turnIndexMap };
+  }, [turns]);
+
   useEffect(() => {
     setSlashIdx(0);
     setSlashDismissed(false);
@@ -3213,34 +3241,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             )
           ) : null}
           {(() => {
-            type VoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
-            type SingleItem = { kind: "single"; turn: Turn };
-            const grouped: Array<VoiceGroup | SingleItem> = [];
-            for (const turn of turns) {
-              if (turn.voiceCallId) {
-                const last = grouped[grouped.length - 1];
-                if (last && last.kind === "call" && last.callId === turn.voiceCallId) {
-                  last.turns.push(turn);
-                  const firstAt = Date.parse(last.turns[0].createdAt);
-                  const lastAt = Date.parse(last.turns[last.turns.length - 1].createdAt);
-                  last.durationSec = Math.max(0, Math.floor((lastAt - firstAt) / 1000));
-                } else {
-                  grouped.push({ kind: "call", callId: turn.voiceCallId, turns: [turn], durationSec: 0 });
-                }
-              } else {
-                grouped.push({ kind: "single", turn });
-              }
-            }
-
-            // Build a flat ordered list of turns for timestamp gap logic (prev-turn lookup).
-            // CHAT-D10-02: pre-build a Map keyed by turn.id to avoid O(n) indexOf per row.
+            // `groupedTurns` + `turnIndexMap` are memoized above (rebuilt only
+            // when `turns` changes, not on every keystroke). `allTurns` feeds
+            // the per-row prev-turn timestamp-gap lookup.
             const allTurns = turns;
-            const turnIndexMap = new Map<string, number>();
-            for (let idx = 0; idx < allTurns.length; idx++) {
-              turnIndexMap.set(allTurns[idx].id, idx);
-            }
-
-            return grouped.map((g) => {
+            return groupedTurns.map((g) => {
               if (g.kind === "single") {
                 const t = g.turn;
                 const i = turnIndexMap.get(t.id) ?? -1;
