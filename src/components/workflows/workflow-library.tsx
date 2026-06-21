@@ -151,6 +151,12 @@ export function WorkflowLibrary({
           placeholder="Search id, tag, familiar…"
           aria-label="Search workflows"
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && query) {
+              event.preventDefault();
+              setQuery("");
+            }
+          }}
         />
       </label>
 
