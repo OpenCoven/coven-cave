@@ -67,4 +67,15 @@ test("tabs support optional icon and count badge", () => {
   assert.doesNotMatch(src, /t\.count > 0/, "zero counts remain visible");
 });
 
+test("segment variant uses a rounded bordered container with raised active background", () => {
+  assert.match(src, /variant\?: "underline" \| "segment"/, "exposes a segment variant prop");
+  assert.match(src, /rounded-lg border border-\[var\(--border-hairline\)\]/, "segment tablist is a bordered rounded container");
+  assert.match(src, /bg-\[var\(--cv-tab-accent,var\(--bg-raised\)\)\]/, "active segment tab fills with raised/accent background");
+});
+
+test("segment variant keeps tablist/tab roles (a11y not lost in the pill look)", () => {
+  assert.match(src, /role="tablist"/, "tablist role still present");
+  assert.match(src, /role="tab"/, "tab role still present");
+});
+
 console.log("ui/tabs.test.ts OK");

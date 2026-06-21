@@ -60,6 +60,8 @@ type TabsProps<T extends string> = {
    * (e.g. a header row that spans tabs + actions).
    */
   bordered?: boolean;
+  /** "underline" (default) or "segment" (rounded pill container, raised active bg). */
+  variant?: "underline" | "segment";
 };
 
 export function Tabs<T extends string>({
@@ -73,6 +75,7 @@ export function Tabs<T extends string>({
   size = "md",
   idPrefix,
   bordered = true,
+  variant = "underline",
 }: TabsProps<T>) {
   const listRef = useRef<HTMLDivElement>(null);
   const { setActiveIndex } = useRovingTabIndex({
@@ -93,14 +96,17 @@ export function Tabs<T extends string>({
 
   const vertical = orientation === "vertical";
   const sm = size === "sm";
+  const segment = variant === "segment";
 
   const listClass = [
     "flex",
-    vertical
-      ? "flex-col gap-1"
-      : bordered
-        ? "items-end gap-1 border-b border-[var(--border-hairline)]"
-        : "items-end gap-1",
+    segment
+      ? "items-center gap-1 rounded-lg border border-[var(--border-hairline)] p-1"
+      : vertical
+        ? "flex-col gap-1"
+        : bordered
+          ? "items-end gap-1 border-b border-[var(--border-hairline)]"
+          : "items-end gap-1",
     className ?? "",
   ].join(" ");
 
@@ -117,9 +123,11 @@ export function Tabs<T extends string>({
         const tabId = idPrefix ? `${idPrefix}-tab-${t.id}` : undefined;
         const panelId = idPrefix ? `${idPrefix}-panel-${t.id}` : undefined;
 
-        const className = vertical
-          ? verticalTabClass(isActive, t.disabled, sm)
-          : horizontalTabClass(isActive, fill, sm);
+        const className = segment
+          ? segmentTabClass(isActive, sm)
+          : vertical
+            ? verticalTabClass(isActive, t.disabled, sm)
+            : horizontalTabClass(isActive, fill, sm);
 
         return (
           <button
@@ -180,5 +188,17 @@ function verticalTabClass(isActive: boolean, disabled: boolean | undefined, sm: 
       : "text-[var(--text-muted)] border-transparent hover:text-[var(--text-secondary)] hover:border-[color-mix(in_oklch,var(--text-muted)_35%,transparent)]",
     disabled ? "opacity-40 cursor-not-allowed" : "",
     "focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] focus-visible:ring-offset-0 rounded-r-sm",
+  ].join(" ");
+}
+
+function segmentTabClass(isActive: boolean, sm: boolean): string {
+  return [
+    "relative inline-flex items-center gap-1.5 outline-none rounded-md",
+    sm ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-[12px]",
+    "font-medium transition-colors",
+    isActive
+      ? "bg-[var(--cv-tab-accent,var(--bg-raised))] text-[var(--text-primary)]"
+      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+    "focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] focus-visible:ring-offset-0",
   ].join(" ");
 }
