@@ -195,6 +195,24 @@ final class AppModel {
         }
     }
 
+    /// Set how far through an item the reader is (0–100), keeping its status.
+    /// Optimistic, with rollback on failure.
+    func setReadingProgress(_ item: ReadingItem, _ progress: Int) async {
+        guard let client else { return }
+        let clamped = max(0, min(100, progress))
+        let previous = reading
+        apply(id: item.id) { $0.progress = Double(clamped) }
+        do {
+            if let updated = try await client.updateReading(
+                id: item.id, status: item.status, progress: Double(clamped)) {
+                apply(id: item.id) { $0 = updated }
+            }
+        } catch {
+            reading = previous
+            readingError = error.localizedDescription
+        }
+    }
+
     private func apply(id: String, _ mutate: (inout ReadingItem) -> Void) {
         guard let idx = reading.firstIndex(where: { $0.id == id }) else { return }
         var item = reading[idx]

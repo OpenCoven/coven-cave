@@ -40,10 +40,22 @@ struct ReadingView: View {
             } else {
                 List {
                     ForEach(visible) { item in
-                        HStack(spacing: 10) {
-                            Button { open(item) } label: { ReadingCard(item: item) }
-                                .buttonStyle(.plain)
-                            readToggle(item)
+                        VStack(spacing: 8) {
+                            HStack(spacing: 10) {
+                                Button { open(item) } label: { ReadingCard(item: item) }
+                                    .buttonStyle(.plain)
+                                readToggle(item)
+                            }
+                            // In-progress items get a draggable slider to set how
+                            // far through they are (commits on release).
+                            if item.status == .reading {
+                                ReadingProgressSlider(progress: item.progressPercent ?? 0) { pct in
+                                    Task { await app.setReadingProgress(item, pct) }
+                                }
+                                .id(item.id)
+                                .padding(.leading, 50)
+                                .padding(.trailing, 4)
+                            }
                         }
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -282,6 +294,35 @@ enum ReadingFilter: Hashable {
     case status(ReadingStatus)
 }
 
+/// Draggable progress control for an in-progress item. Tracks a local value
+/// while dragging and commits once on release (so we PATCH once, not per pixel).
+struct ReadingProgressSlider: View {
+    let progress: Int
+    let onCommit: (Int) -> Void
+    @State private var value: Double
+
+    init(progress: Int, onCommit: @escaping (Int) -> Void) {
+        self.progress = progress
+        self.onCommit = onCommit
+        _value = State(initialValue: Double(min(100, max(0, progress))))
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Slider(value: $value, in: 0...100, step: 1) { editing in
+                if !editing { onCommit(Int(value.rounded())) }
+            }
+            .tint(.accentColor)
+            Text("\(Int(value.rounded()))%")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 38, alignment: .trailing)
+        }
+        .accessibilityLabel("Reading progress")
+        .accessibilityValue("\(Int(value.rounded())) percent")
+    }
+}
+
 /// A single reading-list row: type glyph, title, byline, progress, meta.
 struct ReadingCard: View {
     let item: ReadingItem
@@ -295,7 +336,6 @@ struct ReadingCard: View {
                     .foregroundStyle(.primary)
                     .lineLimit(3)
                 if let byline { Text(byline).font(.subheadline).foregroundStyle(.secondary).lineLimit(1) }
-                if item.status == .reading, let pct = item.progressPercent { progressBar(pct) }
                 metaRow
             }
         }
@@ -314,18 +354,6 @@ struct ReadingCard: View {
     private var byline: String? {
         let parts = [item.author, item.domain].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    private func progressBar(_ pct: Int) -> some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.secondary.opacity(0.18))
-                Capsule().fill(Color.accentColor)
-                    .frame(width: max(4, geo.size.width * CGFloat(pct) / 100))
-            }
-        }
-        .frame(height: 4)
-        .padding(.top, 1)
     }
 
     private var metaRow: some View {
