@@ -699,6 +699,11 @@
 }
 
 .library-doclist-item {
+  /* Skip rendering off-screen rows; the auto intrinsic-size caches each row's
+     real height after first paint, so scrolling never jumps. The rows are
+     self-contained (no fixed/portaled descendants), so containment is safe. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 64px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
