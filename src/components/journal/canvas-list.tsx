@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { isDemoModeEnabled } from "@/lib/demo-mode";
@@ -18,6 +19,16 @@ import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 import { generateArtifactCode } from "@/lib/canvas-generate";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { Familiar } from "@/lib/types";
+
+/**
+ * Render children in place, or portaled to <body> when `active`. Used to lift
+ * the canvas detail pane into a full-screen overlay that escapes the journal's
+ * flex layout (mirrors the chat-artifact fullscreen pattern).
+ */
+function MaybePortal({ active, children }: { active: boolean; children: React.ReactNode }) {
+  if (active && typeof document !== "undefined") return createPortal(children, document.body);
+  return <>{children}</>;
+}
 
 // Example prompts shown in the empty state so the blank Canvas isn't a dead
 // end — tapping one seeds the composer so the user can run or edit it.
@@ -42,6 +53,7 @@ export function CanvasList({
   const [artifacts, setArtifacts] = useState<CanvasArtifact[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<"preview" | "code">("preview");
+  const [fullscreen, setFullscreen] = useState(false);
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [prompt, setPrompt] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -217,6 +229,20 @@ export function CanvasList({
     setCodeDraft(selected?.code ?? "");
   }, [selected?.id, selected?.code]);
 
+  // Escape exits full-screen; deselecting/closing the pane also exits it.
+  useEffect(() => {
+    if (!fullscreen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setFullscreen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [fullscreen]);
+
+  useEffect(() => {
+    if (!selected) setFullscreen(false);
+  }, [selected]);
+
   // Context-aware refine ideas for the selected sketch (cheap string scan).
   const generatedSuggestions = useMemo(
     () => (selected ? generateRefineSuggestions(selected.code, selected.kind ?? "html") : []),
@@ -359,7 +385,8 @@ export function CanvasList({
           </ul>
         )}
       </aside>
-      <section className="journal-detail" aria-label="Sketch preview">
+      <MaybePortal active={fullscreen}>
+      <section className={`journal-detail${fullscreen ? " journal-detail--fullscreen" : ""}`} aria-label="Sketch preview">
         {selected ? (
           <>
             <div className="journal-detail__bar">
@@ -384,6 +411,16 @@ export function CanvasList({
                 </button>
               </div>
               <div className="journal-detail__actions">
+                <button
+                  type="button"
+                  className={`journal-act${fullscreen ? " journal-act--on" : ""}`}
+                  aria-label={fullscreen ? "Exit full screen" : "View full screen"}
+                  aria-pressed={fullscreen}
+                  title={fullscreen ? "Exit full screen (Esc)" : "Full screen"}
+                  onClick={() => setFullscreen((v) => !v)}
+                >
+                  <Icon name={fullscreen ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} aria-hidden />
+                </button>
                 {view === "code" ? (
                   <>
                     <button
@@ -544,6 +581,7 @@ export function CanvasList({
           </div>
         )}
       </section>
+      </MaybePortal>
     </div>
   );
 }

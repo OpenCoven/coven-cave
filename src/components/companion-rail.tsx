@@ -1,6 +1,7 @@
 "use client";
 
-import { forwardRef, useEffect, useState, type ReactNode } from "react";
+import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { Icon } from "@/lib/icon";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
@@ -81,6 +82,11 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       panelIds: ["companion-rail-main", "companion-rail-youtube"],
       storage: railSplitStorage,
     });
+
+    // Arrow-key navigation across the rail section tabs (graceful: tabs stay
+    // tab-focusable if the rail mounts before a familiar is bound).
+    const tabsRef = useRef<HTMLElement | null>(null);
+    useRovingTabIndex({ containerRef: tabsRef, itemSelector: ".companion-rail__tab", orientation: "both", loop: true });
     // The Video tab is a toggle, not a mutually-exclusive section: when on, the
     // YouTube viewer drops into a resizable bottom pane below the active tab's
     // content rather than replacing it. The on/off state can be lifted to the
@@ -186,7 +192,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
         ) : null}
         {/* Familiar header removed — the tab strip is the panel's top row and
             its trigger band aligns with the left sidebar's floating toggle. */}
-        <nav className="companion-rail__tabs" aria-label="Companion sections">
+        <nav className="companion-rail__tabs" ref={tabsRef} aria-label="Companion sections">
           {!familiar || hideChatTab ? null : (
             <button
               type="button"
