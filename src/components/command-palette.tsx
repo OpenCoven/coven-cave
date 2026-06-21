@@ -8,6 +8,7 @@ import { Icon } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
+import { relativeTime } from "@/lib/relative-time";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { FOLDER_MODES, type FolderMode, type AddonsConfig } from "@/components/sidebar-minimal";
 import { useProjects } from "@/lib/use-projects";
@@ -771,6 +772,13 @@ export function CommandPalette({
             const group = browsing ? browseGroup(row) : "";
             const showHeader =
               browsing && group !== "" && (i === 0 || browseGroup(rows[i - 1]) !== group);
+            // Recency hint for session rows ("4m ago" / "just now"), honoring the
+            // user's compact/verbose density pref. Right-aligned in place of the
+            // redundant "open" affordance label.
+            const sessionAgo =
+              row.kind === "session"
+                ? relativeTime(row.session.updated_at || row.session.created_at)
+                : "";
             return (
               <Fragment key={row.id}>
                 {showHeader ? (
@@ -820,7 +828,7 @@ export function CommandPalette({
                           {row.session.harness}
                         </span>
                       </span>
-                      <span className="text-[10px] text-[var(--text-muted)]">open</span>
+                      <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{sessionAgo || "open"}</span>
                     </>
                   ) : null}
                   {row.kind === "card" ? (
