@@ -72,7 +72,9 @@ function highlightCode(code, rawLang) {
   if (lang && hljs.getLanguage(lang)) {
     try { inner = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value; } catch {}
   }
-  return `<pre class="hljs"><code class="hljs">${inner}</code></pre>`;
+  // Wrap in a positioned container with a copy button; the button reads the
+  // <code> textContent (raw, de-highlighted) and hands it to native on tap.
+  return `<div class="code-block"><button class="code-copy" type="button" aria-label="Copy code">Copy</button><pre class="hljs"><code class="hljs">${inner}</code></pre></div>`;
 }
 
 async function renderMarkdown(md) {
@@ -126,6 +128,19 @@ document.addEventListener("click", (e) => {
   if (!a) return;
   e.preventDefault();
   window.webkit?.messageHandlers?.cave?.postMessage({ type: "link", href: a.getAttribute("href") });
+});
+
+// Copy a code block: native owns the clipboard (UIPasteboard), so post the raw
+// text and flip the button to a confirmation briefly.
+document.addEventListener("click", (e) => {
+  const btn = e.target?.closest?.(".code-copy");
+  if (!btn) return;
+  const text = btn.parentElement?.querySelector("code")?.textContent ?? "";
+  window.webkit?.messageHandlers?.cave?.postMessage({ type: "copy", text });
+  btn.textContent = "Copied";
+  btn.classList.add("is-copied");
+  clearTimeout(btn._t);
+  btn._t = setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("is-copied"); }, 1400);
 });
 
 window.webkit?.messageHandlers?.cave?.postMessage({ type: "ready" });

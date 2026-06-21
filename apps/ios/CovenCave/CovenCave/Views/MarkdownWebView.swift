@@ -85,6 +85,11 @@ struct MarkdownWebView: UIViewRepresentable {
                     if let href = body["href"] as? String, let url = URL(string: href) {
                         await UIApplication.shared.open(url)
                     }
+                case "copy":
+                    if let text = body["text"] as? String, !text.isEmpty {
+                        UIPasteboard.general.string = text
+                        Haptics.tap()
+                    }
                 default:
                     break
                 }
