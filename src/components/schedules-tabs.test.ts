@@ -36,11 +36,13 @@ assert.match(
 );
 
 assert.match(automations, /type ScheduleTab = "reminders" \| "automations"/, "Schedules should have explicit tab state");
-assert.match(automations, /const \[activeTab, setActiveTab\] = useState<ScheduleTab>\("reminders"\)/, "Schedules should default to Reminders");
+assert.match(automations, /const \[activeTab, setActiveTab\] = useState<ScheduleTab>\("inbox"\)/, "Schedules should default to Inbox");
 assert.match(automations, /<h1[\s\S]*?>\s*Schedules\s*<\/h1>/, "Surface header should read Schedules");
-assert.match(automations, /\["reminders", "Reminders", reminderItems\.length\]/, "Schedules should expose a Reminders tab");
-assert.match(automations, /\["automations", "Automations", codexAutos\.length\]/, "Schedules should expose an Automations tab");
-assert.match(automations, /\["inbox", "Inbox", items\.length\]/, "Schedules should expose an Inbox tab over the full inbox feed");
+assert.match(automations, /\{ id: "inbox", label: "Inbox", count: items\.length \}/, "Schedules should expose an Inbox tab over the full inbox feed");
+assert.match(automations, /\{ id: "reminders", label: "Reminders", count: reminderItems\.length \}/, "Schedules should expose a Reminders tab");
+assert.match(automations, /\{ id: "automations", label: "Automations", count: codexAutos\.length \}/, "Schedules should expose an Automations tab");
+assert.match(automations, /id: "inbox"[\s\S]*id: "reminders"[\s\S]*id: "automations"/, "tabs ordered Inbox, Reminders, Automations");
+assert.match(automations, /<Tabs[\s\S]{0,200}variant="segment"/, "Schedules tabs use the shared segment Tabs");
 assert.match(automations, /type ScheduleTab = "reminders" \| "automations" \| "inbox"/, "Schedules tab state should include inbox");
 assert.match(automations, /function InboxFeedList/, "Inbox tab should render through a feed-list component");
 assert.match(automations, /groupInboxFeed\(items\)/, "Inbox tab should group the full inbox feed (every kind)");

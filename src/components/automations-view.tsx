@@ -15,6 +15,7 @@ import { Icon } from "@/lib/icon";
 import { formatTimestamp, formatClock, readDateTimePrefs } from "@/lib/datetime-format";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { ProjectTree } from "@/components/project-tree";
 import type { CaveProject } from "@/lib/cave-projects-types";
 
@@ -1246,7 +1247,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ScheduleTab>("reminders");
+  const [activeTab, setActiveTab] = useState<ScheduleTab>("inbox");
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
@@ -1474,29 +1475,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         </div>
 
         <div className="px-8 pb-4">
-          <div className="inline-flex rounded-lg border p-1"
-            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-raised)" }}>
-            {([
-              ["reminders", "Reminders", reminderItems.length],
-              ["inbox", "Inbox", items.length],
-              ["automations", "Automations", codexAutos.length],
-            ] as const).map(([id, label, count]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => selectTab(id)}
-                aria-pressed={activeTab === id}
-                className="rounded-md px-3 py-1.5 text-[12px] font-medium transition-colors"
-                style={{
-                  background: activeTab === id ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: activeTab === id ? "var(--text-primary)" : "var(--text-muted)",
-                }}
-              >
-                {label}
-                <span className="ml-2 text-[10px]" style={{ color: "var(--text-muted)" }}>{count}</span>
-              </button>
-            ))}
-          </div>
+          <Tabs
+            variant="segment"
+            ariaLabel="Schedules tabs"
+            value={activeTab}
+            onChange={selectTab}
+            items={[
+              { id: "inbox", label: "Inbox", count: items.length },
+              { id: "reminders", label: "Reminders", count: reminderItems.length },
+              { id: "automations", label: "Automations", count: codexAutos.length },
+            ] satisfies TabItem<ScheduleTab>[]}
+          />
         </div>
 
         {error && (
