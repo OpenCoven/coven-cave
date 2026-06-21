@@ -43,6 +43,14 @@ function browseGroup(row: Row): string {
   }
 }
 
+// Section label for a row, used to print group headers. Conversation hits get a
+// "Conversations" header in BOTH browse and search mode (they're a distinct
+// content-search cluster); everything else only groups while browsing.
+function paletteGroup(row: Row, browsing: boolean): string {
+  if (row.kind === "conversation-hit") return "Conversations";
+  return browsing ? browseGroup(row) : "";
+}
+
 // Status → dot class for session rows, mirroring the Sessions tab's colors. Only
 // "notable" states get a dot (running pulses green, failed/queued/paused tint);
 // completed/idle sessions stay dotless so the Recent list doesn't get speckled.
@@ -106,6 +114,14 @@ type Props = {
   addons?: AddonsConfig;
 };
 
+// One hit from the conversation content search (/api/chat/search).
+type ConversationHit = {
+  sessionId: string;
+  title?: string;
+  snippet: string;
+  matchCount: number;
+};
+
 type Row =
   | { id: string; kind: "familiar"; familiar: Familiar }
   | { id: string; kind: "session"; session: SessionRow; familiar: Familiar | null }
@@ -115,6 +131,7 @@ type Row =
   | { id: string; kind: "command"; name: string; hint: string; intent: PaletteIntent }
   | { id: string; kind: "shortcut"; label: string; shortcut: string; action: () => void }
   | { id: string; kind: "create-task"; title: string }
+  | { id: string; kind: "conversation-hit"; hit: ConversationHit }
   | { id: string; kind: "salem-answer"; query: string };
 
 type SalemSearchContextItem = {
@@ -136,6 +153,7 @@ const RESULT_LIMITS = {
   covenMemory: 5,
   fsMemory: 8,
   command: 6,
+  conversation: 6,
 };
 
 const SALEM_CONTEXT_LIMIT = 8;
@@ -230,11 +248,42 @@ export function CommandPalette({
   const [salemLoading, setSalemLoading] = useState(false);
   const [salemAnswer, setSalemAnswer] = useState<string | null>(null);
   const [salemError, setSalemError] = useState<string | null>(null);
+  const [contentHits, setContentHits] = useState<ConversationHit[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const keys = useKeySymbols();
 
   useFocusTrap(open, dialogRef, { onEscape: onClose });
+
+  // Conversation content search (CHAT-D9-02 backend, surfaced here). Plain,
+  // unscoped queries of length ≥2 hit /api/chat/search, debounced ~250ms with a
+  // retype aborting the in-flight request — same shape the chat-list uses.
+  useEffect(() => {
+    const { token, rest } = parseFamiliarToken(query);
+    const text = rest.trim();
+    if (token !== null || text.startsWith("/") || text.length < 2) {
+      setContentHits([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/chat/search?q=${encodeURIComponent(text)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const json = await res.json().catch(() => ({ ok: false }));
+        if (controller.signal.aborted) return;
+        setContentHits(json.ok && Array.isArray(json.hits) ? (json.hits as ConversationHit[]) : []);
+      } catch {
+        /* aborted retype or network hiccup — a newer effect owns the state */
+      }
+    }, 250);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query]);
 
   const updateQuery = (next: string) => {
     setQuery(next);
@@ -541,6 +590,20 @@ export function CommandPalette({
     // then the launcher surfaces, and group the rest under section headers
     // (see browseGroup + the render). While the user is typing it falls back to
     // the flat, mixed-relevance order.
+    // Conversation content hits, deduped against sessions already surfaced by a
+    // title match, and never shown while scoped/typing a slash command. Each
+    // carries the familiar from its session (if known) so opening lands scoped.
+    const shownSessionIds = new Set(
+      sessionRows.map((r) => (r.kind === "session" ? r.session.id : "")).filter(Boolean),
+    );
+    const conversationRows: Row[] =
+      scoped || slashToken
+        ? []
+        : contentHits
+            .filter((h) => !shownSessionIds.has(h.sessionId))
+            .slice(0, RESULT_LIMITS.conversation)
+            .map((h) => ({ id: `conv:${h.sessionId}`, kind: "conversation-hit" as const, hit: h }));
+
     const browsing = !q && !scoped;
     const localRows: Row[] = browsing
       ? [
@@ -566,6 +629,7 @@ export function CommandPalette({
           ...projectRows,
           ...shortcutRows,
           ...createRows,
+          ...conversationRows,
         ];
 
     const salemRows: Row[] = query.trim() && !slashCanonical
@@ -573,7 +637,7 @@ export function CommandPalette({
       : [];
 
     return [...salemRows, ...localRows];
-  }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, query, activeFamiliarId, projects, addons]);
+  }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects, addons]);
 
   useEffect(() => {
     if (activeIdx >= rows.length) setActiveIdx(Math.max(0, rows.length - 1));
@@ -663,6 +727,9 @@ export function CommandPalette({
       row.action();
     } else if (row.kind === "create-task") {
       onIntent({ kind: "create-task", title: row.title });
+    } else if (row.kind === "conversation-hit") {
+      const familiarId = sessions.find((s) => s.id === row.hit.sessionId)?.familiarId ?? null;
+      onIntent({ kind: "open-session", sessionId: row.hit.sessionId, familiarId });
     } else {
       onIntent(row.intent);
     }
@@ -780,9 +847,9 @@ export function CommandPalette({
             // In browse mode, print a section header above the first row of each
             // group. Headers are role="presentation", so they stay out of the
             // listbox option indexing that keyboard nav and activeIdx rely on.
-            const group = browsing ? browseGroup(row) : "";
+            const group = paletteGroup(row, browsing);
             const showHeader =
-              browsing && group !== "" && (i === 0 || browseGroup(rows[i - 1]) !== group);
+              group !== "" && (i === 0 || paletteGroup(rows[i - 1], browsing) !== group);
             // Recency hint for session rows ("4m ago" / "just now"), honoring the
             // user's compact/verbose density pref. Right-aligned in place of the
             // redundant "open" affordance label.
@@ -912,6 +979,22 @@ export function CommandPalette({
                         </span>
                       </span>
                       <span className="text-[10px] text-[var(--text-muted)]">create</span>
+                    </>
+                  ) : null}
+                  {row.kind === "conversation-hit" ? (
+                    <>
+                      <Icon name="ph:chat-circle-dots-bold" className="text-[var(--text-secondary)]" width="1.1rem" height="1.1rem" />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-[var(--text-primary)]">
+                          {row.hit.title || "(untitled chat)"}
+                        </span>
+                        <span className="truncate text-[10px] text-[var(--text-muted)]">
+                          {row.hit.snippet}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
+                        {row.hit.matchCount} match{row.hit.matchCount !== 1 ? "es" : ""}
+                      </span>
                     </>
                   ) : null}
                   {row.kind === "salem-answer" ? (
