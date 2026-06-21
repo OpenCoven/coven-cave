@@ -102,6 +102,33 @@ assert.match(
   "native SwiftUI SSE parser should treat whitespace-only separator lines as event boundaries",
 );
 
+const swiftCodeEditorView = read("apps/ios/CovenCave/CovenCave/Views/CodeEditorView.swift");
+assert.match(
+  swiftCodeEditorView,
+  /MarkdownWebView\(markdown: codeMarkdown\(for: loaded\), height: \$previewHeight\)/,
+  "native SwiftUI code editor should render read-only text through the bundled markdown highlighter",
+);
+assert.match(
+  swiftCodeEditorView,
+  /if editing \{[\s\S]*?TextEditor\(text: \$text\)/,
+  "native SwiftUI code editor should keep TextEditor for editable text",
+);
+assert.match(
+  swiftCodeEditorView,
+  /private func codeMarkdown\(for loaded: FileContent\) -> String/,
+  "native SwiftUI code editor should build fenced markdown for highlighted code previews",
+);
+assert.match(
+  swiftCodeEditorView,
+  /private func codeFence\(for value: String\) -> String/,
+  "native SwiftUI code editor should choose a safe fence for code containing backticks",
+);
+assert.match(
+  swiftCodeEditorView,
+  /private func languageForCodeFence\(_ filename: String\) -> String/,
+  "native SwiftUI code editor should infer a highlighter language from the filename",
+);
+
 const frontendStub = read("src-tauri/frontend-stub/index.html");
 assert.match(frontendStub, /Connect to CovenCave/);
 assert.match(frontendStub, /coven-cave:mobile-server-url/);

@@ -15,6 +15,7 @@ struct CodeEditorView: View {
     @State private var original = ""
     @State private var saving = false
     @State private var editing = false
+    @State private var previewHeight: CGFloat = 1
 
     private var isDirty: Bool { text != original }
     private var isEditable: Bool {
@@ -77,20 +78,86 @@ struct CodeEditorView: View {
             } else if !editing {
                 EmptyView()
             }
-            TextEditor(text: $text)
-                .font(.system(.footnote, design: .monospaced))
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .scrollContentBackground(.hidden)
-                .background(Color(.systemBackground))
-                .disabled(!editing || !isEditable)
-                .overlay(alignment: .bottomTrailing) {
-                    if let size = loaded.size {
-                        Text("\(size) bytes")
-                            .font(.caption2).foregroundStyle(.tertiary)
-                            .padding(6)
-                    }
+            if editing {
+                TextEditor(text: $text)
+                    .font(.system(.footnote, design: .monospaced))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(.systemBackground))
+                    .disabled(!isEditable)
+            } else {
+                ScrollView {
+                    MarkdownWebView(markdown: codeMarkdown(for: loaded), height: $previewHeight)
+                        .frame(height: max(previewHeight, 1))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
                 }
+                .background(Color(.systemBackground))
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if let size = loaded.size {
+                Text("\(size) bytes")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .padding(6)
+            }
+        }
+    }
+
+    private func codeMarkdown(for loaded: FileContent) -> String {
+        let body = loaded.content ?? text
+        let fence = codeFence(for: body)
+        let language = languageForCodeFence(name)
+        if language.isEmpty {
+            return "\(fence)\n\(body)\n\(fence)"
+        }
+        return "\(fence)\(language)\n\(body)\n\(fence)"
+    }
+
+    private func codeFence(for value: String) -> String {
+        var fence = "```"
+        while value.contains(fence) {
+            fence.append("`")
+        }
+        return fence
+    }
+
+    private func languageForCodeFence(_ filename: String) -> String {
+        let lowercasedName = filename.lowercased()
+        if lowercasedName == ".env" || lowercasedName.hasSuffix(".env") {
+            return "dotenv"
+        }
+
+        switch URL(fileURLWithPath: filename).pathExtension.lowercased() {
+        case "swift": return "swift"
+        case "ts": return "typescript"
+        case "tsx": return "tsx"
+        case "js", "mjs", "cjs": return "javascript"
+        case "jsx": return "jsx"
+        case "json": return "json"
+        case "yml", "yaml": return "yaml"
+        case "toml": return "toml"
+        case "xml": return "xml"
+        case "html", "htm": return "html"
+        case "css": return "css"
+        case "scss": return "scss"
+        case "md", "markdown", "mdx": return "markdown"
+        case "py": return "python"
+        case "rb": return "ruby"
+        case "rs": return "rust"
+        case "go": return "go"
+        case "java": return "java"
+        case "kt", "kts": return "kotlin"
+        case "sh", "bash", "zsh": return "bash"
+        case "c", "h": return "c"
+        case "cc", "cpp", "cxx", "hpp": return "cpp"
+        case "lua": return "lua"
+        case "zig": return "zig"
+        case "diff", "patch": return "diff"
+        case "sql": return "sql"
+        case "txt", "text": return "text"
+        default: return "text"
         }
     }
 
