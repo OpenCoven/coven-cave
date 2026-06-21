@@ -154,6 +154,7 @@ export const SUITES = {
     "src/lib/terminal-broadcast.test.ts",
     "src/components/comux-broadcast-wiring.test.ts",
     "src/components/comux-chrome-wiring.test.ts",
+    "src/components/comux-touch-wiring.test.ts",
     "src/components/comux-pane-nav-wiring.test.ts",
     "src/components/library-polish.test.ts",
     "src/components/library-file-actions.test.ts",

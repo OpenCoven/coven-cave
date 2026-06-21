@@ -11,6 +11,10 @@ const KEYS = {
   down: "\x1b[B",
   left: "\x1b[D",
   right: "\x1b[C",
+  pipe: "|",
+  tilde: "~",
+  slash: "/",
+  dash: "-",
 } as const;
 
 type Props = {
@@ -52,6 +56,10 @@ export function TerminalKeyBar({ onKey, ctrlActive, onToggleCtrl }: Props) {
       >
         ctrl
       </button>
+      <button type="button" className={KEY_CLASS} onClick={() => onKey(KEYS.pipe)} aria-label="Pipe">|</button>
+      <button type="button" className={KEY_CLASS} onClick={() => onKey(KEYS.tilde)} aria-label="Tilde">~</button>
+      <button type="button" className={KEY_CLASS} onClick={() => onKey(KEYS.slash)} aria-label="Slash">/</button>
+      <button type="button" className={KEY_CLASS} onClick={() => onKey(KEYS.dash)} aria-label="Dash">-</button>
       <span className="flex-1" aria-hidden />
       <ArrowKey label="Left" icon="ph:arrow-left-bold" onClick={() => onKey(KEYS.left)} />
       <ArrowKey label="Up" icon="ph:arrow-up-bold" onClick={() => onKey(KEYS.up)} />

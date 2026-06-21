@@ -8668,3 +8668,24 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-size: 9px;
   color: var(--text-secondary);
 }
+
+/* ── Terminal touch ergonomics (PR2) ──────────────────────────────────────── */
+/* No hover on touch, so pane actions (split/zoom/remove) must be visible by
+   default and finger-sized. Tapping a pane already focuses it. */
+@media (pointer: coarse) {
+  .comux-terminal-pane-action,
+  .comux-terminal-pane-action--split {
+    opacity: 1;
+    width: 30px;
+    height: 30px;
+  }
+  .comux-terminal-pane-bar {
+    min-height: 36px;
+    gap: 9px;
+  }
+  .comux-terminal-pane-num {
+    min-width: 20px;
+    height: 20px;
+    font-size: 11px;
+  }
+}
