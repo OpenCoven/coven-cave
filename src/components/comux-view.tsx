@@ -587,6 +587,19 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
         : selectedRoot
           ? `${selectedRoot.replace(/\/$/, "")}/${detail.path.replace(/^\.?\//, "")}`
           : detail.path;
+      // If the file lives inside a project we already track, reveal it in the
+      // tree too: switch to that project so the tree is rooted there, and make
+      // sure the file column is open. The tree then auto-expands to the file and
+      // highlights it (via selectedPath). Files outside any known project still
+      // open in the preview — just without the tree reveal.
+      const within = projects.find((project) => {
+        const r = project.root.replace(/\/$/, "");
+        return path === r || path.startsWith(`${r}/`);
+      });
+      if (within) {
+        if (within.root !== selectedProjectRoot) setSelectedProjectRoot(within.root);
+        setProjectDetailCollapsed(false);
+      }
       // A user-initiated file open is an explicit view choice — pin it so the
       // diff-first auto-switch doesn't yank them back to Changes.
       pinnedRightViewRef.current = true;
@@ -609,7 +622,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
       window.removeEventListener("cave:open-file-diff", onOpenDiff as EventListener);
     };
-  }, [active, openFilePreview, selectedRoot]);
+  }, [active, openFilePreview, selectedRoot, projects, selectedProjectRoot]);
 
   // Code workspace toolbar wiring (projects view only): the Projects toggle
   // shows/hides this column, and a layout preset additionally switches the

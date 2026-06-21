@@ -56,4 +56,24 @@ assert.match(
 // Affordance styling exists.
 assert.match(css, /code\.cave-file-link \{[\s\S]*?cursor: pointer/, "file-link affordance is styled");
 
+// Opening a file that lives inside a tracked project also reveals it in the
+// tree: comux switches to the containing project and opens the file column.
+const tree = await readFile(new URL("./project-tree.tsx", import.meta.url), "utf8");
+assert.match(
+  comux,
+  /const within = projects\.find\(\(project\) => \{[\s\S]*?path\.startsWith\(`\$\{r\}\/`\)/,
+  "comux matches the opened path against existing project roots",
+);
+assert.match(
+  comux,
+  /if \(within\) \{[\s\S]*?setSelectedProjectRoot\(within\.root\)[\s\S]*?setProjectDetailCollapsed\(false\)/,
+  "an in-project file switches to that project and opens the file column",
+);
+// The tree auto-expands ancestors of the selected file so the highlight shows.
+assert.match(
+  tree,
+  /selectedPath\.startsWith\(`\$\{entry\.path\}\/`\)/,
+  "tree reveals the selected file by expanding its ancestor folders",
+);
+
 console.log("message-bubble-file-links.test.ts: ok");

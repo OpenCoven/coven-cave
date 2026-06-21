@@ -230,6 +230,29 @@ function TreeRow({
     }
   }, [entry, expanded, children, onFileClick]);
 
+  // Reveal-to-selection: when the selected (open) file lives somewhere under
+  // this folder, auto-expand so the highlighted row becomes visible. This is
+  // what makes "click a file in chat → open AND reveal it in the tree" work:
+  // each ancestor expands (lazily fetching its children), and the next ancestor
+  // mounts and repeats, cascading down to the file. We only ever expand here,
+  // never collapse — a user's manual layout is preserved.
+  const revealedRef = useRef(false);
+  useEffect(() => {
+    if (!entry.isDir || !selectedPath) return;
+    if (selectedPath === entry.path || !selectedPath.startsWith(`${entry.path}/`)) return;
+    setExpanded(true);
+    if (children !== null || revealedRef.current) return;
+    revealedRef.current = true;
+    let alive = true;
+    setFetching(true);
+    void fetchChildren(entry.path).then((fetched) => {
+      if (!alive) return;
+      setChildren(fetched);
+      setFetching(false);
+    });
+    return () => { alive = false; };
+  }, [selectedPath, entry.isDir, entry.path, children]);
+
   return (
     <div role="treeitem" aria-expanded={entry.isDir ? expanded : undefined}>
       {/* Row */}
