@@ -115,4 +115,6 @@ assert.match(
   "the custom-theme reset button names the theme it resets",
 );
 
+assert.match(source, /<div className="max-w-none space-y-6">/, "settings pages fill the full pane width (no narrow max-w-2xl column on desktop)");
+
 console.log("settings-shell-polish.test.ts OK");
