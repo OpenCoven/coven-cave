@@ -2202,6 +2202,46 @@ select {
   opacity: 1;
 }
 
+/* Pane number badge — backs ⌘1…9 quick-jump and reads like a tmux pane index.
+   Tints to the brand accent on the focused pane. */
+.comux-terminal-pane-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--text-muted) 22%, transparent);
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.comux-terminal-pane[data-active="true"] .comux-terminal-pane-num {
+  background: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  color: var(--accent-presence);
+}
+
+/* Broadcast ("sync panes") mode: the toolbar toggle lights up and every pane
+   gets a warm ring, so it's unmistakable that a keystroke fans out to all
+   panes. The active pane keeps its accent top hairline atop the warm ring. */
+.comux-terminal-toolbar-button[data-broadcast-active="true"] {
+  background: color-mix(in oklch, var(--color-warning) 20%, transparent);
+  color: var(--color-warning);
+}
+
+.comux-terminal-pane[data-broadcast="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-warning) 45%, transparent);
+}
+
+.comux-terminal-pane[data-broadcast="true"][data-active="true"] {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-warning) 60%, transparent),
+    inset 0 1.5px 0 0 color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+
 .comux-terminal-pane-action:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
@@ -8556,3 +8596,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 @media (prefers-reduced-motion: reduce) {
   .cave-next-path--recommended { animation: none; border-color: var(--color-success); }
 }
+
+/* Bigger desktop search glyph (overrides the 1.15em default). */
+.menu-bar__search-icon { width: 2.5em; height: 2.5em; }

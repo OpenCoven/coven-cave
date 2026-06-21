@@ -48,6 +48,14 @@ import {
   type TerminalSplitDirection,
   type TerminalSplitSide,
 } from "@/lib/terminal-layout";
+import {
+  directionalNeighbor,
+  cycleVisibleSession,
+  paneNumberMap,
+  sessionAtPaneNumber,
+  type PaneDirection,
+} from "@/lib/terminal-nav";
+import { broadcastTargetIds } from "@/lib/terminal-broadcast";
 import type { SessionRow } from "@/lib/types";
 
 type ComuxViewMode = "terminal" | "projects";
@@ -458,6 +466,42 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     [terminalLayout],
   );
 
+  // Zoom/maximize: when set, the surface renders only this pane full-size while
+  // its siblings stay alive (PTYs untouched) behind it. 1-based pane numbers
+  // back the badges + ⌘1…9 quick-jump.
+  const [zoomedSessionId, setZoomedSessionId] = useState<string | null>(null);
+
+  // Broadcast input ("sync panes"): a keystroke in any pane is mirrored to every
+  // other live pane. Each BottomTerminal registers its PTY writer; refs keep the
+  // input handler stable so toggling broadcast never re-mounts a pane.
+  const [broadcast, setBroadcast] = useState(false);
+  const broadcastRef = useRef(false);
+  broadcastRef.current = broadcast;
+  const paneWritersRef = useRef(new Map<string, (data: string) => void>());
+  const registerPaneWriter = useCallback(
+    (paneSessionId: string, write: ((data: string) => void) | null) => {
+      if (write) paneWritersRef.current.set(paneSessionId, write);
+      else paneWritersRef.current.delete(paneSessionId);
+    },
+    [],
+  );
+  const handlePaneInput = useCallback((originSessionId: string, data: string) => {
+    if (!broadcastRef.current) return;
+    for (const id of broadcastTargetIds([...paneWritersRef.current.keys()], originSessionId)) {
+      try {
+        paneWritersRef.current.get(id)?.(data);
+      } catch {
+        /* pane unmounted mid-broadcast — drop it */
+      }
+    }
+  }, []);
+  const paneNumbers = useMemo(() => paneNumberMap(terminalLayout), [terminalLayout]);
+  useEffect(() => {
+    if (zoomedSessionId && !visiblePaneSessionIds.includes(zoomedSessionId)) {
+      setZoomedSessionId(null);
+    }
+  }, [zoomedSessionId, visiblePaneSessionIds]);
+
   const hiddenPaneSessions = useMemo(() => {
     const visibleIds = new Set(visiblePaneSessionIds);
     return sessions.filter((session) => !visibleIds.has(session.id));
@@ -532,6 +576,70 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [view, active, addSession, removeSession, currentIdx, sessions.length]);
+
+  // Multi-pane navigation (tmux-grade): directional focus (⌘⌥Arrow), cycle
+  // (⌘[ / ⌘]), quick-jump (⌘1…9), and zoom toggle (⌘Enter). All gated to ⌘/Ctrl
+  // chords the shell never sees; zoom follows focus so navigating while zoomed
+  // moves the maximized pane.
+  useEffect(() => {
+    if (view !== "terminal" || !active) return;
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.isContentEditable) return;
+      if (e.ctrlKey && !e.metaKey && target?.closest?.(".xterm")) return;
+
+      const activeId = terminalLayout.activeSessionId;
+      const focusPane = (id: string | null) => {
+        if (!id) return;
+        e.preventDefault();
+        dispatchTerminalLayout({ type: "focus", sessionId: id });
+        setZoomedSessionId((z) => (z ? id : z)); // zoom follows the focused pane
+      };
+
+      // Directional focus — ⌘⌥Arrow.
+      if (e.altKey && !e.shiftKey) {
+        const dir: PaneDirection | null =
+          e.key === "ArrowLeft" ? "left"
+          : e.key === "ArrowRight" ? "right"
+          : e.key === "ArrowUp" ? "up"
+          : e.key === "ArrowDown" ? "down"
+          : null;
+        if (dir && activeId) {
+          focusPane(directionalNeighbor(terminalLayout, activeId, dir));
+        }
+        return;
+      }
+      if (e.shiftKey && (e.key === "b" || e.key === "B")) {
+        e.preventDefault();
+        setBroadcast((v) => !v);
+        return;
+      }
+      if (e.shiftKey) return;
+
+      // Cycle visible panes — ⌘] (next) / ⌘[ (prev).
+      if (e.key === "]" || e.key === "[") {
+        focusPane(cycleVisibleSession(terminalLayout, activeId, e.key === "]" ? 1 : -1));
+        return;
+      }
+      // Quick-jump to pane N — ⌘1…9.
+      if (e.key >= "1" && e.key <= "9") {
+        const id = sessionAtPaneNumber(terminalLayout, Number(e.key));
+        if (id) focusPane(id);
+        return;
+      }
+      // Zoom / restore the active pane — ⌘Enter.
+      if (e.key === "Enter") {
+        if (!activeId) return;
+        if (visiblePaneSessionIds.length <= 1 && !zoomedSessionId) return;
+        e.preventDefault();
+        setZoomedSessionId((z) => (z ? null : activeId));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [view, active, terminalLayout, zoomedSessionId, visiblePaneSessionIds]);
 
   const openFilePreview = useCallback(async (path: string, line?: number) => {
     setPreviewPath(path);
@@ -890,6 +998,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
             className="comux-terminal-pane"
             data-terminal-pane-id={s.id}
             data-active={isActive ? "true" : undefined}
+            data-broadcast={broadcast ? "true" : undefined}
             onClick={() => focusSessionById(s.id)}
           >
             <div
@@ -910,8 +1019,27 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                   ?.removeAttribute("data-dragging");
               }}
             >
-              <Icon name="ph:terminal-window" width={12} aria-hidden />
+              {visiblePaneCount > 1 ? (
+                <span className="comux-terminal-pane-num" aria-hidden>{paneNumbers.get(s.id)}</span>
+              ) : (
+                <Icon name="ph:terminal-window" width={12} aria-hidden />
+              )}
               <span className="min-w-0 flex-1 truncate">{s.label}</span>
+              {visiblePaneCount > 1 || zoomedSessionId === s.id ? (
+                <button
+                  type="button"
+                  draggable={false}
+                  className="comux-terminal-pane-action"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setZoomedSessionId((z) => (z === s.id ? null : s.id));
+                  }}
+                  aria-label={zoomedSessionId === s.id ? `Restore ${s.label}` : `Zoom ${s.label}`}
+                  title={zoomedSessionId === s.id ? "Restore split (⌘⏎)" : "Zoom pane (⌘⏎)"}
+                >
+                  <Icon name={zoomedSessionId === s.id ? "ph:arrows-in-simple" : "ph:arrows-out-simple"} width={10} aria-hidden />
+                </button>
+              ) : null}
               {visiblePaneCount > 1 ? (
                 <button
                   type="button"
@@ -937,6 +1065,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 threadId={`cave.comux.${s.id}`}
                 active={active && isActive}
                 projectRoot={s.projectRoot ?? selectedProjectRoot ?? daemonProjectRoot}
+                paneId={s.id}
+                registerWriter={registerPaneWriter}
+                onUserInput={handlePaneInput}
               />
             </div>
           </div>
@@ -981,10 +1112,15 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       daemonProjectRoot,
       focusSessionById,
       nodeKey,
+      paneNumbers,
       selectedProjectRoot,
       sessionById,
       splitSessionIntoPane,
       visiblePaneCount,
+      zoomedSessionId,
+      broadcast,
+      handlePaneInput,
+      registerPaneWriter,
     ],
   );
 
@@ -1073,6 +1209,18 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
               </div>
               <button
                 type="button"
+                onClick={() => setBroadcast((v) => !v)}
+                aria-pressed={broadcast}
+                disabled={visiblePaneCount < 2 && !broadcast}
+                className="comux-terminal-toolbar-button inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:pointer-events-none disabled:opacity-40"
+                data-broadcast-active={broadcast ? "true" : undefined}
+                title="Broadcast input to all panes (⌘⇧B)"
+              >
+                <Icon name="ph:share-network" width={12} aria-hidden />
+                <span>{broadcast ? "Broadcasting" : "Broadcast"}</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => addSession()}
                 aria-label="New terminal"
                 title="New terminal (⌘N)"
@@ -1108,7 +1256,11 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
               </div>
             ) : (
               <>
-                {terminalLayout.root ? renderTerminalNode(terminalLayout.root) : null}
+                {terminalLayout.root
+                  ? zoomedSessionId && visiblePaneSessionIds.includes(zoomedSessionId)
+                    ? renderTerminalNode({ kind: "leaf", sessionId: zoomedSessionId })
+                    : renderTerminalNode(terminalLayout.root)
+                  : null}
                 <div className="comux-terminal-keepalive" aria-hidden="true">
                   {hiddenPaneSessions.map((s) => (
                     <BottomTerminal
@@ -1123,7 +1275,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
             )}
           </div>
           <footer className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-center text-[10px] text-[var(--text-muted)]">
-            ⌘N new · ⌘W close · drag tabs or pane bars onto pane edges to split &amp; reorganize · drag dividers to resize
+            ⌘N new · ⌘W close · drag tabs or pane bars onto pane edges to split &amp; reorganize · drag dividers to resize · ⌘⌥arrows focus · ⌘[ ⌘] cycle · ⌘1–9 jump · ⌘⏎ zoom · ⌘⇧B broadcast
           </footer>
         </div>
       ) : (

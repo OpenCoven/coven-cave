@@ -210,10 +210,16 @@
 .cockpit-kpi { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; border-radius: 12px;
   border: 1px solid var(--border-hairline); background: var(--bg-raised); text-decoration: none; transition: border-color .15s, transform .15s; }
 a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(-1px); }
-.cockpit-kpi__icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px; margin-bottom: 4px;
+.cockpit-kpi__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.cockpit-kpi__icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px;
   color: var(--kpi, var(--accent-presence)); background: color-mix(in oklch, var(--kpi, var(--accent-presence)) 15%, transparent); }
+.cockpit-kpi__delta { font-size: 10px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .cockpit-kpi__value { font-size: 24px; font-weight: 700; line-height: 1.1; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .cockpit-kpi__label { font-size: 11.5px; color: var(--text-secondary); }
+/* 7-day trend sparkline */
+.cockpit-spark { display: block; width: 100%; height: 22px; margin-top: 7px; overflow: visible; }
+.cockpit-spark--flat { display: block; width: 100%; height: 22px; margin-top: 7px;
+  border-bottom: 1px dashed var(--border-hairline); opacity: 0.6; }
 
 /* Main grid */
 .cockpit-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 16px; align-items: start; }

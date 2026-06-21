@@ -12,6 +12,7 @@
  */
 
 import React from "react";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon } from "@/lib/icon";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -144,7 +145,7 @@ function SidebarSection({
           <span className="sidebar-section-label__text">{label}</span>
           <Icon
             name="ph:caret-down-bold"
-            width="0.98rem"
+            width="1.1rem" height="1.1rem"
             className={`sidebar-section-label__chevron${collapsed ? " sidebar-section-label__chevron--collapsed" : ""}`}
           />
         </button>
@@ -189,7 +190,7 @@ function FolderRow({
       title={title}
       onClick={onClick}
     >
-      <Icon name={iconName} width={21} className="sidebar-folder-icon" />
+      <Icon name={iconName} width={42} className="sidebar-folder-icon" />
       <span className="sidebar-folder-label">{label}</span>
       {badge && <span className="sidebar-badge">{badge}</span>}
       {/* The ⌘-number shortcut is no longer shown as a chip here: the numbers
@@ -215,6 +216,11 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   } = props;
 
   const unreadCount = notificationBadgeCount ?? 0;
+
+  // Arrow-key navigation across the nav rows (Work + Tools): one tab stop,
+  // Up/Down moves focus, Home/End jumps. Uses the shared roving-tabindex hook.
+  const navScrollRef = React.useRef<HTMLDivElement | null>(null);
+  useRovingTabIndex({ containerRef: navScrollRef, itemSelector: ".sidebar-folder-row", orientation: "vertical" });
 
   // Projects lives only inside the Familiars surface's Projects tab now (and ⌘9 /
   // the /projects deep-link in workspace.tsx open it there) — no sidebar entry.
@@ -247,12 +253,12 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
       <div className="sidebar-actions">
         <button type="button" className="sidebar-action-row focus-ring" onClick={onNewChat} title="New chat">
-          <Icon name="ph:note-pencil" width={22} aria-hidden />
+          <Icon name="ph:note-pencil" width={28} height={28} aria-hidden />
           <span>New chat</span>
         </button>
       </div>
 
-      <div className="sidebar-nav-scroll">
+      <div className="sidebar-nav-scroll" ref={navScrollRef}>
         <SidebarSection label="Work">
           {workModes.map((fm) => (
             <FolderRow
@@ -301,7 +307,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           title="Dashboard — activity overview and daily reports"
         >
           <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:squares-four" width={20} className="sidebar-foot-icon" />
+            <Icon name="ph:squares-four" width={40} className="sidebar-foot-icon" />
           </span>
           <span className="sidebar-foot-label">Dashboard</span>
         </a>
@@ -316,7 +322,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             <span className="sidebar-foot-icon-cell" aria-hidden="true">
               <Icon
                 name={unreadCount > 0 ? "ph:bell-fill" : "ph:bell"}
-                width={20}
+                width={40}
                 className="sidebar-foot-icon"
               />
             </span>
@@ -336,7 +342,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           title="Settings"
         >
           <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:gear-six" width={20} className="sidebar-foot-icon" />
+            <Icon name="ph:gear-six" width={40} className="sidebar-foot-icon" />
           </span>
           <span className="sidebar-foot-label">Settings</span>
         </button>

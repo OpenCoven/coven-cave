@@ -106,7 +106,7 @@
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 18px;
   cursor: pointer;
   text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
@@ -411,7 +411,7 @@
   background: transparent;
   border: 1px solid transparent;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -478,7 +478,7 @@
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 18px;
   cursor: pointer;
   text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
@@ -1069,3 +1069,15 @@
   padding: 0;
   margin: 0 auto;
 }
+
+/* Nav icon sizing — the width prop alone never resized these: folder/new-chat
+   were CSS-capped (14/18px) and the default 1em height squished the rest, so
+   the icons never visibly grew. Size them explicitly (square) so they scale. */
+.sidebar-folder-icon { width: 40px; height: 40px; }
+.sidebar-action-icon { width: 40px; height: 40px; }
+.sidebar-foot-icon { width: 36px; height: 36px; }
+
+/* Keep the collapsed icon rail comfortable (the 40px icons would touch edges). */
+.shell-nav--rail .sidebar-folder-icon,
+.shell-nav--rail .sidebar-action-icon,
+.shell-nav--rail .sidebar-foot-icon { width: 28px; height: 28px; }

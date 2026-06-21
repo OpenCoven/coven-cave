@@ -64,6 +64,30 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
+// ─── 7-day KPI trends (persisted client-side, keyed by day) ──────────────────────
+
+const TRENDS_KEY = "cave:cockpit:trends";
+const TREND_DAYS = 7;
+type TrendKey = "needs" | "tasks" | "progress" | "review" | "prs" | "reading";
+type DaySnap = Record<TrendKey, number>;
+type TrendStore = Record<string, DaySnap>; // "YYYY-MM-DD" -> snapshot
+
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Last `TREND_DAYS` values for one metric, oldest→newest; null for missing days. */
+function seriesFor(store: TrendStore, key: TrendKey, now: Date): (number | null)[] {
+  const out: (number | null)[] = [];
+  for (let i = TREND_DAYS - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    const v = store[dayKey(d)]?.[key];
+    out.push(typeof v === "number" ? v : null);
+  }
+  return out;
+}
+
 // ─── Status vocab ──────────────────────────────────────────────────────────────
 
 const STATUS_META: Record<CardStatus, { label: string; color: string }> = {
@@ -132,13 +156,32 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     .slice(0, 5);
 
   const kpis: KpiSpec[] = [
-    { icon: "ph:warning-circle", value: model.needsAttention.length, label: "Needs you", accent: "rose" },
-    { icon: "ph:kanban-bold", value: open.length, label: "Active tasks", accent: "lavender", src: "cards" },
-    { icon: "ph:lightning-bold", value: (byStatus.get("running") ?? 0) + runningSessions.length, label: "In progress", accent: "green", src: "cards" },
-    { icon: "ph:git-merge", value: byStatus.get("review") ?? 0, label: "In review", accent: "blue", src: "cards" },
-    { icon: "ph:git-pull-request", value: prsToReview.length, label: "PRs to review", accent: "amber", src: "github" },
-    { icon: "ph:books-bold", value: readingQueue.length, label: "To read", accent: "blue", src: "reading" },
+    { icon: "ph:warning-circle", value: model.needsAttention.length, label: "Needs you", accent: "rose", metric: "needs" },
+    { icon: "ph:kanban-bold", value: open.length, label: "Active tasks", accent: "lavender", src: "cards", metric: "tasks" },
+    { icon: "ph:lightning-bold", value: (byStatus.get("running") ?? 0) + runningSessions.length, label: "In progress", accent: "green", src: "cards", metric: "progress" },
+    { icon: "ph:git-merge", value: byStatus.get("review") ?? 0, label: "In review", accent: "blue", src: "cards", metric: "review" },
+    { icon: "ph:git-pull-request", value: prsToReview.length, label: "PRs to review", accent: "amber", src: "github", metric: "prs" },
+    { icon: "ph:books-bold", value: readingQueue.length, label: "To read", accent: "blue", src: "reading", metric: "reading" },
   ];
+
+  // ── 7-day KPI trends: load history; snapshot today once the live data is in ──
+  const [trends, setTrends] = useState<TrendStore>({});
+  useEffect(() => {
+    try { const raw = localStorage.getItem(TRENDS_KEY); if (raw) setTrends(JSON.parse(raw) as TrendStore); } catch { /* ignore */ }
+  }, []);
+  const coreReady = ready.has("cards") && ready.has("github") && ready.has("reading");
+  useEffect(() => {
+    if (!coreReady) return;
+    const snap = Object.fromEntries(kpis.map((k) => [k.metric, k.value])) as DaySnap;
+    setTrends((prev) => {
+      const store: TrendStore = { ...prev, [dayKey(now)]: snap };
+      const days = Object.keys(store).sort();
+      while (days.length > 30) delete store[days.shift()!];
+      try { localStorage.setItem(TRENDS_KEY, JSON.stringify(store)); } catch { /* ignore */ }
+      return store;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coreReady]);
 
   // ── Draggable layout ──
   const sensors = useSensors(
@@ -220,7 +263,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
 
       {/* KPI rail */}
       <div className="cockpit-kpis">
-        {kpis.map((k) => <KpiTile key={k.label} {...k} loading={k.src ? !ready.has(k.src) : false} />)}
+        {kpis.map((k) => <KpiTile key={k.label} {...k} loading={k.src ? !ready.has(k.src) : false} series={seriesFor(trends, k.metric, now)} />)}
       </div>
 
       {/* Main grid — panels drag to rearrange (hover for the grip) */}
@@ -307,23 +350,54 @@ function SortableWidget({ id, children }: { id: string; children: ReactNode }) {
 
 // ─── KPI tile ────────────────────────────────────────────────────────────────────
 
-type KpiSpec = { icon: IconName; value: number; label: string; accent: "rose" | "lavender" | "green" | "blue" | "amber"; src?: keyof CockpitData; href?: string };
+type KpiSpec = { icon: IconName; value: number; label: string; accent: "rose" | "lavender" | "green" | "blue" | "amber"; metric: TrendKey; src?: keyof CockpitData; href?: string };
 const KPI_ACCENT: Record<KpiSpec["accent"], string> = {
   rose: "var(--color-danger)", lavender: "var(--accent-presence)", green: "var(--color-success)",
   blue: "var(--color-info)", amber: "var(--color-warning)",
 };
 
-function KpiTile({ icon, value, label, accent, href, loading }: KpiSpec & { loading: boolean }) {
+function KpiTile({ icon, value, label, accent, href, loading, series }: KpiSpec & { loading: boolean; series: (number | null)[] }) {
+  const color = KPI_ACCENT[accent];
+  const pts = series.filter((v): v is number => v != null);
+  const delta = pts.length >= 2 ? pts[pts.length - 1] - pts[0] : 0;
   const inner = (
     <>
-      <span className="cockpit-kpi__icon" style={{ ["--kpi" as string]: KPI_ACCENT[accent] }}>
-        <Icon name={icon} aria-hidden />
+      <span className="cockpit-kpi__top">
+        <span className="cockpit-kpi__icon" style={{ ["--kpi" as string]: color }}>
+          <Icon name={icon} aria-hidden />
+        </span>
+        {!loading && delta !== 0 ? (
+          <span className="cockpit-kpi__delta" title={`${delta > 0 ? "+" : ""}${delta} over ${TREND_DAYS} days`}>
+            {delta > 0 ? "▲" : "▼"} {Math.abs(delta)}
+          </span>
+        ) : null}
       </span>
       <span className="cockpit-kpi__value">{loading ? "—" : value}</span>
       <span className="cockpit-kpi__label">{label}</span>
+      <Sparkline values={series} color={color} />
     </>
   );
   return href ? <a className="cockpit-kpi" href={href}>{inner}</a> : <div className="cockpit-kpi">{inner}</div>;
+}
+
+/** Inline 7-day sparkline — line + faint area fill. Sparse data degrades to a
+ *  flat baseline; <2 points renders nothing (the trend is still accumulating). */
+function Sparkline({ values, color }: { values: (number | null)[]; color: string }) {
+  const pts = values.map((v, i) => ({ v, i })).filter((p): p is { v: number; i: number } => p.v != null);
+  if (pts.length < 2) return <span className="cockpit-spark cockpit-spark--flat" aria-hidden />;
+  const W = 100, H = 22, P = 2;
+  const vs = pts.map((p) => p.v);
+  const min = Math.min(...vs), max = Math.max(...vs), range = max - min || 1;
+  const x = (i: number) => (i / (TREND_DAYS - 1)) * W;
+  const y = (v: number) => H - P - ((v - min) / range) * (H - 2 * P);
+  const line = pts.map((p, idx) => `${idx === 0 ? "M" : "L"}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const area = `${line} L${x(pts[pts.length - 1].i).toFixed(1)},${H} L${x(pts[0].i).toFixed(1)},${H} Z`;
+  return (
+    <svg className="cockpit-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden>
+      <path d={area} fill={color} opacity="0.13" />
+      <path d={line} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 // ─── Board snapshot ──────────────────────────────────────────────────────────────

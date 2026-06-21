@@ -43,14 +43,14 @@ assert.match(
 // ───────── Task 3: Week view always renders TimeGrid ─────────
 assert.match(
   source,
-  /function WeekView\([\s\S]*?<TimeGrid columns=\{columns\} onOpenItem=\{onOpenItem\} \/>/,
+  /function WeekView\([\s\S]*?<TimeGrid columns=\{columns\} onOpenItem=\{onOpenItem\}/,
   "WeekView must always render TimeGrid",
 );
 
 // ───────── Task 4: Today indicator ─────────
 assert.match(
   source,
-  /col\.isToday\s*\?\s*"flex-1 relative min-w-\[80px\] bg-\[color-mix\(in_oklch,var\(--accent-presence\)_6%,transparent\)\]"\s*:\s*"flex-1 relative min-w-\[80px\]"/,
+  /col\.isToday \? "bg-\[color-mix\(in_oklch,var\(--accent-presence\)_6%,transparent\)\]" : ""/,
   "TimeGrid column body must tint today's column with accent-presence at 6%",
 );
 assert.match(

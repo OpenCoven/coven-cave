@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -63,12 +63,34 @@ export function JournalEntries({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
   const selectedFamiliarId = activeFamiliarId ?? familiars[0]?.id ?? null;
 
   const familiarName = useCallback(
     (id: string | null) => (id ? familiars.find((f) => f.id === id)?.display_name ?? id : null),
     [familiars],
   );
+
+  // Client-side filter over the day list — matches the date (slug + human
+  // labels), the preview text, and the reflecting familiar's name.
+  const filteredDays = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return days;
+    const now = new Date();
+    return days.filter((d) => {
+      const dateObj = parseDateSlug(d.date) ?? now;
+      const hay = [
+        d.date,
+        longDateLabel(dateObj),
+        relativeDayLabel(dateObj, now),
+        d.preview ?? "",
+        familiarName(d.reflectedBy) ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [days, filter, familiarName]);
 
   const loadDays = useCallback(async () => {
     try {
@@ -213,13 +235,25 @@ export function JournalEntries({
           </div>
         ) : null}
         <div className="journal-list__cap">Your days</div>
+        {days.length > 0 ? (
+          <input
+            type="search"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter entries…"
+            aria-label="Filter journal entries"
+            className="journal-list__filter focus-ring-inset"
+          />
+        ) : null}
         {!daysLoaded && days.length === 0 ? (
           <SkeletonRows count={4} className="journal-list__loading" />
         ) : days.length === 0 ? (
           <div className="journal-empty">No journal entries yet. Generate today's above.</div>
+        ) : filteredDays.length === 0 ? (
+          <div className="journal-empty">No entries match “{filter.trim()}”.</div>
         ) : (
           <ul className="journal-list__items">
-            {days.map((d) => (
+            {filteredDays.map((d) => (
               <li key={d.date}>
                 <button
                   type="button"
