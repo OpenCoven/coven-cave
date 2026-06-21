@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Tabs } from "@/components/ui/tabs";
 import { workflowToYaml } from "@/lib/workflow-edit";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import type { WorkflowSummary } from "@/lib/workflows";
@@ -71,20 +72,18 @@ export function WorkflowManifestPreview({ workflow, dirty, changedFields }: Work
         )}
       </div>
       {workflow && (
-        <div className="workflow-manifest-views" role="tablist" aria-label="Preview mode">
-          {(["manifest", "prompt"] as ManifestView[]).map((id) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={view === id}
-              className={`workflow-manifest-view${view === id ? " is-active" : ""}`}
-              onClick={() => setView(id)}
-            >
-              {id === "manifest" ? "Manifest" : "Run prompt"}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          variant="segment"
+          size="sm"
+          className="shrink-0"
+          ariaLabel="Preview mode"
+          value={view}
+          onChange={setView}
+          items={[
+            { id: "manifest", label: "Manifest" },
+            { id: "prompt", label: "Run prompt" },
+          ]}
+        />
       )}
       {view === "manifest" && dirty && changedFields && changedFields.length > 0 && (
         <p className="workflow-manifest-changes">
