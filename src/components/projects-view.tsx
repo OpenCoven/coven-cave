@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEven
 
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
+import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
 import { CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
@@ -542,6 +543,7 @@ function ProjectRow({
 }
 
 export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: ProjectsViewProps) {
+  useMinuteTick(); // keep the per-project "last active" relative times current
   const {
     projects,
     loading,

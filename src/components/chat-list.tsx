@@ -12,6 +12,7 @@ import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime, isRelativePhrase } from "@/lib/relative-time";
+import { useMinuteTick } from "@/lib/use-minute-tick";
 import { useDateTimePrefs, formatDate, type DateTimePrefs } from "@/lib/datetime-format";
 import {
   deriveChatProjectGroups,
@@ -229,6 +230,7 @@ function ChatListSection({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, compact = false }: Props) {
+  useMinuteTick(); // keep the "Xm ago" timestamps current without a data refresh
   const { projects } = useProjects();
   const projectOverrides = useProjectOverrides();
   const dtPrefs = useDateTimePrefs();
