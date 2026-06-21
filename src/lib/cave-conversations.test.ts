@@ -267,3 +267,33 @@ if (previousHome === undefined) {
 await rm(home, { recursive: true, force: true });
 
 console.log("cave-conversations.test.ts: ok");
+
+// ── searchConversations content cache invalidates on mtime (perf) ────────────
+{
+  const { searchConversations, CONV_DIR } = await import("./cave-conversations.ts");
+  const { writeFile, utimes, mkdir } = await import("node:fs/promises");
+  await mkdir(CONV_DIR, { recursive: true });
+  const file = path.join(CONV_DIR, "cache-test.json");
+  const mk = (text) =>
+    JSON.stringify({
+      sessionId: "cache-test",
+      title: "Cache test",
+      updatedAt: new Date().toISOString(),
+      turns: [{ id: "t1", role: "user", text }],
+    });
+  await writeFile(file, mk("alpha unique-marker-aaa"), "utf8");
+  let hits = await searchConversations("unique-marker-aaa");
+  assert.equal(hits.length, 1, "first search finds the original content");
+
+  await writeFile(file, mk("beta unique-marker-bbb"), "utf8");
+  const future = new Date(Date.now() + 60_000);
+  await utimes(file, future, future);
+  hits = await searchConversations("unique-marker-bbb");
+  assert.equal(hits.length, 1, "after edit, search finds the NEW content (mtime invalidation)");
+  const stale = await searchConversations("unique-marker-aaa");
+  assert.equal(stale.length, 0, "old content is no longer matched after the edit");
+
+  const again = await searchConversations("unique-marker-bbb");
+  assert.equal(again.length, 1, "repeat search via the cache returns the same hit");
+}
+console.log("cave-conversations cache test OK");

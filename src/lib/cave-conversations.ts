@@ -213,6 +213,13 @@ function searchSnippet(text: string, index: number, matchLength: number): string
   return excerpt;
 }
 
+// Per-file content cache, keyed by absolute path and invalidated by mtime, so
+// repeated searches don't re-read + re-parse unchanged conversations (the
+// dominant cost as the transcript count grows). A saveConversation/appendTurn
+// write bumps the mtime, so the next search refreshes just that one file.
+type ConvCacheEntry = { mtimeMs: number; lower: string; conv: ConversationFile | null };
+const searchCache = new Map<string, ConvCacheEntry>();
+
 export async function searchConversations(
   query: string,
   opts: { limit?: number; maxFileBytes?: number } = {},
@@ -230,18 +237,40 @@ export async function searchConversations(
     return [];
   }
 
+  // Drop cache entries for conversations that have since been deleted.
+  if (searchCache.size > 0) {
+    const live = new Set(
+      entries.filter((n) => n.endsWith(".json")).map((n) => path.join(CONV_DIR, n)),
+    );
+    for (const key of searchCache.keys()) if (!live.has(key)) searchCache.delete(key);
+  }
+
   const hits: Array<ConversationSearchHit & { updatedAt: string }> = [];
   for (const name of entries) {
     if (!name.endsWith(".json")) continue;
     try {
       const file = path.join(CONV_DIR, name);
       const info = await stat(file);
-      if (info.size > maxFileBytes) continue; // huge body — skip gracefully
-      const raw = await readFile(file, "utf8");
-      // Cheap substring pre-filter on the raw text before paying for parse.
-      if (!raw.toLowerCase().includes(qLower)) continue;
-      const conv = JSON.parse(raw) as ConversationFile;
-      if (!Array.isArray(conv?.turns)) continue;
+      if (info.size > maxFileBytes) {
+        searchCache.delete(file); // too big now — don't keep a stale entry
+        continue;
+      }
+      let entry = searchCache.get(file);
+      if (!entry || entry.mtimeMs !== info.mtimeMs) {
+        const raw = await readFile(file, "utf8");
+        let parsed: ConversationFile | null = null;
+        try {
+          parsed = JSON.parse(raw) as ConversationFile;
+        } catch {
+          parsed = null;
+        }
+        entry = { mtimeMs: info.mtimeMs, lower: raw.toLowerCase(), conv: parsed };
+        searchCache.set(file, entry);
+      }
+      // Cheap substring pre-filter before scanning turns.
+      if (!entry.lower.includes(qLower)) continue;
+      const conv = entry.conv;
+      if (!conv || !Array.isArray(conv.turns)) continue;
       let matchCount = 0;
       let snippet = "";
       for (const turn of conv.turns) {
