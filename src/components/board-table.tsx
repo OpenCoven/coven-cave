@@ -18,7 +18,10 @@ const STATUS_ORDER: Record<CardStatus, number> = { backlog: 0, inbox: 1, running
 const PRIORITY_ORDER: Record<CardPriority, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
 
 function sortCards(cards: Card[], key: SortKey, dir: SortDir, familiars: Familiar[]): Card[] {
-  const fname = (id: string | null) => familiars.find((f) => f.id === id)?.display_name ?? "";
+  // Precompute id->name once (O(M)) instead of an O(M) find per comparison
+  // (which made the "familiar" sort O(N log N · M)).
+  const nameById = new Map(familiars.map((f) => [f.id, f.display_name]));
+  const fname = (id: string | null) => (id ? nameById.get(id) ?? "" : "");
   return [...cards].sort((a, b) => {
     let cmp = 0;
     switch (key) {
@@ -125,6 +128,12 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
 
   const sorted = useMemo(() => sortCards(cards, sortKey, sortDir, familiars), [cards, sortKey, sortDir, familiars]);
   const groups = useMemo(() => groupCards(sorted, groupBy, familiars, projects), [sorted, groupBy, familiars, projects]);
+  // The familiar <select> options are identical for every row — build them once
+  // instead of rebuilding M <option> elements per row on each render.
+  const familiarOptions = useMemo(
+    () => familiars.map((f) => <option key={f.id} value={f.id}>{f.display_name}</option>),
+    [familiars],
+  );
 
   const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
   useRovingTabIndex({
@@ -244,9 +253,7 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                           onChange={(e) => onPatch(card.id, { familiarId: e.target.value || null })}
                         >
                           <option value="">Unassigned</option>
-                          {familiars.map((f) => (
-                            <option key={f.id} value={f.id}>{f.display_name}</option>
-                          ))}
+                          {familiarOptions}
                         </select>
                       </span>
                     </td>
