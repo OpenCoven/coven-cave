@@ -32,6 +32,7 @@ export const SUITES = {
     "src/lib/demo-mode.test.ts",
     "src/lib/cave-projects.test.ts",
     "src/lib/project-status.test.ts",
+    "src/lib/github-checks.test.ts",
     "src/lib/chat-projects.test.ts",
     "src/lib/chat-project-selection.test.ts",
     "src/lib/chat-session-order.test.ts",
