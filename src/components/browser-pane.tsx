@@ -436,9 +436,13 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   }, [bridge, nativeBrowserAvailable, activeTab?.url, activeTab?.id]);
 
   // ── Localhost probe ───────────────────────────────────────────────
+  // Each closed port logs an ERR_CONNECTION_REFUSED in the console (a no-cors
+  // fetch can't be silenced), so probe sparingly: only while the document is
+  // visible, and on a slow cadence — never poll a backgrounded window.
   useEffect(() => {
     let cancelled = false;
     const probe = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       for (const port of LOCALHOST_PORTS) {
         if (cancelled) break;
         const live = await probeLocalhost(port);
@@ -468,8 +472,16 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       }
     };
     void probe();
-    const interval = setInterval(() => void probe(), 8000);
-    return () => { cancelled = true; clearInterval(interval); };
+    const interval = setInterval(() => void probe(), 30000);
+    // Re-probe promptly when the user returns to the tab rather than waiting
+    // out the slow interval.
+    const onVisible = () => { if (document.visibilityState === "visible") void probe(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   // ── Tab actions ───────────────────────────────────────────────────

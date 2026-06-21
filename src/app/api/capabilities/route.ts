@@ -118,14 +118,28 @@ export async function GET(req: Request) {
   const harness = url.searchParams.get("harness");
 
   if (harness) {
-    const manifest = await fetchHarnessManifest(harness, refresh);
-    if (!manifest) {
-      return NextResponse.json(
-        { ok: false, error: "daemon offline", coven_skills: [], harness_capabilities: [], scanned_at: new Date().toISOString() },
-        { status: 503 },
-      );
+    const res = await callDaemon<HarnessCapabilityManifest>({
+      path: `/api/v1/capabilities/${encodeURIComponent(harness)}${refresh}`,
+    });
+    if (res.ok && isManifest(res.data)) {
+      const manifest = await supplementClaudeSkills(res.data);
+      return NextResponse.json({ ok: true, coven_skills: [], harness_capabilities: [manifest], scanned_at: manifest.scanned_at });
     }
-    return NextResponse.json({ ok: true, coven_skills: [], harness_capabilities: [manifest], scanned_at: manifest.scanned_at });
+    // The daemon may be up but simply have no manifest for this harness —
+    // e.g. openclaw ships as its own CLI flow, not a daemon-scanned harness.
+    // Only report "daemon offline" when the socket is genuinely unreachable;
+    // otherwise say so accurately so the UI doesn't blame an outage.
+    const offline = res.status === 0 || (res.error != null && /(ENOENT|ECONNREFUSED|ETIMEDOUT|socket|connect)/i.test(res.error));
+    return NextResponse.json(
+      {
+        ok: false,
+        error: offline ? "daemon offline" : `no capabilities manifest for harness "${harness}"`,
+        coven_skills: [],
+        harness_capabilities: [],
+        scanned_at: new Date().toISOString(),
+      },
+      { status: 503 },
+    );
   }
 
   // Newer daemons repurposed the aggregate /api/v1/capabilities for
