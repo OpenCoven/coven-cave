@@ -58,7 +58,7 @@ type Props = {
 export type ChatRouterHandle = {
   goToList: () => void;
   newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null) => void;
-  openSession: (sessionId: string) => void;
+  openSession: (sessionId: string, findQuery?: string) => void;
   currentSessionId: () => string | null;
   clearTranscript: () => void;
   runSlash: (command: string) => void;
@@ -98,6 +98,9 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   ref,
 ) {
   const [view, setView] = useState<View>({ kind: "list" });
+  // Set when a conversation-search hit asks the opened chat to jump to a query;
+  // handed to ChatView (nonce-keyed) so it opens in-thread find on the match.
+  const [pendingFind, setPendingFind] = useState<{ query: string; nonce: number } | null>(null);
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
   const sidebarPrefsLoadedRef = useRef(false);
@@ -253,10 +256,12 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           familiarId: next?.id ?? familiarId ?? null,
         });
       },
-      openSession: (sessionId: string) => {
+      openSession: (sessionId: string, findQuery?: string) => {
         const session = sessions.find((entry) => entry.id === sessionId);
         const next = selectFamiliarForChat(session?.familiarId ?? null);
         setView({ kind: "chat", sessionId, familiarId: next?.id ?? session?.familiarId ?? null });
+        const fq = findQuery?.trim();
+        if (fq) setPendingFind({ query: fq, nonce: Date.now() });
       },
       currentSessionId: () => (view.kind === "chat" ? view.sessionId : null),
       clearTranscript: () => viewHandle.current?.clearTranscript(),
@@ -392,6 +397,8 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             session={activeSession}
             projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
             initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
+            openFindQuery={pendingFind?.query}
+            openFindNonce={pendingFind?.nonce}
             daemonRunning={daemonRunning}
             onSessionsChanged={onSessionsChanged}
             onBack={() => setView({ kind: "list" })}

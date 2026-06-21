@@ -63,7 +63,7 @@ const SESSION_DOT: Record<string, string> = {
 
 type PaletteIntent =
   | { kind: "switch-familiar"; familiarId: string }
-  | { kind: "open-session"; sessionId: string; familiarId?: string | null }
+  | { kind: "open-session"; sessionId: string; familiarId?: string | null; findQuery?: string }
   | { kind: "new-chat"; familiarId?: string }
   | { kind: "slash"; command: string; args?: string }
   | { kind: "back-to-list" }
@@ -729,7 +729,13 @@ export function CommandPalette({
       onIntent({ kind: "create-task", title: row.title });
     } else if (row.kind === "conversation-hit") {
       const familiarId = sessions.find((s) => s.id === row.hit.sessionId)?.familiarId ?? null;
-      onIntent({ kind: "open-session", sessionId: row.hit.sessionId, familiarId });
+      // Carry the matched query so the opened chat jumps to it via in-thread find.
+      onIntent({
+        kind: "open-session",
+        sessionId: row.hit.sessionId,
+        familiarId,
+        findQuery: parseFamiliarToken(query).rest.trim(),
+      });
     } else {
       onIntent(row.intent);
     }

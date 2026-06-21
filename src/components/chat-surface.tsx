@@ -393,7 +393,8 @@ export function ChatSurface({
     if (pendingChatAction.kind === "open") {
       if (pendingChatAction.familiarId) onSetActiveFamiliar(pendingChatAction.familiarId);
       setScope("conversation");
-      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId), 0);
+      const findQuery = pendingChatAction.findQuery;
+      window.setTimeout(() => routerRef.current?.openSession(pendingChatAction.sessionId, findQuery), 0);
       onPendingChatActionHandled();
       return;
     }
