@@ -109,6 +109,7 @@ const contracts: RouteContract[] = [
   { route: "/skills/eval-loop/[familiarId]/run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/skills/local", methods: ["GET"], kind: "json" },
   { route: "/skills", methods: ["GET"], kind: "json" },
+  { route: "/theme", methods: ["GET", "PUT"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/vault", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/voice/session", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/voice/transcript", methods: ["POST"], kind: "json", readsJson: true },

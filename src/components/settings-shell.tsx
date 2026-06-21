@@ -617,6 +617,38 @@ function applyMode(mode: Mode) {
   localStorage.setItem(COVEN_MODE_KEY, mode);
 }
 
+// Color tokens mirrored to the daemon so other clients (e.g. the iOS app over
+// Tailscale) can match the desktop theme via GET /api/theme.
+const THEME_SYNC_KEYS = [
+  "--bg-base", "--bg-raised", "--bg-elevated",
+  "--text-primary", "--text-secondary", "--text-muted",
+  "--border-hairline", "--accent-presence",
+] as const;
+
+function persistThemeTokens() {
+  if (typeof window === "undefined") return;
+  try {
+    const html = document.documentElement;
+    const cs = getComputedStyle(html);
+    const tokens: Record<string, string> = {};
+    for (const key of THEME_SYNC_KEYS) {
+      const value = cs.getPropertyValue(key).trim();
+      if (value) tokens[key] = value;
+    }
+    void fetch("/api/theme", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        themeId: html.getAttribute("data-theme") ?? "coven",
+        mode: html.getAttribute("data-mode") ?? "dark",
+        tokens,
+      }),
+    }).catch(() => {});
+  } catch {
+    /* best-effort sync; never block the UI */
+  }
+}
+
 function applyCustomVars(cssVars: CustomThemeData["cssVars"], mode: Mode) {
   const html = document.documentElement;
   html.setAttribute("data-theme", "custom");
@@ -817,6 +849,12 @@ function AppearanceSection() {
   const [activeTheme, setActiveTheme] = useState<ActiveTheme>("coven");
   const [mode, setMode] = useState<Mode>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
+
+  // Mirror the active theme + resolved tokens to the daemon on change (and mount)
+  // so cross-device clients can read it. Best-effort; failures are swallowed.
+  useEffect(() => {
+    persistThemeTokens();
+  }, [activeTheme, mode, customData]);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
