@@ -1,34 +1,40 @@
 import SwiftUI
 
-// Navigation values for the code browser's push stack.
-
-/// A directory level to drill into.
-struct DirNode: Hashable {
-    var path: String
-    var name: String
-    var searchRoot: String   // the project root, for project-wide search
-}
-
 /// A file to open in the editor.
 struct FileRef: Hashable {
     var path: String
     var name: String
 }
 
-/// Code section: pick a project, browse its tree, search it, open a file.
+/// Code section: a single merged explorer. Projects expand **inline** to their
+/// file trees (lazy, recursive) instead of drilling into a separate screen —
+/// mirroring the desktop comux merge where the project switcher and the file
+/// tree share one column. A file opens in the editor; project-wide search runs
+/// against the project you last opened.
 struct CodeBrowserView: View {
     @Environment(AppModel.self) private var app
+
+    @State private var query = ""
+    @State private var focusedRoot: String?
+    @State private var focusedName = ""
+    @State private var results: [SearchFile] = []
+    @State private var searching = false
+    @State private var searchTruncated = false
+
+    private var searchActive: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("Projects")
-                .navigationDestination(for: DirNode.self) { node in
-                    DirectoryView(node: node)
-                }
+                .navigationTitle("Code")
                 .navigationDestination(for: FileRef.self) { file in
                     CodeEditorView(path: file.path, name: file.name)
                 }
+                .searchable(
+                    text: $query,
+                    prompt: focusedRoot == nil ? "Open a project to search it" : "Search \(focusedName)"
+                )
+                .task(id: query) { await runSearch() }
                 .refreshable { await app.loadProjects() }
                 .task { if !app.projectsLoaded { await app.loadProjects() } }
         }
@@ -42,8 +48,7 @@ struct CodeBrowserView: View {
             ContentUnavailableView {
                 Label("Couldn’t load projects", systemImage: "exclamationmark.triangle")
             } description: { Text(error) } actions: {
-                Button("Retry") { Task { await app.loadProjects() } }
-                    .buttonStyle(.borderedProminent)
+                Button("Retry") { Task { await app.loadProjects() } }.buttonStyle(.borderedProminent)
             }
         } else if app.projects.isEmpty {
             ContentUnavailableView {
@@ -51,110 +56,36 @@ struct CodeBrowserView: View {
             } description: {
                 Text("Add a project on the desktop and it’ll appear here.")
             }
+        } else if searchActive && focusedRoot != nil {
+            searchResults
         } else {
-            List(app.projects) { project in
-                NavigationLink(value: DirNode(path: project.root,
-                                              name: project.name,
-                                              searchRoot: project.root)) {
-                    HStack(spacing: 12) {
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color(hex: project.color) ?? .accentColor)
-                            .frame(width: 10, height: 28)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(project.name).font(.callout.weight(.medium))
-                            Text(project.root)
-                                .font(.caption2.monospaced())
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.head)
-                        }
+            tree
+        }
+    }
+
+    // MARK: - Merged tree (projects + files in one explorer)
+
+    private var tree: some View {
+        List {
+            ForEach(app.projects) { project in
+                CodeNode(
+                    path: project.root,
+                    name: project.name,
+                    isDir: true,
+                    searchRoot: project.root,
+                    isProject: true,
+                    color: Color(hex: project.color) ?? .accentColor,
+                    onFocusProject: {
+                        focusedRoot = project.root
+                        focusedName = project.name
                     }
-                }
-            }
-            .listStyle(.insetGrouped)
-        }
-    }
-}
-
-/// One directory level: lazy tree listing + project-wide search.
-struct DirectoryView: View {
-    @Environment(AppModel.self) private var app
-    let node: DirNode
-
-    @State private var entries: [TreeEntry] = []
-    @State private var loading = true
-    @State private var error: String?
-    @State private var query = ""
-    @State private var results: [SearchFile] = []
-    @State private var searching = false
-    @State private var searchTruncated = false
-
-    var body: some View {
-        Group {
-            if !query.trimmingCharacters(in: .whitespaces).isEmpty {
-                searchResults
-            } else {
-                tree
+                )
             }
         }
-        .navigationTitle(node.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "Search this project")
-        .task(id: query) { await runSearch() }
-        .task { await load() }
+        .listStyle(.insetGrouped)
     }
 
-    // MARK: Tree
-
-    @ViewBuilder private var tree: some View {
-        if loading {
-            ProgressView().controlSize(.large)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error {
-            ContentUnavailableView {
-                Label("Couldn’t open folder", systemImage: "exclamationmark.triangle")
-            } description: { Text(error) } actions: {
-                Button("Retry") { Task { await load() } }.buttonStyle(.borderedProminent)
-            }
-        } else if entries.isEmpty {
-            ContentUnavailableView("Empty folder", systemImage: "folder")
-        } else {
-            List(entries) { entry in
-                if entry.isDir {
-                    NavigationLink(value: DirNode(path: entry.path,
-                                                  name: entry.name,
-                                                  searchRoot: node.searchRoot)) {
-                        Label(entry.name, systemImage: "folder.fill")
-                            .foregroundStyle(.primary)
-                    }
-                } else {
-                    NavigationLink(value: FileRef(path: entry.path, name: entry.name)) {
-                        Label {
-                            Text(entry.name)
-                        } icon: {
-                            Image(systemName: fileIcon(entry.name))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-            .listStyle(.plain)
-        }
-    }
-
-    private func load() async {
-        guard let client = app.client else { return }
-        loading = true
-        do {
-            entries = try await client.projectTree(root: node.path, depth: 1)
-            error = nil
-        } catch {
-            self.error = error.localizedDescription
-        }
-        loading = false
-    }
-
-    // MARK: Search
+    // MARK: - Search (scoped to the focused project)
 
     @ViewBuilder private var searchResults: some View {
         if searching {
@@ -193,7 +124,7 @@ struct DirectoryView: View {
 
     private func runSearch() async {
         let q = query.trimmingCharacters(in: .whitespaces)
-        guard q.count >= 2, let client = app.client else {
+        guard q.count >= 2, let root = focusedRoot, let client = app.client else {
             results = []; searchTruncated = false; return
         }
         // Light debounce so each keystroke doesn't spawn a ripgrep run.
@@ -202,7 +133,7 @@ struct DirectoryView: View {
         searching = true
         defer { searching = false }
         do {
-            let resp = try await client.searchProject(root: node.searchRoot, query: q)
+            let resp = try await client.searchProject(root: root, query: q)
             if Task.isCancelled { return }
             results = resp.files ?? []
             searchTruncated = resp.truncated ?? false
@@ -212,12 +143,97 @@ struct DirectoryView: View {
     }
 
     private func absolute(_ relative: String) -> String {
-        node.searchRoot.hasSuffix("/") ? node.searchRoot + relative
-                                       : node.searchRoot + "/" + relative
+        guard let root = focusedRoot else { return relative }
+        return root.hasSuffix("/") ? root + relative : root + "/" + relative
     }
 
     private func lastComponent(_ p: String) -> String {
         p.split(separator: "/").last.map(String.init) ?? p
+    }
+}
+
+/// One node in the merged tree. A project or directory expands inline (lazy) to
+/// its children; a file opens in the editor. Recursive.
+struct CodeNode: View {
+    @Environment(AppModel.self) private var app
+    let path: String
+    let name: String
+    let isDir: Bool
+    let searchRoot: String
+    var isProject = false
+    var color: Color? = nil
+    var onFocusProject: (() -> Void)? = nil
+
+    @State private var expanded = false
+    @State private var children: [TreeEntry] = []
+    @State private var loaded = false
+    @State private var loading = false
+
+    var body: some View {
+        if isDir {
+            DisclosureGroup(isExpanded: $expanded) {
+                if loading && !loaded {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading…").font(.caption).foregroundStyle(.secondary)
+                    }
+                } else if loaded && children.isEmpty {
+                    Text("Empty folder").font(.caption).foregroundStyle(.tertiary)
+                } else {
+                    ForEach(children) { entry in
+                        CodeNode(path: entry.path, name: entry.name, isDir: entry.isDir, searchRoot: searchRoot)
+                    }
+                }
+            } label: {
+                rowLabel
+            }
+            .onChange(of: expanded) { _, isExpanded in
+                if isExpanded {
+                    if isProject { onFocusProject?() }
+                    if !loaded { Task { await load() } }
+                }
+            }
+        } else {
+            NavigationLink(value: FileRef(path: path, name: name)) {
+                Label {
+                    Text(name)
+                } icon: {
+                    Image(systemName: fileIcon(name)).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var rowLabel: some View {
+        if isProject {
+            HStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(color ?? .accentColor)
+                    .frame(width: 8, height: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name).font(.callout.weight(.medium))
+                    Text(path)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+            }
+        } else {
+            Label(name, systemImage: "folder.fill").foregroundStyle(.primary)
+        }
+    }
+
+    private func load() async {
+        guard let client = app.client else { return }
+        loading = true
+        defer { loading = false }
+        do {
+            children = try await client.projectTree(root: path, depth: 1)
+            loaded = true
+        } catch {
+            // leave loaded == false so collapsing + re-expanding retries
+        }
     }
 }
 
