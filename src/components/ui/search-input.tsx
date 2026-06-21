@@ -25,6 +25,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
     placeholder = "Search…",
     className,
     containerClassName,
+    onKeyDown,
     ...rest
   },
   ref,
@@ -43,6 +44,17 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
           value={value}
           placeholder={placeholder}
           onChange={(e) => onValueChange(e.target.value)}
+          onKeyDown={(e) => {
+            onKeyDown?.(e);
+            // Escape clears a non-empty query (consumers opt in via onClear),
+            // matching the app's other search fields. Defers to a consumer
+            // handler that already consumed the event.
+            if (!e.defaultPrevented && e.key === "Escape" && value && onClear) {
+              e.preventDefault();
+              onClear();
+              onValueChange("");
+            }
+          }}
           {...rest}
         />
         {showClear ? (
