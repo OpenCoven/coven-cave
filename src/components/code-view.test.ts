@@ -26,7 +26,7 @@ assert.match(codeView, /CODE_GROUP_ID = "cave\.code\.widths\.v1"/, "CodeView per
 // (a horizontal split is unusable on a phone); both panes stay mounted so
 // their state survives tab taps.
 assert.match(codeView, /if \(isMobile\) \{/, "mobile gets a dedicated layout branch");
-assert.match(codeView, /setMobileTab\("chat"\)|onClick=\{\(\) => setMobileTab\(tab\)\}/, "mobile has a Chat/Code tab switcher");
+assert.match(codeView, /onChange=\{setMobileTab\}/, "mobile has a Chat/Code tab switcher via shared Tabs");
 assert.match(
   codeView,
   /mobileTab === "chat" \? "flex" : "hidden"[\s\S]*?mobileTab === "code" \? "flex" : "hidden"/,

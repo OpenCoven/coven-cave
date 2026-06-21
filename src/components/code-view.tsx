@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { useIsMobile } from "@/lib/use-viewport";
 import {
@@ -61,24 +62,17 @@ export function CodeView({ chat, comux }: Props) {
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex shrink-0 items-center justify-center gap-1 border-b border-[var(--border-hairline)] p-1.5">
-          <div className="flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[11px]">
-            {(["chat", "code"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setMobileTab(tab)}
-                aria-pressed={mobileTab === tab}
-                className={`flex items-center gap-1.5 rounded-[5px] px-3 py-1 transition-colors ${
-                  mobileTab === tab
-                    ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                }`}
-              >
-                <Icon name={tab === "chat" ? "ph:chats" : "ph:code"} width={13} />
-                {tab === "chat" ? "Chat" : "Code"}
-              </button>
-            ))}
-          </div>
+          <Tabs
+            variant="segment"
+            size="sm"
+            ariaLabel="Code view"
+            value={mobileTab}
+            onChange={setMobileTab}
+            items={[
+              { id: "chat", label: "Chat", icon: "ph:chats" },
+              { id: "code", label: "Code", icon: "ph:code" },
+            ]}
+          />
         </div>
         <div className={`min-h-0 flex-1 flex-col ${mobileTab === "chat" ? "flex" : "hidden"}`}>{chat}</div>
         <div className={`min-h-0 flex-1 flex-col ${mobileTab === "code" ? "flex" : "hidden"}`}>{comux}</div>
