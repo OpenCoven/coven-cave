@@ -9,6 +9,43 @@ struct MessageBubble: View {
     private var isUser: Bool { message.role == .user }
 
     var body: some View {
+        if message.role == .system {
+            systemNote
+        } else {
+            chatBubble
+        }
+    }
+
+    /// Inline slash-command output — a subtle monospaced card so it reads as
+    /// system feedback rather than a familiar's reply.
+    private var systemNote: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: message.isError ? "exclamationmark.triangle.fill" : "terminal.fill")
+                .font(.caption)
+                .foregroundStyle(message.isError ? Color.red : Color.secondary)
+                .padding(.top, 2)
+            Text(message.text.isEmpty ? " " : message.text)
+                .font(.callout.monospaced())
+                .foregroundStyle(message.isError ? Color.red : Color.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(Color(.secondarySystemBackground).opacity(0.6),
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color(.separator).opacity(0.5), lineWidth: 1)
+        )
+        .padding(.horizontal, 24)
+        .contextMenu {
+            Button(role: .destructive, action: onDelete) {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    private var chatBubble: some View {
         HStack(alignment: .bottom, spacing: 8) {
             if isUser { Spacer(minLength: 48) }
 

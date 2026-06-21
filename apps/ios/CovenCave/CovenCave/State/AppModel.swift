@@ -1,6 +1,19 @@
 import Foundation
 import Observation
 
+/// The two bottom tabs. Lifted out of the view so slash commands (`/board`,
+/// `/chats`) can drive tab selection from anywhere.
+enum AppTab: String { case chats, tasks }
+
+/// A transient confirmation banner shown over the chat after a command runs.
+struct ToastMessage: Identifiable, Equatable {
+    enum Style { case success, info, warning, error }
+    let id = UUID()
+    var text: String
+    var systemImage: String
+    var style: Style = .info
+}
+
 @Observable
 @MainActor
 final class AppModel {
@@ -18,6 +31,41 @@ final class AppModel {
     var familiarsError: String?
 
     var threads: [ChatThread] = []
+
+    // MARK: - Cross-view command routing
+
+    /// The selected bottom tab. Bound by `MainTabView`; set by `/board` / `/chats`.
+    var selectedTab: AppTab = .chats
+
+    /// A thread a command asked to open. `ChatsHomeView` observes this, pushes
+    /// the thread, and clears it back to nil (one-shot navigation intent).
+    var threadToOpen: ChatThread?
+
+    /// The active confirmation toast, auto-dismissed by the overlay.
+    var toast: ToastMessage?
+
+    /// Show a confirmation toast (replaces any in-flight one).
+    func showToast(_ text: String, systemImage: String = "checkmark.circle.fill",
+                   style: ToastMessage.Style = .success) {
+        toast = ToastMessage(text: text, systemImage: systemImage, style: style)
+    }
+
+    /// Ask the chat list to open a thread (switches to Chats first).
+    func requestOpen(_ thread: ChatThread) {
+        selectedTab = .chats
+        threadToOpen = thread
+    }
+
+    /// Resolve a free-text familiar reference (id or display name, fuzzy) to a
+    /// familiar — used by `/familiar <name>`.
+    func resolveFamiliar(_ query: String) -> Familiar? {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return nil }
+        if let exact = familiars.first(where: { $0.id.lowercased() == q
+            || $0.displayName.lowercased() == q }) { return exact }
+        return familiars.first { $0.displayName.lowercased().contains(q)
+            || $0.id.lowercased().contains(q) }
+    }
 
     var tasks: [BoardCard] = []
     var tasksError: String?
@@ -104,6 +152,17 @@ final class AppModel {
     func createGroup(familiarIds: [String], title: String?) -> ChatThread {
         let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
         let derived = title?.isEmpty == false ? title! : names.joined(separator: ", ")
+        let thread = ChatThread(title: derived, familiarIds: familiarIds)
+        threads.insert(thread, at: 0)
+        persistThreads()
+        return thread
+    }
+
+    /// Always create a brand-new thread (no reuse) — backs `/new`. Works for a
+    /// single familiar (direct) or several (group).
+    func startFreshThread(familiarIds: [String], title: String? = nil) -> ChatThread {
+        let names = familiarIds.compactMap { familiar($0)?.displayName ?? $0 }
+        let derived = (title?.isEmpty == false) ? title! : names.joined(separator: ", ")
         let thread = ChatThread(title: derived, familiarIds: familiarIds)
         threads.insert(thread, at: 0)
         persistThreads()

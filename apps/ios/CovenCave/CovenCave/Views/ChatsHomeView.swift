@@ -42,6 +42,12 @@ struct ChatsHomeView: View {
             }
             .refreshable { await app.loadFamiliars() }
             .onAppear(perform: openDeepLinkedThread)
+            // A slash command (`/new`, `/familiar <name>`) asked to open a thread.
+            .onChange(of: app.threadToOpen) { _, thread in
+                guard let thread else { return }
+                if path.last?.id != thread.id { path.append(thread) }
+                app.threadToOpen = nil
+            }
         }
     }
 
