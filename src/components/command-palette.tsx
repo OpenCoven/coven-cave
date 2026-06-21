@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { SLASH_COMMANDS, canonicalize } from "@/lib/slash-commands";
 import { slashSaveParse } from "@/lib/slash-save-parser";
@@ -15,6 +15,31 @@ import { useProjects } from "@/lib/use-projects";
 function shortProjectRoot(root: string): string {
   const parts = root.replace(/\/+$/, "").split("/").filter(Boolean);
   return parts.length <= 2 ? root : `…/${parts.slice(-2).join("/")}`;
+}
+
+// Section label for a row in empty-query "browse" mode, so the default palette
+// reads as grouped clusters (Recent / Go to / …) instead of one flat dump.
+// Returns "" for rows that never appear while browsing (salem-answer, etc.).
+function browseGroup(row: Row): string {
+  switch (row.kind) {
+    case "session":
+      return "Recent";
+    case "command":
+      if (row.id.startsWith("surface:")) return "Go to";
+      if (row.id.startsWith("project:")) return "Projects";
+      return "Commands";
+    case "familiar":
+      return "Familiars";
+    case "card":
+      return "Tasks";
+    case "coven-memory":
+    case "fs-memory":
+      return "Memory";
+    case "shortcut":
+      return "Shortcuts";
+    default:
+      return "";
+  }
 }
 
 type PaletteIntent =
@@ -272,24 +297,29 @@ export function CommandPalette({
     // If the familiar-handle resolved to nothing, only suggestions are useful.
     if (noFamiliarMatch) return familiarRows;
 
-    const sessionRows: Row[] = sessions
-      .filter((s) => {
-        if (!s.familiarId) return false;
-        if (scoped) {
-          if (!scope!.has(s.familiarId)) return false;
-          if (!q) return true;
-          return (
-            (s.title ?? "").toLowerCase().includes(q) ||
-            s.harness.toLowerCase().includes(q)
-          );
-        }
-        if (!q) return s.familiarId === activeFamiliarId;
+    const byRecency = (a: SessionRow, b: SessionRow) =>
+      (Date.parse(b.updated_at || b.created_at) || 0) -
+      (Date.parse(a.updated_at || a.created_at) || 0);
+    const matchedSessions = sessions.filter((s) => {
+      if (!s.familiarId) return false;
+      if (scoped) {
+        if (!scope!.has(s.familiarId)) return false;
+        if (!q) return true;
         return (
           (s.title ?? "").toLowerCase().includes(q) ||
-          s.harness.toLowerCase().includes(q) ||
-          (s.familiarId ?? "").toLowerCase().includes(q)
+          s.harness.toLowerCase().includes(q)
         );
-      })
+      }
+      // Empty query → the "Recent" jump list: every familiar's sessions, not
+      // just the active one. Recency ordering happens below the filter.
+      if (!q) return true;
+      return (
+        (s.title ?? "").toLowerCase().includes(q) ||
+        s.harness.toLowerCase().includes(q) ||
+        (s.familiarId ?? "").toLowerCase().includes(q)
+      );
+    });
+    const sessionRows: Row[] = (!q ? [...matchedSessions].sort(byRecency) : matchedSessions)
       .slice(0, RESULT_LIMITS.session)
       .map((s) => ({
         id: `s:${s.id}`,
@@ -495,19 +525,36 @@ export function CommandPalette({
             intent: { kind: "open-project", root: p.root },
           }));
 
-    const localRows: Row[] = [
-      ...familiarRows,
-      ...sessionRows,
-      ...cardRows,
-      ...covenMemoryRows,
-      ...fsMemoryRows,
-      ...saveRows,
-      ...cmdRows,
-      ...surfaceRows,
-      ...projectRows,
-      ...shortcutRows,
-      ...createRows,
-    ];
+    // Empty, unscoped query → "browse" mode: lead with the recency jump-list,
+    // then the launcher surfaces, and group the rest under section headers
+    // (see browseGroup + the render). While the user is typing it falls back to
+    // the flat, mixed-relevance order.
+    const browsing = !q && !scoped;
+    const localRows: Row[] = browsing
+      ? [
+          ...sessionRows,
+          ...surfaceRows,
+          ...familiarRows,
+          ...cardRows,
+          ...projectRows,
+          ...covenMemoryRows,
+          ...fsMemoryRows,
+          ...cmdRows,
+          ...shortcutRows,
+        ]
+      : [
+          ...familiarRows,
+          ...sessionRows,
+          ...cardRows,
+          ...covenMemoryRows,
+          ...fsMemoryRows,
+          ...saveRows,
+          ...cmdRows,
+          ...surfaceRows,
+          ...projectRows,
+          ...shortcutRows,
+          ...createRows,
+        ];
 
     const salemRows: Row[] = query.trim() && !slashCanonical
       ? [{ id: "salem-answer", kind: "salem-answer", query: query.trim() }]
@@ -529,6 +576,13 @@ export function CommandPalette({
     const ids = resolveFamiliarIds(familiars, token);
     const matched = familiars.filter((f) => ids?.has(f.id));
     return { token, matched, isBare: token === "" };
+  }, [query, familiars]);
+
+  // Render-time mirror of the in-memo `browsing` flag (empty + unscoped query),
+  // so the section headers only show in the default browse list, not in search.
+  const browsing = useMemo(() => {
+    const { token, rest } = parseFamiliarToken(query);
+    return rest.trim() === "" && resolveFamiliarIds(familiars, token) === null;
   }, [query, familiars]);
 
   const askSalem = async () => {
@@ -711,9 +765,23 @@ export function CommandPalette({
           ) : null}
           {rows.map((row, i) => {
             const active = i === activeIdx;
+            // In browse mode, print a section header above the first row of each
+            // group. Headers are role="presentation", so they stay out of the
+            // listbox option indexing that keyboard nav and activeIdx rely on.
+            const group = browsing ? browseGroup(row) : "";
+            const showHeader =
+              browsing && group !== "" && (i === 0 || browseGroup(rows[i - 1]) !== group);
             return (
+              <Fragment key={row.id}>
+                {showHeader ? (
+                  <li
+                    role="presentation"
+                    className="px-4 pb-1 pt-3 text-[10px] font-medium uppercase tracking-widest text-[var(--text-muted)] first:pt-1.5"
+                  >
+                    {group}
+                  </li>
+                ) : null}
               <li
-                key={row.id}
                 role="option"
                 id={`command-palette-option-${i}`}
                 aria-selected={active}
@@ -830,6 +898,7 @@ export function CommandPalette({
                   ) : null}
                 </button>
               </li>
+              </Fragment>
             );
           })}
         </ul>
