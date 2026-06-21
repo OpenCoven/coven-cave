@@ -7,6 +7,7 @@ import { BottomTerminal } from "@/components/bottom-terminal";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { ProjectTree, type ProjectTreeHandle } from "@/components/project-tree";
+import { CodeQuickOpen } from "@/components/code-quick-open";
 import { MarkdownBlock, SyntaxBlock } from "@/components/message-bubble";
 import { SessionChangesInner } from "@/components/session-changes-panel";
 import { useChangesSummary } from "@/lib/use-changes-summary";
@@ -744,6 +745,24 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // Debounced project-wide search. Re-runs when the query, regex toggle, or
   // selected project changes; an empty query clears results without a request.
   const searchRoot = selectedProject?.root;
+
+  // ⌘P / Ctrl+P → quick-open file picker (fuzzy jump by name). preventDefault
+  // also suppresses the browser's print dialog. Works across the Code workspace
+  // whenever a project is selected, regardless of the active sub-view.
+  const [quickOpen, setQuickOpen] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === "p" || e.key === "P")) {
+        if (!searchRoot) return;
+        e.preventDefault();
+        setQuickOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, searchRoot]);
+
   useEffect(() => {
     const query = searchInput.trim();
     if (!query || !searchRoot) {
@@ -1692,6 +1711,20 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
           </div>
         </div>
       )}
+      <CodeQuickOpen
+        open={quickOpen}
+        root={searchRoot}
+        onClose={() => setQuickOpen(false)}
+        onOpenFile={(rel) =>
+          // Reuse the full open-and-reveal flow (switches to the Files view,
+          // reveals in the tree, opens the preview) instead of just previewing.
+          window.dispatchEvent(
+            new CustomEvent("cave:open-project-file", {
+              detail: { path: `${(searchRoot ?? "").replace(/\/$/, "")}/${rel}` },
+            }),
+          )
+        }
+      />
     </div>
   );
 }
