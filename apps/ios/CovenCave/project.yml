@@ -2,7 +2,7 @@ name: CovenCave
 options:
   bundleIdPrefix: ai.opencoven
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
   createIntermediateGroups: true
   groupSortPosition: top
 settings:
@@ -29,4 +29,4 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
-        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        IPHONEOS_DEPLOYMENT_TARGET: "18.0"
