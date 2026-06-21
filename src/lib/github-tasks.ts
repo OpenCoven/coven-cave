@@ -19,6 +19,9 @@ export type GitHubItem = {
   updatedAt: string;
   draft?: boolean;
   labels?: string[];
+  /** CI rollup for PR rows; only "failing" is surfaced in the UI. See
+   *  {@link import("./github-checks").summarizeChecks}. */
+  checkStatus?: "passing" | "failing" | "pending" | null;
 };
 
 export type GitHubItemContext = {

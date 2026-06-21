@@ -17,11 +17,14 @@
 
 import { NextResponse } from "next/server";
 import { resolveSecret } from "@/lib/vault";
+import { summarizeChecks, type CheckSummary } from "@/lib/github-checks";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const GH = "https://api.github.com";
+// Cap per-PR check enrichment so a long PR list can't blow the rate budget.
+const CHECK_ENRICH_CAP = 15;
 
 type GitHubItem = {
   kind: "pr" | "issue" | "review_request" | "notification";
@@ -34,7 +37,30 @@ type GitHubItem = {
   updatedAt: string;
   draft?: boolean;
   labels?: string[];
+  checkStatus?: CheckSummary;
 };
+
+/**
+ * Best-effort CI rollup for one PR: resolve the head SHA, read its check-runs
+ * (falling back to the legacy combined status), and summarize. Any failure
+ * returns null so the row simply renders without a pip. Uses core REST quota,
+ * so callers must gate this behind a token (the public 60/hr budget can't
+ * absorb it).
+ */
+async function fetchPrChecks(repo: string, number: number, token: string | null): Promise<CheckSummary> {
+  try {
+    const { res, data } = await ghFetch(`/repos/${repo}/pulls/${number}`, token);
+    const sha = (data as { head?: { sha?: string } } | null)?.head?.sha;
+    if (!res.ok || !sha) return null;
+    const { data: cr } = await ghFetch(`/repos/${repo}/commits/${sha}/check-runs?per_page=100`, token);
+    const runs = ((cr as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<{ status?: string; conclusion?: string }>;
+    if (runs.length > 0) return summarizeChecks(runs);
+    const { data: st } = await ghFetch(`/repos/${repo}/commits/${sha}/status`, token);
+    return summarizeChecks([], (st as { state?: string } | null)?.state);
+  } catch {
+    return null;
+  }
+}
 
 type ActivityResult = {
   ok: true;
@@ -170,6 +196,21 @@ export async function GET() {
       });
     }
   } catch { /* non-fatal */ }
+
+  // Enrich PR rows with their CI rollup. Token-gated: this spends core REST
+  // quota (a few calls per PR), which the public 60/hr budget can't absorb —
+  // mirrors how review-requested PRs already require a token. Best-effort and
+  // parallel; the UI only surfaces a `failing` pip.
+  if (token) {
+    const prRows = items
+      .filter((it) => (it.kind === "pr" || it.kind === "review_request") && typeof it.number === "number")
+      .slice(0, CHECK_ENRICH_CAP);
+    await Promise.all(
+      prRows.map(async (it) => {
+        it.checkStatus = await fetchPrChecks(it.repo, it.number as number, token);
+      }),
+    );
+  }
 
   // sort all by updatedAt desc
   items.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

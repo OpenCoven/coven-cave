@@ -566,6 +566,7 @@
 .gh-title:hover { color:var(--accent-presence); text-decoration:underline; }
 .gh-badge { display:inline-flex; align-items:center; padding:1px 6px; margin-left:6px; border-radius:9999px; font-size:9.5px; line-height:1.4; vertical-align:middle; }
 .gh-badge--muted { background:var(--bg-raised); color:var(--text-muted); }
+.gh-badge--danger { background:color-mix(in oklch,var(--color-danger) 16%,transparent); color:var(--color-danger); font-weight:560; }
 .gh-empty-cell { color:color-mix(in oklch,var(--text-muted) 55%,transparent); font-size:11px; }
 
 .gh-task-chip-list { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; max-width:230px; }

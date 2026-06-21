@@ -1364,6 +1364,16 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                         {item.draft && (
                           <span className="gh-badge gh-badge--muted">draft</span>
                         )}
+                        {item.checkStatus === "failing" && (
+                          <span
+                            className="gh-badge gh-badge--danger"
+                            role="img"
+                            aria-label="CI checks failing"
+                            title="CI checks failing"
+                          >
+                            checks failed
+                          </span>
+                        )}
                       </td>
                       <td>
                         {linked.length === 0 ? (
