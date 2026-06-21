@@ -90,6 +90,11 @@ final class ChatThread: Identifiable, Hashable {
         }
     }
 
+    func deleteMessage(_ messageId: String) {
+        messages.removeAll { $0.id == messageId }
+        updatedAt = Date()
+    }
+
     private func stream(familiarId: String, prompt: String, into messageId: String,
                         client: CaveClient, onChange: @escaping () -> Void) async {
         let body = CaveClient.SendBody(familiarId: familiarId, prompt: prompt,
@@ -101,6 +106,7 @@ final class ChatThread: Identifiable, Hashable {
                     if !sid.isEmpty { sessionIds[familiarId] = sid }
                 case .assistantChunk(let chunk):
                     mutate(messageId) { $0.text += chunk }
+                    onChange()
                 case .done(let isError, let sid):
                     if let sid, !sid.isEmpty { sessionIds[familiarId] = sid }
                     mutate(messageId) { $0.streaming = false; if isError { $0.isError = true } }
@@ -126,6 +132,8 @@ final class ChatThread: Identifiable, Hashable {
 
     private func mutate(_ messageId: String, _ body: (inout DisplayMessage) -> Void) {
         guard let idx = messages.firstIndex(where: { $0.id == messageId }) else { return }
-        body(&messages[idx])
+        var message = messages[idx]
+        body(&message)
+        messages[idx] = message
     }
 }

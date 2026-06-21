@@ -123,7 +123,8 @@ struct CaveClient {
 
                     var dataLines: [String] = []
                     for try await line in bytes.lines {
-                        if line.isEmpty {
+                        let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if trimmedLine.isEmpty {
                             // Blank line = event boundary. Flush accumulated data.
                             if !dataLines.isEmpty {
                                 let joined = dataLines.joined(separator: "\n")
@@ -134,8 +135,12 @@ struct CaveClient {
                             }
                             continue
                         }
-                        if line.hasPrefix("data:") {
-                            let payload = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+                        if trimmedLine.hasPrefix("data:") {
+                            let payload = String(trimmedLine.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+                            if let event = StreamEvent.decode(payload) {
+                                continuation.yield(event)
+                                continue
+                            }
                             dataLines.append(payload)
                         }
                         // ignore other SSE fields (event:, id:, :comment)

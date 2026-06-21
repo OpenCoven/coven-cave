@@ -4,6 +4,7 @@ struct MessageBubble: View {
     let message: DisplayMessage
     var isGroup: Bool
     var familiar: Familiar?
+    var onDelete: () -> Void
 
     private var isUser: Bool { message.role == .user }
 
@@ -23,6 +24,11 @@ struct MessageBubble: View {
                         .padding(.leading, 4)
                 }
                 bubble
+                    .contextMenu {
+                        Button(role: .destructive, action: onDelete) {
+                            Label("Delete Message", systemImage: "trash")
+                        }
+                    }
             }
 
             if !isUser { Spacer(minLength: 48) }
@@ -33,19 +39,23 @@ struct MessageBubble: View {
         if message.text.isEmpty && message.streaming {
             TypingIndicator()
                 .padding(.horizontal, 14).padding(.vertical, 11)
-                .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(bubbleBackground, in: bubbleShape)
         } else {
             Text(message.text.isEmpty ? " " : message.text)
                 .textSelection(.enabled)
                 .foregroundStyle(isUser ? Color.white : Color.primary)
                 .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(bubbleBackground, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(bubbleBackground, in: bubbleShape)
                 .overlay(alignment: .bottomTrailing) {
                     if message.streaming {
                         StreamingDot().padding(6)
                     }
                 }
         }
+    }
+
+    private var bubbleShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: isUser ? 22 : 26, style: .continuous)
     }
 
     private var bubbleBackground: Color {

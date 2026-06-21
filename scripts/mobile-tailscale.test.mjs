@@ -39,6 +39,8 @@ test("mobile tailscale app mode serves the native client with no token", () => {
   // relax proxy.ts's loopback host gate — otherwise every request 403s.
   assert.match(script, /export COVEN_CAVE_TAILNET_TRUST=1/);
   assert.match(script, /COVEN_CAVE_TAILNET_TRUST=1/);
+  assert.match(script, /HOSTNAME="\$HOST"/);
+  assert.match(script, /PORT="\$PORT"/);
 });
 
 test("mobile tailscale runner persists state for remote invite regeneration", () => {
@@ -55,6 +57,13 @@ test("mobile tailscale runner refuses untracked localhost listeners", () => {
   assert.match(script, /require_recorded_server\(\)/);
   assert.match(script, /Refusing to contact an untracked server/);
   assert.match(script, /kill -0 "\$pid"/);
+});
+
+test("mobile tailscale status warns when Serve points at another backend", () => {
+  assert.match(script, /warn_if_serve_targets_other_backend\(\)/);
+  assert.match(script, /Tailscale Serve is not pointing at/);
+  assert.match(script, /current proxy target/);
+  assert.match(script, /warn_if_serve_targets_other_backend/);
 });
 
 test("mobile tailscale invite flow does not send the raw persisted token", () => {

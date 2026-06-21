@@ -35,7 +35,8 @@ struct ChatView: View {
                     ForEach(thread.messages) { message in
                         MessageBubble(message: message,
                                       isGroup: thread.isGroup,
-                                      familiar: message.familiarId.flatMap(app.familiar))
+                                      familiar: message.familiarId.flatMap(app.familiar),
+                                      onDelete: { deleteMessage(message) })
                         .id(message.id)
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -113,5 +114,10 @@ struct ChatView: View {
         let text = draft
         draft = ""
         thread.send(text, client: client) { app.touch(thread) }
+    }
+
+    private func deleteMessage(_ message: DisplayMessage) {
+        thread.deleteMessage(message.id)
+        app.touch(thread)
     }
 }

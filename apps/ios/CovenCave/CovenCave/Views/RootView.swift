@@ -10,6 +10,8 @@ struct RootView: View {
                 ConnectionView()
             case .checking where app.connection != nil && app.familiars.isEmpty:
                 ConnectingView()
+            case .unreachable:
+                ConnectionView()
             default:
                 MainTabView()
             }

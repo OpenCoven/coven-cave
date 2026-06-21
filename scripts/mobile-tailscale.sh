@@ -134,6 +134,35 @@ masked_serve_status() {
     true
 }
 
+warn_if_serve_targets_other_backend() {
+  if ! command -v tailscale >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local status_json
+  if ! status_json="$(tailscale_capture serve status --json 2>/dev/null)"; then
+    return 0
+  fi
+
+  node - "$(backend_url)" "$status_json" <<'NODE'
+const [expectedBackend, input] = process.argv.slice(2);
+let status;
+try {
+  status = JSON.parse(input);
+} catch {
+  process.exit(0);
+}
+
+const handlers = Object.values(status?.Web ?? {}).flatMap((config) =>
+  Object.values(config?.Handlers ?? {}),
+);
+const proxies = handlers.map((handler) => handler?.Proxy).filter(Boolean);
+if (proxies.length > 0 && !proxies.includes(expectedBackend)) {
+  console.error(`Warning: Tailscale Serve is not pointing at ${expectedBackend}; current proxy target: ${proxies.join(", ")}`);
+}
+NODE
+}
+
 load_or_create_token() {
   ensure_state_dir
 
@@ -198,7 +227,7 @@ start_with_tmux() {
     # <host>.ts.net Host (not 127.0.0.1). Tailnet membership is the trust
     # boundary — see docs/ios-native-rebuild.md.
     tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
-      "bash -lc 'unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE; export COVEN_CAVE_TAILNET_TRUST=1; exec pnpm exec next dev -H \"$HOST\" -p \"$PORT\" >>\"$LOG_FILE\" 2>&1'"
+      "bash -lc 'unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE; export COVEN_CAVE_TAILNET_TRUST=1 HOSTNAME=\"$HOST\" PORT=\"$PORT\"; exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
     tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}' >"$PID_FILE"
     return 0
   fi
@@ -211,10 +240,10 @@ start_with_tmux() {
     # ?covenCaveToken= in CAVE_MOBILE_DEV_URL. Read from the file (ignoring any
     # inherited COVEN_CAVE_AUTH_TOKEN) so the env can't smuggle a mismatched value.
     tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
-      "bash -lc 'unset COVEN_CAVE_ACCESS_TOKEN; export COVEN_CAVE_AUTH_TOKEN=\"\$(cat \"$SIDECAR_TOKEN_FILE\")\"; exec pnpm exec next dev -H \"$HOST\" -p \"$PORT\" >>\"$LOG_FILE\" 2>&1'"
+      "bash -lc 'unset COVEN_CAVE_ACCESS_TOKEN; export COVEN_CAVE_AUTH_TOKEN=\"\$(cat \"$SIDECAR_TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\"; exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
   else
     tmux new-session -d -s "$TMUX_SESSION" -c "$PWD" \
-      "bash -lc 'COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" exec pnpm exec next dev -H \"$HOST\" -p \"$PORT\" >>\"$LOG_FILE\" 2>&1'"
+      "bash -lc 'COVEN_CAVE_ACCESS_TOKEN=\"\$(cat \"$TOKEN_FILE\")\" HOSTNAME=\"$HOST\" PORT=\"$PORT\" exec pnpm dev >>\"$LOG_FILE\" 2>&1'"
   fi
   tmux display-message -p -t "$TMUX_SESSION" '#{pane_pid}' >"$PID_FILE"
 }
@@ -224,7 +253,9 @@ start_with_nohup() {
     # Tokenless native-app server. See start_with_tmux for the trust rationale.
     nohup env -u COVEN_CAVE_ACCESS_TOKEN -u COVEN_CAVE_AUTH_TOKEN -u COVEN_CAVE_BUNDLE \
       COVEN_CAVE_TAILNET_TRUST=1 \
-      pnpm exec next dev -H "$HOST" -p "$PORT" >"$LOG_FILE" 2>&1 </dev/null &
+      HOSTNAME="$HOST" \
+      PORT="$PORT" \
+      pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
     echo "$!" >"$PID_FILE"
     return 0
   fi
@@ -232,9 +263,9 @@ start_with_nohup() {
   if [ "${CAVE_MOBILE_NATIVE:-0}" = "1" ]; then
     # Native iOS app: ACCESS gate stays open (loopback host), but set the sidecar
     # auth token so /api/ is authenticated. See start_with_tmux for the rationale.
-    COVEN_CAVE_AUTH_TOKEN="$SIDECAR_AUTH_TOKEN" nohup env -u COVEN_CAVE_ACCESS_TOKEN pnpm exec next dev -H "$HOST" -p "$PORT" >"$LOG_FILE" 2>&1 </dev/null &
+    COVEN_CAVE_AUTH_TOKEN="$SIDECAR_AUTH_TOKEN" HOSTNAME="$HOST" PORT="$PORT" nohup env -u COVEN_CAVE_ACCESS_TOKEN pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
   else
-    nohup env COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" pnpm exec next dev -H "$HOST" -p "$PORT" >"$LOG_FILE" 2>&1 </dev/null &
+    nohup env COVEN_CAVE_ACCESS_TOKEN="$ACCESS_TOKEN" HOSTNAME="$HOST" PORT="$PORT" pnpm dev >"$LOG_FILE" 2>&1 </dev/null &
   fi
   echo "$!" >"$PID_FILE"
 }
@@ -602,6 +633,7 @@ status_command() {
     echo "Last invite expires: $(cat "$EXPIRES_FILE")"
   fi
   masked_serve_status
+  warn_if_serve_targets_other_backend
 }
 
 stop_command() {

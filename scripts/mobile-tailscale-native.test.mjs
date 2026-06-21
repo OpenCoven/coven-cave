@@ -32,6 +32,76 @@ assert.match(libRs, /127\.0\.0\.1/);
 assert.match(libRs, /cfg!\(debug_assertions\)/);
 assert.match(libRs, /WebviewUrl::App\("index\.html"\.into\(\)\)/);
 
+const swiftRootView = read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
+assert.match(
+  swiftRootView,
+  /case \.unreachable:\s*\n\s*ConnectionView\(\)/,
+  "native SwiftUI app should return unreachable saved hosts to the connection screen",
+);
+
+const swiftChatThread = read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
+assert.match(
+  swiftChatThread,
+  /func deleteMessage\(_ messageId: String\)/,
+  "native SwiftUI chat threads should expose a persisted message deletion method",
+);
+assert.match(
+  swiftChatThread,
+  /messages\.removeAll\s*\{\s*\$0\.id == messageId\s*\}/,
+  "native SwiftUI chat message deletion should remove the selected message by id",
+);
+assert.match(
+  swiftChatThread,
+  /case \.assistantChunk\(let chunk\):\s*\n\s*mutate\(messageId\) \{ \$0\.text \+= chunk \}\s*\n\s*onChange\(\)/,
+  "native SwiftUI chat should notify/persist after assistant chunks so responses render while streaming",
+);
+assert.match(
+  swiftChatThread,
+  /var message = messages\[idx\][\s\S]*?body\(&message\)[\s\S]*?messages\[idx\] = message/,
+  "native SwiftUI chat should reassign mutated messages so Observation invalidates rendered bubbles",
+);
+
+const swiftMessageBubble = read("apps/ios/CovenCave/CovenCave/Views/MessageBubble.swift");
+assert.match(
+  swiftMessageBubble,
+  /var onDelete: \(\) -> Void/,
+  "native SwiftUI message bubbles should accept a delete action from the owning thread",
+);
+assert.match(
+  swiftMessageBubble,
+  /\.contextMenu\s*\{/,
+  "native SwiftUI message bubbles should expose deletion from the bubble context menu",
+);
+assert.match(
+  swiftMessageBubble,
+  /role: \.destructive[\s\S]*?Delete Message/,
+  "native SwiftUI message deletion should be labeled and destructive",
+);
+
+const swiftChatView = read("apps/ios/CovenCave/CovenCave/Views/ChatView.swift");
+assert.match(
+  swiftChatView,
+  /onDelete:\s*\{\s*deleteMessage\(message\)\s*\}/,
+  "native SwiftUI chat view should wire each bubble delete action to the owning thread",
+);
+assert.match(
+  swiftChatView,
+  /private func deleteMessage\(_ message: DisplayMessage\)/,
+  "native SwiftUI chat view should persist after deleting a message",
+);
+
+const swiftCaveClient = read("apps/ios/CovenCave/CovenCave/Networking/CaveClient.swift");
+assert.match(
+  swiftCaveClient,
+  /if let event = StreamEvent\.decode\(payload\) \{\s*\n\s*continuation\.yield\(event\)\s*\n\s*continue\s*\n\s*\}/,
+  "native SwiftUI SSE parser should decode single data payloads immediately instead of depending on blank-frame boundaries",
+);
+assert.match(
+  swiftCaveClient,
+  /let trimmedLine = line\.trimmingCharacters\(in: \.whitespacesAndNewlines\)[\s\S]*?if trimmedLine\.isEmpty/,
+  "native SwiftUI SSE parser should treat whitespace-only separator lines as event boundaries",
+);
+
 const frontendStub = read("src-tauri/frontend-stub/index.html");
 assert.match(frontendStub, /Connect to CovenCave/);
 assert.match(frontendStub, /coven-cave:mobile-server-url/);
