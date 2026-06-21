@@ -25,6 +25,8 @@ type Props = {
   activeFamiliarId?: string | null;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
+  /** Reschedule an item to a new time (drag-and-drop). Optimistic; SSE reconciles. */
+  onReschedule?: (id: string, fireAtIso: string) => void;
   /** Mark an item done. Optimistic; the SSE stream reconciles. */
   onComplete?: (id: string) => void;
   /** Dismiss (remove) an item. */
@@ -220,11 +222,13 @@ function AgendaView({
   anchor,
   onAddEntry,
   onOpenItem,
+  onReschedule,
 }: {
   items: InboxItem[];
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
+  onReschedule?: (id: string, fireAtIso: string) => void;
 }) {
   const [showPast, setShowPast] = useState(false);
 
@@ -404,11 +408,16 @@ function TimeGrid({
   columns,
   onOpenItem,
   onAddEntry,
+  onReschedule,
 }: {
   columns: { label: string; date: Date; isToday: boolean; items: InboxItem[] }[];
   onOpenItem?: (item: InboxItem) => void;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
+  onReschedule?: (id: string, fireAtIso: string) => void;
 }) {
+  // Tracks the in-flight drag: the item id + where in the block it was grabbed,
+  // so the drop snaps the block's start (not the cursor) to the new time.
+  const dragRef = useRef<{ id: string; grabY: number } | null>(null);
   const nowRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const today = new Date();
@@ -472,6 +481,34 @@ function TimeGrid({
                   }
                 : undefined
             }
+            onDragOver={
+              onReschedule
+                ? (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                  }
+                : undefined
+            }
+            onDrop={
+              onReschedule
+                ? (e) => {
+                    e.preventDefault();
+                    const drag = dragRef.current;
+                    dragRef.current = null;
+                    if (!drag) return;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    // Snap the block's start to the nearest 15 minutes at the drop.
+                    const topPx = e.clientY - rect.top - drag.grabY;
+                    const minutes = Math.max(
+                      0,
+                      Math.min(24 * 60 - 15, Math.round((topPx / HOUR_HEIGHT) * 4) * 15),
+                    );
+                    const slot = new Date(col.date);
+                    slot.setHours(0, minutes, 0, 0);
+                    onReschedule(drag.id, slot.toISOString());
+                  }
+                : undefined
+            }
           >
             {/* Hour lines */}
             {HOURS.map((h) => (
@@ -505,8 +542,20 @@ function TimeGrid({
                   key={ev.item.id}
                   type="button"
                   data-calendar-event="true"
+                  draggable={Boolean(onReschedule)}
+                  onDragStart={
+                    onReschedule
+                      ? (e) => {
+                          dragRef.current = {
+                            id: ev.item.id,
+                            grabY: e.clientY - e.currentTarget.getBoundingClientRect().top,
+                          };
+                          e.dataTransfer.effectAllowed = "move";
+                        }
+                      : undefined
+                  }
                   onClick={() => onOpenItem?.(ev.item)}
-                  title={ev.item.title}
+                  title={onReschedule ? `${ev.item.title} — drag to reschedule` : ev.item.title}
                   className={`focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] border transition-colors overflow-hidden ${
                     done
                       ? "border-[var(--border-hairline)] bg-[var(--bg-raised)] opacity-60"
@@ -540,11 +589,13 @@ function DayView({
   anchor,
   onAddEntry,
   onOpenItem,
+  onReschedule,
 }: {
   items: InboxItem[];
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
+  onReschedule?: (id: string, fireAtIso: string) => void;
 }) {
   const today = new Date();
 
@@ -592,7 +643,7 @@ function DayView({
       )}
       {/* Time grid — always rendered for visual parity with Week */}
       <div className="relative flex flex-1 overflow-hidden">
-        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} />
+        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} />
       </div>
     </div>
   );
@@ -605,11 +656,13 @@ function WeekView({
   anchor,
   onAddEntry,
   onOpenItem,
+  onReschedule,
 }: {
   items: InboxItem[];
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
+  onReschedule?: (id: string, fireAtIso: string) => void;
 }) {
   const weekStart = startOfWeek(anchor);
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -682,7 +735,7 @@ function WeekView({
         <AllDayStrip columns={allDayColumns} onOpenItem={onOpenItem} />
       )}
       <div className="relative flex flex-1 overflow-hidden">
-        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} />
+        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} />
       </div>
     </div>
   );
@@ -1078,7 +1131,7 @@ function ItemDetailPanel({
 
 // ─── Main CalendarView ────────────────────────────────────────────────────────
 
-export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, onOpenItem, onComplete, onDismiss, onSnooze }: Props) {
+export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, onOpenItem, onReschedule, onComplete, onDismiss, onSnooze }: Props) {
   const isMobile = useIsMobile();
   // SSR returns false from useIsMobile, so initial render is always "week"
   // on the server; the effect below snaps to agenda on mount when the
@@ -1272,6 +1325,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
             items={scopedItems}
             anchor={anchor}
             onAddEntry={onAddEntry}
+            onReschedule={onReschedule}
             onOpenItem={(item) => setSelectedItem(item)}
           />
         )}
@@ -1280,6 +1334,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
             items={scopedItems}
             anchor={anchor}
             onAddEntry={onAddEntry}
+            onReschedule={onReschedule}
             onOpenItem={(item) => setSelectedItem(item)}
           />
         )}
@@ -1288,6 +1343,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, onAddEntry, o
             items={scopedItems}
             anchor={anchor}
             onAddEntry={onAddEntry}
+            onReschedule={onReschedule}
             onOpenItem={(item) => setSelectedItem(item)}
           />
         )}

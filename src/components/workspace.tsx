@@ -801,6 +801,18 @@ export function Workspace() {
       body: JSON.stringify({ untilIso }),
     });
   }, []);
+  // Drag-to-reschedule from the calendar: move the item to a new fireAt and make
+  // it pending there (clearing any snooze). Optimistic; the SSE stream reconciles.
+  const rescheduleInboxItem = useCallback((id: string, fireAtIso: string) => {
+    setInboxItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, fireAt: fireAtIso, status: "pending", snoozeUntil: null } : it)),
+    );
+    void fetch(`/api/inbox/${id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fireAt: fireAtIso, status: "pending", snoozeUntil: null }),
+    });
+  }, []);
 
   // Poll Inbox for unresolved-escalations count — drives the
   // sidebar/daemon-bar Inbox badge. Cheap GET every 30s; the route
@@ -1815,6 +1827,7 @@ export function Workspace() {
         onComplete={completeInboxItem}
         onDismiss={dismissInboxItem}
         onSnooze={snoozeInboxItem}
+        onReschedule={rescheduleInboxItem}
       />
     ) : (
       <HomeComposer
