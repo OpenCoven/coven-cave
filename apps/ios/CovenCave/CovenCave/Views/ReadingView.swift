@@ -21,8 +21,10 @@ struct ReadingView: View {
                     listBody
                 }
             }
-            .navigationTitle("Reading")
-            .searchable(text: $query, prompt: "Search titles, authors, tags")
+            // The title + search live in a pinned `readingHeader` (see listBody)
+            // so they stay fixed while only the list scrolls — the standard large
+            // `navigationTitle` collapses and `.searchable` hides on scroll.
+            .toolbar(.hidden, for: .navigationBar)
             .refreshable { await app.loadReading() }
             .task { if !app.readingLoaded { await app.loadReading() } }
             .sheet(item: $reader) { link in
@@ -57,10 +59,51 @@ struct ReadingView: View {
                 .listStyle(.plain)
             }
         }
-        // Pin the filter chips above the list (and empty state) with their
-        // natural height — a horizontal ScrollView inside a VStack next to a
-        // greedy List collapses to zero height.
-        .safeAreaInset(edge: .top, spacing: 0) { filterBar }
+        // Pin the header (title + search) and the filter chips above the list
+        // (and empty state) so the whole header stays fixed while only the list
+        // scrolls. A horizontal ScrollView inside a VStack next to a greedy List
+        // collapses to zero height, so each keeps its natural height.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                readingHeader
+                filterBar
+            }
+        }
+    }
+
+    // MARK: - Fixed header (title + search)
+
+    private var readingHeader: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Reading")
+                .font(.largeTitle.weight(.bold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Search titles, authors, tags", text: $query)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                if !query.isEmpty {
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(Color(.secondarySystemBackground), in: Capsule())
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .background(.bar)
     }
 
     // MARK: - Filter chips
