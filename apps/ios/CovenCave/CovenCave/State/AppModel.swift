@@ -3,7 +3,7 @@ import Observation
 
 /// The two bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String { case chats, tasks }
+enum AppTab: String { case chats, read, tasks }
 
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
@@ -71,6 +71,12 @@ final class AppModel {
     var tasksError: String?
     var tasksLoaded = false
 
+    // MARK: - Reading list
+
+    var reading: [ReadingItem] = []
+    var readingError: String?
+    var readingLoaded = false
+
     var client: CaveClient? {
         guard let connection else { return nil }
         return CaveClient(connection: connection)
@@ -95,6 +101,55 @@ final class AppModel {
             tasksError = error.localizedDescription
         }
         tasksLoaded = true
+    }
+
+    // MARK: - Reading list actions
+
+    func loadReading() async {
+        guard let client else { return }
+        do {
+            reading = try await client.reading()
+            readingError = nil
+        } catch {
+            readingError = error.localizedDescription
+        }
+        readingLoaded = true
+    }
+
+    /// Optimistically set an item's status, then reconcile with the server's
+    /// echoed item (it also stamps `finishedAt` on transition to done).
+    func setReadingStatus(_ item: ReadingItem, _ status: ReadingStatus) async {
+        guard let client else { return }
+        let previous = reading
+        apply(id: item.id) { $0.statusRaw = status.rawValue }
+        do {
+            if let updated = try await client.updateReading(id: item.id, status: status) {
+                apply(id: item.id) { $0 = updated }
+            }
+        } catch {
+            reading = previous
+            readingError = error.localizedDescription
+        }
+    }
+
+    /// Remove an item, optimistically; restore on failure.
+    func deleteReading(_ item: ReadingItem) async {
+        guard let client else { return }
+        let previous = reading
+        reading.removeAll { $0.id == item.id }
+        do {
+            try await client.deleteReading(id: item.id)
+        } catch {
+            reading = previous
+            readingError = error.localizedDescription
+        }
+    }
+
+    private func apply(id: String, _ mutate: (inout ReadingItem) -> Void) {
+        guard let idx = reading.firstIndex(where: { $0.id == id }) else { return }
+        var item = reading[idx]
+        mutate(&item)
+        reading[idx] = item
     }
 
     // MARK: - Connection lifecycle
