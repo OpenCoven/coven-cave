@@ -4160,6 +4160,142 @@ button:active > .edge-rail-chip {
   transform-origin: center;
 }
 
+/* ── Collapse-to-mini player ────────────────────────────────────────────────
+   In the open (full-width) rail, the Video pane can collapse straight down to
+   a single full-width row — transport + title + volume — so a playlist keeps
+   playing in the background while the rest of the rail reclaims the height.
+   The iframe stays mounted (slivered, not unmounted) so audio never stops. */
+
+/* Caret toggle, shared by the URL bar (collapse) and the mini bar (expand). */
+.youtube-viewer__chevron {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.youtube-viewer__chevron:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+/* The mini bar only exists while collapsed. */
+.youtube-viewer__mini {
+  display: none;
+}
+
+.youtube-viewer[data-collapsed="true"] .youtube-viewer__bar,
+.youtube-viewer[data-collapsed="true"] .youtube-viewer__error {
+  display: none;
+}
+
+/* Keep the iframe rendered (a 1px, transparent sliver) so playback continues,
+   but hand the visible row to the mini bar. */
+.youtube-viewer[data-collapsed="true"] .youtube-viewer__frame {
+  flex: 0 0 1px;
+  min-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.youtube-viewer[data-collapsed="true"] .youtube-viewer__mini {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 4px;
+  background: var(--bg-panel);
+}
+
+.youtube-viewer__mini-btn {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 28px;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.1s, background 0.1s;
+}
+
+.youtube-viewer__mini-btn:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.youtube-viewer__mini-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 0 4px;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+/* Slim accent volume slider — the filled portion follows --vol (set inline). */
+.youtube-viewer__volume {
+  flex-shrink: 0;
+  width: 72px;
+  height: 4px;
+  margin: 0 2px;
+  border-radius: 999px;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0,
+    var(--accent) var(--vol, 100%),
+    var(--border-strong) var(--vol, 100%),
+    var(--border-strong) 100%
+  );
+}
+
+.youtube-viewer__volume::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--text-primary);
+  border: 0;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
+}
+
+.youtube-viewer__volume::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--text-primary);
+  border: 0;
+}
+
+/* Pull the bottom pane down to just the mini bar and let the top pane take the
+   freed height. react-resizable-panels sets each Panel's size via inline
+   `flex`, so the override is `!important`; the resizer is hidden while parked. */
+.companion-rail__split:has(.youtube-viewer[data-collapsed="true"]) #companion-rail-youtube {
+  flex: 0 0 36px !important;
+}
+
+.companion-rail__split:has(.youtube-viewer[data-collapsed="true"]) #companion-rail-main {
+  flex: 1 1 auto !important;
+}
+
+.companion-rail__split:has(.youtube-viewer[data-collapsed="true"]) .companion-rail__resize {
+  display: none !important;
+}
+
 /* ────────────────────────────────────────────────
    Rail-pane empty + memory styles
    (Phase 2, shell-ia-redesign)
