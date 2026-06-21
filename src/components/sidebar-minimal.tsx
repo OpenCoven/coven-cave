@@ -12,6 +12,7 @@
  */
 
 import React from "react";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon } from "@/lib/icon";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -216,6 +217,11 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   const unreadCount = notificationBadgeCount ?? 0;
 
+  // Arrow-key navigation across the nav rows (Work + Tools): one tab stop,
+  // Up/Down moves focus, Home/End jumps. Uses the shared roving-tabindex hook.
+  const navScrollRef = React.useRef<HTMLDivElement | null>(null);
+  useRovingTabIndex({ containerRef: navScrollRef, itemSelector: ".sidebar-folder-row", orientation: "vertical" });
+
   // Projects lives only inside the Familiars surface's Projects tab now (and ⌘9 /
   // the /projects deep-link in workspace.tsx open it there) — no sidebar entry.
   const handleModeSelect = (id: FolderMode) => {
@@ -252,7 +258,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         </button>
       </div>
 
-      <div className="sidebar-nav-scroll">
+      <div className="sidebar-nav-scroll" ref={navScrollRef}>
         <SidebarSection label="Work">
           {workModes.map((fm) => (
             <FolderRow
