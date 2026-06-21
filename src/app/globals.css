@@ -8690,3 +8690,9 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
     font-size: 11px;
   }
 }
+
+/* ── Code workspace: file-preview breadcrumb (PR3) ────────────────────────── */
+.comux-preview-crumb-sep {
+  color: color-mix(in oklch, var(--text-muted) 55%, transparent);
+  flex-shrink: 0;
+}

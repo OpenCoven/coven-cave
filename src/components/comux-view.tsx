@@ -286,6 +286,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedPath, setCopiedPath] = useState(false);
   const [previewRaw, setPreviewRaw] = useState(false);
   // 1-based line to scroll the preview to (set when opened from a search match,
   // cleared when opened from the file tree).
@@ -1753,11 +1754,34 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                           width={12}
                           className="shrink-0 text-[var(--text-muted)]"
                         />
-                        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--text-muted)]">
-                          {previewPath.startsWith(selectedProject.root)
+                        <nav className="comux-preview-crumbs min-w-0 flex-1 flex items-center gap-1 truncate font-mono text-[11px] text-[var(--text-muted)]" aria-label="File path">
+                          {(previewPath.startsWith(selectedProject.root)
                             ? previewPath.slice(selectedProject.root.length).replace(/^\//, "")
-                            : previewPath}
-                        </span>
+                            : previewPath)
+                            .split("/")
+                            .filter(Boolean)
+                            .map((seg, i, segs) => (
+                              <span key={i} className="flex min-w-0 items-center gap-1">
+                                {i > 0 ? <span className="comux-preview-crumb-sep" aria-hidden>›</span> : null}
+                                <span className={i === segs.length - 1 ? "truncate text-[var(--text-secondary)]" : "truncate"}>
+                                  {seg}
+                                </span>
+                              </span>
+                            ))}
+                        </nav>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void copyText(previewPath);
+                            setCopiedPath(true);
+                            setTimeout(() => setCopiedPath(false), 1500);
+                          }}
+                          className="comux-preview-copypath shrink-0 rounded-[5px] border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 px-1.5 py-px text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)]"
+                          aria-label="Copy file path"
+                          title={copiedPath ? "Copied!" : "Copy path"}
+                        >
+                          <Icon name={copiedPath ? "ph:check" : "ph:copy"} width={11} aria-hidden />
+                        </button>
                         {previewLangLabel && (
                           <span className="comux-preview-lang shrink-0 rounded-[5px] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 px-1.5 py-px font-mono text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
                             {previewLangLabel}
