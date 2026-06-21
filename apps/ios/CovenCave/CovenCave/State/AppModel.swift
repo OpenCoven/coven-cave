@@ -35,7 +35,7 @@ final class AppModel {
     // MARK: - Cross-view command routing
 
     /// The selected bottom tab. Bound by `MainTabView`; set by `/board` / `/chats`.
-    var selectedTab: AppTab = .chats
+    var selectedTab: AppTab = .canvas
 
     /// A thread a command asked to open. `ChatsHomeView` observes this, pushes
     /// the thread, and clears it back to nil (one-shot navigation intent).

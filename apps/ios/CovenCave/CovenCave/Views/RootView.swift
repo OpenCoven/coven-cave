@@ -28,12 +28,6 @@ struct RootView: View {
 struct MainTabView: View {
     @Environment(AppModel.self) private var app
 
-    // @AppStorage holds the durable saved tab (read reliably at view init); the
-    // live selection is `app.selectedTab` so slash commands (`/board`, `/chats`)
-    // can drive the tab from inside a pushed chat view.
-    @AppStorage("cave.tab") private var savedTab = AppTab.chats.rawValue
-    @State private var restored = false
-
     var body: some View {
         @Bindable var app = app
         TabView(selection: $app.selectedTab) {
@@ -53,20 +47,13 @@ struct MainTabView: View {
                 SettingsView()
             }
         }
-        // TabView wins a layout race at cold launch and resets its selection to
-        // the first tab, overriding any seeded value — but the binding DOES drive
-        // the tab once that settles. So re-assert the saved tab a beat later (from
-        // @AppStorage, already loaded — a fresh UserDefaults read here races
-        // cfprefsd). The `restored` guard stops the launch reset from persisting
-        // over the saved value first.
+        // The app always opens on the Canvas tab. TabView wins a layout race at
+        // cold launch and resets its selection to the first tab, so re-assert
+        // Canvas a beat later — once that settles the binding drives the tab.
+        // In-session, slash commands (`/chats`, `/board`) still move the tab.
         .task {
             try? await Task.sleep(for: .milliseconds(300))
-            if let saved = AppTab(rawValue: savedTab) { app.selectedTab = saved }
-            restored = true
-        }
-        .onChange(of: app.selectedTab) { _, newValue in
-            guard restored else { return }
-            savedTab = newValue.rawValue
+            app.selectedTab = .canvas
         }
         // Command confirmations float above the whole tab bar so they're visible
         // whether a command stays in chat or jumps to the Tasks tab.
