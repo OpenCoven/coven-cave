@@ -151,6 +151,7 @@ export const SUITES = {
     "src/lib/tool-target-file.test.ts",
     "src/lib/terminal-layout.test.ts",
     "src/lib/terminal-nav.test.ts",
+    "src/lib/terminal-broadcast.test.ts",
     "src/components/comux-pane-nav-wiring.test.ts",
     "src/components/library-polish.test.ts",
     "src/components/library-file-actions.test.ts",
