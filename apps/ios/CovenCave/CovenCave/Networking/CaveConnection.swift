@@ -34,6 +34,15 @@ struct CaveConnection: Codable, Equatable {
         return URL(string: "http://\(trimmed):3000")
     }
 
+    /// WebSocket base derived from `baseURL` (https→wss, http→ws). Used by the
+    /// Developer tab's terminal to reach `/api/pty-ws`.
+    var wsBaseURL: URL? {
+        guard let base = baseURL,
+              var comps = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
+        comps.scheme = (comps.scheme == "https") ? "wss" : "ws"
+        return comps.url
+    }
+
     static let storageKey = "cave.connection.host"
 
     static func load() -> CaveConnection? {

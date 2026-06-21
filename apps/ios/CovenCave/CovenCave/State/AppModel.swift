@@ -1,9 +1,9 @@
 import Foundation
 import Observation
 
-/// The two bottom tabs. Lifted out of the view so slash commands (`/board`,
+/// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String { case chats, canvas, read, tasks }
+enum AppTab: String { case chats, canvas, read, tasks, dev }
 
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
@@ -87,6 +87,13 @@ final class AppModel {
     /// The familiar's reply text as it streams in (for the "sketching…" preview).
     var canvasStreamText = ""
 
+    // MARK: - Developer tab
+
+    /// Configured project roots, shared across the Code and Terminal surfaces.
+    var projects: [ProjectInfo] = []
+    var projectsError: String?
+    var projectsLoaded = false
+
     var client: CaveClient? {
         guard let connection else { return nil }
         return CaveClient(connection: connection)
@@ -124,6 +131,19 @@ final class AppModel {
             readingError = error.localizedDescription
         }
         readingLoaded = true
+    }
+
+    // MARK: - Developer tab actions
+
+    func loadProjects() async {
+        guard let client else { return }
+        do {
+            projects = try await client.projects()
+            projectsError = nil
+        } catch {
+            projectsError = error.localizedDescription
+        }
+        projectsLoaded = true
     }
 
     /// Optimistically set an item's status, then reconcile with the server's

@@ -49,6 +49,9 @@ struct MainTabView: View {
             Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
                 TasksView()
             }
+            Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
+                DeveloperView()
+            }
         }
         // TabView wins a layout race at cold launch and resets its selection to
         // the first tab, overriding any seeded value — but the binding DOES drive
