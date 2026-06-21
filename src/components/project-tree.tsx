@@ -4,9 +4,9 @@ import {
   forwardRef,
   useCallback,
   useEffect,
-  useImperativeHandle,
   useRef,
   useState,
+  useImperativeHandle,
 } from "react";
 import { Icon } from "@/lib/icon";
 
@@ -31,11 +31,18 @@ type Props = {
   /**
    * When set, folder rows expose an "Add" affordance that picks the directory
    * (folder-picker mode). Clicking a folder name still expands it for browsing.
+   * Drag-and-drop move is disabled in this mode to avoid gesture conflicts.
    */
   onDirSelect?: (path: string) => void;
   /** Paths already picked — folder-picker mode marks them as added. */
   selectedDirs?: Set<string>;
 };
+
+/** Signals affected directories to refetch their children after a move. */
+type RefetchSignal = { dirs: Set<string>; nonce: number };
+
+/** MIME type carrying the dragged node's absolute path. */
+const DRAG_MIME = "application/x-cave-tree-path";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -67,6 +74,12 @@ function sortEntries(entries: TreeEntry[]): TreeEntry[] {
     if (aDot !== bDot) return aDot ? 1 : -1;
     return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   });
+}
+
+/** Parent directory of an absolute path (no trailing slash). */
+function parentDir(p: string): string {
+  const idx = p.lastIndexOf("/");
+  return idx <= 0 ? p : p.slice(0, idx);
 }
 
 // ─── File-type icon ───────────────────────────────────────────────────────────
@@ -112,6 +125,21 @@ async function fetchChildren(dirPath: string): Promise<TreeEntry[]> {
   }
 }
 
+/** Move `from` into `toDir`. Returns null on success, else an error message. */
+async function requestMove(from: string, toDir: string): Promise<string | null> {
+  try {
+    const res = await fetch("/api/project-tree", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ from, toDir }),
+    });
+    const json = (await res.json()) as { ok: boolean; error?: string };
+    return json.ok ? null : json.error ?? "Move failed";
+  } catch {
+    return "Move failed";
+  }
+}
+
 // ─── Root component ───────────────────────────────────────────────────────────
 
 export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
@@ -119,7 +147,13 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     const [root, setRoot] = useState<string>("");
     const [entries, setEntries] = useState<TreeEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const [moveError, setMoveError] = useState<string | null>(null);
+    const [refetchSignal, setRefetchSignal] = useState<RefetchSignal>({ dirs: new Set(), nonce: 0 });
+    const [rootDrop, setRootDrop] = useState(false);
     const mountedRef = useRef(true);
+
+    // Drag-and-drop move is enabled in browse mode (not folder-picker mode).
+    const dndEnabled = onDirSelect == null;
 
     useEffect(() => {
       mountedRef.current = true;
@@ -145,6 +179,39 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
 
     useImperativeHandle(ref, () => ({ refresh: () => void load() }), [load]);
 
+    const handleMove = useCallback(async (fromPath: string, toDirPath: string) => {
+      if (!fromPath || !toDirPath || fromPath === toDirPath) return;
+      // Already in the destination folder — nothing to do.
+      if (parentDir(fromPath) === toDirPath) return;
+      // Can't move a folder into itself or its own subtree.
+      if (toDirPath === fromPath || toDirPath.startsWith(fromPath + "/")) {
+        setMoveError("Can't move a folder into itself.");
+        return;
+      }
+      const error = await requestMove(fromPath, toDirPath);
+      if (!mountedRef.current) return;
+      if (error) {
+        setMoveError(error);
+        return;
+      }
+      setMoveError(null);
+      // Refetch the source folder (item left) and destination (item arrived).
+      const srcParent = parentDir(fromPath);
+      setRefetchSignal((prev) => ({
+        dirs: new Set([srcParent, toDirPath]),
+        nonce: prev.nonce + 1,
+      }));
+      // Top-level changes aren't covered by row refetch — reload the root.
+      if (srcParent === root || toDirPath === root) void load(root);
+    }, [root, load]);
+
+    // Auto-dismiss the error banner.
+    useEffect(() => {
+      if (!moveError) return;
+      const t = setTimeout(() => setMoveError(null), 4000);
+      return () => clearTimeout(t);
+    }, [moveError]);
+
     if (loading) {
       return (
         <div className="flex items-center gap-1.5 py-3 pl-1 text-[11px] text-[var(--text-muted)]">
@@ -162,20 +229,52 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     }
 
     return (
-      <div role="tree" className="select-none text-[12px] leading-none">
-        {entries.map((e) => (
-          <TreeRow
-            key={e.path}
-            entry={e}
-            depth={0}
-            root={root}
-            selectedPath={selectedPath}
-            onFileClick={onFileClick}
-            onDirSelect={onDirSelect}
-            selectedDirs={selectedDirs}
-          />
-        ))}
-      </div>
+      <>
+        {moveError ? (
+          <div
+            role="alert"
+            className="mx-1 mb-1 flex items-center gap-1.5 rounded-md bg-[var(--color-danger,#b91c1c)]/12 px-2 py-1 text-[11px] text-[var(--color-danger,#b91c1c)]"
+          >
+            <Icon name="ph:warning" width={12} className="shrink-0" />
+            <span className="truncate">{moveError}</span>
+          </div>
+        ) : null}
+        <div
+          role="tree"
+          className={`select-none rounded-md text-[12px] leading-none ${
+            rootDrop ? "outline-dashed outline-1 outline-[var(--accent-presence)]" : ""
+          }`}
+          // Dropping on the tree background (not on a folder/file row) moves to root.
+          onDragOver={dndEnabled ? (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            setRootDrop(true);
+          } : undefined}
+          onDragLeave={dndEnabled ? () => setRootDrop(false) : undefined}
+          onDrop={dndEnabled ? (e) => {
+            e.preventDefault();
+            setRootDrop(false);
+            const src = e.dataTransfer.getData(DRAG_MIME) || e.dataTransfer.getData("text/plain");
+            if (src && root) void handleMove(src, root);
+          } : undefined}
+        >
+          {entries.map((e) => (
+            <TreeRow
+              key={e.path}
+              entry={e}
+              depth={0}
+              root={root}
+              selectedPath={selectedPath}
+              onFileClick={onFileClick}
+              onDirSelect={onDirSelect}
+              selectedDirs={selectedDirs}
+              dndEnabled={dndEnabled}
+              onMove={handleMove}
+              refetchSignal={refetchSignal}
+            />
+          ))}
+        </div>
+      </>
     );
   },
 );
@@ -190,6 +289,9 @@ function TreeRow({
   onFileClick,
   onDirSelect,
   selectedDirs,
+  dndEnabled,
+  onMove,
+  refetchSignal,
 }: {
   entry: TreeEntry;
   depth: number;
@@ -198,6 +300,9 @@ function TreeRow({
   onFileClick?: (path: string) => void;
   onDirSelect?: (path: string) => void;
   selectedDirs?: Set<string>;
+  dndEnabled: boolean;
+  onMove: (from: string, toDir: string) => void;
+  refetchSignal: RefetchSignal;
 }) {
   const startsExpanded =
     entry.isDir && depth === 0 && !HIDDEN_BY_DEFAULT.has(entry.name);
@@ -207,6 +312,8 @@ function TreeRow({
     entry.children ? sortEntries(entry.children) : null,
   );
   const [fetching, setFetching] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [dropTarget, setDropTarget] = useState(false);
 
   const isSelected = !entry.isDir && entry.path === selectedPath;
   const isHidden = HIDDEN_BY_DEFAULT.has(entry.name);
@@ -253,17 +360,61 @@ function TreeRow({
     return () => { alive = false; };
   }, [selectedPath, entry.isDir, entry.path, children]);
 
+  // After a move, refetch this folder's children if it's affected and loaded.
+  useEffect(() => {
+    if (!entry.isDir || !refetchSignal.dirs.has(entry.path) || children === null) return;
+    let cancelled = false;
+    setFetching(true);
+    void fetchChildren(entry.path).then((fetched) => {
+      if (cancelled) return;
+      setChildren(fetched);
+      setFetching(false);
+    });
+    return () => { cancelled = true; };
+    // Re-run only when a new move signal arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refetchSignal]);
+
   return (
     <div role="treeitem" aria-expanded={entry.isDir ? expanded : undefined}>
       {/* Row */}
       <button
         type="button"
         onClick={handleClick}
+        draggable={dndEnabled}
+        onDragStart={dndEnabled ? (e) => {
+          e.dataTransfer.setData(DRAG_MIME, entry.path);
+          e.dataTransfer.setData("text/plain", entry.path);
+          e.dataTransfer.effectAllowed = "move";
+          setDragging(true);
+        } : undefined}
+        onDragEnd={dndEnabled ? () => setDragging(false) : undefined}
+        // Folders are drop targets (move into); files swallow the drag so the
+        // tree-background "move to root" handler doesn't fire over them.
+        onDragOver={dndEnabled ? (e) => {
+          if (entry.isDir) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = "move";
+            if (!dropTarget) setDropTarget(true);
+          } else {
+            e.stopPropagation();
+          }
+        } : undefined}
+        onDragLeave={dndEnabled && entry.isDir ? () => setDropTarget(false) : undefined}
+        onDrop={dndEnabled ? (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDropTarget(false);
+          if (!entry.isDir) return;
+          const src = e.dataTransfer.getData(DRAG_MIME) || e.dataTransfer.getData("text/plain");
+          if (src && src !== entry.path) onMove(src, entry.path);
+        } : undefined}
         className={`focus-ring-inset group flex w-full items-center gap-0 rounded-[5px] py-[3px] text-left transition-colors ${
           isSelected
             ? "bg-[var(--accent-presence)] text-white"
             : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
-        } ${isHidden ? "opacity-40" : ""}`}
+        } ${dropTarget ? "outline-dashed outline-1 outline-[var(--accent-presence)] bg-[var(--accent-presence)]/10" : ""} ${dragging ? "opacity-40" : ""} ${isHidden ? "opacity-40" : ""}`}
         style={{ paddingLeft: indentPx, paddingRight: 8, marginLeft: 4, marginRight: 4, width: "calc(100% - 8px)" }}
       >
         {/* Disclosure triangle — rotates via CSS */}
@@ -359,6 +510,9 @@ function TreeRow({
             onFileClick={onFileClick}
             onDirSelect={onDirSelect}
             selectedDirs={selectedDirs}
+            dndEnabled={dndEnabled}
+            onMove={onMove}
+            refetchSignal={refetchSignal}
           />
         ))
       }
