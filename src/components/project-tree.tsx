@@ -9,6 +9,7 @@ import {
   useImperativeHandle,
 } from "react";
 import { Icon } from "@/lib/icon";
+import { nextVisibleIndex, parentIndexByDepth } from "@/lib/tree-keynav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -244,6 +245,44 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
           className={`select-none rounded-md text-[12px] leading-none ${
             rootDrop ? "outline-dashed outline-1 outline-[var(--accent-presence)]" : ""
           }`}
+          tabIndex={0}
+          aria-label="File tree"
+          onKeyDown={(e) => {
+            if (!["ArrowDown", "ArrowUp", "Home", "End", "ArrowRight", "ArrowLeft", "Enter", " "].includes(e.key)) return;
+            const rows = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>("[data-tree-row]"));
+            if (rows.length === 0) return;
+            const i = rows.findIndex((r) => r === document.activeElement);
+            if (i < 0) { e.preventDefault(); rows[0].focus(); return; }
+            const row = rows[i];
+            const item = row.closest('[role="treeitem"]');
+            const isDir = item?.getAttribute("aria-expanded") != null;
+            const expanded = item?.getAttribute("aria-expanded") === "true";
+            if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
+              const ni = nextVisibleIndex(e.key, i, rows.length);
+              if (ni != null) { e.preventDefault(); rows[ni].focus(); }
+              return;
+            }
+            if (e.key === "ArrowRight") {
+              if (isDir && !expanded) { e.preventDefault(); row.click(); }
+              else if (isDir && expanded && i + 1 < rows.length) { e.preventDefault(); rows[i + 1].focus(); }
+              return;
+            }
+            if (e.key === "ArrowLeft") {
+              if (isDir && expanded) { e.preventDefault(); row.click(); return; }
+              const depths = rows.map((r) => Number(r.dataset.treeDepth ?? "0"));
+              const p = parentIndexByDepth(depths, i);
+              if (p != null) { e.preventDefault(); rows[p].focus(); }
+              return;
+            }
+            e.preventDefault();
+            row.click();
+          }}
+          onFocus={(e) => {
+            if (e.target !== e.currentTarget) return;
+            const rows = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>("[data-tree-row]"));
+            if (rows.length === 0) return;
+            (rows.find((r) => r.dataset.selected === "true") ?? rows[0]).focus();
+          }}
           // Dropping on the tree background (not on a folder/file row) moves to root.
           onDragOver={dndEnabled ? (e) => {
             e.preventDefault();
@@ -380,6 +419,10 @@ function TreeRow({
       {/* Row */}
       <button
         type="button"
+        tabIndex={-1}
+        data-tree-row=""
+        data-tree-depth={depth}
+        data-selected={isSelected ? "true" : undefined}
         onClick={handleClick}
         draggable={dndEnabled}
         onDragStart={dndEnabled ? (e) => {
