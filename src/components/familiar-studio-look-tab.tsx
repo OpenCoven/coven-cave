@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Modal } from "./ui/modal";
 import { FamiliarGlyphPickerPanel } from "./familiar-glyph-picker-panel";
 import { useFamiliarImages } from "@/lib/cave-familiar-images";
 import { useFamiliarImageUpload, FAMILIAR_IMAGE_ACCEPT } from "@/lib/familiar-image-upload";
@@ -75,6 +76,7 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
   const currentImage = images[familiar.id];
   const { onFile, clear, toast } = useFamiliarImageUpload(familiar.id);
   const [colorScope, setColorScope] = useState<ColorScope>("familiar");
+  const [enlarged, setEnlarged] = useState(false);
 
   const harnessKey = familiar.harness ?? "";
   const harnessTargets = allFamiliars.filter((target) => (target.harness ?? "") === harnessKey);
@@ -130,13 +132,21 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
         >
           {currentImage ? (
             <>
-              <img
-                src={currentImage.dataUrl}
-                alt="Current avatar"
-                width={72}
-                height={72}
-                className="rounded-md object-cover"
-              />
+              <button
+                type="button"
+                onClick={() => setEnlarged(true)}
+                className="familiar-studio-look__avatar-zoom"
+                aria-label="Enlarge avatar"
+                title="Click to enlarge"
+              >
+                <img
+                  src={currentImage.dataUrl}
+                  alt="Current avatar"
+                  width={72}
+                  height={72}
+                  className="rounded-md object-cover"
+                />
+              </button>
               <button
                 type="button"
                 onClick={clear}
@@ -236,6 +246,22 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
         </p>
       </section>
 
+      {enlarged && currentImage ? (
+        <Modal
+          open
+          onClose={() => setEnlarged(false)}
+          breadcrumb={[familiar.display_name, "Avatar"]}
+          ariaLabel={`${familiar.display_name} avatar`}
+        >
+          <div className="grid aspect-square w-full max-w-[320px] place-items-center overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)]">
+            <img
+              src={currentImage.dataUrl}
+              alt={`${familiar.display_name} avatar`}
+              className="h-full w-full object-cover"
+            />
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }
