@@ -8,7 +8,7 @@
  *   2. App destinations grouped by purpose:
  *      Work  (Home / Familiars / Board / Calendar / Schedules)
  *      Tools (Browser / Terminal / Code / Library / Roles / Workflows / GitHub)
- *   3. Footer: Notifications, mobile handoff, Settings
+ *   3. Footer: Notifications, Settings
  */
 
 import React from "react";
@@ -47,7 +47,6 @@ export type SidebarMinimalProps = {
   activeSessionId?: string | null;
   onNewChat: () => void;
   onOpenSettings: () => void;
-  onOpenMobileHandoff: () => void;
   onModeChange: (mode: string) => void;
   onOpenSession: (id: string) => void;
   addons?: AddonsConfig;
@@ -197,7 +196,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     mode,
     onNewChat,
     onOpenSettings,
-    onOpenMobileHandoff,
     onModeChange,
     onOpenSession,
     activeSessionId,
@@ -331,15 +329,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
               <Icon name="ph:gear-six" width={14} className="sidebar-foot-icon" />
             </span>
             <span className="sidebar-foot-label">Settings</span>
-          </button>
-          <button
-            type="button"
-            className="sidebar-foot-icon-btn"
-            onClick={onOpenMobileHandoff}
-            aria-label="Open on phone"
-            title="Open on phone"
-          >
-            <Icon name="ph:device-mobile" width={14} className="sidebar-foot-icon" />
           </button>
         </div>
       </div>

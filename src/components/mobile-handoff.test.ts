@@ -14,12 +14,11 @@ const tauriLib = await readFile(new URL("../../src-tauri/src/lib.rs", import.met
 assert.match(topBar, /onOpenMobileHandoff/, "TopBar should accept a mobile handoff opener");
 assert.match(topBar, /ph:device-mobile/, "TopBar should render a mobile-phone icon");
 assert.match(topBar, /top-bar__mobile-handoff/, "TopBar handoff button should have a stable desktop-only class");
-assert.match(sidebar, /onOpenMobileHandoff/, "Sidebar should accept a mobile handoff opener");
-assert.match(sidebar, /aria-label="Open on phone"/, "Sidebar should expose the phone handoff as an icon button");
-assert.match(sidebar, /ph:device-mobile/, "Sidebar should render the mobile-phone handoff icon");
+// The desktop sidebar no longer carries a phone-handoff button — the feature is
+// reached from the (mobile) TopBar. The sidebar must not re-introduce it.
+assert.doesNotMatch(sidebar, /onOpenMobileHandoff/, "Sidebar should not carry a mobile handoff button");
+assert.doesNotMatch(sidebar, /Open on phone/, "Sidebar should not expose an Open-on-phone control");
 assert.match(workspace, /MobileHandoffModal/, "Workspace should mount the mobile handoff modal");
-assert.match(workspace, /setMobileHandoffCopyRequest\(\(value\) => value \+ 1\)/, "Sidebar handoff trigger should request invite copy");
-assert.match(workspace, /autoCopyRequest=\{mobileHandoffCopyRequest\}/, "Workspace should pass sidebar copy intent into the modal");
 assert.match(modal, /\/api\/mobile-handoff/, "Modal should call the mobile handoff API");
 assert.match(modal, /dangerouslySetInnerHTML/, "Modal should render the QR SVG returned by the API");
 assert.match(modal, /expiresAtIso/, "Modal should display the invite expiry");
