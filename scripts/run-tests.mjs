@@ -430,6 +430,7 @@ export const SUITES = {
     "src/proxy-behavior.test.ts",
     "src/lib/server/memory-file-sources-coven-familiar.test.ts",
     "src/lib/server/memory-trash.test.ts",
+    "src/lib/server/theme-store.test.ts",
     "src/app/api/memory-coven-workspaces.test.ts",
     "src/app/api/memory-excerpt.test.ts",
     "src/app/api/memory-mutation-routes.test.ts",

@@ -19,6 +19,15 @@ export async function PUT(req: Request) {
   if (!body || typeof body.themeId !== "string") {
     return NextResponse.json({ ok: false, error: "themeId required" }, { status: 400 });
   }
-  const theme = await saveTheme(body);
-  return NextResponse.json({ ok: true, theme });
+  try {
+    const theme = await saveTheme(body);
+    return NextResponse.json({ ok: true, theme });
+  } catch (err) {
+    // A failed write must never escape the handler — an unhandled rejection
+    // here previously took the whole server down.
+    return NextResponse.json(
+      { ok: false, error: err instanceof Error ? err.message : "failed to save theme" },
+      { status: 500 },
+    );
+  }
 }
