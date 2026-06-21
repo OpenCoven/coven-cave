@@ -287,3 +287,16 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 .cockpit-skel__row { height: 14px; border-radius: 6px; background: linear-gradient(90deg, var(--bg-elevated), var(--bg-hover), var(--bg-elevated));
   background-size: 200% 100%; animation: cockpit-shimmer 1.3s ease-in-out infinite; }
 @keyframes cockpit-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Draggable panels */
+.cockpit-sortable { position: relative; }
+.cockpit-sortable.is-dragging { box-shadow: 0 16px 48px rgb(0 0 0 / 0.45); border-radius: 14px; }
+.cockpit-grip {
+  position: absolute; top: 9px; right: 9px; z-index: 4;
+  width: 22px; height: 22px; display: grid; place-items: center;
+  border: 0; border-radius: 6px; background: transparent; color: var(--text-muted);
+  cursor: grab; opacity: 0; transition: opacity .12s, background .12s; touch-action: none;
+}
+.cockpit-sortable:hover .cockpit-grip, .cockpit-grip:focus-visible { opacity: 1; }
+.cockpit-grip:hover { background: var(--bg-hover); color: var(--text-secondary); }
+.cockpit-grip:active { cursor: grabbing; }

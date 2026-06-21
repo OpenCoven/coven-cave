@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode, type CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import type { DashboardModel } from "@/lib/dashboard-model";
@@ -13,6 +13,14 @@ import { SectionHead, EmptyState, QuickLink } from "@/components/daily-report-ui
 import { ActionInbox } from "@/components/dashboard/action-inbox";
 import { TodaySummary } from "@/components/dashboard/today-summary";
 import { RecentReports } from "@/components/dashboard/recent-reports";
+import {
+  DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, useSortable, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 // ─── Data shapes (client-fetched) ──────────────────────────────────────────────
 
@@ -29,6 +37,22 @@ type CockpitData = {
 };
 
 const EMPTY: CockpitData = { cards: [], familiars: [], github: [], reading: [], upcoming: [], sessions: [] };
+
+// Draggable panel layout — order per column, persisted to localStorage.
+const LAYOUT_KEY = "cave:cockpit:layout";
+type Layout = { main: string[]; rail: string[] };
+const DEFAULT_LAYOUT: Layout = { main: ["needs", "board", "today"], rail: ["agents", "github", "agenda", "reading"] };
+
+/** Merge a saved order with the defaults: keep known ids in saved order, append
+ *  any new defaults, drop anything unknown (survives version changes). */
+function reconcileLayout(stored: Partial<Layout>): Layout {
+  const fix = (saved: string[] | undefined, def: string[]) => {
+    const s = (saved ?? []).filter((id) => def.includes(id));
+    for (const id of def) if (!s.includes(id)) s.push(id);
+    return s;
+  };
+  return { main: fix(stored.main, DEFAULT_LAYOUT.main), rail: fix(stored.rail, DEFAULT_LAYOUT.rail) };
+}
 
 async function getJson<T>(url: string): Promise<T | null> {
   try {
@@ -116,6 +140,65 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     { icon: "ph:books-bold", value: readingQueue.length, label: "To read", accent: "blue", src: "reading" },
   ];
 
+  // ── Draggable layout ──
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const [layout, setLayout] = useState<Layout>(DEFAULT_LAYOUT);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LAYOUT_KEY);
+      if (raw) setLayout(reconcileLayout(JSON.parse(raw)));
+    } catch { /* storage may be unavailable */ }
+  }, []);
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const a = String(active.id), o = String(over.id);
+    for (const col of ["main", "rail"] as const) {
+      const list = layout[col];
+      if (list.includes(a) && list.includes(o)) {
+        const next: Layout = { ...layout, [col]: arrayMove(list, list.indexOf(a), list.indexOf(o)) };
+        setLayout(next);
+        try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+        return;
+      }
+    }
+  };
+
+  const isVisible = (id: string) => id !== "needs" || !model.caughtUp;
+  const widget = (id: string): ReactNode => {
+    switch (id) {
+      case "needs": return model.caughtUp ? null : (
+        <Panel title="Needs attention" icon="ph:warning-circle" count={model.needsAttention.length}>
+          <ActionInbox initialItems={model.needsAttention} />
+        </Panel>);
+      case "board": return (
+        <Panel title="Board" icon="ph:kanban-bold" hint={`${open.length} open`}>
+          <BoardSnapshot byStatus={byStatus} total={data.cards.length} active={activeCards} loaded={ready.has("cards")} familiars={data.familiars} />
+        </Panel>);
+      case "today": return <TodaySummary summary={model.todaySummary} featured={model.featuredReport} now={now} />;
+      case "agents": return (
+        <Panel title="Agents" icon="ph:sparkle" count={data.familiars.length || undefined}>
+          <AgentsPanel familiars={data.familiars} loaded={ready.has("familiars")} />
+        </Panel>);
+      case "github": return (
+        <Panel title="GitHub" icon="ph:github-logo" count={data.github.length || undefined} hint={prsToReview.length ? `${prsToReview.length} to review` : undefined}>
+          <GithubPanel items={data.github} loaded={ready.has("github")} />
+        </Panel>);
+      case "agenda": return (
+        <Panel title="Up next" icon="ph:calendar-bold" count={upcoming.length || undefined}>
+          <AgendaPanel items={upcoming} now={now} loaded={ready.has("upcoming")} />
+        </Panel>);
+      case "reading": return (
+        <Panel title="Reading" icon="ph:books-bold" count={readingQueue.length || undefined} hint={readingQueue.length ? undefined : "queue empty"}>
+          <ReadingPanel items={readingQueue} loaded={ready.has("reading")} />
+        </Panel>);
+      default: return null;
+    }
+  };
+
   return (
     <div className="cockpit">
       {/* Header */}
@@ -140,40 +223,21 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
         {kpis.map((k) => <KpiTile key={k.label} {...k} loading={k.src ? !ready.has(k.src) : false} />)}
       </div>
 
-      {/* Main grid */}
-      <div className="cockpit-grid">
-        <div className="cockpit-col cockpit-col--main">
-          {!model.caughtUp ? (
-            <Panel title="Needs attention" icon="ph:warning-circle" count={model.needsAttention.length}>
-              <ActionInbox initialItems={model.needsAttention} />
-            </Panel>
-          ) : null}
-
-          <Panel title="Board" icon="ph:kanban-bold" hint={`${open.length} open`} href="/#card-">
-            <BoardSnapshot byStatus={byStatus} total={data.cards.length} active={activeCards} loaded={ready.has("cards")} familiars={data.familiars} />
-          </Panel>
-
-          <TodaySummary summary={model.todaySummary} featured={model.featuredReport} now={now} />
+      {/* Main grid — panels drag to rearrange (hover for the grip) */}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+        <div className="cockpit-grid">
+          {(["main", "rail"] as const).map((col) => {
+            const ids = layout[col].filter(isVisible);
+            return (
+              <div key={col} className={`cockpit-col cockpit-col--${col}`}>
+                <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+                  {ids.map((id) => <SortableWidget key={id} id={id}>{widget(id)}</SortableWidget>)}
+                </SortableContext>
+              </div>
+            );
+          })}
         </div>
-
-        <div className="cockpit-col cockpit-col--rail">
-          <Panel title="Agents" icon="ph:sparkle" count={data.familiars.length || undefined}>
-            <AgentsPanel familiars={data.familiars} loaded={ready.has("familiars")} />
-          </Panel>
-
-          <Panel title="GitHub" icon="ph:github-logo" count={data.github.length || undefined} hint={prsToReview.length ? `${prsToReview.length} to review` : undefined}>
-            <GithubPanel items={data.github} loaded={ready.has("github")} />
-          </Panel>
-
-          <Panel title="Up next" icon="ph:calendar-bold" count={upcoming.length || undefined}>
-            <AgendaPanel items={upcoming} now={now} loaded={ready.has("upcoming")} />
-          </Panel>
-
-          <Panel title="Reading" icon="ph:books-bold" count={readingQueue.length || undefined} hint={readingQueue.length ? undefined : "queue empty"}>
-            <ReadingPanel items={readingQueue} loaded={ready.has("reading")} />
-          </Panel>
-        </div>
-      </div>
+      </DndContext>
 
       {/* Quick actions + history */}
       <div className="cockpit-launch">
@@ -218,6 +282,26 @@ function Panel({ title, icon, count, hint, href, children }: {
       </div>
       <div className="cockpit-panel__body">{children}</div>
     </section>
+  );
+}
+
+// ─── Sortable widget wrapper ─────────────────────────────────────────────────────
+
+function SortableWidget({ id, children }: { id: string; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    zIndex: isDragging ? 20 : undefined,
+    opacity: isDragging ? 0.92 : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className={`cockpit-sortable${isDragging ? " is-dragging" : ""}`}>
+      <button type="button" className="cockpit-grip" aria-label="Drag to rearrange" {...attributes} {...listeners}>
+        <Icon name="ph:dots-six-vertical" aria-hidden />
+      </button>
+      {children}
+    </div>
   );
 }
 
