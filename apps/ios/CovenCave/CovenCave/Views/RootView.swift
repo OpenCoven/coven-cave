@@ -40,6 +40,9 @@ struct MainTabView: View {
             Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
                 ChatsHomeView()
             }
+            Tab("Canvas", systemImage: "wand.and.stars", value: AppTab.canvas) {
+                CanvasView()
+            }
             Tab("Read", systemImage: "books.vertical.fill", value: AppTab.read) {
                 ReadingView()
             }
