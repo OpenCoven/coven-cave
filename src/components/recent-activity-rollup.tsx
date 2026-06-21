@@ -22,6 +22,10 @@ const POLL_MS = 15_000;
 const MAX_ROWS = 8;
 // Remember whether the roll-up is collapsed across reloads and remounts.
 const OPEN_STORAGE_KEY = "cave:recent-activity:open";
+// Only "notable" states get a status dot (running pulses, failed/queued/paused
+// tint); completed/idle sessions stay dotless so the list isn't speckled.
+// Mirrors the ⌘K palette + Projects-tab status dots.
+const NOTABLE_STATUS = new Set(["running", "failed", "queued", "paused"]);
 
 function projectLabel(root: string | undefined): string {
   if (!root) return "";
@@ -111,6 +115,7 @@ export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) 
             const add = s.diff?.additions ?? 0;
             const del = s.diff?.deletions ?? 0;
             const proj = projectLabel(s.project_root);
+            const showStatus = NOTABLE_STATUS.has(s.status);
             return (
               <li key={s.id}>
                 <button
@@ -120,6 +125,13 @@ export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) 
                   title={s.title}
                 >
                   <div className="recent-activity__row1">
+                    {showStatus ? (
+                      <span
+                        role="img"
+                        aria-label={`${s.status} session`}
+                        className={`recent-activity__status recent-activity__status--${s.status}`}
+                      />
+                    ) : null}
                     <span className="recent-activity__title">{s.title || "Untitled session"}</span>
                     {proj ? <span className="recent-activity__project">{proj}</span> : null}
                   </div>

@@ -963,6 +963,13 @@
 .recent-activity__card--active::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent-presence); }
 .recent-activity__row1, .recent-activity__row2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .recent-activity__title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 550; color: var(--text-primary); }
+.recent-activity__status { flex-shrink: 0; width: 7px; height: 7px; border-radius: 999px; background: var(--text-muted); }
+.recent-activity__status--running { background: var(--color-success); animation: recent-activity-status-pulse 1.6s ease-in-out infinite; }
+.recent-activity__status--failed { background: var(--color-danger); }
+.recent-activity__status--queued { background: var(--color-warning); }
+.recent-activity__status--paused { background: var(--accent-presence-soft); }
+@keyframes recent-activity-status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .recent-activity__status--running { animation: none; } }
 .recent-activity__project { flex-shrink: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-muted); }
 .recent-activity__model { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: var(--text-secondary); }
 .recent-activity__model-icon { flex-shrink: 0; opacity: 0.85; }
