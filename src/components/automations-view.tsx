@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
+import { groupInboxFeed, inboxKindLabel } from "@/lib/inbox-feed";
 import type {
   AutomationStatus,
   CodexAutomation,
@@ -39,7 +40,7 @@ function linkLabel(link: LinkRef): string {
   return "Memory";
 }
 
-type ScheduleTab = "reminders" | "automations";
+type ScheduleTab = "reminders" | "automations" | "inbox";
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_INITIALS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
@@ -1102,6 +1103,142 @@ function AutomationsPanel({
   );
 }
 
+// ── Inbox feed (full inbox: reminders, summaries, agent + response items) ─────
+function InboxKindBadge({ kind }: { kind: InboxItem["kind"] }) {
+  return (
+    <span
+      className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+      style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-muted)" }}
+    >
+      {inboxKindLabel(kind)}
+    </span>
+  );
+}
+
+function InboxFeedRow({
+  item,
+  selected,
+  familiarLabel,
+  onSelect,
+}: {
+  item: InboxItem;
+  selected: boolean;
+  familiarLabel: (fid?: string | null) => string | null;
+  onSelect: (item: InboxItem) => void;
+}) {
+  const workspace = familiarLabel(item.familiarId);
+  const when = item.firedAt
+    ? `fired ${relTime(item.firedAt)}`
+    : item.fireAt
+    ? relTime(item.fireAt)
+    : relTime(item.updatedAt);
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(item)}
+        className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
+        style={{ background: selected ? "rgba(255,255,255,0.05)" : "transparent" }}
+        onMouseEnter={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
+        onMouseLeave={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+      >
+        <StatusIcon item={item} />
+        <span className="flex-1 min-w-0 flex items-center gap-2">
+          <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
+            {item.title}
+          </span>
+          <InboxKindBadge kind={item.kind} />
+          {workspace && (
+            <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {workspace}
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+          {when}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function InboxFeedSection({
+  title,
+  accent,
+  items,
+  selectedId,
+  familiarLabel,
+  onSelect,
+}: {
+  title: string;
+  accent?: boolean;
+  items: InboxItem[];
+  selectedId: string | null;
+  familiarLabel: (fid?: string | null) => string | null;
+  onSelect: (item: InboxItem) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="mb-6">
+      <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
+        style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
+        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
+          {title}
+        </span>
+        <span
+          className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+          style={
+            accent
+              ? { background: "color-mix(in oklch, var(--color-warning) 18%, transparent)", color: "var(--color-warning)" }
+              : { background: "var(--bg-raised)", color: "var(--text-muted)" }
+          }
+        >
+          {items.length}
+        </span>
+      </div>
+      <ul>
+        {items.map((item) => (
+          <InboxFeedRow
+            key={item.id}
+            item={item}
+            selected={selectedId === item.id}
+            familiarLabel={familiarLabel}
+            onSelect={onSelect}
+          />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function InboxFeedList({
+  needsYou,
+  active,
+  resolved,
+  selectedId,
+  familiarLabel,
+  onSelect,
+}: {
+  needsYou: InboxItem[];
+  active: InboxItem[];
+  resolved: InboxItem[];
+  selectedId: string | null;
+  familiarLabel: (fid?: string | null) => string | null;
+  onSelect: (item: InboxItem) => void;
+}) {
+  return (
+    <>
+      <InboxFeedSection title="Needs you" accent items={needsYou} selectedId={selectedId}
+        familiarLabel={familiarLabel} onSelect={onSelect} />
+      <InboxFeedSection title="Active" items={active} selectedId={selectedId}
+        familiarLabel={familiarLabel} onSelect={onSelect} />
+      <InboxFeedSection title="Resolved" items={resolved} selectedId={selectedId}
+        familiarLabel={familiarLabel} onSelect={onSelect} />
+    </>
+  );
+}
+
 // ── Root ──────────────────────────────────────────────────────────────────────
 export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink }: Props) {
   const [items, setItems] = useState<InboxItem[]>([]);
@@ -1294,15 +1431,20 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     [codexAutos],
   );
 
+  // Inbox tab: the FULL feed (every kind), grouped by attention tier.
+  const inboxFeed = useMemo(() => groupInboxFeed(items), [items]);
   const remindersEmpty = current.length + paused.length + oneShots.length + history.length === 0;
   const automationsEmpty = codexAutos.length === 0;
+  const inboxEmpty = items.length === 0;
   const selectedReminderId = selectedItem?.id ?? null;
   const selectedAutomationId = selectedCodex?.id ?? null;
 
   const selectTab = (tab: ScheduleTab) => {
     setActiveTab(tab);
-    if (tab === "reminders") setSelectedCodex(null);
-    else setSelectedItem(null);
+    // Reminders and Inbox both select InboxItems (DetailPanel); Automations
+    // selects CodexAutomations. Clear the other selection on switch.
+    if (tab === "automations") setSelectedItem(null);
+    else setSelectedCodex(null);
   };
 
   return (
@@ -1336,6 +1478,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             style={{ borderColor: "var(--border-hairline)", background: "var(--bg-raised)" }}>
             {([
               ["reminders", "Reminders", reminderItems.length],
+              ["inbox", "Inbox", items.length],
               ["automations", "Automations", codexAutos.length],
             ] as const).map(([id, label, count]) => (
               <button
@@ -1405,6 +1548,13 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               headline="No automations configured"
               subtitle="Automations run a familiar on a schedule — set one up to get started."
             />
+          ) : activeTab === "inbox" && inboxEmpty ? (
+            <EmptyState
+              className="mt-12"
+              icon="ph:tray"
+              headline="Inbox is empty"
+              subtitle="Reminders, responses, and agent notifications all land here."
+            />
           ) : (
             <>
               {activeTab === "reminders" ? (
@@ -1413,6 +1563,15 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   paused={paused}
                   oneShots={oneShots}
                   history={history}
+                  selectedId={selectedReminderId}
+                  familiarLabel={familiarLabel}
+                  onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
+                />
+              ) : activeTab === "inbox" ? (
+                <InboxFeedList
+                  needsYou={inboxFeed.needsYou}
+                  active={inboxFeed.active}
+                  resolved={inboxFeed.resolved}
                   selectedId={selectedReminderId}
                   familiarLabel={familiarLabel}
                   onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
