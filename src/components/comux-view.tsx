@@ -1110,90 +1110,6 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       ) : (
         /* Project tab */
         <div className="flex flex-1 min-h-0">
-          {/* Project list — collapse from its own header; a thin rail re-opens it.
-              The Code layout presets also drive this (Chat hides it). */}
-          {projectListCollapsed ? (
-          // The whole rail is the click target — its full height re-opens the
-          // list, not just the icon at the top.
-          <button
-            type="button"
-            onClick={() => setProjectListVisible(true)}
-            aria-label="Show projects list"
-            title="Show projects list"
-            className="flex w-[34px] shrink-0 flex-col items-center gap-1 self-stretch border-r border-[var(--border-hairline)] py-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-          >
-            <span className="grid h-7 w-7 place-items-center">
-              <Icon name="ph:sidebar-simple" width={15} />
-            </span>
-            <span
-              className="mt-1 text-[10px] font-semibold uppercase tracking-widest"
-              style={{ writingMode: "vertical-rl" }}
-            >
-              Projects
-            </span>
-          </button>
-          ) : (
-          <div className="w-[200px] shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] py-2 text-[12px]">
-            <div className="mb-1 flex items-center gap-1.5 px-3 pb-1">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Projects</span>
-              <span className="rounded-full bg-[var(--bg-raised)] px-1.5 py-px text-[9px] text-[var(--text-muted)]">
-                {projects.length}
-              </span>
-              <button
-                type="button"
-                onClick={() => setProjectListVisible(false)}
-                aria-label="Hide projects list"
-                title="Hide projects list"
-                className="-my-1 ml-auto grid h-7 w-7 place-items-center rounded-md text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-              >
-                <Icon name="ph:sidebar-simple-fill" width={15} />
-              </button>
-            </div>
-            <div className="space-y-px px-1">
-              {projects.map((project) => {
-                const isActive = selectedProject?.root === project.root;
-                const meta: string[] = [];
-                if (project.sessionCount > 0) {
-                  meta.push(`${project.sessionCount} ${project.sessionCount === 1 ? "chat" : "chats"}`);
-                }
-                if (project.updatedAt) meta.push(shortProjectTime(project.updatedAt));
-                return (
-                  <button
-                    key={project.root}
-                    type="button"
-                    onClick={() => selectProject(project)}
-                    title={project.root}
-                    className={`comux-project-row group flex w-full items-center gap-2 rounded-[6px] px-2 py-[6px] text-left text-[12px] transition-colors ${
-                      isActive
-                        ? "comux-project-row--active text-[var(--text-primary)]"
-                        : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
-                    }`}
-                  >
-                    <Icon
-                      name={project.runningCount > 0 ? "ph:folder-open" : "ph:folder"}
-                      width={14}
-                      className={`shrink-0 ${isActive ? "text-[var(--accent-presence)]" : "text-[var(--text-muted)]"}`}
-                    />
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate font-medium leading-tight">{project.name}</span>
-                      {meta.length > 0 && (
-                        <span className="truncate text-[10px] leading-tight text-[var(--text-muted)]">
-                          {meta.join(" · ")}
-                        </span>
-                      )}
-                    </span>
-                    {project.runningCount > 0 && (
-                      <span
-                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-success)]"
-                        title={`${project.runningCount} running`}
-                      />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          )}
 
           {/* Project detail */}
           <div className="flex min-w-0 min-h-0 flex-1 flex-col">
@@ -1264,6 +1180,75 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                    {/* Projects — merged into this column above the file tree so
+                        the project switcher and the file browser share one
+                        explorer. Collapsible; the Code toolbar's Projects toggle
+                        also drives it via projectListCollapsed. */}
+                    <div className="mb-3">
+                      <button
+                        type="button"
+                        onClick={() => setProjectListVisible(projectListCollapsed)}
+                        className="flex w-full items-center gap-1.5 rounded px-1 py-[3px] text-left transition-colors hover:bg-[var(--bg-raised)]"
+                      >
+                        <svg
+                          width="7" height="7" viewBox="0 0 8 8"
+                          className="shrink-0 text-[var(--text-muted)] transition-transform duration-150"
+                          style={{ transform: projectListCollapsed ? "rotate(0deg)" : "rotate(90deg)" }}
+                        >
+                          <polygon points="1,1 7,4 1,7" fill="currentColor" />
+                        </svg>
+                        <Icon name="ph:folder" width={11} className="shrink-0 text-[var(--text-muted)]" />
+                        <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Projects</span>
+                        <span className="ml-auto rounded-full bg-[var(--bg-raised)] px-1.5 py-px text-[9px] text-[var(--text-muted)]">
+                          {projects.length}
+                        </span>
+                      </button>
+                      {!projectListCollapsed && (
+                        <div className="mt-0.5 space-y-px">
+                          {projects.map((project) => {
+                            const isActive = selectedProject?.root === project.root;
+                            const meta: string[] = [];
+                            if (project.sessionCount > 0) {
+                              meta.push(`${project.sessionCount} ${project.sessionCount === 1 ? "chat" : "chats"}`);
+                            }
+                            if (project.updatedAt) meta.push(shortProjectTime(project.updatedAt));
+                            return (
+                              <button
+                                key={project.root}
+                                type="button"
+                                onClick={() => selectProject(project)}
+                                title={project.root}
+                                className={`comux-project-row group flex w-full items-center gap-2 rounded-[6px] px-2 py-[6px] text-left text-[12px] transition-colors ${
+                                  isActive
+                                    ? "comux-project-row--active text-[var(--text-primary)]"
+                                    : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                                }`}
+                              >
+                                <Icon
+                                  name={project.runningCount > 0 ? "ph:folder-open" : "ph:folder"}
+                                  width={14}
+                                  className={`shrink-0 ${isActive ? "text-[var(--accent-presence)]" : "text-[var(--text-muted)]"}`}
+                                />
+                                <span className="flex min-w-0 flex-1 flex-col">
+                                  <span className="truncate font-medium leading-tight">{project.name}</span>
+                                  {meta.length > 0 && (
+                                    <span className="truncate text-[10px] leading-tight text-[var(--text-muted)]">
+                                      {meta.join(" · ")}
+                                    </span>
+                                  )}
+                                </span>
+                                {project.runningCount > 0 && (
+                                  <span
+                                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-success)]"
+                                    title={`${project.runningCount} running`}
+                                  />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                     {/* Project-wide code search (CODE-SEARCH-01) */}
                     <div className="mb-3">
                       <div className="relative">
