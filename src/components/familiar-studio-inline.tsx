@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { useEffect, useMemo, type CSSProperties } from "react";
 import { Icon, type IconName } from "@/lib/icon";
+import { Tabs } from "@/components/ui/tabs";
 import { useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useDaemonSyncStatus } from "@/lib/daemon-sync-status";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { FamiliarStudioIdentityTab } from "./familiar-studio-identity-tab";
@@ -61,20 +61,6 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
     }
   }, [resolved, activeFamiliarId, openFamiliarStudio]);
 
-  // Roving tabindex across the horizontal tabstrip (APG automatic activation).
-  const tablistRef = useRef<HTMLDivElement | null>(null);
-  const { activeIndex } = useRovingTabIndex({
-    containerRef: tablistRef,
-    itemSelector: '[role="tab"]',
-    orientation: "horizontal",
-  });
-  useEffect(() => {
-    const target = TABS[activeIndex];
-    if (target && target.id !== activeTab) setActiveTab(target.id);
-    // Drives activeTab from focus, not the reverse — omit activeTab/setActiveTab.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIndex]);
-
   if (resolved.length === 0) {
     return (
       <div className="settings-familiars-panel">
@@ -116,32 +102,14 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
       <div className="familiar-studio-inline__detail">
         {familiar ? (
           <>
-            <div
-              role="tablist"
-              aria-label="Studio sections"
-              aria-orientation="horizontal"
-              ref={tablistRef}
-              className="familiar-studio-inline__tabs"
-            >
-              {TABS.map((t) => {
-                const selected = activeTab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    role="tab"
-                    id={`familiar-studio-inline-tab-${t.id}`}
-                    aria-selected={selected}
-                    aria-controls={`familiar-studio-inline-panel-${t.id}`}
-                    onClick={() => setActiveTab(t.id)}
-                    className={`familiar-studio-inline__tab${selected ? " familiar-studio-inline__tab--active" : ""}`}
-                  >
-                    <Icon name={t.icon} width={15} />
-                    <span>{t.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <Tabs
+              variant="underline"
+              idPrefix="familiar-studio-inline"
+              ariaLabel="Studio sections"
+              value={activeTab}
+              onChange={setActiveTab}
+              items={TABS.map((t) => ({ id: t.id, label: t.label, icon: t.icon }))}
+            />
 
             <div
               role="tabpanel"
