@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const comux = readFileSync(new URL("./comux-view.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 assert.match(comux, /const splitFromPane = useCallback\(/, "per-pane split handler");
 assert.match(comux, /splitFromPane\(s\.id, "right"\)/, "split-right button wired");
@@ -15,6 +16,6 @@ assert.match(comux, /Broadcasting to \{visiblePaneSessionIds\.length\} panes/, "
 assert.match(comux, /comux-terminal-empty-hints/, "empty-state shortcut cheatsheet");
 
 for (const cls of ["comux-terminal-pane-cwd", "comux-terminal-pane-action--split", "comux-terminal-broadcast-banner", "comux-terminal-empty-hints"]) {
-  assert.match(css, new RegExp("\\." + cls.replace(/[-]/g, "\\-")), `CSS for ${cls}`);
+  assert.match(css, new RegExp(`\\.${escapeRegex(cls)}`), `CSS for ${cls}`);
 }
 console.log("comux-chrome-wiring.test.ts passed");
