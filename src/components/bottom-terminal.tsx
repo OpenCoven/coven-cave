@@ -55,11 +55,32 @@ export function BottomTerminal({
   threadId,
   active = true,
   projectRoot,
+  paneId,
+  registerWriter,
+  onUserInput,
 }: {
   threadId: string;
   active?: boolean;
   projectRoot?: string;
+  /** Stable id for comux's broadcast registry (defaults to threadId). */
+  paneId?: string;
+  /** Register/unregister this pane's PTY writer so broadcast can fan input in. */
+  registerWriter?: (paneId: string, write: ((data: string) => void) | null) => void;
+  /** Called with every keystroke (post Ctrl-transform) so comux can mirror it
+   *  to sibling panes when broadcast mode is on. */
+  onUserInput?: (paneId: string, data: string) => void;
 }) {
+  const broadcastPaneId = paneId ?? threadId;
+  // Writer set by whichever transport (Tauri / WS) is live; the registered
+  // wrapper reads this ref at call time so registration can precede attach.
+  const writerRef = useRef<((data: string) => void) | null>(null);
+  const onUserInputRef = useRef(onUserInput);
+  onUserInputRef.current = onUserInput;
+  useEffect(() => {
+    if (!registerWriter) return;
+    registerWriter(broadcastPaneId, (data: string) => writerRef.current?.(data));
+    return () => registerWriter(broadcastPaneId, null);
+  }, [registerWriter, broadcastPaneId]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const fitRef = useRef<(() => void) | null>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
@@ -343,7 +364,13 @@ export function BottomTerminal({
           threadId: threadId,
           bytes: Array.from(new TextEncoder().encode(out)),
         }).catch((err) => log("pty_write FAILED", err));
+        onUserInputRef.current?.(broadcastPaneId, out);
       });
+      writerRef.current = (d) =>
+        void bridge.invoke("pty_write", {
+          threadId: threadId,
+          bytes: Array.from(new TextEncoder().encode(d)),
+        }).catch((err) => log("pty_write FAILED", err));
 
       if (!attachToRunning) {
         log("pty_start: invoking with projectRoot=", projectRootRef.current);
@@ -581,7 +608,9 @@ export function BottomTerminal({
           return;
         }
         bridge.write(new TextEncoder().encode(data));
+        onUserInputRef.current?.(broadcastPaneId, data);
       });
+      writerRef.current = (d) => bridge.write(new TextEncoder().encode(d));
 
       const doResize = () => {
         try {
