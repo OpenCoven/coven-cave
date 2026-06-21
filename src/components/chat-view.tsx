@@ -26,6 +26,8 @@ import {
   shouldShowChatArchiveNudge,
 } from "@/lib/chat-archive-nudge";
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
+import type { Card } from "@/lib/cave-board-types";
+import { TaskLinkPicker } from "@/components/task-link-picker";
 import {
   MAX_ATTACHMENT_IMAGE_BYTES,
   MAX_ATTACHMENT_TEXT_CHARS,
@@ -1292,43 +1294,102 @@ function MetaLine({
   );
 }
 
+function TaskChip({
+  task,
+  onOpenTask,
+}: {
+  task: NonNullable<ChatLinkedContext["task"]>;
+  onOpenTask?: (cardId: string) => void;
+}) {
+  const base =
+    "cave-chat-linked-chip cave-chat-linked-chip--task inline-flex min-w-0 max-w-[24rem] items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-2 py-1 text-[11px] text-[var(--text-secondary)]";
+  const body = (
+    <>
+      <Icon name="ph:kanban" width={12} className="shrink-0 text-[var(--accent-presence)]" />
+      <span className="shrink-0 font-medium">Task</span>
+      <span className="min-w-0 truncate">{task.title}</span>
+      <span className="shrink-0 text-[var(--text-muted)]">{task.status}</span>
+      <span className="shrink-0 text-[var(--text-muted)]">{task.priority}</span>
+    </>
+  );
+  return onOpenTask ? (
+    <button
+      type="button"
+      onClick={() => onOpenTask(task.id)}
+      title={`Open task: ${task.title}`}
+      className={`${base} focus-ring transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_18%,transparent)] hover:text-[var(--text-primary)]`}
+    >
+      {body}
+      <Icon name="ph:arrow-square-out" width={10} className="shrink-0 text-[var(--text-muted)]" />
+    </button>
+  ) : (
+    <span className={base}>{body}</span>
+  );
+}
+
 function LinkedContextRow({
   linkedContext,
   onOpenTask,
+  sessionId,
+  onLinkedContextChange,
 }: {
   linkedContext: ChatLinkedContext | null;
   onOpenTask?: (cardId: string) => void;
+  sessionId?: string | null;
+  onLinkedContextChange?: (updater: (prev: ChatLinkedContext | null) => ChatLinkedContext | null) => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   const task = linkedContext?.task ?? null;
+  const tasks = linkedContext?.tasks ?? (task ? [task] : []);
   const github = linkedContext?.github ?? [];
-  if (!task && github.length === 0) return null;
+  const canLink = Boolean(sessionId && onLinkedContextChange);
+  if (!task && github.length === 0 && !canLink) return null;
+
+  const linkedIds = new Set(tasks.map((t) => t.id));
+
+  const onAssigned = (card: Card) => {
+    const linked = {
+      id: card.id,
+      title: card.title,
+      status: card.status,
+      priority: card.priority,
+      lifecycle: card.lifecycle,
+      labels: card.labels,
+      cwd: card.cwd,
+      notes: card.notes.trim() || null,
+    };
+    onLinkedContextChange?.((prev) => {
+      const baseCtx = prev ?? { task: null, tasks: [], github: [] };
+      if (baseCtx.tasks.some((t) => t.id === linked.id)) return baseCtx;
+      return { ...baseCtx, task: baseCtx.task ?? linked, tasks: [...baseCtx.tasks, linked] };
+    });
+  };
 
   return (
     <div className="cave-chat-linked-context">
-      {task ? (
-        onOpenTask ? (
+      {tasks.map((t) => (
+        <TaskChip key={t.id} task={t} onOpenTask={onOpenTask} />
+      ))}
+      {canLink ? (
+        <span className="relative inline-flex">
           <button
             type="button"
-            onClick={() => onOpenTask(task.id)}
-            title={`Open task: ${task.title}`}
-            className="cave-chat-linked-chip cave-chat-linked-chip--task focus-ring inline-flex min-w-0 max-w-[24rem] items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_18%,transparent)] hover:text-[var(--text-primary)]"
+            onClick={() => setPickerOpen((open) => !open)}
+            title="Link a task to this chat"
+            className="cave-chat-linked-chip focus-ring inline-flex items-center gap-1 rounded-md border border-dashed border-[var(--border-strong)] bg-transparent px-2 py-1 text-[11px] text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:text-[var(--text-primary)]"
           >
-            <Icon name="ph:kanban" width={12} className="shrink-0 text-[var(--accent-presence)]" />
-            <span className="shrink-0 font-medium">Task</span>
-            <span className="min-w-0 truncate">{task.title}</span>
-            <span className="shrink-0 text-[var(--text-muted)]">{task.status}</span>
-            <span className="shrink-0 text-[var(--text-muted)]">{task.priority}</span>
-            <Icon name="ph:arrow-square-out" width={10} className="shrink-0 text-[var(--text-muted)]" />
+            <Icon name="ph:plus" width={11} className="shrink-0" />
+            <span>Link task</span>
           </button>
-        ) : (
-          <span className="cave-chat-linked-chip cave-chat-linked-chip--task inline-flex min-w-0 max-w-[24rem] items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-2 py-1 text-[11px] text-[var(--text-secondary)]">
-            <Icon name="ph:kanban" width={12} className="shrink-0 text-[var(--accent-presence)]" />
-            <span className="shrink-0 font-medium">Task</span>
-            <span className="min-w-0 truncate">{task.title}</span>
-            <span className="shrink-0 text-[var(--text-muted)]">{task.status}</span>
-            <span className="shrink-0 text-[var(--text-muted)]">{task.priority}</span>
-          </span>
-        )
+          {pickerOpen && sessionId ? (
+            <TaskLinkPicker
+              sessionId={sessionId}
+              linkedIds={linkedIds}
+              onAssigned={onAssigned}
+              onClose={() => setPickerOpen(false)}
+            />
+          ) : null}
+        </span>
       ) : null}
       {github.map((item) => (
         <a
@@ -3218,7 +3279,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             )}
           </div>
         </MetaLine>
-        <LinkedContextRow linkedContext={linkedContext} onOpenTask={onOpenTask} />
+        <LinkedContextRow
+          linkedContext={linkedContext}
+          onOpenTask={onOpenTask}
+          sessionId={sessionId}
+          onLinkedContextChange={setLinkedContext}
+        />
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
       <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">

@@ -1020,20 +1020,31 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
           <div className="board-drawer-field">
             <div className="board-drawer-field-label">Chat</div>
             {session ? (
-              <button
-                type="button"
-                className="board-drawer-chat-card board-drawer-chat-card--linked"
-                onClick={() => onJumpToSession?.(session.id, session.familiarId ?? null)}
-              >
-                <span className="board-drawer-chat-icon" aria-hidden>
-                  <Icon name="ph:chat-circle-dots" width={14} />
-                </span>
-                <span className="board-drawer-chat-body">
-                  <span className="board-drawer-chat-title">{session.title || "(untitled)"}</span>
-                  <span className="board-drawer-chat-desc">Open conversation</span>
-                </span>
-                <Icon name="ph:arrow-square-out" width={12} className="board-drawer-chat-trail" />
-              </button>
+              <div className="board-drawer-chat-linked-row">
+                <button
+                  type="button"
+                  className="board-drawer-chat-card board-drawer-chat-card--linked"
+                  onClick={() => onJumpToSession?.(session.id, session.familiarId ?? null)}
+                >
+                  <span className="board-drawer-chat-icon" aria-hidden>
+                    <Icon name="ph:chat-circle-dots" width={14} />
+                  </span>
+                  <span className="board-drawer-chat-body">
+                    <span className="board-drawer-chat-title">{session.title || "(untitled)"}</span>
+                    <span className="board-drawer-chat-desc">Open conversation</span>
+                  </span>
+                  <Icon name="ph:arrow-square-out" width={12} className="board-drawer-chat-trail" />
+                </button>
+                <button
+                  type="button"
+                  className="board-drawer-chat-unlink"
+                  title="Unlink chat"
+                  aria-label="Unlink chat"
+                  onClick={() => onPatch(card.id, { sessionId: null })}
+                >
+                  <Icon name="ph:x" width={13} />
+                </button>
+              </div>
             ) : (
               <div className="board-drawer-chat-card board-drawer-chat-card--empty">
                 <span className="board-drawer-chat-icon board-drawer-chat-icon--empty" aria-hidden>

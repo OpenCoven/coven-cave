@@ -50,8 +50,8 @@ assert.match(
 
 assert.match(
   source,
-  /function LinkedContextRow[\s\S]*?if \(!task && github\.length === 0\) return null/,
-  "LinkedContextRow only renders when linked context has entries",
+  /function LinkedContextRow[\s\S]*?if \(!task && github\.length === 0 && !canLink\) return null/,
+  "LinkedContextRow renders when there's linked context OR a chat session that can link a task",
 );
 
 assert.match(

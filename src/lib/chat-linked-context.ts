@@ -1,7 +1,21 @@
 import { loadBoard } from "@/lib/cave-board";
 import type { CardGitHubKind } from "@/lib/cave-board-types";
 
+type LinkedTask = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  lifecycle: string;
+  labels: string[];
+  cwd: string | null;
+  notes: string | null;
+};
+
 export type ChatLinkedContext = {
+  // `task` is the primary (first) linked task, kept for single-task consumers
+  // (mobile header, meta title, lifecycle chip); `tasks` lists every card that
+  // shares this chat's session.
   task:
     | {
         id: string;
@@ -14,6 +28,7 @@ export type ChatLinkedContext = {
         notes: string | null;
       }
     | null;
+  tasks: LinkedTask[];
   github: Array<{
     id: string;
     kind: CardGitHubKind;
@@ -28,29 +43,39 @@ export type ChatLinkedContext = {
 
 export async function linkedContextForSession(sessionId: string): Promise<ChatLinkedContext | null> {
   const board = await loadBoard();
-  const card = board.cards.find((card) => card.sessionId === sessionId);
-  if (!card) return null;
+  const cards = board.cards.filter((card) => card.sessionId === sessionId);
+  if (cards.length === 0) return null;
 
-  return {
-    task: {
-      id: card.id,
-      title: card.title,
-      status: card.status,
-      priority: card.priority,
-      lifecycle: card.lifecycle,
-      labels: card.labels,
-      cwd: card.cwd,
-      notes: card.notes.trim() || null,
-    },
-    github: card.github.map((item) => ({
-      id: item.id,
-      kind: item.kind,
-      repo: item.repo,
-      number: item.number,
-      title: item.title,
-      url: item.url,
-      state: item.state,
-      labels: item.labels,
-    })),
-  };
+  const tasks: LinkedTask[] = cards.map((card) => ({
+    id: card.id,
+    title: card.title,
+    status: card.status,
+    priority: card.priority,
+    lifecycle: card.lifecycle,
+    labels: card.labels,
+    cwd: card.cwd,
+    notes: card.notes.trim() || null,
+  }));
+
+  // Aggregate GitHub links across every linked card, de-duped by id.
+  const github: ChatLinkedContext["github"] = [];
+  const seen = new Set<string>();
+  for (const card of cards) {
+    for (const item of card.github) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      github.push({
+        id: item.id,
+        kind: item.kind,
+        repo: item.repo,
+        number: item.number,
+        title: item.title,
+        url: item.url,
+        state: item.state,
+        labels: item.labels,
+      });
+    }
+  }
+
+  return { task: tasks[0] ?? null, tasks, github };
 }
