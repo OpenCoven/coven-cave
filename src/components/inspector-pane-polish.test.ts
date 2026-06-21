@@ -7,12 +7,10 @@ import { dirname, resolve } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(resolve(here, "./inspector-pane.tsx"), "utf8");
 
-test("outer tab nav is a WAI-ARIA tablist with rounded underline", () => {
-  assert.match(src, /role="tablist"[^>]*aria-label="Inspector sections"/, "outer nav has tablist role + label");
-  assert.match(src, /role="tab"/, "tabs have role=tab");
-  assert.match(src, /aria-selected=\{isActive\}/, "aria-selected wired");
-  assert.match(src, /after:h-\[2px\]/, "2px underline pseudo-element");
-  assert.match(src, /after:rounded-full/, "rounded underline");
+test("outer tab nav uses the shared underline Tabs, labelled + filled", () => {
+  assert.match(src, /<Tabs[\s\S]{0,240}ariaLabel="Inspector sections"/, "outer nav uses shared Tabs");
+  assert.match(src, /variant="underline"/, "outer nav is underline");
+  assert.match(src, /\bfill\b/, "outer tabs stretch to fill the row");
 });
 
 test("inbox badge is softened from danger to warning tone", () => {
@@ -76,20 +74,3 @@ test("inspector empty helper imports IconName for type-safe icon prop", () => {
   assert.match(src, /icon: IconName;/, "InspectorEmpty.icon typed as IconName");
 });
 
-// ── Tab flicker regression ────────────────────────────────────────────────
-// The roving-tabindex sync must be ONE-WAY (tab → activeIndex). The old
-// bidirectional pair oscillated forever on any non-memory tab: activeIndex
-// dragged tab back to memory while tab pushed activeIndex forward, every
-// commit, flickering the pane.
-assert.doesNotMatch(  src,
-  /INSPECTOR_TABS\[activeIndex\][\s\S]{0,120}setTab/,
-  "activeIndex must never drive setTab — that effect pair oscillates on non-memory tabs",
-);
-assert.match(  src,
-  /const tabIndex = INSPECTOR_TABS\.indexOf\(tab\);\s*if \(tabIndex >= 0 && tabIndex !== activeIndex\) setActiveIndex\(tabIndex\)/,
-  "roving tab stop follows the selected tab one-way",
-);
-assert.match(  src,
-  /onFocus=\{\(\) => setTab\(t\)\}/,
-  "selection follows focus so arrow-key roving still switches tabs (ARIA APG)",
-);

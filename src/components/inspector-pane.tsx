@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -11,7 +11,6 @@ import { SnoozeMenu } from "@/components/snooze-menu";
 import { Icon, type IconName } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Tabs } from "@/components/ui/tabs";
-import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
@@ -124,24 +123,6 @@ export function InspectorPane({
   onOpenFullView,
 }: Props) {
   const [tab, setTab] = useState<Tab>("memory");
-  const tablistRef = useRef<HTMLElement | null>(null);
-  const { activeIndex, setActiveIndex } = useRovingTabIndex({
-    containerRef: tablistRef,
-    itemSelector: '[role="tab"]',
-    orientation: "horizontal",
-  });
-
-  // `tab` is the single source of truth. The roving tab stop follows it
-  // one-way; selection follows focus (onFocus on each tab button, per the
-  // ARIA APG tabs pattern) so arrow-key roving still switches tabs. The
-  // previous BIDIRECTIONAL effect pair (activeIndex → setTab as well)
-  // oscillated forever whenever tab !== memory: each effect saw the other's
-  // stale half and flipped it back every commit, flickering the pane
-  // between Memory and the selected tab.
-  useEffect(() => {
-    const tabIndex = INSPECTOR_TABS.indexOf(tab);
-    if (tabIndex >= 0 && tabIndex !== activeIndex) setActiveIndex(tabIndex);
-  }, [tab, activeIndex, setActiveIndex]);
 
   const familiarInbox = useMemo(() => {
     if (!familiar) return [];
@@ -167,46 +148,31 @@ export function InspectorPane({
   return (
     <aside className={shellClassName}>
       {!compact && (
-        <nav
-          ref={tablistRef}
-          role="tablist"
-          aria-label="Inspector sections"
-          className="flex items-end gap-1 border-b border-[var(--border-hairline)] px-1 text-[11px]"
-        >
-          {INSPECTOR_TABS.map((t) => {
-            const isActive = tab === t;
-            return (
-              <button
-                key={t}
-                type="button"
-                role="tab"
-                id={`inspector-tab-${t}`}
-                aria-selected={isActive}
-                aria-controls={`inspector-panel-${t}`}
-                onClick={() => setTab(t)}
-                onFocus={() => setTab(t)}
-                className={[
-                  "relative flex-1 px-3 py-2.5 font-medium tracking-normal transition-colors outline-none",
-                  "after:absolute after:bottom-0 after:left-3 after:right-3 after:h-[2px] after:rounded-full after:transition-colors",
-                  isActive
-                    ? "text-[var(--text-primary)] after:bg-[var(--text-primary)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)] after:bg-transparent hover:after:bg-[color-mix(in_oklch,var(--text-muted)_45%,transparent)]",
-                  "focus-visible:ring-2 focus-visible:ring-[var(--ring-focus)] focus-visible:ring-offset-0 rounded-t-sm",
-                ].join(" ")}
-              >
-                {TAB_LABEL[t]}
-                {t === "inbox" && inboxBadge > 0 ? (
+        <Tabs
+          variant="underline"
+          fill
+          idPrefix="inspector"
+          ariaLabel="Inspector sections"
+          value={tab}
+          onChange={setTab}
+          items={INSPECTOR_TABS.map((t) => ({
+            id: t,
+            label:
+              t === "inbox" && inboxBadge > 0 ? (
+                <>
+                  {TAB_LABEL[t]}
                   <span
                     className="ml-1 inline-flex min-w-[14px] items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--color-warning)_28%,transparent)] px-1 text-[9px] font-semibold text-[var(--color-warning)]"
                     aria-label={`${inboxBadge} fired reminder${inboxBadge === 1 ? "" : "s"}`}
                   >
                     {inboxBadge}
                   </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </nav>
+                </>
+              ) : (
+                TAB_LABEL[t]
+              ),
+          }))}
+        />
       )}
 
       <div
