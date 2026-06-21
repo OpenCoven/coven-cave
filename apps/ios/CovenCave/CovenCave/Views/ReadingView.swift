@@ -140,10 +140,18 @@ struct ReadingView: View {
             }
             .tint(.orange)
         } else {
+            // Full-swipe triggers the first button (Read); a partial swipe also
+            // reveals "Reading" to explicitly mark an item in-progress.
             Button { setStatus(item, .done) } label: {
                 Label("Read", systemImage: "checkmark")
             }
             .tint(.green)
+            if item.status != .reading {
+                Button { setStatus(item, .reading) } label: {
+                    Label("Reading", systemImage: "book")
+                }
+                .tint(.accentColor)
+            }
         }
     }
 
@@ -227,10 +235,18 @@ struct ReadingView: View {
     // MARK: - Actions
 
     private func open(_ item: ReadingItem) {
-        if let link = item.link {
-            reader = ReaderLink(url: link)
-        } else {
+        guard let link = item.link else {
             app.showToast("No link to open", systemImage: "link.badge.plus", style: .warning)
+            return
+        }
+        reader = ReaderLink(url: link)
+        // Opening an unread item starts it: Want → Reading (once, the first open).
+        // Items already Reading/Read/Abandoned are left as-is.
+        if item.status == .wantToRead {
+            Task {
+                await app.setReadingStatus(item, .reading)
+                app.showToast("Started reading", systemImage: "book", style: .info)
+            }
         }
     }
 
