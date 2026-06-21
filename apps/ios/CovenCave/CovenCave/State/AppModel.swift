@@ -41,6 +41,10 @@ final class AppModel {
     /// the thread, and clears it back to nil (one-shot navigation intent).
     var threadToOpen: ChatThread?
 
+    /// A task the user asked to open from a chat. `TasksView` observes this,
+    /// pushes the card, and clears it (mirrors `threadToOpen`).
+    var cardToOpen: BoardCard?
+
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
 
@@ -54,6 +58,12 @@ final class AppModel {
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
         threadToOpen = thread
+    }
+
+    /// Ask the Tasks tab to open a card's detail (switches to Tasks first).
+    func requestOpenTask(_ card: BoardCard) {
+        selectedTab = .tasks
+        cardToOpen = card
     }
 
     /// Resolve a free-text familiar reference (id or display name, fuzzy) to a
@@ -70,6 +80,15 @@ final class AppModel {
     var tasks: [BoardCard] = []
     var tasksError: String?
     var tasksLoaded = false
+
+    // MARK: - Task ↔ chat links
+
+    /// cardId → local thread id. The iOS-immediate source of truth for the
+    /// task↔chat relationship: it works before a server `sessionId` exists
+    /// (a brand-new chat), and for group threads. When a thread does have a
+    /// server session, `card.sessionId` is PATCHed too so the link is visible
+    /// on the desktop/web board. Persisted to `cave-card-links.json`.
+    var cardThreadLinks: [String: String] = [:]
 
     // MARK: - Reading list
 
@@ -102,6 +121,7 @@ final class AppModel {
     init() {
         connection = CaveConnection.load()
         loadThreads()
+        loadCardLinks()
         if connection != nil { connectionState = .checking }
     }
 
@@ -354,6 +374,139 @@ final class AppModel {
         }
     }
 
+    // MARK: - Task ↔ chat linking
+
+    /// The thread linked to a card, if any: prefer the explicit local link,
+    /// then fall back to matching the card's server `sessionId` to a thread's
+    /// per-familiar session (covers links made on another device / the desktop).
+    func linkedThread(for card: BoardCard) -> ChatThread? {
+        if let tid = cardThreadLinks[card.id],
+           let thread = threads.first(where: { $0.id == tid }) {
+            return thread
+        }
+        if let sid = card.sessionId, !sid.isEmpty {
+            return threads.first { $0.sessionIds.values.contains(sid) }
+        }
+        return nil
+    }
+
+    /// Cards linked to a thread (local link map ∪ session-id match).
+    func linkedTasks(for thread: ChatThread) -> [BoardCard] {
+        let sessionIds = Set(thread.sessionIds.values.filter { !$0.isEmpty })
+        return tasks.filter { card in
+            if cardThreadLinks[card.id] == thread.id { return true }
+            if let sid = card.sessionId, !sid.isEmpty { return sessionIds.contains(sid) }
+            return false
+        }
+    }
+
+    /// True when a card has any linked chat (cheap, for list indicators).
+    func hasLinkedChat(_ card: BoardCard) -> Bool {
+        if cardThreadLinks[card.id] != nil { return true }
+        if let sid = card.sessionId, !sid.isEmpty {
+            return threads.contains { $0.sessionIds.values.contains(sid) }
+        }
+        return false
+    }
+
+    /// A thread's primary server session (first familiar's), if assigned.
+    private func primarySessionId(of thread: ChatThread) -> String? {
+        for familiarId in thread.familiarIds {
+            if let sid = thread.sessionIds[familiarId], !sid.isEmpty { return sid }
+        }
+        return thread.sessionIds.values.first { !$0.isEmpty }
+    }
+
+    /// Open (or create) the chat linked to a card and navigate to it. For an
+    /// unlinked card it starts a fresh thread with `familiarId` (the card's
+    /// assignee, or a caller-supplied pick) and links it. Returns nil only if no
+    /// familiar could be resolved.
+    @discardableResult
+    func openChat(for card: BoardCard, familiarId: String? = nil) -> ChatThread? {
+        if let existing = linkedThread(for: card) {
+            cardThreadLinks[card.id] = existing.id   // backfill from a sessionId match
+            persistCardLinks()
+            requestOpen(existing)
+            return existing
+        }
+        guard let familiarId = familiarId ?? card.familiarId else { return nil }
+        let title = "Task: \(card.title)"
+        let thread: ChatThread
+        if let sid = card.sessionId, !sid.isEmpty {
+            // The card already points at a server session (e.g. started on the
+            // desktop) but no local thread carries it — bind one and pull history.
+            thread = ChatThread(title: title, familiarIds: [familiarId],
+                                sessionIds: [familiarId: sid])
+            threads.insert(thread, at: 0)
+            Task { await loadHistory(into: thread, sessionId: sid) }
+        } else {
+            thread = ChatThread(title: title, familiarIds: [familiarId])
+            threads.insert(thread, at: 0)
+        }
+        cardThreadLinks[card.id] = thread.id
+        persistThreads()
+        persistCardLinks()
+        requestOpen(thread)
+        return thread
+    }
+
+    /// Link an existing task to a thread (from the chat side). Best-effort PATCH
+    /// of the card's `sessionId` so the desktop board sees the link too.
+    func linkTask(_ card: BoardCard, to thread: ChatThread) {
+        cardThreadLinks[card.id] = thread.id
+        persistCardLinks()
+        if let sid = primarySessionId(of: thread), card.sessionId != sid {
+            Task { await patchCardSession(cardId: card.id, sessionId: sid) }
+        }
+    }
+
+    /// Remove a card's chat link (local map + server sessionId).
+    func unlinkTask(_ card: BoardCard) {
+        cardThreadLinks[card.id] = nil
+        persistCardLinks()
+        if card.sessionId != nil {
+            Task { await patchCardSession(cardId: card.id, sessionId: nil) }
+        }
+    }
+
+    /// After a thread finishes streaming it may have just acquired its server
+    /// session; PATCH any locally-linked card that doesn't yet carry it.
+    func reconcileCardLinks(for thread: ChatThread) async {
+        guard cardThreadLinks.values.contains(thread.id),
+              let sid = primarySessionId(of: thread) else { return }
+        if !tasksLoaded { await loadTasks() }
+        let cardIds = cardThreadLinks.filter { $0.value == thread.id }.map(\.key)
+        for cardId in cardIds where (tasks.first { $0.id == cardId })?.sessionId != sid {
+            await patchCardSession(cardId: cardId, sessionId: sid)
+        }
+    }
+
+    private func patchCardSession(cardId: String, sessionId: String?) async {
+        guard let client else { return }
+        do {
+            let updated = try await client.updateTaskSession(cardId: cardId, sessionId: sessionId)
+            if let idx = tasks.firstIndex(where: { $0.id == cardId }) { tasks[idx] = updated }
+        } catch {
+            // Non-fatal: the local link still drives in-app navigation.
+        }
+    }
+
+    /// Pull a session's history into a freshly-bound thread so opening a chat
+    /// linked elsewhere isn't blank.
+    private func loadHistory(into thread: ChatThread, sessionId: String) async {
+        guard let client, thread.messages.isEmpty,
+              let convo = try? await client.conversation(sessionId: sessionId) else { return }
+        let assignee = thread.familiarIds.first
+        thread.messages = convo.turns.map { turn in
+            let role = DisplayMessage.Role(rawValue: turn.role) ?? .assistant
+            return DisplayMessage(role: role,
+                                  familiarId: role == .assistant ? assignee : nil,
+                                  text: turn.text,
+                                  isError: turn.isError ?? false)
+        }
+        persistThreads()
+    }
+
     // MARK: - Threads
 
     /// Find an existing direct thread for a familiar, or create one.
@@ -428,5 +581,28 @@ final class AppModel {
         threads = snapshots
             .sorted { $0.updatedAt > $1.updatedAt }
             .map { ChatThread(snapshot: $0) }
+    }
+
+    private var cardLinksFileURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("cave-card-links.json")
+    }
+
+    func persistCardLinks() {
+        do {
+            let data = try JSONEncoder().encode(cardThreadLinks)
+            try data.write(to: cardLinksFileURL, options: .atomic)
+        } catch {
+            // Non-fatal: best-effort persistence.
+        }
+    }
+
+    private func loadCardLinks() {
+        guard let data = try? Data(contentsOf: cardLinksFileURL),
+              let map = try? JSONDecoder().decode([String: String].self, from: data) else {
+            return
+        }
+        cardThreadLinks = map
     }
 }

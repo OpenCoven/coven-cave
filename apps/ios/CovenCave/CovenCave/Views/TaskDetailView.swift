@@ -4,6 +4,8 @@ struct TaskDetailView: View {
     @Environment(AppModel.self) private var app
     let card: BoardCard
 
+    @State private var showFamiliarPicker = false
+
     private var familiar: Familiar? { card.familiarId.flatMap(app.familiar) }
 
     var body: some View {
@@ -11,6 +13,7 @@ struct TaskDetailView: View {
             VStack(alignment: .leading, spacing: 20) {
                 header
                 if let familiar { assigneeRow(familiar) }
+                chatCard
                 if card.hasSteps { stepsCard }
                 if let notes = card.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     notesCard(notes)
@@ -22,6 +25,58 @@ struct TaskDetailView: View {
         }
         .navigationTitle("Task")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showFamiliarPicker) {
+            FamiliarPickerSheet { fam in
+                showFamiliarPicker = false
+                app.openChat(for: card, familiarId: fam.id)
+            }
+        }
+    }
+
+    // MARK: - Linked chat
+
+    private var chatCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Chat").font(.headline)
+            if let thread = app.linkedThread(for: card) {
+                Button { app.openChat(for: card) } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "bubble.left.and.bubble.right.fill")
+                            .foregroundStyle(.tint)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(thread.title).font(.callout.weight(.medium)).foregroundStyle(.primary)
+                            Text(chatSubtitle(thread)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+                Button(role: .destructive) { app.unlinkTask(card) } label: {
+                    Label("Unlink chat", systemImage: "link.badge.minus").font(.caption)
+                }
+            } else {
+                Text("No chat linked yet.").font(.caption).foregroundStyle(.secondary)
+                Button {
+                    if card.familiarId != nil { app.openChat(for: card) }
+                    else { showFamiliarPicker = true }
+                } label: {
+                    Label("Start a chat", systemImage: "plus.bubble.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func chatSubtitle(_ thread: ChatThread) -> String {
+        if let last = thread.messages.last?.text, !last.isEmpty {
+            return last.replacingOccurrences(of: "\n", with: " ")
+        }
+        return "Tap to open"
     }
 
     private var header: some View {

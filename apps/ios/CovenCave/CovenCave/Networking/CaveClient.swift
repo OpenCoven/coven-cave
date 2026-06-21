@@ -89,6 +89,37 @@ struct CaveClient {
         }
     }
 
+    struct BoardPatchResponse: Decodable {
+        var ok: Bool
+        var error: String?
+        var card: BoardCard?
+    }
+
+    /// Encodable that always emits `sessionId` (null when clearing) — the board
+    /// patch only updates a field when its key is present in the body.
+    private struct SessionPatch: Encodable {
+        let sessionId: String?
+        enum CodingKeys: String, CodingKey { case sessionId }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            if let sessionId { try c.encode(sessionId, forKey: .sessionId) }
+            else { try c.encodeNil(forKey: .sessionId) }
+        }
+    }
+
+    /// PATCH a card's linked chat session (`PATCH /api/board/{id}`). Pass nil to
+    /// unlink. Returns the server's updated card.
+    @discardableResult
+    func updateTaskSession(cardId: String, sessionId: String?) async throws -> BoardCard {
+        let payload = try JSONEncoder().encode(SessionPatch(sessionId: sessionId))
+        let req = try request("api/board/\(cardId)", method: "PATCH", body: payload)
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        let decoded = try JSONDecoder().decode(BoardPatchResponse.self, from: data)
+        if let card = decoded.card { return card }
+        throw CaveError.transport(decoded.error ?? "Task update did not return a card.")
+    }
+
     func conversation(sessionId: String) async throws -> Conversation? {
         let req = try request("api/chat/conversation/\(sessionId)")
         let (data, resp) = try await session.data(for: req)
