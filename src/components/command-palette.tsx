@@ -282,6 +282,7 @@ export function CommandPalette({
     setSalemError(null);
   }, [initialQuery, open]);
 
+  const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
   const rows: Row[] = useMemo(() => {
     const { token, rest } = parseFamiliarToken(query);
     const q = rest.trim().toLowerCase();
@@ -336,7 +337,7 @@ export function CommandPalette({
         id: `s:${s.id}`,
         kind: "session",
         session: s,
-        familiar: familiars.find((f) => f.id === s.familiarId) ?? null,
+        familiar: familiarById.get(s.familiarId) ?? null,
       }));
 
     const cardRows: Row[] = cards
@@ -357,7 +358,7 @@ export function CommandPalette({
         id: `card:${c.id}`,
         kind: "card",
         card: c,
-        familiar: familiars.find((f) => f.id === c.familiarId) ?? null,
+        familiar: familiarById.get(c.familiarId) ?? null,
       }));
 
     const covenMemoryRows: Row[] = covenMemory
@@ -375,7 +376,7 @@ export function CommandPalette({
         id: `cm:${e.id}`,
         kind: "coven-memory",
         entry: e,
-        familiar: familiars.find((f) => f.id === e.familiar_id) ?? null,
+        familiar: familiarById.get(e.familiar_id) ?? null,
       }));
 
     // fs-memory, slash commands, and shortcuts are not familiar-scoped, so
@@ -572,7 +573,7 @@ export function CommandPalette({
       : [];
 
     return [...salemRows, ...localRows];
-  }, [familiars, sessions, cards, covenMemory, fsMemory, query, activeFamiliarId, projects, addons]);
+  }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, query, activeFamiliarId, projects, addons]);
 
   useEffect(() => {
     if (activeIdx >= rows.length) setActiveIdx(Math.max(0, rows.length - 1));

@@ -234,18 +234,21 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   );
 
   const visibleFiles = useMemo(() => {
+    // Precompute staleness once per entry (detectStale + normalizeFileEntry are not
+    // free); reused by the staleOnly filter and the staleFirst comparator so neither
+    // recomputes per element / per comparison.
+    const staleByEntry = new Map(familiarScopedFiles.map((entry) => [entry, detectStale(normalizeFileEntry(entry)).stale]));
     const cmp: Record<typeof sortMode, (a: FileMemoryEntry, b: FileMemoryEntry) => number> = {
       recent: (a, b) => (a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : 0),
       oldest: (a, b) => (a.modified > b.modified ? 1 : a.modified < b.modified ? -1 : 0),
       name: (a, b) => fileBase(a.relPath).localeCompare(fileBase(b.relPath)),
       size: (a, b) => (b.size ?? 0) - (a.size ?? 0),
-      staleFirst: (a, b) =>
-        Number(detectStale(normalizeFileEntry(b)).stale) - Number(detectStale(normalizeFileEntry(a)).stale),
+      staleFirst: (a, b) => Number(staleByEntry.get(b)) - Number(staleByEntry.get(a)),
     };
     return familiarScopedFiles
       .filter((entry) => sourceFilter === "all" || entry.sourceKind === sourceFilter)
       .filter((entry) => memoryMatches(entry, q))
-      .filter((entry) => !staleOnly || detectStale(normalizeFileEntry(entry)).stale)
+      .filter((entry) => !staleOnly || (staleByEntry.get(entry) ?? false))
       .sort(cmp[sortMode]);
   }, [familiarScopedFiles, q, sourceFilter, sortMode, staleOnly]);
 

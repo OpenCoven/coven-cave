@@ -780,7 +780,7 @@ function GitHubItemGlassPanel({
                   card={card}
                   familiar={
                     card.familiarId
-                      ? familiars.find((familiar) => familiar.id === card.familiarId) ?? null
+                      ? resolvedById.get(card.familiarId) ?? null
                       : null
                   }
                   onFocusCard={onFocusCard}
@@ -1376,7 +1376,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                                 card={c}
                                 familiar={
                                   c.familiarId
-                                    ? familiars.find((f) => f.id === c.familiarId) ?? null
+                                    ? resolvedById.get(c.familiarId) ?? null
                                     : null
                                 }
                                 onFocusCard={onFocusCard}
