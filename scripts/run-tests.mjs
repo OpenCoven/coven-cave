@@ -310,6 +310,8 @@ export const SUITES = {
     "src/components/chat-surface-projects-tab.test.ts",
     "src/components/composer-density.test.ts",
     "src/lib/memory-rows.test.ts",
+    "src/lib/memory-file-scope.test.ts",
+    "src/components/inspector-memory-familiar-scope.test.ts",
     "src/components/familiars-memory-row.test.ts",
     "src/components/familiars-memory-reader.test.ts",
     "src/components/familiars-memory-master-detail.test.ts",
