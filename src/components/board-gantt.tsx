@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { Familiar } from "@/lib/types";
 import { useDateTimePrefs, readDateTimePrefs } from "@/lib/datetime-format";
@@ -13,6 +13,8 @@ type Props = {
   projects?: ProjectLike[];
   selectedCardId: string | null;
   onSelect: (id: string) => void;
+  /** Persist a card change — used to drag a bar to reschedule its dates. */
+  onPatch?: (id: string, patch: Partial<Card>) => void;
 };
 
 type ScheduledCard = { card: Card; start: Date; end: Date };
@@ -44,6 +46,14 @@ function addDays(d: Date, n: number): Date {
   return x;
 }
 
+/** YYYY-MM-DD in UTC — the board's date storage format. */
+function fmtISO(d: Date): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function startOfWeekMon(d: Date): Date {
   const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
   const dow = (x.getUTCDay() + 6) % 7; // Monday = 0
@@ -69,12 +79,54 @@ function statusCategory(status: CardStatus): GanttCategory {
   return "pending"; // backlog · inbox · review
 }
 
-export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelect }: Props) {
+export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelect, onPatch }: Props) {
   // "Today" depends on the clock, so resolve it after mount to avoid an SSR
   // hydration mismatch — the line just isn't drawn on the first client render.
   const [todayMs, setTodayMs] = useState<number | null>(null);
   useEffect(() => setTodayMs(Date.now()), []);
   useDateTimePrefs();
+
+  // Drag-to-reschedule: while a bar is dragged we track the live day delta and
+  // shift the bar visually; the actual patch lands once on pointer-up.
+  const draggable = !!onPatch;
+  const [drag, setDrag] = useState<{ id: string; deltaDays: number } | null>(null);
+  const dragRef = useRef<{ id: string; startX: number; moved: boolean } | null>(null);
+  // Suppresses the row's select-click that would otherwise fire after a drag.
+  const suppressClickRef = useRef(false);
+
+  const beginDrag = (e: React.PointerEvent, cardId: string) => {
+    if (!draggable) return;
+    // Don't preventDefault — that would also swallow the click we rely on to
+    // select a bar that was tapped (not dragged).
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { id: cardId, startX: e.clientX, moved: false };
+    setDrag({ id: cardId, deltaDays: 0 });
+  };
+  const moveDrag = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    if (Math.abs(dx) > 3) d.moved = true;
+    setDrag({ id: d.id, deltaDays: Math.round(dx / DAY_W) });
+  };
+  const endDrag = (e: React.PointerEvent, card: Card) => {
+    const d = dragRef.current;
+    const active = drag;
+    dragRef.current = null;
+    setDrag(null);
+    if (!d) return;
+    if (d.moved) suppressClickRef.current = true; // swallow the trailing click
+    const delta = active?.deltaDays ?? 0;
+    if (d.moved && delta !== 0 && onPatch) {
+      const patch: Partial<Card> = {};
+      const s = parseDate(card.startDate);
+      const en = parseDate(card.endDate);
+      if (s) patch.startDate = fmtISO(addDays(s, delta));
+      if (en) patch.endDate = fmtISO(addDays(en, delta));
+      if (patch.startDate || patch.endDate) onPatch(card.id, patch);
+    }
+  };
 
   const scheduled: ScheduledCard[] = [];
   const unscheduled: Card[] = [];
@@ -188,37 +240,59 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                   const cat = statusCategory(card.status);
                   const offset = Math.max(0, daysBetween(rangeStart, start));
                   const dur = Math.max(1, daysBetween(start, end) + 1);
-                  const left = offset * DAY_W;
                   const milestone = dur === 1;
+                  const dragDelta = drag?.id === card.id ? drag.deltaDays : 0;
+                  const dragging = drag?.id === card.id && dragDelta !== 0;
+                  const left = (offset + dragDelta) * DAY_W;
+                  const barClass = (base: string) =>
+                    `${base}${draggable ? " cg-bar--grab" : ""}${dragging ? " cg-bar--dragging" : ""}`;
+                  const handlers = draggable
+                    ? {
+                        onPointerDown: (e: React.PointerEvent) => beginDrag(e, card.id),
+                        onPointerMove: moveDrag,
+                        onPointerUp: (e: React.PointerEvent) => endDrag(e, card),
+                      }
+                    : {};
                   return (
                     <button
                       key={card.id}
                       type="button"
                       className={`cg-row${selectedCardId === card.id ? " cg-row--sel" : ""}`}
-                      onClick={() => onSelect(card.id)}
-                      title={`${card.title} · ${formatLabel(start)}–${formatLabel(end)}`}
+                      onClick={() => {
+                        if (suppressClickRef.current) { suppressClickRef.current = false; return; }
+                        onSelect(card.id);
+                      }}
+                      title={`${card.title} · ${formatLabel(addDays(start, dragDelta))}–${formatLabel(addDays(end, dragDelta))}${draggable ? " · drag to reschedule" : ""}`}
                     >
                       <span className="cg-left">
                         <span className="cg-c-task">{card.title}</span>
                         <span className="cg-c-owner">{ownerName(card.familiarId)}</span>
-                        <span className="cg-c-date">{formatLabel(start)}</span>
-                        <span className="cg-c-date">{formatLabel(end)}</span>
+                        <span className="cg-c-date">{formatLabel(addDays(start, dragDelta))}</span>
+                        <span className="cg-c-date">{formatLabel(addDays(end, dragDelta))}</span>
                         <span className="cg-c-st"><span className={`cg-dot cg-dot--${cat}`} aria-hidden /></span>
                       </span>
-                      <span className="cg-track" style={{ width: `${timelineW}px` }} aria-hidden>
+                      <span className="cg-track" style={{ width: `${timelineW}px` }}>
                         {milestone ? (
                           <span
-                            className={`board-gantt-row__bar board-gantt-row__bar--${cat} cg-diamond`}
-                            style={{ left: `${left + DAY_W / 2}px` }}
+                            className={barClass(`board-gantt-row__bar board-gantt-row__bar--${cat} cg-diamond`)}
+                            style={{ left: `${left + DAY_W / 2}px`, touchAction: "none" }}
+                            {...handlers}
                           />
                         ) : (
                           <span
-                            className={`board-gantt-row__bar board-gantt-row__bar--${cat} cg-bar`}
-                            style={{ left: `${left}px`, width: `${Math.max(DAY_W, dur * DAY_W - 3)}px` }}
+                            className={barClass(`board-gantt-row__bar board-gantt-row__bar--${cat} cg-bar`)}
+                            style={{ left: `${left}px`, width: `${Math.max(DAY_W, dur * DAY_W - 3)}px`, touchAction: "none" }}
+                            {...handlers}
                           >
                             <span className="cg-bar__cap" aria-hidden />
                           </span>
                         )}
+                        {dragging ? (
+                          <span className="cg-drag-label" style={{ left: `${Math.max(0, left)}px` }}>
+                            {formatLabel(addDays(start, dragDelta))}
+                            {milestone ? "" : `–${formatLabel(addDays(end, dragDelta))}`}
+                          </span>
+                        ) : null}
                       </span>
                     </button>
                   );

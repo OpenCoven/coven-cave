@@ -1709,6 +1709,20 @@
 }
 .cg-diamond--leg { position: static; display: inline-block; width: 9px; height: 9px; transform: rotate(45deg); background: var(--text-primary); }
 
+/* drag-to-reschedule */
+.cg-bar--grab { cursor: grab; }
+.cg-bar--grab:active, .cg-bar--dragging { cursor: grabbing; }
+.cg-bar--dragging { z-index: 4; filter: brightness(1.12); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }
+.cg-diamond.cg-bar--dragging { transform: translate(-50%, -50%) rotate(45deg) scale(1.15); }
+.cg-row:has(.cg-bar--dragging) { user-select: none; }
+.cg-drag-label {
+  position: absolute; top: -2px; transform: translateY(-100%);
+  font-size: 10px; font-weight: 600; color: var(--text-primary);
+  background: var(--bg-raised); border: 1px solid var(--border-strong);
+  padding: 1px 6px; border-radius: 4px; white-space: nowrap;
+  z-index: 5; pointer-events: none; box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+}
+
 /* today line + flag */
 .cg-today { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--color-danger); z-index: 3; pointer-events: none; }
 .cg-today__flag {
