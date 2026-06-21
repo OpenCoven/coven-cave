@@ -1,7 +1,7 @@
 "use client";
 
 import "@/styles/board.css";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_BOARD_CARDS } from "@/lib/demo-seed";
 import { DEMO_MODE_EVENT, isDemoModeEnabled } from "@/lib/demo-mode";
@@ -48,6 +48,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table", "gantt"]));
   const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar", "project"]));
   const [searchQuery, setSearchQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalDefaultStatus, setModalDefaultStatus] = useState<CardStatus>("backlog");
@@ -83,6 +84,22 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  // "/" jumps to the task search (GitHub-style) while the board is shown,
+  // unless the user is already typing in a field or holding a modifier.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const el = searchRef.current;
+      if (!el) return;
+      e.preventDefault();
+      el.focus();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   useEffect(() => {
     const onDemoModeChange = () => { void load(); };
     window.addEventListener(DEMO_MODE_EVENT, onDemoModeChange);
@@ -330,6 +347,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
           <Icon name="ph:magnifying-glass" width={13} className="board-search-icon" />
           <label className="sr-only" htmlFor="board-search">Search tasks</label>
           <input
+            ref={searchRef}
             id="board-search"
             className="board-search-input"
             value={searchQuery}
@@ -342,6 +360,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
             }}
             placeholder='Search tasks or type is:open cwd:coven-cave url:github'
           />
+          {!searchQuery ? (
+            <kbd aria-hidden className="board-search-kbd">/</kbd>
+          ) : null}
           {searchQuery ? (
             <button
               type="button"
