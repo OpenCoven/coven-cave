@@ -79,6 +79,9 @@ struct ReadingView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
+        // A horizontal ScrollView reports a flexible (≈zero) ideal height, so
+        // without a fixed height it collapses inside a VStack / safeAreaInset.
+        .frame(height: 56)
         .background(.bar)
     }
 
