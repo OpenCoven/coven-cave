@@ -56,15 +56,15 @@ assert.match(chatSurface, /isCodeSurface \? <CodeInlineToolbar \/> : null/, "the
 assert.match(toolbar, /code-panel-toggle/, "the toolbar includes the companion-panel toggle");
 assert.match(toolbar, /cave:toggle-right-panel/, "the panel toggle asks the shell to toggle the companion panel");
 
-// ── The projects-list collapse lives in the list's OWN header (in comux) ──────
-// It collapses only the 200px projects column — never the code/comux Panel —
-// and a thin rail re-opens it. The Code toolbar no longer carries the toggle.
+// ── The projects list is merged into the file-explorer column (in comux) ──────
+// It's a collapsible "Projects" section above the file tree, sharing one column
+// with it (no separate 200px column / rail). The Code toolbar no longer carries
+// the toggle; it drives the section's collapse via projectListCollapsed.
 assert.doesNotMatch(codeView, /toggleProjects|aria-label=\{?"?(Hide|Show) projects/i, "the collapse toggle is not in the Code toolbar anymore");
-assert.match(comux, /onClick=\{\(\) => setProjectListVisible\(false\)\}/, "the projects-list header has a Hide control");
-assert.match(comux, /aria-label="Hide projects list"/, "the header collapse control is labelled");
-assert.match(comux, /onClick=\{\(\) => setProjectListVisible\(true\)\}/, "a collapsed rail re-opens the projects list");
-assert.match(comux, /aria-label="Show projects list"/, "the re-open control is labelled");
-assert.match(comux, /projectListCollapsed \? \(/, "comux swaps the column for a thin rail when collapsed");
+assert.match(comux, /onClick=\{\(\) => setProjectListVisible\(projectListCollapsed\)\}/, "the merged Projects section header toggles its own collapse");
+assert.match(comux, /comux-project-row/, "the projects list renders project rows in the explorer column");
+assert.match(comux, /Projects — merged into this column/, "the projects list is merged into the file-explorer column");
+assert.match(comux, /\{!projectListCollapsed && \(/, "comux hides the projects list when collapsed");
 assert.match(
   comux,
   /const setProjectListVisible = useCallback\([\s\S]*?writeProjectListCollapsed\(!visible\)/,
