@@ -490,9 +490,7 @@ final class AppModel {
     /// After a thread finishes streaming it may have just acquired its server
     /// session; PATCH any locally-linked card that doesn't yet carry it.
     func reconcileCardLinks(for thread: ChatThread) async {
-        guard cardThreadLinks.values.contains(thread.id),
-              let sid = primarySessionId(of: thread) else { return }
-        if !tasksLoaded { await loadTasks() }
+        guard let sid = primarySessionId(of: thread) else { return }
         let cardIds = cardThreadLinks.filter { $0.value == thread.id }.map(\.key)
         for cardId in cardIds where (tasks.first { $0.id == cardId })?.sessionId != sid {
             await patchCardSession(cardId: cardId, sessionId: sid)
