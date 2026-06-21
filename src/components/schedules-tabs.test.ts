@@ -40,6 +40,10 @@ assert.match(automations, /const \[activeTab, setActiveTab\] = useState<Schedule
 assert.match(automations, /<h1[\s\S]*?>\s*Schedules\s*<\/h1>/, "Surface header should read Schedules");
 assert.match(automations, /\["reminders", "Reminders", reminderItems\.length\]/, "Schedules should expose a Reminders tab");
 assert.match(automations, /\["automations", "Automations", codexAutos\.length\]/, "Schedules should expose an Automations tab");
+assert.match(automations, /\["inbox", "Inbox", items\.length\]/, "Schedules should expose an Inbox tab over the full inbox feed");
+assert.match(automations, /type ScheduleTab = "reminders" \| "automations" \| "inbox"/, "Schedules tab state should include inbox");
+assert.match(automations, /function InboxFeedList/, "Inbox tab should render through a feed-list component");
+assert.match(automations, /groupInboxFeed\(items\)/, "Inbox tab should group the full inbox feed (every kind)");
 
 assert.match(
   automations,

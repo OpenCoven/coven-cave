@@ -180,6 +180,7 @@ export const SUITES = {
     "src/components/automations-detail-inputs.test.ts",
     "src/components/automations-view.test.ts",
     "src/components/schedules-tabs.test.ts",
+    "src/lib/inbox-feed.test.ts",
     "src/lib/daily-summary-notifications.test.ts",
     "src/components/daily-summary-notifications.test.ts",
     "src/app/daily-report-page.test.ts",
