@@ -51,13 +51,14 @@ type DaemonStatus = {
   daemon?: { pid: number; startedAt: string; socket: string };
 };
 
-type Section = "general" | "daemon" | "familiars" | "addons" | "appearance" | "about";
+type Section = "general" | "daemon" | "familiars" | "addons" | "mobile" | "appearance" | "about";
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: "general",    label: "General",    icon: "ph:sliders-horizontal" },
   { id: "daemon",     label: "Daemon",     icon: "ph:terminal-window" },
   { id: "familiars",  label: "Familiars",  icon: "ph:users-three" },
   { id: "addons",     label: "Add-ons",    icon: "ph:puzzle-piece" },
+  { id: "mobile",     label: "Phone",      icon: "ph:device-mobile" },
   { id: "appearance", label: "Appearance", icon: "ph:paint-brush" },
   { id: "about",      label: "About",      icon: "ph:info" },
 ];
@@ -207,6 +208,7 @@ export function SettingsShell() {
           {section === "daemon"   && <DaemonSection />}
           {section === "familiars" && <FamiliarsSection />}
           {section === "addons"   && <AddonsSection />}
+          {section === "mobile"   && <MobileSection />}
           {section === "appearance" && <AppearanceSection />}
           {section === "about"    && <AboutSection />}
         </main>
@@ -1186,6 +1188,85 @@ function AppearanceSection() {
     </SettingsPage>
   );
 }
+
+// ─── Section: Phone (connect the native mobile app) ─────────────────────────────
+
+function CopyValue({ value, label }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        navigator.clipboard?.writeText(value).then(
+          () => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          },
+          () => {},
+        );
+      }}
+      aria-label={`Copy ${label ?? value}`}
+      className="group flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-left transition-colors hover:border-[var(--accent-presence)]"
+    >
+      <code className="min-w-0 truncate font-mono text-[12px] text-[var(--text-primary)]">{value}</code>
+      <span className="flex shrink-0 items-center gap-1 text-[11px] text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]">
+        <Icon name={copied ? "ph:check" : "ph:copy"} width={13} />
+        {copied ? "Copied" : "Copy"}
+      </span>
+    </button>
+  );
+}
+
+function MobileSection() {
+  return (
+    <SettingsPage
+      title="Connect on your phone"
+      description="Run the native Coven Cave app on your iPhone or iPad and reach this desktop over your Tailscale network — no token, no password."
+    >
+      <SettingsGroup label="Steps">
+        <SettingsRow label="1 · Same Tailscale network" description="Sign your phone and this Mac into the same tailnet." />
+        <div className="space-y-2 px-4 py-3">
+          <div>
+            <p className="text-[13px] text-[var(--text-primary)]">2 · Start the mobile server</p>
+            <p className="text-[11px] text-[var(--text-muted)]">Serves this desktop to your tailnet and prints the address + a QR code. Leave it running.</p>
+          </div>
+          <CopyValue value="pnpm mobile:tailscale:app" label="start command" />
+        </div>
+        <SettingsRow
+          label="3 · Enter the address in the app"
+          description="On the app’s connect screen, type the https://… address the command printed (your Mac’s Tailscale name)."
+        />
+        <SettingsRow label="4 · Tap Connect" description="Your familiars and board load over Tailscale. Switch tabs for Chats and Tasks." />
+      </SettingsGroup>
+
+      <SettingsGroup label="Why there’s no password">
+        <div className="flex items-start gap-3 px-4 py-3">
+          <Icon name="ph:lock-simple-bold" width={16} className="mt-0.5 shrink-0 text-[var(--accent-presence)]" />
+          <p className="text-[12px] leading-relaxed text-[var(--text-secondary)]">
+            Being on your Tailscale network <em>is</em> the credential. The desktop only serves the mobile API over the
+            tailnet — encrypted and private — so nothing is exposed to the public internet, and there’s no token to copy.
+          </p>
+        </div>
+      </SettingsGroup>
+
+      <SettingsGroup label="Get the app">
+        <SettingsRow label="Build it with Xcode" description="apps/ios/CovenCave — open in Xcode and run on your device, or install the TestFlight build." />
+        <div className="flex flex-wrap gap-2 px-4 py-3">
+          <a
+            href="https://github.com/OpenCoven/coven-cave/blob/main/docs/ios-native-rebuild.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:file-text" width={12} />
+            Setup guide
+          </a>
+        </div>
+      </SettingsGroup>
+    </SettingsPage>
+  );
+}
+
 // ─── Section: About ───────────────────────────────────────────────────────────
 
 function AboutSection() {
