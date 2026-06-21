@@ -557,6 +557,34 @@ export function WorkflowsView({
     showNotice(`Created ${saved.id} from the ${input.pattern} pattern.`);
   };
 
+  const handleImport = async (manifest: Record<string, unknown>) => {
+    if (!confirmDiscard()) return;
+    // Land imports in the user's personal library with a unique id; clear the
+    // public flag so the runtime routes the copy to ~/.coven (never the repo).
+    const rawName = typeof manifest.name === "string" ? manifest.name : "";
+    const rawId = typeof manifest.id === "string" && manifest.id.trim() ? manifest.id : rawName || "imported-workflow";
+    const id = uniqueId(slugifyWorkflowId(rawId) || "imported-workflow");
+    const visibility = {
+      ...(manifest.visibility && typeof manifest.visibility === "object" ? (manifest.visibility as Record<string, unknown>) : {}),
+      public: false,
+      personal: true,
+    };
+    const result = await saveWorkflow({ ...manifest, id, visibility });
+    if (!result.ok) {
+      showNotice(result.error ?? "import failed — check the manifest is valid CWF-01");
+      return;
+    }
+    await load(true);
+    const saved = result.workflow;
+    if (saved) {
+      setSelectedWorkflowId(saved.id);
+      setSelectedNodeId(null);
+      setDraftState(initialWorkflowDraft(saved));
+      void loadRuns(saved.id);
+    }
+    showNotice(`Imported ${id}.`);
+  };
+
   const handleDuplicate = async (workflow: WorkflowSummary) => {
     const id = uniqueId(`${slugifyWorkflowId(workflow.id)}-copy`);
     const copy = duplicateWorkflow(workflow, id);
@@ -707,10 +735,12 @@ export function WorkflowsView({
       onUpdateStep={(id, patch) => dispatchDraft({ type: "update-step", id, patch })}
       onUpdateMeta={(patch) => dispatchDraft({ type: "update-meta", patch })}
       onRemoveStep={(id) => dispatchDraft({ type: "remove-step", id })}
+      onDuplicateStep={(id) => dispatchDraft({ type: "duplicate-step", id })}
       onConnect={(source, target) => dispatchDraft({ type: "connect", source, target })}
       onSavePositions={handleSavePositions}
       onDisconnect={(source, target) => dispatchDraft({ type: "disconnect", source, target })}
       onCreate={(input) => void handleCreate(input)}
+      onImport={(manifest) => void handleImport(manifest)}
       onDuplicate={(workflow) => void handleDuplicate(workflow)}
       onDelete={(workflow) => void handleDelete(workflow)}
       onAttachRole={(role, attach) => void handleAttachRole(role, attach)}

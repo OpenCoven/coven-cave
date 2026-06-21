@@ -437,4 +437,26 @@ assert.match(runsPanel, /window\.confirm/, "Clearing run history should confirm 
 assert.match(studio, /onClearRuns=\{props\.onClearRuns\}/, "Studio should thread the clear-history handler");
 assert.match(css, /\.workflow-runs-clear/, "CSS should style the clear-history button");
 
+// --- Run-prompt preview, import, duplicate-step, keyboard shortcuts ---
+
+// The manifest panel toggles between the YAML manifest and the compiled run prompt.
+assert.match(manifestPreview, /buildWorkflowRunPrompt/, "Manifest preview should compile the run prompt");
+assert.match(manifestPreview, /Run prompt/, "Manifest preview should offer a run-prompt view");
+assert.match(manifestPreview, /workflow-manifest-views/, "Manifest preview should render a view toggle");
+assert.match(css, /\.workflow-manifest-view\b/, "CSS should style the manifest view toggle");
+
+// Import a workflow from a pasted manifest.
+assert.match(dialogs, /export function WorkflowImportDialog/, "An import dialog should parse a pasted manifest");
+assert.match(dialogs, /parseYaml/, "Import should parse YAML/JSON");
+assert.match(studio, /WorkflowImportDialog/, "Studio should wire the import dialog");
+assert.match(library, /onImportRequest/, "Library should expose an import affordance");
+
+// Duplicate a configured step.
+assert.match(inspector, /onDuplicateStep/, "Inspector should offer a duplicate-step affordance");
+assert.match(studio, /onDuplicateStep=\{props\.onDuplicateStep\}/, "Studio should thread duplicate-step into the inspector");
+
+// Studio keyboard shortcuts (save / dry-run / undo-redo).
+assert.match(studio, /event\.metaKey \|\| event\.ctrlKey/, "Studio should bind Cmd/Ctrl keyboard shortcuts");
+assert.match(studio, /addEventListener\("keydown"/, "Studio should attach a keydown listener while mounted");
+
 console.log("workflow-studio.test.ts: ok");

@@ -32,6 +32,8 @@ type WorkflowInspectorProps = {
   onUpdateStep: (id: string, patch: Partial<WorkflowStepSummary>) => void;
   onUpdateMeta: (patch: Partial<WorkflowSummary>) => void;
   onRemoveStep: (id: string) => void;
+  /** Clone the selected step (config + prerequisites) as a new sibling step. */
+  onDuplicateStep?: (id: string) => void;
   /** Jump to a step by id (e.g. from a validation issue that names it). */
   onSelectStep?: (id: string) => void;
   /** Make `target` require `source` (same edge the canvas draws). */
@@ -204,6 +206,7 @@ export function WorkflowInspector({
   onUpdateStep,
   onUpdateMeta,
   onRemoveStep,
+  onDuplicateStep,
   onSelectStep,
   onConnect,
   onDisconnect,
@@ -236,15 +239,28 @@ export function WorkflowInspector({
           </div>
         </div>
         {step && (
-          <button
-            type="button"
-            className="workflow-icon-button workflow-icon-button-danger"
-            onClick={() => onRemoveStep(step.id)}
-            title="Remove step"
-            aria-label={`Remove step ${step.id}`}
-          >
-            <Icon name="ph:trash" width={13} />
-          </button>
+          <div className="workflow-heading-actions">
+            {onDuplicateStep && (
+              <button
+                type="button"
+                className="workflow-icon-button"
+                onClick={() => onDuplicateStep(step.id)}
+                title="Duplicate step"
+                aria-label={`Duplicate step ${step.id}`}
+              >
+                <Icon name="ph:copy" width={13} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="workflow-icon-button workflow-icon-button-danger"
+              onClick={() => onRemoveStep(step.id)}
+              title="Remove step"
+              aria-label={`Remove step ${step.id}`}
+            >
+              <Icon name="ph:trash" width={13} />
+            </button>
+          </div>
         )}
       </div>
 
