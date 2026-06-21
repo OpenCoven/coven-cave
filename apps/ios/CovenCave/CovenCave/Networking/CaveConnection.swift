@@ -43,6 +43,41 @@ struct CaveConnection: Codable, Equatable {
         return comps.url
     }
 
+    /// Ordered base URLs to try when the configured one is unreachable — the fix
+    /// for a host entered without the proper port. `tailscale serve` usually
+    /// terminates TLS on `:8443`, so a `.ts.net` host typed without a port
+    /// (which resolves to plain `:443`) never connects; we probe `:8443` and
+    /// relocate to it. A fully-qualified `http(s)://…` URL is trusted verbatim
+    /// (the user was explicit), so it gets no alternates.
+    var candidateBaseURLs: [URL] {
+        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        var out: [URL] = []
+        func add(_ string: String) {
+            guard let url = URL(string: string), !out.contains(url) else { return }
+            out.append(url)
+        }
+
+        let lower = trimmed.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") {
+            if let url = URL(string: trimmed) { out.append(url) }
+            return out
+        }
+
+        if let primary = baseURL { out.append(primary) }
+
+        let hostname = trimmed.split(separator: ":").first.map(String.init) ?? trimmed
+        if hostname.lowercased().hasSuffix(".ts.net") {
+            add("https://\(hostname):8443")   // Tailscale Serve's usual TLS port
+            add("https://\(hostname)")        // bare 443
+        } else {
+            for port in ["3000", "4500", "4555", "8443"] { add("http://\(hostname):\(port)") }
+            add("https://\(hostname):8443")
+        }
+        return out
+    }
+
     static let storageKey = "cave.connection.host"
 
     static func load() -> CaveConnection? {
