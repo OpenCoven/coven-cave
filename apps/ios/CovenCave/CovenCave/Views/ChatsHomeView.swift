@@ -17,7 +17,11 @@ struct ChatsHomeView: View {
                     threadList
                 }
             }
-            .navigationTitle("Chats")
+            // Flush large-title header at the very top, matching Canvas / Read /
+            // Tasks (which hide the nav bar and supply their own top inset) so
+            // every tab's header aligns. Search + compose stay in the bottom bar.
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) { header }
             .navigationDestination(for: ChatThread.self) { thread in
                 ChatView(thread: thread)
             }
@@ -48,6 +52,25 @@ struct ChatsHomeView: View {
               let id = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"],
               let thread = app.threads.first(where: { $0.id == id }) else { return }
         path.append(thread)
+    }
+
+    /// Large-title header pinned to the top, mirroring the Canvas / Read / Tasks
+    /// tabs so every tab's title aligns at the same flush position.
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Chats")
+                .font(.largeTitle.weight(.bold))
+            Spacer()
+            if !app.threads.isEmpty {
+                Text("^[\(app.threads.count) chat](inflect: true)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
+        .background(.bar)
     }
 
     private var threadList: some View {
