@@ -168,6 +168,17 @@
 .journal-kind--react { background: color-mix(in srgb, var(--color-success) 18%, transparent); color: var(--color-success); }
 
 .journal-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 14px 16px; gap: 12px; overflow: hidden; }
+/* Full-screen canvas: portaled to <body>, fills the viewport. The base rule
+   already lays this out as a flex column, so the preview frame (flex:1) grows. */
+.journal-detail--fullscreen {
+  position: fixed;
+  inset: 14px;
+  z-index: 1200;
+  background: var(--bg-base);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
 .journal-detail__bar { display: flex; align-items: center; justify-content: space-between; }
 .journal-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
 .journal-seg button {
