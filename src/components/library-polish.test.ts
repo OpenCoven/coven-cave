@@ -685,3 +685,10 @@ assert.doesNotMatch(
   /@media \(max-width: 767px\) \{[\s\S]*?\.library-rail-item\s*\{[^}]*border-radius:\s*999px;/,
   "Mobile Library tabs must not render as oversized pill tabs",
 );
+
+// Long doc lists virtualize off-screen rows via content-visibility (perf).
+assert.match(
+  libraryCss,
+  /\.library-doclist-item \{[\s\S]*?content-visibility:\s*auto;[\s\S]*?contain-intrinsic-size:/,
+  "library doc rows skip off-screen rendering via content-visibility",
+);
