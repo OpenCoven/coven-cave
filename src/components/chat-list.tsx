@@ -67,7 +67,7 @@ type Props = {
   familiars?: Familiar[];
   sessions: SessionRow[];
   daemonRunning?: boolean;
-  onOpen: (sessionId: string, familiarId?: string | null) => void;
+  onOpen: (sessionId: string, familiarId?: string | null, findQuery?: string) => void;
   onNewChat: (projectRoot?: string, familiarId?: string | null) => void;
   onSessionsChanged?: () => void;
   /** false while the workspace's first /api/sessions/list fetch is in
@@ -1163,9 +1163,9 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                       <div
                         role="button"
                         tabIndex={0}
-                        onClick={() => { setActiveId(hit.sessionId); onOpen(hit.sessionId, row.familiarId); }}
+                        onClick={() => { setActiveId(hit.sessionId); onOpen(hit.sessionId, row.familiarId, search.trim()); }}
                         onKeyDown={(e) => {
-                          if (e.key === "Enter") { setActiveId(hit.sessionId); onOpen(hit.sessionId, row.familiarId); }
+                          if (e.key === "Enter") { setActiveId(hit.sessionId); onOpen(hit.sessionId, row.familiarId, search.trim()); }
                         }}
                         className="focus-ring-inset group flex cursor-pointer flex-col gap-0.5 px-4 py-2.5 transition-colors hover:bg-[var(--bg-raised)]/50"
                       >

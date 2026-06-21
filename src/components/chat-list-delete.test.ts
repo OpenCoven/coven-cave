@@ -233,8 +233,8 @@ assert.match(
 );
 assert.match(
   source,
-  /onClick=\{\(\) => \{ setActiveId\(hit\.sessionId\); onOpen\(hit\.sessionId, row\.familiarId\); \}\}/,
-  "Clicking a content hit opens the session via the existing onOpen path",
+  /onClick=\{\(\) => \{ setActiveId\(hit\.sessionId\); onOpen\(hit\.sessionId, row\.familiarId, search\.trim\(\)\); \}\}/,
+  "Clicking a content hit opens the session via onOpen, passing the query so it jumps to the match",
 );
 
 // ── CHAT-D13-02: micro-type legibility ─────────────────────────────────────

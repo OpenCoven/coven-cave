@@ -315,9 +315,11 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         sessionsLoaded={sessionsLoaded}
         compact={compact}
         onSessionsChanged={onSessionsChanged}
-        onOpen={(sessionId, familiarId) => {
+        onOpen={(sessionId, familiarId, findQuery) => {
           const next = selectFamiliarForChat(familiarId);
           setView({ kind: "chat", sessionId, familiarId: next?.id ?? familiarId ?? null });
+          const fq = findQuery?.trim();
+          if (fq) setPendingFind({ query: fq, nonce: Date.now() });
         }}
         onNewChat={(projectRoot, familiarId) => {
           const next = selectFamiliarForChat(familiarId);
