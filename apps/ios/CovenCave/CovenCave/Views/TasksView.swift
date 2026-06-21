@@ -31,7 +31,17 @@ struct TasksView: View {
                 .refreshable { await app.loadTasks() }
                 .task { if !app.tasksLoaded { await app.loadTasks() } }
                 .safeAreaInset(edge: .top) { scopeBar }
+                .onAppear(perform: openRequestedCard)
+                // A chat asked to open one of its linked tasks.
+                .onChange(of: app.cardToOpen) { _, card in openRequestedCard() }
         }
+    }
+
+    /// Consume a cross-tab "open this task" intent set by `requestOpenTask`.
+    private func openRequestedCard() {
+        guard let card = app.cardToOpen else { return }
+        if path.last?.id != card.id { path.append(card) }
+        app.cardToOpen = nil
     }
 
     private var scopeBar: some View {
@@ -162,6 +172,12 @@ struct TaskRow: View {
                         Label("\(card.doneStepCount)/\(card.stepCount)", systemImage: "checklist")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                    }
+                    if app.hasLinkedChat(card) {
+                        Image(systemName: "bubble.left.and.bubble.right.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.tint)
+                            .accessibilityLabel("Has linked chat")
                     }
                     ForEach(card.labelList.prefix(2), id: \.self) { LabelChip(text: $0) }
                     if let updated = caveParseISO(card.updatedAt) {

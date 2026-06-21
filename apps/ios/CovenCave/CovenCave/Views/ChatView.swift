@@ -8,6 +8,7 @@ struct ChatView: View {
     @FocusState private var composerFocused: Bool
     @State private var showCommands = false
     @State private var showFamiliarPicker = false
+    @State private var showTasks = false
 
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
@@ -37,6 +38,23 @@ struct ChatView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Button { showTasks = true } label: {
+                    let count = app.linkedTasks(for: thread).count
+                    Image(systemName: count > 0 ? "checklist.checked" : "checklist")
+                        .overlay(alignment: .topTrailing) {
+                            if count > 0 {
+                                Text("\(count)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(3)
+                                    .background(Color.accentColor, in: Circle())
+                                    .offset(x: 8, y: -8)
+                            }
+                        }
+                }
+                .accessibilityLabel("Linked tasks")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { showCommands = true } label: {
                     Image(systemName: "command")
                 }
@@ -51,6 +69,14 @@ struct ChatView: View {
                 showFamiliarPicker = false
                 switchTo(familiar)
             }
+        }
+        .sheet(isPresented: $showTasks) {
+            LinkedTasksSheet(thread: thread)
+        }
+        // A new chat linked to a task acquires its server session only after the
+        // first reply; once streaming stops, push that sessionId onto the card.
+        .onChange(of: thread.isStreaming) { _, streaming in
+            if !streaming { Task { await app.reconcileCardLinks(for: thread) } }
         }
     }
 
