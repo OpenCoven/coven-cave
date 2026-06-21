@@ -159,23 +159,31 @@ struct SuggestionPills: View {
     var onTap: (String) -> Void
 
     var body: some View {
-        FlowRow(spacing: 6) {
+        // Full-width, rounded-rect chips (vs. the old left-aligned FlowRow of
+        // content-hugging capsules). Each suggestion is a sentence, so it gets
+        // its own full-width row with centered text; the recommended one keeps
+        // the accent + ✦ sparkle.
+        VStack(spacing: 6) {
             ForEach(Array(suggestions.enumerated()), id: \.offset) { index, suggestion in
                 Button { onTap(suggestion) } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         if index == 0 {
                             Image(systemName: "sparkle").font(.system(size: 10, weight: .semibold))
                         }
-                        Text(suggestion).font(.caption.weight(.medium)).lineLimit(2)
+                        Text(suggestion)
+                            .font(.caption.weight(.medium))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
                     }
-                    .padding(.horizontal, 11).padding(.vertical, 6)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
                     .foregroundStyle(index == 0 ? Color.accentColor : Color.primary)
                     .background(
                         index == 0 ? Color.accentColor.opacity(0.16) : Color(.secondarySystemBackground),
-                        in: Capsule()
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
                     .overlay(
-                        Capsule().strokeBorder(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(
                             index == 0 ? Color.accentColor.opacity(0.45) : Color(.separator).opacity(0.5),
                             lineWidth: 1
                         )
@@ -184,7 +192,7 @@ struct SuggestionPills: View {
                 .buttonStyle(.plain)
             }
         }
+        .frame(maxWidth: .infinity)
         .padding(.top, 6)
-        .padding(.leading, 4)
     }
 }
