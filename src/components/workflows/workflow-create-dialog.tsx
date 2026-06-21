@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { parse as parseYaml } from "yaml";
 import { Icon } from "@/lib/icon";
+import { Tabs } from "@/components/ui/tabs";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { slugifyWorkflowId } from "@/lib/workflow-edit";
 import {
@@ -155,26 +156,17 @@ export function WorkflowCreateDialog({ familiarOptions, onClose, onCreate, onCre
           </button>
         </div>
 
-        <div className="workflow-create-mode-toggle" role="tablist" aria-label="Create mode">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "describe"}
-            className={`workflow-create-mode${mode === "describe" ? " is-active" : ""}`}
-            onClick={() => setMode("describe")}
-          >
-            <Icon name="ph:sparkle" width={13} /> Describe
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "pattern"}
-            className={`workflow-create-mode${mode === "pattern" ? " is-active" : ""}`}
-            onClick={() => setMode("pattern")}
-          >
-            Pattern
-          </button>
-        </div>
+        <Tabs
+          variant="segment"
+          size="sm"
+          ariaLabel="Create mode"
+          value={mode}
+          onChange={setMode}
+          items={[
+            { id: "describe", label: "Describe", icon: "ph:sparkle" },
+            { id: "pattern", label: "Pattern" },
+          ]}
+        />
 
         {mode === "pattern" ? (
           <>

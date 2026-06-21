@@ -2375,33 +2375,6 @@
   }
 }
 
-/* Create-dialog mode toggle (Describe / Pattern) */
-.workflow-create-mode-toggle {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  margin-bottom: 12px;
-  border-radius: 8px;
-  background: var(--bg-panel, rgba(127, 127, 127, 0.12));
-}
-.workflow-create-mode {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-muted, inherit);
-  font: inherit;
-  cursor: pointer;
-}
-.workflow-create-mode.is-active {
-  background: var(--bg-base, var(--background, #fff));
-  color: var(--color-text, inherit);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
-}
-
 /* Review step list */
 .workflow-review-steps {
   list-style: none;
