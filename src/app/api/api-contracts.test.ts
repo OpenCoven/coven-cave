@@ -88,7 +88,7 @@ const contracts: RouteContract[] = [
   { route: "/openclaw-agents", methods: ["GET"], kind: "json" },
   { route: "/opencoven-tools/status", methods: ["GET"], kind: "json" },
   { route: "/project-file", methods: ["GET", "POST"], kind: "json", pathGuard: true, readsJson: true, invalidJson: "guarded" },
-  { route: "/project-tree", methods: ["GET"], kind: "json", pathGuard: true },
+  { route: "/project-tree", methods: ["GET", "POST"], kind: "json", pathGuard: true, readsJson: true, invalidJson: "guarded" },
   { route: "/project/files", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/project/search", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/projects/[id]", methods: ["PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
