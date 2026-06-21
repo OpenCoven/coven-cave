@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
+import { groupInboxFeed } from "@/lib/inbox-feed";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
@@ -198,6 +199,7 @@ export function Workspace() {
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
+  const [githubAssignedCount, setGithubAssignedCount] = useState(0);
   // Open (not-done) board cards, kept with their familiar so the Tasks badge can
   // show a per-familiar count when a familiar is scoped, and the grand total
   // only when "All familiars" is selected.
@@ -235,6 +237,8 @@ export function Workspace() {
   sessionsLoadedRef.current = sessionsLoaded;
   const modeRef = useRef(mode);
   modeRef.current = mode;
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
 
   const refreshDaemonStatus = useCallback(async () => {
     try {
@@ -317,9 +321,31 @@ export function Workspace() {
     });
   }, [activeId]);
 
+  // Per-familiar rail tab. persistRailTab handles explicit tab choices: it
+  // writes the active familiar slot (plus a global fallback for first paint).
+  // Restoring a familiar tab on scope change uses plain setRailTab so it never
+  // rewrites. Keyed on activeId ("all" when no familiar scope).
+  const persistRailTab = useCallback((next: CompanionTab) => {
+    setRailTab(next);
+    try {
+      window.localStorage.setItem("cave:rail.tab:" + (activeIdRef.current ?? "all"), next);
+      window.localStorage.setItem("cave:rail.tab", next);
+    } catch {
+      /* ignore storage failures */
+    }
+  }, []);
+
   useEffect(() => {
-    if (typeof window !== "undefined") window.localStorage.setItem("cave:rail.tab", railTab);
-  }, [railTab]);
+    if (!activeFamiliarHydrated || typeof window === "undefined") return;
+    try {
+      const stored =
+        window.localStorage.getItem("cave:rail.tab:" + (activeId ?? "all")) ??
+        window.localStorage.getItem("cave:rail.tab");
+      if (stored) setRailTab(stored === "inspector" ? "memory" : (stored as CompanionTab));
+    } catch {
+      /* ignore storage failures */
+    }
+  }, [activeId, activeFamiliarHydrated]);
 
   useEffect(() => {
     const openSalem = () => {
@@ -482,6 +508,7 @@ export function Workspace() {
 
         const githubTasksJson = await githubTasksPromise;
         if (githubTasksJson) {
+          setGithubAssignedCount(Array.isArray(githubTasksJson.tasks) ? githubTasksJson.tasks.length : 0);
           setSessions((currentSessions) =>
             attachGitHubTaskContext(
               currentSessions.length > 0 ? currentSessions : baseSessions,
@@ -1481,6 +1508,13 @@ export function Workspace() {
     return [...inboxItems, ...ephemeral];
   }, [inboxItems, responseNeeded, familiars, sessions]);
 
+  // Schedules nav badge: how many inbox items currently need you (fired or
+  // response-needed) - mirrors the Schedules > Inbox tab "needs you" group.
+  const scheduleNeedsCount = useMemo(
+    () => groupInboxFeed(inboxItemsWithEphemeral).needsYou.length,
+    [inboxItemsWithEphemeral],
+  );
+
   // Mood C three-pane Shell:
   //   nav   = always present (mode switcher + command launchers)
   //   list  = unused by Familiars; Inbox/Board/Plugins
@@ -1498,7 +1532,7 @@ export function Workspace() {
     railTab === "browser" || railTab === "salem" || (mode !== "browser" && mode !== "agents");
 
   const openCompanionTab = useCallback((tab: CompanionTab) => {
-    setRailTab(tab);
+    persistRailTab(tab);
     if (familiarPanelOpen && railTab === tab) {
       shellRef.current?.closeFamiliar();
       return;
@@ -1559,6 +1593,9 @@ export function Workspace() {
         }
       }}
       onNotificationPrefsChanged={refreshPrefs}
+      boardOpenCount={boardTaskCount}
+      scheduleNeedsCount={scheduleNeedsCount}
+      githubAssignedCount={githubAssignedCount}
     />
   );
 
@@ -1890,7 +1927,7 @@ export function Workspace() {
               familiar={active}
               defaultTab={railTab}
               activeTab={railTab}
-              onTabChange={setRailTab}
+              onTabChange={persistRailTab}
               daemonRunning={daemonRunning}
               onCreateFamiliar={openOnboarding}
               youtubeActive={railVideoActive}

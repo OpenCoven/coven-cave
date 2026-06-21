@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useState, type ReactNode } from "react";
-import { Group, Panel, Separator } from "react-resizable-panels";
+import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { Icon } from "@/lib/icon";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { YoutubeViewer } from "@/components/youtube-viewer";
@@ -39,6 +39,18 @@ type Props = {
   onExpandRail?: () => void;
 };
 
+// SSR-safe localStorage shim for the split-layout persistence below.
+const railSplitStorage = {
+  getItem(key: string): string | null {
+    if (typeof window === "undefined") return null;
+    try { return window.localStorage.getItem(key); } catch { return null; }
+  },
+  setItem(key: string, value: string): void {
+    if (typeof window === "undefined") return;
+    try { window.localStorage.setItem(key, value); } catch { /* ignore */ }
+  },
+};
+
 // forwardRef handle is wired in Task 2.3; ref is forwarded to the chatSlot consumer.
 const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
   function CompanionRailInner(props, _ref) {
@@ -60,6 +72,12 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       onExpandRail,
     } = props;
     const [tab, setTab] = useState<CompanionTab>(defaultTab);
+    // Persist the chat-vs-video split ratio so the divider survives reloads.
+    const { defaultLayout: splitLayout, onLayoutChanged: onSplitLayout } = useDefaultLayout({
+      id: "cave:companion-rail-split",
+      panelIds: ["companion-rail-main", "companion-rail-youtube"],
+      storage: railSplitStorage,
+    });
     // The Video tab is a toggle, not a mutually-exclusive section: when on, the
     // YouTube viewer drops into a resizable bottom pane below the active tab's
     // content rather than replacing it. The on/off state can be lifted to the
@@ -222,7 +240,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
         </nav>
         <div className="companion-rail__body">
           {youtubeOpen ? (
-            <Group orientation="vertical" className="companion-rail__split">
+            <Group orientation="vertical" className="companion-rail__split" defaultLayout={splitLayout} onLayoutChanged={onSplitLayout}>
               <Panel
                 id="companion-rail-main"
                 minSize={20}
