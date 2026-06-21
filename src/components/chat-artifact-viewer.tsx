@@ -5,6 +5,7 @@ import "@/styles/chat-artifact.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
+import { Tabs } from "@/components/ui/tabs";
 import {
   buildPreviewSrcDoc,
   buildRefinePrompt,
@@ -182,26 +183,17 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
           <i style={{ background: "#e0a44e" }} />
           <i style={{ background: "#5bbb6b" }} />
         </span>
-        <div className="chat-artifact__seg" role="tablist" aria-label="Artifact view">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "canvas"}
-            className={`chat-artifact__tab${tab === "canvas" ? " is-active" : ""}`}
-            onClick={() => setTab("canvas")}
-          >
-            <Icon name="ph:squares-four" width={13} /> Canvas
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "code"}
-            className={`chat-artifact__tab${tab === "code" ? " is-active" : ""}`}
-            onClick={() => setTab("code")}
-          >
-            <Icon name="ph:code" width={13} /> Code
-          </button>
-        </div>
+        <Tabs
+          variant="segment"
+          size="sm"
+          ariaLabel="Artifact view"
+          value={tab}
+          onChange={setTab}
+          items={[
+            { id: "canvas", label: "Canvas", icon: "ph:squares-four" },
+            { id: "code", label: "Code", icon: "ph:code" },
+          ]}
+        />
         <span className="chat-artifact__title" title={title}>{title}</span>
         <span className="chat-artifact__spacer" />
         <div className="chat-artifact__actions">
