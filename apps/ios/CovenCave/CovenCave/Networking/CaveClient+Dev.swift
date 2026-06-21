@@ -110,4 +110,34 @@ extension CaveClient {
         ])
         return try devDecode(GitHubItemDetail.self, try await devData(req))
     }
+
+    /// Conversation timeline + (for PRs) inline review threads with resolve
+    /// state. Mirrors the desktop GitHub view's comments fetch.
+    func githubComments(repo: String, number: Int, isPull: Bool) async throws -> GitHubCommentsResponse {
+        var query: [URLQueryItem] = [
+            .init(name: "repo", value: repo),
+            .init(name: "number", value: String(number)),
+        ]
+        if isPull { query.append(.init(name: "isPull", value: "1")) }
+        let req = try devRequest("api/github/comments", query: query)
+        return try devDecode(GitHubCommentsResponse.self, try await devData(req))
+    }
+
+    /// Post a reply to the conversation timeline (PAT required server-side).
+    func postGithubComment(repo: String, number: Int, body: String) async throws -> GitHubCommentPostResponse {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "repo": repo, "number": number, "body": body,
+        ])
+        let req = try devRequest("api/github/comment", method: "POST", body: payload)
+        return try devDecode(GitHubCommentPostResponse.self, try await devData(req))
+    }
+
+    /// Resolve / unresolve a PR review thread (PAT required server-side).
+    func resolveGithubThread(threadId: String, resolved: Bool) async throws -> GitHubResolveResponse {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "threadId": threadId, "resolved": resolved,
+        ])
+        let req = try devRequest("api/github/resolve-thread", method: "POST", body: payload)
+        return try devDecode(GitHubResolveResponse.self, try await devData(req))
+    }
 }

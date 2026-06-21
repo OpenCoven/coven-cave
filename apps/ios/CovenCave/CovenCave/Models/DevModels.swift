@@ -132,3 +132,46 @@ struct GitHubItemDetail: Decodable {
     var comments: Int?
     var error: String?
 }
+
+/// One comment in a conversation timeline or review thread
+/// (`GET /api/github/comments`).
+struct GitHubComment: Decodable, Identifiable, Hashable {
+    var id: String
+    var author: GitHubPerson?
+    var body: String
+    var createdAt: String?
+    var url: String?
+    var authorAssociation: String?
+}
+
+/// A pull-request inline review thread with its resolve state.
+struct GitHubReviewThread: Decodable, Identifiable, Hashable {
+    var id: String
+    var isResolved: Bool
+    var isOutdated: Bool
+    var path: String?
+    var diffHunk: String?
+    var comments: [GitHubComment]
+}
+
+struct GitHubCommentsResponse: Decodable {
+    var ok: Bool
+    var authed: Bool?
+    var canResolve: Bool?
+    var issueComments: [GitHubComment]?
+    var reviewThreads: [GitHubReviewThread]?
+    var error: String?
+}
+
+struct GitHubCommentPostResponse: Decodable {
+    var ok: Bool
+    var comment: GitHubComment?
+    var error: String?
+}
+
+struct GitHubResolveResponse: Decodable {
+    var ok: Bool
+    var threadId: String?
+    var isResolved: Bool?
+    var error: String?
+}

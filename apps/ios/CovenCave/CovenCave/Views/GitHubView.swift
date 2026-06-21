@@ -182,12 +182,13 @@ struct GitHubItemDetailView: View {
                 } else if let detail {
                     header(detail)
                     if let body = detail.body, !body.isEmpty {
-                        Text(markdown(body))
-                            .font(.callout)
-                            .textSelection(.enabled)
+                        // Same markdown pipeline as chat (@create-markdown + GFM)
+                        // rather than the inline-only AttributedString renderer.
+                        GitHubMarkdown(body)
                     } else {
                         Text("No description.").foregroundStyle(.secondary).font(.callout)
                     }
+                    GitHubCommentsSection(item: item)
                 }
             }
             .padding(16)
@@ -251,13 +252,6 @@ struct GitHubItemDetailView: View {
         }
     }
 
-    private func markdown(_ raw: String) -> AttributedString {
-        (try? AttributedString(
-            markdown: raw,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        )) ?? AttributedString(raw)
-    }
-
     private func load() async {
         guard let client = app.client, let number = item.number else {
             error = "No detail available."; loading = false; return
@@ -269,6 +263,270 @@ struct GitHubItemDetailView: View {
             if d.ok { detail = d } else { error = d.error ?? "Not found." }
         } catch {
             self.error = error.localizedDescription
+        }
+    }
+}
+
+/// Renders GitHub markdown (body + comments) through the SAME WKWebView preview
+/// pipeline as chat (`@create-markdown` + GFM + highlight.js), holding its own
+/// measured height so it sits naturally in a vertical stack.
+private struct GitHubMarkdown: View {
+    let text: String
+    @State private var height: CGFloat = 1
+    init(_ text: String) { self.text = text }
+    var body: some View {
+        MarkdownWebView(markdown: text, height: $height)
+            .frame(height: max(height, 1))
+    }
+}
+
+/// Conversation timeline + inline PR review threads for one issue/PR. Reads via
+/// `GET /api/github/comments`, resolves threads, and posts replies with optional
+/// `@familiar` tagging — the iOS half of the desktop GitHub comments surface.
+private struct GitHubCommentsSection: View {
+    @Environment(AppModel.self) private var app
+    let item: GitHubItem
+
+    @State private var issueComments: [GitHubComment] = []
+    @State private var threads: [GitHubReviewThread] = []
+    @State private var canComment = false
+    @State private var canResolve = false
+    @State private var loading = true
+    @State private var loadError: String?
+    @State private var showResolved = false
+
+    @State private var draft = ""
+    @State private var posting = false
+    @State private var postError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider().padding(.vertical, 4)
+            HStack {
+                Text("Conversation").font(.headline)
+                Spacer()
+                if unresolvedCount > 0 {
+                    Label("\(unresolvedCount) unresolved", systemImage: "bubble.left.and.exclamationmark.bubble.right")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+            }
+            if loading {
+                ProgressView().frame(maxWidth: .infinity)
+            } else if let loadError {
+                Text(loadError).font(.caption).foregroundStyle(.secondary)
+            } else {
+                threadsView
+                commentsView
+                composer
+            }
+        }
+        .task(id: item.id) { await load() }
+    }
+
+    private var unresolvedCount: Int { threads.filter { !$0.isResolved }.count }
+    private var resolvedCount: Int { threads.filter { $0.isResolved }.count }
+    private var visibleThreads: [GitHubReviewThread] {
+        showResolved ? threads : threads.filter { !$0.isResolved }
+    }
+    private var hasThreads: Bool { item.isPull && !threads.isEmpty }
+
+    @ViewBuilder private var threadsView: some View {
+        if hasThreads {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(visibleThreads) { thread in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            if let path = thread.path {
+                                Label(path.split(separator: "/").last.map(String.init) ?? path,
+                                      systemImage: "doc.text")
+                                    .font(.caption.weight(.semibold)).lineLimit(1)
+                            }
+                            if thread.isOutdated {
+                                Text("outdated").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if canResolve {
+                                Button(thread.isResolved ? "Unresolve" : "Resolve") {
+                                    toggleResolve(thread)
+                                }
+                                .font(.caption.weight(.semibold))
+                                .buttonStyle(.bordered).controlSize(.small)
+                            } else if thread.isResolved {
+                                Label("resolved", systemImage: "checkmark.circle.fill")
+                                    .font(.caption).foregroundStyle(.green)
+                            }
+                        }
+                        if let hunk = thread.diffHunk {
+                            Text(hunk.split(separator: "\n").suffix(3).joined(separator: "\n"))
+                                .font(.caption2.monospaced()).foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(6)
+                                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 6))
+                        }
+                        ForEach(thread.comments) { c in commentRow(c, inline: true) }
+                    }
+                    .padding(10)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(thread.isResolved ? Color.green : Color.orange)
+                            .frame(width: 3)
+                    }
+                    .opacity(thread.isResolved ? 0.7 : 1)
+                }
+                if resolvedCount > 0 {
+                    Button(showResolved ? "Hide resolved" : "Show \(resolvedCount) resolved") {
+                        showResolved.toggle()
+                    }
+                    .font(.caption)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var commentsView: some View {
+        if !issueComments.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(issueComments) { c in commentRow(c, inline: false) }
+            }
+        } else if !hasThreads {
+            Text("No comments yet.").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder private var composer: some View {
+        if canComment {
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Reply… tag a familiar with @", text: $draft, axis: .vertical)
+                    .lineLimit(2...6)
+                    .textFieldStyle(.roundedBorder)
+                if let postError {
+                    Text(postError).font(.caption).foregroundStyle(.red)
+                }
+                HStack {
+                    if !app.familiars.isEmpty {
+                        Menu {
+                            ForEach(app.familiars) { f in
+                                Button(f.displayName) { insertMention(f) }
+                            }
+                        } label: {
+                            Label("Tag familiar", systemImage: "at").font(.caption)
+                        }
+                    }
+                    Spacer()
+                    Button {
+                        post()
+                    } label: {
+                        if posting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("Comment").font(.callout.weight(.semibold))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || posting)
+                }
+            }
+            .padding(.top, 4)
+        } else {
+            Text("Add a PAT (in the desktop GitHub tab) to reply and resolve review threads.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func commentRow(_ c: GitHubComment, inline: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text("@\(c.author?.login ?? "ghost")").font(.caption.weight(.semibold))
+                if let a = c.authorAssociation, a != "NONE" {
+                    Text(a.lowercased()).font(.caption2)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color(.tertiarySystemFill), in: Capsule())
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let url = c.url, let u = URL(string: url) {
+                    Link(destination: u) { Image(systemName: "arrow.up.right.square") }
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            GitHubMarkdown(c.body)
+        }
+        .padding(inline ? 0 : 10)
+        .background(
+            inline ? Color.clear : Color(.secondarySystemBackground),
+            in: RoundedRectangle(cornerRadius: 10)
+        )
+    }
+
+    private func insertMention(_ f: Familiar) {
+        let handle = f.displayName.replacingOccurrences(of: " ", with: "-")
+        if draft.isEmpty || draft.hasSuffix(" ") {
+            draft += "@\(handle) "
+        } else {
+            draft += " @\(handle) "
+        }
+    }
+
+    private func toggleResolve(_ thread: GitHubReviewThread) {
+        guard canResolve, let idx = threads.firstIndex(where: { $0.id == thread.id }) else { return }
+        let next = !threads[idx].isResolved
+        threads[idx].isResolved = next  // optimistic
+        Task {
+            guard let client = app.client else { return }
+            do {
+                let r = try await client.resolveGithubThread(threadId: thread.id, resolved: next)
+                if !r.ok { await load() }  // authoritative refetch on failure
+            } catch {
+                await load()
+            }
+        }
+    }
+
+    private func post() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, let number = item.number, !posting else { return }
+        posting = true
+        postError = nil
+        Task {
+            defer { posting = false }
+            guard let client = app.client else { return }
+            do {
+                let r = try await client.postGithubComment(repo: item.repo, number: number, body: text)
+                if r.ok {
+                    draft = ""
+                    await load()
+                } else {
+                    postError = r.error == "auth_required"
+                        ? "Add a PAT to comment."
+                        : (r.error ?? "Failed to post.")
+                }
+            } catch {
+                postError = error.localizedDescription
+            }
+        }
+    }
+
+    private func load() async {
+        guard let client = app.client, let number = item.number else {
+            loading = false
+            return
+        }
+        loading = true
+        defer { loading = false }
+        do {
+            let r = try await client.githubComments(repo: item.repo, number: number, isPull: item.isPull)
+            if r.ok {
+                issueComments = r.issueComments ?? []
+                threads = r.reviewThreads ?? []
+                canComment = r.authed ?? false
+                canResolve = r.canResolve ?? false
+                loadError = nil
+            } else {
+                loadError = r.error ?? "Couldn’t load comments."
+            }
+        } catch {
+            loadError = error.localizedDescription
         }
     }
 }
