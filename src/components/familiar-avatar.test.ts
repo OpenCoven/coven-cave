@@ -17,7 +17,7 @@ assert.match(source, /alt=/, "img must have alt text for a11y");
 // on this). The <img> must carry an onError that flips to the fallback, and
 // the render must be gated on that error state.
 assert.match(source, /onError=\{\(\) => setErrored\(true\)\}/, "img must fall back on load error");
-assert.match(source, /familiar\.avatarImage && !errored/, "render must gate the img on the not-errored state");
+assert.match(source, /familiar\.avatarImage\)? && !errored/, "render must gate the img on the not-errored state");
 assert.match(source, /useEffect\(\s*\(\) => \{\s*setErrored\(false\);\s*\}, \[familiar\.avatarImage\]\)/, "error state must reset when the avatar src changes");
 
 console.log("familiar-avatar.test.ts: ok");
