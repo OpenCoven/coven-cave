@@ -610,11 +610,17 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
   // Surface the projects you're actually working in: order by most-recent
   // session activity, falling back to the project's own updatedAt.
   const sortedProjects = useMemo(() => {
-    const score = (p: CaveProject) =>
-      lastActiveMs(chatsByRoot.get(normalizeProjectRoot(p.root)) ?? []) ||
-      new Date(p.updatedAt).getTime() ||
-      0;
-    return [...projects].sort((a, b) => score(b) - score(a));
+    // Decorate-sort-undecorate: compute each score ONCE (each call runs
+    // lastActiveMs over the root's chats) instead of ~2x per comparison.
+    const scored = projects.map((p) => ({
+      p,
+      score:
+        lastActiveMs(chatsByRoot.get(normalizeProjectRoot(p.root)) ?? []) ||
+        new Date(p.updatedAt).getTime() ||
+        0,
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map((s) => s.p);
   }, [projects, chatsByRoot]);
 
   // Filter by name or path so the (recency-sorted) list stays scannable when
