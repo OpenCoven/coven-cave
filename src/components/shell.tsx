@@ -288,6 +288,14 @@ function ShellInner({
     return typeof pct !== "number" || pct > 0;
   });
 
+  // Hover-to-peek: when the desktop nav is collapsed to its icon rail, hovering
+  // floats it open as an overlay (navPeeking) without changing the collapse
+  // state. Reset whenever the rail goes away (expanded or mobile).
+  const [navPeeking, setNavPeeking] = useState(false);
+  useEffect(() => {
+    if (navOpen || isMobile) setNavPeeking(false);
+  }, [navOpen, isMobile]);
+
   // Track the detail panel's REAL left/right viewport gaps (side panels +
   // separators + edge rails — everything between the detail box and the
   // viewport edges) so child surfaces (e.g. the Home composer) can visually
@@ -458,8 +466,10 @@ function ShellInner({
         {/* CHAT-D13-05: every complementary landmark carries a distinct
             accessible name (axe landmark-unique). */}
         <aside
-          className={`shell-nav${!isMobile && !navOpen ? " shell-nav--rail" : ""}`}
+          className={`shell-nav${!isMobile && !navOpen ? (navPeeking ? " shell-nav--peek" : " shell-nav--rail") : ""}`}
           aria-label="Sidebar"
+          onMouseEnter={!isMobile && !navOpen ? () => setNavPeeking(true) : undefined}
+          onMouseLeave={!isMobile && !navOpen ? () => setNavPeeking(false) : undefined}
         >
           {nav}
         </aside>
