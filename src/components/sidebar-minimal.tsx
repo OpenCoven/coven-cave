@@ -13,7 +13,7 @@
 
 import React from "react";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
-import { Icon } from "@/lib/icon";
+import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
@@ -145,7 +145,7 @@ function SidebarSection({
           <span className="sidebar-section-label__text">{label}</span>
           <Icon
             name="ph:caret-down-bold"
-            width="1.1rem" height="1.1rem"
+            width={CAVE_ICON_SIZE.sidePanelChevron} height={CAVE_ICON_SIZE.sidePanelChevron}
             className={`sidebar-section-label__chevron${collapsed ? " sidebar-section-label__chevron--collapsed" : ""}`}
           />
         </button>
@@ -190,7 +190,7 @@ function FolderRow({
       title={title}
       onClick={onClick}
     >
-      <Icon name={iconName} width={20} className="sidebar-folder-icon" />
+      <Icon name={iconName} width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-folder-icon" />
       <span className="sidebar-folder-label">{label}</span>
       {badge && <span className="sidebar-badge">{badge}</span>}
       {/* The ⌘-number shortcut is no longer shown as a chip here: the numbers
@@ -253,7 +253,12 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
       <div className="sidebar-actions">
         <button type="button" className="sidebar-action-row focus-ring" onClick={onNewChat} title="New chat">
-          <Icon name="ph:note-pencil" width={28} height={28} aria-hidden />
+          <Icon
+            name="ph:note-pencil"
+            width={CAVE_ICON_SIZE.sidePanelAction}
+            height={CAVE_ICON_SIZE.sidePanelAction}
+            aria-hidden
+          />
           <span>New chat</span>
         </button>
       </div>
@@ -307,7 +312,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           title="Dashboard — activity overview and daily reports"
         >
           <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:squares-four" width={20} className="sidebar-foot-icon" />
+            <Icon name="ph:squares-four" width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-foot-icon" />
           </span>
           <span className="sidebar-foot-label">Dashboard</span>
         </a>
@@ -322,7 +327,9 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             <span className="sidebar-foot-icon-cell" aria-hidden="true">
               <Icon
                 name={unreadCount > 0 ? "ph:bell-fill" : "ph:bell"}
-                width={20}
+                width={CAVE_ICON_SIZE.sidePanelNav}
+                height={CAVE_ICON_SIZE.sidePanelNav}
+                className="sidebar-foot-icon"
               />
             </span>
             <span className="sidebar-foot-label">Notifications</span>
@@ -341,7 +348,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           title="Settings"
         >
           <span className="sidebar-foot-icon-cell" aria-hidden="true">
-            <Icon name="ph:gear-six" width={20} className="sidebar-foot-icon" />
+            <Icon name="ph:gear-six" width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-foot-icon" />
           </span>
           <span className="sidebar-foot-label">Settings</span>
         </button>

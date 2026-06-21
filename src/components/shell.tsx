@@ -10,7 +10,7 @@ import {
   useDefaultLayout,
   type PanelImperativeHandle,
 } from "react-resizable-panels";
-import { Icon, type IconName } from "@/lib/icon";
+import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
 import { UpdateBannerTrigger } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -580,7 +580,7 @@ function ShellInner({
       title={navOpen ? `Collapse navigation (${leftPanelShortcutLabel})` : `Expand navigation (${leftPanelShortcutLabel})`}
       onClick={toggleNavPanel}
     >
-      <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
+      <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>
   ) : null;
   const rightToggles = !isMobile && hasFamiliar ? (
@@ -595,7 +595,7 @@ function ShellInner({
         title="Expand side panel"
         onClick={() => window.dispatchEvent(new CustomEvent("cave:right-panel-expand"))}
       >
-        <Icon name="ph:arrows-out-simple" width={14} />
+        <Icon name="ph:arrows-out-simple" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
       </button>
       <button
         type="button"
@@ -605,7 +605,7 @@ function ShellInner({
         title={familiarOpen ? `Hide side panel (${rightPanelShortcutLabel})` : `Show side panel (${rightPanelShortcutLabel})`}
         onClick={toggleRightPanel}
       >
-        <Icon name={familiarOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={15} />
+        <Icon name={familiarOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
       </button>
     </>
   ) : null;
@@ -692,7 +692,7 @@ export function ShellNavButton({ item }: { item: ShellNavItem }) {
       onClick={item.onClick}
     >
       <span className="shell-nav-item-icon">
-        <Icon name={item.icon} width={14} />
+        <Icon name={item.icon} width={CAVE_ICON_SIZE.shellNav} height={CAVE_ICON_SIZE.shellNav} />
       </span>
       <span>{item.label}</span>
       {item.presence && (
@@ -721,7 +721,8 @@ export function ShellNavHeader({
       <span>{label}</span>
       <Icon
         name="ph:caret-down"
-        width={12}
+        width={CAVE_ICON_SIZE.shellInline}
+        height={CAVE_ICON_SIZE.shellInline}
         className="ml-auto opacity-60"
       />
     </button>
@@ -756,7 +757,7 @@ function ShellBannerStrip() {
             onClick={() => { b.onDismiss?.(); dismissBanner(b.id); }}
             title="Dismiss"
           >
-            <Icon name="ph:x" width={11} />
+            <Icon name="ph:x" width={CAVE_ICON_SIZE.shellDismiss} height={CAVE_ICON_SIZE.shellDismiss} />
           </button>
         </div>
       ))}

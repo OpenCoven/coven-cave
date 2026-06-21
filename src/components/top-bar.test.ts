@@ -3,6 +3,25 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
+const iconSource = readFileSync(new URL("../lib/icon.tsx", import.meta.url), "utf8");
+
+assert.match(
+  iconSource,
+  /export const CAVE_ICON_SIZE = \{[\s\S]*?headerAction: "var\(--icon-md\)"[\s\S]*?headerSearch: "var\(--icon-sm\)"/,
+  "Top bar icon sizes should be centralized on the compact global icon scale",
+);
+
+assert.match(
+  source,
+  /import \{ Icon, CAVE_ICON_SIZE \} from "@\/lib\/icon"/,
+  "TopBar should import the shared icon size constants with the Icon wrapper",
+);
+
+assert.doesNotMatch(
+  source,
+  /<Icon[\s\S]{0,140}width=\{?(?:20|22|24|28|36|40)\}?/,
+  "TopBar chrome icons should use CAVE_ICON_SIZE instead of raw oversized pixel widths",
+);
 
 assert.doesNotMatch(
   source,

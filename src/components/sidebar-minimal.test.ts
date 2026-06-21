@@ -6,6 +6,42 @@ const styles = readFileSync(new URL("../styles/sidebar-minimal.css", import.meta
 const source = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
+assert.match(
+  source,
+  /import \{ Icon, CAVE_ICON_SIZE \} from "@\/lib\/icon"/,
+  "SidebarMinimal should import the shared icon size constants with the Icon wrapper",
+);
+
+assert.doesNotMatch(
+  source,
+  /<Icon[\s\S]{0,140}width=\{?(?:20|28|36|40)\}?/,
+  "Sidebar chrome icons should use CAVE_ICON_SIZE instead of raw oversized pixel widths",
+);
+
+assert.match(
+  source,
+  /<Icon name=\{iconName\} width=\{CAVE_ICON_SIZE\.sidePanelNav\} height=\{CAVE_ICON_SIZE\.sidePanelNav\} className="sidebar-folder-icon" \/>/,
+  "Sidebar nav rows should use the shared compact side-panel nav icon size",
+);
+
+assert.doesNotMatch(
+  styles,
+  /\.sidebar-(?:folder|action|foot)-icon\s*\{[^}]*width:\s*(?:14px|20px|28px|36px|40px)/,
+  "Sidebar icon CSS must not override the shared compact icon scale with raw pixel sizes",
+);
+
+assert.doesNotMatch(
+  styles,
+  /\.sidebar-folder-row\s*\{[^}]*font-size:\s*18px/,
+  "Sidebar nav rows should not use oversized 18px text that makes icons read huge",
+);
+
+assert.match(
+  styles,
+  /\.sidebar-folder-row\s*\{[^}]*font-size:\s*13px/,
+  "Sidebar nav rows should keep compact side-panel text sizing",
+);
+
 // Delegations/calls used to be a standalone page. It is removed from top-level
 // navigation and workspace routing.
 assert.doesNotMatch(
@@ -255,7 +291,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<Icon name="ph:note-pencil"[\s\S]*?<span>New chat<\/span>/,
+  /<Icon[\s\S]{0,180}name="ph:note-pencil"[\s\S]*?<span>New chat<\/span>/,
   "the New chat CTA is labelled and iconed",
 );
 

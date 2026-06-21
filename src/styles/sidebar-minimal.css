@@ -100,13 +100,13 @@
   align-items: center;
   width: 100%;
   gap: 10px;
-  padding: 8px 10px;
-  min-height: 36px;
+  padding: 0 8px;
+  min-height: 34px;
   border-radius: var(--radius-control);
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 18px;
+  font-size: 13px;
   cursor: pointer;
   text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
@@ -144,7 +144,8 @@
 
 .sidebar-action-icon {
   flex-shrink: 0;
-  width: 18px;
+  width: var(--icon-md);
+  height: var(--icon-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -478,7 +479,7 @@
   border: none;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 18px;
+  font-size: 13px;
   cursor: pointer;
   text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
@@ -883,7 +884,8 @@
 
 .sidebar-folder-icon,
 .sidebar-actions--footer .sidebar-action-icon {
-  width: 14px;
+  width: var(--icon-md);
+  height: var(--icon-md);
 }
 
 .sidebar-folder-row:hover,
@@ -1070,14 +1072,18 @@
   margin: 0 auto;
 }
 
-/* Nav icon sizing — the width prop alone never resized these: folder/new-chat
-   were CSS-capped (14/18px) and the default 1em height squished the rest, so
-   the icons never visibly grew. Size them explicitly (square) so they scale. */
-.sidebar-folder-icon { width: 40px; height: 40px; }
-.sidebar-action-icon { width: 40px; height: 40px; }
-.sidebar-foot-icon { width: 36px; height: 36px; }
+/* Nav icon sizing follows the global icon scale in globals.css. */
+.sidebar-folder-icon,
+.sidebar-action-icon,
+.sidebar-foot-icon {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
 
-/* Keep the collapsed icon rail comfortable (the 40px icons would touch edges). */
+/* Keep the collapsed icon rail readable without oversized glyphs. */
 .shell-nav--rail .sidebar-folder-icon,
 .shell-nav--rail .sidebar-action-icon,
-.shell-nav--rail .sidebar-foot-icon { width: 28px; height: 28px; }
+.shell-nav--rail .sidebar-foot-icon {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+}

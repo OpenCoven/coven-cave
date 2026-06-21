@@ -12,6 +12,18 @@ const projectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 
+assert.match(
+  shell,
+  /import \{ Icon, CAVE_ICON_SIZE, type IconName \} from "@\/lib\/icon"/,
+  "Shell should import the shared icon size constants with the Icon wrapper",
+);
+
+assert.doesNotMatch(
+  shell,
+  /<Icon[\s\S]{0,140}width=\{?(?:14|15|20|28|36|40)\}?/,
+  "Shell panel chrome icons should use CAVE_ICON_SIZE instead of raw pixel widths",
+);
+
 // The panel toggles are hoisted into the top bar (a flex row wrapping the
 // rendered top bar), desktop-only — they're built only when !isMobile.
 assert.match(

@@ -283,6 +283,20 @@ export const ICON_NAMES = [
 
 export type IconName = (typeof ICON_NAMES)[number];
 
+export const CAVE_ICON_SIZE = {
+  headerToggle: "var(--icon-md)",
+  headerAction: "var(--icon-md)",
+  headerSearch: "var(--icon-sm)",
+  shellToggle: "var(--icon-sm)",
+  shellNav: "var(--icon-sm)",
+  shellInline: "var(--icon-xs)",
+  shellDismiss: "var(--icon-xs)",
+  sidePanelNav: "var(--icon-md)",
+  sidePanelAction: "var(--icon-md)",
+  sidePanelChevron: "var(--icon-sm)",
+  sidePanelRail: "var(--icon-lg)",
+} as const;
+
 type IconProps = {
   name: IconName;
   className?: string;
