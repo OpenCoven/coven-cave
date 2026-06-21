@@ -278,8 +278,12 @@
   /* Softer than a full hairline — the footer should read as a calm boundary,
      not a hard rule competing with the nav. */
   border-top: 1px solid color-mix(in oklch, var(--border-hairline) 45%, transparent);
-  display: grid;
-  flex-direction: column;
+  /* Compact icon row: Dashboard · Notifications · Settings share one line as
+     equal-width icon buttons (labels are tooltips). Reclaims the vertical space
+     three stacked labeled rows used to take. The rail + mobile drawer restore a
+     vertical stack below. */
+  display: flex;
+  flex-direction: row;
   gap: 4px;
 }
 
@@ -288,6 +292,10 @@
   position: relative;
   display: flex;
   align-items: center;
+  /* Compact row: each button is an equal-width, centered icon target. */
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
   gap: 10px;
   padding: 0 8px;
   border-radius: 8px;
@@ -298,17 +306,7 @@
   cursor: pointer;
   text-align: left;
   transition: background 0.12s ease, color 0.12s ease;
-  width: 100%;
   min-height: 34px;
-}
-
-.sidebar-foot-utility-row {
-  display: grid;
-  /* Settings leads in the 1fr column so its icon + label line up exactly with
-     Dashboard/Notifications above; the phone handoff trails as a 34px icon cell
-     on the right rather than indenting Settings. */
-  grid-template-columns: minmax(0, 1fr) 34px;
-  gap: 4px;
 }
 
 .sidebar-foot-icon-btn {
@@ -345,6 +343,8 @@
 }
 
 .sidebar-foot-label {
+  /* Tooltip-only in the compact icon row; the rail/mobile drawer re-show it. */
+  display: none;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -354,20 +354,22 @@
   color: inherit;
 }
 
-/* Unread notification count pill, right-aligned in the Notifications footer
-   row (mirrors the bell badge's danger treatment). */
+/* Unread notification count pill. In the compact icon row it floats at the
+   top-right corner of the bell button (no label to sit beside). */
 .sidebar-foot-badge {
+  position: absolute;
+  top: 2px;
+  right: 6px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  margin-left: auto;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
   border-radius: 999px;
   background: var(--color-danger);
   color: var(--text-primary);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   line-height: 1;
 }
@@ -1020,6 +1022,13 @@
   align-items: center;
 }
 
+/* The collapsed rail stacks its footer icons vertically (the expanded footer is
+   a horizontal row); a row here would overflow the narrow rail. */
+.shell-nav--rail .sidebar-foot {
+  flex-direction: column;
+  align-items: center;
+}
+
 /* Each row becomes a centered 40px square hit target — comfortable for the
    icon, still a wide-enough click area. */
 .shell-nav--rail .sidebar-folder-row,
@@ -1027,16 +1036,9 @@
 .shell-nav--rail .sidebar-foot-btn,
 .shell-nav--rail .sidebar-foot-icon-btn {
   justify-content: center;
+  flex: none;
   gap: 0;
   width: 40px;
   padding: 0;
   margin: 0 auto;
-}
-
-/* The footer's "Settings + phone" two-column grid stacks into the single rail
-   column. */
-.shell-nav--rail .sidebar-foot-utility-row {
-  grid-template-columns: 1fr;
-  justify-items: center;
-  gap: 4px;
 }

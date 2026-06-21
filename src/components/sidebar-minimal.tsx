@@ -287,6 +287,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         <a
           className="sidebar-foot-btn"
           href="/dashboard"
+          aria-label="Dashboard"
           title="Dashboard — activity overview and daily reports"
         >
           <span className="sidebar-foot-icon-cell" aria-hidden="true">
@@ -317,20 +318,18 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             ) : null}
           </button>
         ) : null}
-        <div className="sidebar-foot-utility-row">
-          <button
-            type="button"
-            className="sidebar-foot-btn"
-            onClick={onOpenSettings}
-            aria-label="Settings"
-            title="Settings"
-          >
-            <span className="sidebar-foot-icon-cell" aria-hidden="true">
-              <Icon name="ph:gear-six" width={14} className="sidebar-foot-icon" />
-            </span>
-            <span className="sidebar-foot-label">Settings</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          className="sidebar-foot-btn"
+          onClick={onOpenSettings}
+          aria-label="Settings"
+          title="Settings"
+        >
+          <span className="sidebar-foot-icon-cell" aria-hidden="true">
+            <Icon name="ph:gear-six" width={14} className="sidebar-foot-icon" />
+          </span>
+          <span className="sidebar-foot-label">Settings</span>
+        </button>
       </div>
     </nav>
   );
