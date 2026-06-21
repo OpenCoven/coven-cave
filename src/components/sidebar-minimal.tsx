@@ -61,7 +61,17 @@ export type SidebarMinimalProps = {
   onOpenInbox?: () => void;
   onOpenInboxItem?: (item: InboxItem) => void;
   onNotificationPrefsChanged?: () => void;
+  /** Live counts surfaced as small nav badges (omitted/0 -> no badge). */
+  boardOpenCount?: number;
+  scheduleNeedsCount?: number;
+  githubAssignedCount?: number;
 };
+
+// Format a count as a compact nav badge; 0/undefined yields no badge.
+function badgeText(n?: number): string | undefined {
+  if (!n || n <= 0) return undefined;
+  return n > 99 ? "99+" : String(n);
+}
 
 const FOLDER_MODES: Array<{
   id: FolderMode;
@@ -77,10 +87,10 @@ const FOLDER_MODES: Array<{
   // Work
   { id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1", description: "Overview and quick actions" },
   { id: "chat", label: "Familiars", iconName: "ph:chats", group: "work", kbd: "⌘2", description: "Talk with your familiars" },
-  { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects" },
+  { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", group: "work", description: "Your daily journal and generated sketches" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4", description: "Schedule and timeline of work" },
-  { id: "inbox", label: "Schedules", iconName: "ph:calendar-bold", group: "work", kbd: "⌘5", description: "Reminders and recurring agent automations" },
+  { id: "inbox", label: "Schedules", iconName: "ph:calendar-bold", group: "work", kbd: "⌘5", description: "Reminders and recurring agent automations", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Tools
   { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘6", description: "Built-in web browser" },
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description: "Shell session in your project" },
@@ -89,7 +99,7 @@ const FOLDER_MODES: Array<{
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, workflows, skills, and the capabilities your familiars can use" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
   // Add-ons (gated)
-  { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons", description: "Issues and PRs assigned to you" },
+  { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount) },
 ];
 
 export { FOLDER_MODES };
