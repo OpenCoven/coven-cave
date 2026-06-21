@@ -19,6 +19,10 @@ final class AppModel {
 
     var threads: [ChatThread] = []
 
+    var tasks: [BoardCard] = []
+    var tasksError: String?
+    var tasksLoaded = false
+
     var client: CaveClient? {
         guard let connection else { return nil }
         return CaveClient(connection: connection)
@@ -32,6 +36,17 @@ final class AppModel {
 
     func familiar(_ id: String) -> Familiar? {
         familiars.first { $0.id == id }
+    }
+
+    func loadTasks() async {
+        guard let client else { return }
+        do {
+            tasks = try await client.tasks()
+            tasksError = nil
+        } catch {
+            tasksError = error.localizedDescription
+        }
+        tasksLoaded = true
     }
 
     // MARK: - Connection lifecycle

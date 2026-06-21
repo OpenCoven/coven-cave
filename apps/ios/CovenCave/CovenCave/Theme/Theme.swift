@@ -52,4 +52,26 @@ enum Theme {
         let letters = parts.compactMap { $0.first }.map(String.init)
         return letters.isEmpty ? "?" : letters.joined().uppercased()
     }
+
+    // MARK: - Tasks
+
+    static func color(for status: CardStatus) -> Color {
+        switch status {
+        case .running: return Color(hex: "#3B82F6")!   // blue
+        case .review: return Color(hex: "#8B5CF6")!    // violet
+        case .blocked: return Color(hex: "#EF4444")!   // red
+        case .inbox: return Color(hex: "#14B8A6")!     // teal
+        case .backlog: return Color(hex: "#94A3B8")!   // slate
+        case .done: return Color(hex: "#10B981")!      // green
+        }
+    }
+
+    static func color(for priority: CardPriority) -> Color {
+        switch priority {
+        case .urgent: return Color(hex: "#EF4444")!
+        case .high: return Color(hex: "#F59E0B")!
+        case .medium: return Color(hex: "#3B82F6")!
+        case .low: return Color(hex: "#94A3B8")!
+        }
+    }
 }

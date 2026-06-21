@@ -76,6 +76,19 @@ struct CaveClient {
         }
     }
 
+    // MARK: - Tasks (board)
+
+    func tasks() async throws -> [BoardCard] {
+        let req = try request("api/board")
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(BoardResponse.self, from: data).cards
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
     func conversation(sessionId: String) async throws -> Conversation? {
         let req = try request("api/chat/conversation/\(sessionId)")
         let (data, resp) = try await session.data(for: req)
