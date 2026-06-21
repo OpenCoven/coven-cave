@@ -456,6 +456,9 @@ export function SessionChangesInner({
   // expanded file's diff so it doesn't show a frozen snapshot. Keyed on a
   // signature of the list so it only fires when something actually changed.
   const filesSig = files.map((f) => `${f.path}:${f.insertions ?? 0}:${f.deletions ?? 0}`).join("|");
+  // Aggregate +/- across all changed files for the header summary.
+  const totalInsertions = files.reduce((sum, f) => sum + (f.insertions ?? 0), 0);
+  const totalDeletions = files.reduce((sum, f) => sum + (f.deletions ?? 0), 0);
   useEffect(() => {
     if (!expandedPath) return;
     if (!files.some((f) => f.path === expandedPath)) return;
@@ -616,9 +619,17 @@ export function SessionChangesInner({
           <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
             Working tree changes
             {loaded && !notARepo && !error ? (
-              <span className="ml-1.5 font-mono font-normal normal-case text-[var(--text-muted)]">
-                {files.length}
-              </span>
+              <>
+                <span className="ml-1.5 font-mono font-normal normal-case text-[var(--text-muted)]">
+                  {files.length}
+                </span>
+                {totalInsertions + totalDeletions > 0 ? (
+                  <span className="ml-1.5 font-mono font-normal normal-case">
+                    <span className="text-[var(--accent-presence)]">+{totalInsertions}</span>{" "}
+                    <span className="text-[var(--color-danger)]">−{totalDeletions}</span>
+                  </span>
+                ) : null}
+              </>
             ) : null}
           </span>
           <span className="flex shrink-0 items-center gap-1">
