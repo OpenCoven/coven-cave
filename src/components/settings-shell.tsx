@@ -1239,7 +1239,7 @@ function AboutSection() {
 
 function SettingsPage({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="max-w-none space-y-6">
       <div>
         <h1 className="text-[18px] font-semibold text-[var(--text-primary)]">{title}</h1>
         {description && <p className="mt-1 text-[12px] text-[var(--text-muted)]">{description}</p>}
