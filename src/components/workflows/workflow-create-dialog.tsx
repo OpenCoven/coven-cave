@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { parse as parseYaml } from "yaml";
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { slugifyWorkflowId } from "@/lib/workflow-edit";
@@ -221,6 +222,89 @@ export function WorkflowRunInputsDialog({ workflow, inputSteps, onClose, onRun }
           <button type="button" className="workflow-play-button workflow-primary-button" onClick={submit}>
             <Icon name="ph:lightning-bold" width={13} />
             {filledCount > 0 ? `Run with ${filledCount} input${filledCount === 1 ? "" : "s"}` : "Run"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type WorkflowImportDialogProps = {
+  onClose: () => void;
+  onImport: (manifest: Record<string, unknown>) => void;
+};
+
+/**
+ * Import a workflow by pasting its manifest (YAML or JSON — `yaml.parse` reads
+ * both). The round-trip partner to the manifest Copy button: copy a manifest
+ * from one workflow, paste it here to recreate it. Schema validation happens on
+ * Save; this dialog only guards that the paste is a single manifest object.
+ */
+export function WorkflowImportDialog({ onClose, onImport }: WorkflowImportDialogProps) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(true, dialogRef, { onEscape: onClose, focusFirst: false });
+
+  const submit = () => {
+    if (!text.trim()) {
+      setError("Paste a workflow manifest first.");
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = parseYaml(text);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't parse the manifest.");
+      return;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      setError("A manifest must be a single YAML/JSON object.");
+      return;
+    }
+    onImport(parsed as Record<string, unknown>);
+  };
+
+  return (
+    <div className="workflow-dialog-backdrop" role="presentation" onClick={onClose}>
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="workflow-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Import workflow"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="workflow-panel-heading">
+          <div>
+            <p className="workflow-eyebrow">Import workflow</p>
+            <h2>Paste a manifest</h2>
+          </div>
+          <button type="button" className="workflow-icon-button" onClick={onClose} aria-label="Close">
+            <Icon name="ph:x" width={14} />
+          </button>
+        </div>
+        <p className="workflow-muted">YAML or JSON. Imported as a personal copy; the id is de-duplicated if it collides.</p>
+        <textarea
+          className="workflow-run-input-field workflow-import-field"
+          rows={10}
+          autoFocus
+          placeholder={"id: my-workflow\nversion: 0.1.0\nsteps:\n  - id: input\n    kind: input\n  - id: output\n    kind: output"}
+          value={text}
+          onChange={(event) => {
+            setText(event.target.value);
+            if (error) setError(null);
+          }}
+        />
+        {error && <p className="workflow-import-error">{error}</p>}
+        <div className="workflow-dialog-actions">
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="workflow-primary-button" disabled={text.trim().length === 0} onClick={submit}>
+            <Icon name="ph:clipboard-text" width={13} />
+            Import
           </button>
         </div>
       </div>

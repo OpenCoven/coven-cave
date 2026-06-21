@@ -111,4 +111,30 @@ for (let i = 0; i < 60; i += 1) {
 }
 assert.ok(state.past.length <= 50, `history is capped (got ${state.past.length})`);
 
+// --- duplicate-step: clones config + prerequisites, inserts after, unique id ---
+state = fresh();
+state = workflowDraftReducer(state, { type: "duplicate-step", id: "execute" });
+{
+  const ids = (state.draft.steps ?? []).map((s) => s.id);
+  assert.deepEqual(ids, ["plan", "execute", "execute-copy"], "duplicate inserts a copy right after the original");
+  const copy = state.draft.steps!.find((s) => s.id === "execute-copy")!;
+  assert.equal(copy.kind, "agent", "copy keeps the original kind");
+  assert.deepEqual(copy.requires, ["plan"], "copy keeps the original prerequisites");
+  assert.equal(copy.name, "Execute copy", "copy gets a distinct name");
+  assert.equal(state.dirty, true, "duplicate marks the draft dirty");
+}
+// second duplicate dedupes the id
+state = workflowDraftReducer(state, { type: "duplicate-step", id: "execute" });
+assert.ok(
+  (state.draft.steps ?? []).some((s) => s.id === "execute-copy-2"),
+  "a colliding copy id is de-duplicated",
+);
+// duplicating a missing step is a no-op
+{
+  const before = state.draft.steps!.length;
+  const next = workflowDraftReducer(state, { type: "duplicate-step", id: "nope" });
+  assert.equal(next, state, "duplicating an unknown step returns the same state");
+  assert.equal(next.draft.steps!.length, before);
+}
+
 console.log("workflow-draft.test.ts: ok");

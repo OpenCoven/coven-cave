@@ -2,7 +2,7 @@
 
 import "@/styles/workflows.css";
 
-import { useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { useIsMobile } from "@/lib/use-viewport";
 import { Tabs } from "@/components/ui/tabs";
@@ -24,7 +24,7 @@ import { WorkflowAttachments } from "./workflow-attachments";
 import type { WorkflowFamiliarOption } from "./workflow-attachments";
 import { WorkflowCanvas } from "./workflow-canvas";
 import { WorkflowStepList } from "./workflow-step-list";
-import { WorkflowCreateDialog, WorkflowRunInputsDialog, WorkflowScheduleDialog } from "./workflow-create-dialog";
+import { WorkflowCreateDialog, WorkflowImportDialog, WorkflowRunInputsDialog, WorkflowScheduleDialog } from "./workflow-create-dialog";
 import { WorkflowInspector, type WorkflowUsesOption } from "./workflow-inspector";
 import { WorkflowLibrary } from "./workflow-library";
 import { WorkflowManifestPreview } from "./workflow-manifest-preview";
@@ -111,10 +111,12 @@ export type WorkflowStudioProps = {
   onUpdateStep: (id: string, patch: Partial<WorkflowStepSummary>) => void;
   onUpdateMeta: (patch: Partial<WorkflowSummary>) => void;
   onRemoveStep: (id: string) => void;
+  onDuplicateStep: (id: string) => void;
   onConnect: (source: string, target: string) => void;
   onSavePositions: (positions: WorkflowNodePositions) => void;
   onDisconnect: (source: string, target: string) => void;
   onCreate: (input: { name: string; pattern: WorkflowPattern; familiar?: string }) => void;
+  onImport: (manifest: Record<string, unknown>) => void;
   onDuplicate: (workflow: WorkflowSummary) => void;
   onDelete: (workflow: WorkflowSummary) => void;
   onAttachRole: (role: WorkflowRoleSummary, attach: boolean) => void;
@@ -133,6 +135,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
     error,
   } = props;
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [runInputsOpen, setRunInputsOpen] = useState(false);
   // Clicking Play captures the workflow's declared input(s) first when it has
@@ -146,6 +149,47 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
     }
     props.onPlay(workflow);
   };
+
+  // Studio keyboard shortcuts (active only while the studio is mounted):
+  //   ⌘/Ctrl+S        save (always preventDefault so the browser's save dialog
+  //                   never steals it)
+  //   ⌘/Ctrl+Enter    dry-run the selected workflow
+  //   ⌘/Ctrl+Z        undo · ⌘/Ctrl+Shift+Z redo — only outside a text field, so
+  //                   native text-editing undo still works while typing.
+  const { onSave, onDryRun, onUndo, onRedo, dirty, canUndo, canRedo } = props;
+  const anyBusy = busyId !== null;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      const key = event.key.toLowerCase();
+      const target = event.target as HTMLElement | null;
+      const editing = Boolean(
+        target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)),
+      );
+      if (key === "s") {
+        event.preventDefault();
+        if (selectedWorkflow && dirty && !anyBusy) onSave(selectedWorkflow);
+      } else if (key === "enter") {
+        if (selectedWorkflow && !anyBusy) {
+          event.preventDefault();
+          onDryRun(selectedWorkflow);
+        }
+      } else if (key === "z" && !editing) {
+        if (event.shiftKey) {
+          if (canRedo) {
+            event.preventDefault();
+            onRedo();
+          }
+        } else if (canUndo) {
+          event.preventDefault();
+          onUndo();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedWorkflow, dirty, anyBusy, canUndo, canRedo, onSave, onDryRun, onUndo, onRedo]);
+
   // Below the shell breakpoint the React Flow canvas (pan/zoom/drag-connect) is
   // awkward on touch, so we swap it for a linear, scrollable step list that reads
   // from the same graph source.
@@ -223,6 +267,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
             onRefresh={props.onRefresh}
             onSelectWorkflow={props.onSelectWorkflow}
             onCreateRequest={() => setCreateOpen(true)}
+            onImportRequest={() => setImportOpen(true)}
             onDuplicate={props.onDuplicate}
             onDelete={props.onDelete}
           />
@@ -361,6 +406,7 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
                 onUpdateStep={props.onUpdateStep}
                 onUpdateMeta={props.onUpdateMeta}
                 onRemoveStep={props.onRemoveStep}
+                onDuplicateStep={props.onDuplicateStep}
                 onSelectStep={props.onSelectStep}
                 onConnect={props.onConnect}
                 onDisconnect={props.onDisconnect}
@@ -388,6 +434,15 @@ export function WorkflowStudio(props: WorkflowStudioProps) {
           onCreate={(input) => {
             setCreateOpen(false);
             props.onCreate(input);
+          }}
+        />
+      )}
+      {importOpen && (
+        <WorkflowImportDialog
+          onClose={() => setImportOpen(false)}
+          onImport={(manifest) => {
+            setImportOpen(false);
+            props.onImport(manifest);
           }}
         />
       )}

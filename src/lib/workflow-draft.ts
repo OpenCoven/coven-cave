@@ -22,6 +22,7 @@ export type WorkflowDraftAction =
   | { type: "update-meta"; patch: Partial<WorkflowSummary> }
   | { type: "add-step"; kind: WorkflowStepKind }
   | { type: "update-step"; id: string; patch: Partial<WorkflowStepSummary> }
+  | { type: "duplicate-step"; id: string }
   | { type: "remove-step"; id: string }
   | { type: "connect"; source: string; target: string }
   | { type: "disconnect"; source: string; target: string }
@@ -100,6 +101,31 @@ export function workflowDraftReducer(
           }
         }
       }
+      return commit(state, draft);
+    }
+
+    case "duplicate-step": {
+      const steps = state.draft.steps ?? [];
+      const index = steps.findIndex((step) => step.id === action.id);
+      if (index === -1) return state;
+      const original = steps[index];
+      const taken = new Set(steps.map((step) => step.id));
+      let copyId = `${action.id}-copy`;
+      let n = 2;
+      while (taken.has(copyId)) {
+        copyId = `${action.id}-copy-${n}`;
+        n += 1;
+      }
+      // Clone the step's config and prerequisites verbatim; insert right after
+      // the original so the duplicate reads as a sibling. Nothing depends on the
+      // copy yet, so no other step's `requires` changes.
+      const clone: WorkflowStepSummary = {
+        ...structuredClone(original),
+        id: copyId,
+        name: original.name ? `${original.name} copy` : copyId,
+      };
+      const draft = structuredClone(state.draft);
+      draft.steps!.splice(index + 1, 0, clone);
       return commit(state, draft);
     }
 

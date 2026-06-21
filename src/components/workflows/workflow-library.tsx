@@ -14,6 +14,7 @@ type WorkflowLibraryProps = {
   onRefresh: () => void;
   onSelectWorkflow: (workflow: WorkflowSummary) => void;
   onCreateRequest: () => void;
+  onImportRequest: () => void;
   onDuplicate: (workflow: WorkflowSummary) => void;
   onDelete: (workflow: WorkflowSummary) => void;
 };
@@ -50,6 +51,7 @@ export function WorkflowLibrary({
   onRefresh,
   onSelectWorkflow,
   onCreateRequest,
+  onImportRequest,
   onDuplicate,
   onDelete,
 }: WorkflowLibraryProps) {
@@ -118,6 +120,15 @@ export function WorkflowLibrary({
             aria-label="New workflow"
           >
             <Icon name="ph:plus-bold" width={14} />
+          </button>
+          <button
+            type="button"
+            className="workflow-icon-button"
+            onClick={onImportRequest}
+            title="Import workflow from a manifest"
+            aria-label="Import workflow from a manifest"
+          >
+            <Icon name="ph:clipboard-text" width={14} />
           </button>
           <button
             type="button"
