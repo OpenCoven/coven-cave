@@ -1661,7 +1661,10 @@
 /* group header row */
 .cg-grouprow { display: flex; align-items: stretch; }
 .cg-grouprow .cg-left {
-  grid-template-columns: 1fr auto; gap: 6px; height: var(--cg-row-h);
+  /* caret · name (fills) · count — three children, so three columns. With only
+     two (1fr auto) the caret ate the 1fr, shoving the name over the timeline
+     and wrapping the count to a second line. */
+  grid-template-columns: auto 1fr auto; gap: 6px; height: var(--cg-row-h);
   background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
 }
 .cg-grouptl { background-color: color-mix(in oklch, var(--accent-presence) 4%, transparent); }
