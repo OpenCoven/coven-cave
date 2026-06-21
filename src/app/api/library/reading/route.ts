@@ -66,13 +66,20 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
+    const nextStatus = body.status as ReadingStatus;
     const item = await store.updateReading(body.id, (existing) => ({
       ...existing,
-      status: body.status as ReadingStatus,
+      status: nextStatus,
       progress: body.progress ?? existing.progress,
-      finishedAt: body.status === "done" && existing.status !== "done"
-        ? new Date().toISOString()
-        : existing.finishedAt,
+      // Stamp finishedAt when an item first becomes done; clear it whenever it
+      // leaves done (so an un-marked item doesn't keep a stale completion date);
+      // otherwise preserve the existing stamp.
+      finishedAt:
+        nextStatus !== "done"
+          ? undefined
+          : existing.status === "done"
+            ? existing.finishedAt
+            : new Date().toISOString(),
     }));
     if (!item) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
     return NextResponse.json({ ok: true, item });
