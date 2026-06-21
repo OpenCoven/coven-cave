@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { formatDate } from "@/lib/datetime-format";
 import { relativeTime } from "@/lib/relative-time";
@@ -59,8 +59,9 @@ export function LibraryDocList({
   error,
   onRetry,
 }: Props) {
-  const filtered = filterDocs(docs, searchQuery);
-  const movableCollections = collections.filter((collection) => collection.id !== "all");
+  const filtered = useMemo(() => filterDocs(docs, searchQuery), [docs, searchQuery]);
+  const movableCollections = useMemo(() => collections.filter((collection) => collection.id !== "all"), [collections]);
+  const movableCollectionIds = useMemo(() => new Set(movableCollections.map((c) => c.id)), [movableCollections]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -162,7 +163,7 @@ export function LibraryDocList({
           filtered.map((doc) => {
             const isEditing = editingId === doc.id;
             const isBusy = busyId === doc.id;
-            const moveValue = movableCollections.some((collection) => collection.id === doc.collection)
+            const moveValue = movableCollectionIds.has(doc.collection)
               ? doc.collection
               : "";
             return (
