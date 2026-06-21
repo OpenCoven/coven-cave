@@ -40,6 +40,10 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Coven Cave connects to your desktop over your private Tailscale network to chat with your familiars.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Coven Cave uses the microphone so you can dictate messages to your familiars.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Coven Cave transcribes your speech into the message field when you dictate.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_tailscale._tcp</string>

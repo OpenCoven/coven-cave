@@ -95,8 +95,15 @@ struct MessageBubble: View {
                         .foregroundStyle(Theme.color(for: familiar))
                         .padding(.leading, 4)
                 }
-                bubble
-                    .contextMenu { messageActions }
+                if !message.attachmentDataUrls.isEmpty {
+                    attachmentImages
+                        .contextMenu { messageActions }
+                }
+                // Hide the (empty) text bubble for image-only messages.
+                if !parsed.visible.isEmpty || message.attachmentDataUrls.isEmpty {
+                    bubble
+                        .contextMenu { messageActions }
+                }
 
                 if !isUser, isLast, !message.streaming, !parsed.suggestions.isEmpty {
                     SuggestionPills(suggestions: parsed.suggestions, onTap: onSuggestion)
@@ -104,6 +111,22 @@ struct MessageBubble: View {
             }
 
             if !isUser { Spacer(minLength: 48) }
+        }
+    }
+
+    @ViewBuilder private var attachmentImages: some View {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 4) {
+            ForEach(message.attachmentDataUrls, id: \.self) { url in
+                if let image = UIImage.fromDataUrl(url) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 240, maxHeight: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
+                }
+            }
         }
     }
 

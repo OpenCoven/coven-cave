@@ -14,6 +14,8 @@ struct DisplayMessage: Identifiable, Codable, Hashable {
     var streaming: Bool = false
     var isError: Bool = false
     var createdAt: Date = Date()
+    /// Image attachments sent with this (user) message, as `data:` URLs.
+    var attachmentDataUrls: [String] = []
 }
 
 /// Plain Codable snapshot used for on-disk persistence.
@@ -79,14 +81,17 @@ final class ChatThread: Identifiable, Hashable {
     /// sending a longer prompt to the familiar — e.g. `/canvas` shows the ask
     /// but sends the full sketch instruction.
     func send(_ text: String, displayText: String? = nil,
+              attachments: [CaveClient.ChatAttachment] = [],
               client: CaveClient, onChange: @escaping () -> Void) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        // An image with no caption is a valid prompt (the familiar reads it).
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return }
         let shown = (displayText?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
             $0.isEmpty ? nil : $0
         } ?? trimmed
 
-        messages.append(DisplayMessage(role: .user, familiarId: nil, text: shown))
+        messages.append(DisplayMessage(role: .user, familiarId: nil, text: shown,
+                                       attachmentDataUrls: attachments.map(\.dataUrl)))
         updatedAt = Date()
         onChange()
 
@@ -96,7 +101,8 @@ final class ChatThread: Identifiable, Hashable {
             messages.append(placeholder)
             let messageId = placeholder.id
             Task { await self.stream(familiarId: familiarId, prompt: trimmed,
-                                     into: messageId, client: client, onChange: onChange) }
+                                     attachments: attachments, into: messageId,
+                                     client: client, onChange: onChange) }
         }
     }
 
@@ -127,10 +133,12 @@ final class ChatThread: Identifiable, Hashable {
         updatedAt = Date()
     }
 
-    private func stream(familiarId: String, prompt: String, into messageId: String,
+    private func stream(familiarId: String, prompt: String,
+                        attachments: [CaveClient.ChatAttachment] = [], into messageId: String,
                         client: CaveClient, onChange: @escaping () -> Void) async {
         let body = CaveClient.SendBody(familiarId: familiarId, prompt: prompt,
-                                       sessionId: sessionIds[familiarId])
+                                       sessionId: sessionIds[familiarId],
+                                       attachments: attachments.isEmpty ? nil : attachments)
         do {
             for try await event in client.sendStream(body) {
                 switch event {

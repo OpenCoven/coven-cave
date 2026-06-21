@@ -133,10 +133,19 @@ struct CaveClient {
 
     // MARK: - Chat streaming
 
+    /// An image attachment the server delivers to the familiar alongside the
+    /// prompt. `dataUrl` is a `data:image/...;base64,...` string.
+    struct ChatAttachment: Encodable {
+        var name: String
+        var mimeType: String
+        var dataUrl: String
+    }
+
     struct SendBody: Encodable {
         var familiarId: String
         var prompt: String
         var sessionId: String?
+        var attachments: [ChatAttachment]?
     }
 
     /// Open the SSE stream for a chat send. Yields decoded `StreamEvent`s.

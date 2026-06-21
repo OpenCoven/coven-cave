@@ -1,4 +1,15 @@
 import SwiftUI
+import PhotosUI
+import UIKit
+
+/// An image chosen in the composer, pending send.
+struct PendingImage: Identifiable {
+    let id = UUID()
+    let image: UIImage
+    let dataUrl: String
+    let mimeType: String
+    let name: String
+}
 
 struct ChatView: View {
     @Environment(AppModel.self) private var app
@@ -10,6 +21,9 @@ struct ChatView: View {
     @State private var showFamiliarPicker = false
     @State private var showTasks = false
     @State private var atBottom = true
+    @State private var dictation = SpeechDictation()
+    @State private var photoItem: PhotosPickerItem?
+    @State private var pendingImage: PendingImage?
 
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
@@ -147,23 +161,83 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            if let pendingImage {
+                attachmentPreview(pendingImage)
+            }
             composerBar
         }
         .animation(.snappy(duration: 0.18), value: showingSlashMenu)
+        .animation(.snappy(duration: 0.18), value: pendingImage?.id)
         .background(.bar)
+        // Live dictation streams its running transcript into the draft.
+        .onAppear { dictation.onUpdate = { draft = $0 } }
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task { await loadPickedImage(item) }
+        }
+    }
+
+    /// Thumbnail of the attached image above the composer, with a remove button.
+    private func attachmentPreview(_ pending: PendingImage) -> some View {
+        HStack {
+            ZStack(alignment: .topTrailing) {
+                Image(uiImage: pending.image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Color(.separator).opacity(0.5), lineWidth: 1))
+                Button {
+                    pendingImage = nil
+                    photoItem = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.white, .black.opacity(0.55))
+                }
+                .offset(x: 6, y: -6)
+                .accessibilityLabel("Remove image")
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 4)
+    }
+
+    private func startDictation() {
+        composerFocused = false
+        Haptics.tap()
+        dictation.start()
+    }
+
+    /// Decode the picked photo, downscale it to keep the payload under the
+    /// server's image cap, and stage it as a `data:` URL.
+    private func loadPickedImage(_ item: PhotosPickerItem) async {
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data) else { return }
+        let resized = image.resizedForUpload()
+        guard let jpeg = resized.jpegData(compressionQuality: 0.8) else { return }
+        let dataUrl = "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
+        await MainActor.run {
+            pendingImage = PendingImage(image: resized, dataUrl: dataUrl,
+                                        mimeType: "image/jpeg", name: "photo.jpg")
+            photoItem = nil
+            Haptics.tap()
+        }
     }
 
     private var composerBar: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            // Attachment / app drawer (wired in a later phase).
-            Button(action: {}) {
+            // Attach an image; the server delivers it to the familiar.
+            PhotosPicker(selection: $photoItem, matching: .images, photoLibrary: .shared()) {
                 Image(systemName: "plus")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 34, height: 34)
                     .background(Color(.secondarySystemBackground), in: Circle())
             }
-            .accessibilityLabel("Add attachment")
+            .accessibilityLabel("Attach image")
 
             // Hairline capsule with the field and a trailing control inside it:
             // a mic when empty, a filled send/run button once there's text.
@@ -175,7 +249,19 @@ struct ChatView: View {
                     .focused($composerFocused)
 
                 Group {
-                    if canSend {
+                    if dictation.isRecording {
+                        Button { dictation.stop() } label: {
+                            Image(systemName: "stop.circle.fill")
+                                .font(.system(size: 29))
+                                .foregroundStyle(.red)
+                                .symbolEffect(.pulse, isActive: true)
+                                .background(Circle().fill(.white).padding(3))
+                        }
+                        .padding(.trailing, 3)
+                        .padding(.bottom, 2)
+                        .transition(.scale.combined(with: .opacity))
+                        .accessibilityLabel("Stop dictation")
+                    } else if canSend {
                         Button(action: send) {
                             Image(systemName: "arrow.up.circle.fill")
                                 .font(.system(size: 29))
@@ -187,17 +273,21 @@ struct ChatView: View {
                         .transition(.scale.combined(with: .opacity))
                         .accessibilityLabel(isCommand ? "Run command" : "Send")
                     } else {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 17))
-                            .foregroundStyle(.secondary)
-                            .padding(.trailing, 12)
-                            .padding(.bottom, 8)
+                        Button { startDictation() } label: {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 17))
+                                .foregroundStyle(.secondary)
+                                .padding(.trailing, 12)
+                                .padding(.bottom, 8)
+                        }
+                        .accessibilityLabel("Dictate")
                     }
                 }
             }
-            .overlay(Capsule().strokeBorder(borderColor, lineWidth: 1))
+            .overlay(Capsule().strokeBorder(dictation.isRecording ? Color.red.opacity(0.5) : borderColor, lineWidth: 1))
             .animation(.snappy(duration: 0.18), value: canSend)
             .animation(.snappy(duration: 0.18), value: isCommand)
+            .animation(.snappy(duration: 0.18), value: dictation.isRecording)
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)
@@ -205,7 +295,7 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pendingImage != nil
     }
 
     /// True when the draft is a recognised command — tints the send affordance
@@ -222,6 +312,7 @@ struct ChatView: View {
     // MARK: - Send / dispatch
 
     private func send() {
+        dictation.stop()
         let raw = draft
         switch SlashInput.parse(raw) {
         case .command(let command, let args):
@@ -233,10 +324,15 @@ struct ChatView: View {
                                 isError: true)
             app.touch(thread)
         case .prose(let text):
-            guard !text.isEmpty, let client = app.client else { return }
+            guard let client = app.client else { return }
+            let attachments = pendingImage.map {
+                [CaveClient.ChatAttachment(name: $0.name, mimeType: $0.mimeType, dataUrl: $0.dataUrl)]
+            } ?? []
+            guard !text.isEmpty || !attachments.isEmpty else { return }
             draft = ""
+            pendingImage = nil
             Haptics.tap()
-            thread.send(text, client: client) { app.touch(thread) }
+            thread.send(text, attachments: attachments, client: client) { app.touch(thread) }
         }
     }
 
