@@ -4,10 +4,24 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @State private var editingHost: String = ""
+    @State private var showDeveloper = false
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Button {
+                        showDeveloper = true
+                    } label: {
+                        Label("Developer", systemImage: "chevron.left.forwardslash.chevron.right")
+                            .foregroundStyle(.primary)
+                    }
+                } header: {
+                    Text("Tools")
+                } footer: {
+                    Text("Code browser, terminal, and GitHub.")
+                }
+
                 Section("Desktop") {
                     LabeledContent("Address") {
                         Text(app.connection?.host ?? "—")
@@ -45,12 +59,16 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
             .onAppear { editingHost = app.connection?.host ?? "" }
+            // Developer (code/terminal/GitHub) was demoted from a tab; present it
+            // as a full-height sheet so its sub-views' own navigation stacks
+            // render cleanly. Wrapping it in another NavigationStack (e.g. for a
+            // push) would double-nest the nav bars; the sheet's grabber handles
+            // dismissal instead.
+            .sheet(isPresented: $showDeveloper) {
+                DeveloperView()
+                    .presentationDragIndicator(.visible)
+            }
         }
     }
 

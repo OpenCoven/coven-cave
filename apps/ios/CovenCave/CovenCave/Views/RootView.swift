@@ -49,8 +49,8 @@ struct MainTabView: View {
             Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
                 TasksView()
             }
-            Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
-                DeveloperView()
+            Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
+                SettingsView()
             }
         }
         // TabView wins a layout race at cold launch and resets its selection to
