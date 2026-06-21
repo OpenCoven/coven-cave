@@ -16,9 +16,11 @@ phased plan and architecture.
 ## Build & run
 
 ```bash
-# from the repo root: build the markdown renderer bundle (Resources/markdown.html,
-# generated & gitignored — the Xcode build can't run node). Needs `pnpm install`.
+# from the repo root: build the web bundles the app embeds (Resources/markdown.html
+# and Resources/terminal.html — generated & gitignored, the Xcode build can't run
+# node). Needs `pnpm install`. Skipping the terminal bundle ships a blank Terminal tab.
 node scripts/build-ios-markdown.mjs
+node scripts/build-ios-terminal.mjs
 
 cd apps/ios/CovenCave
 xcodegen generate          # produces CovenCave.xcodeproj from project.yml
