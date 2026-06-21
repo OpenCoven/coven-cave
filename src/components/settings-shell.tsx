@@ -1331,7 +1331,7 @@ function AboutSection() {
         <div className="flex flex-wrap gap-2 px-4 py-3">
           {[
             { label: "GitHub",   href: "https://github.com/OpenCoven/coven-cave", icon: "ph:github-logo" as const },
-            { label: "Docs",     href: "https://docs.openclaw.ai",                icon: "ph:file-text" as const },
+            { label: "Docs",     href: "https://docs.opencoven.ai",               icon: "ph:file-text" as const },
             { label: "X",        href: "https://x.com/OpenCvn",                   icon: "ph:x-logo-bold" as const },
             { label: "Discord",  href: "https://discord.gg/opencoven",            icon: "ph:discord-logo" as const },
             { label: "Grimoire", href: "https://mind.opencoven.ai",               icon: "ph:book-open" as const },
