@@ -43,8 +43,8 @@ struct MainTabView: View {
             Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
                 TasksView()
             }
-            Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
-                SettingsView()
+            Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
+                DeveloperView()
             }
         }
         // The app always opens on the Canvas tab. TabView wins a layout race at
