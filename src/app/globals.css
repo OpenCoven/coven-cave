@@ -4657,6 +4657,7 @@ button:active > .edge-rail-chip {
   background: transparent;
   color: var(--text-primary);
   font: inherit;
+  font-size: 16px;
   line-height: 1.4;
 }
 
@@ -4714,7 +4715,7 @@ button:active > .edge-rail-chip {
   border-radius: var(--radius-control);
   background: var(--bg-base);
   color: var(--foreground);
-  font-size: var(--text-sm);
+  font-size: 17px;
   white-space: nowrap;
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-standard),
