@@ -42,6 +42,21 @@ type LocalSkillEntry = {
   familiar: string;
 };
 
+// Map a scanned local skill to the detail-drawer's shape (shared by the Skills
+// tab and the role-card skill chips).
+function toSkillDetail(skill: LocalSkillEntry): SkillDetailEntry {
+  return {
+    id: skill.id,
+    name: skill.name,
+    description: skill.description,
+    version: skill.version,
+    category: skill.kind,
+    owner: skill.familiar,
+    tags: skill.tags,
+    source: skill.path,
+  };
+}
+
 type Props = {
   onOpenChat: () => void;
   onOpenWorkflow?: (id: string) => void;
@@ -274,6 +289,26 @@ export function PluginsView({
     }
   }, [tabSet, onCreateSkill]);
 
+  // A role-card skill chip opens that skill's detail drawer (resolving the
+  // chip's name against the scanned local skills). Unknown/not-yet-loaded
+  // skills fall back to the Skills tab, pre-filtered to the name.
+  const openSkillByName = useCallback(
+    (name: string) => {
+      const match = skills.find(
+        (s) => s.id === name || s.name.toLowerCase() === name.toLowerCase(),
+      );
+      if (match) {
+        setSelectedSkill(toSkillDetail(match));
+        return;
+      }
+      if (tabSet.includes("skills")) {
+        setTab("skills");
+        setQuery(name);
+      }
+    },
+    [skills, tabSet],
+  );
+
   return (
     <section className="plugins-view flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       <div className="border-b border-[var(--border-hairline)] px-4 py-3 sm:px-6">
@@ -344,6 +379,7 @@ export function PluginsView({
               onToggleRole={toggleRole}
               onOpenChat={onOpenChat}
               onOpenWorkflow={onOpenWorkflow}
+              onOpenSkill={openSkillByName}
             />
           ) : tab === "workflows" ? (
             <WorkflowsTab workflows={filteredWorkflows} loaded={workflowsLoaded} query={query} onClearQuery={() => setQuery("")} onOpenWorkflow={onOpenWorkflow} />
@@ -354,18 +390,7 @@ export function PluginsView({
               query={query}
               onClearQuery={() => setQuery("")}
               onCreateSkill={openCapabilities}
-              onSelectSkill={(skill) =>
-                setSelectedSkill({
-                  id: skill.id,
-                  name: skill.name,
-                  description: skill.description,
-                  version: skill.version,
-                  category: skill.kind,
-                  owner: skill.familiar,
-                  tags: skill.tags,
-                  source: skill.path,
-                })
-              }
+              onSelectSkill={(skill) => setSelectedSkill(toSkillDetail(skill))}
             />
           )}
         </div>
@@ -389,6 +414,7 @@ function RolesTab({
   onToggleRole,
   onOpenChat,
   onOpenWorkflow,
+  onOpenSkill,
 }: {
   roles: RoleEntry[];
   loaded: boolean;
@@ -398,6 +424,7 @@ function RolesTab({
   onToggleRole: (role: RoleEntry) => void;
   onOpenChat: () => void;
   onOpenWorkflow?: (id: string) => void;
+  onOpenSkill?: (name: string) => void;
 }) {
   if (!loaded) return <ListSkeleton />;
   if (roles.length === 0)
@@ -454,7 +481,13 @@ function RolesTab({
             </div>
 
             <dl className="mt-3 space-y-2">
-              <CapabilityRow label="Skills" items={role.skills} />
+              <CapabilityRow
+                label="Skills"
+                items={role.skills}
+                onOpen={onOpenSkill}
+                openHint="Open skill"
+                icon={ICONS.tabSkills}
+              />
               <CapabilityRow label="Tools" items={role.tools} />
               <CapabilityRow
                 label="Workflows"
@@ -475,11 +508,13 @@ function CapabilityRow({
   items,
   onOpen,
   openHint,
+  icon = ICONS.workflowChip,
 }: {
   label: string;
   items: string[];
   onOpen?: (id: string) => void;
   openHint?: string;
+  icon?: IconName;
 }) {
   return (
     <div className="plugins-role-capability grid grid-cols-[78px_minmax(0,1fr)] items-start gap-2">
@@ -500,7 +535,7 @@ function CapabilityRow({
                   title={openHint ? `${openHint}: ${item}` : item}
                   className="plugins-role-chip plugins-role-chip--action focus-ring inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:text-[var(--accent-text)]"
                 >
-                  <Icon name={ICONS.workflowChip} width={10} aria-hidden />
+                  <Icon name={icon} width={10} aria-hidden />
                   {item}
                 </button>
               ) : (
