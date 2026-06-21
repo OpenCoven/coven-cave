@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The Read tab — a mobile-first reading list over the Cave library's `reading`
 /// section. Filter by status, search, then tap to read in-app (Safari Reader).
-/// Swipe to mark read or remove; long-press for the full set of actions.
+/// Tap the row checkbox to mark read/unread; swipe or long-press for more.
 struct ReadingView: View {
     @Environment(AppModel.self) private var app
     @State private var filter: ReadingFilter = .all
@@ -40,18 +40,21 @@ struct ReadingView: View {
             } else {
                 List {
                     ForEach(visible) { item in
-                        Button { open(item) } label: { ReadingCard(item: item) }
-                            .buttonStyle(.plain)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) { remove(item) } label: {
-                                    Label("Remove", systemImage: "trash")
-                                }
+                        HStack(spacing: 10) {
+                            Button { open(item) } label: { ReadingCard(item: item) }
+                                .buttonStyle(.plain)
+                            readToggle(item)
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { remove(item) } label: {
+                                Label("Remove", systemImage: "trash")
                             }
-                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                leadingSwipe(item)
-                            }
-                            .contextMenu { contextMenu(item) }
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            leadingSwipe(item)
+                        }
+                        .contextMenu { contextMenu(item) }
                     }
                 }
                 .listStyle(.plain)
@@ -107,6 +110,25 @@ struct ReadingView: View {
             .overlay(Capsule().strokeBorder(selected ? Color.accentColor.opacity(0.4) : .clear, lineWidth: 1))
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Read toggle
+
+    /// A tap-target checkbox on each row — the most discoverable way to mark an
+    /// item read (or unread), alongside the swipe and long-press actions.
+    @ViewBuilder private func readToggle(_ item: ReadingItem) -> some View {
+        let done = item.status == .done
+        Button { toggleRead(item) } label: {
+            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 25))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(done ? Color.green : Color.secondary.opacity(0.55))
+                .frame(width: 44, height: 44)          // comfortable tap target
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .animation(.snappy(duration: 0.2), value: done)
+        .accessibilityLabel(done ? "Mark as unread" : "Mark as read")
     }
 
     // MARK: - Swipe / context actions
@@ -216,6 +238,17 @@ struct ReadingView: View {
         Task {
             await app.setReadingStatus(item, status)
             app.showToast("Marked “\(status.label)”", systemImage: status.symbol, style: .success)
+        }
+    }
+
+    /// Toggle the row checkbox: read ⇄ unread (back to want-to-read).
+    private func toggleRead(_ item: ReadingItem) {
+        let done = item.status == .done
+        Task {
+            await app.setReadingStatus(item, done ? .wantToRead : .done)
+            app.showToast(done ? "Marked unread" : "Marked read",
+                          systemImage: done ? "circle" : "checkmark.circle.fill",
+                          style: done ? .info : .success)
         }
     }
 
