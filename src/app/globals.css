@@ -2202,6 +2202,28 @@ select {
   opacity: 1;
 }
 
+/* Pane number badge — backs ⌘1…9 quick-jump and reads like a tmux pane index.
+   Tints to the brand accent on the focused pane. */
+.comux-terminal-pane-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--text-muted) 22%, transparent);
+  color: var(--text-secondary);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.comux-terminal-pane[data-active="true"] .comux-terminal-pane-num {
+  background: color-mix(in oklch, var(--accent-presence) 30%, transparent);
+  color: var(--accent-presence);
+}
+
 .comux-terminal-pane-action:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
