@@ -5,6 +5,7 @@ import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Tabs } from "@/components/ui/tabs";
 import { relativeTime } from "@/lib/relative-time";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { RetroOutcome, RetroRun, RetroRunsSnapshot, RetroTrack } from "@/lib/retro-runs";
@@ -235,20 +236,14 @@ export function RetroRunsView({
           />
         </label>
 
-        <div className="retro-tabs" role="tablist" aria-label="Retro track filter">
-          {TRACKS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              aria-selected={track === item.id}
-              className={track === item.id ? "is-active" : ""}
-              onClick={() => setTrack(item.id)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          variant="segment"
+          size="sm"
+          ariaLabel="Retro track filter"
+          value={track}
+          onChange={setTrack}
+          items={TRACKS}
+        />
 
         <select
           className="retro-select"

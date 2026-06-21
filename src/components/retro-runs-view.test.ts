@@ -20,7 +20,8 @@ assert.match(
 assert.match(component, /fetch\(apiPath/, "RetroRunsView loads retro runs through the scoped API path");
 assert.match(component, /downloadRetroSnapshot/, "RetroRunsView offers a sanitized export");
 assert.match(component, /JSON\.stringify\(snapshot/, "exports the API snapshot rather than raw daemon payloads");
-assert.match(component, /role="tablist"/, "track filters use a segmented tablist control");
+assert.match(component, /<Tabs[\s\S]{0,160}variant="segment"/, "track filters use the shared segment Tabs");
+assert.match(component, /ariaLabel="Retro track filter"/, "track filter tablist is labelled");
 assert.match(component, /aria-label="Refresh retro runs"/, "refresh is an icon button with an accessible name");
 assert.match(apiRoute, /redactSecretsDeep/, "aggregate retro API redacts daemon data at the route boundary");
 assert.match(evalLoopRoute, /redactSecretsDeep/, "per-familiar eval-loop proxy redacts daemon data too");
