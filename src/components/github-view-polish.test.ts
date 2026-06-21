@@ -209,16 +209,16 @@ assert.match(
   /disabled=\{\(!pat\.trim\(\) && !usernameInput\.trim\(\)\) \|\| saving\}/,
   "Save is enabled when either a PAT or a username is entered (not PAT-only)",
 );
-// The filter row is an accessible tablist.
+// The filter row is the shared segment Tabs, labelled for assistive tech.
 assert.match(
   source,
-  /role="tablist"[\s\S]{0,120}?aria-label="Filter GitHub activity"/,
-  "the filter row is a labelled tablist",
+  /<Tabs[\s\S]{0,200}ariaLabel="Filter GitHub activity"/,
+  "the filter row renders through the shared Tabs with an accessible label",
 );
 assert.match(
   source,
-  /role="tab"\s*\n?\s*aria-selected=\{isActive\}/,
-  "each filter is a tab that reports its selected state",
+  /variant="segment"/,
+  "the filter row uses the segment tab variant",
 );
 
 // Sortable table headers are keyboard-operable (a real <button>) and expose

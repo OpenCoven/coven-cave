@@ -16,6 +16,7 @@ import {
   GitHubActionPopover,
   type PopoverMode,
 } from "@/components/github-action-popover";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1522,37 +1523,18 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       </header>
 
       {/* ── Filter tabs ── */}
-      <div className="github-surface-controls flex items-center gap-1 px-4 py-2" role="tablist" aria-label="Filter GitHub activity">
-        {(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => {
-          const labels: Record<Filter, string> = { all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" };
-          const isActive = filter === f;
-          const count = counts[f];
-          return (
-            <button
-              key={f}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setFilter(f)}
-              className={[
-                "focus-ring flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] transition-colors",
-                isActive
-                  ? "bg-[var(--bg-raised)] text-[var(--text-primary)] font-medium"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-              ].join(" ")}
-            >
-              {labels[f]}
-              {count > 0 && (
-                <span className={`rounded-full px-1 py-0.5 text-[9px] leading-none ${
-                  isActive ? "bg-[var(--accent-presence)]/20 text-[var(--accent-presence)]" : "bg-[var(--bg-raised)] text-[var(--text-muted)]"
-                }`}>
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-
+      <div className="github-surface-controls flex items-center gap-2 px-4 py-2">
+        <Tabs
+          variant="segment"
+          ariaLabel="Filter GitHub activity"
+          value={filter}
+          onChange={setFilter}
+          items={(["all", "pr", "review_request", "issue"] as Filter[]).map((f) => ({
+            id: f,
+            label: ({ all: "All", pr: "PRs", review_request: "Reviews", issue: "Issues" } as Record<Filter, string>)[f],
+            count: counts[f] > 0 ? counts[f] : undefined,
+          })) satisfies TabItem<Filter>[]}
+        />
         <div className="ml-auto flex items-center gap-2">
           <select
             className="gh-select"
