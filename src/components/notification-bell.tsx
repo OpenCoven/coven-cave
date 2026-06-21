@@ -101,6 +101,21 @@ export function NotificationBell({
     await fetch(`/api/inbox/${id}/dismiss`, { method: "POST" });
   }, []);
 
+  // Fired notifications are the dismissible stack the badge counts; response-
+  // needed bridges aren't dismissed here (they need a reply, not a clear).
+  const dismissableIds = useMemo(
+    () => items.filter((i) => i.status === "fired").map((i) => i.id),
+    [items],
+  );
+
+  const dismissAll = useCallback(async () => {
+    // Fan out the existing per-item dismiss; the inbox SSE reconciles the list
+    // and badge (same path the single ✕ uses).
+    await Promise.all(
+      dismissableIds.map((id) => fetch(`/api/inbox/${id}/dismiss`, { method: "POST" })),
+    );
+  }, [dismissableIds]);
+
   const snooze = useCallback(async (id: string) => {
     await fetch(`/api/inbox/${id}/snooze`, {
       method: "POST",
@@ -148,6 +163,15 @@ export function NotificationBell({
               >
                 <Icon name="ph:gear-six-bold" aria-hidden />
               </button>
+              {dismissableIds.length > 0 ? (
+                <button
+                  onClick={() => void dismissAll()}
+                  className="notification-bell__clear-all focus-ring rounded text-[11px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
+                  title={`Dismiss all ${dismissableIds.length} notification${dismissableIds.length !== 1 ? "s" : ""}`}
+                >
+                  Clear all
+                </button>
+              ) : null}
               <button
                 onClick={() => {
                   setOpen(false);
