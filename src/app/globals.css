@@ -2224,6 +2224,24 @@ select {
   color: var(--accent-presence);
 }
 
+/* Broadcast ("sync panes") mode: the toolbar toggle lights up and every pane
+   gets a warm ring, so it's unmistakable that a keystroke fans out to all
+   panes. The active pane keeps its accent top hairline atop the warm ring. */
+.comux-terminal-toolbar-button[data-broadcast-active="true"] {
+  background: color-mix(in oklch, var(--color-warning) 20%, transparent);
+  color: var(--color-warning);
+}
+
+.comux-terminal-pane[data-broadcast="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-warning) 45%, transparent);
+}
+
+.comux-terminal-pane[data-broadcast="true"][data-active="true"] {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--color-warning) 60%, transparent),
+    inset 0 1.5px 0 0 color-mix(in oklch, var(--accent-presence) 55%, transparent);
+}
+
 .comux-terminal-pane-action:hover {
   background: var(--bg-hover);
   color: var(--text-primary);

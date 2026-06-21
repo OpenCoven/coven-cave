@@ -55,6 +55,7 @@ import {
   sessionAtPaneNumber,
   type PaneDirection,
 } from "@/lib/terminal-nav";
+import { broadcastTargetIds } from "@/lib/terminal-broadcast";
 import type { SessionRow } from "@/lib/types";
 
 type ComuxViewMode = "terminal" | "projects";
@@ -469,6 +470,31 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // its siblings stay alive (PTYs untouched) behind it. 1-based pane numbers
   // back the badges + ⌘1…9 quick-jump.
   const [zoomedSessionId, setZoomedSessionId] = useState<string | null>(null);
+
+  // Broadcast input ("sync panes"): a keystroke in any pane is mirrored to every
+  // other live pane. Each BottomTerminal registers its PTY writer; refs keep the
+  // input handler stable so toggling broadcast never re-mounts a pane.
+  const [broadcast, setBroadcast] = useState(false);
+  const broadcastRef = useRef(false);
+  broadcastRef.current = broadcast;
+  const paneWritersRef = useRef(new Map<string, (data: string) => void>());
+  const registerPaneWriter = useCallback(
+    (paneSessionId: string, write: ((data: string) => void) | null) => {
+      if (write) paneWritersRef.current.set(paneSessionId, write);
+      else paneWritersRef.current.delete(paneSessionId);
+    },
+    [],
+  );
+  const handlePaneInput = useCallback((originSessionId: string, data: string) => {
+    if (!broadcastRef.current) return;
+    for (const id of broadcastTargetIds([...paneWritersRef.current.keys()], originSessionId)) {
+      try {
+        paneWritersRef.current.get(id)?.(data);
+      } catch {
+        /* pane unmounted mid-broadcast — drop it */
+      }
+    }
+  }, []);
   const paneNumbers = useMemo(() => paneNumberMap(terminalLayout), [terminalLayout]);
   useEffect(() => {
     if (zoomedSessionId && !visiblePaneSessionIds.includes(zoomedSessionId)) {
@@ -583,6 +609,11 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
         if (dir && activeId) {
           focusPane(directionalNeighbor(terminalLayout, activeId, dir));
         }
+        return;
+      }
+      if (e.shiftKey && (e.key === "b" || e.key === "B")) {
+        e.preventDefault();
+        setBroadcast((v) => !v);
         return;
       }
       if (e.shiftKey) return;
@@ -967,6 +998,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
             className="comux-terminal-pane"
             data-terminal-pane-id={s.id}
             data-active={isActive ? "true" : undefined}
+            data-broadcast={broadcast ? "true" : undefined}
             onClick={() => focusSessionById(s.id)}
           >
             <div
@@ -1033,6 +1065,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 threadId={`cave.comux.${s.id}`}
                 active={active && isActive}
                 projectRoot={s.projectRoot ?? selectedProjectRoot ?? daemonProjectRoot}
+                paneId={s.id}
+                registerWriter={registerPaneWriter}
+                onUserInput={handlePaneInput}
               />
             </div>
           </div>
@@ -1083,6 +1118,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       splitSessionIntoPane,
       visiblePaneCount,
       zoomedSessionId,
+      broadcast,
+      handlePaneInput,
+      registerPaneWriter,
     ],
   );
 
@@ -1171,6 +1209,18 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
               </div>
               <button
                 type="button"
+                onClick={() => setBroadcast((v) => !v)}
+                aria-pressed={broadcast}
+                disabled={visiblePaneCount < 2 && !broadcast}
+                className="comux-terminal-toolbar-button inline-flex items-center gap-1 rounded-[5px] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] disabled:pointer-events-none disabled:opacity-40"
+                data-broadcast-active={broadcast ? "true" : undefined}
+                title="Broadcast input to all panes (⌘⇧B)"
+              >
+                <Icon name="ph:share-network" width={12} aria-hidden />
+                <span>{broadcast ? "Broadcasting" : "Broadcast"}</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => addSession()}
                 aria-label="New terminal"
                 title="New terminal (⌘N)"
@@ -1225,7 +1275,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
             )}
           </div>
           <footer className="shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-center text-[10px] text-[var(--text-muted)]">
-            ⌘N new · ⌘W close · drag tabs or pane bars onto pane edges to split &amp; reorganize · drag dividers to resize · ⌘⌥arrows focus · ⌘[ ⌘] cycle · ⌘1–9 jump · ⌘⏎ zoom
+            ⌘N new · ⌘W close · drag tabs or pane bars onto pane edges to split &amp; reorganize · drag dividers to resize · ⌘⌥arrows focus · ⌘[ ⌘] cycle · ⌘1–9 jump · ⌘⏎ zoom · ⌘⇧B broadcast
           </footer>
         </div>
       ) : (
