@@ -273,6 +273,12 @@ export const ICON_NAMES = [
   "ph:paw-print-bold",
   "ph:code-bold",
   "ph:hand-bold",
+  "ph:play-fill",
+  "ph:pause-fill",
+  "ph:skip-forward-fill",
+  "ph:speaker-high-fill",
+  "ph:speaker-low-fill",
+  "ph:speaker-slash-fill",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

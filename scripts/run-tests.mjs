@@ -204,6 +204,7 @@ export const SUITES = {
     "src/components/chat-view.test.ts",
     "src/components/companion-rail-persistence.test.ts",
     "src/components/companion-rail.test.ts",
+    "src/components/youtube-collapse.test.ts",
     "src/components/daemon-start-button.test.ts",
     "src/components/familiar-avatar.test.ts",
     "src/components/familiar-glyph-picker-panel.test.ts",
