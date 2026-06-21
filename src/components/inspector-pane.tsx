@@ -16,6 +16,7 @@ import type { HarnessCapabilityManifest } from "@/app/api/capabilities/route";
 import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
 import type { AdapterReport } from "@/lib/harness-adapters";
+import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
 
 type Tab = "memory" | "familiar" | "inbox" | "vault";
 
@@ -28,6 +29,9 @@ type MemoryEntry = {
   fullPath: string;
   size: number;
   modified: string;
+  /** Familiar id when this file belongs to a specific agent workspace; absent
+   *  for ownerless/global pools. Drives strict per-familiar scoping in chat. */
+  familiarId?: string | null;
 };
 
 type MemoryFile = {
@@ -591,6 +595,16 @@ type CovenMemoryEntry = {
   excerpt?: string;
 };
 
+/** Marks a row that belongs to a shared/global pool (no familiar owner) rather
+ *  than the active familiar — so "Files" never silently mixes scopes. */
+function OwnershipTag() {
+  return (
+    <span className="rounded bg-[var(--bg-raised)] px-1 py-px text-[9px] normal-case tracking-normal text-[var(--text-muted)]">
+      shared
+    </span>
+  );
+}
+
 function MemoryTab({
   familiar,
   onOpenFullView,
@@ -627,10 +641,17 @@ function MemoryTab({
     })();
   }, []);
 
+  // Scope the file inventory to the active familiar AT THE SOURCE so another
+  // familiar's file metadata never reaches this chat session. The server keeps
+  // this familiar's files + ownerless/global pools and drops every other
+  // familiar's. Re-fetch when the active familiar changes.
   useEffect(() => {
     void (async () => {
       try {
-        const res = await fetch("/api/memory", { cache: "no-store" });
+        const url = familiar
+          ? `/api/memory?familiarId=${encodeURIComponent(familiar.id)}`
+          : "/api/memory";
+        const res = await fetch(url, { cache: "no-store" });
         const json = await res.json();
         if (!json.ok) {
           setError(json.error ?? "memory list failed");
@@ -641,7 +662,7 @@ function MemoryTab({
         setError(err instanceof Error ? err.message : "fetch failed");
       }
     })();
-  }, []);
+  }, [familiar?.id]);
 
   useEffect(() => {
     if (!openPath) {
@@ -670,11 +691,20 @@ function MemoryTab({
     })();
   }, [openPath, reveal]);
 
+  // Strict per-familiar scoping (defense in depth alongside the server filter):
+  // owned files first, then ownerless/global; another familiar's files are never
+  // shown. `ownership` labels each row; `hiddenForeignCount` reports how many
+  // other-familiar files were withheld.
+  const filesScope = useMemo(
+    () => scopeMemoryFilesToFamiliar(entries, familiar?.id),
+    [entries, familiar?.id],
+  );
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter((e) => e.relPath.toLowerCase().includes(q) || e.rootLabel.toLowerCase().includes(q));
-  }, [entries, query]);
+    const rows = filesScope.visible;
+    if (!q) return rows;
+    return rows.filter((e) => e.relPath.toLowerCase().includes(q) || e.rootLabel.toLowerCase().includes(q));
+  }, [filesScope, query]);
 
   const covenFiltered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -823,8 +853,9 @@ function MemoryTab({
             >
               <span className="flex min-w-0 flex-col">
                 <span className="truncate text-[var(--text-primary)]">{e.relPath}</span>
-                <span className="truncate text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
-                  {e.rootLabel}
+                <span className="flex items-center gap-1 truncate text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+                  {e.ownership === "shared" ? <OwnershipTag /> : null}
+                  <span className="truncate">{e.rootLabel}</span>
                 </span>
               </span>
               <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{age(e.modified)}</span>
@@ -834,6 +865,12 @@ function MemoryTab({
         {filtered.length > 200 ? (
           <li className="px-2 py-2 text-center text-[10px] text-[var(--text-muted)]">
             +{filtered.length - 200} more — filter to narrow
+          </li>
+        ) : null}
+        {familiar && filesScope.hiddenForeignCount > 0 ? (
+          <li className="px-2 py-2 text-center text-[10px] text-[var(--text-muted)]">
+            {filesScope.hiddenForeignCount} other familiar
+            {filesScope.hiddenForeignCount === 1 ? "’s" : "s’"} memory hidden — scoped to {familiar.display_name}
           </li>
         ) : null}
       </ul>
