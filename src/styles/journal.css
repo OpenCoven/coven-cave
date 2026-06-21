@@ -454,6 +454,33 @@
   outline-offset: 2px;
 }
 .journal-entry__reflection { line-height: 1.6; color: var(--text-secondary); font-size: 13px; }
+/* Reflective "next-paths" prompts lifted out of the reflection markdown. */
+.journal-entry__next {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
+}
+.journal-entry__next-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.journal-entry__next-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
 .journal-entry__by {
   display: flex;
   align-items: center;

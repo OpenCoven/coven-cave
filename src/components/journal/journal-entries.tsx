@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { extractNextPaths } from "@/lib/next-paths";
 import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug } from "@/lib/daily-report";
 import { generateReflection } from "@/lib/journal-generate";
 import type { Familiar } from "@/lib/types";
@@ -20,6 +21,29 @@ type JournalDay = {
   stats: JournalStats;
   context: string;
 };
+
+/** Render a journal reflection. The reflection is generated through the chat
+ *  pipeline, which appends a `<coven:next-paths>` suggestions block; lift it out
+ *  (as chat-view does) so the tags don't leak into the markdown, and show the
+ *  suggestions as a quiet "Next" list below the reflection. */
+function JournalReflection({ text }: { text: string }) {
+  const { visible, suggestions } = extractNextPaths(text);
+  return (
+    <>
+      <MarkdownBlock text={visible} className="journal-entry__reflection" />
+      {suggestions.length > 0 ? (
+        <div className="journal-entry__next">
+          <span className="journal-entry__next-label">Next</span>
+          <ul className="journal-entry__next-list">
+            {suggestions.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </>
+  );
+}
 
 export function JournalEntries({
   familiars,
@@ -290,7 +314,7 @@ export function JournalEntries({
                     autoFocus
                   />
                 ) : (
-                  <MarkdownBlock text={day.entry.reflection} className="journal-entry__reflection" />
+                  <JournalReflection text={day.entry.reflection} />
                 )}
                 <div className="journal-entry__by">
                   <Icon name="ph:sparkle" aria-hidden />
