@@ -3,6 +3,36 @@
 > Status: **DRAFT / Phase 0 (recon + design)** — started 2026-06-20.
 > Owner: this is a multi-phase arc. Each phase ships independently and is verifiable on its own.
 
+> ## ⚠️ Coordination — this surface is actively developed; check before editing
+>
+> Multiple Claude sessions have repeatedly done **duplicate, colliding** work on the iOS
+> surface, including two silent regressions where one PR reverted another's merged change. If
+> you are about to touch any file below, first skim `git log --oneline -15 -- <path>` and the
+> open PRs touching it — there is very likely parallel work in flight.
+>
+> **Owned / in-flight files (treat as a coordinated surface):**
+> - `apps/ios/CovenCave/**` — the native SwiftUI app (views, models, networking, project.yml).
+> - `scripts/mobile-tailscale.sh` — the `app` (tokenless) launch mode, incl. `COVEN_CAVE_TAILNET_TRUST=1`.
+> - `src/proxy.ts` — the `tailnetTrusted` host-gate branch (security-sensitive).
+> - Tests pinning the above: `src/middleware.test.ts`, `src/proxy-behavior.test.ts`,
+>   `scripts/mobile-tailscale.test.mjs`, `scripts/mobile-tailscale-native.test.mjs`.
+>
+> **Why (concrete history, 2026-06-20):**
+> - #1319 (scaffold + tokenless script) → #1329 (tailnet-trust fix + 18px rounded bubbles).
+> - #1354 independently re-did the 18px bubbles; #1343 (a duplicate of the #1319/#1329 work,
+>   branched off an older `main`) then **reverted both #1354's bubbles and #1329's
+>   `COVEN_CAVE_TAILNET_TRUST=1` flag** — the latter silently breaking `pnpm mobile:tailscale:app`
+>   over real Tailscale (the gate 403s). Tests stayed green because the matching assertions were
+>   reverted too. #1363 restored both.
+>
+> **Rules of engagement:**
+> 1. Branch off the **latest** `origin/main`, not a stale base — most reverts came from old bases.
+> 2. Before changing a file above, confirm no open PR already does it; prefer extending the open PR.
+> 3. If you change the tokenless flow, update **both** the script and its tests in the same PR, and
+>    re-read `src/proxy.ts`'s gate — the `tailnetTrusted` flag is load-bearing for tailnet access.
+> 4. `tailscale serve` forwards the `<host>.ts.net` Host (NOT `127.0.0.1`); do not "simplify" the
+>    host gate back to loopback-only.
+
 ## Goal (verbatim intent)
 
 Rebuild the iOS app from the ground up as a **genuinely native iOS experience** — not a
