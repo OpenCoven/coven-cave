@@ -137,3 +137,93 @@ export function parseManifestResponse(text: string): Record<string, unknown> {
   }
   return obj;
 }
+
+/** Stream the assistant's full text for `prompt` from `familiarId`. */
+async function streamFamiliarText(opts: {
+  familiarId: string;
+  prompt: string;
+  signal?: AbortSignal;
+}): Promise<{ text: string; error: string | null }> {
+  let res: Response;
+  try {
+    res = await fetch("/api/chat/send", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ familiarId: opts.familiarId, prompt: opts.prompt }),
+      signal: opts.signal,
+    });
+  } catch (err) {
+    return { text: "", error: (err as Error)?.message ?? "request failed" };
+  }
+  if (!res.ok || !res.body) return { text: "", error: `chat bridge ${res.status}` };
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let text = "";
+  let error: string | null = null;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      const frame = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      const ev = parseSseFrame(frame);
+      if (!ev) continue;
+      if (ev.kind === "assistant_chunk") text += ev.text ?? "";
+      else if (ev.kind === "done" && ev.isError) error = error ?? "the familiar reported an error";
+      else if (ev.kind === "error") error = ev.message ?? "generation error";
+    }
+  }
+  return { text, error };
+}
+
+export type QuestionsResult = { questions: GeneratedQuestion[] | null; error: string | null };
+export type ManifestResult = { manifest: Record<string, unknown> | null; error: string | null };
+
+/** Pass 1: get the familiar's 2-3 clarifying questions for `goal`. */
+export async function generateWorkflowQuestions(opts: {
+  goal: string;
+  familiarId: string;
+  signal?: AbortSignal;
+}): Promise<QuestionsResult> {
+  const { text, error } = await streamFamiliarText({
+    familiarId: opts.familiarId,
+    prompt: buildQuestionsPrompt(opts.goal),
+    signal: opts.signal,
+  });
+  if (error) return { questions: null, error };
+  try {
+    return { questions: parseQuestionsResponse(text), error: null };
+  } catch (err) {
+    return { questions: null, error: err instanceof Error ? err.message : "couldn't read questions" };
+  }
+}
+
+/** Pass 2: get the generated manifest from `goal` + `answers`. */
+export async function generateWorkflowManifest(opts: {
+  goal: string;
+  answers: GeneratedAnswer[];
+  familiarId: string;
+  suggestedName?: string;
+  signal?: AbortSignal;
+}): Promise<ManifestResult> {
+  const { text, error } = await streamFamiliarText({
+    familiarId: opts.familiarId,
+    prompt: buildManifestPrompt({
+      goal: opts.goal,
+      answers: opts.answers,
+      familiarId: opts.familiarId,
+      suggestedName: opts.suggestedName,
+    }),
+    signal: opts.signal,
+  });
+  if (error) return { manifest: null, error };
+  try {
+    return { manifest: parseManifestResponse(text), error: null };
+  } catch (err) {
+    return { manifest: null, error: err instanceof Error ? err.message : "couldn't read the workflow" };
+  }
+}
