@@ -21,6 +21,11 @@ export type ResolvedFamiliar = Omit<Familiar, "display_name" | "role"> & {
    * exists — the glyph renders instead.
    */
   avatarImage?: string;
+  /** Absolute `~/.coven` workspace avatar path (loads only via Tauri's asset
+   *  protocol, resolved client-side post-mount). Consumed by familiar-avatar-src. */
+  avatarPath?: string;
+  /** Avatar file mtime — cache-buster for the resolved asset URL. */
+  avatarVersion?: number;
   /** Resolved glyph for fallback rendering when no image is set. */
   glyph: FamiliarGlyph;
   archived: boolean;
