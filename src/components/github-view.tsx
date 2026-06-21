@@ -10,6 +10,7 @@ import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { gfmAutolink } from "@/lib/gfm-autolink";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   GitHubActionPopover,
@@ -645,6 +646,397 @@ function PersonChip({ person, prefix }: { person: GitHubPerson; prefix?: string 
   );
 }
 
+// ── Comments + review threads (read · resolve · tag a familiar) ───────────────
+
+type GhComment = {
+  id: string;
+  author: GitHubPerson | null;
+  body: string;
+  createdAt: string | null;
+  url: string | null;
+  authorAssociation: string | null;
+};
+
+type GhReviewThread = {
+  id: string;
+  isResolved: boolean;
+  isOutdated: boolean;
+  path: string | null;
+  line: number | null;
+  diffHunk: string | null;
+  comments: GhComment[];
+};
+
+type CommentsResult = {
+  ok: true;
+  authed: boolean;
+  canResolve: boolean;
+  issueComments: GhComment[];
+  reviewThreads: GhReviewThread[];
+};
+
+type CommentsState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; data: CommentsResult }
+  | { status: "error" };
+
+/** Author chip + relative timestamp header shared by comments and threads. */
+function CommentHeader({ comment }: { comment: GhComment }) {
+  return (
+    <div className="gh-comment-head">
+      {comment.author ? (
+        <PersonChip person={comment.author} />
+      ) : (
+        <span className="gh-person-login">ghost</span>
+      )}
+      {comment.authorAssociation && comment.authorAssociation !== "NONE" && (
+        <span className="gh-comment-assoc">{comment.authorAssociation.toLowerCase()}</span>
+      )}
+      {comment.createdAt && (
+        <span className="gh-comment-time" title={comment.createdAt}>
+          {relativeTime(comment.createdAt)}
+        </span>
+      )}
+      {comment.url && (
+        <a
+          href={comment.url}
+          target="_blank"
+          rel="noreferrer"
+          className="gh-comment-link"
+          title="Open this comment on GitHub"
+          aria-label="Open this comment on GitHub"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Icon name="ph:arrow-square-out" width={11} />
+        </a>
+      )}
+    </div>
+  );
+}
+
+function CommentBody({ comment, repo }: { comment: GhComment; repo: string }) {
+  return comment.body.trim() ? (
+    <MarkdownBlock text={gfmAutolink(comment.body, { repo })} className="gh-comment-body" />
+  ) : (
+    <p className="gh-glass-muted gh-comment-body">No content.</p>
+  );
+}
+
+/**
+ * Reads the conversation timeline + inline PR review threads, resolves threads
+ * (PAT only), and posts a reply with optional `@familiar` tagging. The whole
+ * surface is reused verbatim by the native iOS app via the same API routes.
+ */
+function GitHubComments({
+  item,
+  detail,
+  familiars,
+}: {
+  item: GitHubItem;
+  detail: ItemDetail | null;
+  familiars: Familiar[];
+}) {
+  const [state, setState] = useState<CommentsState>({ status: "idle" });
+  const [tick, setTick] = useState(0);
+  const [draft, setDraft] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [postError, setPostError] = useState<string | null>(null);
+  const [showResolved, setShowResolved] = useState(false);
+  const [familiarPickerOpen, setFamiliarPickerOpen] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const repo = item.repo;
+  const number = item.number ?? null;
+  const isPull = detail?.isPull ?? (item.kind === "pr" || item.kind === "review_request");
+
+  // Reset the composer when the selected item changes.
+  useEffect(() => {
+    setDraft("");
+    setPostError(null);
+    setFamiliarPickerOpen(false);
+  }, [repo, number]);
+
+  useEffect(() => {
+    if (number == null) {
+      setState({ status: "idle" });
+      return;
+    }
+    let cancelled = false;
+    setState({ status: "loading" });
+    fetch(
+      `/api/github/comments?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}${isPull ? "&isPull=1" : ""}`,
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.ok) setState({ status: "ready", data: data as CommentsResult });
+        else setState({ status: "error" });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, number, isPull, tick]);
+
+  const data = state.status === "ready" ? state.data : null;
+  const canResolve = data?.canResolve ?? false;
+  const canComment = data?.authed ?? false;
+
+  const threads = data?.reviewThreads ?? [];
+  const unresolvedThreads = threads.filter((t) => !t.isResolved);
+  const resolvedThreads = threads.filter((t) => t.isResolved);
+  const visibleThreads = showResolved ? threads : unresolvedThreads;
+
+  async function toggleResolve(thread: GhReviewThread) {
+    if (!canResolve || state.status !== "ready") return;
+    const next = !thread.isResolved;
+    // Optimistic flip — revert on failure.
+    setState({
+      status: "ready",
+      data: {
+        ...state.data,
+        reviewThreads: state.data.reviewThreads.map((t) =>
+          t.id === thread.id ? { ...t, isResolved: next } : t,
+        ),
+      },
+    });
+    try {
+      const res = await fetch("/api/github/resolve-thread", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ threadId: thread.id, resolved: next }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? "failed");
+    } catch {
+      // Revert by refetching the authoritative state.
+      setTick((n) => n + 1);
+    }
+  }
+
+  function insertMention(familiar: Familiar) {
+    const handle = (familiar.name ?? familiar.display_name).replace(/\s+/g, "-");
+    const mention = `@${handle}`;
+    const el = textareaRef.current;
+    if (!el) {
+      setDraft((d) => (d ? `${d} ${mention} ` : `${mention} `));
+    } else {
+      const start = el.selectionStart ?? draft.length;
+      const end = el.selectionEnd ?? draft.length;
+      const before = draft.slice(0, start);
+      const after = draft.slice(end);
+      const spacer = before && !before.endsWith(" ") ? " " : "";
+      const next = `${before}${spacer}${mention} ${after}`;
+      setDraft(next);
+      requestAnimationFrame(() => {
+        el.focus();
+        const pos = before.length + spacer.length + mention.length + 1;
+        el.setSelectionRange(pos, pos);
+      });
+    }
+    setFamiliarPickerOpen(false);
+  }
+
+  async function postComment() {
+    const text = draft.trim();
+    if (!text || number == null || posting) return;
+    setPosting(true);
+    setPostError(null);
+    try {
+      const res = await fetch("/api/github/comment", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ repo, number, body: text }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setPostError(json?.error === "auth_required" ? "Add a PAT to comment." : json?.error ?? "Failed to post.");
+        return;
+      }
+      setDraft("");
+      setTick((n) => n + 1);
+    } catch (e) {
+      setPostError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  if (number == null) return null;
+
+  const commentCount = data?.issueComments.length ?? detail?.comments ?? 0;
+
+  return (
+    <div className="gh-glass-section gh-comments">
+      <div className="gh-glass-section-title gh-comments-title">
+        <span>
+          Conversation
+          {commentCount > 0 && <span className="gh-comments-count">{commentCount}</span>}
+        </span>
+        {isPull && unresolvedThreads.length > 0 && (
+          <span className="gh-comments-unresolved" title="Unresolved review threads">
+            <Icon name="ph:chat-circle-dots" width={11} />
+            {unresolvedThreads.length} unresolved
+          </span>
+        )}
+      </div>
+
+      {state.status === "loading" ? (
+        <p className="gh-glass-muted">Loading the thread…</p>
+      ) : state.status === "error" ? (
+        <p className="gh-glass-muted">Couldn’t load comments — open on GitHub for the full thread.</p>
+      ) : (
+        <>
+          {/* Inline PR review threads, unresolved first. */}
+          {isPull && threads.length > 0 && (
+            <div className="gh-threads">
+              {resolvedThreads.length > 0 && (
+                <button
+                  type="button"
+                  className="gh-threads-toggle"
+                  onClick={() => setShowResolved((v) => !v)}
+                  aria-pressed={showResolved}
+                >
+                  <Icon name={showResolved ? "ph:caret-up" : "ph:caret-down"} width={11} />
+                  {showResolved
+                    ? `Hide ${resolvedThreads.length} resolved`
+                    : `Show ${resolvedThreads.length} resolved`}
+                </button>
+              )}
+              {visibleThreads.map((thread) => (
+                <div
+                  key={thread.id}
+                  className={`gh-thread${thread.isResolved ? " is-resolved" : ""}`}
+                >
+                  <div className="gh-thread-head">
+                    {thread.path && (
+                      <span className="gh-thread-path" title={thread.path}>
+                        <Icon name="ph:file-code" width={11} />
+                        {thread.path.split("/").pop()}
+                      </span>
+                    )}
+                    {thread.isOutdated && <span className="gh-thread-badge">outdated</span>}
+                    {thread.isResolved && (
+                      <span className="gh-thread-badge gh-thread-badge--ok">
+                        <Icon name="ph:check-circle" width={11} /> resolved
+                      </span>
+                    )}
+                    {canResolve && (
+                      <button
+                        type="button"
+                        className="gh-thread-resolve"
+                        onClick={() => void toggleResolve(thread)}
+                      >
+                        {thread.isResolved ? "Unresolve" : "Resolve"}
+                      </button>
+                    )}
+                  </div>
+                  {thread.diffHunk && (
+                    <pre className="gh-thread-diff">
+                      {thread.diffHunk.split("\n").slice(-4).join("\n")}
+                    </pre>
+                  )}
+                  {thread.comments.map((c) => (
+                    <div key={c.id} className="gh-comment gh-comment--inline">
+                      <CommentHeader comment={c} />
+                      <CommentBody comment={c} repo={repo} />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Conversation timeline. */}
+          {data && data.issueComments.length > 0 ? (
+            <div className="gh-comment-list">
+              {data.issueComments.map((c) => (
+                <div key={c.id} className="gh-comment">
+                  <CommentHeader comment={c} />
+                  <CommentBody comment={c} repo={repo} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            isPull && threads.length > 0 ? null : <p className="gh-glass-muted">No comments yet.</p>
+          )}
+
+          {/* Composer — read-only hint without a PAT. */}
+          {canComment ? (
+            <div className="gh-composer">
+              <textarea
+                ref={textareaRef}
+                className="gh-composer-input"
+                placeholder="Reply… use @ to tag a familiar"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    void postComment();
+                  }
+                }}
+                rows={2}
+              />
+              {postError && <p className="gh-composer-error">{postError}</p>}
+              <div className="gh-composer-actions">
+                <div className="gh-composer-tag">
+                  <button
+                    type="button"
+                    className="gh-composer-tag-btn"
+                    onClick={() => setFamiliarPickerOpen((v) => !v)}
+                    aria-expanded={familiarPickerOpen}
+                    title="Tag a familiar"
+                    disabled={familiars.length === 0}
+                  >
+                    <Icon name="ph:at" width={12} />
+                    Tag familiar
+                  </button>
+                  {familiarPickerOpen && (
+                    <div className="gh-composer-tag-menu" role="menu">
+                      {familiars.map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          role="menuitem"
+                          className="gh-composer-tag-item"
+                          onClick={() => insertMention(f)}
+                        >
+                          <span
+                            className="gh-task-chip-dot"
+                            style={{ background: f.color ?? "var(--accent-presence)" }}
+                            aria-hidden
+                          />
+                          {f.display_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="gh-composer-submit"
+                  onClick={() => void postComment()}
+                  disabled={!draft.trim() || posting}
+                >
+                  {posting ? "Posting…" : "Comment"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="gh-glass-muted gh-composer-hint">
+              Add a PAT to reply and resolve review threads.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Selected item detail ─────────────────────────────────────────────────────
 
 function GitHubItemGlassPanel({
@@ -764,11 +1156,13 @@ function GitHubItemGlassPanel({
           ) : detailState.status === "error" ? (
             <p className="gh-glass-muted">Couldn’t load the description — open on GitHub for the full thread.</p>
           ) : detail?.body?.trim() ? (
-            <MarkdownBlock text={detail.body} className="gh-issue-body" />
+            <MarkdownBlock text={gfmAutolink(detail.body, { repo: item.repo })} className="gh-issue-body" />
           ) : (
             <p className="gh-glass-muted">No description provided.</p>
           )}
         </div>
+
+        <GitHubComments item={item} detail={detail} familiars={familiars} />
 
         <div className="gh-glass-section">
           <div className="gh-glass-section-title">Linked work</div>
