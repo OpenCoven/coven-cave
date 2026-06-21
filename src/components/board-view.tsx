@@ -618,7 +618,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
         ) : viewMode === "gantt" ? (
           <BoardGantt cards={filtered} familiars={familiars} projects={projects}
             selectedCardId={selectedCardId}
-            onSelect={setSelectedCardId} />
+            onSelect={setSelectedCardId}
+            onPatch={patchCard} />
         ) : (
           <BoardTable cards={filtered} familiars={familiars} projects={projects}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
