@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/relative-time";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { MarkdownBlock } from "@/components/message-bubble";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
@@ -359,7 +360,7 @@ export function CapabilitiesViewSurface({
               <div className="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
                 {scannedAt && (
                   <span title={scannedAt}>
-                    Scanned {relativeTime(scannedAt)}
+                    Scanned <RelativeTime iso={scannedAt} />
                   </span>
                 )}
                 <button

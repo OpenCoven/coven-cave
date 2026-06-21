@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
@@ -1408,7 +1409,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                         )}
                       </td>
                       <td style={{ textAlign: "right" }}>
-                        <span className="board-table-cell-time">{relativeTime(item.updatedAt)}</span>
+                        <RelativeTime iso={item.updatedAt} className="board-table-cell-time" />
                       </td>
                       <td style={{ textAlign: "right" }}>
                         <div className="gh-actions">

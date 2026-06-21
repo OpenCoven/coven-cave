@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { relativeTime } from "@/lib/relative-time";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
 import type {
@@ -163,7 +164,7 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
                   <span className="workflow-run-kind">{run.kind}</span>
                   <span className="workflow-run-detail">{stepRollup(run)}</span>
                   <span className="workflow-run-time" title={formatTimestamp(run.startedAt, readDateTimePrefs())}>
-                    {relativeTime(run.startedAt)}
+                    <RelativeTime iso={run.startedAt} />
                   </span>
                 </button>
                 {expanded && (
