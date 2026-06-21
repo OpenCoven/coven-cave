@@ -1,5 +1,3 @@
-import type { ResolvedFamiliar } from "./familiar-resolve.ts";
-
 /**
  * Pure decision helpers for resolving a familiar's avatar `<img src>`.
  *
@@ -9,7 +7,21 @@ import type { ResolvedFamiliar } from "./familiar-resolve.ts";
  * without a React runtime.
  */
 
-type AvatarFields = Pick<ResolvedFamiliar, "avatarPath" | "avatarImage" | "avatarVersion">;
+/**
+ * Structural shape of the avatar fields these helpers read. Kept independent
+ * of the `Familiar`/`ResolvedFamiliar` types so the helpers stay testable with
+ * minimal fixtures and so future avatar fields don't drag the whole familiar
+ * type into this leaf module.
+ *
+ * - `avatarPath`: absolute on-disk workspace file path (Tauri-resolved at runtime)
+ * - `avatarImage`: SSR-safe data URL or fully-resolved http(s) URL
+ * - `avatarVersion`: optional mtime/version used to cache-bust the asset URL
+ */
+export type AvatarFields = {
+  avatarPath?: string;
+  avatarImage?: string;
+  avatarVersion?: number;
+};
 
 /**
  * The `<img src>` to use before any client-side asset resolution runs.
