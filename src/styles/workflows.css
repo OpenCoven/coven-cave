@@ -1514,55 +1514,6 @@
   color: var(--text-primary);
 }
 
-/* Runs history filter chips (plan snapshots vs real executions vs problems). */
-.workflow-runs-filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 8px;
-}
-
-.workflow-runs-filter-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-base);
-  color: var(--muted-foreground);
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.workflow-runs-filter-chip:hover {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-
-.workflow-runs-filter-chip.is-active {
-  border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border));
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
-  color: var(--text-primary);
-}
-
-.workflow-runs-filter-chip:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 1px;
-}
-
-.workflow-runs-filter-count {
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  color: var(--muted-foreground);
-}
-
-.workflow-runs-filter-chip.is-active .workflow-runs-filter-count {
-  color: var(--text-primary);
-}
-
 .workflow-role-list {
   margin: 0;
   padding: 0 4px 0 0;

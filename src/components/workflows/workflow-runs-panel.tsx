@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { Icon, type IconName } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { relativeTime } from "@/lib/relative-time";
@@ -112,24 +113,18 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
       {/* Filter history once there's more than a couple of runs — a busy
           workflow's plan snapshots otherwise bury its real executions. */}
       {workflow && runs.length > 2 && (
-        <div className="workflow-runs-filter" role="tablist" aria-label="Filter runs">
-          {RUN_FILTERS.map((entry) => {
-            const matchCount = entry.id === "all" ? runs.length : runs.filter(entry.match).length;
-            return (
-              <button
-                key={entry.id}
-                type="button"
-                role="tab"
-                aria-selected={filter === entry.id}
-                className={`workflow-runs-filter-chip${filter === entry.id ? " is-active" : ""}`}
-                onClick={() => setFilter(entry.id)}
-              >
-                {entry.label}
-                <span className="workflow-runs-filter-count">{matchCount}</span>
-              </button>
-            );
-          })}
-        </div>
+        <Tabs
+          variant="segment"
+          size="sm"
+          ariaLabel="Filter runs"
+          value={filter}
+          onChange={setFilter}
+          items={RUN_FILTERS.map((entry) => ({
+            id: entry.id,
+            label: entry.label,
+            count: entry.id === "all" ? runs.length : runs.filter(entry.match).length,
+          })) satisfies TabItem<WorkflowRunFilter>[]}
+        />
       )}
       {!workflow ? (
         <p className="workflow-muted">Select a workflow to see its run history.</p>

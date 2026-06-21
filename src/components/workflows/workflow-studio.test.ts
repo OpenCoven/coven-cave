@@ -386,9 +386,8 @@ assert.match(css, /\.workflow-issue-jump/, "CSS should style the issue jump affo
 
 // Runs history filter: plan snapshots vs executions vs problems.
 assert.match(runsPanel, /RUN_FILTERS/, "Runs panel should define history filters");
-assert.match(runsPanel, /workflow-runs-filter/, "Runs panel should render filter chips");
+assert.match(runsPanel, /variant="segment"/, "Runs panel should render filter via shared segment Tabs");
 assert.match(runsPanel, /visibleRuns/, "Runs panel should render the filtered run set");
-assert.match(css, /\.workflow-runs-filter-chip/, "CSS should style runs filter chips");
 
 // Manifest copy: hand off the canonical YAML.
 assert.match(manifestPreview, /navigator\.clipboard\.writeText/, "Manifest preview should copy the canonical YAML");
