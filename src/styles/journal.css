@@ -98,6 +98,22 @@
   color: var(--text-muted);
   margin: 4px 2px 2px;
 }
+.journal-list__filter {
+  width: 100%;
+  margin: 2px 0 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
+  font-size: 12.5px;
+  color: var(--text-primary);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.journal-list__filter::placeholder { color: var(--text-muted); }
+.journal-list__filter:focus-visible {
+  border-color: color-mix(in oklch, var(--accent-presence) 50%, transparent);
+  background: var(--bg-raised);
+}
 .journal-list__items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .journal-art {
   width: 100%;
