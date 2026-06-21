@@ -402,15 +402,24 @@ final class AppModel {
         return nil
     }
 
-    /// Lightweight reachability check against `<base>/api/familiars`.
+    /// Reachability check that requires a *real* Cave API response — a 2xx whose
+    /// body decodes as the familiars payload. A bare status check would accept
+    /// the wrong endpoint: another `tailscale serve` target (e.g. `:443`) can
+    /// answer `/api/familiars` with a 404 or some other app's 200, and the old
+    /// `200..<500` test latched onto it. Decoding the payload guarantees we only
+    /// adopt an actual Cave server.
     private static func probe(_ base: URL) async -> Bool {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 6
         config.waitsForConnectivity = false
         var req = URLRequest(url: base.appendingPathComponent("api/familiars"))
         req.timeoutInterval = 6
-        guard let (_, resp) = try? await URLSession(configuration: config).data(for: req) else { return false }
-        return (resp as? HTTPURLResponse).map { (200..<500).contains($0.statusCode) } ?? false
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        guard let (data, resp) = try? await URLSession(configuration: config).data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              (try? JSONDecoder().decode(FamiliarsResponse.self, from: data)) != nil
+        else { return false }
+        return true
     }
 
     func loadFamiliars() async {
