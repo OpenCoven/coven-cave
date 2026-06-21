@@ -403,9 +403,11 @@ const HOUR_HEIGHT = 56;
 function TimeGrid({
   columns,
   onOpenItem,
+  onAddEntry,
 }: {
   columns: { label: string; date: Date; isToday: boolean; items: InboxItem[] }[];
   onOpenItem?: (item: InboxItem) => void;
+  onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
 }) {
   const nowRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -452,10 +454,24 @@ function TimeGrid({
         {columns.map((col, ci) => (
           <div
             key={ci}
-            className={col.isToday
-              ? "flex-1 relative min-w-[80px] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]"
-              : "flex-1 relative min-w-[80px]"}
+            className={`calendar-daycol flex-1 relative min-w-[80px] ${
+              col.isToday ? "bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]" : ""
+            } ${onAddEntry ? "cursor-pointer" : ""}`}
             style={{ height: totalHeight }}
+            title={onAddEntry ? "Click an empty slot to add an event" : undefined}
+            onClick={
+              onAddEntry
+                ? (e) => {
+                    // Clicking an existing event opens it; only empty slots create.
+                    if ((e.target as HTMLElement).closest("[data-calendar-event]")) return;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const hour = Math.max(0, Math.min(23, Math.floor((e.clientY - rect.top) / HOUR_HEIGHT)));
+                    const slot = new Date(col.date);
+                    slot.setHours(hour, 0, 0, 0);
+                    onAddEntry({ fireAt: slot.toISOString() });
+                  }
+                : undefined
+            }
           >
             {/* Hour lines */}
             {HOURS.map((h) => (
@@ -576,7 +592,7 @@ function DayView({
       )}
       {/* Time grid — always rendered for visual parity with Week */}
       <div className="relative flex flex-1 overflow-hidden">
-        <TimeGrid columns={columns} onOpenItem={onOpenItem} />
+        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} />
       </div>
     </div>
   );
@@ -666,7 +682,7 @@ function WeekView({
         <AllDayStrip columns={allDayColumns} onOpenItem={onOpenItem} />
       )}
       <div className="relative flex flex-1 overflow-hidden">
-        <TimeGrid columns={columns} onOpenItem={onOpenItem} />
+        <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} />
       </div>
     </div>
   );
