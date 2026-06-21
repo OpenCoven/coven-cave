@@ -8596,3 +8596,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 @media (prefers-reduced-motion: reduce) {
   .cave-next-path--recommended { animation: none; border-color: var(--color-success); }
 }
+
+/* Bigger desktop search glyph (overrides the 1.15em default). */
+.menu-bar__search-icon { width: 2.5em; height: 2.5em; }

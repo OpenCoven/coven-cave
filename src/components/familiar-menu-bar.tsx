@@ -95,7 +95,7 @@ export function FamiliarMenuBar({
           onOpenSearch();
         }}
       >
-        <Icon name="ph:magnifying-glass" width={26} className="menu-bar__search-icon" aria-hidden />
+        <Icon name="ph:magnifying-glass" width={36} className="menu-bar__search-icon" aria-hidden />
         <input
           type="search"
           className="menu-bar__search-input"
@@ -119,7 +119,7 @@ export function FamiliarMenuBar({
             aria-label={enrichingTasks ? `Enhancing tasks ${enrichLabel}` : activeFamiliarId ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
             title={activeFamiliarId ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
           >
-            <Icon name="ph:sparkle" width={30} aria-hidden />
+            <Icon name="ph:sparkle" width={38} height={38} aria-hidden />
             <span>{enrichingTasks ? enrichLabel : "Enhance"}</span>
           </button>
         ) : null}
@@ -129,7 +129,7 @@ export function FamiliarMenuBar({
           onClick={onViewTasks}
           aria-label={taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
         >
-          <Icon name="ph:kanban" width={30} aria-hidden />
+          <Icon name="ph:kanban" width={38} height={38} aria-hidden />
           <span>Tasks</span>
           {taskCount > 0 ? <span className="menu-bar__badge">{fmtBadge(taskCount)}</span> : null}
         </button>
@@ -139,7 +139,7 @@ export function FamiliarMenuBar({
           onClick={onViewInbox}
           aria-label={inboxCount > 0 ? `View inbox — ${inboxCount} need attention` : "View inbox"}
         >
-          <Icon name="ph:tray" width={30} aria-hidden />
+          <Icon name="ph:tray" width={38} height={38} aria-hidden />
           <span>Inbox</span>
           {inboxCount > 0 ? (
             <span className="menu-bar__badge menu-bar__badge--alert">{fmtBadge(inboxCount)}</span>

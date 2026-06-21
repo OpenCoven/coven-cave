@@ -118,7 +118,7 @@ export function TopBar(props: Props) {
             aria-controls="nav"
             title={navDrawerOpen ? "Close navigation" : "Open navigation"}
           >
-            <Icon name="ph:sidebar-simple" width={36} />
+            <Icon name="ph:sidebar-simple" width={40} height={40} />
           </button>
         ) : null}
         {onToggleList ? (
@@ -132,7 +132,7 @@ export function TopBar(props: Props) {
             aria-controls="list"
             title={listDrawerOpen ? "Close list" : "Open list"}
           >
-            <Icon name="ph:list-checks-bold" width={36} />
+            <Icon name="ph:list-checks-bold" width={40} height={40} />
           </button>
         ) : null}
       </div>
@@ -150,7 +150,7 @@ export function TopBar(props: Props) {
           onOpenPalette();
         }}
       >
-        <Icon name="ph:magnifying-glass" width={24} className="top-bar__search-icon" />
+        <Icon name="ph:magnifying-glass" width={32} height={32} className="top-bar__search-icon" />
         <input
           type="search"
           className="top-bar__search-input"
@@ -185,7 +185,7 @@ export function TopBar(props: Props) {
             aria-label={activeFamiliar ? enrichLabel : "Select a familiar to enhance tasks"}
             title={activeFamiliar ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
           >
-            <Icon name="ph:sparkle" width={30} />
+            <Icon name="ph:sparkle" width={38} height={38} />
           </button>
         ) : null}
         {onViewTasks ? (
@@ -196,7 +196,7 @@ export function TopBar(props: Props) {
             aria-label={taskCount && taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
             title="View tasks"
           >
-            <Icon name="ph:kanban" width={30} />
+            <Icon name="ph:kanban" width={38} height={38} />
             {taskCount && taskCount > 0 ? (
               <span className="top-bar__tasks-badge">{taskCount > 99 ? "99+" : taskCount}</span>
             ) : null}
@@ -209,7 +209,7 @@ export function TopBar(props: Props) {
           aria-label="Open on phone"
           title="Open on phone"
         >
-          <Icon name="ph:device-mobile" width={28} />
+          <Icon name="ph:device-mobile" width={36} height={36} />
         </button>
         <NotificationBell
           items={inboxItems}
@@ -227,7 +227,7 @@ export function TopBar(props: Props) {
           aria-label="Account / settings"
           title="Settings (⌘,)"
         >
-          <Icon name="ph:user" width={26} />
+          <Icon name="ph:user" width={36} height={36} />
         </button>
         {onToggleFamiliar ? (
           <button
@@ -240,7 +240,7 @@ export function TopBar(props: Props) {
             aria-controls="agent"
             title={familiarDrawerOpen ? "Close familiar panel" : "Open familiar panel"}
           >
-            <Icon name="ph:cat" width={36} />
+            <Icon name="ph:cat" width={40} height={40} />
           </button>
         ) : null}
       </div>
