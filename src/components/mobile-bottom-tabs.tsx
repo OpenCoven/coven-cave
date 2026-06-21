@@ -64,7 +64,7 @@ export function MobileBottomTabs({
             onClick={() => onSelect(tab.id)}
           >
             <span className="mobile-bottom-tab__icon-wrap" aria-hidden>
-              <Icon name={tab.iconName} width={20} />
+              <Icon name={tab.iconName} width={24} height={24} />
               {showBadge ? (
                 <span className="mobile-bottom-tab__badge" aria-hidden>
                   {inboxBadgeCount > 99 ? "99+" : inboxBadgeCount}
