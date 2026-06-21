@@ -1,7 +1,8 @@
 // Persists the desktop's active theme + resolved color tokens to
 // ~/.coven/cave-theme.json so other clients (the iOS app over Tailscale)
 // can read it from GET /api/theme. Fixed filename — no user-controlled path.
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { homedir } from "node:os";
 
@@ -49,8 +50,17 @@ export async function saveTheme(input: { themeId?: unknown; mode?: unknown; toke
     updatedAt: new Date().toISOString(),
   };
   await mkdir(path.dirname(THEME_PATH), { recursive: true });
-  const tmp = THEME_PATH + ".tmp";
-  await writeFile(tmp, JSON.stringify(snap, null, 2), "utf8");
-  await rename(tmp, THEME_PATH);
+  // Unique temp name per write: a fixed `.tmp` made concurrent PUTs race —
+  // both wrote the same file, the first rename consumed it, and the second
+  // rename hit ENOENT, crashing the dev server. A per-write name lets parallel
+  // saves each rename their own file (last writer wins) without colliding.
+  const tmp = `${THEME_PATH}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    await writeFile(tmp, JSON.stringify(snap, null, 2), "utf8");
+    await rename(tmp, THEME_PATH);
+  } catch (err) {
+    await rm(tmp, { force: true }).catch(() => {});
+    throw err;
+  }
   return snap;
 }
