@@ -20,10 +20,6 @@ struct ChatView: View {
     @State private var showCommands = false
     @State private var showFamiliarPicker = false
     @State private var showTasks = false
-    @State private var atBottom = true
-    @State private var dictation = SpeechDictation()
-    @State private var photoItem: PhotosPickerItem?
-    @State private var pendingImage: PendingImage?
 
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
