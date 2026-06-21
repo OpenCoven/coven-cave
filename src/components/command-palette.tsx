@@ -337,7 +337,7 @@ export function CommandPalette({
         id: `s:${s.id}`,
         kind: "session",
         session: s,
-        familiar: familiarById.get(s.familiarId) ?? null,
+        familiar: s.familiarId ? familiarById.get(s.familiarId) ?? null : null,
       }));
 
     const cardRows: Row[] = cards
@@ -358,7 +358,7 @@ export function CommandPalette({
         id: `card:${c.id}`,
         kind: "card",
         card: c,
-        familiar: familiarById.get(c.familiarId) ?? null,
+        familiar: c.familiarId ? familiarById.get(c.familiarId) ?? null : null,
       }));
 
     const covenMemoryRows: Row[] = covenMemory
@@ -376,7 +376,7 @@ export function CommandPalette({
         id: `cm:${e.id}`,
         kind: "coven-memory",
         entry: e,
-        familiar: familiarById.get(e.familiar_id) ?? null,
+        familiar: e.familiar_id ? familiarById.get(e.familiar_id) ?? null : null,
       }));
 
     // fs-memory, slash commands, and shortcuts are not familiar-scoped, so
