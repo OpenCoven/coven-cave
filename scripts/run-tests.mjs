@@ -106,6 +106,7 @@ export const SUITES = {
     "src/components/sidepanel-badges.test.ts",
     "src/components/sidepanel-badge-dots.test.ts",
     "src/components/sidepanel-nav-peek.test.ts",
+    "src/components/sidepanel-keyboard-nav.test.ts",
     "src/components/recent-activity-rollup.test.ts",
     "src/components/sidebar-familiar-filter.test.ts",
     "src/components/shell-edge-rails.test.ts",

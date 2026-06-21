@@ -23,7 +23,7 @@ assert.doesNotMatch(workspace, /case "\/delegations":|case "\/calls":|setMode\("
 
 assert.match(
   source,
-  /<div className="sidebar-nav-scroll">/,
+  /<div className="sidebar-nav-scroll"/,
   "Sidebar should keep the main navigation in one continuous scrollable rail",
 );
 
