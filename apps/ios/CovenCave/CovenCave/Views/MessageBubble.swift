@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct MessageBubble: View {
     let message: DisplayMessage
@@ -7,10 +8,33 @@ struct MessageBubble: View {
     var isLast: Bool = false
     var onDelete: () -> Void
     var onSuggestion: (String) -> Void = { _ in }
+    /// Regenerate this reply (assistant messages only); nil hides the action.
+    var onRetry: (() -> Void)? = nil
 
     @State private var mdHeight: CGFloat = 0
 
     private var isUser: Bool { message.role == .user }
+
+    /// Long-press actions shared by the bubble and the system note: copy the
+    /// text, optionally retry (regenerate), and delete.
+    @ViewBuilder private var messageActions: some View {
+        if !message.text.isEmpty {
+            Button {
+                UIPasteboard.general.string = message.text
+                Haptics.tap()
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+        }
+        if let onRetry {
+            Button(action: onRetry) {
+                Label("Retry", systemImage: "arrow.clockwise")
+            }
+        }
+        Button(role: .destructive, action: onDelete) {
+            Label("Delete Message", systemImage: "trash")
+        }
+    }
 
     /// Assistant text minus the `<coven:next-paths>` block (parsed into chips).
     private var parsed: (visible: String, suggestions: [String]) {
@@ -53,11 +77,7 @@ struct MessageBubble: View {
                 .strokeBorder(Color(.separator).opacity(0.5), lineWidth: 1)
         )
         .padding(.horizontal, 24)
-        .contextMenu {
-            Button(role: .destructive, action: onDelete) {
-                Label("Delete", systemImage: "trash")
-            }
-        }
+        .contextMenu { messageActions }
     }
 
     private var chatBubble: some View {
@@ -76,11 +96,7 @@ struct MessageBubble: View {
                         .padding(.leading, 4)
                 }
                 bubble
-                    .contextMenu {
-                        Button(role: .destructive, action: onDelete) {
-                            Label("Delete Message", systemImage: "trash")
-                        }
-                    }
+                    .contextMenu { messageActions }
 
                 if !isUser, isLast, !message.streaming, !parsed.suggestions.isEmpty {
                     SuggestionPills(suggestions: parsed.suggestions, onTap: onSuggestion)

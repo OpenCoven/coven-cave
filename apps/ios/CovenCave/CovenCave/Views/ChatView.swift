@@ -9,6 +9,7 @@ struct ChatView: View {
     @State private var showCommands = false
     @State private var showFamiliarPicker = false
     @State private var showTasks = false
+    @State private var atBottom = true
 
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
@@ -90,7 +91,8 @@ struct ChatView: View {
                                       familiar: message.familiarId.flatMap(app.familiar),
                                       isLast: message.id == thread.messages.last?.id,
                                       onDelete: { deleteMessage(message) },
-                                      onSuggestion: { sendSuggestion($0) })
+                                      onSuggestion: { sendSuggestion($0) },
+                                      onRetry: canRetry(message) ? { retryAssistant(message) } : nil)
                         .id(message.id)
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -99,6 +101,33 @@ struct ChatView: View {
                 .padding(.vertical, 14)
             }
             .scrollDismissesKeyboard(.interactively)
+            // Track whether the user is parked at the latest message so a
+            // "jump to bottom" button can appear when they've scrolled up.
+            .onScrollGeometryChange(for: Bool.self) { geo in
+                geo.contentOffset.y >= geo.contentSize.height - geo.containerSize.height - 24
+            } action: { _, nowAtBottom in
+                atBottom = nowAtBottom
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !atBottom {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 36, height: 36)
+                            .background(.regularMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
+                            .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+                    }
+                    .padding(.trailing, 14)
+                    .padding(.bottom, 10)
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel("Scroll to latest")
+                }
+            }
+            .animation(.snappy(duration: 0.2), value: atBottom)
             .onChange(of: thread.messages.last?.text) { _, _ in
                 withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo("bottom", anchor: .bottom) }
             }
@@ -206,6 +235,7 @@ struct ChatView: View {
         case .prose(let text):
             guard !text.isEmpty, let client = app.client else { return }
             draft = ""
+            Haptics.tap()
             thread.send(text, client: client) { app.touch(thread) }
         }
     }
@@ -214,6 +244,30 @@ struct ChatView: View {
     private func sendSuggestion(_ text: String) {
         guard let client = app.client else { return }
         thread.send(text, client: client) { app.touch(thread) }
+    }
+
+    /// Retry is offered on the latest, settled assistant reply of a 1:1 chat
+    /// (group fan-out would re-trigger every familiar, duplicating replies).
+    private func canRetry(_ message: DisplayMessage) -> Bool {
+        guard !thread.isGroup, message.role == .assistant, !message.streaming,
+              message.id == thread.messages.last?.id,
+              let idx = thread.messages.firstIndex(where: { $0.id == message.id }),
+              idx > 0, thread.messages[idx - 1].role == .user else { return false }
+        return true
+    }
+
+    /// Regenerate the latest reply: drop it and the user prompt that produced
+    /// it, then re-send that prompt (a clean replace, not a duplicate).
+    private func retryAssistant(_ assistant: DisplayMessage) {
+        guard let client = app.client,
+              let idx = thread.messages.firstIndex(where: { $0.id == assistant.id }),
+              idx > 0, thread.messages[idx - 1].role == .user else { return }
+        let userMessage = thread.messages[idx - 1]
+        let prompt = userMessage.text
+        thread.deleteMessage(assistant.id)
+        thread.deleteMessage(userMessage.id)
+        Haptics.tap()
+        thread.send(prompt, client: client) { app.touch(thread) }
     }
 
     /// Tap a row in the inline autocomplete. Commands that take arguments get
