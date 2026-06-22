@@ -4722,6 +4722,15 @@ button:active > .edge-rail-chip {
     border-color var(--duration-fast) var(--ease-standard);
 }
 
+/* Size the button icon relative to its label (mirrors .menu-bar__search-icon)
+   so it stays balanced with the 17px text and scales under magnification,
+   instead of a fixed 22px glyph that visually dwarfed the label. */
+.menu-bar__task > svg {
+  flex-shrink: 0;
+  width: 1.15em;
+  height: 1.15em;
+}
+
 .menu-bar__new {
   flex: 0 0 auto;
   color: var(--foreground);
