@@ -18,6 +18,10 @@ import { Button } from "@/components/ui/button";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { ProjectTree } from "@/components/project-tree";
 import type { CaveProject } from "@/lib/cave-projects-types";
+import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -1000,10 +1004,12 @@ function CodexDetailPanel({
 function AutomationScheduleRow({
   auto,
   selected,
+  familiarsById,
   onSelect,
 }: {
   auto: CodexAutomation;
   selected: boolean;
+  familiarsById: Map<string, ResolvedFamiliar>;
   onSelect: (auto: CodexAutomation) => void;
 }) {
   const isActive = auto.status === "ACTIVE";
@@ -1035,6 +1041,21 @@ function AutomationScheduleRow({
             <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>coven</span>
           )}
         </span>
+        {auto.familiars.length > 0 && (
+          <span className="flex shrink-0 -space-x-1.5">
+            {auto.familiars.slice(0, 3).map((fid) => {
+              const f = familiarsById.get(fid);
+              return f ? (
+                <FamiliarAvatar key={fid} familiar={f} size="sm" title={f.display_name} className="rounded-full ring-1 ring-[var(--bg-base)]" />
+              ) : null;
+            })}
+            {auto.familiars.length > 3 && (
+              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[var(--bg-raised)] text-[9px] text-[var(--text-muted)] ring-1 ring-[var(--bg-base)]">
+                +{auto.familiars.length - 3}
+              </span>
+            )}
+          </span>
+        )}
         <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
           {auto.scheduleHuman}
         </span>
@@ -1047,11 +1068,13 @@ function AutomationScheduleSection({
   title,
   items,
   selectedId,
+  familiarsById,
   onSelect,
 }: {
   title: string;
   items: CodexAutomation[];
   selectedId: string | null;
+  familiarsById: Map<string, ResolvedFamiliar>;
   onSelect: (auto: CodexAutomation) => void;
 }) {
   if (items.length === 0) return null;
@@ -1073,6 +1096,7 @@ function AutomationScheduleSection({
             key={auto.id}
             auto={auto}
             selected={selectedId === auto.id}
+            familiarsById={familiarsById}
             onSelect={onSelect}
           />
         ))}
@@ -1085,20 +1109,24 @@ function AutomationsPanel({
   active,
   paused,
   selectedId,
+  familiarsById,
   onSelect,
 }: {
   active: CodexAutomation[];
   paused: CodexAutomation[];
   selectedId: string | null;
+  familiarsById: Map<string, ResolvedFamiliar>;
   onSelect: (auto: CodexAutomation) => void;
 }) {
   return (
     <>
       <AutomationScheduleSection title="Active" items={active}
         selectedId={selectedId}
+        familiarsById={familiarsById}
         onSelect={onSelect} />
       <AutomationScheduleSection title="Paused" items={paused}
         selectedId={selectedId}
+        familiarsById={familiarsById}
         onSelect={onSelect} />
     </>
   );
@@ -1423,13 +1451,39 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       .slice(0, 20),
     [reminderItems]);
 
+  const resolvedFamiliars = useResolvedFamiliars(familiars);
+  const familiarsById = useMemo(
+    () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
+    [resolvedFamiliars],
+  );
+  const [familiarFilter, setFamiliarFilter] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    const raw = window.localStorage.getItem("cave:automations:familiar-filter");
+    if (!raw) return new Set();
+    return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+  });
+  const updateFamiliarFilter = useCallback((next: Set<string>) => {
+    setFamiliarFilter(next);
+    try {
+      window.localStorage.setItem("cave:automations:familiar-filter", [...next].join(","));
+    } catch {
+      /* ignore storage errors */
+    }
+  }, []);
+
   const codexActive = useMemo(
-    () => codexAutos.filter((a) => a.status === "ACTIVE"),
-    [codexAutos],
+    () =>
+      codexAutos.filter(
+        (a) => a.status === "ACTIVE" && automationMatchesFilter(a.familiars, familiarFilter),
+      ),
+    [codexAutos, familiarFilter],
   );
   const codexPaused = useMemo(
-    () => codexAutos.filter((a) => a.status === "PAUSED"),
-    [codexAutos],
+    () =>
+      codexAutos.filter(
+        (a) => a.status === "PAUSED" && automationMatchesFilter(a.familiars, familiarFilter),
+      ),
+    [codexAutos, familiarFilter],
   );
 
   // Inbox tab: the FULL feed (every kind), grouped by attention tier.
@@ -1566,12 +1620,22 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
                 />
               ) : (
-                <AutomationsPanel
-                  active={codexActive}
-                  paused={codexPaused}
-                  selectedId={selectedAutomationId}
-                  onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
-                />
+                <>
+                  {resolvedFamiliars.length > 0 && (
+                    <FamiliarMultiSelect
+                      familiars={resolvedFamiliars}
+                      selected={familiarFilter}
+                      onChange={updateFamiliarFilter}
+                    />
+                  )}
+                  <AutomationsPanel
+                    active={codexActive}
+                    paused={codexPaused}
+                    selectedId={selectedAutomationId}
+                    familiarsById={familiarsById}
+                    onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
+                  />
+                </>
               )}
             </>
           )}
