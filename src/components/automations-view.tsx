@@ -1635,6 +1635,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                     familiarsById={familiarsById}
                     onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
                   />
+                  {familiarFilter.size > 0 && codexActive.length === 0 && codexPaused.length === 0 && (
+                    <p className="mt-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                      No automations match this familiar filter.
+                    </p>
+                  )}
                 </>
               )}
             </>
