@@ -43,6 +43,7 @@ export const SUITES = {
     "src/lib/workflows.test.ts",
     "src/lib/workflow-generate.test.ts",
     "src/lib/familiar-multiselect.test.ts",
+    "src/lib/codex-automation-form.test.ts",
     "src/lib/git-changes.test.ts",
     "src/lib/env-file.test.ts",
     "src/lib/workflow-graph.test.ts",

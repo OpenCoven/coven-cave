@@ -6,13 +6,13 @@ const source = await readFile(new URL("./automations-view.tsx", import.meta.url)
 
 assert.match(
   source,
-  /function splitAutomationPrompt/,
+  /splitAutomationPrompt/,
   "Automation detail should split the stored prompt into editable sections",
 );
 
 assert.match(
   source,
-  /function composeAutomationPrompt/,
+  /composeAutomationPrompt/,
   "Automation detail should compose distinct inputs back into the prompt payload",
 );
 

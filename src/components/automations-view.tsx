@@ -47,9 +47,16 @@ function linkLabel(link: LinkRef): string {
 
 type ScheduleTab = "reminders" | "automations" | "inbox";
 
+import {
+  RRULE_DAY_ORDER,
+  parseCodexRrule,
+  buildCodexRrule,
+  splitAutomationPrompt,
+  composeAutomationPrompt,
+} from "@/lib/codex-automation-form";
+
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_INITIALS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-const RRULE_DAY_ORDER = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 const RRULE_DAY_LABEL: Record<string, string> = {
   SU: "Sun",
   MO: "Mon",
@@ -117,46 +124,6 @@ function relTime(iso: string | undefined | null): string {
   return formatTimestamp(iso, readDateTimePrefs());
 }
 
-function parseCodexRrule(rrule: string | null): {
-  mode: "daily" | "weekly" | "raw";
-  days: string[];
-  time: string;
-  raw: string;
-} {
-  const raw = rrule ?? "";
-  const freq = raw.match(/FREQ=(\w+)/)?.[1];
-  const hour = raw.match(/BYHOUR=(\d+)/)?.[1];
-  const min = raw.match(/BYMINUTE=(\d+)/)?.[1];
-  const days = raw.match(/BYDAY=([^;]+)/)?.[1]?.split(",").filter(Boolean) ?? [];
-  const time = `${(hour ?? "9").padStart(2, "0")}:${(min ?? "0").padStart(2, "0")}`;
-
-  if (freq === "DAILY" && hour !== undefined) return { mode: "daily", days: [], time, raw };
-  if (freq === "WEEKLY" && hour !== undefined) {
-    return {
-      mode: "weekly",
-      days: days.length > 0 ? days : RRULE_DAY_ORDER,
-      time,
-      raw,
-    };
-  }
-  return { mode: "raw", days: RRULE_DAY_ORDER, time, raw };
-}
-
-function buildCodexRrule(mode: "daily" | "weekly" | "raw", time: string, days: string[], raw: string): string {
-  if (mode === "raw") return raw.trim();
-  const [hour = "9", minute = "0"] = time.split(":");
-  const parts = [
-    "RRULE:FREQ=" + (mode === "daily" ? "DAILY" : "WEEKLY"),
-    `BYHOUR=${Number(hour)}`,
-    `BYMINUTE=${Number(minute)}`,
-  ];
-  if (mode === "weekly") {
-    const ordered = RRULE_DAY_ORDER.filter((day) => days.includes(day));
-    parts.push(`BYDAY=${ordered.join(",")}`);
-  }
-  return parts.join(";");
-}
-
 function listInput(values: string[]): string {
   return values.join("\n");
 }
@@ -170,48 +137,6 @@ function parseListInput(value: string): string[] {
     .split(/\n|,/)
     .map((part) => part.trim())
     .filter(Boolean);
-}
-
-function splitAutomationPrompt(prompt: string): {
-  goals: string;
-  deliverables: string;
-  hasStructuredSections: boolean;
-} {
-  const sectionPattern = /^\s*(?:#{1,6}\s*)?(Goals|Deliverables)\s*:?\s*$/gim;
-  const matches = [...prompt.matchAll(sectionPattern)];
-  if (matches.length === 0) {
-    return { goals: prompt, deliverables: "", hasStructuredSections: false };
-  }
-
-  const parts = { goals: "", deliverables: "" };
-  const leading = prompt.slice(0, matches[0].index ?? 0).trim();
-  if (leading) parts.goals = leading;
-
-  matches.forEach((match, index) => {
-    const key = match[1].toLowerCase() === "deliverables" ? "deliverables" : "goals";
-    const start = (match.index ?? 0) + match[0].length;
-    const end = matches[index + 1]?.index ?? prompt.length;
-    const value = prompt.slice(start, end).trim();
-    parts[key] = parts[key] ? `${parts[key]}\n\n${value}`.trim() : value;
-  });
-
-  return { ...parts, hasStructuredSections: true };
-}
-
-function composeAutomationPrompt(
-  goals: string,
-  deliverables: string,
-  includeHeadings: boolean,
-): string {
-  const nextGoals = goals.trim();
-  const nextDeliverables = deliverables.trim();
-
-  if (!includeHeadings && !nextDeliverables) return nextGoals;
-
-  const sections: string[] = [];
-  if (nextGoals) sections.push(`Goals:\n${nextGoals}`);
-  if (nextDeliverables) sections.push(`Deliverables:\n${nextDeliverables}`);
-  return sections.join("\n\n");
 }
 
 function FieldLabel({ children }: { children: ReactNode }) {
