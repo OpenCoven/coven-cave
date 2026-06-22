@@ -19,6 +19,7 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { ProjectTree } from "@/components/project-tree";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
+import { SkillSelect } from "@/components/automation-skill-select";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
@@ -524,6 +525,7 @@ function CodexDetailPanel({
   const [executionEnvironment, setExecutionEnvironment] = useState(auto.executionEnvironment ?? "worktree");
   const [tagsText, setTagsText] = useState(commaInput(auto.tags));
   const [cwdsText, setCwdsText] = useState(listInput(auto.cwds));
+  const [skillPath, setSkillPath] = useState(auto.skillPath ?? "");
   // Folder-picker ("browse") state for the Working directories field.
   const [cwdPickerOpen, setCwdPickerOpen] = useState(false);
   const [cwdProjects, setCwdProjects] = useState<CaveProject[]>([]);
@@ -543,6 +545,7 @@ function CodexDetailPanel({
     setExecutionEnvironment(auto.executionEnvironment ?? "worktree");
     setTagsText(commaInput(auto.tags));
     setCwdsText(listInput(auto.cwds));
+    setSkillPath(auto.skillPath ?? "");
     setScheduleMode(nextSchedule.mode);
     setScheduleTime(nextSchedule.time);
     setScheduleDays(nextSchedule.days);
@@ -588,6 +591,7 @@ function CodexDetailPanel({
     executionEnvironment !== (auto.executionEnvironment ?? "worktree") ||
     tagsText !== commaInput(auto.tags) ||
     cwdsText !== listInput(auto.cwds) ||
+    skillPath.trim() !== (auto.skillPath ?? "") ||
     nextRrule !== (auto.rrule ?? "");
   const canSave = !busy && dirty && name.trim().length > 0 && !invalidSchedule;
 
@@ -619,6 +623,7 @@ function CodexDetailPanel({
       execution_environment: executionEnvironment,
       tags,
       cwds,
+      skill_path: skillPath.trim() || undefined,
     });
   };
 
@@ -884,14 +889,10 @@ function CodexDetailPanel({
               style={fieldStyle}
             />
           </div>
-          {auto.skillPath && (
-            <div>
-              <FieldLabel>Skill</FieldLabel>
-              <p className="break-all font-mono text-[10px]" style={{ color: "var(--text-muted)" }}>
-                {auto.skillPath}
-              </p>
-            </div>
-          )}
+          <div>
+            <FieldLabel>Skill</FieldLabel>
+            <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
+          </div>
         </div>
       </div>
 
