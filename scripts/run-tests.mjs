@@ -510,6 +510,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-schedule.test.ts",
   "src/lib/salem/pathfinder-feedback.test.ts",
   "src/lib/session-rail-title.test.ts",
+  "src/lib/familiar-multiselect.test.ts",
   "src/lib/server/familiar-contract-files.test.ts",
   "src/lib/server/project-paths.test.ts",
   "src/lib/server/session-project-roots.test.ts",
