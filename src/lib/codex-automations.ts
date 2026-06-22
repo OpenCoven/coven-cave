@@ -203,6 +203,7 @@ export function patchTomlAutomationFields(
     ["execution_environment", "execution_environment", tomlString as (value: never) => string],
     ["cwds", "cwds", tomlStringArray as (value: never) => string],
     ["tags", "tags", tomlStringArray as (value: never) => string],
+    ["familiars", "familiars", tomlStringArray as (value: never) => string],
     ["skill_path", "skill_path", tomlString as (value: never) => string],
   ];
 
@@ -270,6 +271,7 @@ export async function listCodexAutomations(): Promise<CodexAutomationRecord[]> {
         executionEnvironment: kv["execution_environment"] ?? null,
         cwds: parseTags(kv["cwds"] ?? ""),
         tags: parseTags(kv["tags"] ?? ""),
+        familiars: parseTags(kv["familiars"] ?? ""),
         prompt: kv["prompt"] ?? "",
         skillPath: kv["skill_path"] ?? null,
         scheduleHuman: humanRrule(rrule),

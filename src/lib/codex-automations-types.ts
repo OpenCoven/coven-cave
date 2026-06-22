@@ -11,6 +11,7 @@ export type CodexAutomation = {
   executionEnvironment: string | null;
   cwds: string[];
   tags: string[];
+  familiars: string[];
   prompt: string;
   skillPath: string | null;
   scheduleHuman: string;
@@ -30,5 +31,6 @@ export type CodexAutomationPatch = {
   execution_environment?: string;
   cwds?: string[];
   tags?: string[];
+  familiars?: string[];
   skill_path?: string;
 };

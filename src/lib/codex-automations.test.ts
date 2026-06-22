@@ -28,6 +28,7 @@ const patched = patchTomlAutomationFields(original, {
   execution_environment: "worktree",
   cwds: ["/Users/buns/Documents/GitHub/OpenCoven/coven-cave"],
   tags: ["ios", "priority", "audit"],
+  familiars: ["nova", "salem"],
 });
 
 assert.match(patched, /^name = "Priority \\"Audit\\""/m);
@@ -39,6 +40,7 @@ assert.match(patched, /^reasoning_effort = "high"/m);
 assert.match(patched, /^execution_environment = "worktree"/m);
 assert.match(patched, /^cwds = \["\/Users\/buns\/Documents\/GitHub\/OpenCoven\/coven-cave"\]/m);
 assert.match(patched, /^tags = \["ios", "priority", "audit"\]/m);
+assert.match(patched, /^familiars = \["nova", "salem"\]/m);
 assert.ok(patched.includes("prompt = '''Daily task: iOS Application Priority Audit\n\nLook for drift.\n'''"));
 assert.ok(!patched.includes("Old prompt"));
 assert.ok(patched.includes('skill_path = "/Users/buns/.coven/skills/coven-task-manager"'));
