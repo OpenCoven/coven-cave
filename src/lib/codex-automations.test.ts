@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { humanRrule, patchTomlAutomationFields, patchTomlStatus } from "./codex-automations.ts";
+import { humanRrule, patchTomlAutomationFields, patchTomlStatus, serializeAutomationToml } from "./codex-automations.ts";
 
 const original = `version = 1
 id = "ios-application-priority-audit"
@@ -84,3 +84,27 @@ assert.equal(
   humanRrule("RRULE:FREQ=WEEKLY;BYHOUR=6;BYMINUTE=30;BYDAY=MO,WE,FR"),
   "Mon/Wed/Fri at 06:30",
 );
+
+// serializeAutomationToml emits a complete, re-parseable PAUSED automation
+{
+  const toml = serializeAutomationToml({
+    id: "triage-bugs",
+    name: "Triage Bugs",
+    rrule: "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0",
+    prompt: "Goals:\nTriage inbound bugs",
+    cwds: ["/repo"],
+    tags: ["ops"],
+    familiars: ["nova", "salem"],
+    model: "gpt-5.4",
+    reasoningEffort: "medium",
+    executionEnvironment: "worktree",
+    skillPath: null,
+  });
+  assert.match(toml, /^id = "triage-bugs"$/m);
+  assert.match(toml, /^kind = "cron"$/m);
+  assert.match(toml, /^status = "PAUSED"$/m);
+  assert.match(toml, /^familiars = \["nova", "salem"\]$/m);
+  assert.match(toml, /^rrule = "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0"$/m);
+  assert.match(toml, /prompt = '''/);
+  assert.doesNotMatch(toml, /skill_path/);
+}
