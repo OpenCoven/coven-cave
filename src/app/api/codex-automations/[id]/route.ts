@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   type AutomationStatus,
   type CodexAutomationPatch,
+  deleteCodexAutomation,
   getCodexAutomation,
   toCodexAutomationPayload,
   updateCodexAutomation,
@@ -96,4 +97,14 @@ export async function PATCH(req: Request, { params }: Params) {
     return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   }
   return NextResponse.json({ ok: true, automation: toCodexAutomationPayload(updated) });
+}
+
+export async function DELETE(req: Request, { params }: Params) {
+  if (!isLocalOrigin(req)) {
+    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  }
+  const { id } = await params;
+  const existed = await deleteCodexAutomation(id);
+  if (!existed) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  return NextResponse.json({ ok: true });
 }
