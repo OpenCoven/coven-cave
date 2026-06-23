@@ -3,11 +3,19 @@ import path from "node:path";
 import { homedir } from "node:os";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
+import { linearizeLegacy } from "./conversation-tree.ts";
 
 const CONV_DIR = path.join(homedir(), ".coven", "cave-conversations");
 
 export type ChatTurn = {
   id: string;
+  /** Branching: the turn this one follows. null/undefined = conversation root.
+   *  Legacy turns lack it and are linearized by createdAt on load. */
+  parentId?: string | null;
+  /** Branching: the harness session id that produced this turn, recorded so a
+   *  branch tip can resume the right rollout. Distinct from the conversation
+   *  field of the same name (which is just the latest). */
+  harnessSessionId?: string;
   role: "user" | "assistant" | "system";
   text: string;
   attachments?: import("./chat-attachments").ChatAttachment[];
@@ -66,6 +74,12 @@ export type ConversationFile = {
   createdAt: string;
   updatedAt: string;
   turns: ChatTurn[];
+  /** Branching: id of the turn at the tip of the currently selected path. The
+   *  rendered conversation is the chain from here to the root. */
+  activeLeafId?: string;
+  /** Branching lineage (set by fork-to-new-thread in a later PR). */
+  parentSessionId?: string;
+  branchedFromTurnId?: string;
 };
 
 async function ensureDir() {
@@ -96,7 +110,16 @@ function pathFor(sessionId: string): string {
 export async function loadConversation(sessionId: string): Promise<ConversationFile | null> {
   try {
     const raw = await readFile(pathFor(sessionId), "utf8");
-    return JSON.parse(raw) as ConversationFile;
+    const conv = JSON.parse(raw) as ConversationFile;
+    // Lazy migration: a pre-branching file has no activeLeafId. Linearize its
+    // turns into a single-path tree so callers always see tree shape. Written
+    // back to disk on the next saveConversation.
+    if (!conv.activeLeafId && conv.turns.length > 0) {
+      const { turns, activeLeafId } = linearizeLegacy(conv.turns);
+      conv.turns = turns;
+      conv.activeLeafId = activeLeafId;
+    }
+    return conv;
   } catch {
     return null;
   }

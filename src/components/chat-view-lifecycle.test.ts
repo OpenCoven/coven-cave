@@ -127,7 +127,7 @@ assert.match(
 
 assert.match(
   source,
-  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) return;[\s\S]*?setInput\(""\);[\s\S]*?setAttachments\(\[\]\);[\s\S]*?await sendRaw\(outgoingText, outgoingAttachments, outgoingMentions\)/,
+  /const send = async \(override\?: string\) => \{[\s\S]*?intentFromSlash\(text\)[\s\S]*?if \(busy\) return;[\s\S]*?setInput\(""\);[\s\S]*?setAttachments\(\[\]\);[\s\S]*?await sendRaw\(outgoingText, outgoingAttachments, outgoingMentions/,
   "send() must run slash intents first, then bail on busy BEFORE clearing the composer — a mid-stream Enter must not destroy the draft (CHAT-D5-01)",
 );
 
@@ -185,7 +185,7 @@ assert.match(
 
 assert.match(
   source,
-  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]\);/,
+  /function regenerateFor\(turn: Turn\)[\s\S]*?role === "user"[\s\S]*?if \(!prevUser\) return undefined;[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]/,
   "Regenerate re-sends the preceding user turn (text + attachments) through the guarded sendRaw path, and hides when no user turn precedes (CHAT-D6-02)",
 );
 
@@ -213,7 +213,7 @@ assert.match(
 // false, error: true) must keep passing it, or the pill below never renders.
 const regenerateForBody =
   source.match(
-    /function regenerateFor\(turn: Turn\)[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]\);/,
+    /function regenerateFor\(turn: Turn\)[\s\S]*?return \(\) => void sendRaw\(text, prevAttachments \?\? \[\]/,
   )?.[0] ?? "";
 assert.ok(regenerateForBody, "regenerateFor body should be extractable (CHAT-D12-03)");
 assert.doesNotMatch(

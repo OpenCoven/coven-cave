@@ -26,6 +26,7 @@ type ConversationWriteBody = {
   updatedAt?: string;
   turn?: unknown;
   turns?: unknown[];
+  activeLeafId?: unknown;
 };
 
 type ConversationPatchBody = {
@@ -35,6 +36,7 @@ type ConversationPatchBody = {
     applicationState?: unknown;
     reason?: unknown;
   } | null;
+  activeLeafId?: unknown;
 };
 
 function jsonError(error: string, status: number) {
@@ -66,6 +68,12 @@ function normalizeTurn(input: unknown): ChatTurn | null {
     ...(Array.isArray(value.attachments) ? { attachments: value.attachments } : {}),
     ...(typeof value.reasoning === "string" ? { reasoning: value.reasoning } : {}),
     ...(Array.isArray(value.tools) ? { tools: value.tools } : {}),
+    ...(typeof value.parentId === "string" || value.parentId === null
+      ? { parentId: value.parentId }
+      : {}),
+    ...(typeof value.harnessSessionId === "string"
+      ? { harnessSessionId: value.harnessSessionId }
+      : {}),
     createdAt:
       typeof value.createdAt === "string" && value.createdAt.trim()
         ? value.createdAt
@@ -130,6 +138,11 @@ function buildConversation(args: {
         ? args.body.updatedAt
         : args.existing?.updatedAt ?? now,
     turns: args.turns,
+    ...(typeof args.body.activeLeafId === "string" && args.body.activeLeafId
+      ? { activeLeafId: args.body.activeLeafId }
+      : args.existing?.activeLeafId
+        ? { activeLeafId: args.existing.activeLeafId }
+        : {}),
   };
 }
 
@@ -234,6 +247,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return jsonError("invalid json body", 400);
+  }
+
+  if (typeof body.activeLeafId === "string" && body.activeLeafId) {
+    const existing = await loadConversation(id);
+    if (!existing) return jsonError("not found", 404);
+    existing.activeLeafId = body.activeLeafId;
+    await saveConversation(existing);
+    return NextResponse.json({ ok: true, conversation: existing });
   }
 
   const existing = await loadConversation(id);

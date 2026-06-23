@@ -69,6 +69,7 @@ import { toolInputAsDiff, toolTargetFile } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
+import { resolveActivePath, siblingsOf, childLeaf } from "@/lib/conversation-tree";
 
 type ToolEvent = {
   id: string;
@@ -105,6 +106,7 @@ type ChatTurnLifecycle =
 
 type Turn = {
   id: string;
+  parentId?: string | null;
   role: "user" | "assistant" | "system";
   text: string;
   attachments?: ChatAttachment[];
@@ -1602,6 +1604,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [activeLeafId, setActiveLeafId] = useState<string>("");
+  const [pendingBranchParent, setPendingBranchParent] = useState<string | null>(null);
   const [historyState, setHistoryState] = useState<ChatHistoryState>("idle");
   const [debugModalOpen, setDebugModalOpen] = useState(false);
 
@@ -2072,15 +2076,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [turns],
   );
 
+  // Active branch path: when activeLeafId is set (branched conversation), only
+  // the turns on the path from the root to that leaf are rendered. For linear
+  // (non-branched) conversations every turn has exactly one child so
+  // resolveActivePath returns the full list — behaviour is identical.
+  const activePath = useMemo<Turn[]>(() => {
+    if (!activeLeafId) return turns;
+    return resolveActivePath(turns, activeLeafId) as Turn[];
+  }, [turns, activeLeafId]);
+
   // Voice-call grouping + a turn.id → index map for the timestamp-gap logic.
-  // Memoized on `turns` so it's rebuilt only when the transcript changes — NOT
-  // on every composer keystroke / caret move / hover, which all re-render
-  // ChatView but leave `turns` untouched (this was an O(n) rebuild per render).
+  // Memoized on `activePath` so it's rebuilt only when the visible transcript
+  // changes — NOT on every composer keystroke / caret move / hover, which all
+  // re-render ChatView but leave `turns` untouched (this was an O(n) rebuild
+  // per render).
   const { groupedTurns, turnIndexMap } = useMemo(() => {
     type VoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
     type SingleItem = { kind: "single"; turn: Turn };
     const grouped: Array<VoiceGroup | SingleItem> = [];
-    for (const turn of turns) {
+    for (const turn of activePath) {
       if (turn.voiceCallId) {
         const last = grouped[grouped.length - 1];
         if (last && last.kind === "call" && last.callId === turn.voiceCallId) {
@@ -2096,9 +2110,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
     }
     const turnIndexMap = new Map<string, number>();
-    for (let idx = 0; idx < turns.length; idx++) turnIndexMap.set(turns[idx].id, idx);
+    for (let idx = 0; idx < activePath.length; idx++) turnIndexMap.set(activePath[idx].id, idx);
     return { groupedTurns: grouped, turnIndexMap };
-  }, [turns]);
+  }, [activePath]);
 
   useEffect(() => {
     setSlashIdx(0);
@@ -2150,6 +2164,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setLinkedContext(null);
     if (!sessionId) {
       setTurns([]);
+      setActiveLeafId("");
       setHistoryState("idle");
       return;
     }
@@ -2165,6 +2180,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               return;
             }
             setTurns([]);
+            setActiveLeafId("");
             setHistoryState(res.status === 404 ? "missing" : "error");
           }
           return;
@@ -2173,8 +2189,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ok?: boolean;
           context?: ChatLinkedContext | null;
           conversation?: {
+            activeLeafId?: string;
             turns?: Array<{
               id: string;
+              parentId?: string | null;
               role: string;
               text: string;
               attachments?: ChatAttachment[];
@@ -2199,6 +2217,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               .filter(
                 (t): t is {
                   id: string;
+                  parentId?: string | null;
                   role: "user" | "assistant";
                   text: string;
                   attachments?: ChatAttachment[];
@@ -2217,6 +2236,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               )
               .map((t) => ({
                   id: t.id,
+                  parentId: t.parentId,
                   role: t.role,
                   text: t.text,
                   attachments: t.attachments,
@@ -2233,6 +2253,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   voiceCallId: t.voiceCallId,
                 })),
           );
+          setActiveLeafId(
+            typeof json.conversation.activeLeafId === "string" ? json.conversation.activeLeafId : "",
+          );
           setHistoryState("loaded");
         } else if (json.ok && json.context) {
           // Known affiliation (e.g. fresh task chat) — no transcript yet.
@@ -2241,6 +2264,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           setTurns([]);
+          setActiveLeafId("");
           setHistoryState("loaded");
         } else {
           if (keepLiveSession()) {
@@ -2248,6 +2272,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           setTurns([]);
+          setActiveLeafId("");
           setHistoryState("missing");
         }
       } catch {
@@ -2257,6 +2282,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           setTurns([]);
+          setActiveLeafId("");
           setHistoryState("error");
         }
       }
@@ -2415,6 +2441,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (command === "/clear") {
       liveSessionIdRef.current = null;
       setTurns([]);
+      setActiveLeafId("");
       setInput("");
       return true;
     }
@@ -2501,7 +2528,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     text: string,
     outgoingAttachments: ChatAttachment[] = [],
     outgoingMentions: string[] = [],
-    opts?: { promptOverride?: string },
+    opts?: { promptOverride?: string; parentTurnId?: string },
   ) => {
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
@@ -2518,9 +2545,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     liveSessionIdRef.current = currentSessionRef.current;
     setHistoryState("loaded");
 
+    const resolvedParentId = opts?.parentTurnId ?? (activeLeafId || null);
     const now = new Date().toISOString();
     const userTurn: Turn = {
       id: crypto.randomUUID(),
+      parentId: resolvedParentId,
       role: "user",
       text: trimmed,
       ...(outgoingAttachments.length ? { attachments: outgoingAttachments } : {}),
@@ -2529,6 +2558,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const assistantId = crypto.randomUUID();
     const assistantTurn: Turn = {
       id: assistantId,
+      parentId: userTurn.id,
       role: "assistant",
       text: "",
       pending: true,
@@ -2542,6 +2572,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
     appendTurn([userTurn, assistantTurn]);
     setTurns((prev) => [...prev, userTurn, assistantTurn]);
+    setActiveLeafId(assistantTurn.id);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -2580,6 +2611,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 mentionedFilesRoot: mentionRoot,
               }
             : {}),
+          // Branching: when regenerating or re-editing from a non-leaf
+          // position, send the explicit parent so the server builds the new
+          // turn off the right node rather than defaulting to the current
+          // active leaf.
+          ...(opts?.parentTurnId ? { parentTurnId: opts.parentTurnId } : {}),
         }),
         signal: controller.signal,
       });
@@ -2677,8 +2713,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // server-side context, so locally rewriting the transcript would lie on
   // reload). A non-empty draft is never silently destroyed: we only prefill
   // when the composer is empty, and always hand focus back to it.
+  // When the edited turn is the LAST user turn on the active path, the next
+  // send will branch from its parent (creating a sibling instead of a child).
   function editTurnInComposer(turn: Turn) {
     setInput((current) => (current.trim() ? current : turn.text));
+    const lastUser = [...activePath].reverse().find((t) => t.role === "user");
+    if (lastUser?.id === turn.id) setPendingBranchParent(turn.parentId ?? null);
     inputRef.current?.focus();
   }
 
@@ -2715,21 +2755,46 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // CHAT-D6-02: regenerate. Re-sends the PRECEDING user turn (text +
   // attachments) through the normal guarded sendRaw path as a new turn pair.
-  // Returns undefined (action hidden) while busy, on pending turns, and on
-  // assistant turns with no preceding user turn (e.g. system-injected).
+  // Returns undefined (action hidden) while busy, on pending turns, on
+  // assistant turns with no preceding user turn (e.g. system-injected), and
+  // on assistant turns that are NOT the last on the active path (only the tip
+  // gets a regenerate button so earlier branches keep their settled answers).
   function regenerateFor(turn: Turn): (() => void) | undefined {
     if (busy || turn.role !== "assistant" || turn.pending) return undefined;
-    const idx = turns.findIndex((t) => t.id === turn.id);
+    if (activePath[activePath.length - 1]?.id !== turn.id) return undefined;
+    const idx = activePath.findIndex((t) => t.id === turn.id);
     if (idx < 0) return undefined;
     let prevUser: Turn | undefined;
     for (let j = idx - 1; j >= 0; j -= 1) {
-      const candidate = turns[j];
+      const candidate = activePath[j];
       if (candidate && candidate.role === "user") { prevUser = candidate; break; }
     }
     if (!prevUser) return undefined;
-    const { text, attachments: prevAttachments } = prevUser;
+    const { text, attachments: prevAttachments, parentId } = prevUser;
     if (!text.trim() && !prevAttachments?.length) return undefined;
-    return () => void sendRaw(text, prevAttachments ?? []);
+    return () => void sendRaw(text, prevAttachments ?? [], [], { parentTurnId: parentId ?? undefined });
+  }
+
+  // Branch navigator: switch to a sibling turn and make its deepest descendant
+  // the new active leaf. Persists the new leaf to the conversation so a reload
+  // restores the same branch. Optimistic — the in-memory switch is immediate;
+  // the PATCH is best-effort (network errors are silently swallowed).
+  async function switchBranch(turnId: string, dir: -1 | 1) {
+    const { siblings, index } = siblingsOf(turns, turnId);
+    const next = siblings[index + dir];
+    if (!next) return;
+    const leaf = childLeaf(turns, next.id);
+    setActiveLeafId(leaf);
+    if (!sessionId) return;
+    try {
+      await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ activeLeafId: leaf }),
+      });
+    } catch {
+      // optimistic; the in-memory switch already happened
+    }
   }
 
   const send = async (override?: string) => {
@@ -2758,7 +2823,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setInput("");
     setAttachments([]);
     setMentionedFiles([]);
-    await sendRaw(outgoingText, outgoingAttachments, outgoingMentions);
+    // Branching: consume a pending branch parent set by editTurnInComposer.
+    // Read-and-clear atomically so it only applies to THIS send.
+    const branchParent = pendingBranchParent;
+    setPendingBranchParent(null);
+    await sendRaw(outgoingText, outgoingAttachments, outgoingMentions, branchParent !== null ? { parentTurnId: branchParent } : undefined);
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
@@ -3160,12 +3229,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearTranscript: () => {
         liveSessionIdRef.current = null;
         setTurns([]);
+        setActiveLeafId("");
       },
       runSlash: (command: string) => {
         // Push command into the composer + dispatch
         if (command === "/clear") {
           liveSessionIdRef.current = null;
           setTurns([]);
+          setActiveLeafId("");
           return;
         }
         if (command === "/help") {
@@ -3345,9 +3416,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ) : null}
           {(() => {
             // `groupedTurns` + `turnIndexMap` are memoized above (rebuilt only
-            // when `turns` changes, not on every keystroke). `allTurns` feeds
-            // the per-row prev-turn timestamp-gap lookup.
-            const allTurns = turns;
+            // when `activePath` changes, not on every keystroke). `allTurns`
+            // feeds the per-row prev-turn timestamp-gap lookup and must match
+            // the same sequence used for grouping.
+            const allTurns = activePath;
             return groupedTurns.map((g) => {
               if (g.kind === "single") {
                 const t = g.turn;
@@ -3360,6 +3432,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   if (!Number.isFinite(gap)) return true;
                   if (gap >= 10 * 60 * 1000) return true;
                   return prev.role !== t.role;
+                })();
+                const singleBranchNav = (() => {
+                  const { siblings, index } = siblingsOf(turns, t.id);
+                  if (siblings.length <= 1) return undefined;
+                  return {
+                    index,
+                    total: siblings.length,
+                    onPrev: () => void switchBranch(t.id, -1),
+                    onNext: () => void switchBranch(t.id, 1),
+                  };
                 })();
                 return (
                   <TurnRow
@@ -3375,6 +3457,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     onSuggestion={(sug) => void send(sug)}
                     expanded={expandedAvatarTurnId === t.id}
                     onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
+                    branchNav={singleBranchNav}
                   />
                 );
               }
@@ -3397,6 +3480,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       if (gap >= 10 * 60 * 1000) return true;
                       return prev.role !== t.role;
                     })();
+                    const groupBranchNav = (() => {
+                      const { siblings, index } = siblingsOf(turns, t.id);
+                      if (siblings.length <= 1) return undefined;
+                      return {
+                        index,
+                        total: siblings.length,
+                        onPrev: () => void switchBranch(t.id, -1),
+                        onNext: () => void switchBranch(t.id, 1),
+                      };
+                    })();
                     return (
                       <TurnRow
                         key={t.id}
@@ -3409,8 +3502,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         onReply={replyFor(t)}
                         onOpenUrl={onOpenUrl}
                         onSuggestion={(sug) => void send(sug)}
-                    expanded={expandedAvatarTurnId === t.id}
+                        expanded={expandedAvatarTurnId === t.id}
                         onToggleAvatar={() => setExpandedAvatarTurnId((cur) => (cur === t.id ? null : t.id))}
+                        branchNav={groupBranchNav}
                       />
                     );
                   })}
@@ -3857,6 +3951,7 @@ function TurnRowImpl({
   expanded = false,
   onToggleAvatar,
   onSuggestion,
+  branchNav,
 }: {
   turn: Turn;
   onSuggestion?: (s: string) => void;
@@ -3875,6 +3970,8 @@ function TurnRowImpl({
   onOpenUrl?: (url: string) => void;
   expanded?: boolean;
   onToggleAvatar?: () => void;
+  /** Branch navigator: shown when this turn has siblings (alternate branches). */
+  branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
 }) {
   // Tool activity renders inline while a turn streams (watching tools run IS the
   // live feedback). Once the turn settles, the prose is shown uninterrupted and
@@ -3942,6 +4039,7 @@ function TurnRowImpl({
             onEdit={onEdit}
             onReply={onReply}
             onOpenUrl={onOpenUrl}
+            branchNav={branchNav}
           />
           {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
         </div>
@@ -4097,6 +4195,7 @@ function TurnRowImpl({
                 // the text segments concatenate to `visible` anyway, so prose
                 // renders identically with the tool blocks omitted.
                 segments={renderSegments}
+                branchNav={branchNav}
               />
             )}
             {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
@@ -4345,7 +4444,12 @@ function areTurnRowPropsEqual(prev: TurnRowProps, next: TurnRowProps): boolean {
     prev.expanded === next.expanded &&
     Boolean(prev.onEdit) === Boolean(next.onEdit) &&
     Boolean(prev.onRegenerate) === Boolean(next.onRegenerate) &&
-    Boolean(prev.onReply) === Boolean(next.onReply)
+    Boolean(prev.onReply) === Boolean(next.onReply) &&
+    // Branch nav: compare by index+total (the displayed position changes when
+    // branches are added); skip closure identity — callbacks are recreated on
+    // every parent render and would defeat memoization.
+    prev.branchNav?.index === next.branchNav?.index &&
+    prev.branchNav?.total === next.branchNav?.total
   );
 }
 
