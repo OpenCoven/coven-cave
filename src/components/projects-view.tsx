@@ -152,7 +152,7 @@ function ProjectChatRow({
           </button>
         )}
         <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${chatDotClass(session.status)}`} />
-        <span className="min-w-0 flex-1 truncate">{title}</span>
+        <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
         {selectMode ? null : confirmDelete ? (
           <span className="flex shrink-0 items-center gap-1">
             <button

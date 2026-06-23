@@ -184,7 +184,7 @@ function ThreadRow({
             <Icon name="ph:dots-six-vertical" width={11} aria-hidden />
           </button>
         </span>
-        <span className="min-w-0 flex-1 truncate">{title}</span>
+        <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
         <span className="chat-thread-age shrink-0 font-mono text-[10px] text-[var(--text-muted)] group-hover/row:hidden">
           {shortAge(session.updated_at)}
         </span>
@@ -284,7 +284,7 @@ function FolderChatRow({
             <Icon name="ph:dots-six-vertical" width={10} aria-hidden />
           </button>
         </span>
-        <span className="min-w-0 flex-1 truncate">{title}</span>
+        <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
       </div>
     </li>
   );
