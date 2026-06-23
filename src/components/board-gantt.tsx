@@ -63,6 +63,17 @@ function addDays(d: Date, n: number): Date {
   return x;
 }
 
+type DragMode = "move" | "resize-start" | "resize-end";
+
+// Clamp a drag delta so a resize can never invert the bar — the moving edge
+// stops one day short of the fixed edge (minimum 1-day duration). "move" is
+// unbounded (the whole bar slides freely).
+function clampDelta(mode: DragMode, delta: number, dur: number): number {
+  if (mode === "resize-start") return Math.min(delta, dur - 1); // start can't pass end
+  if (mode === "resize-end") return Math.max(delta, -(dur - 1)); // end can't pass start
+  return delta;
+}
+
 /** YYYY-MM-DD in UTC — the board's date storage format. */
 function fmtISO(d: Date): string {
   const y = d.getUTCFullYear();
@@ -105,29 +116,32 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   useEffect(() => setTodayMs(Date.now()), []);
   useDateTimePrefs();
 
-  // Drag-to-reschedule: while a bar is dragged we track the live day delta and
-  // shift the bar visually; the actual patch lands once on pointer-up.
+  // Drag a bar to reschedule it: grab the middle to MOVE both dates together,
+  // or grab a left/right edge handle to RESIZE one end — changing the start or
+  // end date independently. While dragging we track the live day delta and
+  // reshape the bar visually; the actual patch lands once on pointer-up.
   const draggable = !!onPatch;
-  const [drag, setDrag] = useState<{ id: string; deltaDays: number } | null>(null);
-  const dragRef = useRef<{ id: string; startX: number; moved: boolean } | null>(null);
+  const [drag, setDrag] = useState<{ id: string; mode: DragMode; deltaDays: number } | null>(null);
+  const dragRef = useRef<{ id: string; mode: DragMode; startX: number; moved: boolean } | null>(null);
   // Suppresses the row's select-click that would otherwise fire after a drag.
   const suppressClickRef = useRef(false);
 
-  const beginDrag = (e: React.PointerEvent, rowId: string) => {
+  const beginDrag = (e: React.PointerEvent, rowId: string, mode: DragMode) => {
     if (!draggable) return;
     // Don't preventDefault — that would also swallow the click we rely on to
-    // select a bar that was tapped (not dragged).
+    // select a bar that was tapped (not dragged). stopPropagation keeps an
+    // edge-handle press from also starting the bar's move-drag.
     e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { id: rowId, startX: e.clientX, moved: false };
-    setDrag({ id: rowId, deltaDays: 0 });
+    dragRef.current = { id: rowId, mode, startX: e.clientX, moved: false };
+    setDrag({ id: rowId, mode, deltaDays: 0 });
   };
   const moveDrag = (e: React.PointerEvent) => {
     const d = dragRef.current;
     if (!d) return;
     const dx = e.clientX - d.startX;
     if (Math.abs(dx) > 3) d.moved = true;
-    setDrag({ id: d.id, deltaDays: Math.round(dx / DAY_W) });
+    setDrag({ id: d.id, mode: d.mode, deltaDays: Math.round(dx / DAY_W) });
   };
   const endDrag = (e: React.PointerEvent, row: GanttRow) => {
     const d = dragRef.current;
@@ -136,25 +150,39 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     setDrag(null);
     if (!d) return;
     if (d.moved) suppressClickRef.current = true; // swallow the trailing click
-    const delta = active?.deltaDays ?? 0;
+    const dur = daysBetween(row.start, row.end) + 1;
+    const delta = clampDelta(d.mode, active?.deltaDays ?? 0, dur);
     if (!(d.moved && delta !== 0 && onPatch)) return;
+    const card = cards.find((c) => c.id === row.cardId);
+    if (!card) return;
     const newStart = fmtISO(addDays(row.start, delta));
     const newEnd = fmtISO(addDays(row.end, delta));
+    const curStart = fmtISO(row.start);
+    const curEnd = fmtISO(row.end);
+    // Resolve the new {start,end} for the dragged mode.
+    const next =
+      d.mode === "move" ? { startDate: newStart, endDate: newEnd }
+      : d.mode === "resize-start" ? { startDate: newStart, endDate: curEnd }
+      : { startDate: curStart, endDate: newEnd };
     if (row.stepId) {
-      // Task mode: shift this step's dates (promoting a card-range fallback to
-      // explicit step dates), leaving the other steps untouched.
-      const card = cards.find((c) => c.id === row.cardId);
-      if (!card) return;
+      // Task mode: write this step's dates (promoting a card-range fallback to
+      // explicit dates), leaving the other steps untouched.
       const steps = (card.steps ?? []).map((s) =>
-        s.id === row.stepId ? { ...s, startDate: newStart, endDate: newEnd } : s,
+        s.id === row.stepId ? { ...s, ...next } : s,
       );
       onPatch(row.cardId, { steps });
     } else {
-      // Project mode: shift whichever of the task's own dates are set.
-      const card = cards.find((c) => c.id === row.cardId);
+      // Project mode: a move shifts whichever of the task's own dates are set;
+      // a resize sets the dragged end explicitly.
       const patch: Partial<Card> = {};
-      if (parseDate(card?.startDate)) patch.startDate = newStart;
-      if (parseDate(card?.endDate)) patch.endDate = newEnd;
+      if (d.mode === "move") {
+        if (parseDate(card.startDate)) patch.startDate = newStart;
+        if (parseDate(card.endDate)) patch.endDate = newEnd;
+      } else if (d.mode === "resize-start") {
+        patch.startDate = newStart;
+      } else {
+        patch.endDate = newEnd;
+      }
       if (patch.startDate || patch.endDate) onPatch(row.cardId, patch);
     }
   };
@@ -333,18 +361,41 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                   const offset = Math.max(0, daysBetween(rangeStart, start));
                   const dur = Math.max(1, daysBetween(start, end) + 1);
                   const milestone = dur === 1;
-                  const dragDelta = drag?.id === row.rowId ? drag.deltaDays : 0;
-                  const dragging = drag?.id === row.rowId && dragDelta !== 0;
-                  const left = (offset + dragDelta) * DAY_W;
+                  // Live drag state for this row, clamped so a resize can't
+                  // invert the bar. A diamond has no edges, so it only moves.
+                  const active = drag?.id === row.rowId ? drag : null;
+                  const mode: DragMode = active?.mode ?? "move";
+                  const dragDelta = active ? clampDelta(mode, active.deltaDays, dur) : 0;
+                  const dragging = active !== null && dragDelta !== 0;
+                  // Reshape the bar per mode: move slides it, resize-start moves
+                  // the left edge (offset + delta, shorter), resize-end stretches
+                  // the right edge (longer). Dates preview the same way.
+                  const previewOffset = mode === "resize-end" ? offset : offset + dragDelta;
+                  const previewDur =
+                    mode === "resize-start" ? dur - dragDelta : mode === "resize-end" ? dur + dragDelta : dur;
+                  const left = previewOffset * DAY_W;
+                  const previewStart = addDays(start, mode === "resize-end" ? 0 : dragDelta);
+                  const previewEnd = addDays(end, mode === "resize-start" ? 0 : dragDelta);
                   const barClass = (base: string) =>
                     `${base}${draggable ? " cg-bar--grab" : ""}${dragging ? " cg-bar--dragging" : ""}`;
                   const handlers = draggable
                     ? {
-                        onPointerDown: (e: React.PointerEvent) => beginDrag(e, row.rowId),
+                        onPointerDown: (e: React.PointerEvent) => beginDrag(e, row.rowId, "move"),
                         onPointerMove: moveDrag,
                         onPointerUp: (e: React.PointerEvent) => endDrag(e, row),
                       }
                     : {};
+                  // Edge handles share the move pointer plumbing but start in a
+                  // resize mode; stopPropagation in beginDrag keeps them distinct.
+                  const resizeHandle = (which: "start" | "end") => (
+                    <span
+                      className={`cg-bar__resize cg-bar__resize--${which}`}
+                      onPointerDown={(e) => beginDrag(e, row.rowId, which === "start" ? "resize-start" : "resize-end")}
+                      onPointerMove={moveDrag}
+                      onPointerUp={(e) => endDrag(e, row)}
+                      aria-hidden
+                    />
+                  );
                   return (
                     <button
                       key={row.rowId}
@@ -354,13 +405,13 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                         if (suppressClickRef.current) { suppressClickRef.current = false; return; }
                         onSelect(row.cardId);
                       }}
-                      title={`${row.label} · ${formatLabel(addDays(start, dragDelta))}–${formatLabel(addDays(end, dragDelta))}${draggable ? " · drag to reschedule" : ""}`}
+                      title={`${row.label} · ${formatLabel(previewStart)}–${formatLabel(previewEnd)}${draggable ? " · drag to move, drag edges to resize" : ""}`}
                     >
                       <span className="cg-left">
                         <span className="cg-c-task">{row.label}</span>
                         <span className="cg-c-owner">{row.owner}</span>
-                        <span className="cg-c-date">{formatLabel(addDays(start, dragDelta))}</span>
-                        <span className="cg-c-date">{formatLabel(addDays(end, dragDelta))}</span>
+                        <span className="cg-c-date">{formatLabel(previewStart)}</span>
+                        <span className="cg-c-date">{formatLabel(previewEnd)}</span>
                         <span className="cg-c-st"><span className={`cg-dot cg-dot--${cat}`} aria-hidden /></span>
                       </span>
                       <span className="cg-track" style={{ width: `${timelineW}px` }}>
@@ -373,16 +424,18 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                         ) : (
                           <span
                             className={barClass(`board-gantt-row__bar board-gantt-row__bar--${cat} cg-bar`)}
-                            style={{ left: `${left}px`, width: `${Math.max(DAY_W, dur * DAY_W - 3)}px`, touchAction: "none" }}
+                            style={{ left: `${left}px`, width: `${Math.max(DAY_W, previewDur * DAY_W - 3)}px`, touchAction: "none" }}
                             {...handlers}
                           >
+                            {draggable ? resizeHandle("start") : null}
                             <span className="cg-bar__cap" aria-hidden />
+                            {draggable ? resizeHandle("end") : null}
                           </span>
                         )}
                         {dragging ? (
                           <span className="cg-drag-label" style={{ left: `${Math.max(0, left)}px` }}>
-                            {formatLabel(addDays(start, dragDelta))}
-                            {milestone ? "" : `–${formatLabel(addDays(end, dragDelta))}`}
+                            {formatLabel(previewStart)}
+                            {milestone ? "" : `–${formatLabel(previewEnd)}`}
                           </span>
                         ) : null}
                       </span>

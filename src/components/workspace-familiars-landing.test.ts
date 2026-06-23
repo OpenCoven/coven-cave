@@ -111,23 +111,28 @@ assert.match(
 
 assert.match(
   workspace,
-  /const \[activeId, setActiveId\] = useState<string \| null>\(null\)/,
-  "Workspace should SSR-render active familiar as null so server/client first render match",
+  /const \[scopeIds, setScopeIds\] = useState<Set<string>>\(\(\) => new Set\(\)\)/,
+  "Workspace should SSR-render the familiar scope as an empty set so server/client first render match",
+);
+assert.match(
+  workspace,
+  /const activeId = scopeIds\.size === 1 \? \[\.\.\.scopeIds\]\[0\]! : null/,
+  "activeId is the derived single-primary (lone scoped id, else null)",
 );
 assert.doesNotMatch(
   workspace,
-  /useState<string \| null>\(\(\) => getActiveFamiliar\(\)\)/,
-  "Workspace must not read localStorage in the active familiar useState initializer",
+  /useState<Set<string>>\(\(\) => new Set\(getFamiliarScope\(\)\)\)/,
+  "Workspace must not read localStorage in the scope useState initializer",
 );
 assert.match(
   workspace,
-  /setActiveId\(getActiveFamiliar\(\)\);[\s\S]*setActiveFamiliarHydrated\(true\);/,
-  "Workspace should restore the persisted active familiar after mount",
+  /setScopeIds\(new Set\(getFamiliarScope\(\)\)\);[\s\S]*setActiveFamiliarHydrated\(true\);/,
+  "Workspace should restore the persisted familiar scope after mount",
 );
 assert.match(
   workspace,
-  /if \(!activeFamiliarHydrated\) return;[\s\S]*setActiveFamiliar\(activeId\)/,
-  "Workspace should not write active familiar storage until after the mount restore runs",
+  /if \(!activeFamiliarHydrated\) return;[\s\S]*setFamiliarScope\(\[\.\.\.scopeIds\]\)/,
+  "Workspace should not write scope storage until after the mount restore runs",
 );
 
 assert.doesNotMatch(

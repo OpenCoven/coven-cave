@@ -26,14 +26,15 @@ import { CompanionRail, type CompanionTab } from "@/components/companion-rail";
 import { RailInspector } from "@/components/inspector-pane";
 import { FamiliarsView } from "@/components/familiars-view";
 import {
-  getActiveFamiliar,
-  setActiveFamiliar,
+  getFamiliarScope,
+  setFamiliarScope,
   getLastSurface,
   setLastSurface,
   getRailOpen,
   setRailOpen,
 } from "@/lib/familiar-memory";
 import { recordFamiliarUsed } from "@/lib/familiar-quick-switch";
+import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { FamiliarPanel } from "@/components/familiar-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
@@ -156,7 +157,17 @@ export function Workspace() {
   const nextRouter = useRouter();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  // Multiselect familiar scope. Empty set = "All familiars". `activeId` is the
+  // derived single "primary" — the lone scoped id, or null when 0 or ≥2 are
+  // selected — so all the existing single-familiar chrome/per-familiar state
+  // behaves exactly as before at 0–1 selections; ≥2 is the new filter case.
+  const [scopeIds, setScopeIds] = useState<Set<string>>(() => new Set());
+  const activeId = scopeIds.size === 1 ? [...scopeIds][0]! : null;
+  // Back-compat shim for the call sites that scope to a single familiar (e.g.
+  // opening a session) or clear to All: writes the multiselect set accordingly.
+  const setActiveId = useCallback((id: string | null) => {
+    setScopeIds(id == null ? new Set<string>() : new Set([id]));
+  }, []);
   const [activeFamiliarHydrated, setActiveFamiliarHydrated] = useState(false);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
@@ -304,14 +315,14 @@ export function Workspace() {
   }, []);
 
   useEffect(() => {
-    setActiveId(getActiveFamiliar());
+    setScopeIds(new Set(getFamiliarScope()));
     setActiveFamiliarHydrated(true);
   }, []);
 
   useEffect(() => {
     if (!activeFamiliarHydrated) return;
-    setActiveFamiliar(activeId);
-  }, [activeId, activeFamiliarHydrated]);
+    setFamiliarScope([...scopeIds]);
+  }, [scopeIds, activeFamiliarHydrated]);
 
   useEffect(() => {
     if (!activeId) {
@@ -472,11 +483,17 @@ export function Workspace() {
     }
   }, [demoMode]);
 
-  const selectFamiliarScope = useCallback((id: string | null) => {
-    setActiveId(id);
+  // Scope the view to a familiar. `null` clears to "All". With `opts.multi`
+  // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain
+  // click replaces the scope with just that familiar (today's behavior).
+  const selectFamiliarScope = useCallback((id: string | null, opts?: { multi?: boolean }) => {
+    setScopeIds((prev) => (id == null ? new Set<string>() : toggleFamiliarSelection(prev, id, opts?.multi ?? false)));
     if (!id) return;
     // Stamp recency so the top-bar quick-switch strip reflects real usage.
     recordFamiliarUsed(id);
+    // A multi-toggle shouldn't yank the surface around — only a plain single
+    // select restores that familiar's last-viewed surface.
+    if (opts?.multi) return;
     const last = getLastSurface(id);
     // Guard against retired/unknown persisted modes (e.g. the removed
     // "projects" standalone surface). Only restore if the stored string is
@@ -1771,6 +1788,7 @@ export function Workspace() {
         familiars={familiars}
         sessions={sessions}
         activeFamiliarId={activeId}
+        scopeFamiliarIds={scopeIds}
         onOpenUrl={(url) => {
           setMode("browser");
           requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
@@ -1902,6 +1920,7 @@ export function Workspace() {
             <FamiliarMenuBar
               familiars={resolvedFamiliars}
               activeFamiliarId={activeId}
+              selectedFamiliarIds={scopeIds}
               sessions={sessions}
               responseNeeded={responseNeeded}
               taskCount={boardTaskCount}

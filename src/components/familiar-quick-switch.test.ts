@@ -28,10 +28,17 @@ assert.match(
 );
 
 // Each strip entry is a one-tap switch button with an avatar + presence dot.
+// A plain tap selects only that familiar; ⌘/Ctrl-click toggles multiselect.
 assert.match(
   source,
-  /onClick=\{\(\) => onSelectFamiliar\(f\.id\)\}/,
-  "tapping a strip avatar switches to that familiar",
+  /onClick=\{\(e\) => onSelectFamiliar\(f\.id, \{ multi: e\.metaKey \|\| e\.ctrlKey \}\)\}/,
+  "tapping a strip avatar scopes to it; ⌘/Ctrl-click toggles it in the multiselect set",
+);
+// The strip highlights every member of the multiselect scope when supplied.
+assert.match(
+  source,
+  /selectedFamiliarIds\s*\?\s*selectedFamiliarIds\.has\(f\.id\)\s*:\s*f\.id === activeFamiliarId/,
+  "strip marks all selected familiars active (falls back to the single active id)",
 );
 assert.match(source, /<FamiliarAvatar familiar=\{f\} size="sm" \/>/, "renders each familiar's avatar");
 assert.match(
