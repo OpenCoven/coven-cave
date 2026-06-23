@@ -9,6 +9,7 @@ import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { FOLDER_MODES, type FolderMode, type AddonsConfig } from "@/components/sidebar-minimal";
 import { useProjects } from "@/lib/use-projects";
@@ -239,6 +240,7 @@ export function CommandPalette({
   onIntent,
   addons,
 }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const { projects } = useProjects();
   const [query, setQuery] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);

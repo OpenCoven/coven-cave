@@ -5,7 +5,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { KIND_ICON, KIND_LABEL, itemHasTarget, itemHref, relativeTime } from "@/lib/daily-report";
-import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
+import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { nextItemsAfterAction } from "@/lib/dashboard-model";
 
 type Action = "done" | "dismiss" | "snooze";
@@ -27,6 +27,7 @@ function minutesUntilTomorrowMorning(): number {
 }
 
 export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [items, setItems] = useState<InboxItem[]>(initialItems);
   const [error, setError] = useState<string | null>(null);
   const [snoozeOpenId, setSnoozeOpenId] = useState<string | null>(null);

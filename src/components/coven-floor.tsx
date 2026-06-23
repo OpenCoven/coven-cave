@@ -5,7 +5,7 @@ import { relativeTime } from "@/lib/relative-time";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { formatClock } from "@/lib/datetime-format";
+import { formatClock, useDateTimePrefs } from "@/lib/datetime-format";
 import type { CovenStatusResponse, FamiliarCard, SessionSummary } from "@/lib/coven-status-types";
 import { statusColor, statusLabel } from "@/lib/coven-status-types";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
@@ -237,6 +237,7 @@ function SessionSummaryRow({ counts }: { counts: ReturnType<typeof sessionCounts
 }
 
 export function CovenFloor() {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [familiars, setFamiliars] = useState<FamiliarCard[]>([]);
   const [computedAt, setComputedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

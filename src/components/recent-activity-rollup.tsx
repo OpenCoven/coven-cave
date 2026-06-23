@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
-import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
+import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { modelIcon } from "@/lib/model-label";
 import type { SessionRow } from "@/lib/types";
 
@@ -39,6 +39,7 @@ type Props = {
 };
 
 export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   // Default open for SSR + first paint, then hydrate the saved preference after
   // mount so the server and client markup match.
