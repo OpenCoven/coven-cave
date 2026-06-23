@@ -144,6 +144,74 @@ final class AppModel {
         tasksLoaded = true
     }
 
+    // MARK: - Task actions
+
+    /// Optimistically set a task's status, then reconcile with the server's
+    /// echoed card (it stamps lifecycle/updatedAt). Reverts on failure.
+    func setTaskStatus(_ card: BoardCard, _ status: CardStatus) async {
+        guard let client, status != card.status else { return }
+        let previous = tasks
+        applyTask(id: card.id) { $0.statusRaw = status.rawValue }
+        do {
+            let updated = try await client.updateTask(cardId: card.id, status: status)
+            applyTask(id: card.id) { $0 = updated }
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
+    /// Optimistically set a task's priority; reconcile/revert like status.
+    func setTaskPriority(_ card: BoardCard, _ priority: CardPriority) async {
+        guard let client, priority != card.priority else { return }
+        let previous = tasks
+        applyTask(id: card.id) { $0.priorityRaw = priority.rawValue }
+        do {
+            let updated = try await client.updateTask(cardId: card.id, priority: priority)
+            applyTask(id: card.id) { $0 = updated }
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
+    /// Toggle a checklist step's done flag, persisting the whole step list.
+    func toggleStep(_ card: BoardCard, stepId: String) async {
+        guard let client, var steps = card.steps,
+              let idx = steps.firstIndex(where: { $0.id == stepId }) else { return }
+        steps[idx].done.toggle()
+        let newSteps = steps
+        let previous = tasks
+        applyTask(id: card.id) { $0.steps = newSteps }
+        do {
+            let updated = try await client.updateTask(cardId: card.id, steps: newSteps)
+            applyTask(id: card.id) { $0 = updated }
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
+    /// Optimistically remove a task, then DELETE it. Reinserts on failure.
+    func deleteTask(_ card: BoardCard) async {
+        guard let client else { return }
+        let previous = tasks
+        tasks.removeAll { $0.id == card.id }
+        do {
+            try await client.deleteTask(cardId: card.id)
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
+    private func applyTask(id: String, _ mutate: (inout BoardCard) -> Void) {
+        guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
+        var card = tasks[idx]
+        mutate(&card)
+        tasks[idx] = card
+    }
+
     // MARK: - Reading list actions
 
     func loadReading() async {
@@ -434,6 +502,76 @@ final class AppModel {
         } catch {
             familiarsError = error.localizedDescription
         }
+    }
+
+    // MARK: - Sessions (server-side, for per-familiar thread lists)
+
+    /// Chat sessions known to the server (`GET /api/sessions/list`) — including
+    /// conversations started on the desktop/web that have no local thread yet.
+    /// Merged with on-device threads to build each familiar's thread list.
+    var serverSessions: [SessionRow] = []
+    var sessionsError: String?
+    var sessionsLoaded = false
+
+    func loadSessions() async {
+        guard let client else { return }
+        do {
+            serverSessions = try await client.sessions()
+            sessionsError = nil
+        } catch {
+            sessionsError = error.localizedDescription
+        }
+        sessionsLoaded = true
+    }
+
+    /// Direct (1:1) on-device threads for a familiar, newest-updated first.
+    func directThreads(for familiarId: String) -> [ChatThread] {
+        threads
+            .filter { !$0.isGroup && $0.familiarIds == [familiarId] }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Every group thread, newest first — shown as its own rows on the Chats
+    /// home (a group has no single familiar to file it under).
+    var groupThreads: [ChatThread] {
+        threads.filter(\.isGroup).sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Server sessions for a familiar that no local thread already carries —
+    /// i.e. conversations to surface but not yet materialised on this device.
+    func serverOnlySessions(for familiarId: String) -> [SessionRow] {
+        let bound = Set(threads.flatMap { $0.sessionIds.values }.filter { !$0.isEmpty })
+        return serverSessions
+            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) }
+            .sorted { (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast) }
+    }
+
+    /// How many conversations a familiar has (local direct + server-only).
+    func threadCount(for familiarId: String) -> Int {
+        directThreads(for: familiarId).count + serverOnlySessions(for: familiarId).count
+    }
+
+    /// Most recent activity across a familiar's local + server conversations.
+    func lastActivity(for familiarId: String) -> Date? {
+        let local = directThreads(for: familiarId).map(\.updatedAt)
+        let server = serverOnlySessions(for: familiarId).compactMap { caveParseISO($0.updatedAt) }
+        return (local + server).max()
+    }
+
+    /// Materialise a server session as a local thread (binding its `sessionId`
+    /// and pulling history) and return it, so it opens like any other thread.
+    /// Reuses an existing local thread that already carries the session id.
+    func openServerSession(_ row: SessionRow, familiarId: String) -> ChatThread {
+        if let existing = threads.first(where: { $0.sessionIds.values.contains(row.id) }) {
+            return existing
+        }
+        let title = row.title.isEmpty ? (familiar(familiarId)?.displayName ?? familiarId) : row.title
+        let thread = ChatThread(title: title, familiarIds: [familiarId],
+                                sessionIds: [familiarId: row.id])
+        threads.insert(thread, at: 0)
+        persistThreads()
+        Task { await loadHistory(into: thread, sessionId: row.id) }
+        return thread
     }
 
     // MARK: - Task ↔ chat linking

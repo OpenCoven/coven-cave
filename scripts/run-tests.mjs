@@ -483,6 +483,7 @@ export const SUITES = {
     "scripts/ios-code-viewer.test.mjs",
     "scripts/ios-message-reader.test.mjs",
     "scripts/ios-task-notes-reader.test.mjs",
+    "scripts/ios-task-actions.test.mjs",
     "scripts/mobile-tailscale.test.mjs",
     "scripts/mobile-tailscale-native.test.mjs",
     "src/components/mobile-handoff.test.ts",

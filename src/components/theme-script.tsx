@@ -40,8 +40,10 @@ const THEME_SCRIPT = `
     // Allowlist: corrupt or attacker-written localStorage values must not
     // land as data-theme attribute content. Unknown ids fall back to coven.
     if (valid.indexOf(theme) === -1) theme = "coven";
-    var mode = localStorage.getItem("coven-mode") || "dark";
-    if (mode !== "light" && mode !== "dark") mode = "dark";
+    var modePref = localStorage.getItem("coven-mode") || "dark";
+    var mode = modePref === "light" ? "light"
+      : modePref === "dark" ? "dark"
+      : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
 
     var html = document.documentElement;
     html.setAttribute("data-theme", theme);

@@ -1,20 +1,31 @@
 import SwiftUI
 
+/// A destination on the Chats navigation stack. Selecting a familiar drills into
+/// that familiar's thread list; selecting a thread opens the conversation. Both
+/// are pushed onto one shared stack so the back button walks the chain.
+enum ChatRoute: Hashable {
+    case familiar(Familiar)
+    case thread(ChatThread)
+}
+
+/// The Chats tab: a list of familiars (tap one to see its threads) plus any
+/// group chats as their own rows. Tapping a familiar pushes `FamiliarThreadsView`;
+/// tapping a thread pushes `ChatView`.
 struct ChatsHomeView: View {
     @Environment(AppModel.self) private var app
     @State private var showNewChat = false
     @State private var query = ""
-    @State private var path: [ChatThread] = []
+    @State private var path: [ChatRoute] = []
 
     var body: some View {
         NavigationStack(path: $path) {
             Group {
-                if app.threads.isEmpty {
+                if app.familiars.isEmpty && app.threads.isEmpty {
                     emptyState
-                } else if filteredThreads.isEmpty {
+                } else if filteredFamiliars.isEmpty && filteredGroups.isEmpty {
                     ContentUnavailableView.search(text: query)
                 } else {
-                    threadList
+                    homeList
                 }
             }
             // Flush large-title header at the very top, matching Canvas / Read /
@@ -22,8 +33,13 @@ struct ChatsHomeView: View {
             // every tab's header aligns. Search + compose stay in the bottom bar.
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { header }
-            .navigationDestination(for: ChatThread.self) { thread in
-                ChatView(thread: thread)
+            .navigationDestination(for: ChatRoute.self) { route in
+                switch route {
+                case .familiar(let familiar):
+                    FamiliarThreadsView(familiar: familiar, path: $path)
+                case .thread(let thread):
+                    ChatView(thread: thread)
+                }
             }
             // Search + compose live in a floating bottom bar (iMessage-style),
             // not the top toolbar; Settings is now its own tab.
@@ -31,18 +47,30 @@ struct ChatsHomeView: View {
             .sheet(isPresented: $showNewChat) {
                 NewChatView { thread in
                     showNewChat = false
-                    path.append(thread)
+                    path.append(.thread(thread))
                 }
             }
-            .refreshable { await app.loadFamiliars() }
+            .refreshable {
+                await app.loadFamiliars()
+                await app.loadSessions()
+            }
+            .task { await app.loadSessions() }
             .onAppear(perform: openDeepLinkedThread)
-            // A slash command (`/new`, `/familiar <name>`) asked to open a thread.
+            // A slash command (`/new`, `/familiar <name>`) or a task link asked to
+            // open a specific thread — push it straight onto the stack.
             .onChange(of: app.threadToOpen) { _, thread in
                 guard let thread else { return }
-                if path.last?.id != thread.id { path.append(thread) }
+                if lastThreadId != thread.id { path.append(.thread(thread)) }
                 app.threadToOpen = nil
             }
         }
+    }
+
+    /// The id of the thread currently on top of the stack, if any (so a repeat
+    /// `requestOpen` of the same thread doesn't double-push it).
+    private var lastThreadId: String? {
+        if case .thread(let t) = path.last { return t.id }
+        return nil
     }
 
     /// Open a thread named by the `CAVE_OPEN_THREAD` launch env var. This is the
@@ -51,7 +79,7 @@ struct ChatsHomeView: View {
         guard path.isEmpty,
               let id = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"],
               let thread = app.threads.first(where: { $0.id == id }) else { return }
-        path.append(thread)
+        path.append(.thread(thread))
     }
 
     /// Large-title header pinned to the top, mirroring the Canvas / Read / Tasks
@@ -61,8 +89,8 @@ struct ChatsHomeView: View {
             Text("Chats")
                 .font(.largeTitle.weight(.bold))
             Spacer()
-            if !app.threads.isEmpty {
-                Text("^[\(app.threads.count) chat](inflect: true)")
+            if !app.familiars.isEmpty {
+                Text("^[\(app.familiars.count) familiar](inflect: true)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -73,30 +101,49 @@ struct ChatsHomeView: View {
         .background(.bar)
     }
 
-    private var threadList: some View {
+    private var homeList: some View {
         List {
-            ForEach(filteredThreads) { thread in
-                Button { path.append(thread) } label: {
-                    ThreadRow(thread: thread)
+            Section(filteredFamiliars.isEmpty ? "" : "Familiars") {
+                ForEach(filteredFamiliars) { familiar in
+                    NavigationLink(value: ChatRoute.familiar(familiar)) {
+                        FamiliarRow(familiar: familiar)
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 }
-                .buttonStyle(.plain)
-                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             }
-            .onDelete { offsets in
-                offsets.map { filteredThreads[$0] }.forEach(app.deleteThread)
+            if !filteredGroups.isEmpty {
+                Section("Groups") {
+                    ForEach(filteredGroups) { thread in
+                        Button { path.append(.thread(thread)) } label: {
+                            ThreadRow(thread: thread)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    }
+                    .onDelete { offsets in
+                        offsets.map { filteredGroups[$0] }.forEach(app.deleteThread)
+                    }
+                }
             }
         }
         .listStyle(.plain)
     }
 
-    /// Threads matching the search query (title, last-message preview, or a
-    /// participating familiar's name). Empty query shows everything.
-    private var filteredThreads: [ChatThread] {
+    /// Familiars matching the search query (name or role). Empty query → all.
+    private var filteredFamiliars: [Familiar] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return app.threads }
-        return app.threads.filter { thread in
+        guard !q.isEmpty else { return app.familiars }
+        return app.familiars.filter {
+            $0.displayName.lowercased().contains(q) || ($0.role?.lowercased().contains(q) ?? false)
+        }
+    }
+
+    /// Group threads matching the search query (title or a member's name).
+    private var filteredGroups: [ChatThread] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return app.groupThreads }
+        return app.groupThreads.filter { thread in
             if thread.title.lowercased().contains(q) { return true }
-            if let last = thread.messages.last?.text, last.lowercased().contains(q) { return true }
             return thread.familiarIds.compactMap(app.familiar).contains {
                 $0.displayName.lowercased().contains(q)
             }
@@ -144,13 +191,46 @@ struct ChatsHomeView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("No chats yet", systemImage: "bubble.left.and.bubble.right")
+            Label("No familiars yet", systemImage: "bubble.left.and.bubble.right")
         } description: {
-            Text("Start a conversation with one familiar — or group several together.")
+            Text("Pull to refresh once your desktop is connected, or start a group chat.")
         } actions: {
             Button("New chat") { showNewChat = true }
                 .buttonStyle(.borderedProminent)
         }
+    }
+}
+
+/// A familiar row on the Chats home: avatar, name, role, and a trailing summary
+/// of how many conversations they have and when they were last active.
+struct FamiliarRow: View {
+    @Environment(AppModel.self) private var app
+    let familiar: Familiar
+
+    var body: some View {
+        HStack(spacing: 12) {
+            AvatarView(familiar: familiar,
+                       url: app.client?.avatarURL(for: familiar),
+                       size: 48)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(familiar.displayName).font(.headline).lineLimit(1)
+                if let role = familiar.role, !role.isEmpty {
+                    Text(role).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 3) {
+                let count = app.threadCount(for: familiar.id)
+                if let last = app.lastActivity(for: familiar.id) {
+                    Text(last, format: .relative(presentation: .numeric))
+                        .font(.caption).foregroundStyle(.tertiary)
+                }
+                Text(count == 0 ? "No chats" : "^[\(count) chat](inflect: true)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 2)
+        .contentShape(Rectangle())
     }
 }
 

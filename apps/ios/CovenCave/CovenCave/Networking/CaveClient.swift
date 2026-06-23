@@ -112,6 +112,42 @@ struct CaveClient {
     @discardableResult
     func updateTaskSession(cardId: String, sessionId: String?) async throws -> BoardCard {
         let payload = try JSONEncoder().encode(SessionPatch(sessionId: sessionId))
+        return try await patchTask(cardId: cardId, payload: payload)
+    }
+
+    /// Fields a task edit can carry. Only the non-nil ones are sent, since the
+    /// board patch updates a field only when its key is present in the body.
+    struct TaskFieldsPatch: Encodable {
+        var status: CardStatus?
+        var priority: CardPriority?
+        var steps: [CardStep]?
+        enum CodingKeys: String, CodingKey { case status, priority, steps }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            if let status { try c.encode(status.rawValue, forKey: .status) }
+            if let priority { try c.encode(priority.rawValue, forKey: .priority) }
+            if let steps { try c.encode(steps, forKey: .steps) }
+        }
+    }
+
+    /// PATCH a task's editable fields (status, priority, steps). Returns the
+    /// server's updated card.
+    @discardableResult
+    func updateTask(cardId: String, status: CardStatus? = nil,
+                    priority: CardPriority? = nil, steps: [CardStep]? = nil) async throws -> BoardCard {
+        let payload = try JSONEncoder().encode(
+            TaskFieldsPatch(status: status, priority: priority, steps: steps))
+        return try await patchTask(cardId: cardId, payload: payload)
+    }
+
+    /// `DELETE /api/board/{id}` — remove a task.
+    func deleteTask(cardId: String) async throws {
+        let req = try request("api/board/\(cardId)", method: "DELETE")
+        let (_, resp) = try await session.data(for: req)
+        try Self.check(resp)
+    }
+
+    private func patchTask(cardId: String, payload: Data) async throws -> BoardCard {
         let req = try request("api/board/\(cardId)", method: "PATCH", body: payload)
         let (data, resp) = try await session.data(for: req)
         try Self.check(resp)
