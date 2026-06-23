@@ -29,9 +29,14 @@ const WORKFLOW_KEY_ORDER = [
   "tags",
   "limits",
   "permissions",
+  "skills",
+  "mcp",
+  "http",
   "visibility",
   "steps",
 ] as const;
+
+const HTTP_CALL_KEY_ORDER = ["id", "name", "method", "url", "note"] as const;
 
 function compact<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -70,7 +75,11 @@ export function workflowToManifest(workflow: WorkflowSummary): Record<string, un
   const manifest = compact({
     ...rest,
     steps: undefined,
+    http: undefined,
   });
+  if (workflow.http && workflow.http.length > 0) {
+    manifest.http = workflow.http.map((call) => orderKeys(compact({ ...call }), HTTP_CALL_KEY_ORDER));
+  }
   if (workflow.steps && workflow.steps.length > 0) {
     manifest.steps = workflow.steps.map((step) => stepToManifest(step));
   }

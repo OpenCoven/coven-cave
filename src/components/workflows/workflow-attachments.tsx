@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { WorkflowRoleSummary, WorkflowSummary } from "@/lib/workflows";
+import { WorkflowCapabilityAttachments } from "@/components/workflows/workflow-capability-attachments";
 
 export type WorkflowFamiliarOption = {
   id: string;
@@ -145,6 +146,8 @@ export function WorkflowAttachments({
             </ul>
           )}
         </AttachmentSection>
+
+        {workflow && <WorkflowCapabilityAttachments workflow={workflow} onUpdateMeta={onUpdateMeta} />}
 
         <AttachmentSection
           icon="ph:kanban"

@@ -15,6 +15,12 @@ export type LocalSkillEntry = {
   version?: string;
   kind?: string;
   tags?: string[];
+  /**
+   * Capabilities the skill needs, declared in its SKILL.md frontmatter as a
+   * `permissions:` list (e.g. `web.fetch`, `repo.read`). Surfaced as inherited
+   * permissions when the skill is attached to a workflow.
+   */
+  permissions?: string[];
   path: string;
   familiar: string;   // "global" for shared workspace skills, "user" for ~/.claude
 };
@@ -82,6 +88,7 @@ export async function scanSkillsDir(dir: string, familiar: string, out: LocalSki
       const text = await readFile(skillMdPath, "utf8");
       const fm = parseFrontmatter(text);
       const tags = parseListField(text, "tags");
+      const permissions = parseListField(text, "permissions");
       out.push({
         id: skillName,
         name: fm.name ?? skillName,
@@ -89,6 +96,7 @@ export async function scanSkillsDir(dir: string, familiar: string, out: LocalSki
         version: fm.version,
         kind: fm.kind,
         tags: tags.length ? tags : (fm.tags ? [fm.tags] : []),
+        permissions: permissions.length ? permissions : undefined,
         path: skillMdPath,
         familiar,
       });
