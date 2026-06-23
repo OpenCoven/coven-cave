@@ -131,6 +131,7 @@ export const SUITES = {
     "src/components/board-grouping.test.ts",
     "src/components/board-project-picker.test.ts",
     "src/components/board-ux-polish.test.ts",
+    "src/components/board-bulk-select.test.ts",
     "src/components/board-link-browser.test.ts",
     "src/components/calendar-view-polish.test.ts",
     "src/lib/calendar-layout.test.ts",

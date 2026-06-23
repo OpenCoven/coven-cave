@@ -102,10 +102,14 @@ type Props = {
   groupBy: GroupBy;
   selectedCardId: string | null;
   onSelect: (id: string) => void;
+  /** Bulk-select mode: clicking a row toggles its checkbox instead of opening. */
+  selectMode?: boolean;
+  isSelected?: (id: string) => boolean;
+  onToggleSelect?: (id: string) => void;
   onPatch: (id: string, patch: Partial<Card>) => void;
 };
 
-export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId, onSelect, onPatch }: Props) {
+export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId, onSelect, selectMode = false, isSelected, onToggleSelect, onPatch }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["done"]));
@@ -211,13 +215,33 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
               </tr>
               {!collapsed.has(key) && gc.map((card) => {
                 const resolvedFamiliar = card.familiarId ? resolvedByIdMap.get(card.familiarId) ?? null : null;
+                const rowChecked = selectMode && !!isSelected?.(card.id);
                 return (
                   <tr key={card.id}
                     data-board-row="true"
                     data-card-id={card.id}
-                    className={selectedCardId === card.id ? "selected" : ""}
-                    onClick={() => onSelect(card.id)}>
-                    <td><span className="board-table-title" title={card.title}>{card.title}</span></td>
+                    role={selectMode ? "checkbox" : undefined}
+                    aria-checked={selectMode ? rowChecked : undefined}
+                    className={(selectMode ? rowChecked : selectedCardId === card.id) ? "selected" : ""}
+                    onClick={() => (selectMode ? onToggleSelect?.(card.id) : onSelect(card.id))}>
+                    <td>
+                      <span className="board-table-title-cell" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {selectMode && (
+                          <span
+                            aria-hidden
+                            style={{
+                              display: "inline-flex", alignItems: "center", justifyContent: "center",
+                              height: 16, width: 16, flexShrink: 0, borderRadius: 4,
+                              border: `1px solid ${rowChecked ? "var(--accent-presence)" : "var(--border-strong)"}`,
+                              background: rowChecked ? "var(--accent-presence)" : "transparent",
+                            }}
+                          >
+                            {rowChecked && <Icon name="ph:check-bold" width={11} className="text-white" />}
+                          </span>
+                        )}
+                        <span className="board-table-title" title={card.title}>{card.title}</span>
+                      </span>
+                    </td>
                     <td>
                       <span className="board-table-cell-status">
                         <span className={`board-table-status-dot board-table-status-dot--${card.status}`} aria-hidden />

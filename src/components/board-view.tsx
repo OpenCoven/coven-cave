@@ -7,8 +7,10 @@ import { DEMO_BOARD_CARDS } from "@/lib/demo-seed";
 import { DEMO_MODE_EVENT, isDemoModeEnabled } from "@/lib/demo-mode";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { Icon } from "@/lib/icon";
-import { type Card, type CardStatus } from "@/lib/cave-board-types";
+import { type Card, type CardStatus, STATUSES } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
+import { useMultiSelect } from "@/lib/use-multi-select";
+import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { familiarInScope } from "@/lib/familiar-multiselect";
 import { BoardKanban } from "@/components/board-kanban";
 import { BoardGantt } from "@/components/board-gantt";
@@ -236,6 +238,61 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     const res = await fetch(`/api/board/${id}`, { method: "DELETE" });
     const json = await res.json();
     if (json.ok) { if (selectedCardId === id) setSelectedCardId(null); await load(); }
+  };
+
+  // ── Bulk select (kanban + table) ────────────────────────────────────────────
+  const cardSelect = useMultiSelect(filtered, (c) => c.id);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const selectedCards = () => cardSelect.selectedFrom(filtered);
+
+  const bulkMove = async (status: CardStatus) => {
+    const ids = selectedCards().map((c) => c.id);
+    if (ids.length === 0) { cardSelect.exit(); return; }
+    setBulkBusy(true);
+    await Promise.all(ids.map((id) => moveCardToStatus(id, status)));
+    setBulkBusy(false);
+    cardSelect.exit();
+  };
+
+  const bulkAssign = async (familiarId: string) => {
+    const ids = selectedCards().map((c) => c.id);
+    if (ids.length === 0) { cardSelect.exit(); return; }
+    setBulkBusy(true);
+    await Promise.all(ids.map((id) => patchCard(id, { familiarId })));
+    setBulkBusy(false);
+    cardSelect.exit();
+  };
+
+  const bulkDelete = async () => {
+    const ids = selectedCards().map((c) => c.id);
+    if (ids.length === 0) { cardSelect.exit(); return; }
+    if (!window.confirm(`Delete ${ids.length} task${ids.length === 1 ? "" : "s"}? This can't be undone.`)) return;
+    setBulkBusy(true);
+    const idSet = new Set(ids);
+    setCards((prev) => prev.filter((c) => !idSet.has(c.id)));
+    if (selectedCardId && idSet.has(selectedCardId)) setSelectedCardId(null);
+    const results = await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const res = await fetch(`/api/board/${id}`, { method: "DELETE" });
+          return (await res.json()).ok as boolean;
+        } catch { return false; }
+      }),
+    );
+    setBulkBusy(false);
+    cardSelect.exit();
+    const failed = results.filter((ok) => !ok).length;
+    if (failed > 0) {
+      setActionError(`Couldn't delete ${failed} of ${ids.length} task${ids.length === 1 ? "" : "s"} — reverted those.`);
+      await load();
+    } else {
+      setActionError(null);
+    }
+  };
+
+  const STATUS_LABELS: Record<CardStatus, string> = {
+    backlog: "Backlog", inbox: "Inbox", running: "Running",
+    review: "Review", blocked: "Blocked", done: "Done",
   };
 
   const handleClearDone = async () => {
@@ -475,6 +532,18 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             </button>
           </div>
 
+          {!isMobile && (viewMode === "kanban" || viewMode === "table") && filtered.length > 0 && !cardSelect.selectMode && (
+            <button
+              type="button"
+              className="board-toolbar-btn"
+              onClick={() => cardSelect.setSelectMode(true)}
+              title="Select multiple tasks"
+            >
+              <Icon name="ph:check-square" width={13} />
+              Select
+            </button>
+          )}
+
           {clearConfirm ? (
             <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
               <button
@@ -587,6 +656,48 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
 
       {/* Content */}
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        {cardSelect.selectMode && (
+          <div className="px-5 pt-3">
+            <SelectionToolbar
+              allSelected={cardSelect.allSelected(filtered)}
+              count={cardSelect.selectedCount}
+              onToggleSelectAll={() => cardSelect.toggleSelectAll(filtered)}
+              onCancel={cardSelect.exit}
+            >
+              <label className="sr-only" htmlFor="board-bulk-move">Move selected tasks to status</label>
+              <select
+                id="board-bulk-move"
+                disabled={bulkBusy || cardSelect.selectedCount === 0}
+                value=""
+                onChange={(e) => { if (e.target.value) void bulkMove(e.target.value as CardStatus); }}
+                className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+              >
+                <option value="">Move to…</option>
+                {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+              </select>
+              <label className="sr-only" htmlFor="board-bulk-assign">Assign selected tasks to a familiar</label>
+              <select
+                id="board-bulk-assign"
+                disabled={bulkBusy || cardSelect.selectedCount === 0}
+                value=""
+                onChange={(e) => { if (e.target.value) void bulkAssign(e.target.value); }}
+                className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+              >
+                <option value="">Assign to…</option>
+                {familiars.map((f) => <option key={f.id} value={f.id}>{f.display_name}</option>)}
+              </select>
+              <button
+                type="button"
+                disabled={bulkBusy || cardSelect.selectedCount === 0}
+                onClick={() => void bulkDelete()}
+                className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+              >
+                <Icon name="ph:trash-bold" width={11} aria-hidden />
+                {bulkBusy ? "Working…" : `Delete${cardSelect.selectedCount ? ` ${cardSelect.selectedCount}` : ""}`}
+              </button>
+            </SelectionToolbar>
+          </div>
+        )}
         {!hasLoaded && !error ? (
           <div className="flex h-full items-center justify-center p-6" role="status" aria-label="Loading tasks">
             <Icon name="ph:circle-notch-bold" width={20} className="animate-spin text-[var(--text-muted)]" aria-hidden />
@@ -656,6 +767,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           <BoardKanban cards={filtered} familiars={familiars} projects={projects} sessions={sessions}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
+            selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
             onJumpToSession={onJumpToSession}
             onOpenTaskChat={onOpenTaskChat}
@@ -670,6 +782,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           <BoardTable cards={filtered} familiars={familiars} projects={projects}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
             onSelect={setSelectedCardId}
+            selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}
             onPatch={patchCard} />
         )}
       </div>
