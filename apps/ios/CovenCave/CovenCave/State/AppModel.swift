@@ -686,6 +686,33 @@ final class AppModel {
         persistThreads()
     }
 
+    /// Render a thread's conversation to Markdown for the share/export action.
+    /// Skips empty/streaming-placeholder turns; attributes each to "You", the
+    /// familiar's display name, or "System".
+    func exportMarkdown(_ thread: ChatThread) -> String {
+        var lines: [String] = ["# \(thread.title)", ""]
+        let names = thread.familiarIds.map { familiar($0)?.displayName ?? $0 }
+        if !names.isEmpty {
+            lines.append("_Chat with \(names.joined(separator: ", "))_")
+            lines.append("")
+        }
+        for message in thread.messages {
+            let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.isEmpty { continue }
+            let who: String
+            switch message.role {
+            case .user: who = "You"
+            case .assistant: who = message.familiarId.flatMap { familiar($0)?.displayName } ?? "Assistant"
+            case .system: who = "System"
+            }
+            lines.append("**\(who)**")
+            lines.append("")
+            lines.append(text)
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     func touch(_ thread: ChatThread) {
         // Move the most recently active thread to the top, then persist.
         if let idx = threads.firstIndex(where: { $0.id == thread.id }), idx != 0 {

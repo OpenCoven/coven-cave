@@ -86,6 +86,14 @@ struct ChatView: View {
                 }
                 .accessibilityLabel("Commands")
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(item: ThreadMarkdownExport(title: thread.title,
+                                                     markdown: app.exportMarkdown(thread)),
+                          preview: SharePreview(thread.title)) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("Export as Markdown")
+            }
         }
         .sheet(isPresented: $showCommands) {
             CommandsSheet { command in prefill(command) }
