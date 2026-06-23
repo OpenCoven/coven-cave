@@ -288,9 +288,9 @@ export const CAVE_ICON_SIZE = {
   headerToggle: "var(--icon-md)",
   headerAction: "var(--icon-md)",
   headerSearch: "var(--icon-sm)",
-  // The top sidepanel/nav toggles share the standard top-chrome glyph size so
-  // they match the familiar avatars and the menu-bar action icons (16px).
-  shellToggle: "var(--icon-md)",
+  // The top sidepanel/nav toggles share the compact top-chrome glyph size so
+  // they stay unified with the menu-bar action icons (14px).
+  shellToggle: "var(--icon-sm)",
   shellNav: "var(--icon-sm)",
   shellInline: "var(--icon-xs)",
   shellDismiss: "var(--icon-xs)",

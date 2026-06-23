@@ -4579,11 +4579,11 @@ button:active > .edge-rail-chip {
   display: none;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 6px 12px;
+  gap: 12px;
+  padding: 5px 12px;
   /* min-height (not a fixed height) so the bar grows with scaled-up content
      under screen magnification instead of clipping the search row. */
-  min-height: 44px;
+  min-height: 38px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-hairline);
   font-size: var(--text-sm);
@@ -4619,7 +4619,7 @@ button:active > .edge-rail-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 12px;
+  padding: 4px 10px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-base);
@@ -4641,12 +4641,11 @@ button:active > .edge-rail-chip {
 
 .menu-bar__search-icon {
   flex-shrink: 0;
-  /* One standard size across the top chrome: var(--icon-md) matches the
-     familiar avatars (FamiliarAvatar "sm" / the labeled trigger img) and the
-     sidepanel toggle glyph, so icons and avatars all read at 16px. */
+  /* Compact top-chrome standard (var(--icon-sm), 14px) — shared with the
+     menu-bar action icons and the sidepanel toggle glyph. */
   align-self: center;
-  width: var(--icon-md);
-  height: var(--icon-md);
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
 .menu-bar__search-input {
@@ -4657,7 +4656,7 @@ button:active > .edge-rail-chip {
   background: transparent;
   color: var(--text-primary);
   font: inherit;
-  font-size: 16px;
+  font-size: var(--text-base);
   line-height: 1.4;
 }
 
@@ -4712,25 +4711,25 @@ button:active > .edge-rail-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  padding: 4px 9px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-base);
   color: var(--foreground);
-  font-size: 17px;
+  font-size: var(--text-base);
   white-space: nowrap;
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard);
 }
 
-/* One standard size across the top chrome (var(--icon-md), 16px): the
-   Enhance/Tasks/Inbox glyphs match the familiar avatars and the sidepanel
-   toggle, rather than scaling with their own label. */
+/* One compact standard across the top chrome (var(--icon-sm), 14px): the
+   Enhance/Tasks/Inbox glyphs, the search glyph, and the sidepanel toggle all
+   share this size, rather than scaling with their own label. */
 .menu-bar__task > svg {
   flex-shrink: 0;
-  width: var(--icon-md);
-  height: var(--icon-md);
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
 .menu-bar__new {
@@ -4753,11 +4752,11 @@ button:active > .edge-rail-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 17px;
-  height: 17px;
+  min-width: 15px;
+  height: 15px;
   padding: 0 5px;
-  border-radius: 9px;
-  font-size: 11px;
+  border-radius: 8px;
+  font-size: 10px;
   font-weight: 600;
   line-height: 1;
   color: var(--accent-presence-foreground);
