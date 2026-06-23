@@ -1,7 +1,8 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 const INBOX_PATH = path.join(homedir(), ".coven", "cave-inbox.json");
 
@@ -85,7 +86,7 @@ export async function loadInbox(): Promise<InboxFile> {
 
 export async function saveInbox(file: InboxFile): Promise<void> {
   await ensureDir();
-  await writeFile(INBOX_PATH, JSON.stringify(file, null, 2), "utf8");
+  await writeJsonAtomic(INBOX_PATH, file);
 }
 
 // Serialize all read-modify-write sequences against the inbox file. Without

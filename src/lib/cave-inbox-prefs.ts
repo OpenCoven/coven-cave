@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 const PREFS_PATH = path.join(homedir(), ".coven", "cave-inbox-prefs.json");
 
@@ -51,7 +52,7 @@ export async function loadPrefs(): Promise<InboxPrefs> {
 
 export async function savePrefs(prefs: InboxPrefs): Promise<void> {
   await ensureDir();
-  await writeFile(PREFS_PATH, JSON.stringify(prefs, null, 2), "utf8");
+  await writeJsonAtomic(PREFS_PATH, prefs);
 }
 
 export async function patchPrefs(

@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 import path from "node:path";
 
 /**
@@ -56,7 +57,7 @@ export async function recordRun(input: Omit<WorkflowRunRecord, "id">): Promise<W
     file.runs.unshift(record);
     if (file.runs.length > RUNS_HISTORY_CAP) file.runs.length = RUNS_HISTORY_CAP;
     await mkdir(path.dirname(runsPath()), { recursive: true });
-    await writeFile(runsPath(), JSON.stringify(file, null, 2), "utf8");
+    await writeJsonAtomic(runsPath(), file);
   });
   return record;
 }
@@ -80,7 +81,7 @@ export async function clearRuns(workflowId?: string): Promise<number> {
     const removed = before - file.runs.length;
     if (removed > 0) {
       await mkdir(path.dirname(runsPath()), { recursive: true });
-      await writeFile(runsPath(), JSON.stringify(file, null, 2), "utf8");
+      await writeJsonAtomic(runsPath(), file);
     }
     return removed;
   });

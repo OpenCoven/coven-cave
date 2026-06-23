@@ -347,6 +347,7 @@ export const SUITES = {
     "src/lib/workflow-source-bundle.test.ts",
     "src/lib/vault-bundle.test.ts",
     "src/lib/cave-board-atomic.test.ts",
+    "src/lib/server/atomic-write.test.ts",
     "src/lib/env-local-bundle.test.ts",
     "src/lib/cave-board-schedule.test.ts",
     "src/components/ui/tabs.test.ts",

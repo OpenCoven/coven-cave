@@ -1,6 +1,7 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 import {
   type FamiliarRuntime,
   normalizeFamiliarRuntime,
@@ -188,7 +189,7 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
     roles: patch.roles !== undefined ? patch.roles : current.roles,
   };
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(updated, null, 2), "utf8");
+  await writeJsonAtomic(CONFIG_PATH, updated);
   return updated;
 }
 
@@ -209,7 +210,7 @@ export async function installMarketplacePlugin(
     },
   };
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(updated, null, 2), "utf8");
+  await writeJsonAtomic(CONFIG_PATH, updated);
   return installedAt;
 }
 
@@ -222,7 +223,7 @@ export async function uninstallMarketplacePlugin(pluginName: string): Promise<vo
     marketplace: { installed },
   };
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(updated, null, 2), "utf8");
+  await writeJsonAtomic(CONFIG_PATH, updated);
 }
 
 export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBinding {
@@ -261,7 +262,7 @@ export async function loadState(): Promise<CaveState> {
 
 async function saveState(state: CaveState): Promise<void> {
   await mkdir(path.dirname(STATE_PATH), { recursive: true });
-  await writeFile(STATE_PATH, JSON.stringify(state, null, 2), "utf8");
+  await writeJsonAtomic(STATE_PATH, state);
 }
 
 // In-process serialization of cave-state.json mutations. Without this, two
@@ -371,5 +372,5 @@ export async function upsertRoleConfig(
     cfg.roles.push({ id: roleId, familiar, active, activatedAt: active ? now : undefined });
   }
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
-  await writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf8");
+  await writeJsonAtomic(CONFIG_PATH, cfg);
 }

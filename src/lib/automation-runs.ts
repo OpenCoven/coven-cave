@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 import path from "node:path";
 
 /**
@@ -52,7 +53,7 @@ function withRunsLock<T>(fn: () => Promise<T>): Promise<T> {
 
 async function persist(file: RunsFile): Promise<void> {
   await mkdir(path.dirname(runsPath()), { recursive: true });
-  await writeFile(runsPath(), JSON.stringify(file, null, 2), "utf8");
+  await writeJsonAtomic(runsPath(), file);
 }
 
 export async function recordRun(input: Omit<AutomationRunRecord, "id">): Promise<AutomationRunRecord> {
