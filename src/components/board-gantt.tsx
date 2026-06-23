@@ -20,7 +20,7 @@ type Props = {
    * "task": one group per task, one bar per checklist step (using step dates,
    * falling back to the task's own range for undated steps).
    */
-  groupMode?: "project" | "task";
+  groupMode?: "project" | "task" | "familiar";
 };
 
 type GanttCategory = "done" | "in-progress" | "pending" | "at-risk";
@@ -239,16 +239,20 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
       groups.push({ key: card.id, name: card.title, rows, firstStart: Math.min(...rows.map((r) => r.start.getTime())) });
     }
   } else {
-    // One group per project; one bar per scheduled task.
+    // One group per project (or familiar); one bar per scheduled task.
+    const byFamiliar = groupMode === "familiar";
     const groupMap = new Map<string, Group>();
     for (const card of cards) {
       const cr = cardRange(card);
       if (!cr) continue;
       placedCardIds.add(card.id);
-      const key = card.projectId ?? "__none__";
+      const key = byFamiliar ? (card.familiarId ?? "__unassigned__") : (card.projectId ?? "__none__");
       let group = groupMap.get(key);
       if (!group) {
-        group = { key, name: projectName(card.projectId), rows: [], firstStart: cr.start.getTime() };
+        const name = byFamiliar
+          ? (card.familiarId ? ownerName(card.familiarId) : "Unassigned")
+          : projectName(card.projectId);
+        group = { key, name, rows: [], firstStart: cr.start.getTime() };
         groupMap.set(key, group);
       }
       group.rows.push({

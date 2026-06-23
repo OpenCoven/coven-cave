@@ -53,7 +53,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar", "project"]));
   // Gantt has its own grouping: by project (one bar per task) or by task (one
   // bar per checklist step). Separate from the kanban/table groupBy above.
-  const [ganttGroup, setGanttGroup] = useState<"project" | "task">(() => loadPref("cave:board:ganttGroup", "project", ["project", "task"]) as "project" | "task");
+  const [ganttGroup, setGanttGroup] = useState<"project" | "task" | "familiar">(() => loadPref("cave:board:ganttGroup", "project", ["project", "task", "familiar"]) as "project" | "task" | "familiar");
   const [searchQuery, setSearchQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
@@ -179,6 +179,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // familiar — fall back to status there. Status and project grouping stay
   // meaningful regardless of the familiar scope.
   const effectiveGroupBy: GroupBy = activeFamiliarId !== null && groupBy === "familiar" ? "status" : groupBy;
+  // Familiar grouping is meaningless once the board is scoped to one familiar.
+  const effectiveGanttGroup = ganttGroup === "familiar" && activeFamiliarId !== null ? "project" : ganttGroup;
   // Grouping applies to both the kanban (swimlanes) and table views; hidden on
   // phones, where BoardCardStack replaces both surfaces.
   const showGroupToggle = !isMobile;
@@ -395,20 +397,30 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               <>
                 <button
                   type="button"
-                  className={`board-group-toggle-btn${ganttGroup === "project" ? " board-group-toggle-btn--active" : ""}`}
+                  className={`board-group-toggle-btn${effectiveGanttGroup === "project" ? " board-group-toggle-btn--active" : ""}`}
                   onClick={() => setGanttGroup("project")}
-                  aria-pressed={ganttGroup === "project"}
+                  aria-pressed={effectiveGanttGroup === "project"}
                 >
                   Project
                 </button>
                 <button
                   type="button"
-                  className={`board-group-toggle-btn${ganttGroup === "task" ? " board-group-toggle-btn--active" : ""}`}
+                  className={`board-group-toggle-btn${effectiveGanttGroup === "task" ? " board-group-toggle-btn--active" : ""}`}
                   onClick={() => setGanttGroup("task")}
-                  aria-pressed={ganttGroup === "task"}
+                  aria-pressed={effectiveGanttGroup === "task"}
                 >
                   Task
                 </button>
+                {activeFamiliarId === null ? (
+                  <button
+                    type="button"
+                    className={`board-group-toggle-btn${effectiveGanttGroup === "familiar" ? " board-group-toggle-btn--active" : ""}`}
+                    onClick={() => setGanttGroup("familiar")}
+                    aria-pressed={effectiveGanttGroup === "familiar"}
+                  >
+                    Familiar
+                  </button>
+                ) : null}
               </>
             ) : (
               <>
@@ -653,7 +665,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             selectedCardId={selectedCardId}
             onSelect={setSelectedCardId}
             onPatch={patchCard}
-            groupMode={ganttGroup} />
+            groupMode={effectiveGanttGroup} />
         ) : (
           <BoardTable cards={filtered} familiars={familiars} projects={projects}
             groupBy={effectiveGroupBy} selectedCardId={selectedCardId}
