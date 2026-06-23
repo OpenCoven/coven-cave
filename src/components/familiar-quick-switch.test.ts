@@ -18,8 +18,13 @@ assert.match(
 );
 assert.match(
   source,
-  /computeQuickSwitch\(familiars, \{ pins, lastUsed, activeId: activeFamiliarId, max \}\)/,
-  "computes the strip from pins, recency, and the active familiar",
+  /computeQuickSwitch\(familiars, \{ pins, lastUsed, activeId: activeFamiliarId, max, scope: stripScope \}\)/,
+  "computes the strip from pins, recency, the active familiar, and the scope preference",
+);
+assert.match(
+  source,
+  /useFamiliarStripScope\(\)/,
+  "subscribes to the pinned-only / all scope preference",
 );
 
 // Each strip entry is a one-tap switch button with an avatar + presence dot.

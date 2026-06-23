@@ -359,6 +359,7 @@ export const SUITES = {
     "src/components/familiar-pin-order.test.ts",
     "src/lib/familiar-quick-switch.test.ts",
     "src/lib/familiar-switcher-style.test.ts",
+    "src/lib/familiar-strip-scope.test.ts",
     "src/lib/salem/happy-paths.test.ts",
     "src/lib/salem/pathfinder-match.test.ts",
     "src/lib/salem/pathfinder-card.test.ts",

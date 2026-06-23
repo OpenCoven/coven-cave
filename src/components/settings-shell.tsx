@@ -33,6 +33,12 @@ import {
   useFamiliarSwitcherStyle,
 } from "@/lib/familiar-switcher-style";
 import {
+  FAMILIAR_STRIP_SCOPE_OPTIONS,
+  FAMILIAR_STRIP_SCOPE_LABELS,
+  setFamiliarStripScope,
+  useFamiliarStripScope,
+} from "@/lib/familiar-strip-scope";
+import {
   DEMO_MODE_EVENT,
   clearDemoModeData,
   demoModeFetchHeaders,
@@ -862,6 +868,7 @@ function AppearanceSection() {
   const [colorEditorBase, setColorEditorBase] = useState<PresetTheme | null>(null);
   const [cornerRadius, setCornerRadius] = useState<CornerRadius>("default");
   const familiarSwitcherStyle = useFamiliarSwitcherStyle();
+  const familiarStripScope = useFamiliarStripScope();
 
   // Read persisted theme + mode on mount
   useEffect(() => {
@@ -1168,20 +1175,57 @@ function AppearanceSection() {
           </div>
         </div>
 
-        {/* Pin order — only meaningful for the avatar strip, so it follows the
-            style toggle and shows only when that style is active. */}
+        {/* Avatars shown + Pin order — only meaningful for the avatar strip, so
+            they follow the style toggle and show only when that style is active. */}
         {familiarSwitcherStyle === "avatars" ? (
-          <div className="border-t border-[var(--border-hairline)] px-4 py-3">
-            <div className="mb-2 min-w-0">
-              <div className="text-[12px] font-medium text-[var(--text-secondary)]">
-                Pin order
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-[var(--border-hairline)] px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-[12px] font-medium text-[var(--text-secondary)]">
+                  Avatars shown
+                </div>
+                <div className="text-[11px] text-[var(--text-muted)]">
+                  Show only your pinned familiars in the strip, or every familiar.
+                </div>
               </div>
-              <div className="text-[11px] text-[var(--text-muted)]">
-                Drag to set the order pinned familiars appear in the avatar strip.
+              <div
+                role="group"
+                aria-label="Familiars shown in the avatar strip"
+                className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5"
+              >
+                {FAMILIAR_STRIP_SCOPE_OPTIONS.map((option) => {
+                  const active = familiarStripScope === option;
+                  return (
+                    <button
+                      key={option}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setFamiliarStripScope(option)}
+                      className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                        active
+                          ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                      }`}
+                    >
+                      {FAMILIAR_STRIP_SCOPE_LABELS[option]}
+                    </button>
+                  );
+                })}
               </div>
             </div>
-            <FamiliarPinOrder />
-          </div>
+
+            <div className="border-t border-[var(--border-hairline)] px-4 py-3">
+              <div className="mb-2 min-w-0">
+                <div className="text-[12px] font-medium text-[var(--text-secondary)]">
+                  Pin order
+                </div>
+                <div className="text-[11px] text-[var(--text-muted)]">
+                  Drag to set the order pinned familiars appear in the avatar strip.
+                </div>
+              </div>
+              <FamiliarPinOrder />
+            </div>
+          </>
         ) : null}
       </SettingsGroup>
 

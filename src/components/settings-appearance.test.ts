@@ -342,6 +342,17 @@ assert.match(
   /familiarSwitcherStyle === "avatars" \?[\s\S]*<FamiliarPinOrder/,
   "the pin-order manager only shows for the avatar strip style",
 );
+// "Avatars shown" — restrict the strip to pinned familiars (default) or show all.
+assert.match(
+  settings,
+  /Avatars shown[\s\S]*setFamiliarStripScope\(option\)/,
+  "the avatar style exposes a pinned-only / all scope control",
+);
+assert.match(
+  settings,
+  /familiarSwitcherStyle === "avatars" \?[\s\S]*setFamiliarStripScope/,
+  "the scope control only shows for the avatar strip style",
+);
 
 // Corner radius drives the shared --radius tokens app-wide, so its boot block
 // must run before paint (ThemeScript) and its controller must mount in layout.

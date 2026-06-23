@@ -45,6 +45,47 @@ const fam = (id, extra = {}) => ({ id, last_seen: undefined, ...extra });
   assert.deepEqual(computeQuickSwitch(familiars, { max: 0 }), [], "max 0 → empty");
 }
 
+// scope "pinned" → ONLY the pinned familiars, in pin order; no active/recent fill.
+{
+  const familiars = [fam("a"), fam("b"), fam("c"), fam("d")];
+  const out = computeQuickSwitch(familiars, {
+    pins: ["c", "a"],
+    activeId: "d",
+    lastUsed: { b: 999, d: 500 },
+    scope: "pinned",
+  });
+  assert.deepEqual(out.map((f) => f.id), ["c", "a"], "pinned scope shows only pinned, in pin order");
+}
+
+// scope "pinned" with no pins → empty strip (even with an active familiar).
+{
+  const familiars = [fam("a"), fam("b")];
+  const out = computeQuickSwitch(familiars, { activeId: "a", scope: "pinned" });
+  assert.deepEqual(out, [], "pinned scope + no pins → empty");
+}
+
+// scope "pinned" still honors max and drops unknown pin ids.
+{
+  const familiars = [fam("a"), fam("b"), fam("c")];
+  assert.deepEqual(
+    computeQuickSwitch(familiars, { pins: ["a", "b", "c"], max: 2, scope: "pinned" }).map((f) => f.id),
+    ["a", "b"],
+    "pinned scope respects max",
+  );
+  assert.deepEqual(
+    computeQuickSwitch(familiars, { pins: ["ghost", "b"], scope: "pinned" }).map((f) => f.id),
+    ["b"],
+    "pinned scope skips unknown pin ids",
+  );
+}
+
+// scope "all" (the default) is unchanged — pinned, then active, then recency.
+{
+  const familiars = [fam("a"), fam("b"), fam("c")];
+  const out = computeQuickSwitch(familiars, { pins: ["a"], activeId: "c", lastUsed: { b: 999 }, scope: "all" });
+  assert.deepEqual(out.map((f) => f.id), ["a", "c", "b"], "all scope keeps active + recency fill");
+}
+
 // Pins/active referencing absent familiars are ignored (no crash, no holes).
 {
   const familiars = [fam("a"), fam("b")];

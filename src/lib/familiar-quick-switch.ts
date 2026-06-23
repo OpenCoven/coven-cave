@@ -150,6 +150,13 @@ type QuickSwitchOpts = {
   /** The active familiar is always surfaced (treated as most-recent). */
   activeId?: string | null;
   max?: number;
+  /**
+   * Which familiars the strip surfaces:
+   *   • "all"    — pinned, then active, then recency-ranked (the default).
+   *   • "pinned" — ONLY the pinned familiars, in pin order. The active/recent
+   *                fill steps are skipped so the strip is a curated set.
+   */
+  scope?: "all" | "pinned";
 };
 
 /**
@@ -159,6 +166,9 @@ type QuickSwitchOpts = {
  *   3. remaining familiars by most-recent use (cave last-used, then daemon
  *      `last_seen`), preserving the input order as a stable tiebreak.
  * Capped at `max` (default {@link QUICK_SWITCH_MAX}).
+ *
+ * When `scope` is "pinned", only step 1 runs — the strip is exactly the pinned
+ * familiars (still present), in pin order.
  */
 export function computeQuickSwitch<T extends { id: string; last_seen?: string }>(
   familiars: readonly T[],
@@ -169,6 +179,7 @@ export function computeQuickSwitch<T extends { id: string; last_seen?: string }>
   const pins = opts.pins ?? [];
   const lastUsed = opts.lastUsed ?? {};
   const activeId = opts.activeId ?? null;
+  const scope = opts.scope ?? "all";
 
   const byId = new Map<string, T>();
   familiars.forEach((f) => byId.set(f.id, f));
@@ -183,6 +194,8 @@ export function computeQuickSwitch<T extends { id: string; last_seen?: string }>
 
   // 1. pins (in order)
   for (const id of pins) take(byId.get(id));
+  // "pinned" scope stops here — the strip is exactly the pinned familiars.
+  if (scope === "pinned") return out;
   // 2. active familiar
   if (activeId) take(byId.get(activeId));
   // 3. recency-ranked remainder

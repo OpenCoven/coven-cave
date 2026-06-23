@@ -7,6 +7,7 @@ import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import { computeQuickSwitch, QUICK_SWITCH_MAX } from "@/lib/familiar-quick-switch";
 import { useFamiliarLastUsed, useFamiliarPins } from "@/lib/use-familiar-quick-switch";
 import { useFamiliarSwitcherStyle } from "@/lib/familiar-switcher-style";
+import { useFamiliarStripScope } from "@/lib/familiar-strip-scope";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 
@@ -46,11 +47,12 @@ export function FamiliarQuickSwitch({
   const pins = useFamiliarPins();
   const lastUsed = useFamiliarLastUsed();
   const switcherStyle = useFamiliarSwitcherStyle();
+  const stripScope = useFamiliarStripScope();
   const pinnedSet = useMemo(() => new Set(pins), [pins]);
 
   const quick = useMemo(
-    () => computeQuickSwitch(familiars, { pins, lastUsed, activeId: activeFamiliarId, max }),
-    [familiars, pins, lastUsed, activeFamiliarId, max],
+    () => computeQuickSwitch(familiars, { pins, lastUsed, activeId: activeFamiliarId, max, scope: stripScope }),
+    [familiars, pins, lastUsed, activeFamiliarId, max, stripScope],
   );
 
   // "dropdown" preference hides the avatar strip, leaving only the switcher menu.
