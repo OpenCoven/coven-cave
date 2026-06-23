@@ -38,7 +38,7 @@ export function resolveActivePath<T extends TreeTurn>(turns: T[], activeLeafId: 
   while (current && !seen.has(current.id)) {
     seen.add(current.id);
     chain.push(current);
-    const parentId = current.parentId;
+    const parentId: string | null | undefined = current.parentId;
     current = parentId ? byId.get(parentId) : undefined;
   }
   return chain.reverse();
@@ -94,7 +94,7 @@ export function childLeaf<T extends TreeTurn>(turns: T[], turnId: string): strin
  */
 export function linearizeLegacy<T extends TreeTurn>(
   turns: T[],
-): { turns: T[]; activeLeafId: string } {
+): { turns: (T & { parentId: string | null })[]; activeLeafId: string } {
   if (turns.length === 0) return { turns: [], activeLeafId: "" };
   const ordered = byCreatedAt(turns);
   const linked = ordered.map((turn, i) => ({
