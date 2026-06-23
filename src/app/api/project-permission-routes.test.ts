@@ -6,6 +6,8 @@ const helper = await readFile(
   new URL("../../lib/server/project-permission-requests.ts", import.meta.url),
   "utf8",
 );
+const proxy = await readFile(new URL("../../proxy.ts", import.meta.url), "utf8");
+const proxyHelpers = await readFile(new URL("../../proxy-helpers.ts", import.meta.url), "utf8");
 const projectFile = await readFile(new URL("./project-file/route.ts", import.meta.url), "utf8");
 const projectTree = await readFile(new URL("./project-tree/route.ts", import.meta.url), "utf8");
 const projectFiles = await readFile(new URL("./project/files/route.ts", import.meta.url), "utf8");
@@ -36,6 +38,21 @@ assert.match(
   /ProjectAccessDeniedError\("missing familiarId for project access"\)/,
   "project API request helper should fail closed when no familiarId is supplied",
 );
+assert.match(
+  proxyHelpers,
+  /export const MOBILE_ACCESS_HEADER = "x-coven-cave-mobile-access";/,
+  "proxy helpers should define the private verified-mobile request marker",
+);
+assert.match(
+  proxy,
+  /requestHeaders\.delete\(MOBILE_ACCESS_HEADER\)[\s\S]*if \(mobileAccessAuthenticated\) requestHeaders\.set\(MOBILE_ACCESS_HEADER, "1"\)/,
+  "proxy should strip client-supplied mobile markers and set one only after verifying the mobile access credential",
+);
+assert.match(
+  helper,
+  /export function projectPermissionSurfaceForRequest\([\s\S]*MOBILE_ACCESS_HEADER[\s\S]*return "mobile"/,
+  "project API helper should map verified mobile requests to the mobile audit/check surface",
+);
 
 for (const [name, source] of [
   ["project-file", projectFile],
@@ -50,12 +67,49 @@ for (const [name, source] of [
   );
 }
 
-assert.match(projectFile, /surface: "file-read"/, "project-file GET should audit file reads");
-assert.match(projectFile, /surface: "file-write"/, "project-file POST should audit file writes");
-assert.match(projectTree, /surface: "file-browse"/, "project-tree GET should audit browsing");
-assert.match(projectTree, /surface: "file-write"/, "project-tree POST moves should audit writes");
-assert.match(projectFiles, /surface: "project-api"/, "project files index should audit project API access");
-assert.match(projectSearch, /surface: "project-api"/, "project search should audit project API access");
+assert.match(
+  projectFile,
+  /surface: projectPermissionSurfaceForRequest\(req, "file-read"\)/,
+  "project-file GET should audit file reads",
+);
+assert.match(
+  projectFile,
+  /surface: projectPermissionSurfaceForRequest\(req, "file-write"\)/,
+  "project-file POST should audit file writes",
+);
+assert.match(
+  projectTree,
+  /surface: projectPermissionSurfaceForRequest\(req, "file-browse"\)/,
+  "project-tree GET should audit browsing",
+);
+assert.match(
+  projectTree,
+  /projectPermissionSurfaceForRequest\(req, "file-write"\)/,
+  "project-tree POST moves should audit writes",
+);
+assert.match(
+  projectFiles,
+  /surface: projectPermissionSurfaceForRequest\(req, "project-api"\)/,
+  "project files index should audit project API access",
+);
+assert.match(
+  projectSearch,
+  /surface: projectPermissionSurfaceForRequest\(req, "project-api"\)/,
+  "project search should audit project API access",
+);
+
+for (const [name, source] of [
+  ["project-file", projectFile],
+  ["project-tree", projectTree],
+  ["project/files", projectFiles],
+  ["project/search", projectSearch],
+] as const) {
+  assert.match(
+    source,
+    /surface: projectPermissionSurfaceForRequest\(req, /,
+    `${name} should use the verified mobile marker to audit mobile project access without bypassing the grant check`,
+  );
+}
 
 assert.match(
   projectTreeClient,

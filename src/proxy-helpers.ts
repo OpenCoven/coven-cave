@@ -104,6 +104,7 @@ export const ACCESS_TOKEN_COOKIE = "coven_cave_access";
 export const ACCESS_TOKEN_QUERY_PARAM = "coven_access_token";
 export const TOKEN_PARAM = "covenCaveToken";
 export const TOKEN_HEADER = "x-coven-cave-token";
+export const MOBILE_ACCESS_HEADER = "x-coven-cave-mobile-access";
 export const SAFE_CONTENT_TYPES = [
   "application/json",
   "application/x-www-form-urlencoded",

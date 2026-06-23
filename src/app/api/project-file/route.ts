@@ -5,6 +5,7 @@ import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
 import {
   assertProjectApiAccess,
   projectAccessDeniedBody,
+  projectPermissionSurfaceForRequest,
 } from "@/lib/server/project-permission-requests";
 import { ProjectAccessDeniedError } from "@/lib/project-permissions";
 
@@ -164,7 +165,7 @@ export async function GET(req: NextRequest) {
     await assertProjectApiAccess({
       familiarId: req.nextUrl.searchParams.get("familiarId"),
       path: filePath,
-      surface: "file-read",
+      surface: projectPermissionSurfaceForRequest(req, "file-read"),
     });
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {
@@ -257,7 +258,7 @@ export async function POST(req: NextRequest) {
     await assertProjectApiAccess({
       familiarId: typeof payload.familiarId === "string" ? payload.familiarId : null,
       path: filePath,
-      surface: "file-write",
+      surface: projectPermissionSurfaceForRequest(req, "file-write"),
     });
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {

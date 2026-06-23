@@ -5,6 +5,7 @@ import {
   ACCESS_TOKEN_QUERY_PARAM,
   TOKEN_PARAM,
   TOKEN_HEADER,
+  MOBILE_ACCESS_HEADER,
   SAFE_CONTENT_TYPES,
   timingSafeEqualString,
   isLoopbackHost,
@@ -26,6 +27,7 @@ export {
   isAllowedRequestSource,
   bearerFromReferer,
   shouldRequireMobileAccessCredential,
+  MOBILE_ACCESS_HEADER,
 };
 
 function jsonError(status: number, error: string) {
@@ -116,6 +118,13 @@ function hasSafeContentType(req: NextRequest) {
   return SAFE_CONTENT_TYPES.includes(mediaType);
 }
 
+function nextWithMobileAccessMarker(req: NextRequest, mobileAccessAuthenticated: boolean) {
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.delete(MOBILE_ACCESS_HEADER);
+  if (mobileAccessAuthenticated) requestHeaders.set(MOBILE_ACCESS_HEADER, "1");
+  return NextResponse.next({ request: { headers: requestHeaders } });
+}
+
 export async function proxy(req: NextRequest) {
   const mobileAccessToken = configuredMobileAccessToken();
   const mobileRes = await mobileAccessGate(req);
@@ -186,14 +195,14 @@ export async function proxy(req: NextRequest) {
   if (!sidecarToken) {
     return process.env.COVEN_CAVE_BUNDLE === "1"
       ? jsonError(500, "missing sidecar auth token")
-      : NextResponse.next();
+      : nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
   }
 
   if (!sidecarAuthenticated) {
     return jsonError(401, "unauthorized");
   }
 
-  return NextResponse.next();
+  return nextWithMobileAccessMarker(req, mobileAccessAuthenticated);
 }
 
 export const config = {

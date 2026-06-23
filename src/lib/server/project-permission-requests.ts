@@ -7,6 +7,7 @@ import {
   assertProjectAccess,
   type ProjectPermissionSurface,
 } from "@/lib/project-permissions";
+import { MOBILE_ACCESS_HEADER } from "@/proxy-helpers";
 
 function isWithinRoot(candidate: string, root: string): boolean {
   const relativePath = path.relative(root, candidate);
@@ -48,6 +49,14 @@ export async function assertProjectApiAccess(args: {
     throw new ProjectAccessDeniedError("project is not registered for permission checks");
   }
   await assertProjectAccess({ familiarId }, project.id, surface);
+}
+
+export function projectPermissionSurfaceForRequest(
+  req: Request,
+  fallback: ProjectPermissionSurface,
+): ProjectPermissionSurface {
+  if (req.headers.get(MOBILE_ACCESS_HEADER) === "1") return "mobile";
+  return fallback;
 }
 
 export function projectAccessDeniedBody(error: ProjectAccessDeniedError) {

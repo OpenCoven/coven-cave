@@ -5,6 +5,7 @@ import { resolveAllowedProjectPath } from "@/lib/server/project-paths";
 import {
   assertProjectApiAccess,
   projectAccessDeniedBody,
+  projectPermissionSurfaceForRequest,
 } from "@/lib/server/project-permission-requests";
 import { ProjectAccessDeniedError } from "@/lib/project-permissions";
 
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
     await assertProjectApiAccess({
       familiarId: req.nextUrl.searchParams.get("familiarId"),
       path: root,
-      surface: "file-browse",
+      surface: projectPermissionSurfaceForRequest(req, "file-browse"),
     });
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {
@@ -106,9 +107,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "missing from/toDir" }, { status: 400 });
   }
   const familiarId = typeof body.familiarId === "string" ? body.familiarId : null;
+  const surface = projectPermissionSurfaceForRequest(req, "file-write");
   try {
-    await assertProjectApiAccess({ familiarId, path: from, surface: "file-write" });
-    await assertProjectApiAccess({ familiarId, path: toDir, surface: "file-write" });
+    await assertProjectApiAccess({ familiarId, path: from, surface });
+    await assertProjectApiAccess({ familiarId, path: toDir, surface });
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {
       const result = projectAccessDeniedBody(error);

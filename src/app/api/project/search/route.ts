@@ -8,6 +8,7 @@ import { parseRipgrepJson, type SearchResult } from "@/lib/project-search";
 import {
   assertProjectApiAccess,
   projectAccessDeniedBody,
+  projectPermissionSurfaceForRequest,
 } from "@/lib/server/project-permission-requests";
 import { ProjectAccessDeniedError } from "@/lib/project-permissions";
 
@@ -158,7 +159,7 @@ export async function GET(req: NextRequest) {
     await assertProjectApiAccess({
       familiarId: sp.get("familiarId"),
       path: root,
-      surface: "project-api",
+      surface: projectPermissionSurfaceForRequest(req, "project-api"),
     });
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {
