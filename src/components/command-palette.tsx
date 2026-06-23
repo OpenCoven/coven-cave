@@ -344,16 +344,16 @@ export function CommandPalette({
     // and suppress everything else. This is also what we do for a bare `@`.
     const noFamiliarMatch = scoped && scope!.size === 0;
 
-    const familiarRows: Row[] = familiars
-      .filter((f) => {
-        if (scoped && !scope!.has(f.id)) return false;
-        if (!q) return true;
-        return (
-          f.display_name.toLowerCase().includes(q) ||
-          f.role.toLowerCase().includes(q) ||
-          (f.harness ?? "").toLowerCase().includes(q)
-        );
-      })
+    const familiarSuggestionPool = noFamiliarMatch ? familiars : familiars.filter((f) => {
+      if (scoped && !scope!.has(f.id)) return false;
+      if (!q) return true;
+      return (
+        f.display_name.toLowerCase().includes(q) ||
+        f.role.toLowerCase().includes(q) ||
+        (f.harness ?? "").toLowerCase().includes(q)
+      );
+    });
+    const familiarRows: Row[] = familiarSuggestionPool
       .slice(0, RESULT_LIMITS.familiar)
       .map((f) => ({ id: `f:${f.id}`, kind: "familiar", familiar: f }));
 
@@ -634,7 +634,7 @@ export function CommandPalette({
           ...conversationRows,
         ];
 
-    const salemRows: Row[] = query.trim() && !slashCanonical
+    const salemRows: Row[] = query.trim() && !slashCanonical && !noFamiliarMatch
       ? [{ id: "salem-answer", kind: "salem-answer", query: query.trim() }]
       : [];
 

@@ -14,7 +14,9 @@ export function parseFamiliarToken(query: string): { token: string | null; rest:
   const m = query.match(/(^|\s)@([\w-]*)/);
   if (!m) return { token: null, rest: query };
   const token = m[2].toLowerCase();
-  const rest = (query.slice(0, m.index! + m[1].length) + query.slice(m.index! + m[1].length + 1 + m[2].length)).trim();
+  const rest = (query.slice(0, m.index! + m[1].length) + query.slice(m.index! + m[1].length + 1 + m[2].length))
+    .replace(/\s+/g, " ")
+    .trim();
   return { token, rest };
 }
 

@@ -17,7 +17,7 @@ export function journalMemoryEntriesForFamiliar<T extends MemoryStatsEntry>(
   familiarId: string | null,
 ): T[] {
   if (!familiarId) return entries;
-  return entries.filter((entry) => entry.familiarId == null || entry.familiarId === familiarId);
+  return entries.filter((entry) => entry.familiarId === familiarId);
 }
 
 export function buildJournalMemoryStats(
@@ -44,6 +44,6 @@ export function buildJournalMemoryContext(
     `${date}: ${who} spans ${plural(stats.covenOrigin, "Coven origin file")}, ` +
       `${plural(stats.externalRuntimes, "external runtime file")}, and ` +
       `${plural(stats.runtimeMemory, "runtime memory file")}.`,
-    "Reflect only on the selected familiar's available memory coverage.",
+    "Reflect only on files attributed to the selected familiar; ignore shared, global, or unattributed memory files.",
   ].join("\n");
 }

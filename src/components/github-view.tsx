@@ -496,6 +496,98 @@ function OpenChatAction({
   );
 }
 
+// ── Safe merge action ─────────────────────────────────────────────────────────
+
+function SafeMergeAction({
+  item,
+  linkedCards,
+  familiars,
+  onJumpToSession,
+}: {
+  item: GitHubItem;
+  linkedCards: Card[];
+  familiars: Familiar[];
+  onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (item.kind !== "pr" && item.kind !== "review_request") return null;
+
+  const linkedCard = linkedCards.find((card) => card.cwd) ?? linkedCards[0] ?? null;
+  const familiarId = linkedCard?.familiarId ?? familiars[0]?.id ?? null;
+
+  async function startSafeMerge(e: React.MouseEvent) {
+    e.stopPropagation();
+    setBusy(true);
+    setError(null);
+    let worktreeLine =
+      "Worktree: no linked local project root was available; resolve the repo root before editing.";
+
+    try {
+      if (linkedCard?.cwd) {
+        const res = await fetch("/api/github/worktree", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            projectRoot: linkedCard.cwd,
+            kind: item.kind,
+            number: item.number ?? null,
+            title: item.title,
+          }),
+        });
+        const json = (await res.json().catch(() => null)) as {
+          ok?: boolean;
+          worktree?: string;
+          branch?: string;
+          created?: boolean;
+          error?: string;
+        } | null;
+        if (!res.ok || !json?.ok) {
+          throw new Error(json?.error ?? `worktree HTTP ${res.status}`);
+        }
+        worktreeLine = `Worktree: ${json.worktree} (${json.created ? "created" : "reused"}). Branch: ${json.branch}.`;
+      }
+
+      const context = [
+        `**Safely merge this PR: ${item.title}**`,
+        `Repo: \`${item.repo}\`${item.number != null ? ` #${item.number}` : ""}`,
+        `URL: ${item.url}`,
+        worktreeLine,
+        "",
+        "Prefer the worktree path over switching branches in the shared checkout.",
+        "Fetch latest refs, inspect the diff, verify mergeability, run the relevant checks, and only merge after verification evidence is clear.",
+        "Use the repository's PR merge flow when available; do not push directly to main unless explicitly instructed.",
+      ].join("\n");
+
+      window.dispatchEvent(
+        new CustomEvent("cave:agents-new-chat", {
+          detail: { familiarId, context },
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "safe merge setup failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="gh-action-wrap">
+      <button
+        type="button"
+        onClick={startSafeMerge}
+        disabled={busy}
+        title="Safely merge from a worktree"
+        className="gh-action-btn"
+      >
+        <Icon name="ph:git-merge" width={12} />
+        <span className="gh-action-btn-label">{busy ? "Prep…" : "Merge"}</span>
+      </button>
+      {error && <span className="gh-action-error" role="img" aria-label={`Error: ${error}`} title={error}>!</span>}
+    </div>
+  );
+}
+
 // ── Add-to-board action ───────────────────────────────────────────────────────
 
 function AddToBoardAction({
@@ -1219,6 +1311,12 @@ function GitHubItemGlassPanel({
             cards={cards}
             onAfterLink={onAfterLink}
           />
+          <SafeMergeAction
+            item={item}
+            linkedCards={linkedCards}
+            familiars={familiars}
+            onJumpToSession={onJumpToSession}
+          />
           <a
             href={item.url}
             target="_blank"
@@ -1813,6 +1911,12 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                             familiars={familiars}
                             cards={cards}
                             onAfterLink={reloadCards}
+                          />
+                          <SafeMergeAction
+                            item={item}
+                            linkedCards={linked}
+                            familiars={familiars}
+                            onJumpToSession={onJumpToSession}
                           />
                           <a
                             href={item.url}

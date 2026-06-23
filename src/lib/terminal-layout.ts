@@ -266,6 +266,23 @@ export function terminalLayoutVisibleSessionIds(state: TerminalLayoutState): str
   return visibleIds(state.root).filter((id, index, ids) => ids.indexOf(id) === index);
 }
 
+export function reorderTerminalSessions(
+  state: TerminalLayoutState,
+  sourceSessionId: string,
+  targetSessionId: string,
+): TerminalLayoutState {
+  if (sourceSessionId === targetSessionId) return state;
+  const sourceIndex = state.sessions.findIndex((session) => session.id === sourceSessionId);
+  const targetIndex = state.sessions.findIndex((session) => session.id === targetSessionId);
+  if (sourceIndex < 0 || targetIndex < 0) return state;
+
+  const sessions = [...state.sessions];
+  const [source] = sessions.splice(sourceIndex, 1);
+  const nextTargetIndex = sessions.findIndex((session) => session.id === targetSessionId);
+  sessions.splice(nextTargetIndex, 0, source);
+  return { ...state, sessions };
+}
+
 export function addTerminalSession(
   state: TerminalLayoutState,
   session: TerminalSession,

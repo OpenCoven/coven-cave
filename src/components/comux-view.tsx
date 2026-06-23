@@ -42,6 +42,7 @@ import {
   normalizeTerminalLayout,
   removeTerminalPaneView,
   renameTerminalSession,
+  reorderTerminalSessions,
   terminalLayoutVisibleSessionIds,
   type TerminalLayoutNode,
   type TerminalLayoutState,
@@ -218,6 +219,7 @@ type TerminalLayoutAction =
   | { type: "focus"; sessionId: string }
   | { type: "move"; sourceSessionId: string; targetSessionId: string; side: TerminalSplitSide }
   | { type: "remove-view"; sessionId: string }
+  | { type: "reorder"; sourceSessionId: string; targetSessionId: string }
   | { type: "rename"; sessionId: string; label: string };
 
 function terminalLayoutReducer(
@@ -239,6 +241,8 @@ function terminalLayoutReducer(
       return moveTerminalPane(state, action);
     case "remove-view":
       return removeTerminalPaneView(state, action.sessionId);
+    case "reorder":
+      return reorderTerminalSessions(state, action.sourceSessionId, action.targetSessionId);
     case "rename":
       return renameTerminalSession(state, action.sessionId, action.label);
   }
@@ -301,6 +305,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [saveError, setSaveError] = useState<string | null>(null);
   // Brief "Saved" confirmation after a successful write (auto-clears).
   const [justSaved, setJustSaved] = useState(false);
+  const [tabDropTargetId, setTabDropTargetId] = useState<string | null>(null);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   // Projects list (the 200px column) visibility, driven by the Code workspace
   // toolbar's Projects toggle and its layout presets over window events. Lives
@@ -549,6 +554,12 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     },
     [sessions],
   );
+
+  const acceptsTerminalSessionDrag = useCallback((event: DragEvent<HTMLElement>) =>
+    Array.from(event.dataTransfer.types).some((type) =>
+      type === TERMINAL_SESSION_DRAG_TYPE || type === "text/plain",
+    ),
+  []);
 
   const onSplitTerminal = useCallback(
     (direction: TerminalSplitDirection) => {
@@ -1045,6 +1056,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = "move";
                 e.dataTransfer.setData(TERMINAL_SESSION_DRAG_TYPE, s.id);
+                e.dataTransfer.setData("text/plain", s.id);
                 e.currentTarget
                   .closest(".comux-terminal-pane")
                   ?.setAttribute("data-dragging", "true");
@@ -1203,17 +1215,47 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 <div
                   key={s.id}
                   draggable
-                  className={`group flex cursor-pointer items-center gap-1 rounded px-2 py-0.5 transition-colors ${
+                  className={`comux-terminal-tab group flex cursor-pointer items-center gap-1 rounded px-2 py-0.5 transition-colors ${
                     i === currentIdx
                       ? "bg-[var(--bg-base)] text-[var(--text-primary)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                  }`}
+                  }${tabDropTargetId === s.id ? " comux-terminal-tab--drop-target" : ""}`}
+                  data-terminal-tab-id={s.id}
                   onClick={() => selectSession(i)}
                   onDragStart={(e) => {
                     e.dataTransfer.effectAllowed = "move";
                     e.dataTransfer.setData(TERMINAL_SESSION_DRAG_TYPE, s.id);
+                    e.dataTransfer.setData("text/plain", s.id);
                   }}
-                  title="Drag onto a pane edge to split"
+                  onDragOver={(e) => {
+                    if (!acceptsTerminalSessionDrag(e)) return;
+                    const dragged =
+                      e.dataTransfer.getData(TERMINAL_SESSION_DRAG_TYPE) ||
+                      e.dataTransfer.getData("text/plain");
+                    if (dragged === s.id) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    setTabDropTargetId(s.id);
+                  }}
+                  onDragLeave={() => {
+                    setTabDropTargetId((current) => (current === s.id ? null : current));
+                  }}
+                  onDrop={(e) => {
+                    if (!acceptsTerminalSessionDrag(e)) return;
+                    e.preventDefault();
+                    setTabDropTargetId(null);
+                    const dragged =
+                      e.dataTransfer.getData(TERMINAL_SESSION_DRAG_TYPE) ||
+                      e.dataTransfer.getData("text/plain");
+                    if (!dragged || dragged === s.id) return;
+                    dispatchTerminalLayout({
+                      type: "reorder",
+                      sourceSessionId: dragged,
+                      targetSessionId: s.id,
+                    });
+                  }}
+                  onDragEnd={() => setTabDropTargetId(null)}
+                  title="Drag onto another tab to reorder · drag onto a pane edge to split"
                 >
                   <span
                     contentEditable

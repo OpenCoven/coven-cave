@@ -10,6 +10,7 @@ import {
   normalizeTerminalLayout,
   removeTerminalPaneView,
   renameTerminalSession,
+  reorderTerminalSessions,
   splitTerminalPane,
   terminalLayoutSessionIds,
   terminalLayoutVisibleSessionIds,
@@ -115,6 +116,31 @@ function ids(state: TerminalLayoutState): string[] {
   state = focusTerminalSession(state, "b");
   assert.deepEqual(ids(state), ["b"], "focusing a hidden session reattaches it into the visible tree");
   assert.equal(state.activeSessionId, "b", "reattached session becomes active");
+}
+
+{
+  const root = {
+    kind: "horizontal",
+    children: [
+      { size: 50, node: { kind: "leaf", sessionId: "a" } },
+      { size: 50, node: { kind: "leaf", sessionId: "b" } },
+    ],
+  };
+  const state: TerminalLayoutState = {
+    version: 1,
+    sessions: [session("a"), session("b"), session("c")],
+    activeSessionId: "b",
+    root,
+  };
+  const next = reorderTerminalSessions(state, "c", "a");
+
+  assert.deepEqual(
+    terminalLayoutSessionIds(next),
+    ["c", "a", "b"],
+    "dropping a terminal tab onto another tab reorders only the tab list",
+  );
+  assert.equal(next.activeSessionId, "b", "reordering tabs preserves the active pane");
+  assert.equal(next.root, root, "reordering tabs does not mutate the split pane tree");
 }
 
 {

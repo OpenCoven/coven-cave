@@ -26,6 +26,7 @@
     "build": "next build && pnpm build:server",
     "typecheck": "tsc --noEmit",
     "check:tests-wired": "node scripts/check-tests-wired.mjs",
+    "test": "node scripts/run-tests.mjs app",
     "test:app": "node scripts/run-tests.mjs app",
     "test:api": "node scripts/run-tests.mjs api",
     "test:api:http": "node scripts/api-http-smoke.mjs",

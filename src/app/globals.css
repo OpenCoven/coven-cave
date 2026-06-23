@@ -2291,6 +2291,10 @@ select {
   outline-offset: -1px;
 }
 
+.comux-terminal-tab--drop-target {
+  box-shadow: inset 2px 0 0 var(--accent-presence);
+}
+
 .comux-terminal-keepalive {
   position: absolute;
   inset: 0;
@@ -6883,6 +6887,12 @@ a.mobile-handoff__link:hover {
   color: var(--color-warning);
 }
 
+.plugins-role-chip--mcp {
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 28%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent-presence) 9%, var(--bg-raised));
+  color: var(--text-primary);
+}
+
 /* Touch / coarse-pointer surface. On devices with no hover capability,
    controls that the desktop hides behind `opacity-0 group-hover:opacity-100`
    become permanently visible — opt in with `.touch-always-visible`. */
@@ -7023,8 +7033,8 @@ a.mobile-handoff__link:hover {
   }
 
   .plugins-role-toggle {
-    width: var(--touch-target);
-    min-width: var(--touch-target);
+    width: auto;
+    min-width: calc(var(--touch-target) + 28px);
   }
 
   .capabilities-view button.rounded-full {

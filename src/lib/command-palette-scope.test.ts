@@ -23,6 +23,7 @@ test("parseFamiliarToken: leading @token strips the token from rest", () => {
 
 test("parseFamiliarToken: mid-query @token keeps the rest as free text", () => {
   assert.deepEqual(parseFamiliarToken("browser @nova"), { token: "nova", rest: "browser" });
+  assert.deepEqual(parseFamiliarToken("browser @nova readme"), { token: "nova", rest: "browser readme" });
 });
 
 test("parseFamiliarToken: no @ means no scope", () => {
@@ -49,6 +50,11 @@ test("resolveFamiliarIds: matches on id / name / display_name, case-insensitive"
   assert.deepEqual([...(resolveFamiliarIds(FAMILIARS, "SAGE") ?? [])], ["sage"]); // display_name
 });
 
+test("resolveFamiliarIds: normalizes display-name whitespace", () => {
+  const ids = resolveFamiliarIds([fam("val", "Val Entina")], "valentina");
+  assert.deepEqual([...(ids ?? [])], ["val"]);
+});
+
 test("resolveFamiliarIds: no familiar matches → empty set (not null)", () => {
   const ids = resolveFamiliarIds(FAMILIARS, "zzz");
   assert.ok(ids instanceof Set);
@@ -68,7 +74,17 @@ test("command palette renders a scope chip with an accessible label", () => {
 test("no-match regression: an unmatched @token shows suggestions only", () => {
   assert.match(
     source,
+    /const familiarSuggestionPool = noFamiliarMatch \? familiars : familiars\.filter/,
+    "unmatched @tokens bypass the empty scope filter so familiar suggestions still render",
+  );
+  assert.match(
+    source,
     /if \(noFamiliarMatch\) return familiarRows;/,
-    "when the @token resolves to nothing, only familiar suggestion rows are returned",
+    "when the @token resolves to nothing, no non-familiar rows are returned",
+  );
+  assert.match(
+    source,
+    /const salemRows: Row\[\] = query\.trim\(\) && !slashCanonical && !noFamiliarMatch/,
+    "the unmatched @token path does not prepend the Salem answer row",
   );
 });

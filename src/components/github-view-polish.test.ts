@@ -240,4 +240,42 @@ assert.match(
 assert.ok(source.includes('import { relativeTime } from "@/lib/relative-time"'), "imports shared relativeTime");
 assert.ok(!source.includes("relTime"), "local relTime helper and its call sites are gone");
 
+// PR rows expose a maintainer-safe merge path that prefers an issue/PR worktree
+// over working directly from the shared branch checkout.
+assert.match(
+  source,
+  /function SafeMergeAction/,
+  "GitHub rows should expose a dedicated safe-merge action",
+);
+assert.match(
+  source,
+  /if \(item\.kind !== "pr" && item\.kind !== "review_request"\) return null/,
+  "safe merge action should only render for pull requests and review requests",
+);
+assert.match(
+  source,
+  /fetch\("\/api\/github\/worktree"/,
+  "safe merge action should provision or reuse a worktree before opening chat",
+);
+assert.match(
+  source,
+  /Safely merge this PR/,
+  "safe merge chat context should clearly ask for the safe merge workflow",
+);
+assert.match(
+  source,
+  /Prefer the worktree path over switching branches in the shared checkout/,
+  "safe merge prompt should prefer worktrees over branch switching",
+);
+assert.match(
+  source,
+  /<SafeMergeAction[\s\S]{0,500}?onJumpToSession=\{onJumpToSession\}/,
+  "safe merge action should be wired into each GitHub row",
+);
+assert.match(
+  source,
+  /<div className="gh-glass-actions">[\s\S]{0,900}<SafeMergeAction[\s\S]{0,500}?onJumpToSession=\{onJumpToSession\}/,
+  "safe merge action should be wired into the selected-item panel actions",
+);
+
 console.log("github-view-polish.test.ts OK");

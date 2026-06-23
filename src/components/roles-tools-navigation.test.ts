@@ -6,6 +6,7 @@ const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url)
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const pluginsView = await readFile(new URL("./plugins-view.tsx", import.meta.url), "utf8");
+const rolesRoute = await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8");
 const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const shortcutsCatalog = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 const shortcutsSheet = await readFile(new URL("./shortcuts-sheet.tsx", import.meta.url), "utf8");
@@ -51,6 +52,42 @@ assert.match(
   pluginsView,
   /tabs\?: Tab\[\]/,
   "PluginsView should support caller-selected tab sets",
+);
+
+assert.match(
+  rolesRoute,
+  /mcpServers:\s*string\[\]/,
+  "Roles API should expose mcpServers as a first-class role capability list",
+);
+
+assert.match(
+  rolesRoute,
+  /mcpServers:\s*parseRoleMcpServers\(text\)/,
+  "Roles API should read mcpServers plus supported MCP aliases from ROLE.md",
+);
+
+assert.match(
+  pluginsView,
+  /mcpServers:\s*string\[\]/,
+  "Roles view should type MCP servers alongside skills, tools, plugins, and workflows",
+);
+
+assert.match(
+  pluginsView,
+  /\.\.\.role\.mcpServers/,
+  "Roles search should include MCP server names",
+);
+
+assert.match(
+  pluginsView,
+  /label="MCP Servers"[\s\S]{0,160}items=\{role\.mcpServers\}/,
+  "Role cards should render a dedicated MCP Servers row",
+);
+
+assert.match(
+  pluginsView,
+  /No MCP servers/,
+  "Role cards should explain roles with no MCP server bindings instead of treating MCP as generic tools",
 );
 
 // --- Keyboard shortcuts sheet (CHAT-D11-03) ---

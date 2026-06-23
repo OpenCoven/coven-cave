@@ -166,6 +166,16 @@ assert.match(
 );
 assert.match(
   source,
+  /type: "reorder"[\s\S]*?sourceSessionId[\s\S]*?targetSessionId/,
+  "terminal layout reducer exposes a tab reorder action",
+);
+assert.match(
+  source,
+  /className=\{`comux-terminal-tab[\s\S]*?onDragOver=\{\(e\) => \{[\s\S]*?onDrop=\{\(e\) => \{[\s\S]*?type: "reorder"/,
+  "terminal tabs accept drops from other tabs and reorder the tab strip",
+);
+assert.match(
+  source,
   /function TerminalDropZone\([\s\S]*?onDrop=\{\(e\) => \{[\s\S]*?onSplit\(dragged,\s*side\);/,
   "terminal panes expose edge drop zones that split with the dragged session",
 );

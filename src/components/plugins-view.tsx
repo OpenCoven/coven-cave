@@ -24,6 +24,7 @@ type RoleEntry = {
   familiar: string;
   skills: string[];
   tools: string[];
+  mcpServers: string[];
   plugins: string[];
   workflows: string[];
   path: string;
@@ -86,6 +87,9 @@ const ICONS = {
   tabSkills: "ph:sparkle",
   tabCapabilities: "ph:lightning-bold",
   workflowChip: "ph:lightning-bold",
+  mcpServer: "ph:plug-bold",
+  tool: "ph:wrench-bold",
+  plugin: "ph:puzzle-piece-bold",
   workflowItem: "ph:graph",
   workflowOpen: "ph:arrow-right-bold",
 } satisfies Record<string, IconName>;
@@ -214,6 +218,7 @@ export function PluginsView({
             role.familiar,
             ...role.skills,
             ...role.tools,
+            ...role.mcpServers,
             ...role.plugins,
             ...role.workflows,
           ],
@@ -238,6 +243,20 @@ export function PluginsView({
       ),
     [workflows, query],
   );
+
+  const rolesSummary = useMemo(() => {
+    const mcpServerNames = new Set<string>();
+    let activeRoles = 0;
+    for (const role of roles) {
+      if (role.active) activeRoles += 1;
+      for (const server of role.mcpServers) mcpServerNames.add(server);
+    }
+    return {
+      activeRoles,
+      totalRoles: roles.length,
+      mcpServers: mcpServerNames.size,
+    };
+  }, [roles]);
 
   const toggleRole = async (role: RoleEntry) => {
     const key = `${role.familiar}:${role.id}`;
@@ -320,6 +339,11 @@ export function PluginsView({
             <h2 className="text-[20px] font-semibold text-[var(--text-primary)]">
               Role and capability map
             </h2>
+            {tab === "roles" ? (
+              <p className="mt-1 text-[12px] text-[var(--text-muted)]">
+                {rolesSummary.totalRoles} roles · {rolesSummary.activeRoles} active · {rolesSummary.mcpServers} MCP servers
+              </p>
+            ) : null}
           </div>
           {tab === "capabilities" ? null : (
             <label className="flex min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 lg:w-80">
@@ -441,7 +465,8 @@ function RolesTab({
             key={key}
             className="plugins-role-card rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4 py-3"
           >
-            <div className="flex items-start gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-raised)] text-[15px] font-semibold text-[var(--text-primary)]">
                 {role.emoji || role.name.slice(0, 1).toUpperCase()}
               </span>
@@ -461,7 +486,8 @@ function RolesTab({
                   <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--text-secondary)]">{role.description}</p>
                 ) : null}
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              </div>
+              <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                 <button
                   type="button"
                   disabled={busyRoleKey === key}
@@ -488,10 +514,24 @@ function RolesTab({
                 openHint="Open skill"
                 icon={ICONS.tabSkills}
               />
-              <CapabilityRow label="Tools" items={role.tools} />
+              <CapabilityRow
+                label="MCP Servers"
+                items={role.mcpServers}
+                emptyText="No MCP servers"
+                icon={ICONS.mcpServer}
+                tone="mcp"
+              />
+              <CapabilityRow label="Tools" items={role.tools} icon={ICONS.tool} />
+              <CapabilityRow
+                label="Plugins"
+                items={role.plugins}
+                emptyText="No plugins"
+                icon={ICONS.plugin}
+              />
               <CapabilityRow
                 label="Workflows"
                 items={role.workflows}
+                emptyText="No workflows"
                 onOpen={onOpenWorkflow}
                 openHint="Open workflow"
               />
@@ -509,21 +549,25 @@ function CapabilityRow({
   onOpen,
   openHint,
   icon = ICONS.workflowChip,
+  emptyText = "None",
+  tone = "default",
 }: {
   label: string;
   items: string[];
   onOpen?: (id: string) => void;
   openHint?: string;
   icon?: IconName;
+  emptyText?: string;
+  tone?: "default" | "mcp";
 }) {
   return (
-    <div className="plugins-role-capability grid grid-cols-[78px_minmax(0,1fr)] items-start gap-2">
+    <div className="plugins-role-capability grid grid-cols-[96px_minmax(0,1fr)] items-start gap-2">
       <dt className="pt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]">
         {label}
       </dt>
       <dd className="min-w-0">
         {items.length === 0 ? (
-          <span className="text-[12px] text-[var(--text-muted)]">None</span>
+          <span className="text-[12px] text-[var(--text-muted)]">{emptyText}</span>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {items.map((item) =>
@@ -533,7 +577,7 @@ function CapabilityRow({
                   type="button"
                   onClick={() => onOpen(item)}
                   title={openHint ? `${openHint}: ${item}` : item}
-                  className="plugins-role-chip plugins-role-chip--action focus-ring inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:text-[var(--accent-text)]"
+                  className={`plugins-role-chip plugins-role-chip--${tone} plugins-role-chip--action focus-ring inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:text-[var(--accent-text)]`}
                 >
                   <Icon name={icon} width={10} aria-hidden />
                   {item}
@@ -541,8 +585,9 @@ function CapabilityRow({
               ) : (
                 <span
                   key={item}
-                  className="plugins-role-chip inline-flex items-center rounded-md bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-secondary)]"
+                  className={`plugins-role-chip plugins-role-chip--${tone} inline-flex items-center gap-1 rounded-md bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-secondary)]`}
                 >
+                  {tone === "mcp" ? <Icon name={icon} width={10} aria-hidden /> : null}
                   {item}
                 </span>
               ),

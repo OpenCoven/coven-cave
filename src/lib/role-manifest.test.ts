@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseRoleListField, setRoleListField } from "./role-manifest.ts";
+import { parseRoleListField, parseRoleMcpServers, setRoleListField } from "./role-manifest.ts";
 
 const roleMd = `---
 name: "Release Captain"
@@ -16,6 +16,10 @@ skills:
 workflows:
 - nova-release-review
 
+mcpServers:
+- filesystem
+- github
+
 ## Notes
 
 Some prose that must survive edits.
@@ -25,11 +29,15 @@ Some prose that must survive edits.
 assert.deepEqual(parseRoleListField(roleMd, "workflows"), ["nova-release-review"]);
 assert.deepEqual(parseRoleListField(roleMd, "skills"), ["changelog-writer", "release-notes"]);
 assert.deepEqual(parseRoleListField(roleMd, "plugins"), [], "missing field parses as empty");
+assert.deepEqual(parseRoleMcpServers(roleMd), ["filesystem", "github"], "mcpServers parses as a first-class role list");
+assert.deepEqual(parseRoleMcpServers("mcp:\n- linear\n- vercel\n"), ["linear", "vercel"], "legacy mcp alias stays readable");
+assert.deepEqual(parseRoleMcpServers("mcp_servers:\n- memory\n"), ["memory"], "snake_case mcp_servers alias stays readable");
 
 // --- replace an existing block ---
 const added = setRoleListField(roleMd, "workflows", ["nova-release-review", "sage-research-sweep"]);
 assert.deepEqual(parseRoleListField(added, "workflows"), ["nova-release-review", "sage-research-sweep"]);
 assert.deepEqual(parseRoleListField(added, "skills"), ["changelog-writer", "release-notes"], "other lists untouched");
+assert.deepEqual(parseRoleMcpServers(added), ["filesystem", "github"], "mcp server lists survive unrelated edits");
 assert.match(added, /Some prose that must survive edits\./, "surrounding prose survives");
 assert.match(added, /name: "Release Captain"/, "frontmatter survives");
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import { loadConfig, upsertRoleConfig } from "@/lib/cave-config";
-import { parseRoleListField } from "@/lib/role-manifest";
+import { parseRoleListField, parseRoleMcpServers } from "@/lib/role-manifest";
 import { discoverRoleFiles, parseRoleFrontmatter } from "@/lib/role-source";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,7 @@ export type RoleEntry = {
   familiar: string;
   skills: string[];
   tools: string[];
+  mcpServers: string[];
   plugins: string[];
   workflows: string[];
   path: string;
@@ -46,6 +47,7 @@ export async function GET() {
         familiar,
         skills: parseRoleListField(text, "skills"),
         tools: parseRoleListField(text, "tools"),
+        mcpServers: parseRoleMcpServers(text),
         plugins: parseRoleListField(text, "plugins"),
         workflows: parseRoleListField(text, "workflows"),
         path: roleFile.path,
