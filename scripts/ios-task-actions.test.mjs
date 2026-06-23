@@ -18,11 +18,12 @@ const detail = await readFile(
   "utf8",
 );
 
-// Client speaks the board mutation contract.
+// Client speaks the board mutation contract. (Match the core params loosely so
+// adding further optional fields — e.g. notes — doesn't break this assertion.)
 assert.match(
   client,
-  /func updateTask\(cardId: String, status: CardStatus\? = nil,\s*priority: CardPriority\? = nil, steps: \[CardStep\]\? = nil\) async throws -> BoardCard/,
-  "CaveClient should expose updateTask(status:priority:steps:)",
+  /func updateTask\(cardId: String, status: CardStatus\? = nil,[\s\S]*?priority: CardPriority\? = nil,[\s\S]*?steps: \[CardStep\]\? = nil[\s\S]*?\) async throws -> BoardCard/,
+  "CaveClient should expose updateTask(status:priority:steps:…)",
 );
 assert.match(
   client,
