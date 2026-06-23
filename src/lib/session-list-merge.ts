@@ -80,6 +80,17 @@ export function mergeSessionRows({
   const seen = new Set<string>();
   const rows: SessionRow[] = [];
 
+  // The daemon bumps a session's `updated_at` when it's resumed/attached — i.e.
+  // when you merely *open* a chat — so ordering by it sinks to "last viewed".
+  // For UI-originated chats we also keep a local conversation whose `updatedAt`
+  // is written only when a turn is appended (chat/send), so it tracks the last
+  // message sent or received. Prefer that message-authoritative timestamp so
+  // the list orders by real activity, not by what you last looked at.
+  const localUpdatedById = new Map<string, string>();
+  for (const conv of localConversations) {
+    if (conv.updatedAt) localUpdatedById.set(conv.sessionId, conv.updatedAt);
+  }
+
   for (const session of daemonSessions) {
     if (isValidDaemonProjectRoot && !isValidDaemonProjectRoot(session.project_root)) {
       continue;
@@ -88,8 +99,10 @@ export function mergeSessionRows({
     const titleOverride = state.sessionTitles[session.id];
     const archivedLocal = state.sessionArchived[session.id] ?? null;
     const archived_at = archivedLocal ?? session.archived_at;
+    const localUpdatedAt = localUpdatedById.get(session.id);
     const row: SessionRow = {
       ...session,
+      ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
       // Daemon titles derive from the harness prompt, which the chat route
       // prefixes with the identity canon — sanitize so the preamble never
       // surfaces as a session title.

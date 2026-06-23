@@ -141,4 +141,54 @@ assert.equal(
   "archived local chats should return when includeArchived is enabled",
 );
 
+// A daemon session whose `updated_at` was bumped by a mere resume/view should
+// order by the matching local conversation's last-message time, not the later
+// view time — so reopening an old chat doesn't float it to the top.
+const viewedDaemon = {
+  id: "chat-7",
+  project_root: "/repo",
+  harness: "codex",
+  title: "Reopened chat",
+  status: "completed",
+  exit_code: 0,
+  archived_at: null,
+  created_at: "2026-06-01T10:00:00.000Z",
+  updated_at: "2026-06-20T09:00:00.000Z", // bumped "now" by opening it
+};
+const chat7Local = {
+  sessionId: "chat-7",
+  familiarId: "charm",
+  updatedAt: "2026-06-02T11:00:00.000Z", // real last message, days earlier
+};
+const recentDaemon = {
+  ...viewedDaemon,
+  id: "chat-9",
+  title: "Genuinely recent chat",
+  created_at: "2026-06-10T10:00:00.000Z",
+  updated_at: "2026-06-10T12:00:00.000Z",
+};
+const chat9Local = {
+  sessionId: "chat-9",
+  familiarId: "cody",
+  updatedAt: "2026-06-10T12:00:00.000Z",
+};
+
+const orderedByMessage = mergeSessionRows({
+  daemonSessions: [viewedDaemon, recentDaemon],
+  localConversations: [chat7Local, chat9Local],
+  state: { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} },
+  includeArchived: false,
+});
+
+assert.equal(
+  orderedByMessage.find((s) => s.id === "chat-7")?.updated_at,
+  "2026-06-02T11:00:00.000Z",
+  "a daemon session with a local conversation should use the local last-message time, not the daemon's view-time bump",
+);
+assert.deepEqual(
+  orderedByMessage.map((s) => s.id),
+  ["chat-9", "chat-7"],
+  "the genuinely-recent chat outranks the just-reopened older chat",
+);
+
 console.log("session-list-merge.test.ts: ok");
