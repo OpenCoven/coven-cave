@@ -794,6 +794,16 @@
   padding: 3px 5px;
 }
 
+/* Branch navigator — compact ‹ n/m › switcher inline with action buttons */
+.cave-chat-branch-nav { display: inline-flex; align-items: center; gap: 2px; }
+.cave-chat-branch-nav__btn {
+  border: none; background: transparent; cursor: pointer;
+  padding: 0 4px; line-height: 1; font-size: 14px; opacity: 0.7;
+}
+.cave-chat-branch-nav__btn:hover:not(:disabled) { opacity: 1; }
+.cave-chat-branch-nav__btn:disabled { opacity: 0.3; cursor: default; }
+.cave-chat-branch-nav__count { font-size: 11px; opacity: 0.7; min-width: 2.4em; text-align: center; }
+
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    EXPAND FOOTER (CHAT-D7-03) — emitted only on blocks tall enough to clamp;
    sticks to the bottom of the wrap's scroll viewport like the header sticks

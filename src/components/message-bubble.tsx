@@ -939,9 +939,17 @@ export type MessageBubbleProps = {
    *  text span streams (progressive markdown + ▌ cursor); earlier spans
    *  render settled. */
   segments?: MessageBubbleSegment[];
+  /** Branching: when a turn has siblings, render a compact ‹ index/total ›
+   *  switcher. Omitted (or total <= 1) hides it. */
+  branchNav?: {
+    index: number; // 0-based
+    total: number;
+    onPrev: () => void;
+    onNext: () => void;
+  };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, segments }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, segments, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1079,6 +1087,31 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
             >
               <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
             </button>
+          ) : null}
+          {branchNav && branchNav.total > 1 ? (
+            <span className="cave-chat-branch-nav" role="group" aria-label="Switch response branch">
+              <button
+                type="button"
+                className="cave-chat-branch-nav__btn"
+                onClick={branchNav.onPrev}
+                disabled={branchNav.index <= 0}
+                aria-label="Previous response"
+              >
+                ‹
+              </button>
+              <span className="cave-chat-branch-nav__count" aria-live="polite">
+                {branchNav.index + 1}/{branchNav.total}
+              </span>
+              <button
+                type="button"
+                className="cave-chat-branch-nav__btn"
+                onClick={branchNav.onNext}
+                disabled={branchNav.index >= branchNav.total - 1}
+                aria-label="Next response"
+              >
+                ›
+              </button>
+            </span>
           ) : null}
           <ExpandBubble text={content} label={label ?? "Familiar response"} />
           <CopyBubble text={content} />
