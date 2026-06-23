@@ -269,6 +269,17 @@ struct ChatView: View {
                     .padding(.leading, 14)
                     .padding(.vertical, 7)
                     .focused($composerFocused)
+                    // Hardware-keyboard ergonomics (iPad / Mac over Tailscale):
+                    // plain Return sends, Shift+Return inserts a newline. The
+                    // software keyboard's return still inserts a newline as usual
+                    // (a vertical-axis field doesn't fire onSubmit), so multi-line
+                    // composing on-device is untouched.
+                    .onKeyPress(keys: [.return]) { press in
+                        guard !press.modifiers.contains(.shift) else { return .ignored }
+                        guard canSend else { return .ignored }
+                        send()
+                        return .handled
+                    }
 
                 Group {
                     if dictation.isRecording {

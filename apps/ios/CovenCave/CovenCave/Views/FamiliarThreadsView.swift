@@ -10,6 +10,8 @@ struct FamiliarThreadsView: View {
     let familiar: Familiar
     @Binding var path: [ChatRoute]
     @State private var renamingThread: ChatThread?
+    /// An on-device thread awaiting delete confirmation (swipe or context menu).
+    @State private var pendingDelete: ChatThread?
 
     /// One row in the list: an on-device thread or a server-only session.
     private enum Entry: Identifiable {
@@ -73,21 +75,49 @@ struct FamiliarThreadsView: View {
                 Button { open(entry) } label: { row(entry) }
                     .buttonStyle(.plain)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    // Only on-device threads can be renamed/deleted from here; a
+                    // server-only session lives on the desktop, so its rows offer
+                    // no swipe actions.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if case .local(let thread) = entry {
+                            Button(role: .destructive) { pendingDelete = thread } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                    .swipeActions(edge: .leading) {
+                        if case .local(let thread) = entry {
+                            Button { renamingThread = thread } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
+                            .tint(.accentColor)
+                        }
+                    }
                     .contextMenu {
                         if case .local(let thread) = entry {
                             Button { renamingThread = thread } label: {
                                 Label("Rename", systemImage: "pencil")
                             }
-                            Button(role: .destructive) { app.deleteThread(thread) } label: {
+                            Button(role: .destructive) { pendingDelete = thread } label: {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
                     }
             }
-            .onDelete(perform: delete)
         }
         .listStyle(.plain)
         .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
+        .confirmationDialog("Delete this chat?",
+                            isPresented: deleteDialogBinding,
+                            titleVisibility: .visible,
+                            presenting: pendingDelete) { thread in
+            Button("Delete", role: .destructive) { app.deleteThread(thread) }
+            Button("Cancel", role: .cancel) {}
+        } message: { thread in Text(thread.title) }
+    }
+
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
     }
 
     @ViewBuilder
@@ -109,14 +139,6 @@ struct FamiliarThreadsView: View {
             // then open it like any other.
             let thread = app.openServerSession(session, familiarId: familiar.id)
             path.append(.thread(thread))
-        }
-    }
-
-    /// Swipe-to-delete removes on-device threads; a server-only session can't be
-    /// deleted from here (it lives on the desktop), so those rows are skipped.
-    private func delete(_ offsets: IndexSet) {
-        for index in offsets {
-            if case .local(let thread) = entries[index] { app.deleteThread(thread) }
         }
     }
 
