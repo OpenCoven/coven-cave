@@ -12,6 +12,7 @@
 import { readdir, readFile, writeFile, access, mkdir, rm, realpath } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
+import { slugifyAutomationId } from "./codex-automation-form";
 import type {
   AutomationStatus,
   CodexAutomation,
@@ -348,11 +349,6 @@ export function serializeAutomationToml(input: CreateAutomationInput): string {
   return lines.join("\n") + "\n";
 }
 
-function slugifyAutomationIdLocal(name: string): string {
-  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-");
-  return slug.length > 0 ? slug.slice(0, 80) : "automation";
-}
-
 /** Create a new automation TOML under a unique id; returns the parsed record. */
 export async function createCodexAutomation(
   input: Omit<CreateAutomationInput, "id">,
@@ -360,7 +356,7 @@ export async function createCodexAutomation(
   return withCodexAutomationLock(async () => {
     const existing = await listCodexAutomations();
     const taken = new Set(existing.map((a) => a.id));
-    const base = slugifyAutomationIdLocal(input.name);
+    const base = slugifyAutomationId(input.name);
     let id = base;
     for (let n = 2; taken.has(id); n += 1) id = `${base}-${n}`;
     const dir = path.join(AUTOMATIONS_DIR, id);
@@ -377,14 +373,13 @@ export async function deleteCodexAutomation(id: string): Promise<boolean> {
   return withCodexAutomationLock(async () => {
     const dir = path.join(AUTOMATIONS_DIR, id);
     let resolved: string;
-    let root: string;
     try {
       resolved = await realpath(dir);
     } catch (err) {
       if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return false;
       throw err;
     }
-    root = await realpath(AUTOMATIONS_DIR);
+    const root = await realpath(AUTOMATIONS_DIR);
     if (path.dirname(resolved) !== root) {
       throw new Error("refusing to delete outside the automations dir");
     }

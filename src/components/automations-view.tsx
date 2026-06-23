@@ -626,7 +626,8 @@ function CodexDetailPanel({
       execution_environment: executionEnvironment,
       tags,
       cwds,
-      skill_path: skillPath.trim() || undefined,
+      // Send "" (not undefined) so selecting "— none —" actually clears the skill.
+      skill_path: skillPath.trim(),
     });
   };
 
