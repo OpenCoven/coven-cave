@@ -12,6 +12,6 @@ assert.match(css, /\.menu-bar__search-input\s*\{[\s\S]*?font-size:\s*var\(--text
 // The sidepanel/nav toggle glyph stays unified with the action icons.
 const iconLib = readFileSync(new URL("../lib/icon.tsx", import.meta.url), "utf8");
 assert.match(iconLib, /shellToggle:\s*"var\(--icon-sm\)"/, "sidepanel toggle glyph is var(--icon-sm)");
-// Avatar tiles are shrunk in the desktop menu bar to match the compact chrome.
-assert.match(css, /\.menu-bar \.familiar-quickswitch__btn\s*\{[\s\S]*?width:\s*22px[\s\S]*?height:\s*22px/, "menu-bar avatar tiles are 22px");
+// Avatar tiles match the top-bar button/search height so the strip lines up.
+assert.match(css, /\.menu-bar \.familiar-quickswitch__btn\s*\{[\s\S]*?width:\s*28px[\s\S]*?height:\s*28px/, "menu-bar avatar tiles match the button height (28px)");
 console.log("menu-bar-icon-size.test.ts passed");
