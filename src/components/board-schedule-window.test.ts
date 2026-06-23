@@ -77,17 +77,15 @@ assert.match(
 assert.doesNotMatch(gantt, /const rangeStart = startOfWeekMon\(min\)/, "the leading Monday-snap is gone");
 assert.match(gantt, /width: Math\.min\(7, totalDays - i\)/, "the trailing week column is clamped to the range");
 
-// Grouping by familiar drops the redundant Owner column (header + cells + grid).
-assert.match(gantt, /const hideOwner = groupMode === "familiar"/, "owner column is hidden when grouping by familiar");
-assert.match(gantt, /className=\{`cg\$\{hideOwner \? " cg--no-owner" : ""\}`\}/, "the no-owner modifier class is applied to the grid");
-assert.match(gantt, /\{!hideOwner && <span className="cg-c-owner">Owner<\/span>\}/, "the Owner header is conditional");
-assert.match(gantt, /\{!hideOwner && <span className="cg-c-owner">\{row\.owner\}<\/span>\}/, "the per-row owner cell is conditional");
-assert.match(styles, /\.cg--no-owner \.cg-left \{ flex-basis: 332px; grid-template-columns: 190px 58px 58px 26px; \}/, "the no-owner layout drops the owner column width");
-assert.match(styles, /\.cg--no-owner \.cg-grouprow \.cg-left \{ grid-template-columns: auto 1fr auto; \}/, "group rows keep their own three-column template");
-
-// Task-mode step rows carry the parent card's owner (the Owner column was blank).
-assert.match(gantt, /label: step\.text,\s*owner: ownerName\(card\.familiarId\),/, "task-mode step rows show the card's owner");
-assert.doesNotMatch(gantt, /owner: "",/, "the empty task-mode owner placeholder is gone");
+// The Owner column was removed from every Gantt mode — familiar bar colour now
+// carries the owner cue. No header, per-row cell, grid track, flag, or row field
+// for the owner column remains.
+assert.doesNotMatch(gantt, /hideOwner/, "the hideOwner flag is gone");
+assert.doesNotMatch(gantt, /cg-c-owner/, "no Owner column header/cell remains in the markup");
+assert.doesNotMatch(gantt, /cg--no-owner/, "the no-owner modifier class is gone");
+assert.doesNotMatch(gantt, /row\.owner|owner: ownerName/, "GanttRow no longer carries an owner field");
+assert.doesNotMatch(styles, /cg-c-owner|cg--no-owner/, "Owner column styles are removed");
+assert.match(styles, /\.cg-left \{[\s\S]*?grid-template-columns: 190px 58px 58px 26px;/, "the left table uses the four-column (ownerless) layout");
 
 // By-familiar grouping colour-codes bars by familiar.
 assert.match(gantt, /const familiarColor = \(id: string \| null\): string \| undefined =>/, "a per-familiar colour helper exists");

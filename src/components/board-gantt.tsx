@@ -31,7 +31,6 @@ type GanttRow = {
   cardId: string;       // the task this row belongs to (selected on click)
   stepId?: string;      // set in task mode — the step this bar drags/patches
   label: string;
-  owner: string;
   start: Date;
   end: Date;
   category: GanttCategory;
@@ -253,7 +252,6 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
           cardId: card.id,
           stepId: step.id,
           label: step.text,
-          owner: ownerName(card.familiarId),
           start: a <= b ? a : b,
           end: a <= b ? b : a,
           category: step.done ? "done" : statusCategory(card.status),
@@ -284,7 +282,6 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
         rowId: card.id,
         cardId: card.id,
         label: card.title,
-        owner: ownerName(card.familiarId),
         start: cr.start,
         end: cr.end,
         category: statusCategory(card.status),
@@ -350,9 +347,6 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   // Focus: when a group is clicked, render only it (range stays global so bars don't jump).
   const focused = focusedKey && groups.some((g) => g.key === focusedKey) ? focusedKey : null;
   const visibleGroups = focused ? groups.filter((g) => g.key === focused) : groups;
-  // Grouping by familiar already names the owner in every group header, so the
-  // per-row Owner column just repeats it — drop the column in that mode.
-  const hideOwner = groupMode === "familiar";
 
   const min = new Date(Math.min(...allRows.map((r) => r.start.getTime())));
   const max = new Date(Math.max(...allRows.map((r) => r.end.getTime())));
@@ -396,12 +390,11 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
         <button type="button" className="board-group-toggle-btn" onClick={scrollToToday} disabled={todayX === null} title="Scroll the timeline to today">Today</button>
       </div>
       <div className="board-gantt__scroll" ref={scrollRef}>
-        <div className={`cg${hideOwner ? " cg--no-owner" : ""}`} style={{ ["--cg-day" as string]: `${DAY_W}px`, ["--cg-tl" as string]: `${timelineW}px` }}>
+        <div className="cg" style={{ ["--cg-day" as string]: `${DAY_W}px`, ["--cg-tl" as string]: `${timelineW}px` }}>
           {/* Header: left column titles + week band */}
           <div className="cg-head">
             <div className="cg-left cg-left--head">
               <span className="cg-c-task">Group / Task</span>
-              {!hideOwner && <span className="cg-c-owner">Owner</span>}
               <span className="cg-c-date">Start</span>
               <span className="cg-c-date">End</span>
               <span className="cg-c-st">St</span>
@@ -494,7 +487,6 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                     >
                       <span className="cg-left">
                         <span className="cg-c-task">{row.label}</span>
-                        {!hideOwner && <span className="cg-c-owner">{row.owner}</span>}
                         <span className="cg-c-date">{formatLabel(previewStart)}</span>
                         <span className="cg-c-date">{formatLabel(previewEnd)}</span>
                         <span className="cg-c-st"><span className={`cg-dot cg-dot--${cat}`} aria-hidden /></span>
