@@ -14,6 +14,7 @@ func caveParseISO(_ iso: String?) -> Date? {
 struct TasksView: View {
     @Environment(AppModel.self) private var app
     @AppStorage("cave.tasks.groupBy") private var groupByRaw = GroupBy.status.rawValue
+    @AppStorage("cave.tasks.sortBy") private var sortByRaw = SortBy.priority.rawValue
     @State private var query = ""
     @State private var path: [BoardCard] = []
     /// A task awaiting delete confirmation (swipe or context menu).
@@ -25,7 +26,21 @@ struct TasksView: View {
         var id: String { rawValue }
     }
 
+    /// How the cards within each section are ordered.
+    enum SortBy: String, CaseIterable, Identifiable {
+        case priority = "Priority", recent = "Recent", title = "Title"
+        var id: String { rawValue }
+        var systemImage: String {
+            switch self {
+            case .priority: return "flag"
+            case .recent: return "clock"
+            case .title: return "textformat"
+            }
+        }
+    }
+
     private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .status }
+    private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .priority }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -34,6 +49,19 @@ struct TasksView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: BoardCard.self) { TaskDetailView(card: $0) }
                 .searchable(text: $query, prompt: "Search tasks")
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Picker("Sort by", selection: $sortByRaw) {
+                                ForEach(SortBy.allCases) { s in
+                                    Label(s.rawValue, systemImage: s.systemImage).tag(s.rawValue)
+                                }
+                            }
+                        } label: {
+                            Label("Sort", systemImage: "arrow.up.arrow.down")
+                        }
+                    }
+                }
                 .refreshable { await app.loadTasks() }
                 .task {
                     if !app.tasksLoaded { await app.loadTasks() }
@@ -243,11 +271,21 @@ struct TasksView: View {
     }
 
     private func sortCards(_ cards: [BoardCard]) -> [BoardCard] {
-        cards.sorted { a, b in
-            if a.priority.rank != b.priority.rank { return a.priority.rank < b.priority.rank }
-            let da = caveParseISO(a.updatedAt) ?? .distantPast
-            let db = caveParseISO(b.updatedAt) ?? .distantPast
-            return da > db
+        switch sortBy {
+        case .priority:
+            // Highest priority first, ties broken by most-recently updated.
+            return cards.sorted { a, b in
+                if a.priority.rank != b.priority.rank { return a.priority.rank < b.priority.rank }
+                let da = caveParseISO(a.updatedAt) ?? .distantPast
+                let db = caveParseISO(b.updatedAt) ?? .distantPast
+                return da > db
+            }
+        case .recent:
+            return cards.sorted {
+                (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast)
+            }
+        case .title:
+            return cards.sorted { $0.title.lowercased() < $1.title.lowercased() }
         }
     }
 }
