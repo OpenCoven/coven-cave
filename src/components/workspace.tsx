@@ -41,6 +41,7 @@ import { ComuxView } from "@/components/comux-view";
 import { CodeView } from "@/components/code-view";
 import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
+import { DocsPane } from "@/components/docs-pane";
 import { PluginsView } from "@/components/plugins-view";
 import { WorkflowsView } from "@/components/workflows-view";
 import { RetroRunsView } from "@/components/retro-runs-view";
@@ -95,6 +96,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   retro: "Retro Runs",
   capabilities: "Capabilities",
   journal: "Journal",
+  docs: "Docs",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -1802,6 +1804,8 @@ export function Workspace() {
       />
     ) : mode === "browser" ? (
       <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} />
+    ) : mode === "docs" ? (
+      <DocsPane />
     ) : mode === "github" ? (
       <GitHubView
         onJumpToSession={openFamiliarSession}

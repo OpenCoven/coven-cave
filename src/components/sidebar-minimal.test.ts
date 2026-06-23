@@ -140,6 +140,12 @@ assert.match(
   "Library is the last shortcut Tools surface, on ⌘0 (shortcuts ascend with sidebar order)",
 );
 
+assert.match(
+  source,
+  /\{ id: "docs", label: "Docs", iconName: "ph:book-bookmark", group: "tools", description:/,
+  "Docs is a Tools surface embedding the OpenCoven docs site",
+);
+
 // Library is a gated add-on (default off): the nav filter hides it until the
 // add-on is enabled, mirroring GitHub. Tools always has non-gated surfaces
 // (Browser/Terminal/Code/Roles/Workflows), so it never renders an empty header.
