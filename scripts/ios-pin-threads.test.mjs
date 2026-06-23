@@ -12,7 +12,7 @@ const familiarThreads = await read(`${iosRoot}/Views/FamiliarThreadsView.swift`)
 assert.match(thread, /var pinned: Bool = false/, "ChatThread should carry a pinned flag");
 assert.match(thread, /var pinned: Bool\?/, "ThreadSnapshot.pinned should be optional for back-compat");
 assert.match(thread, /self\.pinned = s\.pinned \?\? false/, "snapshot decode should default pinned to false");
-assert.match(thread, /archived: archived, pinned: pinned\)/, "snapshot encode should include pinned");
+assert.match(thread, /archived: archived, pinned: pinned/, "snapshot encode should include pinned");
 
 assert.match(
   model,

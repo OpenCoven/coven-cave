@@ -168,6 +168,10 @@ struct ChatsHomeView: View {
                                 Label(thread.pinned ? "Unpin" : "Pin",
                                       systemImage: thread.pinned ? "pin.slash" : "pin")
                             }
+                            Button { app.setThreadMuted(thread, !thread.muted) } label: {
+                                Label(thread.muted ? "Unmute" : "Mute",
+                                      systemImage: thread.muted ? "bell" : "bell.slash")
+                            }
                             Button { app.setThreadArchived(thread, !thread.archived) } label: {
                                 Label(thread.archived ? "Unarchive" : "Archive",
                                       systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
@@ -209,6 +213,10 @@ struct ChatsHomeView: View {
                             Button { app.setThreadPinned(thread, !thread.pinned) } label: {
                                 Label(thread.pinned ? "Unpin" : "Pin",
                                       systemImage: thread.pinned ? "pin.slash" : "pin")
+                            }
+                            Button { app.setThreadMuted(thread, !thread.muted) } label: {
+                                Label(thread.muted ? "Unmute" : "Mute",
+                                      systemImage: thread.muted ? "bell" : "bell.slash")
                             }
                             Button { app.setThreadArchived(thread, !thread.archived) } label: {
                                 Label(thread.archived ? "Unarchive" : "Archive",
@@ -395,6 +403,10 @@ struct ThreadRow: View {
                     if thread.pinned {
                         Image(systemName: "pin.fill")
                             .font(.caption2).foregroundStyle(.orange)
+                    }
+                    if thread.muted {
+                        Image(systemName: "bell.slash.fill")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }
                     if thread.isGroup {
                         Image(systemName: "person.2.fill")

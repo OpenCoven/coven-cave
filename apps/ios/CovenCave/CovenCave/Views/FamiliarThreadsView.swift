@@ -122,6 +122,10 @@ struct FamiliarThreadsView: View {
                                 Label(thread.pinned ? "Unpin" : "Pin",
                                       systemImage: thread.pinned ? "pin.slash" : "pin")
                             }
+                            Button { app.setThreadMuted(thread, !thread.muted) } label: {
+                                Label(thread.muted ? "Unmute" : "Mute",
+                                      systemImage: thread.muted ? "bell" : "bell.slash")
+                            }
                             Button { app.setThreadArchived(thread, !thread.archived) } label: {
                                 Label(thread.archived ? "Unarchive" : "Archive",
                                       systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")

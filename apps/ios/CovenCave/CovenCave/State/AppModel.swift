@@ -677,6 +677,15 @@ final class AppModel {
         persistThreads()
     }
 
+    /// Mute or unmute a thread's notifications (persisted; honoured by the
+    /// notification path when it lands).
+    func setThreadMuted(_ thread: ChatThread, _ muted: Bool) {
+        guard let target = threads.first(where: { $0.id == thread.id }),
+              target.muted != muted else { return }
+        target.muted = muted
+        persistThreads()
+    }
+
     func touch(_ thread: ChatThread) {
         // Move the most recently active thread to the top, then persist.
         if let idx = threads.firstIndex(where: { $0.id == thread.id }), idx != 0 {
