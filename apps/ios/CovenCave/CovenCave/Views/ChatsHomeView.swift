@@ -28,8 +28,8 @@ struct ChatsHomeView: View {
                     homeList
                 }
             }
-            // Flush large-title header at the very top, matching Canvas / Read /
-            // Tasks (which hide the nav bar and supply their own top inset) so
+            // Flush large-title header at the very top, matching Read / Tasks
+            // (which hide the nav bar and supply their own top inset) so
             // every tab's header aligns. Search + compose stay in the bottom bar.
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { header }
@@ -82,8 +82,8 @@ struct ChatsHomeView: View {
         path.append(.thread(thread))
     }
 
-    /// Large-title header pinned to the top, mirroring the Canvas / Read / Tasks
-    /// tabs so every tab's title aligns at the same flush position.
+    /// Large-title header pinned to the top, mirroring the Read / Tasks tabs
+    /// so every tab's title aligns at the same flush position.
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             Text("Chats")

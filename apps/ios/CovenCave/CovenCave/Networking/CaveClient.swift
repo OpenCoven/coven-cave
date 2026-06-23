@@ -352,41 +352,6 @@ struct CaveClient {
         try Self.check(resp)
     }
 
-    // MARK: - Canvas (generated artifacts)
-
-    private struct CanvasResponse: Decodable { var ok: Bool?; var artifacts: [CanvasArtifact]? }
-    private struct UpsertBody: Encodable { var artifact: CanvasArtifact }
-
-    /// `GET /api/canvas` — the saved canvas artifacts.
-    func canvasArtifacts() async throws -> [CanvasArtifact] {
-        let req = try request("api/canvas")
-        let (data, resp) = try await session.data(for: req)
-        try Self.check(resp)
-        do {
-            return try JSONDecoder().decode(CanvasResponse.self, from: data).artifacts ?? []
-        } catch {
-            throw CaveError.decoding(String(describing: error))
-        }
-    }
-
-    /// `POST /api/canvas` — upsert an artifact; returns the full updated list.
-    @discardableResult
-    func saveCanvasArtifact(_ artifact: CanvasArtifact) async throws -> [CanvasArtifact] {
-        let payload = try JSONEncoder().encode(UpsertBody(artifact: artifact))
-        let req = try request("api/canvas", method: "POST", body: payload)
-        let (data, resp) = try await session.data(for: req)
-        try Self.check(resp)
-        return (try? JSONDecoder().decode(CanvasResponse.self, from: data).artifacts) ?? []
-    }
-
-    /// `DELETE /api/canvas` — remove an artifact by id.
-    func deleteCanvasArtifact(id: String) async throws {
-        let payload = try JSONEncoder().encode(["id": id])
-        let req = try request("api/canvas", method: "DELETE", body: payload)
-        let (_, resp) = try await session.data(for: req)
-        try Self.check(resp)
-    }
-
     // MARK: - Helpers
 
     private static func check(_ resp: URLResponse) throws {

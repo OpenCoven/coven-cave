@@ -440,8 +440,6 @@ struct ChatView: View {
             app.showToast("Opened Tasks", systemImage: "checklist", style: .info)
         case .sendAsPrompt:
             sendPrompt(args, command: command)
-        case .sketch:
-            sendSketch(args)
         case .saveLink:
             Task { await saveLink(args) }
         case .daemonStatus:
@@ -476,14 +474,6 @@ struct ChatView: View {
         }
         guard let client = app.client else { return }
         thread.send(trimmed, client: client) { app.touch(thread) }
-    }
-
-    private func sendSketch(_ args: String) {
-        guard let client = app.client else { return }
-        let ask = args.trimmingCharacters(in: .whitespacesAndNewlines)
-        let label = ask.isEmpty ? "/canvas" : "/canvas \(ask)"
-        thread.send(buildSketchPrompt(ask), displayText: label, client: client) { app.touch(thread) }
-        app.showToast("Asking for a UI sketch…", systemImage: "paintbrush.fill", style: .info)
     }
 
     private func saveLink(_ args: String) async {

@@ -78,8 +78,8 @@ final class ChatThread: Identifiable, Hashable {
     /// Send a user message and stream replies from every familiar in the thread.
     ///
     /// `displayText` lets a caller show a short label in the user bubble while
-    /// sending a longer prompt to the familiar — e.g. `/canvas` shows the ask
-    /// but sends the full sketch instruction.
+    /// sending a longer prompt to the familiar (e.g. a slash command that shows
+    /// the ask but sends a fuller instruction).
     func send(_ text: String, displayText: String? = nil,
               attachments: [CaveClient.ChatAttachment] = [],
               client: CaveClient, onChange: @escaping () -> Void) {

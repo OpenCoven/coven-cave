@@ -39,7 +39,6 @@ struct SlashCommand: Identifiable, Hashable {
         case openSessions          // jump to the Chats list
         case openBoard             // switch to the Tasks tab
         case sendAsPrompt          // /run /codex /claude — send the args as a message
-        case sketch                // /canvas — send a sketch-building prompt
         case saveLink              // /save <url> … — route a URL into the library
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline
@@ -109,10 +108,6 @@ enum SlashCatalog {
         SlashCommand(name: "/board", hint: "Tasks",
                      description: "Open the Tasks board.",
                      section: .view, availability: .native, action: .openBoard),
-        SlashCommand(name: "/canvas", hint: "sketch a UI",
-                     description: "Ask the familiar to sketch a UI.",
-                     argPlaceholder: "describe a UI…", section: .view,
-                     availability: .native, action: .sketch),
         SlashCommand(name: "/save", aliases: ["/bookmark", "/read"],
                      hint: "/save <url> [bookmarks|reading|github] [#tag]",
                      description: "Route a URL into the library (auto-classified).",
@@ -248,22 +243,4 @@ func parseSaveArgs(_ args: String) -> SlashSaveArgs {
         }
     }
     return SlashSaveArgs(url: first, listHint: listHint, tags: tags)
-}
-
-/// Build the sketch prompt sent for `/canvas` — a trimmed Swift port of the web
-/// `buildSketchPrompt` (src/lib/canvas-artifacts.ts) so a familiar returns one
-/// self-contained, renderable code block.
-func buildSketchPrompt(_ userPrompt: String) -> String {
-    let ask = userPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        ? "a simple example UI"
-        : userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    return [
-        "You are generating a UI for a live preview.",
-        "Output EXACTLY ONE fenced code block and nothing else — no prose before or after.",
-        "Use a ```html block: a COMPLETE self-contained document starting with `<!doctype html>`,",
-        "with all CSS in <style> and all JS in <script>. No external files, no network access.",
-        "Make it polished and responsive.",
-        "",
-        "Build this: \(ask)",
-    ].joined(separator: "\n")
 }
