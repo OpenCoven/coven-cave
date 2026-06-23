@@ -1712,6 +1712,24 @@
 /* drag-to-reschedule */
 .cg-bar--grab { cursor: grab; }
 .cg-bar--grab:active, .cg-bar--dragging { cursor: grabbing; }
+
+/* edge handles: drag to resize one end (change start / end independently).
+   They sit just inside each cap, span a little past the bar for an easier hit
+   target, and surface a grip on hover so the affordance is discoverable. */
+.cg-bar__resize {
+  position: absolute; top: -3px; bottom: -3px; width: 9px;
+  z-index: 2; cursor: ew-resize; touch-action: none;
+}
+.cg-bar__resize--start { left: -3px; }
+.cg-bar__resize--end { right: -3px; }
+.cg-bar__resize::after {
+  content: ""; position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px; height: 8px; border-radius: 1px;
+  background: var(--text-primary); opacity: 0; transition: opacity 0.12s ease;
+}
+.cg-bar:hover .cg-bar__resize::after,
+.cg-bar__resize:active::after { opacity: 0.85; }
 .cg-bar--dragging { z-index: 4; filter: brightness(1.12); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }
 .cg-diamond.cg-bar--dragging { transform: translate(-50%, -50%) rotate(45deg) scale(1.15); }
 .cg-row:has(.cg-bar--dragging) { user-select: none; }
