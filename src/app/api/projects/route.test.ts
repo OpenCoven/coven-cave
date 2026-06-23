@@ -7,6 +7,11 @@ const itemRoute = readFileSync(new URL("./[id]/route.ts", import.meta.url), "utf
 const seedRoute = readFileSync(new URL("./seed/route.ts", import.meta.url), "utf8");
 
 assert.match(listRoute, /seedDefaultProjectsIfEmpty/, "GET /api/projects should seed defaults before listing");
+assert.match(
+  listRoute,
+  /bootstrapConfiguredFamiliarProjectGrants\(projects, Object\.keys\(config\.familiars\)\)/,
+  "GET /api/projects should migrate legacy configured-familiar grants before familiar-scoped filtering",
+);
 assert.match(listRoute, /export async function GET\(req: Request\)/, "projects route should expose GET");
 assert.match(listRoute, /searchParams\.get\("familiarId"\)/, "GET /api/projects should accept familiar-scoped listing");
 assert.match(listRoute, /isValidFamiliarId\(familiarId\)/, "GET /api/projects should validate familiar id before scoping");

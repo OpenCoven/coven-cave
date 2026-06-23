@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { loadConfig } from "@/lib/cave-config";
 import { createProject, loadProjects, seedDefaultProjectsIfEmpty } from "@/lib/cave-projects";
-import { filterProjectsForFamiliar } from "@/lib/project-permissions";
+import {
+  bootstrapConfiguredFamiliarProjectGrants,
+  filterProjectsForFamiliar,
+} from "@/lib/project-permissions";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +13,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   await seedDefaultProjectsIfEmpty();
   const projects = await loadProjects();
+  const config = await loadConfig();
+  await bootstrapConfiguredFamiliarProjectGrants(projects, Object.keys(config.familiars));
   const familiarId = new URL(req.url).searchParams.get("familiarId")?.trim() || null;
   if (!familiarId) return NextResponse.json({ ok: true, projects });
   if (!isValidFamiliarId(familiarId)) {

@@ -35,6 +35,11 @@ assert.match(
 );
 assert.match(
   helper,
+  /bootstrapConfiguredFamiliarProjectGrants\([\s\S]*projects,[\s\S]*familiarId,[\s\S]*\.\.\.Object\.keys\(config\.familiars\)/,
+  "project API request helper should run the legacy configured-familiar grant bootstrap before enforcing access",
+);
+assert.match(
+  helper,
   /ProjectAccessDeniedError\("missing familiarId for project access"\)/,
   "project API request helper should fail closed when no familiarId is supplied",
 );
