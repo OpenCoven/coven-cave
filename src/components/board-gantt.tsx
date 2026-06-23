@@ -42,7 +42,7 @@ type Group = { key: string; name: string; rows: GanttRow[]; firstStart: number }
 const ZOOM_DAY_W = { day: 22, week: 11, month: 5 } as const; // px per day column at each zoom
 type GanttZoom = keyof typeof ZOOM_DAY_W;
 const ZOOM_LABELS: Array<[GanttZoom, string]> = [["day", "Day"], ["week", "Week"], ["month", "Month"]];
-const LEFT_W = 416; // sum of the left table columns — keep in sync with .cg-left
+const LEFT_W = 442; // sum of the left table columns (300+58+58+26) — keep in sync with .cg-left
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;

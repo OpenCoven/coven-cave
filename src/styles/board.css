@@ -1614,9 +1614,9 @@
   position: sticky;
   left: 0;
   z-index: 2;
-  flex: 0 0 332px;
+  flex: 0 0 442px;
   display: grid;
-  grid-template-columns: 190px 58px 58px 26px;
+  grid-template-columns: 300px 58px 58px 26px;
   align-items: center;
   background: var(--bg-base);
   border-right: 1px solid var(--border-strong);

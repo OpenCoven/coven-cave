@@ -85,7 +85,7 @@ assert.doesNotMatch(gantt, /cg-c-owner/, "no Owner column header/cell remains in
 assert.doesNotMatch(gantt, /cg--no-owner/, "the no-owner modifier class is gone");
 assert.doesNotMatch(gantt, /row\.owner|owner: ownerName/, "GanttRow no longer carries an owner field");
 assert.doesNotMatch(styles, /cg-c-owner|cg--no-owner/, "Owner column styles are removed");
-assert.match(styles, /\.cg-left \{[\s\S]*?grid-template-columns: 190px 58px 58px 26px;/, "the left table uses the four-column (ownerless) layout");
+assert.match(styles, /\.cg-left \{[\s\S]*?grid-template-columns: 300px 58px 58px 26px;/, "the left table uses the four-column (ownerless) layout with a wide task column");
 
 // By-familiar grouping colour-codes bars by familiar.
 assert.match(gantt, /const familiarColor = \(id: string \| null\): string \| undefined =>/, "a per-familiar colour helper exists");
