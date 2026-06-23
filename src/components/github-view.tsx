@@ -5,6 +5,8 @@ import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
@@ -1600,43 +1602,40 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
           </div>
 
         ) : error === "no_user" ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
-            <Icon name="ph:github-logo" width={28} className="text-[var(--text-muted)]" />
-            <div>
-              <p className="text-[14px] font-medium text-[var(--text-primary)] mb-1">Connect your GitHub account</p>
-              <p className="text-[12px] text-[var(--text-muted)] max-w-xs">
-                Cave uses the public GitHub API (no auth needed) or your own PAT for private repos and reviews.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 items-center">
-              <button
-                type="button"
-                onClick={() => setShowPatModal(true)}
-                className="rounded-lg bg-[var(--accent-presence)] px-5 py-2 text-[13px] font-medium text-white hover:opacity-90 transition-opacity"
-              >
-                Set up GitHub
-              </button>
-            </div>
+          <div className="flex h-full items-center justify-center px-8">
+            <EmptyState
+              icon="ph:github-logo"
+              headline="Connect your GitHub account"
+              subtitle="Cave uses the public GitHub API (no auth needed) or your own PAT for private repos and reviews."
+              actions={
+                <Button variant="primary" leadingIcon="ph:github-logo" onClick={() => setShowPatModal(true)}>
+                  Set up GitHub
+                </Button>
+              }
+            />
           </div>
 
         ) : error ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-            <p className="text-[12px] text-[var(--color-danger)]">{error}</p>
-            <button
-              type="button"
-              onClick={() => void fetchActivity()}
-              className="text-[11px] text-[var(--accent-presence)] hover:underline"
-            >
-              Retry
-            </button>
+          <div className="flex h-full items-center justify-center px-8">
+            <EmptyState
+              icon="ph:warning-circle"
+              headline="Couldn't load GitHub"
+              subtitle={error}
+              actions={
+                <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void fetchActivity()}>
+                  Retry
+                </Button>
+              }
+            />
           </div>
 
         ) : sorted.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
-            <Icon name="ph:check-circle" width={22} className="text-[var(--text-muted)]" />
-            <p className="text-[13px] text-[var(--text-muted)]">
-              {filter === "all" ? "Nothing open right now." : `No open ${filter === "review_request" ? "review requests" : filter + "s"}.`}
-            </p>
+          <div className="flex h-full items-center justify-center px-8">
+            <EmptyState
+              icon="ph:check-circle"
+              headline={filter === "all" ? "Nothing open right now" : `No open ${filter === "review_request" ? "review requests" : filter + "s"}`}
+              subtitle={filter === "all" ? "Pull requests, reviews, and issues that need you will show up here." : undefined}
+            />
           </div>
 
         ) : (

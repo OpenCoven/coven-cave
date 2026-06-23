@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { isPersonalWorkflow, isPublicTemplate, type WorkflowSummary } from "@/lib/workflows";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
 
 type WorkflowLibraryProps = {
   workflows: WorkflowSummary[];
@@ -174,13 +176,16 @@ export function WorkflowLibrary({
           </button>
         </div>
       ) : workflows.length === 0 ? (
-        <div className="workflow-library-state">
-          No WORKFLOW.md or .workflow.yaml manifests found.
-          <button type="button" className="workflow-primary-button" onClick={onCreateRequest}>
-            <Icon name="ph:plus-bold" width={13} />
-            New workflow
-          </button>
-        </div>
+        <EmptyState
+          icon="ph:graph"
+          headline="No workflows yet"
+          subtitle="No WORKFLOW.md or .workflow.yaml manifests found. Create one to chain steps into a repeatable run."
+          actions={
+            <Button variant="primary" leadingIcon="ph:plus" onClick={onCreateRequest}>
+              New workflow
+            </Button>
+          }
+        />
       ) : (
         <div className="workflow-library-list">
           {visible.length === 0 && (
