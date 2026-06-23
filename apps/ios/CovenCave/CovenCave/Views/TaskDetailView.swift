@@ -9,6 +9,7 @@ struct TaskDetailView: View {
     @State private var notesHeight: CGFloat = 0
     @State private var notesReader: ResponseReaderItem?
     @State private var confirmingDelete = false
+    @State private var editingNotes = false
 
     /// The current card from the store, so status/priority/step edits made here
     /// reflect immediately; falls back to the passed-in snapshot.
@@ -22,9 +23,7 @@ struct TaskDetailView: View {
                 if let familiar { assigneeRow(familiar) }
                 chatCard
                 if live.hasSteps { stepsCard }
-                if let notes = live.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    notesCard(notes)
-                }
+                notesSection
                 if !live.labelList.isEmpty { labelsRow }
                 metaCard
             }
@@ -41,6 +40,11 @@ struct TaskDetailView: View {
         }
         .sheet(item: $notesReader) { item in
             ResponseReaderView(item: item)
+        }
+        .sheet(isPresented: $editingNotes) {
+            NotesEditorView(initialText: live.notes ?? "") { text in
+                Task { await app.setTaskNotes(live, text) }
+            }
         }
         .confirmationDialog("Delete this task?", isPresented: $confirmingDelete,
                             titleVisibility: .visible) {
@@ -68,6 +72,10 @@ struct TaskDetailView: View {
                     }
                 }
             } label: { Label("Priority", systemImage: "flag") }
+
+            Button { editingNotes = true } label: {
+                Label(hasNotes ? "Edit notes" : "Add notes", systemImage: "square.and.pencil")
+            }
 
             Divider()
             Button(role: .destructive) { confirmingDelete = true } label: {
@@ -192,11 +200,37 @@ struct TaskDetailView: View {
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    private var hasNotes: Bool {
+        !(live.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    @ViewBuilder private var notesSection: some View {
+        if let notes = live.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            notesCard(notes)
+        } else {
+            Button { editingNotes = true } label: {
+                Label("Add notes", systemImage: "square.and.pencil")
+                    .font(.callout)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+    }
+
     private func notesCard(_ notes: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(spacing: 12) {
                 Text("Notes").font(.headline)
                 Spacer()
+                Button { editingNotes = true } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(7)
+                        .background(.thinMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit notes")
                 Button {
                     notesReader = ResponseReaderItem(title: "Notes", markdown: notes)
                     Haptics.tap()
@@ -243,6 +277,45 @@ struct TaskDetailView: View {
             Spacer()
             Text(date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "—")
                 .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Full-screen plain-text editor for a task's notes (Markdown is rendered in the
+/// detail view; here it's edited as raw text). Save is disabled until the text
+/// actually changes from what was passed in.
+struct NotesEditorView: View {
+    @Environment(\.dismiss) private var dismiss
+    let initialText: String
+    let onSave: (String) -> Void
+
+    @State private var text: String
+    @FocusState private var focused: Bool
+
+    init(initialText: String, onSave: @escaping (String) -> Void) {
+        self.initialText = initialText
+        self.onSave = onSave
+        _text = State(initialValue: initialText)
+    }
+
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: $text)
+                .font(.body)
+                .padding(16)
+                .focused($focused)
+                .navigationTitle("Notes")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { onSave(text); dismiss() }
+                            .disabled(text == initialText)
+                    }
+                }
+                .onAppear { focused = true }
         }
     }
 }

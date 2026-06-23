@@ -182,6 +182,22 @@ final class AppModel {
         }
     }
 
+    /// Optimistically set a task's notes (pass "" to clear); reconcile/revert.
+    func setTaskNotes(_ card: BoardCard, _ notes: String) async {
+        guard let client else { return }
+        let trimmed = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed != (card.notes ?? "") else { return }
+        let previous = tasks
+        applyTask(id: card.id) { $0.notes = trimmed }
+        do {
+            let updated = try await client.updateTask(cardId: card.id, notes: trimmed)
+            applyTask(id: card.id) { $0 = updated }
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
     /// Optimistically remove a task, then DELETE it. Reinserts on failure.
     func deleteTask(_ card: BoardCard) async {
         guard let client else { return }

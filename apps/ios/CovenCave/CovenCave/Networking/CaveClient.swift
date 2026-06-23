@@ -121,22 +121,24 @@ struct CaveClient {
         var status: CardStatus?
         var priority: CardPriority?
         var steps: [CardStep]?
-        enum CodingKeys: String, CodingKey { case status, priority, steps }
+        var notes: String?
+        enum CodingKeys: String, CodingKey { case status, priority, steps, notes }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
             if let status { try c.encode(status.rawValue, forKey: .status) }
             if let priority { try c.encode(priority.rawValue, forKey: .priority) }
             if let steps { try c.encode(steps, forKey: .steps) }
+            if let notes { try c.encode(notes, forKey: .notes) }
         }
     }
 
-    /// PATCH a task's editable fields (status, priority, steps). Returns the
-    /// server's updated card.
+    /// PATCH a task's editable fields (status, priority, steps, notes). Returns
+    /// the server's updated card. Pass `notes: ""` to clear the notes.
     @discardableResult
-    func updateTask(cardId: String, status: CardStatus? = nil,
-                    priority: CardPriority? = nil, steps: [CardStep]? = nil) async throws -> BoardCard {
+    func updateTask(cardId: String, status: CardStatus? = nil, priority: CardPriority? = nil,
+                    steps: [CardStep]? = nil, notes: String? = nil) async throws -> BoardCard {
         let payload = try JSONEncoder().encode(
-            TaskFieldsPatch(status: status, priority: priority, steps: steps))
+            TaskFieldsPatch(status: status, priority: priority, steps: steps, notes: notes))
         return try await patchTask(cardId: cardId, payload: payload)
     }
 
