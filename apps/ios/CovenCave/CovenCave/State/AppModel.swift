@@ -651,6 +651,13 @@ final class AppModel {
         persistThreads()
     }
 
+    /// Delete several threads at once (bulk select); persists once.
+    func deleteThreads(_ ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        threads.removeAll { ids.contains($0.id) }
+        persistThreads()
+    }
+
     /// Rename a thread (local title only); no-ops on a blank or unchanged name.
     func renameThread(_ thread: ChatThread, to title: String) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
