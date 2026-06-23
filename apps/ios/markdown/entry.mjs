@@ -7,6 +7,7 @@
 import { parse } from "@create-markdown/core";
 import { renderAsync } from "@create-markdown/preview";
 import { mermaidPlugin } from "@create-markdown/preview-mermaid";
+import { renderTableReplacements } from "../../../src/lib/markdown-table-cells.ts";
 import hljs from "highlight.js/lib/core";
 
 import langSwift from "highlight.js/lib/languages/swift";
@@ -92,11 +93,20 @@ async function renderMarkdown(md) {
     replacements[i] = highlightCode(codeText(block), block.props?.language ?? block.props?.info ?? "");
   });
 
+  // Re-render table cells through the inline path so **bold**/`code`/[links]
+  // inside a cell render as formatting, not literal markdown (preview emits
+  // cells as escaped plain text). Supplied positionally via `table`.
+  const tableReplacements = await renderTableReplacements(blocks, renderAsync);
+
   let idx = 0;
+  let tableIdx = 0;
   let html = await renderAsync(blocks, {
     linkTarget: "_blank",
     sanitize: true,
-    customRenderers: { codeBlock: () => replacements[idx++] ?? "" },
+    customRenderers: {
+      codeBlock: () => replacements[idx++] ?? "",
+      table: () => tableReplacements[tableIdx++] ?? "",
+    },
   });
   if (hasMermaid && mermaid.postProcess) html = await mermaid.postProcess(html);
   return html;
