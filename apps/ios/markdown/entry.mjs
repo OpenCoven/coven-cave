@@ -143,4 +143,24 @@ document.addEventListener("click", (e) => {
   btn._t = setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("is-copied"); }, 1400);
 });
 
+// Tap a table, Mermaid diagram, or inline image to enlarge it full-screen —
+// native owns the zoom surface. Links / copy buttons keep their own behavior,
+// so skip taps that land on them.
+const MERMAID_SEL = ".cm-mermaid, .mermaid, [class*='mermaid']";
+document.addEventListener("click", (e) => {
+  if (e.target?.closest?.("a[href], button, .code-copy")) return;
+  const hit = e.target?.closest?.(`table, img, svg, ${MERMAID_SEL}`);
+  if (!hit) return;
+  // A Mermaid SVG: lift its styled wrapper so the enlarged view keeps the card.
+  const target =
+    hit.tagName?.toLowerCase() === "svg" ? (hit.closest(MERMAID_SEL) || hit) : hit;
+  const tag = target.tagName?.toLowerCase();
+  const kind = tag === "table" ? "table" : tag === "img" ? "image" : "diagram";
+  window.webkit?.messageHandlers?.cave?.postMessage({
+    type: "enlarge",
+    kind,
+    html: target.outerHTML,
+  });
+});
+
 window.webkit?.messageHandlers?.cave?.postMessage({ type: "ready" });

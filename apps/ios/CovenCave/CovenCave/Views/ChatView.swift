@@ -24,6 +24,9 @@ struct ChatView: View {
     @State private var dictation = SpeechDictation()
     @State private var photoItem: PhotosPickerItem?
     @State private var pendingImage: PendingImage?
+    // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
+    // from the markdown WebView). Driven by the `.caveZoomContent` notification.
+    @State private var zoomTarget: ZoomTarget?
 
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
@@ -92,6 +95,14 @@ struct ChatView: View {
         // first reply; once streaming stops, push that sessionId onto the card.
         .onChange(of: thread.isStreaming) { _, streaming in
             if !streaming { Task { await app.reconcileCardLinks(for: thread) } }
+        }
+        // Tap-to-enlarge: any chat subview posts a ZoomTarget; present it full
+        // screen here (one cover for native images and lifted table/diagram HTML).
+        .onReceive(NotificationCenter.default.publisher(for: .caveZoomContent)) { note in
+            if let target = note.object as? ZoomTarget { zoomTarget = target }
+        }
+        .fullScreenCover(item: $zoomTarget) { target in
+            ZoomableContentView(target: target)
         }
     }
 

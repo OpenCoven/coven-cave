@@ -125,6 +125,10 @@ struct MessageBubble: View {
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
+                        // Tap to enlarge the attachment full-screen (pinch-zoom).
+                        .onTapGesture { ContentZoom.image(image) }
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Tap to enlarge")
                 }
             }
         }
