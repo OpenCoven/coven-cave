@@ -101,8 +101,10 @@ export function resolveOpenClawAgentIdFromSources(
 
 export async function resolveOpenClawAgentId(familiarId: string): Promise<string> {
   const explicit = await readOpenClawAgentBinding(familiarId);
+  if (explicit) return explicit;
+
   const agents = await listOpenClawAgents();
-  return resolveOpenClawAgentIdFromSources(familiarId, explicit, agents);
+  return resolveOpenClawAgentIdFromSources(familiarId, null, agents);
 }
 
 export function extractOpenClawText(json: OpenClawAgentJson): string {

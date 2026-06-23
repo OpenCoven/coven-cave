@@ -1,11 +1,15 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   extractOpenClawSessionId,
   extractOpenClawText,
   openClawAgentArgs,
   openClawSessionKey,
   readTomlString,
+  resolveOpenClawAgentId,
   resolveOpenClawAgentIdFromSources,
   slugifyOpenClawAgentName,
 } from "./openclaw-bridge.ts";
@@ -50,6 +54,31 @@ assert.equal(
   "unknown",
   "unknown familiars intentionally fall back to the familiar id",
 );
+
+const previousCovenHome = process.env.COVEN_HOME;
+const tempCovenHome = await mkdtemp(path.join(tmpdir(), "openclaw-bridge-"));
+try {
+  await mkdir(tempCovenHome, { recursive: true });
+  await writeFile(
+    path.join(tempCovenHome, "familiars.toml"),
+    [
+      "[[familiar]]",
+      'id = "nova"',
+      'openclaw_agent = "nova-explicit"',
+    ].join("\n"),
+    "utf8",
+  );
+  process.env.COVEN_HOME = tempCovenHome;
+  assert.equal(
+    await resolveOpenClawAgentId("nova"),
+    "nova-explicit",
+    "explicit openclaw_agent binding should return before listing OpenClaw agents",
+  );
+} finally {
+  if (previousCovenHome === undefined) delete process.env.COVEN_HOME;
+  else process.env.COVEN_HOME = previousCovenHome;
+  await rm(tempCovenHome, { recursive: true, force: true });
+}
 
 assert.equal(openClawSessionKey("ABC_123:Weird"), "cave-abc-123-weird");
 assert.deepEqual(openClawAgentArgs("hi", "nova", "ABC_123"), [
