@@ -7,6 +7,7 @@
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { InboxItem } from "@/lib/cave-inbox";
+import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import {
   KIND_ICON,
   KIND_LABEL,
@@ -32,6 +33,7 @@ export function MetricCard({
   caption,
   accent = "lavender",
   href,
+  trend,
 }: {
   icon: IconName;
   value: number | string;
@@ -39,6 +41,8 @@ export function MetricCard({
   caption?: string;
   accent?: Accent;
   href?: string;
+  /** Optional 7-day trend — renders a hover-able sparkline under the metric. */
+  trend?: SparkPoint[];
 }) {
   const muted = value === 0 || value === "0";
   const className = `dr-metric${muted ? " dr-metric--muted" : ""}${href ? " dr-metric--link" : ""}`;
@@ -58,6 +62,11 @@ export function MetricCard({
       <div className="dr-metric__value">{value}</div>
       <div className="dr-metric__label">{label}</div>
       {caption ? <div className="dr-metric__caption">{caption}</div> : null}
+      {trend && trend.length ? (
+        <div className="dr-metric__spark">
+          <Sparkline points={trend} color={ACCENT_VAR[accent]} height={26} />
+        </div>
+      ) : null}
     </>
   );
   if (href) {

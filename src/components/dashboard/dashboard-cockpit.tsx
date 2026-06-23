@@ -10,6 +10,7 @@ import type { GitHubItem } from "@/lib/github-tasks";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { relativeTime } from "@/lib/daily-report";
 import { SectionHead, EmptyState, QuickLink } from "@/components/daily-report-ui";
+import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
 import { TodaySummary } from "@/components/dashboard/today-summary";
 import { RecentReports } from "@/components/dashboard/recent-reports";
@@ -76,14 +77,17 @@ function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** Last `TREND_DAYS` values for one metric, oldest→newest; null for missing days. */
-function seriesFor(store: TrendStore, key: TrendKey, now: Date): (number | null)[] {
-  const out: (number | null)[] = [];
+/** Last `TREND_DAYS` points for one metric, oldest→newest; null value for missing days. */
+function seriesFor(store: TrendStore, key: TrendKey, now: Date): SparkPoint[] {
+  const out: SparkPoint[] = [];
   for (let i = TREND_DAYS - 1; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(now.getDate() - i);
     const v = store[dayKey(d)]?.[key];
-    out.push(typeof v === "number" ? v : null);
+    out.push({
+      label: d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
+      value: typeof v === "number" ? v : null,
+    });
   }
   return out;
 }
@@ -356,9 +360,9 @@ const KPI_ACCENT: Record<KpiSpec["accent"], string> = {
   blue: "var(--color-info)", amber: "var(--color-warning)",
 };
 
-function KpiTile({ icon, value, label, accent, href, loading, series }: KpiSpec & { loading: boolean; series: (number | null)[] }) {
+function KpiTile({ icon, value, label, accent, href, loading, series }: KpiSpec & { loading: boolean; series: SparkPoint[] }) {
   const color = KPI_ACCENT[accent];
-  const pts = series.filter((v): v is number => v != null);
+  const pts = series.map((p) => p.value).filter((v): v is number => v != null);
   const delta = pts.length >= 2 ? pts[pts.length - 1] - pts[0] : 0;
   const inner = (
     <>
@@ -374,30 +378,10 @@ function KpiTile({ icon, value, label, accent, href, loading, series }: KpiSpec 
       </span>
       <span className="cockpit-kpi__value">{loading ? "—" : value}</span>
       <span className="cockpit-kpi__label">{label}</span>
-      <Sparkline values={series} color={color} />
+      <Sparkline points={series} color={color} height={22} />
     </>
   );
   return href ? <a className="cockpit-kpi" href={href}>{inner}</a> : <div className="cockpit-kpi">{inner}</div>;
-}
-
-/** Inline 7-day sparkline — line + faint area fill. Sparse data degrades to a
- *  flat baseline; <2 points renders nothing (the trend is still accumulating). */
-function Sparkline({ values, color }: { values: (number | null)[]; color: string }) {
-  const pts = values.map((v, i) => ({ v, i })).filter((p): p is { v: number; i: number } => p.v != null);
-  if (pts.length < 2) return <span className="cockpit-spark cockpit-spark--flat" aria-hidden />;
-  const W = 100, H = 22, P = 2;
-  const vs = pts.map((p) => p.v);
-  const min = Math.min(...vs), max = Math.max(...vs), range = max - min || 1;
-  const x = (i: number) => (i / (TREND_DAYS - 1)) * W;
-  const y = (v: number) => H - P - ((v - min) / range) * (H - 2 * P);
-  const line = pts.map((p, idx) => `${idx === 0 ? "M" : "L"}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
-  const area = `${line} L${x(pts[pts.length - 1].i).toFixed(1)},${H} L${x(pts[0].i).toFixed(1)},${H} Z`;
-  return (
-    <svg className="cockpit-spark" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden>
-      <path d={area} fill={color} opacity="0.13" />
-      <path d={line} fill="none" stroke={color} strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
 }
 
 // ─── Board snapshot ──────────────────────────────────────────────────────────────

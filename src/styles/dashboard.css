@@ -216,10 +216,18 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 .cockpit-kpi__delta { font-size: 10px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .cockpit-kpi__value { font-size: 24px; font-weight: 700; line-height: 1.1; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .cockpit-kpi__label { font-size: 11.5px; color: var(--text-secondary); }
-/* 7-day trend sparkline */
-.cockpit-spark { display: block; width: 100%; height: 22px; margin-top: 7px; overflow: visible; }
-.cockpit-spark--flat { display: block; width: 100%; height: 22px; margin-top: 7px;
-  border-bottom: 1px dashed var(--border-hairline); opacity: 0.6; }
+/* Shared hover-able trend sparkline (cockpit KPIs + report metric cards) */
+.spark { position: relative; display: block; width: 100%; overflow: visible; }
+.spark svg { display: block; width: 100%; height: 100%; }
+.spark--flat { width: 100%; border-bottom: 1px dashed var(--border-hairline); opacity: 0.6; }
+.spark-tip { position: absolute; top: -7px; transform: translate(-50%, -100%);
+  white-space: nowrap; pointer-events: none; z-index: 4;
+  padding: 3px 7px; border-radius: 6px; font-size: 10.5px; line-height: 1.2;
+  color: var(--text-primary); background: var(--bg-elevated, var(--bg-raised));
+  border: 1px solid var(--border-strong); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  font-variant-numeric: tabular-nums; }
+.spark-tip b { font-weight: 700; }
+.cockpit-kpi .spark { margin-top: 7px; }
 
 /* Main grid */
 .cockpit-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 16px; align-items: start; }
