@@ -146,6 +146,14 @@ struct ChatView: View {
                 .padding(.vertical, 14)
             }
             .scrollDismissesKeyboard(.interactively)
+            // Pull to re-sync a direct chat that may have advanced on another
+            // device (no-op for groups / unsent threads, see ChatThread.reload).
+            .refreshable {
+                if let client = app.client {
+                    await thread.reload(client: client)
+                    app.persistThreads()
+                }
+            }
             // Track whether the user is parked at the latest message so a
             // "jump to bottom" button can appear when they've scrolled up.
             .onScrollGeometryChange(for: Bool.self) { geo in

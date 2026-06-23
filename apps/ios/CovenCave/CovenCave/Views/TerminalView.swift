@@ -61,16 +61,16 @@ struct TerminalView: View {
     private var keyRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                keyButton("esc") { terminal.sendInput("\u{1B}") }
-                keyButton("tab") { terminal.sendInput("\t") }
-                keyButton("⌃C") { terminal.sendInput("\u{03}") }
-                keyButton("⌃D") { terminal.sendInput("\u{04}") }
-                keyButton("⌃Z") { terminal.sendInput("\u{1A}") }
-                keyButton("↑") { terminal.sendInput("\u{1B}[A") }
-                keyButton("↓") { terminal.sendInput("\u{1B}[B") }
-                keyButton("←") { terminal.sendInput("\u{1B}[D") }
-                keyButton("→") { terminal.sendInput("\u{1B}[C") }
-                keyButton("clear") { terminal.sendInput("clear\n") }
+                keyButton("esc", "Escape") { terminal.sendInput("\u{1B}") }
+                keyButton("tab", "Tab") { terminal.sendInput("\t") }
+                keyButton("⌃C", "Control C") { terminal.sendInput("\u{03}") }
+                keyButton("⌃D", "Control D") { terminal.sendInput("\u{04}") }
+                keyButton("⌃Z", "Control Z") { terminal.sendInput("\u{1A}") }
+                keyButton("↑", "Up arrow") { terminal.sendInput("\u{1B}[A") }
+                keyButton("↓", "Down arrow") { terminal.sendInput("\u{1B}[B") }
+                keyButton("←", "Left arrow") { terminal.sendInput("\u{1B}[D") }
+                keyButton("→", "Right arrow") { terminal.sendInput("\u{1B}[C") }
+                keyButton("clear", "Clear screen") { terminal.sendInput("clear\n") }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -78,7 +78,10 @@ struct TerminalView: View {
         .background(.bar)
     }
 
-    private func keyButton(_ label: String, action: @escaping () -> Void) -> some View {
+    /// `label` is the compact glyph shown on the key; `accessibility` spells it
+    /// out for VoiceOver (e.g. "↑" → "Up arrow", "⌃C" → "Control C").
+    private func keyButton(_ label: String, _ accessibility: String,
+                           action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
                 .font(.system(.footnote, design: .monospaced))
@@ -87,6 +90,7 @@ struct TerminalView: View {
         }
         .buttonStyle(.plain)
         .disabled(!terminal.connected)
+        .accessibilityLabel(accessibility)
     }
 
     // MARK: - Toolbar

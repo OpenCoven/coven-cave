@@ -8,6 +8,22 @@ struct ReadingView: View {
     @State private var filter: ReadingFilter = .all
     @State private var query = ""
     @State private var reader: ReaderLink?
+    @AppStorage("cave.reading.sortBy") private var sortByRaw = ReadingSort.recent.rawValue
+
+    /// How the reading list is ordered.
+    enum ReadingSort: String, CaseIterable, Identifiable {
+        case recent = "Date added", title = "Title", progress = "Progress"
+        var id: String { rawValue }
+        var systemImage: String {
+            switch self {
+            case .recent: return "clock"
+            case .title: return "textformat"
+            case .progress: return "chart.bar"
+            }
+        }
+    }
+
+    private var sortBy: ReadingSort { ReadingSort(rawValue: sortByRaw) ?? .recent }
 
     var body: some View {
         NavigationStack {
@@ -24,6 +40,19 @@ struct ReadingView: View {
             .navigationTitle("Reading")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "Search titles, authors, tags")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Sort by", selection: $sortByRaw) {
+                            ForEach(ReadingSort.allCases) { s in
+                                Label(s.rawValue, systemImage: s.systemImage).tag(s.rawValue)
+                            }
+                        }
+                    } label: {
+                        Label("Sort", systemImage: "arrow.up.arrow.down")
+                    }
+                }
+            }
             .refreshable { await app.loadReading() }
             .task { if !app.readingLoaded { await app.loadReading() } }
             .sheet(item: $reader) { link in
@@ -235,7 +264,14 @@ struct ReadingView: View {
                 || (item.domain?.lowercased().contains(q) ?? false)
                 || item.tagList.joined(separator: " ").lowercased().contains(q)
         }
-        return searched.sorted { ($0.addedDate ?? .distantPast) > ($1.addedDate ?? .distantPast) }
+        switch sortBy {
+        case .recent:
+            return searched.sorted { ($0.addedDate ?? .distantPast) > ($1.addedDate ?? .distantPast) }
+        case .title:
+            return searched.sorted { $0.title.lowercased() < $1.title.lowercased() }
+        case .progress:
+            return searched.sorted { ($0.progressPercent ?? 0) > ($1.progressPercent ?? 0) }
+        }
     }
 
     private func count(_ value: ReadingFilter) -> Int {

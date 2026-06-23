@@ -216,6 +216,7 @@ struct GitHubItemDetailView: View {
             if let url = URL(string: item.url) {
                 ToolbarItem(placement: .topBarTrailing) {
                     Link(destination: url) { Image(systemName: "safari") }
+                        .accessibilityLabel("Open on GitHub")
                 }
             }
         }
@@ -515,6 +516,7 @@ private struct GitHubCommentsSection: View {
                 if let url = c.url, let u = URL(string: url) {
                     Link(destination: u) { Image(systemName: "arrow.up.right.square") }
                         .font(.caption).foregroundStyle(.secondary)
+                        .accessibilityLabel("Open comment on GitHub")
                 }
             }
             GitHubMarkdown(c.body)
