@@ -960,6 +960,114 @@
   color: var(--muted-foreground);
 }
 
+/* ── Capability attachments (skills / MCP / API calls / inherited perms) ── */
+
+.workflow-attach-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent-presence);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.workflow-attach-add:hover { background: color-mix(in oklch, var(--accent-presence) 20%, transparent); }
+
+.workflow-chip-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.workflow-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 5px 0 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-primary, inherit);
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  max-width: 100%;
+}
+.workflow-attach-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-attach-chip-badge {
+  font-size: 10px;
+  color: var(--muted-foreground);
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+}
+.workflow-attach-chip-x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; padding: 0;
+  color: var(--muted-foreground);
+  background: transparent; border: 0; border-radius: 999px; cursor: pointer;
+  flex: 0 0 auto;
+}
+.workflow-attach-chip-x:hover { color: var(--color-danger); background: color-mix(in oklch, var(--color-danger) 14%, transparent); }
+
+/* picker popover */
+.workflow-attach-picker { display: flex; flex-direction: column; max-height: 320px; min-width: 260px; }
+.workflow-attach-search {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 9px; border-bottom: 1px solid var(--border-hairline);
+  color: var(--muted-foreground);
+}
+.workflow-attach-search input {
+  flex: 1; min-width: 0; border: 0; background: transparent; outline: none;
+  font-size: 12.5px; color: var(--text-primary, inherit);
+}
+.workflow-attach-options { list-style: none; margin: 0; padding: 4px; overflow-y: auto; }
+.workflow-attach-empty { padding: 12px; text-align: center; font-size: 12px; color: var(--muted-foreground); }
+.workflow-attach-option {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 8px; border: 0; border-radius: 7px; background: transparent;
+  text-align: left; cursor: pointer; color: var(--text-primary, inherit);
+}
+.workflow-attach-option:hover { background: color-mix(in oklch, var(--foreground) 6%, transparent); }
+.workflow-attach-option.is-on { color: var(--accent-presence); }
+.workflow-attach-option-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.workflow-attach-option-title { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-attach-option-sub { font-size: 10.5px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* API call rows */
+.workflow-apicall-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.workflow-apicall-list li { display: flex; align-items: center; gap: 4px; }
+.workflow-apicall-row {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+  padding: 6px 9px; border: 1px solid var(--border-hairline); border-radius: 8px;
+  background: var(--bg-base); cursor: pointer; text-align: left;
+}
+.workflow-apicall-row:hover { border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline)); }
+.workflow-apicall-method {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.03em;
+  padding: 2px 6px; border-radius: 5px; flex: 0 0 auto;
+  color: var(--accent-presence); background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+}
+.workflow-apicall-method.m-post, .workflow-apicall-method.m-put, .workflow-apicall-method.m-patch {
+  color: var(--color-warning); background: color-mix(in oklch, var(--color-warning) 16%, transparent);
+}
+.workflow-apicall-method.m-delete { color: var(--color-danger); background: color-mix(in oklch, var(--color-danger) 16%, transparent); }
+.workflow-apicall-url { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.workflow-apicall-form { display: flex; flex-direction: column; gap: 10px; min-width: 320px; }
+
+/* inherited permission chips */
+.workflow-inherited-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 23px; padding: 0 9px;
+  font-size: 11px; border-radius: 999px;
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+  border: 1px dashed var(--border-hairline);
+}
+.workflow-inherited-perm { font-weight: 600; font-family: var(--font-mono, monospace); }
+.workflow-inherited-src { color: var(--muted-foreground); }
+
 .workflow-attachment-row button {
   padding: 0 9px;
 }

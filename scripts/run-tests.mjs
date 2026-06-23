@@ -123,6 +123,7 @@ export const SUITES = {
     "src/components/workflows-view.test.ts",
     "src/components/workflows/workflow-studio.test.ts",
     "src/components/workflows/workflow-step-list.test.ts",
+    "src/components/workflows/workflow-capability-attachments.test.ts",
     "src/components/projects-view.test.ts",
     "src/components/onboarding-guided-steps.test.ts",
     "src/components/familiar-studio.test.ts",
