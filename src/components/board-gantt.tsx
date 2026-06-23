@@ -532,11 +532,15 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
           </div>
 
           {/* Legend */}
+          {/* Bars are coloured by the board's status. The four colours collapse
+              the six statuses: Running, Blocked and Done map 1:1; Backlog, Inbox
+              and Review share the "pending" colour. Labels match those actual
+              statuses (no invented "In Progress"/"At Risk"). */}
           <div className="cg-legend">
             <span className="cg-leg"><span className="cg-sw cg-sw--done" aria-hidden />Done</span>
-            <span className="cg-leg"><span className="cg-sw cg-sw--in-progress" aria-hidden />In Progress</span>
-            <span className="cg-leg"><span className="cg-sw cg-sw--pending" aria-hidden />Pending</span>
-            <span className="cg-leg"><span className="cg-sw cg-sw--at-risk" aria-hidden />At Risk</span>
+            <span className="cg-leg"><span className="cg-sw cg-sw--in-progress" aria-hidden />Running</span>
+            <span className="cg-leg" title="Backlog, Inbox and Review tasks"><span className="cg-sw cg-sw--pending" aria-hidden />Backlog · Inbox · Review</span>
+            <span className="cg-leg"><span className="cg-sw cg-sw--at-risk" aria-hidden />Blocked</span>
             <span className="cg-leg"><span className="cg-diamond cg-diamond--leg" aria-hidden />Milestone</span>
             <span className="cg-leg"><span className="cg-today-sw" aria-hidden />Today</span>
           </div>

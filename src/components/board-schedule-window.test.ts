@@ -94,4 +94,13 @@ assert.match(gantt, /const familiarColor = \(id: string \| null\): string \| und
 assert.match(gantt, /color: byFamiliar \? familiarColor\(card\.familiarId\) : undefined/, "rows carry a familiar colour only in by-familiar mode");
 assert.match(gantt, /\.\.\.\(row\.color \? \{ background: row\.color \} : \{\}\)/, "the bar paints the familiar colour when present");
 
+// The legend labels match the board's actual statuses (no invented
+// "In Progress"/"At Risk"): Running, Blocked, Done map 1:1; the shared colour
+// is labelled with the three statuses it represents.
+assert.match(gantt, /cg-sw--in-progress" aria-hidden \/>Running</, "in-progress swatch is labelled Running");
+assert.match(gantt, /cg-sw--at-risk" aria-hidden \/>Blocked</, "at-risk swatch is labelled Blocked");
+assert.match(gantt, /cg-sw--pending" aria-hidden \/>Backlog · Inbox · Review</, "pending swatch lists the statuses it bundles");
+assert.doesNotMatch(gantt, />In Progress</, "the invented 'In Progress' label is gone");
+assert.doesNotMatch(gantt, />At Risk</, "the invented 'At Risk' label is gone");
+
 console.log("board-schedule-window.test.ts: ok");
