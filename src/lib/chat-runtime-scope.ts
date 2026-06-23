@@ -132,13 +132,15 @@ export function buildRuntimeScopePreamble(scope: RuntimeScope): string {
 }
 
 function uniqueAllowedProjectRoots(primaryRoot: string, roots: string[] | undefined): string[] {
-  const primary = primaryRoot.trim();
+  const normalize = (value: string) => value.trim().replace(/\\/g, "/").replace(/\/+$/, "");
+  const primary = normalize(primaryRoot);
   const seen = new Set<string>();
   const unique: string[] = [];
   for (const root of roots ?? []) {
     const trimmed = root.trim();
-    if (!trimmed || trimmed === primary || seen.has(trimmed)) continue;
-    seen.add(trimmed);
+    const normalized = normalize(trimmed);
+    if (!normalized || normalized === primary || seen.has(normalized)) continue;
+    seen.add(normalized);
     unique.push(trimmed);
   }
   return unique;
