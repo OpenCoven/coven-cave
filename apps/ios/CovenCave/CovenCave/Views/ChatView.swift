@@ -11,6 +11,12 @@ struct PendingImage: Identifiable {
     let name: String
 }
 
+struct ResponseReaderItem: Identifiable {
+    let id = UUID()
+    let title: String
+    let markdown: String
+}
+
 struct ChatView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -24,6 +30,7 @@ struct ChatView: View {
     @State private var dictation = SpeechDictation()
     @State private var photoItem: PhotosPickerItem?
     @State private var pendingImage: PendingImage?
+    @State private var responseReader: ResponseReaderItem?
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
     @State private var zoomTarget: ZoomTarget?
@@ -91,6 +98,9 @@ struct ChatView: View {
         .sheet(isPresented: $showTasks) {
             LinkedTasksSheet(thread: thread)
         }
+        .sheet(item: $responseReader) { item in
+            ResponseReaderView(item: item)
+        }
         // A new chat linked to a task acquires its server session only after the
         // first reply; once streaming stops, push that sessionId onto the card.
         .onChange(of: thread.isStreaming) { _, streaming in
@@ -117,6 +127,7 @@ struct ChatView: View {
                                       isLast: message.id == thread.messages.last?.id,
                                       onDelete: { deleteMessage(message) },
                                       onSuggestion: { sendSuggestion($0) },
+                                      onOpenReader: { openReader(text: $0, familiar: message.familiarId.flatMap(app.familiar)) },
                                       onRetry: canRetry(message) ? { retryAssistant(message) } : nil)
                         .id(message.id)
                     }
@@ -558,6 +569,41 @@ struct ChatView: View {
     private func deleteMessage(_ message: DisplayMessage) {
         thread.deleteMessage(message.id)
         app.touch(thread)
+    }
+
+    private func openReader(text: String, familiar: Familiar?) {
+        responseReader = ResponseReaderItem(title: familiar?.displayName ?? "Response", markdown: text)
+    }
+}
+
+struct ResponseReaderView: View {
+    @Environment(\.dismiss) private var dismiss
+    let item: ResponseReaderItem
+    @State private var mdHeight: CGFloat = 0
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                MarkdownWebView(markdown: item.markdown, height: $mdHeight)
+                    .frame(height: max(mdHeight, 1))
+                    .padding(20)
+            }
+            .navigationTitle(item.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        UIPasteboard.general.string = item.markdown
+                        Haptics.tap()
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 

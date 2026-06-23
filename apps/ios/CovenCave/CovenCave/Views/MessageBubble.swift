@@ -8,6 +8,7 @@ struct MessageBubble: View {
     var isLast: Bool = false
     var onDelete: () -> Void
     var onSuggestion: (String) -> Void = { _ in }
+    var onOpenReader: ((String) -> Void)? = nil
     /// Regenerate this reply (assistant messages only); nil hides the action.
     var onRetry: (() -> Void)? = nil
 
@@ -24,6 +25,14 @@ struct MessageBubble: View {
                 Haptics.tap()
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
+            }
+        }
+        if canOpenReader {
+            Button {
+                onOpenReader?(parsed.visible)
+                Haptics.tap()
+            } label: {
+                Label("Open in Reader", systemImage: "text.page")
             }
         }
         if let onRetry {
@@ -45,6 +54,10 @@ struct MessageBubble: View {
     /// assistant reply. Streaming / user / error messages stay native Text.
     private var rendersMarkdown: Bool {
         !isUser && !message.streaming && !message.isError && !parsed.visible.isEmpty
+    }
+
+    private var canOpenReader: Bool {
+        !isUser && !message.streaming && !message.isError && !parsed.visible.isEmpty && onOpenReader != nil
     }
 
     var body: some View {
@@ -144,6 +157,23 @@ struct MessageBubble: View {
                 .frame(height: max(mdHeight, 1))
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(bubbleBackground, in: bubbleShape)
+                .overlay(alignment: .topTrailing) {
+                    if canOpenReader {
+                        Button {
+                            onOpenReader?(parsed.visible)
+                            Haptics.tap()
+                        } label: {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(7)
+                                .background(.thinMaterial, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(6)
+                        .accessibilityLabel("Open response in reader")
+                    }
+                }
         } else {
             Text(parsed.visible.isEmpty ? " " : parsed.visible)
                 .textSelection(.enabled)
