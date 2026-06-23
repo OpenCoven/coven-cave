@@ -4641,11 +4641,12 @@ button:active > .edge-rail-chip {
 
 .menu-bar__search-icon {
   flex-shrink: 0;
-  /* Match the sidepanel toggle glyph (.shell-top-toggle uses var(--icon-sm))
-     so the top-chrome icons all read at one consistent size. */
+  /* One standard size across the top chrome: var(--icon-md) matches the
+     familiar avatars (FamiliarAvatar "sm" / the labeled trigger img) and the
+     sidepanel toggle glyph, so icons and avatars all read at 16px. */
   align-self: center;
-  width: var(--icon-sm);
-  height: var(--icon-sm);
+  width: var(--icon-md);
+  height: var(--icon-md);
 }
 
 .menu-bar__search-input {
@@ -4721,13 +4722,13 @@ button:active > .edge-rail-chip {
     border-color var(--duration-fast) var(--ease-standard);
 }
 
-/* Match the sidepanel toggle glyph (.shell-top-toggle uses var(--icon-sm)) so
-   the Enhance/Tasks/Inbox icons read at the same size as the rest of the top
-   chrome, rather than scaling with their own label. */
+/* One standard size across the top chrome (var(--icon-md), 16px): the
+   Enhance/Tasks/Inbox glyphs match the familiar avatars and the sidepanel
+   toggle, rather than scaling with their own label. */
 .menu-bar__task > svg {
   flex-shrink: 0;
-  width: var(--icon-sm);
-  height: var(--icon-sm);
+  width: var(--icon-md);
+  height: var(--icon-md);
 }
 
 .menu-bar__new {
