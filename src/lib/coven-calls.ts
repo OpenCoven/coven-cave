@@ -3,9 +3,10 @@
 // Pure types + aggregator live in coven-calls-types so client code
 // can import without pulling in node:fs.
 
-import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 import { randomUUID } from "node:crypto";
 
 import type {
@@ -49,9 +50,7 @@ export async function loadCalls(): Promise<CallsFile> {
 
 export async function saveCalls(file: CallsFile): Promise<void> {
   await ensureDir();
-  const tmp = `${FILE_PATH}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(file, null, 2), "utf8");
-  await rename(tmp, FILE_PATH);
+  await writeJsonAtomic(FILE_PATH, file);
 }
 
 export async function recordCall(input: CovenCallInput): Promise<CovenCall> {
