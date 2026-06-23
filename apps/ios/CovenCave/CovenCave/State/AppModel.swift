@@ -618,6 +618,15 @@ final class AppModel {
         persistThreads()
     }
 
+    /// Rename a thread (local title only); no-ops on a blank or unchanged name.
+    func renameThread(_ thread: ChatThread, to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != thread.title,
+              let target = threads.first(where: { $0.id == thread.id }) else { return }
+        target.title = trimmed
+        persistThreads()
+    }
+
     func touch(_ thread: ChatThread) {
         // Move the most recently active thread to the top, then persist.
         if let idx = threads.firstIndex(where: { $0.id == thread.id }), idx != 0 {

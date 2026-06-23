@@ -9,6 +9,7 @@ struct FamiliarThreadsView: View {
     @Environment(AppModel.self) private var app
     let familiar: Familiar
     @Binding var path: [ChatRoute]
+    @State private var renamingThread: ChatThread?
 
     /// One row in the list: an on-device thread or a server-only session.
     private enum Entry: Identifiable {
@@ -72,10 +73,21 @@ struct FamiliarThreadsView: View {
                 Button { open(entry) } label: { row(entry) }
                     .buttonStyle(.plain)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .contextMenu {
+                        if case .local(let thread) = entry {
+                            Button { renamingThread = thread } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
+                            Button(role: .destructive) { app.deleteThread(thread) } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
             }
             .onDelete(perform: delete)
         }
         .listStyle(.plain)
+        .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
     }
 
     @ViewBuilder

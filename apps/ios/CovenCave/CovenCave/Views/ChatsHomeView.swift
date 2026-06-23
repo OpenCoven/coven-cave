@@ -16,6 +16,7 @@ struct ChatsHomeView: View {
     @State private var showNewChat = false
     @State private var query = ""
     @State private var path: [ChatRoute] = []
+    @State private var renamingThread: ChatThread?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -119,6 +120,14 @@ struct ChatsHomeView: View {
                         }
                         .buttonStyle(.plain)
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .contextMenu {
+                            Button { renamingThread = thread } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
+                            Button(role: .destructive) { app.deleteThread(thread) } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                     }
                     .onDelete { offsets in
                         offsets.map { filteredGroups[$0] }.forEach(app.deleteThread)
@@ -127,6 +136,7 @@ struct ChatsHomeView: View {
             }
         }
         .listStyle(.plain)
+        .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
     }
 
     /// Familiars matching the search query (name or role). Empty query → all.
