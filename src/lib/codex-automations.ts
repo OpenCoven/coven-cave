@@ -12,7 +12,7 @@
 import { readdir, readFile, writeFile, access, mkdir, rm, realpath } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
-import { slugifyAutomationId } from "./codex-automation-form";
+import { slugifyAutomationId } from "./codex-automation-form.ts";
 import type {
   AutomationStatus,
   CodexAutomation,
