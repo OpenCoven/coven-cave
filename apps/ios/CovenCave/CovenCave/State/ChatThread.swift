@@ -144,6 +144,26 @@ final class ChatThread: Identifiable, Hashable {
         updatedAt = Date()
     }
 
+    /// Re-fetch this thread's conversation from the server and replace the local
+    /// messages — backs pull-to-refresh, so a chat advanced on another device
+    /// catches up. Direct threads only: a group is N independent sessions with no
+    /// shared turn ordering to merge. Skipped while streaming (and when there's no
+    /// server session yet) so an in-flight reply is never clobbered.
+    func reload(client: CaveClient) async {
+        guard !isGroup, !isStreaming,
+              let familiarId = familiarIds.first,
+              let sessionId = sessionIds[familiarId],
+              let convo = try? await client.conversation(sessionId: sessionId) else { return }
+        messages = convo.turns.map { turn in
+            let role = DisplayMessage.Role(rawValue: turn.role) ?? .assistant
+            return DisplayMessage(role: role,
+                                  familiarId: role == .assistant ? familiarId : nil,
+                                  text: turn.text,
+                                  isError: turn.isError ?? false)
+        }
+        updatedAt = Date()
+    }
+
     private func stream(familiarId: String, prompt: String,
                         attachments: [CaveClient.ChatAttachment] = [], into messageId: String,
                         client: CaveClient, onChange: @escaping () -> Void) async {
