@@ -22,6 +22,18 @@ assert.match(
 
 assert.match(
   source,
+  /ensureAdapterCoverage\(reported, refresh\)/,
+  "Daemon aggregate manifests are backfilled so every supported harness stays covered",
+);
+
+assert.match(
+  source,
+  /const missing = COMPATIBILITY_ADAPTERS\.map\(\(adapter\) => adapter\.id\)\.filter\(\(id\) => !present\.has\(id\)\)/,
+  "Coverage backfill only fetches harnesses the daemon aggregate omitted",
+);
+
+assert.match(
+  source,
   /supplementClaudeSkills/,
   "Claude manifests are supplemented with the local ~/.claude/skills scan",
 );
