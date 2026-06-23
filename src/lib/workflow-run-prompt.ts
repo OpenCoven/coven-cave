@@ -13,7 +13,7 @@ import type { WorkflowStepSummary, WorkflowSummary } from "./workflows.ts";
  */
 
 function stepLine(step: WorkflowStepSummary, index: number): string {
-  const parts: string[] = [`${index + 1}. [${step.kind}] ${step.name ?? step.id}`];
+  const parts: string[] = [`${index + 1}. [${step.kind}] ${step.name ?? step.id} (id: ${step.id})`];
   if (step.uses) parts.push(`uses: ${step.uses}`);
   if (step.requires && step.requires.length > 0) parts.push(`after: ${step.requires.join(", ")}`);
   if (step.on_error) parts.push(`on_error: ${step.on_error}`);
@@ -98,6 +98,21 @@ export function buildWorkflowRunPrompt(workflow: WorkflowSummary, inputs?: Recor
     "Work through the plan end to end. Where a step names a skill, tool, or sub-workflow, use it.",
     "Stop and ask before any destructive or irreversible action. Report what each step produced as you go.",
   );
+
+  if (steps.length > 0) {
+    // Progress protocol: lets Cave map your live transcript back onto the plan
+    // and show each step's status + output. Keep markers on their own line.
+    lines.push(
+      "",
+      "Progress markers — print these on their own line so progress can be tracked:",
+      "- Before starting a step, print:  @@step-start <id>",
+      "- After a step succeeds, print:    @@step-done <id>",
+      "- If a step fails, print:          @@step-fail <id>",
+      "Use the exact id shown in parentheses for each step above. Between a step's",
+      "start and done markers, narrate what you're doing and show the step's output —",
+      "that narration is surfaced as the step's debugging detail.",
+    );
+  }
 
   return lines.join("\n");
 }

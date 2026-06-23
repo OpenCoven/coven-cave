@@ -9,6 +9,7 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
+import { WorkflowRunProgress } from "@/components/workflows/workflow-run-progress";
 import type {
   WorkflowRunRecord,
   WorkflowRunStepRecord,
@@ -187,21 +188,27 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
                       </div>
                     </dl>
                     {run.summary && <p className="workflow-run-summary-line">{run.summary}</p>}
+                    {/* Session-executor runs derive live per-step progress + debug
+                        detail from the agent transcript; daemon/replay runs keep
+                        the recorded static step list. */}
+                    {run.sessionId && <WorkflowRunProgress run={run} />}
                     {replayable ? (
                       <>
-                        <ol className="workflow-run-steps">
-                          {run.steps.map((step) => (
-                            <li
-                              key={step.id}
-                              className={`workflow-run-step workflow-run-step-${step.status}`}
-                            >
-                              <Icon name={STEP_STATUS_ICON[step.status]} width={13} />
-                              <span className="workflow-run-step-id">{step.id}</span>
-                              <span className="workflow-run-step-kind">{step.kind}</span>
-                              <span className="workflow-run-step-status">{step.status}</span>
-                            </li>
-                          ))}
-                        </ol>
+                        {!run.sessionId && (
+                          <ol className="workflow-run-steps">
+                            {run.steps.map((step) => (
+                              <li
+                                key={step.id}
+                                className={`workflow-run-step workflow-run-step-${step.status}`}
+                              >
+                                <Icon name={STEP_STATUS_ICON[step.status]} width={13} />
+                                <span className="workflow-run-step-id">{step.id}</span>
+                                <span className="workflow-run-step-kind">{step.kind}</span>
+                                <span className="workflow-run-step-status">{step.status}</span>
+                              </li>
+                            ))}
+                          </ol>
+                        )}
                         <div className="workflow-run-actions-row">
                           <button
                             type="button"

@@ -61,13 +61,25 @@ const dependent: WorkflowSummary = {
   assert.match(missing, /If required workflow input is missing, ask Val for the specific value/);
 }
 
-// A manifest with no steps still produces a usable prompt (no crash, no step block).
+// A manifest with no steps still produces a usable prompt (no crash, no step
+// block, and no progress markers — there's nothing to track).
 {
   const bare: WorkflowSummary = { id: "empty", version: "1.0.0", name: "Empty" };
   assert.deepEqual(orderedWorkflowSteps(bare), []);
   const prompt = buildWorkflowRunPrompt(bare);
   assert.match(prompt, /executing the "Empty" workflow/);
   assert.doesNotMatch(prompt, /Carry out these steps/);
+  assert.doesNotMatch(prompt, /@@step-start/);
+}
+
+// A workflow with steps exposes each step's id and the progress-marker protocol
+// so Cave can map the live transcript back onto the plan.
+{
+  const prompt = buildWorkflowRunPrompt(dependent);
+  assert.match(prompt, /\(id: synth\)/, "each step line shows its id");
+  assert.match(prompt, /@@step-start <id>/, "prompt documents the start marker");
+  assert.match(prompt, /@@step-done <id>/, "prompt documents the done marker");
+  assert.match(prompt, /@@step-fail <id>/, "prompt documents the fail marker");
 }
 
 console.log("workflow-run-prompt.test.ts ✓");

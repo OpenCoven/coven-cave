@@ -146,6 +146,11 @@ export type WorkflowRunRecord = {
   steps: WorkflowRunStepRecord[];
   summary?: string;
   source: "cave" | "daemon";
+  /**
+   * The agent session carrying out this run (session executor). Lets the run
+   * panel pull the live transcript to derive per-step progress + debug detail.
+   */
+  sessionId?: string;
 };
 
 export type SaveWorkflowResponse = {

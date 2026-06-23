@@ -173,6 +173,7 @@ async function runViaSession(body: RunBody) {
     })),
     summary: `agent session ${sessionId.slice(0, 8)}`,
     source: "cave",
+    sessionId,
   });
 
   return NextResponse.json({ ok: true, run, sessionId, executor: "session" });
