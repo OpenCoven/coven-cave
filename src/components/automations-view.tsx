@@ -23,6 +23,7 @@ import { SkillSelect } from "@/components/automation-skill-select";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
+import { AutomationCreateDialog, type AutomationCreateInput } from "@/components/automation-create-dialog";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -1215,6 +1216,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -1370,6 +1372,21 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, [load]);
 
+  const createCodex = useCallback(async (input: AutomationCreateInput) => {
+    try {
+      const res = await fetch("/api/codex-automations", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
+      setCreateOpen(false);
+      await load();
+      if (json.automation) { setSelectedCodex(json.automation); setSelectedItem(null); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "codex create failed");
+    }
+  }, [load]);
+
   // ── Sections ──────────────────────────────────────────────────────────────
   const reminderItems = useMemo(() =>
     items.filter(isScheduleInboxItem),
@@ -1463,21 +1480,28 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           <h1 className="text-[22px] font-semibold" style={{ color: "var(--text-primary)" }}>
             Schedules
           </h1>
-          {onNewReminder && (
-            <button
-              type="button"
-              onClick={onNewReminder}
-              className="automation-create-chat-btn inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors hover:bg-white/5"
-              style={{
-                background: "var(--bg-raised)",
-                border: "1px solid var(--border-hairline)",
-                color: "var(--text-primary)",
-              }}
-            >
-              Create via chat
-              <span style={{ color: "var(--text-muted)", display: "flex" }}><Icon name="ph:caret-down" width={11} /></span>
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {activeTab === "automations" && (
+              <Button leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
+                New automation
+              </Button>
+            )}
+            {onNewReminder && (
+              <button
+                type="button"
+                onClick={onNewReminder}
+                className="automation-create-chat-btn inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors hover:bg-white/5"
+                style={{
+                  background: "var(--bg-raised)",
+                  border: "1px solid var(--border-hairline)",
+                  color: "var(--text-primary)",
+                }}
+              >
+                Create via chat
+                <span style={{ color: "var(--text-muted)", display: "flex" }}><Icon name="ph:caret-down" width={11} /></span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="px-8 pb-4">
@@ -1627,6 +1651,15 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             />
           )}
         </div>
+      )}
+
+      {/* ── Create automation dialog ───────────────────────────────────────── */}
+      {createOpen && (
+        <AutomationCreateDialog
+          resolvedFamiliars={resolvedFamiliars}
+          onClose={() => setCreateOpen(false)}
+          onCreate={(i) => void createCodex(i)}
+        />
       )}
     </section>
   );
