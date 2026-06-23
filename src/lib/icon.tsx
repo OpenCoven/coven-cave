@@ -273,6 +273,7 @@ export const ICON_NAMES = [
   "ph:paw-print-bold",
   "ph:code-bold",
   "ph:hand-bold",
+  "ph:play",
   "ph:play-fill",
   "ph:pause-fill",
   "ph:skip-forward-fill",

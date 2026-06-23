@@ -51,6 +51,7 @@ export const SUITES = {
     "src/lib/workflow-edit.test.ts",
     "src/lib/workflow-draft.test.ts",
     "src/lib/workflow-runs.test.ts",
+    "src/lib/automation-runs.test.ts",
     "src/lib/secret-redaction.test.ts",
     "src/lib/retro-runs.test.ts",
     "src/lib/role-manifest.test.ts",
@@ -386,6 +387,7 @@ export const SUITES = {
     "src/lib/next-paths.test.ts",
     "src/components/board-clear-done.test.ts",
     "src/components/board-schedule-window.test.ts",
+    "src/lib/server/automation-runner.test.ts",
   ],
   api: [
     "scripts/dependency-policy.test.mjs",
@@ -520,6 +522,7 @@ const ALIAS_LOADER = new Set([
   "src/app/api/library/doc/route.test.ts",
   "src/lib/server/familiar-avatar.test.ts",
   "src/lib/workflow-generate.test.ts",
+  "src/lib/server/automation-runner.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

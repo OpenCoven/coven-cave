@@ -11,6 +11,7 @@ import type {
   CodexAutomation,
   CodexAutomationPatch,
 } from "@/lib/codex-automations-types";
+import type { AutomationRunRecord } from "@/lib/automation-runs";
 import { Icon } from "@/lib/icon";
 import { formatTimestamp, formatClock, readDateTimePrefs } from "@/lib/datetime-format";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -509,6 +510,8 @@ function CodexDetailPanel({
   onToggle,
   onSave,
   onDelete,
+  onRun,
+  runs,
 }: {
   auto: CodexAutomation;
   busy: boolean;
@@ -516,6 +519,8 @@ function CodexDetailPanel({
   onToggle: (auto: CodexAutomation) => void;
   onSave: (auto: CodexAutomation, patch: CodexAutomationPatch) => void;
   onDelete: (auto: CodexAutomation) => void;
+  onRun: (auto: CodexAutomation) => void;
+  runs: AutomationRunRecord[];
 }) {
   const isActive = auto.status === "ACTIVE";
   const parsedSchedule = useMemo(() => parseCodexRrule(auto.rrule), [auto.rrule]);
@@ -898,11 +903,31 @@ function CodexDetailPanel({
             <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
           </div>
         </div>
+
+        {runs.length > 0 && (
+          <div>
+            <FieldLabel>Recent runs</FieldLabel>
+            <ul className="mt-1 space-y-1">
+              {runs.slice(0, 10).map((r) => (
+                <li key={r.id} className="flex items-center gap-2 text-[12px]">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background:
+                    r.status === "succeeded" ? "var(--accent-presence)" : r.status === "failed" ? "var(--color-danger)" : "var(--text-muted)" }} />
+                  <span style={{ color: "var(--text-secondary)" }}>{relTime(r.startedAt)}</span>
+                  {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Actions */}
       <div className="border-t px-5 py-4 space-y-2"
         style={{ borderColor: "var(--border-hairline)" }}>
+        <button type="button" disabled={busy} onClick={() => onRun(auto)}
+          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium hover:bg-white/5 disabled:opacity-50">
+          <Icon name="ph:play" width={13} /> Run now
+        </button>
         {saveBlockedReason ? (
           <p className="text-[11px]" style={{ color: "oklch(0.7 0.16 35)" }} role="alert">
             {saveBlockedReason}
@@ -943,11 +968,13 @@ function AutomationScheduleRow({
   auto,
   selected,
   familiarsById,
+  lastRun,
   onSelect,
 }: {
   auto: CodexAutomation;
   selected: boolean;
   familiarsById: Map<string, ResolvedFamiliar>;
+  lastRun?: AutomationRunRecord;
   onSelect: (auto: CodexAutomation) => void;
 }) {
   const isActive = auto.status === "ACTIVE";
@@ -994,6 +1021,11 @@ function AutomationScheduleRow({
             )}
           </span>
         )}
+        {lastRun && (
+          <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            Run {relTime(lastRun.startedAt)}
+          </span>
+        )}
         <span className="shrink-0 text-[12px] tabular-nums" style={{ color: "var(--text-muted)" }}>
           {auto.scheduleHuman}
         </span>
@@ -1007,12 +1039,14 @@ function AutomationScheduleSection({
   items,
   selectedId,
   familiarsById,
+  lastRunById,
   onSelect,
 }: {
   title: string;
   items: CodexAutomation[];
   selectedId: string | null;
   familiarsById: Map<string, ResolvedFamiliar>;
+  lastRunById: Map<string, AutomationRunRecord>;
   onSelect: (auto: CodexAutomation) => void;
 }) {
   if (items.length === 0) return null;
@@ -1035,6 +1069,7 @@ function AutomationScheduleSection({
             auto={auto}
             selected={selectedId === auto.id}
             familiarsById={familiarsById}
+            lastRun={lastRunById.get(auto.id)}
             onSelect={onSelect}
           />
         ))}
@@ -1048,12 +1083,14 @@ function AutomationsPanel({
   paused,
   selectedId,
   familiarsById,
+  lastRunById,
   onSelect,
 }: {
   active: CodexAutomation[];
   paused: CodexAutomation[];
   selectedId: string | null;
   familiarsById: Map<string, ResolvedFamiliar>;
+  lastRunById: Map<string, AutomationRunRecord>;
   onSelect: (auto: CodexAutomation) => void;
 }) {
   return (
@@ -1061,10 +1098,12 @@ function AutomationsPanel({
       <AutomationScheduleSection title="Active" items={active}
         selectedId={selectedId}
         familiarsById={familiarsById}
+        lastRunById={lastRunById}
         onSelect={onSelect} />
       <AutomationScheduleSection title="Paused" items={paused}
         selectedId={selectedId}
         familiarsById={familiarsById}
+        lastRunById={lastRunById}
         onSelect={onSelect} />
     </>
   );
@@ -1218,6 +1257,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [automationRuns, setAutomationRuns] = useState<AutomationRunRecord[]>([]);
+  const [lastRunById, setLastRunById] = useState<Map<string, AutomationRunRecord>>(new Map());
 
   const load = useCallback(async () => {
     try {
@@ -1238,6 +1279,36 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, []);
 
+  const refreshRuns = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/codex-automations/${encodeURIComponent(id)}/runs`);
+      const json = await res.json().catch(() => null);
+      if (json?.ok && Array.isArray(json.runs)) setAutomationRuns(json.runs);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const refreshLastRuns = useCallback(async () => {
+    try {
+      const entries = await Promise.all(
+        codexAutos.map((a) =>
+          fetch(`/api/codex-automations/${encodeURIComponent(a.id)}/runs`)
+            .then((r) => r.json())
+            .then((j) => [a.id, j?.runs?.[0]] as const)
+            .catch(() => [a.id, undefined] as const),
+        ),
+      );
+      const map = new Map<string, AutomationRunRecord>();
+      for (const [id, run] of entries) {
+        if (run) map.set(id, run);
+      }
+      setLastRunById(map);
+    } catch {
+      /* ignore */
+    }
+  }, [codexAutos]);
+
   useEffect(() => {
     void load();
     const t = setInterval(load, 15000);
@@ -1251,6 +1322,20 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     if (fresh) setSelectedCodex(fresh);
     else setSelectedCodex(null);
   }, [codexAutos, selectedCodex?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refresh runs for the selected automation when it changes
+  useEffect(() => {
+    if (selectedCodex?.id) {
+      void refreshRuns(selectedCodex.id);
+    } else {
+      setAutomationRuns([]);
+    }
+  }, [selectedCodex?.id, refreshRuns]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refresh last-run map whenever the automation list changes
+  useEffect(() => {
+    if (codexAutos.length > 0) void refreshLastRuns();
+  }, [codexAutos, refreshLastRuns]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const famById = useMemo(() => {
     const m = new Map<string, Familiar>();
@@ -1372,6 +1457,22 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       setBusyId(null);
     }
   }, [load]);
+
+  const runCodexNow = useCallback(async (auto: CodexAutomation) => {
+    if (!window.confirm(`Run "${auto.name}" now? This executes the agent immediately.`)) return;
+    setBusyId(auto.id);
+    try {
+      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}/run`, { method: "POST" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
+      await refreshRuns(auto.id);
+      await refreshLastRuns();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "run failed");
+    } finally {
+      setBusyId(null);
+    }
+  }, [refreshRuns, refreshLastRuns]);
 
   const createCodex = useCallback(async (input: AutomationCreateInput) => {
     try {
@@ -1610,6 +1711,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                     paused={codexPaused}
                     selectedId={selectedAutomationId}
                     familiarsById={familiarsById}
+                    lastRunById={lastRunById}
                     onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
                   />
                   {familiarFilter.size > 0 && codexActive.length === 0 && codexPaused.length === 0 && (
@@ -1649,6 +1751,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               onToggle={toggleCodex}
               onSave={saveCodex}
               onDelete={deleteCodex}
+              onRun={runCodexNow}
+              runs={automationRuns}
             />
           )}
         </div>
