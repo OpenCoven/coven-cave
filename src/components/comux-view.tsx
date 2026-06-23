@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { BottomTerminal } from "@/components/bottom-terminal";
 import { Icon } from "@/lib/icon";
@@ -266,6 +267,7 @@ function shortProjectTime(iso: string | null): string {
 }
 
 export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "" }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const layoutKey = STORAGE_LAYOUT + storageNamespace;
   const sessionsKey = STORAGE_SESSIONS + storageNamespace;
   const [terminalLayout, dispatchTerminalLayout] = useReducer(

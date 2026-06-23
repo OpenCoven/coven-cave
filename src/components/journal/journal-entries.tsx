@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { extractNextPaths } from "@/lib/next-paths";
 import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug } from "@/lib/daily-report";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { generateReflection } from "@/lib/journal-generate";
 import type { Familiar } from "@/lib/types";
 
@@ -52,6 +53,7 @@ export function JournalEntries({
   familiars: Familiar[];
   activeFamiliarId: string | null;
 }) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const today = dateSlug(new Date());
   const [days, setDays] = useState<JournalSummary[]>([]);
   const [daysLoaded, setDaysLoaded] = useState(false);

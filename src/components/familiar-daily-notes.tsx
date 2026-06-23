@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { DAILY_NOTE_SECTIONS } from "@/lib/daily-note";
 import { dateSlug, longDateLabel, parseDateSlug, relativeTime } from "@/lib/daily-report";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 
 type DailyNotesFamiliar = { id: string; display_name: string };
 
@@ -28,6 +29,7 @@ function shiftDay(slug: string, delta: number): string {
  * autosave on blur and can be saved explicitly with ⌘/Ctrl+S.
  */
 export function FamiliarDailyNotes({ familiar }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const today = useMemo(() => dateSlug(new Date()), []);
   const [date, setDate] = useState<string>(today);
   const [notes, setNotes] = useState("");

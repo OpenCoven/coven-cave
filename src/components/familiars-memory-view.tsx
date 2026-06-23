@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
+import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
@@ -122,6 +122,7 @@ function memoryMatches(entry: CovenMemoryEntry | FileMemoryEntry, query: string)
 }
 
 export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFile, limit, lockToFamiliar, compact }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [query, setQuery] = useState("");
@@ -897,6 +898,7 @@ export function MemoryFilesList({
   onShowMore,
   onDelete,
 }: MemoryFilesListProps) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const sliced = entries.slice(0, limit ?? entries.length);
   const hidden = entries.length - sliced.length;
   return (

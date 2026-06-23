@@ -18,7 +18,7 @@ import type { IconName } from "@/lib/icon";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
-import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
+import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +75,7 @@ const TRACK_LABEL: Record<Track, string> = {
 // ── Component ────────────────────────────────────────────────────────────────
 
 export function EvalLoopPanel({ familiarId, familiarName }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [state, setState] = useState<EvalLoopState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

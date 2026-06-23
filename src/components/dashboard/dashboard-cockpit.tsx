@@ -9,6 +9,7 @@ import type { Familiar } from "@/lib/types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { relativeTime } from "@/lib/daily-report";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { SectionHead, EmptyState, QuickLink } from "@/components/daily-report-ui";
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
@@ -107,6 +108,7 @@ const STATUS_ORDER: CardStatus[] = ["running", "review", "blocked", "inbox", "ba
 // ─── Root ───────────────────────────────────────────────────────────────────────
 
 export function DashboardCockpit({ model }: { model: DashboardModel }) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [data, setData] = useState<CockpitData>(EMPTY);
   // Each source populates independently so a panel renders the moment its data
   // lands — the slow ones (sessions) never block the fast ones (board, agents).

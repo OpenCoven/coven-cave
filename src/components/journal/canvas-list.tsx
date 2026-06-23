@@ -6,6 +6,7 @@ import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
 import { isDemoModeEnabled } from "@/lib/demo-mode";
 import { relativeTime } from "@/lib/daily-report";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
 import {
   buildPreviewSrcDoc,
@@ -50,6 +51,7 @@ export function CanvasList({
   familiars: Familiar[];
   activeFamiliarId: string | null;
 }) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [artifacts, setArtifacts] = useState<CanvasArtifact[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<"preview" | "code">("preview");

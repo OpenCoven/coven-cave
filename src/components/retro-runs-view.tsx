@@ -7,6 +7,7 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { RetroOutcome, RetroRun, RetroRunsSnapshot, RetroTrack } from "@/lib/retro-runs";
 
@@ -118,6 +119,7 @@ export function RetroRunsView({
   standalone?: boolean;
   familiarId?: string | null;
 }) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [snapshot, setSnapshot] = useState<RetroRunsSnapshot>(EMPTY_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
