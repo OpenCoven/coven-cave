@@ -12,6 +12,8 @@ struct FamiliarThreadsView: View {
     @State private var renamingThread: ChatThread?
     /// An on-device thread awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: ChatThread?
+    /// Reveal archived on-device threads.
+    @State private var showArchived = false
 
     /// One row in the list: an on-device thread or a server-only session.
     private enum Entry: Identifiable {
@@ -33,15 +35,23 @@ struct FamiliarThreadsView: View {
     }
 
     /// On-device threads + server-only sessions, newest activity first.
+    /// Archived on-device threads stay hidden until the user opts in.
     private var entries: [Entry] {
-        let local = app.directThreads(for: familiar.id).map(Entry.local)
+        let local = app.directThreads(for: familiar.id)
+            .filter { showArchived || !$0.archived }
+            .map(Entry.local)
         let server = app.serverOnlySessions(for: familiar.id).map(Entry.server)
         return (local + server).sorted { $0.date > $1.date }
     }
 
+    /// Number of archived on-device threads (drives the show/hide toggle).
+    private var archivedLocalCount: Int {
+        app.directThreads(for: familiar.id).filter(\.archived).count
+    }
+
     var body: some View {
         Group {
-            if entries.isEmpty {
+            if entries.isEmpty && archivedLocalCount == 0 {
                 emptyState
             } else {
                 threadList
@@ -83,6 +93,11 @@ struct FamiliarThreadsView: View {
                             Button(role: .destructive) { pendingDelete = thread } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+                            Button { app.setThreadArchived(thread, !thread.archived) } label: {
+                                Label(thread.archived ? "Unarchive" : "Archive",
+                                      systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
+                            }
+                            .tint(.indigo)
                         }
                     }
                     .swipeActions(edge: .leading) {
@@ -98,11 +113,27 @@ struct FamiliarThreadsView: View {
                             Button { renamingThread = thread } label: {
                                 Label("Rename", systemImage: "pencil")
                             }
+                            Button { app.setThreadArchived(thread, !thread.archived) } label: {
+                                Label(thread.archived ? "Unarchive" : "Archive",
+                                      systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
+                            }
                             Button(role: .destructive) { pendingDelete = thread } label: {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
                     }
+            }
+            if archivedLocalCount > 0 {
+                Button {
+                    withAnimation { showArchived.toggle() }
+                } label: {
+                    Label(showArchived ? "Hide archived" : "Show \(archivedLocalCount) archived",
+                          systemImage: showArchived ? "chevron.up" : "archivebox")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
             }
         }
         .listStyle(.plain)

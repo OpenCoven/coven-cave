@@ -26,6 +26,8 @@ struct ThreadSnapshot: Codable, Identifiable {
     var sessionIds: [String: String]
     var messages: [DisplayMessage]
     var updatedAt: Date
+    /// Optional so snapshots written before archiving existed still decode.
+    var archived: Bool?
 }
 
 /// A conversation thread. One familiar = a direct chat; several = a group.
@@ -46,6 +48,7 @@ final class ChatThread: Identifiable, Hashable {
     var sessionIds: [String: String]
     var messages: [DisplayMessage]
     var updatedAt: Date
+    var archived: Bool = false
 
     var isGroup: Bool { familiarIds.count > 1 }
     var activeStreams: Int { messages.filter { $0.streaming }.count }
@@ -68,11 +71,13 @@ final class ChatThread: Identifiable, Hashable {
         self.init(id: s.id, title: s.title, familiarIds: s.familiarIds,
                   sessionIds: s.sessionIds, messages: s.messages)
         self.updatedAt = s.updatedAt
+        self.archived = s.archived ?? false
     }
 
     var snapshot: ThreadSnapshot {
         ThreadSnapshot(id: id, title: title, familiarIds: familiarIds,
-                       sessionIds: sessionIds, messages: messages, updatedAt: updatedAt)
+                       sessionIds: sessionIds, messages: messages,
+                       updatedAt: updatedAt, archived: archived)
     }
 
     /// Send a user message and stream replies from every familiar in the thread.

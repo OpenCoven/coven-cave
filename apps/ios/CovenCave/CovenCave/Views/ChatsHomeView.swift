@@ -20,6 +20,8 @@ struct ChatsHomeView: View {
     /// A group thread awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: ChatThread?
     @State private var editMode: EditMode = .inactive
+    /// Reveal archived group chats in the list.
+    @State private var showArchived = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -129,8 +131,8 @@ struct ChatsHomeView: View {
                     app.moveFamiliar(fromOffsets: source, toOffset: destination)
                 }
             }
-            if !filteredGroups.isEmpty {
-                Section("Groups") {
+            if !filteredGroups.isEmpty || archivedGroupCount > 0 {
+                Section {
                     ForEach(filteredGroups) { thread in
                         Button { path.append(.thread(thread)) } label: {
                             ThreadRow(thread: thread)
@@ -141,6 +143,11 @@ struct ChatsHomeView: View {
                             Button(role: .destructive) { pendingDelete = thread } label: {
                                 Label("Delete", systemImage: "trash")
                             }
+                            Button { app.setThreadArchived(thread, !thread.archived) } label: {
+                                Label(thread.archived ? "Unarchive" : "Archive",
+                                      systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
+                            }
+                            .tint(.indigo)
                         }
                         .swipeActions(edge: .leading) {
                             Button { renamingThread = thread } label: {
@@ -152,10 +159,29 @@ struct ChatsHomeView: View {
                             Button { renamingThread = thread } label: {
                                 Label("Rename", systemImage: "pencil")
                             }
+                            Button { app.setThreadArchived(thread, !thread.archived) } label: {
+                                Label(thread.archived ? "Unarchive" : "Archive",
+                                      systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
+                            }
                             Button(role: .destructive) { pendingDelete = thread } label: {
                                 Label("Delete", systemImage: "trash")
                             }
                         }
+                    }
+                } header: {
+                    Text("Groups")
+                } footer: {
+                    if archivedGroupCount > 0 {
+                        Button {
+                            withAnimation { showArchived.toggle() }
+                        } label: {
+                            Label(showArchived ? "Hide archived"
+                                               : "Show \(archivedGroupCount) archived",
+                                  systemImage: showArchived ? "chevron.up" : "archivebox")
+                                .font(.footnote)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -191,10 +217,14 @@ struct ChatsHomeView: View {
     }
 
     /// Group threads matching the search query (title or a member's name).
+    /// Number of archived group chats (drives the show/hide-archived toggle).
+    private var archivedGroupCount: Int { app.groupThreads.filter(\.archived).count }
+
     private var filteredGroups: [ChatThread] {
+        let base = app.groupThreads.filter { showArchived || !$0.archived }
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return app.groupThreads }
-        return app.groupThreads.filter { thread in
+        guard !q.isEmpty else { return base }
+        return base.filter { thread in
             if thread.title.lowercased().contains(q) { return true }
             return thread.familiarIds.compactMap(app.familiar).contains {
                 $0.displayName.lowercased().contains(q)

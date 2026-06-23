@@ -654,6 +654,15 @@ final class AppModel {
         persistThreads()
     }
 
+    /// Archive or restore a thread; archived threads are hidden from the default
+    /// lists but kept on disk.
+    func setThreadArchived(_ thread: ChatThread, _ archived: Bool) {
+        guard let target = threads.first(where: { $0.id == thread.id }),
+              target.archived != archived else { return }
+        target.archived = archived
+        persistThreads()
+    }
+
     func touch(_ thread: ChatThread) {
         // Move the most recently active thread to the top, then persist.
         if let idx = threads.firstIndex(where: { $0.id == thread.id }), idx != 0 {
