@@ -108,4 +108,15 @@ assert.match(gantt, /\{groupMode === "familiar" \? \(/, "the legend is condition
 assert.match(gantt, /groups\.map\(\(g\) => \(/, "the legend renders a swatch per familiar group");
 assert.match(gantt, /background: familiarColor\(g\.key === "__unassigned__" \? null : g\.key\) \?\? "var\(--text-muted\)"/, "familiar legend swatches match the bar colours");
 
+// The timeline-zoom control reads as a zoom: a magnifier glyph + compact
+// single-letter buttons (D/W/M), with the full word + what it does in the
+// title/aria so it's clear and narrow (not a "Day/Week/Month" range filter).
+assert.match(gantt, /className="cg-zoom-cell"[\s\S]{0,80}name="ph:magnifying-glass"/, "the zoom control shows a magnifier glyph");
+assert.match(gantt, /\["day", "Day", "D",/, "day zoom carries a short label + hint");
+assert.match(gantt, /\["month", "Month", "M",/, "month zoom carries a short label + hint");
+assert.match(gantt, /aria-label=\{`Zoom: \$\{full\}`\}/, "each zoom button announces the full word");
+assert.match(gantt, /title=\{`\$\{full\} — \$\{hint\}`\}/, "each zoom button explains what the scale does");
+assert.match(gantt, />\s*\{short\}\s*<\/button>/, "buttons render the compact single-letter label");
+assert.match(styles, /\.board-group-toggle \.cg-zoom-cell/, "the zoom glyph cell is styled to match the segmented control");
+
 console.log("board-schedule-window.test.ts: ok");

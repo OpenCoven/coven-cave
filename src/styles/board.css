@@ -39,6 +39,8 @@
 .board-multiselect-popover { min-width:180px; }
 
 .board-group-toggle { display:flex; border:1px solid var(--border-strong); border-radius:7px; overflow:hidden; }
+/* Leading zoom glyph so the compact D/W/M reads as a timeline zoom, not a range filter. */
+.board-group-toggle .cg-zoom-cell { display:flex; align-items:center; padding:0 4px 0 8px; background:var(--bg-raised); color:var(--text-muted); border-right:1px solid var(--border-strong); }
 .board-group-toggle-btn { display:flex; align-items:center; justify-content:center; padding:0 10px; height:28px; background:var(--bg-raised); color:var(--text-muted); border:none; cursor:pointer; font-size:12px; font-weight:500; transition:background .12s,color .12s; white-space:nowrap; }
 .board-group-toggle-btn+.board-group-toggle-btn { border-left:1px solid var(--border-strong); }
 .board-group-toggle-btn:hover { background:var(--bg-hover); color:var(--text-secondary); }
