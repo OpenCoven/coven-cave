@@ -67,6 +67,35 @@ await assert.rejects(
 }
 
 {
+  const docs = path.join(home, "docs");
+  const preamble = buildRuntimeScopePreamble({
+    kind: "local",
+    root: repo,
+    allowedProjectRoots: [repo, docs, repo],
+  });
+  assert.match(preamble, /Runtime filesystem boundary:/);
+  assert.match(preamble, /Primary root:/);
+  assert.match(preamble, /Granted project roots:/);
+  assert.match(preamble, new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(preamble, new RegExp(docs.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(
+    preamble,
+    /You may read, edit, create, delete, commit, push, and run commands inside the primary root and the granted project roots listed above/,
+    "grant-aware local scopes should permit work inside every granted project root",
+  );
+  assert.doesNotMatch(
+    preamble,
+    /ask the user to reopen/,
+    "grant-aware local scopes should not tell the familiar to reopen when another granted project is requested",
+  );
+  assert.equal(
+    preamble.match(new RegExp(repo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))?.length,
+    1,
+    "duplicate allowed roots should be listed once",
+  );
+}
+
+{
   const preamble = buildRuntimeScopePreamble({
     kind: "ssh",
     host: "build-box",

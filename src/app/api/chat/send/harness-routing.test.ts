@@ -244,6 +244,18 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /filterProjectsForFamiliar\(projects, body\.familiarId\)/,
+  "Local Cave chat should derive grant-aware project roots for the familiar before building the runtime prompt",
+);
+
+assert.match(
+  chatRoute,
+  /allowedProjectRoots: grantedProjectRoots/,
+  "The runtime prompt should include every project root the familiar is granted, not only the spawn cwd",
+);
+
+assert.match(
+  chatRoute,
   /import \{[\s\S]*ProjectAccessDeniedError,[\s\S]*assertProjectAccess,[\s\S]*\} from "@\/lib\/project-permissions";/,
   "Chat send should import the shared project-permission chokepoint",
 );

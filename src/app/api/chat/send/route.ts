@@ -71,6 +71,7 @@ import {
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
+  filterProjectsForFamiliar,
 } from "@/lib/project-permissions";
 import {
   buildTaskAwarePrompt,
@@ -184,6 +185,7 @@ async function conversationCwd(sessionId?: string): Promise<string | undefined> 
 }
 
 async function chatProjectAccessId(args: {
+  projects: Awaited<ReturnType<typeof loadProjects>>;
   requestedProjectRoot?: string;
   resumeCwd?: string;
   resolvedCwd: string;
@@ -193,7 +195,7 @@ async function chatProjectAccessId(args: {
   const projectRoot = explicitRoot ?? resumedRoot;
   if (!projectRoot) return null;
 
-  const projects = await loadProjects();
+  const projects = args.projects;
   const project =
     projectForRoot(projectRoot, projects) ??
     projectForRoot(args.resolvedCwd, projects);
@@ -891,9 +893,11 @@ export async function POST(req: Request) {
     }
     throw error;
   }
+  const projects = sshRuntime ? [] : await loadProjects();
   const chatProjectId = sshRuntime
     ? null
     : await chatProjectAccessId({
+        projects,
         requestedProjectRoot: body.projectRoot,
         resumeCwd,
         resolvedCwd: cwd,
@@ -911,6 +915,9 @@ export async function POST(req: Request) {
       throw error;
     }
   }
+  const grantedProjectRoots = sshRuntime
+    ? []
+    : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
   const resolvedFamiliarWorkspace = !sshRuntime
     ? await resolveFamiliarWorkspace(body.familiarId)
     : undefined;
@@ -927,7 +934,7 @@ export async function POST(req: Request) {
     : undefined;
   const runtimeScope: RuntimeScope = sshRuntime
     ? { kind: "ssh", host: sshRuntime.host, root: sshRuntime.cwd }
-    : { kind: "local", root: familiarCwd ?? cwd };
+    : { kind: "local", root: familiarCwd ?? cwd, allowedProjectRoots: grantedProjectRoots };
   const responseMetadata: ChatResponseMetadata = {
     familiarId: body.familiarId,
     harness: binding.harness,
