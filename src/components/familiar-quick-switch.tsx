@@ -14,10 +14,14 @@ import type { SessionRow } from "@/lib/types";
 type Props = {
   familiars: ResolvedFamiliar[];
   activeFamiliarId?: string | null;
+  /** The full multiselect scope (empty/undefined = All). When ≥2 are selected
+   *  every member is highlighted; falls back to `activeFamiliarId` otherwise. */
+  selectedFamiliarIds?: ReadonlySet<string>;
   sessions: SessionRow[];
   responseNeeded?: Set<string>;
-  /** `null` scopes to "All familiars". */
-  onSelectFamiliar: (id: string | null) => void;
+  /** `null` scopes to "All familiars". `opts.multi` (⌘/Ctrl-click) toggles the
+   *  id in the multiselect set instead of replacing the scope. */
+  onSelectFamiliar: (id: string | null, opts?: { multi?: boolean }) => void;
   /** Menu placement of the embedded full switcher. */
   placement?: "bottom-start" | "bottom-end" | "top-start" | "top-end";
   /** Labels the embedded switcher's trigger with the active familiar name. */
@@ -37,6 +41,7 @@ type Props = {
 export function FamiliarQuickSwitch({
   familiars,
   activeFamiliarId,
+  selectedFamiliarIds,
   sessions,
   responseNeeded,
   onSelectFamiliar,
@@ -63,7 +68,11 @@ export function FamiliarQuickSwitch({
       {showStrip ? (
         <ul className="familiar-quickswitch__strip" role="listbox" aria-label="Quick switch familiar">
           {quick.map((f) => {
-            const isActive = f.id === activeFamiliarId;
+            // Highlight every member of the multiselect scope; fall back to the
+            // single active id when no scope set was supplied.
+            const isActive = selectedFamiliarIds
+              ? selectedFamiliarIds.has(f.id)
+              : f.id === activeFamiliarId;
             const needsReply = responseNeeded?.has(f.id) ?? false;
             const presence = computePresence({
               familiar: f,
@@ -80,8 +89,10 @@ export function FamiliarQuickSwitch({
                   aria-selected={isActive}
                   className={`familiar-quickswitch__btn focus-ring${isActive ? " is-active" : ""}`}
                   style={{ ["--familiar-accent" as string]: f.color } as CSSProperties}
-                  onClick={() => onSelectFamiliar(f.id)}
-                  title={`${f.display_name}${isPinned ? " · pinned" : ""} · ${presence.label}`}
+                  // ⌘/Ctrl-click toggles this familiar in the scope (multiselect);
+                  // a plain click selects only it.
+                  onClick={(e) => onSelectFamiliar(f.id, { multi: e.metaKey || e.ctrlKey })}
+                  title={`${f.display_name}${isPinned ? " · pinned" : ""} · ${presence.label} · ⌘-click to multi-select`}
                   aria-label={`Switch to ${f.display_name}${isPinned ? " (pinned)" : ""}`}
                 >
                   <span className="familiar-quickswitch__avatar">

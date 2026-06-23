@@ -14,8 +14,16 @@ assert.match(
 
 assert.match(
   source,
-  /\[cards, familiarsById, searchQuery, activeFamiliarId\]/,
-  "BoardView filtered memo dependency array must include activeFamiliarId so re-filter triggers on familiar switch",
+  /\[cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds\]/,
+  "BoardView filtered memo deps include activeFamiliarId + scopeFamiliarIds so re-filter triggers on familiar switch / multiselect change",
+);
+
+// Multiselect: when a scope set is supplied, the board filters to the union via
+// the shared familiarInScope predicate (empty set = All).
+assert.match(
+  source,
+  /scopeFamiliarIds\s*\?\s*familiarInScope\(scopeFamiliarIds, c\.familiarId\)/,
+  "BoardView filters by the multiselect scope set when provided",
 );
 
 // Stats must reflect the visible (filtered) set, not the full unfiltered

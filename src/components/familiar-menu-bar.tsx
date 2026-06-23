@@ -8,6 +8,9 @@ import type { SessionRow } from "@/lib/types";
 type Props = {
   familiars: ResolvedFamiliar[];
   activeFamiliarId: string | null;
+  /** The full multiselect scope (empty = All). Drives multi-highlight in the
+   *  avatar strip; `activeFamiliarId` stays the single-primary for the rest. */
+  selectedFamiliarIds?: ReadonlySet<string>;
   sessions: SessionRow[];
   responseNeeded?: Set<string>;
   /** Open task count (board cards not yet done) — drives the Tasks badge. */
@@ -20,8 +23,9 @@ type Props = {
   searchQuery: string;
   /** Update shared top-search query. */
   onSearchQueryChange: (query: string) => void;
-  /** Change the active-familiar scope (the switcher menu's "All"/per-familiar). */
-  onSelectFamiliar: (id: string | null) => void;
+  /** Change the familiar scope. `opts.multi` (⌘/Ctrl-click) toggles the id in
+   *  the multiselect set; a plain click selects only that one (`null` = All). */
+  onSelectFamiliar: (id: string | null, opts?: { multi?: boolean }) => void;
   /** Jump to the task board. */
   onViewTasks: () => void;
   /** Enrich active tasks for the selected familiar. */
@@ -48,6 +52,7 @@ function fmtBadge(n: number): string {
 export function FamiliarMenuBar({
   familiars,
   activeFamiliarId,
+  selectedFamiliarIds,
   sessions,
   responseNeeded,
   taskCount,
@@ -74,6 +79,7 @@ export function FamiliarMenuBar({
         <FamiliarQuickSwitch
           familiars={familiars}
           activeFamiliarId={activeFamiliarId}
+          selectedFamiliarIds={selectedFamiliarIds}
           sessions={sessions}
           responseNeeded={responseNeeded}
           onSelectFamiliar={onSelectFamiliar}

@@ -9,6 +9,7 @@ import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
+import { familiarInScope } from "@/lib/familiar-multiselect";
 import { BoardKanban } from "@/components/board-kanban";
 import { BoardGantt } from "@/components/board-gantt";
 import { BoardTable, type GroupBy } from "@/components/board-table";
@@ -32,11 +33,14 @@ type Props = {
   familiars: Familiar[];
   sessions: SessionRow[];
   activeFamiliarId: string | null;
+  /** Multiselect scope (empty = All). When ≥2 are selected the board filters to
+   *  the union; `activeFamiliarId` stays the single-primary for chrome. */
+  scopeFamiliarIds?: ReadonlySet<string>;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenUrl?: (url: string) => void;
 };
 
-export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSession, onOpenUrl }: Props) {
+export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliarIds, onJumpToSession, onOpenUrl }: Props) {
   const isMobile = useIsMobile();
   const [cards, setCards] = useState<Card[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -142,10 +146,12 @@ export function BoardView({ familiars, sessions, activeFamiliarId, onJumpToSessi
     () =>
       cards.filter(
         (c) =>
-          (activeFamiliarId === null || c.familiarId === activeFamiliarId) &&
+          (scopeFamiliarIds
+            ? familiarInScope(scopeFamiliarIds, c.familiarId)
+            : activeFamiliarId === null || c.familiarId === activeFamiliarId) &&
           cardMatchesBoardSearch(c, searchQuery, familiarsById),
       ),
-    [cards, familiarsById, searchQuery, activeFamiliarId],
+    [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds],
   );
 
   const stats = useMemo(() => ({

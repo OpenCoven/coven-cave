@@ -4,6 +4,10 @@
 // All readers SSR-guard (Next.js renders this code on both server and client).
 
 const ACTIVE_KEY = "cave:active-familiar";
+// The full multiselect scope (JSON string[]). Empty/absent = "All familiars".
+// ACTIVE_KEY is kept in sync as the single "primary" (the lone id when exactly
+// one is scoped, else null) so other readers — e.g. the iOS app — still work.
+const SCOPE_KEY = "cave:familiar-scope";
 
 function safeGet(key: string): string | null {
   if (typeof window === "undefined") return null;
@@ -24,6 +28,30 @@ export function getActiveFamiliar(): string | null {
 
 export function setActiveFamiliar(id: string | null): void {
   safeSet(ACTIVE_KEY, id);
+}
+
+/**
+ * The persisted multiselect scope. Falls back to the legacy single
+ * `cave:active-familiar` (so existing users keep their scoped familiar) when no
+ * scope set has been written yet.
+ */
+export function getFamiliarScope(): string[] {
+  const raw = safeGet(SCOPE_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) return parsed.filter((x): x is string => typeof x === "string");
+    } catch { /* corrupt — fall through to the legacy single key */ }
+  }
+  const single = getActiveFamiliar();
+  return single ? [single] : [];
+}
+
+/** Persist the scope set and keep the legacy single key in sync (lone id or null). */
+export function setFamiliarScope(ids: readonly string[]): void {
+  const deduped = [...new Set(ids.filter((x) => typeof x === "string"))];
+  safeSet(SCOPE_KEY, JSON.stringify(deduped));
+  setActiveFamiliar(deduped.length === 1 ? deduped[0]! : null);
 }
 
 export function getLastSurface(familiarId: string): string | null {
