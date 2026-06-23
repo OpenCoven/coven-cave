@@ -112,6 +112,28 @@ async function fetchHarnessManifest(harness: string, refresh: string): Promise<H
   return supplementClaudeSkills(res.data);
 }
 
+/**
+ * The daemon's aggregate /api/v1/capabilities can return a harness_capabilities
+ * list that omits a harness Cave knows about (e.g. the aggregate scanner skipped
+ * it, but its per-harness endpoint still serves a manifest). Trusting the
+ * aggregate verbatim under-reports coverage, so the panel silently drops that
+ * harness. Backfill any COMPATIBILITY_ADAPTERS harness missing from the
+ * aggregate by fetching its per-harness manifest; aggregate-reported manifests
+ * always win on id collisions.
+ */
+async function ensureAdapterCoverage(
+  manifests: HarnessCapabilityManifest[],
+  refresh: string,
+): Promise<HarnessCapabilityManifest[]> {
+  const present = new Set(manifests.map((m) => m.harness_id));
+  const missing = COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id).filter((id) => !present.has(id));
+  if (missing.length === 0) return manifests;
+  const backfilled = (await Promise.all(missing.map((id) => fetchHarnessManifest(id, refresh)))).filter(
+    (m): m is HarnessCapabilityManifest => m !== null,
+  );
+  return [...manifests, ...backfilled];
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const refresh = url.searchParams.get("refresh") === "1" ? "?refresh=1" : "";
@@ -148,7 +170,8 @@ export async function GET(req: Request) {
   // per-harness endpoints (which still serve manifests).
   const aggregate = await callDaemon<CapabilitiesResponse>({ path: `/api/v1/capabilities${refresh}` });
   if (aggregate.ok && Array.isArray(aggregate.data?.harness_capabilities)) {
-    const manifests = await Promise.all(aggregate.data.harness_capabilities.map(supplementClaudeSkills));
+    const reported = await Promise.all(aggregate.data.harness_capabilities.map(supplementClaudeSkills));
+    const manifests = await ensureAdapterCoverage(reported, refresh);
     return NextResponse.json({
       ok: true,
       coven_skills: aggregate.data.coven_skills ?? [],
