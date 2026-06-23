@@ -38,7 +38,9 @@ type GanttRow = {
 };
 type Group = { key: string; name: string; rows: GanttRow[]; firstStart: number };
 
-const DAY_W = 22; // px per day column — keep in sync with --cg-day in board.css
+const ZOOM_DAY_W = { day: 22, week: 11, month: 5 } as const; // px per day column at each zoom
+type GanttZoom = keyof typeof ZOOM_DAY_W;
+const ZOOM_LABELS: Array<[GanttZoom, string]> = [["day", "Day"], ["week", "Week"], ["month", "Month"]];
 const LEFT_W = 416; // sum of the left table columns — keep in sync with .cg-left
 
 function parseDate(value: string | null | undefined): Date | null {
@@ -115,6 +117,15 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   const [todayMs, setTodayMs] = useState<number | null>(null);
   useEffect(() => setTodayMs(Date.now()), []);
   useDateTimePrefs();
+  // Timeline zoom (px/day) + a ref to the scroller so "Today" can recenter.
+  const [zoom, setZoom] = useState<GanttZoom>(() => {
+    if (typeof window === "undefined") return "day";
+    const v = window.localStorage.getItem("cave:board:ganttZoom");
+    return v === "day" || v === "week" || v === "month" ? v : "day";
+  });
+  useEffect(() => { try { window.localStorage.setItem("cave:board:ganttZoom", zoom); } catch { /* ignore */ } }, [zoom]);
+  const DAY_W = ZOOM_DAY_W[zoom];
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // Drag a bar to reschedule it: grab the middle to MOVE both dates together,
   // or grab a left/right edge handle to RESIZE one end — changing the start or
@@ -312,9 +323,24 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     if (offset >= 0 && offset <= totalDays) todayX = offset * DAY_W + DAY_W / 2;
   }
 
+  // Scroll the timeline so today sits in the middle of the viewport.
+  const scrollToToday = () => {
+    const el = scrollRef.current;
+    if (!el || todayX === null) return;
+    el.scrollLeft = Math.max(0, LEFT_W + todayX - el.clientWidth / 2);
+  };
+
   return (
     <div className="board-gantt">
-      <div className="board-gantt__scroll">
+      <div className="cg-controls" style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", padding: "2px 8px 6px" }}>
+        <div className="board-group-toggle" role="group" aria-label="Timeline zoom">
+          {ZOOM_LABELS.map(([z, label]) => (
+            <button key={z} type="button" className={`board-group-toggle-btn${zoom === z ? " board-group-toggle-btn--active" : ""}`} onClick={() => setZoom(z)} aria-pressed={zoom === z}>{label}</button>
+          ))}
+        </div>
+        <button type="button" className="board-group-toggle-btn" onClick={scrollToToday} disabled={todayX === null} title="Scroll the timeline to today">Today</button>
+      </div>
+      <div className="board-gantt__scroll" ref={scrollRef}>
         <div className="cg" style={{ ["--cg-day" as string]: `${DAY_W}px`, ["--cg-tl" as string]: `${timelineW}px` }}>
           {/* Header: left column titles + week band */}
           <div className="cg-head">
