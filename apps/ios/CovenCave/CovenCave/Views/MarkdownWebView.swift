@@ -90,6 +90,13 @@ struct MarkdownWebView: UIViewRepresentable {
                         UIPasteboard.general.string = text
                         Haptics.tap()
                     }
+                case "enlarge":
+                    // A tapped table / Mermaid diagram / inline image — hand its
+                    // HTML to the full-screen zoom surface (ChatView presents it).
+                    if let html = body["html"] as? String, !html.isEmpty {
+                        Haptics.tap()
+                        ContentZoom.html(html)
+                    }
                 default:
                     break
                 }
