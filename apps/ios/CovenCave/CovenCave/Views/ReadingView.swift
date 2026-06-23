@@ -22,6 +22,7 @@ struct ReadingView: View {
                 }
             }
             .navigationTitle("Reading")
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "Search titles, authors, tags")
             .refreshable { await app.loadReading() }
             .task { if !app.readingLoaded { await app.loadReading() } }

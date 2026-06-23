@@ -481,6 +481,7 @@ export const SUITES = {
     "src/lib/mobile-access-token.test.ts",
     "src/lib/mobile-handoff.test.ts",
     "scripts/ios-app-store-assets.test.mjs",
+    "scripts/ios-code-browser-files.test.mjs",
     "scripts/ios-code-viewer.test.mjs",
     "scripts/ios-no-canvas-tab.test.mjs",
     "scripts/ios-message-reader.test.mjs",
