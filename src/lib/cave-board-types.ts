@@ -15,6 +15,8 @@ export type CardStep = {
   done: boolean;     // completed?
   addedAt: string;   // ISO timestamp when step was created
   doneAt?: string;   // ISO timestamp when step was checked off
+  startDate?: string | null; // YYYY-MM-DD — schedules the step on the Gantt (group-by-task)
+  endDate?: string | null;   // YYYY-MM-DD
 };
 
 export type CardGitHubKind = "repo" | "issue" | "pr" | "discussion" | "review_request" | "notification";

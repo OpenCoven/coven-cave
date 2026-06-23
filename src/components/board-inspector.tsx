@@ -652,6 +652,13 @@ function StepsSection({
     onPatch(card.id, { steps: steps.filter((s) => s.id !== id) });
   }
 
+  // Schedule a step on the Gantt (group-by-task). Empty string clears the date.
+  function setStepDate(id: string, field: "startDate" | "endDate", value: string) {
+    onPatch(card.id, {
+      steps: steps.map((s) => (s.id === id ? { ...s, [field]: value || null } : s)),
+    });
+  }
+
   function reorderStep(id: string, dir: -1 | 1) {
     const idx = steps.findIndex((s) => s.id === id);
     if (idx < 0) return;
@@ -714,6 +721,7 @@ function StepsSection({
               key={step.id}
               style={{
                 display: "flex",
+                flexWrap: "wrap",
                 alignItems: "flex-start",
                 gap: 8,
                 padding: "6px 8px",
@@ -776,6 +784,25 @@ function StepsSection({
                   <Icon name="ph:x-bold" width={9} />
                 </button>
               </span>
+
+              {/* Step schedule — places this step on the Gantt under "group by Task". */}
+              <div style={{ display: "flex", flexBasis: "100%", gap: 6, alignItems: "center", paddingLeft: 23 }}>
+                <input
+                  type="date"
+                  aria-label={`Start date for step: ${step.text}`}
+                  value={step.startDate ?? ""}
+                  onChange={(e) => setStepDate(step.id, "startDate", e.target.value)}
+                  style={{ fontSize: 11, padding: "1px 4px", borderRadius: 4, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-secondary)" }}
+                />
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }} aria-hidden>→</span>
+                <input
+                  type="date"
+                  aria-label={`End date for step: ${step.text}`}
+                  value={step.endDate ?? ""}
+                  onChange={(e) => setStepDate(step.id, "endDate", e.target.value)}
+                  style={{ fontSize: 11, padding: "1px 4px", borderRadius: 4, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-secondary)" }}
+                />
+              </div>
             </li>
           ))}
         </ul>
