@@ -53,6 +53,7 @@ export const SUITES = {
     "src/lib/workflow-source.test.ts",
     "src/lib/workflow-edit.test.ts",
     "src/lib/workflow-draft.test.ts",
+    "src/lib/workflow-attachments.test.ts",
     "src/lib/workflow-runs.test.ts",
     "src/lib/automation-runs.test.ts",
     "src/lib/secret-redaction.test.ts",

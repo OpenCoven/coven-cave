@@ -4,6 +4,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { covenHome } from "./coven-paths.ts";
 import type {
   WorkflowDryRunPlan,
+  WorkflowHttpCall,
   WorkflowListResponse,
   WorkflowStepSummary,
   WorkflowSummary,
@@ -126,6 +127,24 @@ function asStringArray(value: unknown): string[] | undefined {
   return out.length > 0 ? out : undefined;
 }
 
+function asHttpCalls(value: unknown): WorkflowHttpCall[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: WorkflowHttpCall[] = [];
+  for (const [index, raw] of value.entries()) {
+    const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const url = asString(obj.url);
+    if (!url) continue; // a call without a URL is meaningless — drop it
+    out.push({
+      id: asString(obj.id) ?? `call-${index + 1}`,
+      name: asString(obj.name),
+      method: asString(obj.method),
+      url,
+      note: asString(obj.note),
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 function coerceStep(raw: unknown, index: number): WorkflowStepSummary {
   const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   return {
@@ -169,6 +188,9 @@ export function coerceManifest(
     steps: rawSteps.map((step, index) => coerceStep(step, index)),
     tags: asStringArray(obj.tags),
     permissions: asStringArray(obj.permissions),
+    skills: asStringArray(obj.skills),
+    mcp: asStringArray(obj.mcp),
+    http: asHttpCalls(obj.http),
     path: source,
     storage,
   };
