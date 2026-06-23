@@ -507,12 +507,14 @@ function CodexDetailPanel({
   onClose,
   onToggle,
   onSave,
+  onDelete,
 }: {
   auto: CodexAutomation;
   busy: boolean;
   onClose: () => void;
   onToggle: (auto: CodexAutomation) => void;
   onSave: (auto: CodexAutomation, patch: CodexAutomationPatch) => void;
+  onDelete: (auto: CodexAutomation) => void;
 }) {
   const isActive = auto.status === "ACTIVE";
   const parsedSchedule = useMemo(() => parseCodexRrule(auto.rrule), [auto.rrule]);
@@ -921,6 +923,14 @@ function CodexDetailPanel({
           style={{ background: isActive ? "oklch(0.45 0.12 20)" : "var(--accent-presence)" }}
         >
           {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onDelete(auto)}
+          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] disabled:opacity-50"
+        >
+          <Icon name="ph:trash" width={13} /> Delete
         </button>
       </div>
     </div>
@@ -1344,6 +1354,22 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, [load]);
 
+  const deleteCodex = useCallback(async (auto: CodexAutomation) => {
+    if (!window.confirm(`Delete automation "${auto.name}"? This removes its file.`)) return;
+    setBusyId(auto.id);
+    try {
+      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
+      setSelectedCodex(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "codex delete failed");
+    } finally {
+      setBusyId(null);
+    }
+  }, [load]);
+
   // ── Sections ──────────────────────────────────────────────────────────────
   const reminderItems = useMemo(() =>
     items.filter(isScheduleInboxItem),
@@ -1597,6 +1623,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               onClose={() => setSelectedCodex(null)}
               onToggle={toggleCodex}
               onSave={saveCodex}
+              onDelete={deleteCodex}
             />
           )}
         </div>
