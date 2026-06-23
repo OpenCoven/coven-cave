@@ -4645,8 +4645,8 @@ button:active > .edge-rail-chip {
      scales together with the input under screen magnification (rem fonts)
      instead of staying a tiny fixed-px glyph pinned to the top. */
   align-self: center;
-  width: 1.15em;
-  height: 1.15em;
+  width: 1.35em;
+  height: 1.35em;
 }
 
 .menu-bar__search-input {
@@ -4723,12 +4723,13 @@ button:active > .edge-rail-chip {
 }
 
 /* Size the button icon relative to its label (mirrors .menu-bar__search-icon)
-   so it stays balanced with the 17px text and scales under magnification,
-   instead of a fixed 22px glyph that visually dwarfed the label. */
+   so it scales under magnification instead of a fixed-px glyph. At 1.35em the
+   icon reads as matched to the 17px label — prominent enough not to look dainty
+   (1.15em did), without dwarfing the text. */
 .menu-bar__task > svg {
   flex-shrink: 0;
-  width: 1.15em;
-  height: 1.15em;
+  width: 1.35em;
+  height: 1.35em;
 }
 
 .menu-bar__new {
