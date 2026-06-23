@@ -747,6 +747,24 @@ final class AppModel {
         return thread
     }
 
+    /// Copy a thread into a new, independent local thread — fresh message ids,
+    /// no server session (so sending in the copy starts clean), and reset
+    /// pin/archive/mute. Inserts at the top and persists.
+    @discardableResult
+    func duplicateThread(_ thread: ChatThread) -> ChatThread {
+        let copiedMessages = thread.messages.map { message in
+            DisplayMessage(role: message.role, familiarId: message.familiarId,
+                           text: message.text, isError: message.isError,
+                           attachmentDataUrls: message.attachmentDataUrls)
+        }
+        let copy = ChatThread(title: "\(thread.title) (copy)",
+                              familiarIds: thread.familiarIds,
+                              messages: copiedMessages)
+        threads.insert(copy, at: 0)
+        persistThreads()
+        return copy
+    }
+
     func touch(_ thread: ChatThread) {
         // Move the most recently active thread to the top, then persist.
         if let idx = threads.firstIndex(where: { $0.id == thread.id }), idx != 0 {
