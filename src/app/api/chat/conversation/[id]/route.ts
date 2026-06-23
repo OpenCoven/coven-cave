@@ -252,6 +252,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (typeof body.activeLeafId === "string" && body.activeLeafId) {
     const existing = await loadConversation(id);
     if (!existing) return jsonError("not found", 404);
+    // Reject a leaf that isn't an actual turn — persisting a bogus id would make
+    // resolveActivePath silently fall back to showing every turn unfiltered.
+    if (!existing.turns.some((turn) => turn.id === body.activeLeafId)) {
+      return jsonError("unknown activeLeafId", 400);
+    }
     existing.activeLeafId = body.activeLeafId;
     await saveConversation(existing);
     return NextResponse.json({ ok: true, conversation: existing });

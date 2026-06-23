@@ -52,6 +52,16 @@ test("siblingsOf for a turn with no siblings is index 0 of 1", () => {
   assert.equal(r.index, 0);
 });
 
+test("siblingsOf treats multiple root turns (null parent) as siblings", () => {
+  // Branching the first exchange creates a second ROOT user turn; both must be
+  // siblings so the navigator appears at the root. Regression guard for the
+  // root-turn branch fix (undefined-vs-null parent sentinel).
+  const turns = [t("u1", null, 1), t("a1", "u1", 2), t("u1b", null, 3), t("a1b", "u1b", 4)];
+  const r = siblingsOf(turns, "u1");
+  assert.deepEqual(r.siblings.map((x) => x.id), ["u1", "u1b"]);
+  assert.equal(r.index, 0);
+});
+
 test("childLeaf descends to the newest descendant of a sibling", () => {
   const turns = [t("u1", null, 1), t("s", "u1", 2), t("s2", "s", 3), t("s3", "s2", 4)];
   assert.equal(childLeaf(turns, "s"), "s3");
