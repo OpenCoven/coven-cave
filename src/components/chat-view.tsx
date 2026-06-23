@@ -69,6 +69,7 @@ import { toolInputAsDiff, toolTargetFile } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
+import { resolveActivePath } from "@/lib/conversation-tree";
 
 type ToolEvent = {
   id: string;
@@ -105,6 +106,7 @@ type ChatTurnLifecycle =
 
 type Turn = {
   id: string;
+  parentId?: string | null;
   role: "user" | "assistant" | "system";
   text: string;
   attachments?: ChatAttachment[];
@@ -1602,6 +1604,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [activeLeafId, setActiveLeafId] = useState<string>("");
   const [historyState, setHistoryState] = useState<ChatHistoryState>("idle");
   const [debugModalOpen, setDebugModalOpen] = useState(false);
 
@@ -2072,15 +2075,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [turns],
   );
 
+  // Active branch path: when activeLeafId is set (branched conversation), only
+  // the turns on the path from the root to that leaf are rendered. For linear
+  // (non-branched) conversations every turn has exactly one child so
+  // resolveActivePath returns the full list — behaviour is identical.
+  const activePath = useMemo<Turn[]>(() => {
+    if (!activeLeafId) return turns;
+    return resolveActivePath(turns, activeLeafId) as Turn[];
+  }, [turns, activeLeafId]);
+
   // Voice-call grouping + a turn.id → index map for the timestamp-gap logic.
-  // Memoized on `turns` so it's rebuilt only when the transcript changes — NOT
-  // on every composer keystroke / caret move / hover, which all re-render
-  // ChatView but leave `turns` untouched (this was an O(n) rebuild per render).
+  // Memoized on `activePath` so it's rebuilt only when the visible transcript
+  // changes — NOT on every composer keystroke / caret move / hover, which all
+  // re-render ChatView but leave `turns` untouched (this was an O(n) rebuild
+  // per render).
   const { groupedTurns, turnIndexMap } = useMemo(() => {
     type VoiceGroup = { kind: "call"; callId: string; turns: Turn[]; durationSec: number };
     type SingleItem = { kind: "single"; turn: Turn };
     const grouped: Array<VoiceGroup | SingleItem> = [];
-    for (const turn of turns) {
+    for (const turn of activePath) {
       if (turn.voiceCallId) {
         const last = grouped[grouped.length - 1];
         if (last && last.kind === "call" && last.callId === turn.voiceCallId) {
@@ -2096,9 +2109,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
     }
     const turnIndexMap = new Map<string, number>();
-    for (let idx = 0; idx < turns.length; idx++) turnIndexMap.set(turns[idx].id, idx);
+    for (let idx = 0; idx < activePath.length; idx++) turnIndexMap.set(activePath[idx].id, idx);
     return { groupedTurns: grouped, turnIndexMap };
-  }, [turns]);
+  }, [activePath]);
 
   useEffect(() => {
     setSlashIdx(0);
@@ -2150,6 +2163,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setLinkedContext(null);
     if (!sessionId) {
       setTurns([]);
+      setActiveLeafId("");
       setHistoryState("idle");
       return;
     }
@@ -2165,6 +2179,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               return;
             }
             setTurns([]);
+            setActiveLeafId("");
             setHistoryState(res.status === 404 ? "missing" : "error");
           }
           return;
@@ -2173,8 +2188,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ok?: boolean;
           context?: ChatLinkedContext | null;
           conversation?: {
+            activeLeafId?: string;
             turns?: Array<{
               id: string;
+              parentId?: string | null;
               role: string;
               text: string;
               attachments?: ChatAttachment[];
@@ -2199,6 +2216,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               .filter(
                 (t): t is {
                   id: string;
+                  parentId?: string | null;
                   role: "user" | "assistant";
                   text: string;
                   attachments?: ChatAttachment[];
@@ -2217,6 +2235,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               )
               .map((t) => ({
                   id: t.id,
+                  parentId: t.parentId,
                   role: t.role,
                   text: t.text,
                   attachments: t.attachments,
@@ -2233,6 +2252,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   voiceCallId: t.voiceCallId,
                 })),
           );
+          setActiveLeafId(
+            typeof json.conversation.activeLeafId === "string" ? json.conversation.activeLeafId : "",
+          );
           setHistoryState("loaded");
         } else if (json.ok && json.context) {
           // Known affiliation (e.g. fresh task chat) — no transcript yet.
@@ -2241,6 +2263,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           setTurns([]);
+          setActiveLeafId("");
           setHistoryState("loaded");
         } else {
           if (keepLiveSession()) {
@@ -2248,6 +2271,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           setTurns([]);
+          setActiveLeafId("");
           setHistoryState("missing");
         }
       } catch {
@@ -2257,6 +2281,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             return;
           }
           setTurns([]);
+          setActiveLeafId("");
           setHistoryState("error");
         }
       }
@@ -2415,6 +2440,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (command === "/clear") {
       liveSessionIdRef.current = null;
       setTurns([]);
+      setActiveLeafId("");
       setInput("");
       return true;
     }
@@ -2521,6 +2547,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const now = new Date().toISOString();
     const userTurn: Turn = {
       id: crypto.randomUUID(),
+      parentId: activeLeafId || null,
       role: "user",
       text: trimmed,
       ...(outgoingAttachments.length ? { attachments: outgoingAttachments } : {}),
@@ -2529,6 +2556,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const assistantId = crypto.randomUUID();
     const assistantTurn: Turn = {
       id: assistantId,
+      parentId: userTurn.id,
       role: "assistant",
       text: "",
       pending: true,
@@ -2542,6 +2570,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
     appendTurn([userTurn, assistantTurn]);
     setTurns((prev) => [...prev, userTurn, assistantTurn]);
+    setActiveLeafId(assistantTurn.id);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -3160,12 +3189,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       clearTranscript: () => {
         liveSessionIdRef.current = null;
         setTurns([]);
+        setActiveLeafId("");
       },
       runSlash: (command: string) => {
         // Push command into the composer + dispatch
         if (command === "/clear") {
           liveSessionIdRef.current = null;
           setTurns([]);
+          setActiveLeafId("");
           return;
         }
         if (command === "/help") {
@@ -3345,9 +3376,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ) : null}
           {(() => {
             // `groupedTurns` + `turnIndexMap` are memoized above (rebuilt only
-            // when `turns` changes, not on every keystroke). `allTurns` feeds
-            // the per-row prev-turn timestamp-gap lookup.
-            const allTurns = turns;
+            // when `activePath` changes, not on every keystroke). `allTurns`
+            // feeds the per-row prev-turn timestamp-gap lookup and must match
+            // the same sequence used for grouping.
+            const allTurns = activePath;
             return groupedTurns.map((g) => {
               if (g.kind === "single") {
                 const t = g.turn;
