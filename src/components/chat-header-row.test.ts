@@ -104,19 +104,9 @@ assert.doesNotMatch(
   "Standalone lifecycle status bar CSS is removed (folded into meta line)",
 );
 
-// In-chat delete: header trash action with the same two-step confirm as the
-// Chats-page rows — first click only ARMS, the explicit Delete commits, and
-// success refreshes the session list and navigates back.
-assert.match(
-  source,
-  /danger onSelect=\{\(\) => onConfirmDeleteChange\(true\)\}>\s*Delete chat/,
-  "Overflow-menu Delete only arms the confirmation — it must not delete",
-);
-assert.match(
-  source,
-  /confirmDelete \?[\s\S]*?Cancel[\s\S]*?Confirm delete/,
-  "Armed state offers explicit Cancel and Delete actions",
-);
+// In-chat delete lives ONLY in the header trash button now — it opens a confirm
+// popover, the explicit Delete commits via deleteChat, and success refreshes the
+// session list and navigates back. The overflow menu no longer carries delete.
 assert.match(
   source,
   /const deleteChat = async[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(sessionId\)\}`, \{ method: "DELETE" \}\)/,
@@ -137,8 +127,19 @@ assert.match(
 );
 assert.match(
   source,
-  /<HeaderDeleteButton onDelete=\{\(\) => void deleteChat\(\)\} deleting=\{deleting\} \/>/,
-  "the chat header mounts the standalone delete button wired to deleteChat",
+  /<HeaderDeleteButton key=\{sessionId\} onDelete=\{\(\) => void deleteChat\(\)\} deleting=\{deleting\} \/>/,
+  "the chat header mounts the standalone delete button (keyed on sessionId) wired to deleteChat",
+);
+// The overflow (kebab) menu no longer offers delete — it's header-only.
+assert.doesNotMatch(
+  source,
+  /onConfirmDeleteChange/,
+  "the overflow menu's two-step delete wiring is removed",
+);
+assert.doesNotMatch(
+  source,
+  /Confirm delete/,
+  "no 'Confirm delete' item remains in the overflow menu",
 );
 
 // ── Collapsed tool rows show a one-line arg summary (CHAT-D4-02) ─────────────

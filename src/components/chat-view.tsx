@@ -640,10 +640,10 @@ function ChatEmptyState({
 }
 
 /** Codex/ChatGPT-style overflow menu. Collapses the session's secondary
- *  controls — project switch, voice call, debug, delete — into a single kebab
- *  so the header reads as title + quiet metadata instead of a row of competing
- *  icons. Find stays inline (one-click, frequently used); everything else lives
- *  one click away here. */
+ *  controls — project switch, voice call, debug — into a single kebab so the
+ *  header reads as title + quiet metadata instead of a row of competing icons.
+ *  Find and Delete stay inline (one-click); everything else lives one click away
+ *  here. */
 function SessionOverflowMenu({
   projects,
   projectId,
@@ -652,10 +652,6 @@ function SessionOverflowMenu({
   voiceActive,
   onOpenVoice,
   onOpenDebug,
-  onDelete,
-  deleting,
-  confirmDelete,
-  onConfirmDeleteChange,
 }: {
   projects: CaveProject[];
   projectId: string | null;
@@ -664,20 +660,13 @@ function SessionOverflowMenu({
   voiceActive: boolean;
   onOpenVoice: () => void;
   onOpenDebug: () => void;
-  onDelete: () => void;
-  deleting: boolean;
-  confirmDelete: boolean;
-  onConfirmDeleteChange: (next: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const activeProject = (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
   const voiceConfigured = Boolean(familiar.voiceProvider);
 
-  const close = () => {
-    setOpen(false);
-    onConfirmDeleteChange(false);
-  };
+  const close = () => setOpen(false);
 
   return (
     <>
@@ -750,21 +739,6 @@ function SessionOverflowMenu({
           >
             Debug session
           </PopoverItem>
-          <PopoverSeparator />
-          {confirmDelete ? (
-            <>
-              <PopoverItem icon="ph:x" onSelect={() => onConfirmDeleteChange(false)}>
-                Cancel
-              </PopoverItem>
-              <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete()}>
-                {deleting ? "Deleting…" : "Confirm delete"}
-              </PopoverItem>
-            </>
-          ) : (
-            <PopoverItem icon="ph:trash" danger onSelect={() => onConfirmDeleteChange(true)}>
-              Delete chat
-            </PopoverItem>
-          )}
         </PopoverBody>
       </Popover>
     </>
@@ -1679,9 +1653,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
   const expandedAvatarTurnIdRef = useRef<string | null>(null);
   expandedAvatarTurnIdRef.current = expandedAvatarTurnId;
-  // Two-step delete, matching the Chats-page rows: the trash icon only ARMS
-  // the inline Cancel/Delete confirm; only the explicit Delete commits.
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Two-step delete via the header trash button: it opens a confirm popover and
+  // only the explicit Delete commits (HeaderDeleteButton owns the armed state).
   const [deleting, setDeleting] = useState(false);
   const { projects } = useProjects();
   const firstProject = projects[0] ?? null;
@@ -3105,15 +3078,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     writeComposerHistory(COMPOSER_HISTORY_KEY, inputHistory);
   }, [inputHistory]);
 
-  // Disarm a pending delete confirmation and sync the selected project when
-  // switching sessions. Drop staged file mentions because they are scoped to
-  // the previous session/root.
-  // Sync draft when the session/root changes. Also initialise the draft the
-  // first time projects load (when it is still null). Do NOT overwrite a
+  // Sync the selected project when switching sessions. Also initialise the draft
+  // the first time projects load (when it is still null). Do NOT overwrite a
   // user-set draft just because the projects list was re-fetched (e.g. after a
-  // rename or create), which would discard an in-session selection.
+  // rename or create), which would discard an in-session selection. (The header
+  // delete confirm resets itself — HeaderDeleteButton is keyed on sessionId.)
   useEffect(() => {
-    setConfirmDelete(false);
     setProjectIdDraft((prev) => {
       const resolved =
         projectIdForRoot(session?.project_root ?? projectRoot, projects) ??
@@ -3181,7 +3151,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setError(err instanceof Error ? err.message : "delete failed");
     } finally {
       setDeleting(false);
-      setConfirmDelete(false);
     }
   };
 
@@ -3314,7 +3283,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               />
             ) : null}
             {sessionId && (
-              <HeaderDeleteButton onDelete={() => void deleteChat()} deleting={deleting} />
+              <HeaderDeleteButton key={sessionId} onDelete={() => void deleteChat()} deleting={deleting} />
             )}
             {sessionId && (
               <SessionOverflowMenu
@@ -3325,10 +3294,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 voiceActive={voiceCallOpen}
                 onOpenVoice={() => setVoiceCallOpen(true)}
                 onOpenDebug={openDebug}
-                onDelete={() => void deleteChat()}
-                deleting={deleting}
-                confirmDelete={confirmDelete}
-                onConfirmDeleteChange={setConfirmDelete}
               />
             )}
           </div>
