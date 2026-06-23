@@ -8,7 +8,9 @@ import {
   parseDateSlug,
   parseRecentSessions,
   parseStatsFromBody,
+  recentReports,
   relativeTime,
+  type DailyReportStats,
 } from "@/lib/daily-report";
 
 export const dynamic = "force-dynamic";
@@ -62,6 +64,25 @@ export default async function DailyReportPage({ params }: Props) {
 
   const stats = item.media?.stats ?? parseStatsFromBody(item.body);
   const breakdown = breakdownForDay(inbox.items, parsedDate ?? new Date());
+
+  // 7-day trend per metric, ending on this report's date, from the daily reports.
+  const slugFor = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const statBySlug = new Map(recentReports(inbox.items).map((r) => [r.slug, r.stats]));
+  const trendBase = parsedDate ?? new Date();
+  const trendFor = (metric: keyof DailyReportStats) => {
+    const out: { label: string; value: number | null }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(trendBase);
+      d.setDate(trendBase.getDate() - i);
+      const s = statBySlug.get(slugFor(d));
+      out.push({
+        label: d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
+        value: s ? s[metric] : null,
+      });
+    }
+    return out;
+  };
   const recentSessions = parseRecentSessions(item.body);
   const generatedAt = item.firedAt ?? item.updatedAt ?? null;
   const totalEvents = stats
@@ -130,6 +151,7 @@ export default async function DailyReportPage({ params }: Props) {
               label="Reminders fired"
               caption={stats.reminders === 1 ? "1 reminder" : `${stats.reminders} reminders`}
               accent="amber"
+              trend={trendFor("reminders")}
             />
             <MetricCard
               icon="ph:chat-circle-dots"
@@ -137,6 +159,7 @@ export default async function DailyReportPage({ params }: Props) {
               label="Responses waiting"
               caption="Need your reply"
               accent="rose"
+              trend={trendFor("responses")}
             />
             <MetricCard
               icon="ph:sparkle"
@@ -144,6 +167,7 @@ export default async function DailyReportPage({ params }: Props) {
               label="Familiar updates"
               caption="From your agents"
               accent="lavender"
+              trend={trendFor("familiars")}
             />
             <MetricCard
               icon="ph:graph-bold"
@@ -151,6 +175,7 @@ export default async function DailyReportPage({ params }: Props) {
               label="Sessions updated"
               caption="Coding & chat work"
               accent="green"
+              trend={trendFor("sessions")}
             />
           </section>
         ) : null}
