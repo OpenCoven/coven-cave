@@ -1463,11 +1463,11 @@ export async function POST(req: Request) {
           createdAt: new Date().toISOString(),
           durationMs: result.duration_ms,
           isError: result.is_error,
-          parentId: userTurnId,
           ...(cancelledByUser ? { cancelled: true } : {}),
           ...(result.usage ? { usage: result.usage } : {}),
           ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
           ...(persistedTools ? { tools: persistedTools } : {}),
+          parentId: userTurnId,
           responseMetadata,
         };
         const conv = existing ?? {
