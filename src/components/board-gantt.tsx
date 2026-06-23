@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { Familiar } from "@/lib/types";
 import { useDateTimePrefs, readDateTimePrefs } from "@/lib/datetime-format";
+import { Icon } from "@/lib/icon";
 
 type ProjectLike = { id: string; name: string };
 
@@ -41,7 +42,14 @@ type Group = { key: string; name: string; rows: GanttRow[]; firstStart: number }
 
 const ZOOM_DAY_W = { day: 22, week: 11, month: 5 } as const; // px per day column at each zoom
 type GanttZoom = keyof typeof ZOOM_DAY_W;
-const ZOOM_LABELS: Array<[GanttZoom, string]> = [["day", "Day"], ["week", "Week"], ["month", "Month"]];
+// Each zoom sets the column scale (px/day). Compact single-letter buttons keep
+// the control narrow; the full word + what it does live in the title/aria so
+// "D/W/M" next to the magnifier still reads as a timeline zoom.
+const ZOOM_LABELS: Array<[GanttZoom, string, string, string]> = [
+  ["day", "Day", "D", "Zoom in — one fat column per day"],
+  ["week", "Week", "W", "Medium zoom — a week spans the view"],
+  ["month", "Month", "M", "Zoom out — months fit on screen"],
+];
 const LEFT_W = 442; // sum of the left table columns (300+58+58+26) — keep in sync with .cg-left
 
 function parseDate(value: string | null | undefined): Date | null {
@@ -383,8 +391,19 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     <div className="board-gantt">
       <div className="cg-controls" style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", padding: "2px 8px 6px" }}>
         <div className="board-group-toggle" role="group" aria-label="Timeline zoom">
-          {ZOOM_LABELS.map(([z, label]) => (
-            <button key={z} type="button" className={`board-group-toggle-btn${zoom === z ? " board-group-toggle-btn--active" : ""}`} onClick={() => setZoom(z)} aria-pressed={zoom === z}>{label}</button>
+          <span className="cg-zoom-cell" aria-hidden><Icon name="ph:magnifying-glass" width={13} /></span>
+          {ZOOM_LABELS.map(([z, full, short, hint]) => (
+            <button
+              key={z}
+              type="button"
+              className={`board-group-toggle-btn${zoom === z ? " board-group-toggle-btn--active" : ""}`}
+              onClick={() => setZoom(z)}
+              aria-pressed={zoom === z}
+              aria-label={`Zoom: ${full}`}
+              title={`${full} — ${hint}`}
+            >
+              {short}
+            </button>
           ))}
         </div>
         <button type="button" className="board-group-toggle-btn" onClick={scrollToToday} disabled={todayX === null} title="Scroll the timeline to today">Today</button>
