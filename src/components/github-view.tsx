@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
@@ -1247,6 +1248,7 @@ const COLS: ColDef[] = [
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [activity, setActivity] = useState<ActivityResult | null>(null);
   const [patStatus, setPatStatus] = useState<PatStatus | null>(null);
   const [loading, setLoading] = useState(true);

@@ -4,7 +4,7 @@ import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime } from "@/lib/relative-time";
-import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
+import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 /**
@@ -26,6 +26,7 @@ export function NewChatLaunch({
   onResume: (sessionId: string) => void;
   pendingProjectRoot?: string | null;
 }) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   // Resolve glyphs/avatars/order the same way the rest of the app does so the
   // cards match the switcher (and FamiliarAvatar gets a ResolvedFamiliar).
   const resolved = useResolvedFamiliars(familiars);

@@ -5,6 +5,7 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { Icon, type IconName } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
@@ -77,6 +78,7 @@ function summarizeRuns(runs: WorkflowRunRecord[]): string {
 
 /** Run history for the selected workflow: plan snapshots and executions. */
 export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayRun, onClearRuns }: WorkflowRunsPanelProps) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<WorkflowRunFilter>("all");
   const replaying = playback?.source === "replay" && playback.workflowId === workflow?.id;

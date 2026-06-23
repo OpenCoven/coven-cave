@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -111,6 +112,7 @@ export function CapabilitiesViewSurface({
 }: {
   activeHarness?: string | null;
 }) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [items, setItems] = useState<HarnessCapabilityManifest[]>([]);
   const [covenSkills, setCovenSkills] = useState<CovenSkill[]>([]);
   const [scannedAt, setScannedAt] = useState<string | null>(null);

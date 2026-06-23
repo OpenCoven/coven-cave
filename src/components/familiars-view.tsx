@@ -6,6 +6,7 @@ import { Tabs } from "@/components/ui/tabs";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
@@ -67,6 +68,7 @@ export function FamiliarsView({
   onOpenMemoryFile,
   onOpenOnboarding,
 }: AgentsViewProps) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [memoryError, setMemoryError] = useState<string | null>(null);
