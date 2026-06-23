@@ -23,7 +23,7 @@ type ResolveLocalRuntimeOptions = {
 };
 
 export type RuntimeScope =
-  | { kind: "local"; root: string }
+  | { kind: "local"; root: string; allowedProjectRoots?: string[] }
   | { kind: "ssh"; host: string; root: string };
 
 /** Normalize a path so Node's fs functions don't EISDIR on bare Windows
@@ -103,6 +103,21 @@ export async function resolveLocalRuntimeCwd(
 }
 
 export function buildRuntimeScopePreamble(scope: RuntimeScope): string {
+  if (scope.kind === "local") {
+    const allowedProjectRoots = uniqueAllowedProjectRoots(scope.root, scope.allowedProjectRoots);
+    if (allowedProjectRoots.length > 0) {
+      return [
+        "Runtime filesystem boundary:",
+        "- This is the local runtime boundary for this Cave session.",
+        `- Primary root: ${scope.root}`,
+        "- Granted project roots:",
+        ...allowedProjectRoots.map((root) => `  - ${root}`),
+        "- You may read, edit, create, delete, commit, push, and run commands inside the primary root and the granted project roots listed above.",
+        "- Do not read, edit, create, delete, commit, push, or run commands against files outside those listed roots.",
+      ].join("\n");
+    }
+  }
+
   const label = scope.kind === "ssh" ? `${scope.host}:${scope.root}` : scope.root;
   const boundary = scope.kind === "ssh"
     ? "This is the remote runtime boundary for this Cave session."
@@ -114,6 +129,19 @@ export function buildRuntimeScopePreamble(scope: RuntimeScope): string {
     "- Do not read, edit, create, delete, commit, push, or run commands against files outside this directory.",
     "- If the user asks for work outside this boundary, ask the user to reopen or start a Cave conversation in that project's runtime instead.",
   ].join("\n");
+}
+
+function uniqueAllowedProjectRoots(primaryRoot: string, roots: string[] | undefined): string[] {
+  const primary = primaryRoot.trim();
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const root of roots ?? []) {
+    const trimmed = root.trim();
+    if (!trimmed || trimmed === primary || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    unique.push(trimmed);
+  }
+  return unique;
 }
 
 export function buildPromptWithRuntimeScope(prompt: string, scope: RuntimeScope): string {
