@@ -1758,6 +1758,18 @@
 .cg-dot--pending { background: var(--color-warning); }
 .cg-dot--at-risk { background: var(--color-danger); }
 
+/* status-filter chips (toolbar) — toggle a whole status category off */
+.cg-filter { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
+.cg-filter-chip { display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 8px; border:1px solid var(--border-strong); border-radius:999px; background:var(--bg-raised); color:var(--text-secondary); font-size:11px; cursor:pointer; transition:opacity .12s, background .12s; white-space:nowrap; }
+.cg-filter-chip:hover { background:var(--bg-hover); }
+.cg-filter-chip:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
+.cg-filter-chip--off { opacity:.4; text-decoration:line-through; }
+
+/* quick-schedule preset buttons (unscheduled tray) */
+.cg-preset-btn { height:22px; padding:0 7px; border:1px solid var(--border-hairline); border-radius:5px; background:var(--bg-base); color:var(--text-secondary); font-size:11px; cursor:pointer; transition:background .12s, color .12s; }
+.cg-preset-btn:hover:not(:disabled) { background:var(--bg-hover); color:var(--text-primary); }
+.cg-preset-btn:disabled { opacity:.5; cursor:default; }
+
 /* legend */
 .cg-legend {
   position: sticky; left: 0;

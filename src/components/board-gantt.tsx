@@ -51,6 +51,14 @@ const ZOOM_LABELS: Array<[GanttZoom, string, string, string]> = [
   ["month", "Month", "M", "Zoom out — months fit on screen"],
 ];
 const LEFT_W = 442; // sum of the left table columns (300+58+58+26) — keep in sync with .cg-left
+// Status-filter chips: [category, short chip label, full status names]. Labels
+// match the legend's actual-status wording (Running/Blocked, not In Progress).
+const CATEGORY_CHIPS: Array<[GanttCategory, string, string]> = [
+  ["done", "Done", "Done"],
+  ["in-progress", "Running", "Running"],
+  ["pending", "Pending", "Backlog · Inbox · Review"],
+  ["at-risk", "Blocked", "Blocked"],
+];
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -122,6 +130,16 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   // Click a group header to focus it (hide the others); click again to show all.
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [showUnscheduled, setShowUnscheduled] = useState(false);
+  // Status-category filter: chips toggle whole categories off so a busy
+  // timeline can be narrowed (e.g. only Blocked) or de-cluttered (hide Done).
+  const [hiddenCats, setHiddenCats] = useState<Set<GanttCategory>>(() => new Set());
+  const toggleCat = (cat: GanttCategory) =>
+    setHiddenCats((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
   // "Today" depends on the clock, so resolve it after mount to avoid an SSR
   // hydration mismatch — the line just isn't drawn on the first client render.
   const [todayMs, setTodayMs] = useState<number | null>(null);
@@ -146,6 +164,12 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   const dragRef = useRef<{ id: string; mode: DragMode; startX: number; moved: boolean } | null>(null);
   // Suppresses the row's select-click that would otherwise fire after a drag.
   const suppressClickRef = useRef(false);
+  // Center the timeline on "today" the first time it opens, so a long project
+  // doesn't open scrolled to its earliest task. The scroll geometry is computed
+  // below the empty-state early return, so render assigns the scroller into this
+  // ref and the effect (declared above the return) calls through it.
+  const didAutoCenterRef = useRef(false);
+  const centerOnTodayRef = useRef<() => boolean>(() => false);
 
   const beginDrag = (e: React.PointerEvent, rowId: string, mode: DragMode) => {
     if (!draggable) return;
@@ -309,6 +333,26 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   const unscheduledCards = cards.filter((c) => !placedCardIds.has(c.id));
   const unscheduledCount = unscheduledCards.length;
 
+  // Auto-center on today once the timeline can be drawn (keyed on the clock +
+  // zoom). centerOnTodayRef is assigned during render below; retry until it
+  // succeeds (scroller mounted, today in range), then latch so we never fight a
+  // manual scroll. Declared above the empty-state early return to keep hook order stable.
+  useEffect(() => {
+    if (didAutoCenterRef.current) return;
+    if (centerOnTodayRef.current()) didAutoCenterRef.current = true;
+  }, [todayMs, zoom, allRows.length]);
+
+  // Quick-schedule presets for undated tasks: drop a task onto this/next week
+  // (Mon–Sun) without opening the date pickers.
+  const schedulePreset = (cardId: string, weeksAhead: number) => {
+    if (!onPatch || todayMs === null) return;
+    const now = new Date(todayMs);
+    const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const start = addDays(startOfWeekMon(todayUtc), weeksAhead * 7);
+    const end = addDays(start, 6);
+    onPatch(cardId, { startDate: fmtISO(start), endDate: fmtISO(end) });
+  };
+
   // The tasks the timeline can't place (no dates / no scheduled steps) used to
   // be a dead-end count; make it an expandable tray so they can be scheduled.
   const unscheduledTray =
@@ -330,7 +374,9 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                 <button type="button" onClick={() => onSelect(c.id)} title="Open task" style={{ flex: 1, minWidth: 120, textAlign: "left", background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", font: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</button>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{ownerName(c.familiarId)}</span>
                 {onPatch ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <button type="button" className="cg-preset-btn" disabled={todayMs === null} onClick={() => schedulePreset(c.id, 0)} title="Schedule Mon–Sun this week">This week</button>
+                    <button type="button" className="cg-preset-btn" disabled={todayMs === null} onClick={() => schedulePreset(c.id, 1)} title="Schedule Mon–Sun next week">Next week</button>
                     <input type="date" aria-label={`Start date for ${c.title}`} value={c.startDate ?? ""} onChange={(e) => onPatch(c.id, { startDate: e.target.value || null })} style={{ fontSize: 11, padding: "1px 4px", borderRadius: 4, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-secondary)" }} />
                     <span aria-hidden style={{ color: "var(--text-muted)" }}>→</span>
                     <input type="date" aria-label={`End date for ${c.title}`} value={c.endDate ?? ""} onChange={(e) => onPatch(c.id, { endDate: e.target.value || null })} style={{ fontSize: 11, padding: "1px 4px", borderRadius: 4, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-secondary)" }} />
@@ -354,7 +400,12 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
 
   // Focus: when a group is clicked, render only it (range stays global so bars don't jump).
   const focused = focusedKey && groups.some((g) => g.key === focusedKey) ? focusedKey : null;
-  const visibleGroups = focused ? groups.filter((g) => g.key === focused) : groups;
+  // Apply the focus narrowing, then drop bars whose status category is filtered
+  // out. The timeline range stays global (computed from all rows) so bars don't
+  // jump when chips toggle.
+  const visibleGroups = (focused ? groups.filter((g) => g.key === focused) : groups)
+    .map((g) => (hiddenCats.size ? { ...g, rows: g.rows.filter((r) => !hiddenCats.has(r.category)) } : g))
+    .filter((g) => g.rows.length > 0);
 
   const min = new Date(Math.min(...allRows.map((r) => r.start.getTime())));
   const max = new Date(Math.max(...allRows.map((r) => r.end.getTime())));
@@ -380,16 +431,37 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     if (offset >= 0 && offset <= totalDays) todayX = offset * DAY_W + DAY_W / 2;
   }
 
-  // Scroll the timeline so today sits in the middle of the viewport.
-  const scrollToToday = () => {
+  // Scroll the timeline so today sits in the middle of the viewport. Returns
+  // whether it actually scrolled (used by the auto-center effect to know when
+  // the scroller is ready and latch).
+  const scrollToToday = (): boolean => {
     const el = scrollRef.current;
-    if (!el || todayX === null) return;
+    if (!el || todayX === null || el.clientWidth === 0) return false;
     el.scrollLeft = Math.max(0, LEFT_W + todayX - el.clientWidth / 2);
+    return true;
   };
+  centerOnTodayRef.current = scrollToToday;
 
   return (
     <div className="board-gantt">
-      <div className="cg-controls" style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", padding: "2px 8px 6px" }}>
+      <div className="cg-controls" style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", padding: "2px 8px 6px" }}>
+        <div className="cg-filter" role="group" aria-label="Filter by status">
+          {CATEGORY_CHIPS.map(([cat, label, full]) => {
+            const off = hiddenCats.has(cat);
+            return (
+              <button
+                key={cat}
+                type="button"
+                className={`cg-filter-chip${off ? " cg-filter-chip--off" : ""}`}
+                aria-pressed={!off}
+                onClick={() => toggleCat(cat)}
+                title={off ? `Show ${full}` : `Hide ${full}`}
+              >
+                <span className={`cg-dot cg-dot--${cat}`} aria-hidden />{label}
+              </button>
+            );
+          })}
+        </div>
         <div className="board-group-toggle" role="group" aria-label="Timeline zoom">
           <span className="cg-zoom-cell" aria-hidden><Icon name="ph:magnifying-glass" width={13} /></span>
           {ZOOM_LABELS.map(([z, full, short, hint]) => (
