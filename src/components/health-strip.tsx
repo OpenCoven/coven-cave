@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { Familiar } from "@/lib/types";
 
 type DaemonHealth = {
@@ -65,6 +66,7 @@ function relTime(iso: string): string {
 }
 
 export function HealthStrip({ familiars }: { familiars: Familiar[] }) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [daemon, setDaemon] = useState<DaemonHealth | null>(null);
   const [sessions, setSessions] = useState<SessionLite[]>([]);
   const [open, setOpen] = useState<string | null>(null);
