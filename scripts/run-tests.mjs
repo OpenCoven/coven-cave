@@ -407,6 +407,7 @@ export const SUITES = {
     "src/lib/coven-daemon.test.ts",
     "src/lib/coven-bin.test.ts",
     "src/lib/openclaw-bin.test.ts",
+    "src/lib/openclaw-bridge.test.ts",
     "src/lib/coven-identity-canon.test.ts",
     "src/lib/familiar-runtime.test.ts",
     "src/lib/harness-adapters.test.ts",

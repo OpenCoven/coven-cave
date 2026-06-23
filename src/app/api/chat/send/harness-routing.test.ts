@@ -19,6 +19,10 @@ const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
   "utf8",
 );
+const openclawBridge = await readFile(
+  new URL("../../../../lib/openclaw-bridge.ts", import.meta.url),
+  "utf8",
+);
 const boardRoute = await readFile(
   new URL("../../board/enrich-steps/route.ts", import.meta.url),
   "utf8",
@@ -85,13 +89,13 @@ assert.match(
 );
 
 assert.match(
-  chatRoute,
+  openclawBridge,
   /"agent"[\s\S]*"--agent"[\s\S]*agentId[\s\S]*"--message"[\s\S]*harnessPrompt[\s\S]*"--json"/,
   "OpenClaw native chat should call openclaw agent with the resolved agent id and JSON output",
 );
 
 assert.match(
-  chatRoute,
+  openclawBridge,
   /spawn\(openClawBin\(\), openClawSpawnArgs\(\["agents", "list", "--json"\]\)[\s\S]*env: openClawSpawnEnv\(\),[\s\S]*shell: openClawNeedsShell\(\)/,
   "OpenClaw agent listing should launch Windows npm .cmd shims correctly",
 );
@@ -108,7 +112,7 @@ assert.match(
 //    OpenClaw's durable identity; session ids rotate on reset/compaction;
 // 2. the gateway's session id is never adopted as the conversation key.
 assert.match(
-  chatRoute,
+  openclawBridge,
   /"--session-key",\s*\n?\s*openClawSessionKey\(conversationId\)/,
   "OpenClaw native chat must pin a per-conversation session key",
 );
