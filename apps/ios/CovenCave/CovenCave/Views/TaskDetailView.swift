@@ -2,11 +2,16 @@ import SwiftUI
 
 struct TaskDetailView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
     let card: BoardCard
 
     @State private var showFamiliarPicker = false
+    @State private var confirmingDelete = false
 
-    private var familiar: Familiar? { card.familiarId.flatMap(app.familiar) }
+    /// The current card from the store, so status/priority/step edits made here
+    /// reflect immediately; falls back to the passed-in snapshot.
+    private var live: BoardCard { app.tasks.first { $0.id == card.id } ?? card }
+    private var familiar: Familiar? { live.familiarId.flatMap(app.familiar) }
 
     var body: some View {
         ScrollView {
@@ -14,22 +19,57 @@ struct TaskDetailView: View {
                 header
                 if let familiar { assigneeRow(familiar) }
                 chatCard
-                if card.hasSteps { stepsCard }
-                if let notes = card.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if live.hasSteps { stepsCard }
+                if let notes = live.notes, !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     notesCard(notes)
                 }
-                if !card.labelList.isEmpty { labelsRow }
+                if !live.labelList.isEmpty { labelsRow }
                 metaCard
             }
             .padding(20)
         }
         .navigationTitle("Task")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { actionsMenu } }
         .sheet(isPresented: $showFamiliarPicker) {
             FamiliarPickerSheet { fam in
                 showFamiliarPicker = false
                 app.openChat(for: card, familiarId: fam.id)
             }
+        }
+        .confirmationDialog("Delete this task?", isPresented: $confirmingDelete,
+                            titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                Task { await app.deleteTask(card); dismiss() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text(live.title) }
+    }
+
+    private var actionsMenu: some View {
+        Menu {
+            Menu {
+                ForEach(CardStatus.allCases, id: \.self) { status in
+                    Button { Task { await app.setTaskStatus(live, status) } } label: {
+                        Label(status.label, systemImage: live.status == status ? "checkmark" : status.systemImage)
+                    }
+                }
+            } label: { Label("Status", systemImage: "circle.dashed") }
+
+            Menu {
+                ForEach(CardPriority.allCases, id: \.self) { priority in
+                    Button { Task { await app.setTaskPriority(live, priority) } } label: {
+                        Label(priority.label, systemImage: live.priority == priority ? "checkmark" : "flag")
+                    }
+                }
+            } label: { Label("Priority", systemImage: "flag") }
+
+            Divider()
+            Button(role: .destructive) { confirmingDelete = true } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
         }
     }
 
@@ -81,20 +121,20 @@ struct TaskDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(card.title)
+            Text(live.title)
                 .font(.title2.bold())
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                StatusPill(status: card.status)
+                StatusPill(status: live.status)
                 priorityBadge
-                if card.needsHuman == true { NeedsYouBadge() }
+                if live.needsHuman == true { NeedsYouBadge() }
             }
         }
     }
 
     private var priorityBadge: some View {
-        let color = Theme.color(for: card.priority)
-        return Label(card.priority.label, systemImage: "flag.fill")
+        let color = Theme.color(for: live.priority)
+        return Label(live.priority.label, systemImage: "flag.fill")
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(color.opacity(0.16), in: Capsule())
@@ -121,22 +161,25 @@ struct TaskDetailView: View {
             HStack {
                 Text("Steps").font(.headline)
                 Spacer()
-                Text("\(card.doneStepCount)/\(card.stepCount)")
+                Text("\(live.doneStepCount)/\(live.stepCount)")
                     .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
             }
-            ProgressView(value: card.stepFraction)
-                .tint(Theme.color(for: card.status))
+            ProgressView(value: live.stepFraction)
+                .tint(Theme.color(for: live.status))
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(card.steps ?? []) { step in
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(step.done ? Color.green : Color.secondary)
-                        Text(step.text)
-                            .strikethrough(step.done, color: .secondary)
-                            .foregroundStyle(step.done ? .secondary : .primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
+                ForEach(live.steps ?? []) { step in
+                    Button { Task { await app.toggleStep(live, stepId: step.id) } } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(step.done ? Color.green : Color.secondary)
+                            Text(step.text)
+                                .strikethrough(step.done, color: .secondary)
+                                .foregroundStyle(step.done ? .secondary : .primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -162,17 +205,17 @@ struct TaskDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Labels").font(.headline)
             FlowRow(spacing: 8) {
-                ForEach(card.labelList, id: \.self) { LabelChip(text: $0) }
+                ForEach(live.labelList, id: \.self) { LabelChip(text: $0) }
             }
         }
     }
 
     private var metaCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            metaRow("Created", caveParseISO(card.createdAt))
-            metaRow("Updated", caveParseISO(card.updatedAt))
-            if card.startDate != nil { metaRow("Start", caveParseISO(card.startDate)) }
-            if card.endDate != nil { metaRow("Due", caveParseISO(card.endDate)) }
+            metaRow("Created", caveParseISO(live.createdAt))
+            metaRow("Updated", caveParseISO(live.updatedAt))
+            if live.startDate != nil { metaRow("Start", caveParseISO(live.startDate)) }
+            if live.endDate != nil { metaRow("Due", caveParseISO(live.endDate)) }
         }
         .font(.footnote)
     }
