@@ -570,29 +570,84 @@ struct ResponseReaderView: View {
     @Environment(\.dismiss) private var dismiss
     let item: ResponseReaderItem
     @State private var mdHeight: CGFloat = 0
+    @AppStorage("cave:reader:fontScale") private var fontScale: Double = 1.0
+    @AppStorage("cave:reader:theme") private var themeRaw: String = ReaderTheme.dark.rawValue
+    @State private var headings: [ReaderHeading] = []
+    @State private var scrollCommand: ReaderScrollCommand?
+    @State private var scrollToken = 0
+
+    private var theme: ReaderTheme { ReaderTheme(rawValue: themeRaw) ?? .dark }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                MarkdownWebView(markdown: item.markdown, height: $mdHeight)
-                    .frame(height: max(mdHeight, 1))
-                    .padding(20)
+            // The reader's WebView scrolls internally (scrollable: true) so the
+            // TOC can scroll to a heading and font/theme changes preserve the
+            // scroll position. Fills the screen rather than auto-height.
+            MarkdownWebView(markdown: item.markdown, height: $mdHeight,
+                            scrollable: true,
+                            fontScale: CGFloat(fontScale),
+                            theme: theme,
+                            scrollCommand: scrollCommand,
+                            onHeadings: { headings = $0 })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(theme.background.ignoresSafeArea())
+                .navigationTitle(item.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { readerToolbar }
+        }
+    }
+
+    @ToolbarContentBuilder private var readerToolbar: some ToolbarContent {
+        ToolbarItem(placement: .cancellationAction) {
+            Button {
+                UIPasteboard.general.string = item.markdown
+                Haptics.tap()
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
             }
-            .navigationTitle(item.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button {
-                        UIPasteboard.general.string = item.markdown
-                        Haptics.tap()
-                    } label: {
-                        Label("Copy", systemImage: "doc.on.doc")
+        }
+        ToolbarItemGroup(placement: .primaryAction) {
+            if !headings.isEmpty {
+                Menu {
+                    ForEach(headings) { h in
+                        Button {
+                            scrollToken += 1
+                            scrollCommand = ReaderScrollCommand(index: h.index, token: scrollToken)
+                            Haptics.tap()
+                        } label: {
+                            // Indent nested headings so the outline reads as a tree.
+                            Text(String(repeating: "   ", count: max(0, h.level - 1)) + h.text)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "list.bullet")
+                }
+                .accessibilityLabel("Table of contents")
+            }
+            Menu {
+                Section("Text size") {
+                    Button { fontScale = min(fontScale + 0.1, 1.8) } label: {
+                        Label("Larger", systemImage: "textformat.size.larger")
+                    }
+                    Button { fontScale = max(fontScale - 0.1, 0.7) } label: {
+                        Label("Smaller", systemImage: "textformat.size.smaller")
+                    }
+                    Button { fontScale = 1.0 } label: {
+                        Label("Reset size", systemImage: "arrow.counterclockwise")
                     }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                Section("Theme") {
+                    ForEach(ReaderTheme.allCases) { t in
+                        Button { themeRaw = t.rawValue } label: {
+                            Label(t.label, systemImage: theme == t ? "checkmark" : t.icon)
+                        }
+                    }
                 }
+            } label: {
+                Image(systemName: "textformat.size")
             }
+            .accessibilityLabel("Reading options")
+            Button("Done") { dismiss() }
         }
     }
 }

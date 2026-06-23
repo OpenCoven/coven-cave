@@ -89,16 +89,29 @@ function highlightCode(code, rawLang) {
     + `<pre class="hljs"><code class="hljs">${inner}</code></pre></div>`;
 }
 
-async function renderMarkdown(md) {
+// While a reply is still streaming we DON'T run Mermaid: the fence is usually
+// incomplete (so it errors) and re-rendering a diagram on every token is heavy
+// and flickers. Show a lightweight placeholder instead; the real diagram renders
+// once on settle (streaming === false).
+function mermaidPlaceholder(code) {
+  const preview = escapeHtml(code).trim().slice(0, 400);
+  return `<div class="cm-mermaid" style="opacity:.8">`
+    + `<div style="font:600 10.5px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:.05em;text-transform:uppercase;color:var(--txt-muted);text-align:left;margin-bottom:6px">◇ Diagram · rendering on completion</div>`
+    + `<pre style="margin:0;background:transparent;border:0;padding:0;white-space:pre-wrap;text-align:left;font-size:12px;color:var(--txt-muted)">${preview}</pre></div>`;
+}
+
+async function renderMarkdown(md, { streaming = false } = {}) {
   const blocks = parse(md || "");
   const codeBlocks = blocks.filter((b) => b.type === "codeBlock");
-  const hasMermaid = codeBlocks.some(isMermaid);
+  const hasMermaid = !streaming && codeBlocks.some(isMermaid);
   if (hasMermaid) await initMermaid();
 
   const replacements = new Array(codeBlocks.length);
   codeBlocks.forEach((block, i) => {
-    if (hasMermaid && isMermaid(block)) {
-      replacements[i] = mermaid.renderBlock?.(block, () => "") ?? "";
+    if (isMermaid(block)) {
+      replacements[i] = streaming
+        ? mermaidPlaceholder(codeText(block))
+        : (mermaid.renderBlock?.(block, () => "") ?? "");
       return;
     }
     replacements[i] = highlightCode(codeText(block), block.props?.language ?? block.props?.info ?? "");
@@ -123,25 +136,74 @@ async function renderMarkdown(md) {
   return html;
 }
 
-function reportHeight() {
+// Reader theming: override the prose-level CSS variables (declared on :root in
+// markdown.css) so the same bundle can render dark / light / sepia. Code blocks
+// keep their dark card (we deliberately DON'T touch --code-bg / hljs colours) —
+// a dark code card on a light page is intentional and dodges contrast problems.
+const THEME_VARS = {
+  dark: null,
+  light: { "--txt": "#1c1c22", "--txt-muted": "#5b5b66", "--accent": "#5a51d6", "--hairline": "rgba(0,0,0,0.14)", bg: "#ffffff" },
+  sepia: { "--txt": "#43382a", "--txt-muted": "#7a6a55", "--accent": "#9a5a2a", "--hairline": "rgba(0,0,0,0.16)", bg: "#f4ecd8" },
+};
+const THEME_KEYS = ["--txt", "--txt-muted", "--accent", "--hairline"];
+function applyTheme(name) {
+  const de = document.documentElement;
+  const t = THEME_VARS[name] || null;
+  THEME_KEYS.forEach((k) => de.style.removeProperty(k));
+  if (t) for (const k of THEME_KEYS) if (t[k]) de.style.setProperty(k, t[k]);
+  document.body.style.background = t && t.bg ? t.bg : "";
+}
+
+// fontScale zooms the whole document uniformly (px + em both scale); reader mode
+// adds page padding so the full-screen scroll view isn't edge-to-edge.
+function applyStyle(opts = {}) {
+  const { fontScale = 1, theme = "dark", reader = false } = opts || {};
+  applyTheme(theme);
+  document.body.style.zoom = fontScale && fontScale !== 1 ? String(fontScale) : "";
+  document.body.style.padding = reader ? "18px 18px 80px" : "";
+}
+
+// Heading elements from the last render, in document order, so the reader's TOC
+// can scroll to one by index without round-tripping coordinates.
+let lastHeadingEls = [];
+function reportLayout() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const h = Math.ceil(document.body.getBoundingClientRect().height);
       window.webkit?.messageHandlers?.cave?.postMessage({ type: "height", height: h });
+      const root = document.getElementById("root");
+      lastHeadingEls = root ? [...root.querySelectorAll("h1,h2,h3,h4,h5,h6")] : [];
+      const headings = lastHeadingEls
+        .map((el, i) => ({ index: i, level: Number(el.tagName[1]), text: (el.textContent || "").trim() }))
+        .filter((x) => x.text);
+      window.webkit?.messageHandlers?.cave?.postMessage({ type: "headings", headings });
     });
   });
 }
 
-window.caveRender = async (md) => {
+window.caveRender = async (md, opts = {}) => {
   const root = document.getElementById("root");
   if (!root) return;
+  applyStyle(opts);
   try {
-    root.innerHTML = await renderMarkdown(md);
+    root.innerHTML = await renderMarkdown(md, { streaming: !!opts.streaming });
   } catch (err) {
     root.textContent = String(md || "");
     window.webkit?.messageHandlers?.cave?.postMessage({ type: "error", message: String(err) });
   }
-  reportHeight();
+  reportLayout();
+};
+
+// Re-style without re-rendering markdown — used when the reader's font size or
+// theme changes, so the scroll position survives (innerHTML is untouched).
+window.caveStyle = (opts = {}) => {
+  applyStyle(opts);
+  reportLayout();
+};
+
+// Reader TOC: scroll the (internally-scrolling) reader WebView to a heading.
+window.caveScrollToHeading = (i) => {
+  lastHeadingEls[i]?.scrollIntoView({ behavior: "smooth", block: "start" });
 };
 
 document.addEventListener("click", (e) => {
@@ -194,10 +256,14 @@ document.addEventListener("click", (e) => {
     hit.tagName?.toLowerCase() === "svg" ? (hit.closest(MERMAID_SEL) || hit) : hit;
   const tag = target.tagName?.toLowerCase();
   const kind = tag === "table" ? "table" : tag === "img" ? "image" : "diagram";
+  // For an <img>, also pass its src so native can decode it into a UIImage and
+  // present the smooth native zoom (pinch/pan/double-tap) instead of a WebView.
+  const src = kind === "image" ? (target.getAttribute("src") || "") : "";
   window.webkit?.messageHandlers?.cave?.postMessage({
     type: "enlarge",
     kind,
     html: target.outerHTML,
+    src,
   });
 });
 

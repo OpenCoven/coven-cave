@@ -54,10 +54,14 @@ struct MessageBubble: View {
         isUser ? (message.text, []) : NextPaths.extract(message.text)
     }
 
-    /// Render the desktop-parity markdown WebView only for a settled, non-error
-    /// assistant reply. Streaming / user / error messages stay native Text.
+    /// Render the desktop-parity markdown WebView. Assistant replies always do —
+    /// now including while streaming (the WebView renders live, throttled). A
+    /// *user* message only renders markdown when it actually contains some, so
+    /// plain chatter stays fast native Text. Error messages stay native Text.
     private var rendersMarkdown: Bool {
-        !isUser && !message.streaming && !message.isError && !parsed.visible.isEmpty && !markdownFailed
+        guard !message.isError, !parsed.visible.isEmpty, !markdownFailed else { return false }
+        if isUser { return MarkdownDetect.hasMarkdown(message.text) }
+        return true
     }
 
     private var canOpenReader: Bool {
@@ -158,6 +162,7 @@ struct MessageBubble: View {
                 .background(bubbleBackground, in: bubbleShape)
         } else if rendersMarkdown {
             MarkdownWebView(markdown: parsed.visible, height: $mdHeight,
+                            streaming: message.streaming && !isUser,
                             onFailure: { markdownFailed = true })
                 .frame(height: max(mdHeight, 1))
                 .padding(.horizontal, 14).padding(.vertical, 10)
@@ -178,6 +183,9 @@ struct MessageBubble: View {
                         .padding(6)
                         .accessibilityLabel("Open response in reader")
                     }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if message.streaming && !isUser { StreamingDot().padding(6) }
                 }
         } else {
             Text(parsed.visible.isEmpty ? " " : parsed.visible)
