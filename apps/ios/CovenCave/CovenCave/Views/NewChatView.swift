@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Pick one familiar (direct chat) or several (group). Mirrors the Telegram
 /// "new message → new group" flow.
@@ -9,12 +10,18 @@ struct NewChatView: View {
 
     @State private var selected: Set<String> = []
     @State private var groupName: String = ""
+    @State private var importingFile = false
 
     private var isGroup: Bool { selected.count > 1 }
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Button { importingFile = true } label: {
+                        Label("Import from Markdown…", systemImage: "square.and.arrow.down")
+                    }
+                }
                 if isGroup {
                     Section("Group name (optional)") {
                         TextField("e.g. Research crew", text: $groupName)
@@ -58,7 +65,22 @@ struct NewChatView: View {
                         .disabled(selected.isEmpty)
                 }
             }
+            .fileImporter(isPresented: $importingFile,
+                          allowedContentTypes: [.plainText, .text],
+                          allowsMultipleSelection: false) { result in
+                importFromFile(result)
+            }
         }
+    }
+
+    /// Read the picked Markdown file into a new thread and open it.
+    private func importFromFile(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let url = urls.first else { return }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        let fallback = url.deletingPathExtension().lastPathComponent
+        onStart(app.importMarkdown(text, fallbackTitle: fallback))
     }
 
     private func toggle(_ id: String) {

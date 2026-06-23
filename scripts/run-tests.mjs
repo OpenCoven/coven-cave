@@ -499,6 +499,7 @@ export const SUITES = {
     "scripts/ios-thread-search.test.mjs",
     "scripts/ios-mute-threads.test.mjs",
     "scripts/ios-export-markdown.test.mjs",
+    "scripts/ios-import-markdown.test.mjs",
     "scripts/ios-reorder-familiars.test.mjs",
     "scripts/ios-github-comment-attach.test.mjs",
     "scripts/mobile-tailscale.test.mjs",
