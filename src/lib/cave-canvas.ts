@@ -6,9 +6,10 @@
 // owner (and the many other sessions that mutate it) never has to know the
 // canvas exists, and a canvas write can never clobber card data.
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 import type { CanvasPosition, CanvasPositions } from "@/lib/canvas-layout";
 import { sanitizeArtifacts, type CanvasArtifact } from "@/lib/canvas-artifacts";
@@ -87,15 +88,9 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-let tmpCounter = 0;
-
 export async function saveCanvas(file: CanvasFile): Promise<void> {
   await ensureDir();
-  // Atomic write via temp-file + rename so a concurrent reader never observes a
-  // half-written file (rename is atomic on POSIX).
-  const tmp = `${CANVAS_PATH}.${process.pid}.${tmpCounter++}.tmp`;
-  await writeFile(tmp, JSON.stringify(file, null, 2), "utf8");
-  await rename(tmp, CANVAS_PATH);
+  await writeJsonAtomic(CANVAS_PATH, file);
 }
 
 /**

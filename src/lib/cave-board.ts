@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
+import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 import {
   DEFAULT_MAX_RETRIES,
@@ -198,19 +199,14 @@ function withBoardLock<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-let boardTmpCounter = 0;
-
 export async function saveBoard(board: BoardFile): Promise<void> {
   await ensureDir();
-  // Atomic write: plain writeFile truncates-then-writes, so a concurrent reader
-  // can observe a half-written file. loadBoard() then fails to parse it and
-  // falls back to an empty board, making cards momentarily "vanish" — e.g. a
-  // task-chat POST 404ing ("not found") on a card that actually exists. Write to
-  // a temp file and rename() instead: rename is atomic on POSIX, so a reader
-  // always sees a complete old-or-new file, never a torn one.
-  const tmp = `${BOARD_PATH}.${process.pid}.${boardTmpCounter++}.tmp`;
-  await writeFile(tmp, JSON.stringify(board, null, 2), "utf8");
-  await rename(tmp, BOARD_PATH);
+  // Atomic write (temp file + rename): a plain writeFile truncates-then-writes,
+  // so a concurrent reader can observe a half-written file, loadBoard() fails to
+  // parse it and falls back to an empty board — cards momentarily "vanish" (e.g.
+  // a task-chat POST 404ing on a card that exists). The write lock above
+  // serializes mutations; writeJsonAtomic makes each write torn-read-safe.
+  await writeJsonAtomic(BOARD_PATH, board);
 }
 
 export type NewCardInput = {

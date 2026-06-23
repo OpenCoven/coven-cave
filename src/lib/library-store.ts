@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 import type { LibraryBookmark, LibraryReadingItem, LibraryGitHubItem } from "./library-types";
+import { writeFileAtomic } from "./server/atomic-write.ts";
 
 export type IndexEntry = {
   url: string;
@@ -39,9 +40,7 @@ async function readJson<T>(p: string, fallback: T): Promise<T> {
 
 async function writeJsonAtomic(p: string, value: unknown): Promise<void> {
   await fs.mkdir(path.dirname(p), { recursive: true });
-  const tmp = `${p}.tmp-${process.pid}-${Date.now()}`;
-  await fs.writeFile(tmp, JSON.stringify(value, null, 2), "utf-8");
-  await fs.rename(tmp, p);
+  await writeFileAtomic(p, JSON.stringify(value, null, 2));
 }
 
 export function createLibraryStore(root: string = DEFAULT_ROOT) {
