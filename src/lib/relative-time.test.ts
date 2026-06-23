@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { relativeTime, isRelativePhrase } from "./relative-time.ts";
+import { relativeTime, isRelativePhrase, relativeTimeSigned } from "./relative-time.ts";
 import { relativeTime as reExported } from "./daily-report.ts";
 import { readFileSync } from "node:fs";
 
@@ -72,4 +72,18 @@ test("isRelativePhrase distinguishes relative phrases from the absolute fallback
   assert.equal(isRelativePhrase("3d ago"), true);
   assert.equal(isRelativePhrase("Jun 6"), false);
   assert.equal(isRelativePhrase(""), false);
+});
+
+test("relativeTimeSigned handles past and future, compact + verbose", () => {
+  const now = new Date("2026-01-01T12:00:00Z").getTime();
+  // compact
+  assert.equal(relativeTimeSigned("2026-01-01T11:58:00Z", now, "compact"), "2m ago");
+  assert.equal(relativeTimeSigned("2026-01-01T12:05:00Z", now, "compact"), "in 5m");
+  assert.equal(relativeTimeSigned("2026-01-01T11:59:40Z", now, "compact"), "just now");
+  assert.equal(relativeTimeSigned("2026-01-01T12:00:20Z", now, "compact"), "soon");
+  // verbose
+  assert.equal(relativeTimeSigned("2026-01-01T10:00:00Z", now, "verbose"), "2 hours ago");
+  assert.equal(relativeTimeSigned("2026-01-01T14:00:00Z", now, "verbose"), "in 2 hours");
+  // null
+  assert.equal(relativeTimeSigned(null, now, "compact"), "");
 });
