@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { stripAnsi } from "@/lib/ansi";
@@ -38,10 +38,17 @@ import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
 import { openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
-  covenHome,
   familiarWorkspacesRoot,
   readFamiliarWorkspaces,
 } from "@/lib/coven-paths";
+import {
+  extractOpenClawSessionId,
+  extractOpenClawText,
+  openClawAgentArgs,
+  openClawSessionKey,
+  resolveOpenClawAgentId,
+  type OpenClawAgentJson,
+} from "@/lib/openclaw-bridge";
 import { isTrustedChatHarness, covenRunSupportsModelFlag } from "@/lib/harness-adapters";
 import {
   type ConversationFile,
@@ -505,164 +512,6 @@ function buildPromptWithResponseControls(prompt: string, body: SendBody): string
     "",
     prompt,
   ].join("\n");
-}
-
-type OpenClawAgentJson = {
-  status?: string;
-  summary?: string;
-  sessionId?: string;
-  result?: {
-    payloads?: Array<{ text?: string; content?: unknown }>;
-    sessionId?: string;
-    meta?: { agentMeta?: { sessionId?: string } };
-  };
-  meta?: { agentMeta?: { sessionId?: string } };
-};
-
-type OpenClawAgentSummary = {
-  id?: string;
-  name?: string;
-  identityName?: string;
-  isDefault?: boolean;
-};
-
-function readTomlString(block: string, key: string): string | null {
-  const quoted = block.match(new RegExp(`^\\s*${key}\\s*=\\s*(['"])(.*?)\\1\\s*(?:#.*)?$`, "m"));
-  if (quoted) return quoted[2];
-  const bare = block.match(new RegExp(`^\\s*${key}\\s*=\\s*([^\\s#]+)\\s*(?:#.*)?$`, "m"));
-  return bare?.[1] ?? null;
-}
-
-function slugifyAgentName(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-async function readOpenClawAgentBinding(familiarId: string): Promise<string | null> {
-  try {
-    const raw = await readFile(path.join(covenHome(), "familiars.toml"), "utf8");
-    const blocks = raw.split(/^\s*\[\[familiar\]\]\s*$/m).slice(1);
-    for (const block of blocks) {
-      if (readTomlString(block, "id") !== familiarId) continue;
-      return readTomlString(block, "openclaw_agent");
-    }
-  } catch {
-    /* no familiar binding file */
-  }
-  return null;
-}
-
-function listOpenClawAgents(): Promise<OpenClawAgentSummary[]> {
-  return new Promise((resolve) => {
-    const child = spawn(openClawBin(), openClawSpawnArgs(["agents", "list", "--json"]), {
-      stdio: ["ignore", "pipe", "ignore"],
-      env: openClawSpawnEnv(),
-      shell: openClawNeedsShell(),
-    });
-    let stdout = "";
-    child.stdout.on("data", (data: Buffer) => {
-      stdout += data.toString("utf8");
-    });
-    child.on("error", () => resolve([]));
-    child.on("close", () => {
-      try {
-        const parsed = JSON.parse(stdout.trim()) as OpenClawAgentSummary[];
-        resolve(Array.isArray(parsed) ? parsed : []);
-      } catch {
-        resolve([]);
-      }
-    });
-  });
-}
-
-async function resolveOpenClawAgentId(familiarId: string): Promise<string> {
-  const explicit = await readOpenClawAgentBinding(familiarId);
-  if (explicit) return explicit;
-
-  const agents = await listOpenClawAgents();
-  const exact = agents.find((agent) => agent.id === familiarId)?.id;
-  if (exact) return exact;
-
-  const named = agents.find(
-    (agent) =>
-      (agent.name && slugifyAgentName(agent.name) === familiarId) ||
-      (agent.identityName && slugifyAgentName(agent.identityName) === familiarId),
-  )?.id;
-  if (named) return named;
-
-  return familiarId;
-}
-
-function extractOpenClawText(json: OpenClawAgentJson): string {
-  const payloads = json.result?.payloads ?? [];
-  const text = payloads
-    .map((payload) => {
-      if (typeof payload.text === "string") return payload.text;
-      if (Array.isArray(payload.content)) {
-        return payload.content
-          .map((part) =>
-            part &&
-            typeof part === "object" &&
-            "text" in part &&
-            typeof part.text === "string"
-              ? part.text
-              : "",
-          )
-          .join("");
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-  return text || json.summary?.trim() || "";
-}
-
-function extractOpenClawSessionId(
-  json: OpenClawAgentJson,
-  fallback?: string,
-): string | null {
-  return (
-    json.sessionId ??
-    json.result?.sessionId ??
-    json.result?.meta?.agentMeta?.sessionId ??
-    json.meta?.agentMeta?.sessionId ??
-    fallback ??
-    null
-  );
-}
-
-/**
- * Conversation identity for the OpenClaw bridge is CAVE-owned. OpenClaw
- * sessions are persisted per session *key* (`agent:<id>:<key>`); the
- * `sessionId` inside an entry rotates on daily resets, `/new`, and
- * compaction. Pinning each Cave chat to its own `--session-key` keeps one
- * durable gateway session per conversation. Without a key, every turn lands
- * in the shared `agent:<id>:main` session — id rotation then forked each
- * Cave chat into a brand-new conversation, and concurrent chats with the
- * same familiar interleaved context.
- */
-function openClawSessionKey(conversationId: string): string {
-  return `cave-${conversationId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`;
-}
-
-function openClawAgentArgs(
-  harnessPrompt: string,
-  agentId: string,
-  conversationId: string,
-): string[] {
-  return [
-    "agent",
-    "--agent",
-    agentId,
-    "--message",
-    harnessPrompt,
-    "--json",
-    "--session-key",
-    openClawSessionKey(conversationId),
-  ];
 }
 
 function openClawChatResponse(args: {
