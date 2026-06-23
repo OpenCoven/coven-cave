@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var editingHost: String = ""
     @State private var showDeveloper = false
+    @State private var exportArchive: ExportArchive?
+    @State private var exportFailed = false
 
     var body: some View {
         NavigationStack {
@@ -20,6 +22,24 @@ struct SettingsView: View {
                     Text("Tools")
                 } footer: {
                     Text("Code browser, terminal, and GitHub.")
+                }
+
+                Section {
+                    Button {
+                        do {
+                            exportArchive = ExportArchive(url: try app.exportAllThreadsZip())
+                        } catch {
+                            exportFailed = true
+                        }
+                    } label: {
+                        Label("Export all chats", systemImage: "square.and.arrow.up.on.square")
+                            .foregroundStyle(.primary)
+                    }
+                    .disabled(app.threads.isEmpty)
+                } header: {
+                    Text("Chats")
+                } footer: {
+                    Text("Save every conversation as Markdown files in a single .zip.")
                 }
 
                 Section("Desktop") {
@@ -68,6 +88,12 @@ struct SettingsView: View {
             .sheet(isPresented: $showDeveloper) {
                 DeveloperView()
                     .presentationDragIndicator(.visible)
+            }
+            .sheet(item: $exportArchive) { archive in
+                ActivityView(items: [archive.url])
+            }
+            .alert("Couldn't export chats", isPresented: $exportFailed) {
+                Button("OK", role: .cancel) {}
             }
         }
     }
