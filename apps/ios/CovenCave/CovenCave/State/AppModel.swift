@@ -713,6 +713,40 @@ final class AppModel {
         return lines.joined(separator: "\n")
     }
 
+    /// Build a new thread from a Markdown transcript (inverse of
+    /// `exportMarkdown`). "You"/"System" map to user/system turns; other authors
+    /// become assistant turns, resolved to a familiar by display name when
+    /// possible. Inserts at the top and persists.
+    @discardableResult
+    func importMarkdown(_ text: String, fallbackTitle: String = "Imported chat") -> ChatThread {
+        let parsed = parseThreadMarkdown(text)
+        func resolve(_ name: String) -> String? {
+            familiars.first { $0.displayName.caseInsensitiveCompare(name) == .orderedSame }?.id
+        }
+        var familiarIds: [String] = []
+        var messages: [DisplayMessage] = []
+        for turn in parsed.turns {
+            switch turn.who.lowercased() {
+            case "you":
+                messages.append(DisplayMessage(role: .user, familiarId: nil, text: turn.text))
+            case "system":
+                messages.append(DisplayMessage(role: .system, familiarId: nil, text: turn.text))
+            default:
+                let fid = resolve(turn.who)
+                if let fid, !familiarIds.contains(fid) { familiarIds.append(fid) }
+                messages.append(DisplayMessage(role: .assistant, familiarId: fid, text: turn.text))
+            }
+        }
+        for name in parsed.participants {
+            if let fid = resolve(name), !familiarIds.contains(fid) { familiarIds.append(fid) }
+        }
+        let title = parsed.title.isEmpty ? fallbackTitle : parsed.title
+        let thread = ChatThread(title: title, familiarIds: familiarIds, messages: messages)
+        threads.insert(thread, at: 0)
+        persistThreads()
+        return thread
+    }
+
     func touch(_ thread: ChatThread) {
         // Move the most recently active thread to the top, then persist.
         if let idx = threads.firstIndex(where: { $0.id == thread.id }), idx != 0 {
