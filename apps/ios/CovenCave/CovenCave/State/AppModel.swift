@@ -436,6 +436,76 @@ final class AppModel {
         }
     }
 
+    // MARK: - Sessions (server-side, for per-familiar thread lists)
+
+    /// Chat sessions known to the server (`GET /api/sessions/list`) — including
+    /// conversations started on the desktop/web that have no local thread yet.
+    /// Merged with on-device threads to build each familiar's thread list.
+    var serverSessions: [SessionRow] = []
+    var sessionsError: String?
+    var sessionsLoaded = false
+
+    func loadSessions() async {
+        guard let client else { return }
+        do {
+            serverSessions = try await client.sessions()
+            sessionsError = nil
+        } catch {
+            sessionsError = error.localizedDescription
+        }
+        sessionsLoaded = true
+    }
+
+    /// Direct (1:1) on-device threads for a familiar, newest-updated first.
+    func directThreads(for familiarId: String) -> [ChatThread] {
+        threads
+            .filter { !$0.isGroup && $0.familiarIds == [familiarId] }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Every group thread, newest first — shown as its own rows on the Chats
+    /// home (a group has no single familiar to file it under).
+    var groupThreads: [ChatThread] {
+        threads.filter(\.isGroup).sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Server sessions for a familiar that no local thread already carries —
+    /// i.e. conversations to surface but not yet materialised on this device.
+    func serverOnlySessions(for familiarId: String) -> [SessionRow] {
+        let bound = Set(threads.flatMap { $0.sessionIds.values }.filter { !$0.isEmpty })
+        return serverSessions
+            .filter { $0.familiarId == familiarId && $0.archivedAt == nil && !bound.contains($0.id) }
+            .sorted { (caveParseISO($0.updatedAt) ?? .distantPast) > (caveParseISO($1.updatedAt) ?? .distantPast) }
+    }
+
+    /// How many conversations a familiar has (local direct + server-only).
+    func threadCount(for familiarId: String) -> Int {
+        directThreads(for: familiarId).count + serverOnlySessions(for: familiarId).count
+    }
+
+    /// Most recent activity across a familiar's local + server conversations.
+    func lastActivity(for familiarId: String) -> Date? {
+        let local = directThreads(for: familiarId).map(\.updatedAt)
+        let server = serverOnlySessions(for: familiarId).compactMap { caveParseISO($0.updatedAt) }
+        return (local + server).max()
+    }
+
+    /// Materialise a server session as a local thread (binding its `sessionId`
+    /// and pulling history) and return it, so it opens like any other thread.
+    /// Reuses an existing local thread that already carries the session id.
+    func openServerSession(_ row: SessionRow, familiarId: String) -> ChatThread {
+        if let existing = threads.first(where: { $0.sessionIds.values.contains(row.id) }) {
+            return existing
+        }
+        let title = row.title.isEmpty ? (familiar(familiarId)?.displayName ?? familiarId) : row.title
+        let thread = ChatThread(title: title, familiarIds: [familiarId],
+                                sessionIds: [familiarId: row.id])
+        threads.insert(thread, at: 0)
+        persistThreads()
+        Task { await loadHistory(into: thread, sessionId: row.id) }
+        return thread
+    }
+
     // MARK: - Task ↔ chat linking
 
     /// The thread linked to a card, if any: prefer the explicit local link,
