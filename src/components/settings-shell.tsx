@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { SettingsGroup } from "@/components/ui/settings-group";
+import { RelativeTime } from "@/components/ui/relative-time";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { FamiliarPinOrder } from "@/components/familiar-pin-order";
@@ -391,7 +393,7 @@ function DaemonSection() {
           <SettingsKV label="Coven version" value={status.covenVersion ?? "—"} />
           <SettingsKV label="API version"   value={status.apiVersion   ?? "—"} />
           <SettingsKV label="Socket"        value={status.daemon?.socket ?? "—"} mono />
-          <SettingsKV label="Started"       value={status.daemon?.startedAt ? new Date(status.daemon.startedAt).toLocaleString() : "—"} />
+          <SettingsKV label="Started"       value={<RelativeTime iso={status.daemon?.startedAt} fallback="—" />} />
           <SettingsKV label="Workspace"     value={status.workspacePath ?? "—"} mono />
         </SettingsGroup>
       )}
@@ -564,7 +566,7 @@ function FamiliarsSection() {
   if (!loaded) {
     return (
       <div className="settings-familiars-panel" role="status" aria-busy="true">
-        <p className="settings-familiars-panel__empty">Loading familiars…</p>
+        <SkeletonRows count={4} />
       </div>
     );
   }
@@ -1444,7 +1446,7 @@ function SettingsRow({ label, description, comingSoon, children }: { label: stri
   );
 }
 
-function SettingsKV({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function SettingsKV({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-3">
       <span className="text-[12px] text-[var(--text-secondary)]">{label}</span>

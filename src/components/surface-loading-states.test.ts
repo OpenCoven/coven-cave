@@ -110,11 +110,17 @@ for (const [file, label] of [
   ["./board-inspector.tsx", "Board inspector linked context"],
   ["./project-tree.tsx", "Project tree"],
   ["./journal/journal-entries.tsx", "Journal entries pane"],
+  ["./workflows/workflow-library.tsx", "Workflow library"],
 ]) {
   const src = read(file);
   assert.doesNotMatch(src, />Loading…</, `${label} no longer shows a bare Loading… line`);
   assert.match(src, /<SkeletonRows/, `${label} shows shared skeleton rows on first load`);
 }
+// Workflow library: a bare "Loading workflow manifests..." string is gone, and
+// the in-list "no search match" case uses the shared EmptyState (not bare text).
+const workflowLib = read("./workflows/workflow-library.tsx");
+assert.doesNotMatch(workflowLib, /Loading workflow manifests/, "Workflow library no longer shows a bare loading line");
+assert.match(workflowLib, /headline="No workflows match"/, "Workflow library search-no-results uses EmptyState");
 const docPreview = read("./library-doc-preview.tsx");
 assert.doesNotMatch(docPreview, /library-preview-empty-text">Loading…</, "Library doc preview no longer shows a bare Loading… line");
 assert.match(docPreview, /<SkeletonGroup[\s\S]{0,200}<Skeleton variant="text"/, "Library doc preview shows a document-shaped skeleton on first load");

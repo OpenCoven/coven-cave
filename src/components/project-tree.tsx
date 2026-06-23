@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Icon } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 import { nextVisibleIndex, parentIndexByDepth } from "@/lib/tree-keynav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -225,9 +226,12 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
     }
     if (entries.length === 0) {
       return (
-        <p className="py-3 pl-1 text-[11px] text-[var(--text-muted)]">
-          No files found.
-        </p>
+        <EmptyState
+          compact
+          icon="ph:folder-open"
+          headline="No files found"
+          subtitle="This project has no files, or they're all filtered out."
+        />
       );
     }
 

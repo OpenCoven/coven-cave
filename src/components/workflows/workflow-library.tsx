@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { isPersonalWorkflow, isPublicTemplate, type WorkflowSummary } from "@/lib/workflows";
 import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 
 type WorkflowLibraryProps = {
@@ -163,7 +164,7 @@ export function WorkflowLibrary({
       </label>
 
       {!loaded ? (
-        <div className="workflow-library-state">Loading workflow manifests...</div>
+        <SkeletonRows count={6} className="workflow-library-list" />
       ) : error ? (
         <div className="workflow-library-state workflow-library-state-error" role="alert">
           <span className="workflow-library-state-error-msg">
@@ -189,7 +190,12 @@ export function WorkflowLibrary({
       ) : (
         <div className="workflow-library-list">
           {visible.length === 0 && (
-            <div className="workflow-library-state">No workflows match “{query.trim()}”.</div>
+            <EmptyState
+              compact
+              icon="ph:magnifying-glass"
+              headline="No workflows match"
+              subtitle={`Nothing matches “${query.trim()}”. Try a different term or clear the search.`}
+            />
           )}
           {groups.personal.length > 0 && (
             <section className="workflow-library-group" aria-label="Personal workflows">
