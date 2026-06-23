@@ -15,6 +15,10 @@
  *     src/components/home-composer.tsx handleKeyDown
  *   - "/" search focus: each surface's view (familiars-view, projects-view,
  *     capabilities-view, chat-list); "⌘F" sessions search: chat-list.tsx
+ *   - terminal & panes: src/components/comux-view.tsx keydown handlers
+ *   - browser pane: src/components/browser-pane.tsx (⌘L / ⌘K / [)
+ *   - ⌘S save: familiar-daily-notes.tsx + journal/canvas-list.tsx;
+ *     artifact refine ⌘↵: chat-artifact-viewer.tsx
  */
 
 export type ShortcutEntry = {
@@ -24,7 +28,7 @@ export type ShortcutEntry = {
 };
 
 export type ShortcutGroup = {
-  id: "panels" | "composer" | "slash-menu" | "other";
+  id: "panels" | "terminal" | "browser" | "composer" | "slash-menu" | "other";
   label: string;
   entries: ShortcutEntry[];
 };
@@ -48,6 +52,28 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌘N", description: "New chat (on the Chat surface)" },
       { keys: "/", description: "Focus the search (Familiars, Projects, Capabilities, Sessions)" },
       { keys: "⌘F", description: "Focus the sessions search" },
+    ],
+  },
+  {
+    id: "terminal",
+    label: "Terminal & panes",
+    entries: [
+      { keys: "⌘N", description: "New terminal session" },
+      { keys: "⌘W", description: "Close the focused pane" },
+      { keys: "⌘⌥←→↑↓", description: "Focus the pane in that direction" },
+      { keys: "⌘[ / ⌘]", description: "Cycle to the previous / next pane" },
+      { keys: "⌘1–⌘9", description: "Jump to pane N" },
+      { keys: "⌘↵", description: "Zoom the focused pane (toggle)" },
+      { keys: "⌘⇧B", description: "Broadcast input to every visible pane" },
+    ],
+  },
+  {
+    id: "browser",
+    label: "Browser",
+    entries: [
+      { keys: "⌘L", description: "Focus the address bar" },
+      { keys: "⌘K", description: "Open quick-open" },
+      { keys: "[", description: "Toggle the rail pin" },
     ],
   },
   {
@@ -75,6 +101,8 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     label: "Other",
     entries: [
       { keys: "⌘,", description: "Open Settings" },
+      { keys: "⌘S", description: "Save (daily notes, journal)" },
+      { keys: "⌘↵", description: "Run the refine (artifact viewer)" },
       { keys: "⌘/", description: "Open this shortcuts sheet" },
       { keys: "?", description: "Open the shortcuts sheet (when not typing in a field)" },
       { keys: "Esc", description: "Close dialogs and modals" },
