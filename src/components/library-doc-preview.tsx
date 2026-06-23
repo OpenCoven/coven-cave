@@ -389,7 +389,18 @@ async function getMdFn(): Promise<MdFn> {
   if (mdFnCached) return mdFnCached;
   const { renderAsync } = await import("@create-markdown/preview");
   const { parse } = await import("@create-markdown/core");
-  mdFnCached = async (markdown: string) => renderAsync(parse(markdown));
+  const { renderTableReplacements } = await import("@/lib/markdown-table-cells");
+  mdFnCached = async (markdown: string) => {
+    const blocks = parse(markdown);
+    // Re-render table cells through the inline path so **bold**/`code`/[links]
+    // inside a cell do not show up as literal markdown (preview emits cells as
+    // escaped plain text). Supplied positionally via the `table` customRenderer.
+    const tables = await renderTableReplacements(blocks, renderAsync);
+    let tableIdx = 0;
+    return renderAsync(blocks, {
+      customRenderers: { table: () => tables[tableIdx++] ?? "" },
+    });
+  };
   return mdFnCached;
 }
 
