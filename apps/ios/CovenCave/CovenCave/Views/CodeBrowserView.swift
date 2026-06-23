@@ -27,6 +27,7 @@ struct CodeBrowserView: View {
         NavigationStack {
             content
                 .navigationTitle("Code")
+                .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: FileRef.self) { file in
                     CodeEditorView(path: file.path, name: file.name)
                 }
@@ -74,6 +75,7 @@ struct CodeBrowserView: View {
                     isDir: true,
                     searchRoot: project.root,
                     isProject: true,
+                    autoExpand: true,
                     color: Color(hex: project.color) ?? .accentColor,
                     onFocusProject: {
                         focusedRoot = project.root
@@ -82,7 +84,7 @@ struct CodeBrowserView: View {
                 )
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
     }
 
     // MARK: - Search (scoped to the focused project)
@@ -161,6 +163,7 @@ struct CodeNode: View {
     let isDir: Bool
     let searchRoot: String
     var isProject = false
+    var autoExpand = false
     var color: Color? = nil
     var onFocusProject: (() -> Void)? = nil
 
@@ -189,14 +192,16 @@ struct CodeNode: View {
             }
             .onChange(of: expanded) { _, isExpanded in
                 if isExpanded {
-                    if isProject { onFocusProject?() }
-                    if !loaded { Task { await load() } }
+                    expandAndLoad()
                 }
+            }
+            .onAppear {
+                if autoExpand { expandAndLoad() }
             }
         } else {
             NavigationLink(value: FileRef(path: path, name: name)) {
                 Label {
-                    Text(name)
+                    Text(name).font(.subheadline)
                 } icon: {
                     Image(systemName: fileIcon(name)).foregroundStyle(.secondary)
                 }
@@ -206,13 +211,13 @@ struct CodeNode: View {
 
     @ViewBuilder private var rowLabel: some View {
         if isProject {
-            HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 5)
+            HStack(spacing: 9) {
+                Capsule()
                     .fill(color ?? .accentColor)
-                    .frame(width: 8, height: 22)
+                    .frame(width: 3, height: 18)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(name).font(.callout.weight(.medium))
-                    Text(path)
+                    Text(name).font(.subheadline.weight(.semibold))
+                    Text(compactPath(path))
                         .font(.caption2.monospaced())
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -220,12 +225,24 @@ struct CodeNode: View {
                 }
             }
         } else {
-            Label(name, systemImage: "folder.fill").foregroundStyle(.primary)
+            Label {
+                Text(name).font(.subheadline)
+            } icon: {
+                Image(systemName: "folder").foregroundStyle(.secondary)
+            }
         }
+    }
+
+    private func expandAndLoad() {
+        if !expanded { expanded = true }
+        if isProject { onFocusProject?() }
+        guard !loaded, !loading else { return }
+        Task { await load() }
     }
 
     private func load() async {
         guard let client = app.client else { return }
+        guard !loading else { return }
         loading = true
         defer { loading = false }
         do {
@@ -234,6 +251,12 @@ struct CodeNode: View {
         } catch {
             // leave loaded == false so collapsing + re-expanding retries
         }
+    }
+
+    private func compactPath(_ path: String) -> String {
+        let parts = path.split(separator: "/").map(String.init)
+        guard parts.count > 3 else { return path }
+        return ".../" + parts.suffix(3).joined(separator: "/")
     }
 }
 
