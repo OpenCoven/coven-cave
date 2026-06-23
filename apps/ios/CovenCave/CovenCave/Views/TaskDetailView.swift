@@ -7,6 +7,8 @@ struct TaskDetailView: View {
 
     @State private var showFamiliarPicker = false
     @State private var confirmingDelete = false
+    @State private var notesHeight: CGFloat = 0
+    @State private var notesReader: ResponseReaderItem?
 
     /// The current card from the store, so status/priority/step edits made here
     /// reflect immediately; falls back to the passed-in snapshot.
@@ -44,6 +46,9 @@ struct TaskDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { Text(live.title) }
+        .sheet(item: $notesReader) { item in
+            ResponseReaderView(item: item)
+        }
     }
 
     private var actionsMenu: some View {
@@ -188,13 +193,25 @@ struct TaskDetailView: View {
     }
 
     private func notesCard(_ notes: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Notes").font(.headline)
-            Text(notes)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Notes").font(.headline)
+                Spacer()
+                Button {
+                    notesReader = ResponseReaderItem(title: "Notes", markdown: notes)
+                    Haptics.tap()
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(7)
+                        .background(.thinMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open notes in reader")
+            }
+            MarkdownWebView(markdown: notes, height: $notesHeight)
+                .frame(height: max(notesHeight, 1))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
