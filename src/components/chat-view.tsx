@@ -771,6 +771,56 @@ function SessionOverflowMenu({
   );
 }
 
+/** Standalone delete control for the chat header — a one-click trash button that
+ *  opens a small confirm popover before committing. Mirrors the overflow menu's
+ *  two-step guard, but surfaced at the top of the session for quick access. Uses
+ *  its own open state so it never collides with the kebab's armed state; the
+ *  in-flight `deleting` flag and the actual delete are shared via props. */
+function HeaderDeleteButton({
+  onDelete,
+  deleting,
+}: {
+  onDelete: () => void;
+  deleting: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="focus-ring cave-chat-delete-trigger"
+        aria-label="Delete chat"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Delete chat"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="ph:trash" width={15} aria-hidden />
+      </button>
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={triggerRef}
+        placement="bottom-end"
+        minWidth={216}
+        ariaLabel="Delete chat"
+      >
+        <PopoverBody>
+          <PopoverLabel>Delete this chat permanently?</PopoverLabel>
+          <PopoverItem icon="ph:x" onSelect={() => setOpen(false)}>
+            Cancel
+          </PopoverItem>
+          <PopoverItem icon="ph:trash" danger disabled={deleting} onSelect={() => onDelete()}>
+            {deleting ? "Deleting…" : "Delete chat"}
+          </PopoverItem>
+        </PopoverBody>
+      </Popover>
+    </>
+  );
+}
+
 function ChatHistoryNotice({
   title,
   body,
@@ -3263,6 +3313,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onPrev={findPrev}
               />
             ) : null}
+            {sessionId && (
+              <HeaderDeleteButton onDelete={() => void deleteChat()} deleting={deleting} />
+            )}
             {sessionId && (
               <SessionOverflowMenu
                 projects={projects}

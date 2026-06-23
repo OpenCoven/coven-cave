@@ -2259,6 +2259,14 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-primary);
 }
 
+/* The header delete trigger reads as destructive on hover/open. */
+.cave-chat-session-actions > .cave-chat-delete-trigger:hover:not(:disabled),
+.cave-chat-session-actions > .cave-chat-delete-trigger[aria-expanded="true"] {
+  border-color: color-mix(in oklch, var(--color-danger) 55%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
+  color: var(--color-danger);
+}
+
 .cave-chat-session-actions .voice-call-button:disabled {
   opacity: 0.45;
 }

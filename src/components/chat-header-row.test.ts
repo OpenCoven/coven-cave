@@ -128,6 +128,19 @@ assert.match(
   "Successful delete refreshes sessions and navigates back to the list",
 );
 
+// A standalone delete (trash) button sits at the top of the session, beside the
+// overflow menu, opening a confirm popover before it commits via deleteChat.
+assert.match(
+  source,
+  /function HeaderDeleteButton[\s\S]*?aria-label="Delete chat"[\s\S]*?Delete this chat permanently\?[\s\S]*?disabled=\{deleting\} onSelect=\{\(\) => onDelete\(\)\}/,
+  "HeaderDeleteButton renders a guarded trash trigger that confirms before deleting",
+);
+assert.match(
+  source,
+  /<HeaderDeleteButton onDelete=\{\(\) => void deleteChat\(\)\} deleting=\{deleting\} \/>/,
+  "the chat header mounts the standalone delete button wired to deleteChat",
+);
+
 // ── Collapsed tool rows show a one-line arg summary (CHAT-D4-02) ─────────────
 // The summary is derived by the pure helper in src/lib/tool-arg-summary.ts so
 // a run can be audited (`Read(src/foo.ts)`-style) without expanding blocks.
