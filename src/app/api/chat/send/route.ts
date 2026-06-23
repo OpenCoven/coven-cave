@@ -112,8 +112,10 @@ type SendBody = {
    * projectRoot in the body, so the composer sends the root it knows. */
   mentionedFilesRoot?: string;
   /** Branching: when set, the new user turn is parented here (its prior
-   *  sibling stays in the tree) and the new assistant turn becomes the tip. */
-  parentTurnId?: string;
+   *  sibling stays in the tree) and the new assistant turn becomes the tip.
+   *  Explicit null means "branch at the root" (sibling of a root turn) and is
+   *  distinct from the field being absent (a normal, non-branch send). */
+  parentTurnId?: string | null;
 };
 
 type ReasoningEffort = "low" | "medium" | "high";
@@ -699,7 +701,10 @@ function openClawChatResponse(args: {
           // Branching: same logic as the coven-run path — client-supplied
           // parentTurnId takes precedence; falls back to prior activeLeafId for
           // normal (non-branch) sends so the linear chain is preserved.
-          const branchParentId = args.body.parentTurnId ?? existing?.activeLeafId ?? null;
+          const branchParentId =
+            args.body.parentTurnId !== undefined
+              ? args.body.parentTurnId
+              : existing?.activeLeafId ?? null;
           const conv = existing ?? {
             sessionId,
             familiarId: args.body.familiarId,
@@ -1440,7 +1445,8 @@ export async function POST(req: Request) {
         // (non-branch) send, fall back to the prior activeLeafId so the
         // conversation stays a linear chain identical to the pre-branching
         // behaviour. First turn of a new chat gets null (no parent).
-        const branchParentId = body.parentTurnId ?? existing?.activeLeafId ?? null;
+        const branchParentId =
+          body.parentTurnId !== undefined ? body.parentTurnId : existing?.activeLeafId ?? null;
         const userTurn: ChatTurn = {
           id: userTurnId,
           role: "user",

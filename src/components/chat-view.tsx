@@ -1605,7 +1605,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [activeLeafId, setActiveLeafId] = useState<string>("");
-  const [pendingBranchParent, setPendingBranchParent] = useState<string | null>(null);
+  // Branching: undefined = no pending branch; null = branch at the ROOT (the
+  // edited/regenerated turn was itself a root, so its sibling is also a root);
+  // string = branch under that parent turn. The undefined-vs-null distinction
+  // is what lets the first exchange branch instead of silently appending.
+  const [pendingBranchParent, setPendingBranchParent] = useState<string | null | undefined>(undefined);
   const [historyState, setHistoryState] = useState<ChatHistoryState>("idle");
   const [debugModalOpen, setDebugModalOpen] = useState(false);
 
@@ -2528,7 +2532,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     text: string,
     outgoingAttachments: ChatAttachment[] = [],
     outgoingMentions: string[] = [],
-    opts?: { promptOverride?: string; parentTurnId?: string },
+    opts?: { promptOverride?: string; parentTurnId?: string | null },
   ) => {
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
@@ -2545,7 +2549,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     liveSessionIdRef.current = currentSessionRef.current;
     setHistoryState("loaded");
 
-    const resolvedParentId = opts?.parentTurnId ?? (activeLeafId || null);
+    // Explicit parentTurnId (including null = root) wins; only fall back to the
+    // current leaf when the caller did not specify a branch point at all.
+    const resolvedParentId =
+      opts?.parentTurnId !== undefined ? opts.parentTurnId : (activeLeafId || null);
     const now = new Date().toISOString();
     const userTurn: Turn = {
       id: crypto.randomUUID(),
@@ -2615,7 +2622,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           // position, send the explicit parent so the server builds the new
           // turn off the right node rather than defaulting to the current
           // active leaf.
-          ...(opts?.parentTurnId ? { parentTurnId: opts.parentTurnId } : {}),
+          ...(opts?.parentTurnId !== undefined ? { parentTurnId: opts.parentTurnId } : {}),
         }),
         signal: controller.signal,
       });
@@ -2772,7 +2779,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (!prevUser) return undefined;
     const { text, attachments: prevAttachments, parentId } = prevUser;
     if (!text.trim() && !prevAttachments?.length) return undefined;
-    return () => void sendRaw(text, prevAttachments ?? [], [], { parentTurnId: parentId ?? undefined });
+    // null parentId (root user turn) must be forwarded as null, not undefined,
+    // so the regenerated answer becomes a root sibling rather than appending.
+    return () => void sendRaw(text, prevAttachments ?? [], [], { parentTurnId: parentId ?? null });
   }
 
   // Branch navigator: switch to a sibling turn and make its deepest descendant
@@ -2826,8 +2835,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // Branching: consume a pending branch parent set by editTurnInComposer.
     // Read-and-clear atomically so it only applies to THIS send.
     const branchParent = pendingBranchParent;
-    setPendingBranchParent(null);
-    await sendRaw(outgoingText, outgoingAttachments, outgoingMentions, branchParent !== null ? { parentTurnId: branchParent } : undefined);
+    setPendingBranchParent(undefined);
+    await sendRaw(outgoingText, outgoingAttachments, outgoingMentions, branchParent !== undefined ? { parentTurnId: branchParent } : undefined);
   };
 
   // Auto-send a prompt handed off from the home composer. Deferred one
