@@ -112,6 +112,7 @@ function statusCategory(status: CardStatus): GanttCategory {
 export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelect, onPatch, groupMode = "project" }: Props) {
   // Click a group header to focus it (hide the others); click again to show all.
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const [showUnscheduled, setShowUnscheduled] = useState(false);
   // "Today" depends on the clock, so resolve it after mount to avoid an SSR
   // hydration mismatch — the line just isn't drawn on the first client render.
   const [todayMs, setTodayMs] = useState<number | null>(null);
@@ -286,15 +287,48 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   }
 
   const allRows = groups.flatMap((g) => g.rows);
-  const unscheduledCount = cards.filter((c) => !placedCardIds.has(c.id)).length;
+  const unscheduledCards = cards.filter((c) => !placedCardIds.has(c.id));
+  const unscheduledCount = unscheduledCards.length;
+
+  // The tasks the timeline can't place (no dates / no scheduled steps) used to
+  // be a dead-end count; make it an expandable tray so they can be scheduled.
+  const unscheduledTray =
+    unscheduledCount === 0 ? null : (
+      <div className="board-gantt-unscheduled">
+        <button
+          type="button"
+          onClick={() => setShowUnscheduled((v) => !v)}
+          aria-expanded={showUnscheduled}
+          style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "inherit", cursor: "pointer", font: "inherit" }}
+        >
+          <span aria-hidden>{showUnscheduled ? "▾" : "▸"}</span>
+          {unscheduledCount} task{unscheduledCount === 1 ? "" : "s"} {groupMode === "task" ? "without scheduled steps" : "without dates"}
+        </button>
+        {showUnscheduled ? (
+          <ul style={{ listStyle: "none", margin: "6px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+            {unscheduledCards.map((c) => (
+              <li key={c.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+                <button type="button" onClick={() => onSelect(c.id)} title="Open task" style={{ flex: 1, minWidth: 120, textAlign: "left", background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", font: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</button>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{ownerName(c.familiarId)}</span>
+                {onPatch ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <input type="date" aria-label={`Start date for ${c.title}`} value={c.startDate ?? ""} onChange={(e) => onPatch(c.id, { startDate: e.target.value || null })} style={{ fontSize: 11, padding: "1px 4px", borderRadius: 4, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-secondary)" }} />
+                    <span aria-hidden style={{ color: "var(--text-muted)" }}>→</span>
+                    <input type="date" aria-label={`End date for ${c.title}`} value={c.endDate ?? ""} onChange={(e) => onPatch(c.id, { endDate: e.target.value || null })} style={{ fontSize: 11, padding: "1px 4px", borderRadius: 4, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-secondary)" }} />
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    );
 
   if (allRows.length === 0) {
     return (
       <div className="board-gantt board-gantt--empty">
         <p>{groupMode === "task" ? "No tasks have steps with dates yet." : "No tasks have start and end dates yet."}</p>
-        {unscheduledCount > 0 ? (
-          <span>{unscheduledCount} task{unscheduledCount === 1 ? "" : "s"} without dates</span>
-        ) : null}
+        {unscheduledTray}
       </div>
     );
   }
@@ -487,11 +521,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
           </div>
         </div>
       </div>
-      {unscheduledCount > 0 ? (
-        <div className="board-gantt-unscheduled">
-          {unscheduledCount} task{unscheduledCount === 1 ? "" : "s"} {groupMode === "task" ? "without scheduled steps" : "without dates"}
-        </div>
-      ) : null}
+      {unscheduledTray}
     </div>
   );
 }
