@@ -80,16 +80,26 @@ function shortRoot(p: string): string {
 // event the chat surface already listens for); the handle drags it to reorder
 // within the project or onto another project card to move it. The trash button
 // deletes the chat with a two-step confirm, mirroring the Chats list.
+//
+// In select mode the leading drag handle becomes a checkbox and the row's
+// primary click toggles selection instead of opening the chat, so several chats
+// can be deleted together via the card's bulk toolbar.
 function ProjectChatRow({
   session,
   displayTitle,
   onOpen,
   onDelete,
+  selectMode,
+  selected,
+  onToggleSelect,
 }: {
   session: SessionRow;
   displayTitle?: string;
   onOpen: () => void;
   onDelete: (id: string) => Promise<void>;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: session.id,
@@ -98,36 +108,52 @@ function ProjectChatRow({
   const title = stripLeadingTrailingEmoji(displayTitle ?? (session.title || "(untitled chat)"));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const activate = () => (selectMode ? onToggleSelect(session.id) : onOpen());
   return (
     <li ref={setNodeRef} style={style} data-dragging={isDragging ? "true" : undefined} className="group/pc relative">
       <div
-        role="button"
+        role={selectMode ? "checkbox" : "button"}
+        aria-checked={selectMode ? selected : undefined}
         tabIndex={0}
-        onClick={onOpen}
+        onClick={activate}
         onKeyDown={(e) => {
-          // ARIA button pattern: Enter and Space both activate. preventDefault on
-          // Space stops the page from scrolling when the row has focus.
+          // ARIA button/checkbox pattern: Enter and Space both activate.
+          // preventDefault on Space stops the page from scrolling when focused.
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
-            onOpen();
+            activate();
           }
         }}
-        className="focus-ring flex w-full items-center gap-2 px-4 py-1 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+        data-selected={selectMode && selected ? "true" : undefined}
+        className="focus-ring flex w-full items-center gap-2 px-4 py-1 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] data-[selected=true]:bg-[var(--accent-presence)]/10 data-[selected=true]:text-[var(--text-primary)]"
       >
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          onClick={(e) => e.stopPropagation()}
-          title="Drag to reorder or move to another project"
-          aria-label={`Move ${title}`}
-          className="grid h-4 w-3 shrink-0 cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/pc:opacity-100"
-        >
-          <Icon name="ph:dots-six-vertical" width={10} aria-hidden />
-        </button>
+        {selectMode ? (
+          <span
+            aria-hidden
+            className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded border ${
+              selected
+                ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--text-primary)]"
+                : "border-[var(--border-strong)] text-transparent"
+            }`}
+          >
+            <Icon name="ph:check-bold" width={9} aria-hidden />
+          </span>
+        ) : (
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            title="Drag to reorder or move to another project"
+            aria-label={`Move ${title}`}
+            className="grid h-4 w-3 shrink-0 cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/pc:opacity-100"
+          >
+            <Icon name="ph:dots-six-vertical" width={10} aria-hidden />
+          </button>
+        )}
         <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${chatDotClass(session.status)}`} />
         <span className="min-w-0 flex-1 truncate">{title}</span>
-        {confirmDelete ? (
+        {selectMode ? null : confirmDelete ? (
           <span className="flex shrink-0 items-center gap-1">
             <button
               type="button"
@@ -193,6 +219,7 @@ type ProjectRowProps = {
   onNewChat?: (projectRoot: string) => void;
   onOpenSession?: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => Promise<void>;
+  onDeleteSessions: (sessionIds: string[]) => Promise<void>;
 };
 
 function ProjectRow({
@@ -204,6 +231,7 @@ function ProjectRow({
   onNewChat,
   onOpenSession,
   onDeleteSession,
+  onDeleteSessions,
 }: ProjectRowProps) {
   const chatCount = chats.length;
   // Every project starts collapsed to a single scannable row; expanding reveals
@@ -244,6 +272,49 @@ function ProjectRow({
   const [showAllChats, setShowAllChats] = useState(false);
   const visibleChats = showAllChats ? chats : chats.slice(0, CHAT_CAP);
   const chatTitles = useMemo(() => disambiguateSessionTitles(chats), [chats]);
+
+  // Bulk-select: pick several chats and delete them in one pass. Selection is
+  // scoped to this project card and resets when the set of chats changes (e.g.
+  // after a delete) so stale ids never linger.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const chatIdKey = chats.map((c) => c.id).join(",");
+  useEffect(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, [chatIdKey]);
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  // Visible-aware select-all: acts on the chats currently shown (respects the
+  // Show all / Show less cap) and flips to "Clear" once they're all picked.
+  const allVisibleSelected =
+    visibleChats.length > 0 && visibleChats.every((s) => selectedIds.has(s.id));
+  const toggleSelectAllVisible = () =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) for (const s of visibleChats) next.delete(s.id);
+      else for (const s of visibleChats) next.add(s.id);
+      return next;
+    });
+  const exitSelect = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+  const deleteSelected = async () => {
+    const ids = chats.map((s) => s.id).filter((id) => selectedIds.has(id));
+    if (ids.length === 0) return;
+    setBulkDeleting(true);
+    await onDeleteSessions(ids);
+    setBulkDeleting(false);
+    exitSelect();
+  };
+
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `pcard:${normalizeProjectRoot(project.root)}`,
   });
@@ -508,8 +579,53 @@ function ProjectRow({
 
       {chats.length > 0 ? (
         <>
+          <div className="-mx-2 mt-2 flex items-center justify-between gap-2 border-t border-[var(--border-hairline)] px-4 pt-2">
+            {selectMode ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllVisible}
+                    className="focus-ring rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+                  >
+                    {allVisibleSelected ? "Clear" : "Select all"}
+                  </button>
+                  <span className="text-[11px] text-[var(--text-muted)]">
+                    {selectedIds.size} selected
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={exitSelect}
+                    className="focus-ring rounded px-1.5 py-0.5 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkDeleting || selectedIds.size === 0}
+                    onClick={() => void deleteSelected()}
+                    className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+                  >
+                    <Icon name="ph:trash-bold" width={11} aria-hidden />
+                    {bulkDeleting ? "Deleting…" : `Delete${selectedIds.size ? ` ${selectedIds.size}` : ""}`}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setSelectMode(true)}
+                className="focus-ring ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+              >
+                <Icon name="ph:list-checks-bold" width={12} aria-hidden />
+                Select
+              </button>
+            )}
+          </div>
           <SortableContext items={visibleChats.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-            <ul className="-mx-2 mt-2 flex flex-col gap-0.5 border-t border-[var(--border-hairline)] pt-2">
+            <ul className="-mx-2 mt-1 flex flex-col gap-0.5">
               {visibleChats.map((session) => (
                 <ProjectChatRow
                   key={session.id}
@@ -517,6 +633,9 @@ function ProjectRow({
                   displayTitle={chatTitles.get(session.id)}
                   onOpen={() => onOpenSession?.(session.id)}
                   onDelete={onDeleteSession}
+                  selectMode={selectMode}
+                  selected={selectedIds.has(session.id)}
+                  onToggleSelect={toggleSelect}
                 />
               ))}
             </ul>
@@ -684,22 +803,38 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
     setShowForm(false);
   };
 
-  // Delete a chat from its project card, mirroring the Chats list delete
-  // (DELETE /api/chat/conversation/:id), then ask the parent to refetch
-  // sessions so the row disappears everywhere.
-  const handleDeleteSession = async (sessionId: string) => {
-    setSessionError(null);
+  // Delete one chat, mirroring the Chats list delete (DELETE
+  // /api/chat/conversation/:id). Returns whether it succeeded; callers refetch.
+  const deleteOneSession = async (sessionId: string): Promise<boolean> => {
     try {
       const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
       const json = await res.json().catch(() => ({ ok: false }));
       if (!res.ok || !json.ok) {
         setSessionError(json.error ?? "delete failed");
-        return;
+        return false;
       }
-      onSessionsChanged?.();
+      return true;
     } catch (err) {
       setSessionError(err instanceof Error ? err.message : "delete failed");
+      return false;
     }
+  };
+
+  // Delete a single chat from its project card, then ask the parent to refetch
+  // sessions so the row disappears everywhere.
+  const handleDeleteSession = async (sessionId: string) => {
+    setSessionError(null);
+    if (await deleteOneSession(sessionId)) onSessionsChanged?.();
+  };
+
+  // Bulk-delete the chats selected in a project card. Runs the deletes in
+  // parallel, then refetches once if anything succeeded so the surviving rows
+  // (if a delete failed) stay accurate.
+  const handleDeleteSessions = async (sessionIds: string[]) => {
+    setSessionError(null);
+    if (sessionIds.length === 0) return;
+    const results = await Promise.all(sessionIds.map((id) => deleteOneSession(id)));
+    if (results.some(Boolean)) onSessionsChanged?.();
   };
 
   return (
@@ -907,6 +1042,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
                     onNewChat={onNewChat}
                     onOpenSession={openSessionById}
                     onDeleteSession={handleDeleteSession}
+                    onDeleteSessions={handleDeleteSessions}
                   />
                 ))}
               </DndContext>

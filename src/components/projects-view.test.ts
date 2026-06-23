@@ -19,17 +19,82 @@ assert.match(projectsView, /chats=\{chatsByRoot\.get\(normalizeProjectRoot\(proj
 // Nested chats are draggable: reorder within a project, move across projects.
 assert.match(projectsView, /<DndContext[\s\S]{0,120}onDragEnd=\{handleDragEnd\}/, "Projects view wraps the cards in a DndContext");
 assert.match(projectsView, /function ProjectChatRow/, "chats render as sortable rows");
-// The chat row is a div role="button"; keep it keyboard-accessible — both Enter
-// and Space activate (ARIA button pattern) and it shows a visible focus ring.
+// The chat row is a div that toggles role button↔checkbox with select mode; keep
+// it keyboard-accessible — both Enter and Space activate (ARIA pattern) and it
+// shows a visible focus ring. In select mode activate toggles selection.
 assert.match(
   projectsView,
-  /role="button"[\s\S]{0,400}?e\.key === "Enter" \|\| e\.key === " "[\s\S]{0,120}?onOpen\(\)/,
+  /role=\{selectMode \? "checkbox" : "button"\}/,
+  "the chat row is a button normally and a checkbox in select mode",
+);
+assert.match(
+  projectsView,
+  /const activate = \(\) => \(selectMode \? onToggleSelect\(session\.id\) : onOpen\(\)\)/,
+  "activate toggles selection in select mode, otherwise opens the chat",
+);
+assert.match(
+  projectsView,
+  /e\.key === "Enter" \|\| e\.key === " "[\s\S]{0,120}?activate\(\)/,
   "the chat row activates on both Enter and Space",
 );
 assert.match(
   projectsView,
-  /role="button"[\s\S]{0,700}?className="focus-ring /,
+  /role=\{selectMode \? "checkbox" : "button"\}[\s\S]{0,900}?className="focus-ring /,
   "the chat row has a visible keyboard focus ring",
+);
+
+// Bulk multiselect: a Select toggle puts the card into select mode, each chat
+// row becomes a checkbox, and a toolbar deletes all selected chats at once.
+assert.match(
+  projectsView,
+  /const \[selectMode, setSelectMode\] = useState\(false\)/,
+  "each project card tracks its own select mode",
+);
+assert.match(
+  projectsView,
+  /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/,
+  "selected chat ids are held in a Set",
+);
+assert.match(
+  projectsView,
+  /onDeleteSessions: \(sessionIds: string\[\]\) => Promise<void>/,
+  "project rows receive a bulk-delete callback",
+);
+assert.match(
+  projectsView,
+  /const handleDeleteSessions = async \(sessionIds: string\[\]\)/,
+  "ProjectsView implements a bulk-delete handler",
+);
+assert.match(
+  projectsView,
+  /Promise\.all\(sessionIds\.map\(\(id\) => deleteOneSession\(id\)\)\)/,
+  "bulk delete runs the per-chat deletes in parallel",
+);
+assert.match(
+  projectsView,
+  /results\.some\(Boolean\)\) onSessionsChanged/,
+  "bulk delete refetches once if any chat was deleted",
+);
+assert.match(
+  projectsView,
+  /\{allVisibleSelected \? "Clear" : "Select all"\}/,
+  "the select toolbar offers select-all / clear",
+);
+assert.match(
+  projectsView,
+  /\{selectedIds\.size\} selected/,
+  "the toolbar shows how many chats are selected",
+);
+assert.match(
+  projectsView,
+  /onDeleteSessions=\{handleDeleteSessions\}/,
+  "the bulk-delete handler is wired into project rows",
+);
+// Selection resets whenever the card's chat set changes, so deleted ids never linger.
+assert.match(
+  projectsView,
+  /const chatIdKey = chats\.map\(\(c\) => c\.id\)\.join\(","\)/,
+  "selection is keyed to the current chat ids",
 );
 assert.match(projectsView, /useDroppable\(\{\s*id: `pcard:/, "project cards are drop targets");
 assert.match(projectsView, /applyProjectOverrides\(sessions, projectOverrides\)/, "chats are grouped with Cave-local project overrides applied");
@@ -68,6 +133,8 @@ for (const icon of [
   "ph:terminal-window-bold",
   "ph:trash-bold",
   "ph:pencil-simple-bold",
+  "ph:list-checks-bold",
+  "ph:check-bold",
 ]) {
   assert.match(iconSource, new RegExp(`"${icon}"`), `${icon} should be in the icon allowlist`);
 }
