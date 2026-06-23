@@ -118,6 +118,9 @@ struct FamiliarThreadsView: View {
                             Button { renamingThread = thread } label: {
                                 Label("Rename", systemImage: "pencil")
                             }
+                            Button { app.duplicateThread(thread) } label: {
+                                Label("Duplicate", systemImage: "plus.square.on.square")
+                            }
                             Button { app.setThreadPinned(thread, !thread.pinned) } label: {
                                 Label(thread.pinned ? "Unpin" : "Pin",
                                       systemImage: thread.pinned ? "pin.slash" : "pin")
