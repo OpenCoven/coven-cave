@@ -10,5 +10,6 @@ assert.match(src, /title=\{exact\}/, "exposes the exact timestamp on hover");
 assert.match(src, /relativeTime\(iso, now, prefs\.density\)/, "uses shared relativeTime honoring density");
 assert.match(src, /formatDate\(iso, prefs/, "builds the exact title from the shared absolute formatter");
 assert.match(src, /useDateTimePrefs\(\)/, "subscribes to date/time prefs so changes apply live");
+assert.match(src, /fallback != null \? <span className=\{className\}>\{fallback\}<\/span> : null/, "renders the styled fallback (e.g. \"never\") when there is no timestamp");
 
 console.log("ui/relative-time.test.ts: ok");

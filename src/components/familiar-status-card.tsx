@@ -1,19 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { relativeTime } from "@/lib/relative-time";
-import { useDateTimePrefs } from "@/lib/datetime-format";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { parseGlyphString } from "@/lib/familiar-glyph";
 import { Icon } from "@/lib/icon";
 import type { FamiliarCard, SessionSummary } from "@/lib/coven-status-types";
 import { statusColor, statusLabel } from "@/lib/coven-status-types";
-
-// ── Relative time ─────────────────────────────────────────────────────────────
-
-function relTime(iso: string | null): string {
-  return iso ? relativeTime(iso) : "never";
-}
 
 // ── Format runtime ────────────────────────────────────────────────────────────
 
@@ -148,9 +141,11 @@ function SessionItem({ session, indent }: { session: SessionSummary; indent: boo
       <span className={`shrink-0 text-[10px] font-medium ${statusCls}`}>{session.status}</span>
 
       {/* timestamp */}
-      <span className="ml-auto shrink-0 text-[10px] text-[var(--text-muted)]">
-        {relTime(session.updatedAt)}
-      </span>
+      <RelativeTime
+        iso={session.updatedAt}
+        fallback="never"
+        className="ml-auto shrink-0 text-[10px] text-[var(--text-muted)]"
+      />
     </li>
   );
 }
@@ -164,7 +159,6 @@ type Props = {
 };
 
 export function FamiliarStatusCard({ card, expanded, onToggle }: Props) {
-  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const statusClr = statusColor(card.status);
   const label = statusLabel(card.status);
 
@@ -285,9 +279,7 @@ export function FamiliarStatusCard({ card, expanded, onToggle }: Props) {
             <span className="text-[10px] text-[var(--text-secondary)]">{label}</span>
           </div>
           {card.lastActiveAt && (
-            <span className="text-[10px] text-[var(--text-muted)]">
-              {relTime(card.lastActiveAt)}
-            </span>
+            <RelativeTime iso={card.lastActiveAt} className="text-[10px] text-[var(--text-muted)]" />
           )}
         </div>
 

@@ -6,6 +6,7 @@ import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/date
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
+import { RelativeTime } from "@/components/ui/relative-time";
 import type { Familiar } from "@/lib/types";
 import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -626,7 +627,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
                           <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-secondary)]">
                             {familiar?.display_name ?? entry.familiar_id}
                           </span>
-                          <span>{age(entry.updated_at)}</span>
+                          <RelativeTime iso={entry.updated_at} />
                         </div>
                         <h4 className="mt-2 line-clamp-2 text-[13px] font-medium text-[var(--text-primary)]">{entry.title}</h4>
                       </div>
@@ -951,7 +952,7 @@ export function MemoryFilesList({
                     </span>
                   ) : null}
                 </span>
-                <span className="shrink-0 text-[10px] text-[var(--text-muted)]">{age(entry.modified)}</span>
+                <RelativeTime iso={entry.modified} className="shrink-0 text-[10px] text-[var(--text-muted)]" />
               </button>
               <div className="flex items-center gap-1 pr-2">
                 <ExpandMemoryButton path={entry.fullPath} title={entry.relPath} variant="compact" />

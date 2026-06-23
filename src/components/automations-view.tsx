@@ -930,7 +930,7 @@ function CodexDetailPanel({
                   >
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ background:
                       r.status === "succeeded" ? "var(--accent-presence)" : r.status === "failed" ? "var(--color-danger)" : "var(--text-muted)" }} />
-                    <span style={{ color: "var(--text-secondary)" }}>{relTime(r.startedAt)}</span>
+                    <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
                     {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
                     <span className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
                       <Icon name={openRunId === r.id ? "ph:caret-down" : "ph:caret-right"} width={11} />
@@ -1049,7 +1049,7 @@ function AutomationScheduleRow({
           </span>
         )}
         {lastRun && (
-          <span className="shrink-0 text-[11px]" style={{ color:
+          <span className="shrink-0 text-[11px]" title={lastRun.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined} style={{ color:
             lastRun.status === "failed" ? "var(--color-danger)"
             : lastRun.status === "running" ? "var(--accent-presence)"
             : "var(--text-muted)" }}>

@@ -7,6 +7,7 @@ import { Tabs } from "@/components/ui/tabs";
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
+import { RelativeTime } from "@/components/ui/relative-time";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
@@ -738,9 +739,7 @@ function FamiliarDetailPanel({
                           {s.harness} · {s.status}
                         </span>
                       </span>
-                      <span className="shrink-0 text-[10px] text-[var(--text-muted)]">
-                        {age(s.updated_at)}
-                      </span>
+                      <RelativeTime iso={s.updated_at} className="shrink-0 text-[10px] text-[var(--text-muted)]" />
                     </button>
                   </li>
                 ))}

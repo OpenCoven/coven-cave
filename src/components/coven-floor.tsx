@@ -1,21 +1,17 @@
 "use client";
 
 import "@/styles/board.css";
-import { relativeTime } from "@/lib/relative-time";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { formatClock, useDateTimePrefs } from "@/lib/datetime-format";
+import { RelativeTime } from "@/components/ui/relative-time";
 import type { CovenStatusResponse, FamiliarCard, SessionSummary } from "@/lib/coven-status-types";
 import { statusColor, statusLabel } from "@/lib/coven-status-types";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 import { SkeletonRows } from "@/components/ui/skeleton";
 
 const MAX_VISIBLE_SESSIONS = 12;
-
-function relTime(iso: string | null): string {
-  return iso ? relativeTime(iso) : "never";
-}
 
 function fmtRuntime(ms: number | undefined): string | null {
   if (!ms) return null;
@@ -139,7 +135,7 @@ function SessionTableCells({ session }: { session: SessionSummary }) {
         </span>
       </td>
       <td>
-        <span className="board-table-muted">{relTime(session.updatedAt)}</span>
+        <RelativeTime iso={session.updatedAt} fallback="never" className="board-table-muted" />
       </td>
       <td className="floor-trace-cell">
         <span className="board-table-muted">{session.isSubagent ? "Subagent" : "Session"}</span>
@@ -211,7 +207,7 @@ function EmptySessionRow({ card }: { card: FamiliarCard }) {
         <span className="board-table-muted">No recent sessions for this familiar.</span>
       </td>
       <td>
-        <span className="board-table-muted">{relTime(card.lastActiveAt)}</span>
+        <RelativeTime iso={card.lastActiveAt} fallback="never" className="board-table-muted" />
       </td>
       <td className="floor-trace-cell">
         <span className="board-table-muted">Empty</span>
@@ -395,7 +391,7 @@ export function CovenFloor() {
                           </span>
                         </td>
                         <td>
-                          <span className="board-table-muted">{relTime(card.lastActiveAt)}</span>
+                          <RelativeTime iso={card.lastActiveAt} fallback="never" className="board-table-muted" />
                         </td>
                         <td className="floor-trace-cell">
                           <span className="board-table-muted">{expandedId === card.id ? "Hide traces" : "Show traces"}</span>

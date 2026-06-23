@@ -16,6 +16,7 @@ import type { RoleEntry } from "@/app/api/roles/route";
 import type { LocalSkillEntry } from "@/app/api/skills/local/route";
 import type { AdapterReport } from "@/lib/harness-adapters";
 import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
+import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 
 type Tab = "memory" | "familiar" | "inbox" | "vault";
 
@@ -824,7 +825,7 @@ function MemoryTab({
                   <span className="truncate">{e.rootLabel}</span>
                 </span>
               </span>
-              <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">{age(e.modified)}</span>
+              <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]" title={e.modified ? formatTimestamp(e.modified, readDateTimePrefs()) : undefined}>{age(e.modified)}</span>
             </button>
           </li>
         ))}
