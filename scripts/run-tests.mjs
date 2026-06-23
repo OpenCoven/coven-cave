@@ -37,6 +37,7 @@ export const SUITES = {
     "src/lib/github-checks.test.ts",
     "src/lib/gfm-autolink.test.ts",
     "src/lib/chat-projects.test.ts",
+    "src/lib/conversation-tree.test.ts",
     "src/lib/chat-project-selection.test.ts",
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-project-overrides.test.ts",
