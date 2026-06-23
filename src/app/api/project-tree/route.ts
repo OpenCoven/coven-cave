@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
       familiarId: req.nextUrl.searchParams.get("familiarId"),
       path: root,
       surface: projectPermissionSurfaceForRequest(req, "file-browse"),
+      request: req,
     });
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {

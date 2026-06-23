@@ -8,6 +8,7 @@ import {
   type ProjectPermissionSurface,
 } from "@/lib/project-permissions";
 import { MOBILE_ACCESS_HEADER } from "@/proxy-helpers";
+import { isLocalOrigin } from "@/lib/server/local-origin";
 
 function isWithinRoot(candidate: string, root: string): boolean {
   const relativePath = path.relative(root, candidate);
@@ -30,16 +31,26 @@ function projectRootForPath(value: string, projects: CaveProject[]): CaveProject
   return matches[0]?.project ?? null;
 }
 
+/**
+ * Read-only surfaces the human operator may use WITHOUT a familiar context —
+ * but only from a loopback origin (their own desktop), never the phone /
+ * tailnet. Familiars still require a grant; write surfaces always require a
+ * familiarId.
+ */
+const LOCAL_HUMAN_READ_SURFACES: ReadonlySet<ProjectPermissionSurface> = new Set([
+  "file-browse",
+  "file-read",
+  "project-api",
+]);
+
 export async function assertProjectApiAccess(args: {
   familiarId: string | null | undefined;
   path: string | null | undefined;
   surface: ProjectPermissionSurface;
+  request?: Request;
 }): Promise<void> {
   const { surface } = args;
   const familiarId = args.familiarId?.trim();
-  if (!familiarId) {
-    throw new ProjectAccessDeniedError("missing familiarId for project access");
-  }
   const requestedPath = args.path?.trim();
   if (!requestedPath) {
     throw new ProjectAccessDeniedError("missing project path for permission check");
@@ -48,6 +59,14 @@ export async function assertProjectApiAccess(args: {
   const project = projectRootForPath(requestedPath, projects);
   if (!project) {
     throw new ProjectAccessDeniedError("project is not registered for permission checks");
+  }
+  if (!familiarId) {
+    // The human at their own desktop (loopback) may read a registered project's
+    // files without a familiar. Familiars stay gated; writes still need one.
+    if (args.request && isLocalOrigin(args.request) && LOCAL_HUMAN_READ_SURFACES.has(surface)) {
+      return;
+    }
+    throw new ProjectAccessDeniedError("missing familiarId for project access");
   }
   await assertProjectAccess({ familiarId }, project.id, surface);
 }

@@ -160,6 +160,7 @@ export async function GET(req: NextRequest) {
       familiarId: sp.get("familiarId"),
       path: root,
       surface: projectPermissionSurfaceForRequest(req, "project-api"),
+      request: req,
     });
   } catch (error) {
     if (error instanceof ProjectAccessDeniedError) {
