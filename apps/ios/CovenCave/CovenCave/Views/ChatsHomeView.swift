@@ -28,7 +28,7 @@ struct ChatsHomeView: View {
             Group {
                 if app.familiars.isEmpty && app.threads.isEmpty {
                     emptyState
-                } else if filteredFamiliars.isEmpty && filteredGroups.isEmpty {
+                } else if filteredFamiliars.isEmpty && filteredGroups.isEmpty && matchingThreads.isEmpty {
                     ContentUnavailableView.search(text: query)
                 } else {
                     homeList
@@ -194,11 +194,38 @@ struct ChatsHomeView: View {
                     }
                 }
             }
+            if !matchingThreads.isEmpty {
+                Section("Chats") {
+                    ForEach(matchingThreads) { thread in
+                        Button { path.append(.thread(thread)) } label: {
+                            ThreadRow(thread: thread)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                        .contextMenu {
+                            Button { renamingThread = thread } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
+                            Button { app.setThreadPinned(thread, !thread.pinned) } label: {
+                                Label(thread.pinned ? "Unpin" : "Pin",
+                                      systemImage: thread.pinned ? "pin.slash" : "pin")
+                            }
+                            Button { app.setThreadArchived(thread, !thread.archived) } label: {
+                                Label(thread.archived ? "Unarchive" : "Archive",
+                                      systemImage: thread.archived ? "tray.and.arrow.up" : "archivebox")
+                            }
+                            Button(role: .destructive) { pendingDelete = thread } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
         }
         .listStyle(.plain)
         .environment(\.editMode, $editMode)
         .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
-        .confirmationDialog("Delete this group chat?",
+        .confirmationDialog("Delete this chat?",
                             isPresented: deleteDialogBinding,
                             titleVisibility: .visible,
                             presenting: pendingDelete) { thread in
@@ -214,6 +241,27 @@ struct ChatsHomeView: View {
 
     private var deleteDialogBinding: Binding<Bool> {
         Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
+    }
+
+    /// Direct (non-group) threads matching the search query by title, a member's
+    /// name, or message text. Empty while not searching (groups have their own
+    /// section; this surfaces individual conversations otherwise filed under a
+    /// familiar).
+    private var matchingThreads: [ChatThread] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return [] }
+        return app.threads
+            .filter { !$0.isGroup && (showArchived || !$0.archived) }
+            .filter { thread in
+                if thread.title.lowercased().contains(q) { return true }
+                if thread.familiarIds.compactMap(app.familiar)
+                    .contains(where: { $0.displayName.lowercased().contains(q) }) { return true }
+                return thread.messages.contains { $0.text.lowercased().contains(q) }
+            }
+            .sorted { a, b in
+                if a.pinned != b.pinned { return a.pinned }
+                return a.updatedAt > b.updatedAt
+            }
     }
 
     /// Familiars matching the search query (name or role). Empty query → all.
