@@ -9,8 +9,6 @@ struct TaskDetailView: View {
     @State private var notesHeight: CGFloat = 0
     @State private var notesReader: ResponseReaderItem?
     @State private var confirmingDelete = false
-    @State private var notesHeight: CGFloat = 0
-    @State private var notesReader: ResponseReaderItem?
 
     /// The current card from the store, so status/priority/step edits made here
     /// reflect immediately; falls back to the passed-in snapshot.
