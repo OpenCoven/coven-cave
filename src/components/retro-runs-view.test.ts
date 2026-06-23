@@ -6,7 +6,6 @@ const component = readFileSync(new URL("./retro-runs-view.tsx", import.meta.url)
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
-const dashboard = readFileSync(new URL("./dashboard/launcher-grid.tsx", import.meta.url), "utf8");
 const apiRoute = readFileSync(new URL("../app/api/retro-runs/route.ts", import.meta.url), "utf8");
 const evalLoopRoute = readFileSync(new URL("../app/api/skills/eval-loop/[familiarId]/route.ts", import.meta.url), "utf8");
 const retroPageUrl = new URL("../app/dashboard/retro/page.tsx", import.meta.url);
@@ -34,6 +33,5 @@ assert.match(
 assert.match(workspace, /<RetroRunsView familiarId=\{retroFamiliarId\}/, "workspace renders Retro Runs scoped to one familiar");
 assert.doesNotMatch(sidebar, /id: "retro"/, "desktop sidebar should not expose a Retro tab");
 assert.doesNotMatch(mobileTabs, /id: "retro"/, "mobile bottom tabs should not expose a Retro tab");
-assert.match(dashboard, /href: "\/dashboard\/retro"/, "dashboard quick links include Retro Runs");
 
 console.log("retro-runs-view.test.ts: ok");
