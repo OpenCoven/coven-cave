@@ -4706,6 +4706,14 @@ button:active > .edge-rail-chip {
   max-width: clamp(280px, 40vw, 600px);
 }
 
+/* Compact avatar tiles to match the standardized top-bar icons (14px) and
+   13px labels — smaller than the default 28px strip bubble, scoped to the
+   desktop menu bar so the mobile `.top-bar` strip is unaffected. */
+.menu-bar .familiar-quickswitch__btn {
+  width: 22px;
+  height: 22px;
+}
+
 .menu-bar__new,
 .menu-bar__task {
   display: inline-flex;
