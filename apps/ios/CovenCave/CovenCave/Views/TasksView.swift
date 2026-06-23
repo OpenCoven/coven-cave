@@ -31,6 +31,7 @@ struct TasksView: View {
         NavigationStack(path: $path) {
             content
                 .navigationTitle("Tasks")
+                .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: BoardCard.self) { TaskDetailView(card: $0) }
                 .searchable(text: $query, prompt: "Search tasks")
                 .refreshable { await app.loadTasks() }
