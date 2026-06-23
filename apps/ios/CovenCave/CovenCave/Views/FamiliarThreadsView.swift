@@ -106,12 +106,21 @@ struct FamiliarThreadsView: View {
                                 Label("Rename", systemImage: "pencil")
                             }
                             .tint(.accentColor)
+                            Button { app.setThreadPinned(thread, !thread.pinned) } label: {
+                                Label(thread.pinned ? "Unpin" : "Pin",
+                                      systemImage: thread.pinned ? "pin.slash" : "pin")
+                            }
+                            .tint(.orange)
                         }
                     }
                     .contextMenu {
                         if case .local(let thread) = entry {
                             Button { renamingThread = thread } label: {
                                 Label("Rename", systemImage: "pencil")
+                            }
+                            Button { app.setThreadPinned(thread, !thread.pinned) } label: {
+                                Label(thread.pinned ? "Unpin" : "Pin",
+                                      systemImage: thread.pinned ? "pin.slash" : "pin")
                             }
                             Button { app.setThreadArchived(thread, !thread.archived) } label: {
                                 Label(thread.archived ? "Unarchive" : "Archive",

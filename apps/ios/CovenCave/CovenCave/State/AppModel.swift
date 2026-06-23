@@ -427,13 +427,19 @@ final class AppModel {
     func directThreads(for familiarId: String) -> [ChatThread] {
         threads
             .filter { !$0.isGroup && $0.familiarIds == [familiarId] }
-            .sorted { $0.updatedAt > $1.updatedAt }
+            .sorted { a, b in
+                if a.pinned != b.pinned { return a.pinned }
+                return a.updatedAt > b.updatedAt
+            }
     }
 
     /// Every group thread, newest first — shown as its own rows on the Chats
     /// home (a group has no single familiar to file it under).
     var groupThreads: [ChatThread] {
-        threads.filter(\.isGroup).sorted { $0.updatedAt > $1.updatedAt }
+        threads.filter(\.isGroup).sorted { a, b in
+            if a.pinned != b.pinned { return a.pinned }
+            return a.updatedAt > b.updatedAt
+        }
     }
 
     /// Server sessions for a familiar that no local thread already carries —
@@ -660,6 +666,14 @@ final class AppModel {
         guard let target = threads.first(where: { $0.id == thread.id }),
               target.archived != archived else { return }
         target.archived = archived
+        persistThreads()
+    }
+
+    /// Pin or unpin a thread; pinned threads sort to the top of their list.
+    func setThreadPinned(_ thread: ChatThread, _ pinned: Bool) {
+        guard let target = threads.first(where: { $0.id == thread.id }),
+              target.pinned != pinned else { return }
+        target.pinned = pinned
         persistThreads()
     }
 
