@@ -13,6 +13,10 @@ struct MessageBubble: View {
     var onRetry: (() -> Void)? = nil
 
     @State private var mdHeight: CGFloat = 0
+    /// Set when the markdown WebView can't render (missing/stale bundle, JS
+    /// error) — flips this bubble back to plain `Text` so the reply is never
+    /// shown as a blank sliver.
+    @State private var markdownFailed = false
 
     private var isUser: Bool { message.role == .user }
 
@@ -53,7 +57,7 @@ struct MessageBubble: View {
     /// Render the desktop-parity markdown WebView only for a settled, non-error
     /// assistant reply. Streaming / user / error messages stay native Text.
     private var rendersMarkdown: Bool {
-        !isUser && !message.streaming && !message.isError && !parsed.visible.isEmpty
+        !isUser && !message.streaming && !message.isError && !parsed.visible.isEmpty && !markdownFailed
     }
 
     private var canOpenReader: Bool {
@@ -153,7 +157,8 @@ struct MessageBubble: View {
                 .padding(.horizontal, 14).padding(.vertical, 11)
                 .background(bubbleBackground, in: bubbleShape)
         } else if rendersMarkdown {
-            MarkdownWebView(markdown: parsed.visible, height: $mdHeight)
+            MarkdownWebView(markdown: parsed.visible, height: $mdHeight,
+                            onFailure: { markdownFailed = true })
                 .frame(height: max(mdHeight, 1))
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(bubbleBackground, in: bubbleShape)

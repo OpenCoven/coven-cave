@@ -19,6 +19,28 @@ targets:
     platform: iOS
     sources:
       - path: CovenCave
+    preBuildScripts:
+      - name: Generate web bundles (markdown.html + terminal.html)
+        # markdown.html / terminal.html are gitignored, build-generated bundles
+        # the WebViews load. A build that ships without them renders assistant
+        # replies as blank slivers (markdown) / a dead terminal. Regenerate them
+        # on every build so a fresh checkout is never missing them. Non-fatal:
+        # if node can't be found we warn and rely on the Swift Text fallback.
+        basedOnDependencyAnalysis: false
+        script: |
+          set -u
+          REPO="$SRCROOT/../../.."
+          if ! command -v node >/dev/null 2>&1; then
+            for p in /opt/homebrew/bin /usr/local/bin "$HOME/.volta/bin" "$HOME/.nvm/versions/node"/*/bin; do
+              [ -x "$p/node" ] && export PATH="$p:$PATH" && break
+            done
+          fi
+          if ! command -v node >/dev/null 2>&1; then
+            echo "warning: node not found — skipping web bundle generation (using fallbacks)"
+            exit 0
+          fi
+          ( cd "$REPO" && node scripts/build-ios-markdown.mjs && node scripts/build-ios-terminal.mjs ) \
+            || echo "warning: web bundle generation failed — using fallbacks"
     settings:
       base:
         INFOPLIST_FILE: CovenCave/Info.plist
