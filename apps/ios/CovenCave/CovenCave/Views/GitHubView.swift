@@ -12,11 +12,13 @@ struct GitHubView: View {
     @State private var loading = true
     @State private var error: String?
     @State private var hint: String?
+    @State private var query = ""
 
     var body: some View {
         NavigationStack {
             content
                 .navigationTitle("GitHub")
+                .searchable(text: $query, prompt: "Search issues & PRs")
                 .navigationDestination(for: GitHubItem.self) { item in
                     GitHubItemDetailView(item: item)
                 }
@@ -51,6 +53,8 @@ struct GitHubView: View {
             } description: {
                 Text("No open pull requests, review requests, or assigned issues.")
             }
+        } else if groups.isEmpty {
+            ContentUnavailableView.search(text: query)
         } else {
             List {
                 ForEach(groups, id: \.title) { group in
@@ -79,6 +83,18 @@ struct GitHubView: View {
 
     struct Group { let title: String; let items: [GitHubItem] }
 
+    /// Items narrowed by the search field — matches the title, the repo, or a
+    /// "#123"-style issue/PR number. Empty query → everything.
+    private var visibleItems: [GitHubItem] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return items }
+        return items.filter { item in
+            item.title.lowercased().contains(q)
+                || item.repo.lowercased().contains(q)
+                || (item.number.map { "#\($0)".contains(q) } ?? false)
+        }
+    }
+
     private var groups: [Group] {
         let order: [(String, (GitHubItem) -> Bool)] = [
             ("Review requests", { $0.kind == "review_request" }),
@@ -87,7 +103,7 @@ struct GitHubView: View {
             ("Notifications", { $0.kind == "notification" }),
         ]
         return order.compactMap { title, match in
-            let matched = items.filter(match)
+            let matched = visibleItems.filter(match)
             return matched.isEmpty ? nil : Group(title: title, items: matched)
         }
     }
