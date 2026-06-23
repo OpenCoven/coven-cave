@@ -3,7 +3,7 @@ import Observation
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String { case chats, canvas, read, tasks, dev }
+enum AppTab: String { case chats, read, tasks, dev }
 
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
@@ -35,7 +35,7 @@ final class AppModel {
     // MARK: - Cross-view command routing
 
     /// The selected bottom tab. Bound by `MainTabView`; set by `/board` / `/chats`.
-    var selectedTab: AppTab = .canvas
+    var selectedTab: AppTab = .chats
 
     /// A thread a command asked to open. `ChatsHomeView` observes this, pushes
     /// the thread, and clears it back to nil (one-shot navigation intent).

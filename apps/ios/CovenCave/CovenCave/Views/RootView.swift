@@ -34,9 +34,6 @@ struct MainTabView: View {
             Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
                 ChatsHomeView()
             }
-            Tab("Canvas", systemImage: "wand.and.stars", value: AppTab.canvas) {
-                CanvasView()
-            }
             Tab("Read", systemImage: "books.vertical.fill", value: AppTab.read) {
                 ReadingView()
             }
@@ -46,14 +43,6 @@ struct MainTabView: View {
             Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
                 DeveloperView()
             }
-        }
-        // The app always opens on the Canvas tab. TabView wins a layout race at
-        // cold launch and resets its selection to the first tab, so re-assert
-        // Canvas a beat later — once that settles the binding drives the tab.
-        // In-session, slash commands (`/chats`, `/board`) still move the tab.
-        .task {
-            try? await Task.sleep(for: .milliseconds(300))
-            app.selectedTab = .canvas
         }
         // Command confirmations float above the whole tab bar so they're visible
         // whether a command stays in chat or jumps to the Tasks tab.
