@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@/lib/icon";
-import { copyText } from "@/lib/clipboard";
+import { useCopy } from "@/lib/use-copy";
 import { formatClock } from "@/lib/datetime-format";
 import {
   stripPreviewOnlyAttachmentFields,
@@ -39,24 +39,14 @@ function statusColor(status: string | undefined): string {
 // ── Small building blocks ─────────────────────────────────────────────────────
 
 function CopyButton({ getText, label }: { getText: () => string; label?: string }) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopy();
   return (
     <button
       type="button"
       className="focus-ring inline-flex shrink-0 items-center gap-1 rounded px-1 py-0.5 text-[10px] text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)]"
       title={label ?? "Copy"}
       aria-label={label ?? "Copy"}
-      onClick={() => {
-        copyText(getText())
-          .then(() => {
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1500);
-          })
-          .catch(() => {
-            // Clipboard unavailable (insecure context / permission denied) —
-            // skip the "Copied" feedback rather than crash the pane.
-          });
-      }}
+      onClick={() => copy(getText())}
     >
       <Icon name={copied ? "ph:check" : "ph:copy"} width={11} aria-hidden />
       {label ? <span>{copied ? "Copied" : label}</span> : null}

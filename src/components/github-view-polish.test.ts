@@ -278,4 +278,14 @@ assert.match(
   "safe merge action should be wired into the selected-item panel actions",
 );
 
+// Copy buttons must use the context-safe copyText (via useCopy), not raw
+// navigator.clipboard — the latter silently no-ops in the Tauri webview and
+// over non-secure Tailscale Serve.
+assert.doesNotMatch(
+  source,
+  /navigator\.clipboard/,
+  "GitHub copy buttons go through the context-safe copyText (useCopy), not raw navigator.clipboard",
+);
+assert.match(source, /useCopy/, "GitHub view copies via the shared useCopy hook");
+
 console.log("github-view-polish.test.ts OK");

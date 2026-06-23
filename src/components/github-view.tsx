@@ -8,6 +8,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { useCopy } from "@/lib/use-copy";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
@@ -703,7 +704,7 @@ function useGitHubItemDetail(item: GitHubItem | null): DetailState {
 
 /** A tiny copy-to-clipboard affordance for the issue number. */
 function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopy(1200);
   return (
     <button
       type="button"
@@ -712,13 +713,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       aria-label={label}
       onClick={(e) => {
         e.stopPropagation();
-        navigator.clipboard?.writeText(value).then(
-          () => {
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1200);
-          },
-          () => {},
-        );
+        copy(value);
       }}
     >
       <Icon name={copied ? "ph:check" : "ph:copy"} width={11} />

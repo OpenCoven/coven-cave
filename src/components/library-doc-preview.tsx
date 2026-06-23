@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { copyText } from "@/lib/clipboard";
+import { useCopy } from "@/lib/use-copy";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { parseLeadingMetadata, type MetaEntry } from "@/lib/library-metadata";
 import { isSafeGitHubUrl, isSafeHttpUrl, isSafeVscodeFileUrl } from "@/lib/url-safety";
@@ -95,16 +96,12 @@ async function openUrl(url: string, kind: UrlOpenKind = "web") {
 }
 
 function CopyButton({ text, label, compact }: { text: string; label: string; compact?: boolean }) {
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopy(2000);
   return (
     <button
       type="button"
       className={`library-preview-action-btn${compact ? " library-preview-action-btn--compact" : ""}`}
-      onClick={() => {
-        copyText(text)
-          .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })
-          .catch(() => undefined);
-      }}
+      onClick={() => copy(text)}
     >
       <Icon name={copied ? "ph:check" : "ph:copy"} width={compact ? 12 : 13} />
       <span>{copied ? "Copied!" : label}</span>
