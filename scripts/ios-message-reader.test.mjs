@@ -54,14 +54,20 @@ assert.match(
 
 assert.match(
   chatView,
-  /struct ResponseReaderView: View[\s\S]*MarkdownWebView\(markdown: item\.markdown, height: \$mdHeight\)/,
+  /struct ResponseReaderView: View[\s\S]*MarkdownWebView\(markdown: item\.markdown, height: \$mdHeight,[\s\S]*scrollable: true/,
   "ResponseReaderView should render the full response through the markdown renderer",
 );
 
 assert.match(
   chatView,
-  /ToolbarItem\(placement: \.confirmationAction\) \{[\s\S]*Button\("Done"\)/,
+  /struct ResponseReaderView: View[\s\S]*Button\("Done"\) \{ dismiss\(\) \}/,
   "ResponseReaderView should provide a Done toolbar action",
+);
+
+assert.match(
+  chatView,
+  /struct ResponseReaderView: View[\s\S]*fontScale[\s\S]*Section\("Theme"\)/,
+  "ResponseReaderView should offer reader font-size and theme controls",
 );
 
 assert.match(
