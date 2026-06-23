@@ -16,6 +16,8 @@ struct TasksView: View {
     @AppStorage("cave.tasks.groupBy") private var groupByRaw = GroupBy.status.rawValue
     @State private var query = ""
     @State private var path: [BoardCard] = []
+    /// A task awaiting delete confirmation (swipe or context menu).
+    @State private var pendingDelete: BoardCard?
 
     /// How the task list is partitioned into sections.
     enum GroupBy: String, CaseIterable, Identifiable {
@@ -40,6 +42,46 @@ struct TasksView: View {
                 .onAppear(perform: openRequestedCard)
                 // A chat asked to open one of its linked tasks.
                 .onChange(of: app.cardToOpen) { _, card in openRequestedCard() }
+                .confirmationDialog("Delete this task?",
+                                    isPresented: deleteDialogBinding,
+                                    titleVisibility: .visible,
+                                    presenting: pendingDelete) { card in
+                    Button("Delete", role: .destructive) { Task { await app.deleteTask(card) } }
+                    Button("Cancel", role: .cancel) {}
+                } message: { card in Text(card.title) }
+        }
+    }
+
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
+    }
+
+    /// Status / priority / delete actions, shared by the row context menu and
+    /// the detail-view toolbar menu.
+    @ViewBuilder private func taskMenu(_ card: BoardCard) -> some View {
+        Menu {
+            ForEach(CardStatus.allCases, id: \.self) { status in
+                Button {
+                    Task { await app.setTaskStatus(card, status) }
+                } label: {
+                    Label(status.label, systemImage: card.status == status ? "checkmark" : status.systemImage)
+                }
+            }
+        } label: { Label("Status", systemImage: "circle.dashed") }
+
+        Menu {
+            ForEach(CardPriority.allCases, id: \.self) { priority in
+                Button {
+                    Task { await app.setTaskPriority(card, priority) }
+                } label: {
+                    Label(priority.label, systemImage: card.priority == priority ? "checkmark" : "flag")
+                }
+            }
+        } label: { Label("Priority", systemImage: "flag") }
+
+        Divider()
+        Button(role: .destructive) { pendingDelete = card } label: {
+            Label("Delete", systemImage: "trash")
         }
     }
 
@@ -85,6 +127,17 @@ struct TasksView: View {
                         Button { path.append(card) } label: { TaskRow(card: card) }
                             .buttonStyle(.plain)
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 12))
+                            .contextMenu { taskMenu(card) }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) { pendingDelete = card } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                Button { Task { await app.setTaskStatus(card, card.status == .done ? .running : .done) } } label: {
+                                    Label(card.status == .done ? "Reopen" : "Done",
+                                          systemImage: card.status == .done ? "arrow.uturn.backward" : "checkmark")
+                                }
+                                .tint(card.status == .done ? .orange : .green)
+                            }
                     }
                 } header: {
                     HStack(spacing: 6) {

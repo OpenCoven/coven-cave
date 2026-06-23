@@ -144,6 +144,74 @@ final class AppModel {
         tasksLoaded = true
     }
 
+    // MARK: - Task actions
+
+    /// Optimistically set a task's status, then reconcile with the server's
+    /// echoed card (it stamps lifecycle/updatedAt). Reverts on failure.
+    func setTaskStatus(_ card: BoardCard, _ status: CardStatus) async {
+        guard let client, status != card.status else { return }
+        let previous = tasks
+        applyTask(id: card.id) { $0.statusRaw = status.rawValue }
+        do {
+            let updated = try await client.updateTask(cardId: card.id, status: status)
+            applyTask(id: card.id) { $0 = updated }
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
+    /// Optimistically set a task's priority; reconcile/revert like status.
+    func setTaskPriority(_ card: BoardCard, _ priority: CardPriority) async {
+        guard let client, priority != card.priority else { return }
+        let previous = tasks
+        applyTask(id: card.id) { $0.priorityRaw = priority.rawValue }
+        do {
+            let updated = try await client.updateTask(cardId: card.id, priority: priority)
+            applyTask(id: card.id) { $0 = updated }
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
+    /// Toggle a checklist step's done flag, persisting the whole step list.
+    func toggleStep(_ card: BoardCard, stepId: String) async {
+        guard let client, var steps = card.steps,
+              let idx = steps.firstIndex(where: { $0.id == stepId }) else { return }
+        steps[idx].done.toggle()
+        let newSteps = steps
+        let previous = tasks
+        applyTask(id: card.id) { $0.steps = newSteps }
+        do {
+            let updated = try await client.updateTask(cardId: card.id, steps: newSteps)
+            applyTask(id: card.id) { $0 = updated }
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
+    /// Optimistically remove a task, then DELETE it. Reinserts on failure.
+    func deleteTask(_ card: BoardCard) async {
+        guard let client else { return }
+        let previous = tasks
+        tasks.removeAll { $0.id == card.id }
+        do {
+            try await client.deleteTask(cardId: card.id)
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
+    private func applyTask(id: String, _ mutate: (inout BoardCard) -> Void) {
+        guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
+        var card = tasks[idx]
+        mutate(&card)
+        tasks[idx] = card
+    }
+
     // MARK: - Reading list actions
 
     func loadReading() async {
