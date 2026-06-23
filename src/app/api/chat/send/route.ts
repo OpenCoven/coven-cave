@@ -111,6 +111,9 @@ type SendBody = {
   /** Project root the mentions are relative to — resumed sessions don't carry
    * projectRoot in the body, so the composer sends the root it knows. */
   mentionedFilesRoot?: string;
+  /** Branching: when set, the new user turn is parented here (its prior
+   *  sibling stays in the tree) and the new assistant turn becomes the tip. */
+  parentTurnId?: string;
 };
 
 type ReasoningEffort = "low" | "medium" | "high";
@@ -693,6 +696,10 @@ function openClawChatResponse(args: {
           const assistantTurnId = crypto.randomUUID();
           const chatTitle = existing?.title ?? defaultChatTitleForSession(sessionId);
           if (!existing) await setDefaultSessionTitleIfMissing(sessionId, chatTitle);
+          // Branching: same logic as the coven-run path — client-supplied
+          // parentTurnId takes precedence; falls back to prior activeLeafId for
+          // normal (non-branch) sends so the linear chain is preserved.
+          const branchParentId = args.body.parentTurnId ?? existing?.activeLeafId ?? null;
           const conv = existing ?? {
             sessionId,
             familiarId: args.body.familiarId,
@@ -714,6 +721,7 @@ function openClawChatResponse(args: {
               text: args.promptText,
               ...(args.attachments.length ? { attachments: args.attachments } : {}),
               createdAt: now,
+              ...(branchParentId != null ? { parentId: branchParentId } : {}),
             },
             {
               id: assistantTurnId,
@@ -722,10 +730,12 @@ function openClawChatResponse(args: {
               createdAt: new Date().toISOString(),
               durationMs,
               isError,
+              parentId: userTurnId,
               responseMetadata,
               ...(cancelledByUser ? { cancelled: true } : {}),
             },
           );
+          conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
           pushProgress("save-transcript", "Transcript saved", "done");
           scheduleLinkRoute({
@@ -1425,12 +1435,19 @@ export async function POST(req: Request) {
         const assistantTurnId = crypto.randomUUID();
         const chatTitle = existing?.title ?? defaultChatTitleForSession(finalSessionId);
         if (!existing) await setDefaultSessionTitleIfMissing(finalSessionId, chatTitle);
+        // Branching: when the client passes parentTurnId, the new user turn is
+        // parented there (its prior sibling stays in the tree). For a normal
+        // (non-branch) send, fall back to the prior activeLeafId so the
+        // conversation stays a linear chain identical to the pre-branching
+        // behaviour. First turn of a new chat gets null (no parent).
+        const branchParentId = body.parentTurnId ?? existing?.activeLeafId ?? null;
         const userTurn: ChatTurn = {
           id: userTurnId,
           role: "user",
           text: promptText,
           ...(persistedAttachments.length ? { attachments: persistedAttachments } : {}),
           createdAt: now,
+          ...(branchParentId != null ? { parentId: branchParentId } : {}),
         };
         // Persist the turn's tool rows: the live chips exist only in client
         // state fed by SSE; without this, refresh/chat-switch loses them.
@@ -1446,6 +1463,7 @@ export async function POST(req: Request) {
           createdAt: new Date().toISOString(),
           durationMs: result.duration_ms,
           isError: result.is_error,
+          parentId: userTurnId,
           ...(cancelledByUser ? { cancelled: true } : {}),
           ...(result.usage ? { usage: result.usage } : {}),
           ...(result.costUsd !== undefined ? { costUsd: result.costUsd } : {}),
@@ -1468,6 +1486,7 @@ export async function POST(req: Request) {
         persistSendModelIntent(conv, body, modelState);
         if (harnessSessionId) conv.harnessSessionId = harnessSessionId;
         conv.turns.push(userTurn, assistantTurn);
+        conv.activeLeafId = assistantTurnId;
         await saveConversation(conv);
         pushProgress("save-transcript", "Transcript saved", "done");
 
