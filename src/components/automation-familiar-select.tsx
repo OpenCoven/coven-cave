@@ -64,6 +64,11 @@ export function FamiliarMultiSelect({ familiars, selected, onChange }: Props) {
           </button>
         );
       })}
+      {familiars.length > 1 && (
+        <span className="ml-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          ⌘-click to combine
+        </span>
+      )}
     </div>
   );
 }

@@ -1362,6 +1362,18 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, [selectedCodex?.id, refreshRuns]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // While a run is in flight, poll so its status + log fill in without a manual refresh.
+  useEffect(() => {
+    if (!selectedCodex?.id) return;
+    if (!automationRuns.some((r) => r.status === "running")) return;
+    const id = selectedCodex.id;
+    const t = setInterval(() => {
+      void refreshRuns(id);
+      void refreshLastRuns();
+    }, 2500);
+    return () => clearInterval(t);
+  }, [selectedCodex?.id, automationRuns, refreshRuns, refreshLastRuns]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Refresh last-run map whenever the automation list changes
   useEffect(() => {
     if (codexAutos.length > 0) void refreshLastRuns();
