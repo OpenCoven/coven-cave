@@ -382,7 +382,7 @@ export function JournalEntries({
             )}
           </>
         ) : (
-          <div className="journal-empty journal-empty--pane">Loading…</div>
+          <div className="journal-empty journal-empty--pane"><SkeletonRows count={5} /></div>
         )}
       </section>
     </div>

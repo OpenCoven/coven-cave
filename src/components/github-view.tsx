@@ -7,6 +7,7 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
@@ -1695,8 +1696,8 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       <div className="github-surface-body min-h-0 flex-1 overflow-hidden">
 
         {loading ? (
-          <div className="flex h-full items-center justify-center">
-            <span className="text-[12px] text-[var(--text-muted)]">Loading…</span>
+          <div className="p-2">
+            <SkeletonRows count={8} />
           </div>
 
         ) : error === "no_user" ? (

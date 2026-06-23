@@ -7,6 +7,7 @@ import type { Card, CardLifecycle, CardPriority, CardStatus } from "@/lib/cave-b
 import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import type { CardStep } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import {
@@ -320,7 +321,7 @@ function GitHubAttachSection({
 
           <div style={{ maxHeight: 240, overflowY: "auto" }}>
             {loading && (
-              <div style={{ padding: "12px 10px", fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>Loading…</div>
+              <div style={{ padding: "10px" }}><SkeletonRows count={4} /></div>
             )}
             {err && (
               <div style={{ padding: "10px", fontSize: 11, color: "var(--color-danger)" }}>{err}</div>

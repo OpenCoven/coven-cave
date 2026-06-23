@@ -104,4 +104,19 @@ assert.doesNotMatch(
   "Retro runs no longer hand-rolls retro-skeleton placeholder divs",
 );
 
+// More surfaces converted from a bare "Loading…" string to the shared skeleton.
+for (const [file, label] of [
+  ["./github-view.tsx", "GitHub activity"],
+  ["./board-inspector.tsx", "Board inspector linked context"],
+  ["./project-tree.tsx", "Project tree"],
+  ["./journal/journal-entries.tsx", "Journal entries pane"],
+]) {
+  const src = read(file);
+  assert.doesNotMatch(src, />Loading…</, `${label} no longer shows a bare Loading… line`);
+  assert.match(src, /<SkeletonRows/, `${label} shows shared skeleton rows on first load`);
+}
+const docPreview = read("./library-doc-preview.tsx");
+assert.doesNotMatch(docPreview, /library-preview-empty-text">Loading…</, "Library doc preview no longer shows a bare Loading… line");
+assert.match(docPreview, /<SkeletonGroup[\s\S]{0,200}<Skeleton variant="text"/, "Library doc preview shows a document-shaped skeleton on first load");
+
 console.log("surface-loading-states.test.ts: ok");

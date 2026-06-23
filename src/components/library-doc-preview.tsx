@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
+import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { parseLeadingMetadata, type MetaEntry } from "@/lib/library-metadata";
@@ -1239,7 +1240,13 @@ export function LibraryDocPreview({ selected, loading, activeSection, docNav, on
   if (loading && !selected) {
     return (
       <div className="library-preview library-preview--empty">
-        <span className="library-preview-empty-text">Loading…</span>
+        <SkeletonGroup className="w-full max-w-prose">
+          <Skeleton variant="text" width="55%" />
+          <Skeleton variant="text" />
+          <Skeleton variant="text" />
+          <Skeleton variant="text" width="80%" />
+          <Skeleton variant="text" width="70%" />
+        </SkeletonGroup>
       </div>
     );
   }

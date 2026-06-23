@@ -9,6 +9,7 @@ import {
   useImperativeHandle,
 } from "react";
 import { Icon } from "@/lib/icon";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { nextVisibleIndex, parentIndexByDepth } from "@/lib/tree-keynav";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -217,9 +218,8 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
 
     if (loading) {
       return (
-        <div className="flex items-center gap-1.5 py-3 pl-1 text-[11px] text-[var(--text-muted)]">
-          <Icon name="ph:arrow-clockwise" width={11} className="animate-spin shrink-0" />
-          Loading…
+        <div className="py-2 pl-1">
+          <SkeletonRows count={6} />
         </div>
       );
     }
