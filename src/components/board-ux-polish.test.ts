@@ -51,9 +51,9 @@ assert.match(
   /PRIORITIES\.find\(\(p\) => p\.id === card\.priority\) \?\? \{ id: card\.priority, label: card\.priority \}/,
   "Priority lookup must fall back instead of asserting",
 );
-assert.match(kanban, /role="button"/, "Kanban cards must expose a button role");
-assert.match(kanban, /aria-label=\{`\$\{card\.title\}[\s\S]*?priority[\s\S]*?Enter to open; Space to move\.`\}/, "Cards need a descriptive aria-label with the move/open shortcuts");
-assert.match(kanban, /aria-keyshortcuts="Enter Space"/, "Cards must declare their key shortcuts");
+assert.match(kanban, /role=\{selectMode \? "checkbox" : "button"\}/, "Kanban cards expose a button role (checkbox in select mode)");
+assert.match(kanban, /aria-label=\{`\$\{card\.title\}[\s\S]*?priority[\s\S]*?Enter to open; Space to move\./, "Cards need a descriptive aria-label with the move/open shortcuts");
+assert.match(kanban, /aria-keyshortcuts=\{selectMode \? undefined : "Enter Space"\}/, "Cards declare their key shortcuts outside select mode");
 assert.doesNotMatch(kanban, /aria-selected=\{isSelected\}/, "Invalid aria-selected on the card must be removed");
 assert.doesNotMatch(kanban, /aria-grabbed=\{isGrabbed\}/, "Deprecated aria-grabbed must be removed (state is in the label + live announce)");
 // Keyboard DnD contract preserved.

@@ -38,6 +38,10 @@ type Props = {
   selectedCardId: string | null;
   onSelect: (id: string) => void;
   onMoveStatus: (id: string, status: CardStatus) => void;
+  /** Bulk-select mode: cards become checkboxes instead of openers. */
+  selectMode?: boolean;
+  isSelected?: (id: string) => boolean;
+  onToggleSelect?: (id: string) => void;
   onNewCard: (status: CardStatus) => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
@@ -74,7 +78,7 @@ function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[], projects: 
   return entries;
 }
 
-export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, onNewCard, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
+export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, selectMode = false, isSelected, onToggleSelect, onNewCard, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -459,9 +463,10 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                           {rows.map((card) => (
                             <KanbanCard key={card.id} card={card} familiarById={familiarById} sessionById={sessionById} todayMs={todayMs}
                               isDragging={draggingId === card.id || touchDragId === card.id}
-                              isSelected={selectedCardId === card.id}
+                              isSelected={selectMode ? !!isSelected?.(card.id) : selectedCardId === card.id}
                               isGrabbed={grabbedCardId === card.id || touchDragId === card.id}
-                              onSelect={() => onSelect(card.id)}
+                              selectMode={selectMode}
+                              onSelect={() => (selectMode ? onToggleSelect?.(card.id) : onSelect(card.id))}
                               onDragStart={(e) => handleDragStart(e, card.id)}
                               onDragEnd={handleDragEnd}
                               onPointerDownTouch={(e) => handleCardPointerDown(e, card)}
@@ -492,9 +497,9 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   );
 }
 
-function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSelected, isGrabbed, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
+function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSelected, isGrabbed, selectMode = false, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
   card: Card; familiarById: Map<string, Familiar>; sessionById: Map<string, SessionRow>; todayMs: number | null;
-  isDragging: boolean; isSelected: boolean; isGrabbed: boolean;
+  isDragging: boolean; isSelected: boolean; isGrabbed: boolean; selectMode?: boolean;
   onSelect: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
   onPointerDownTouch?: (e: React.PointerEvent) => void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
@@ -515,16 +520,20 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
   const hasChips = !!schedule || !!card.cwd || card.links.length > 0 || card.labels.length > 0 || !!session;
 
   return (
-    <li draggable
+    <li draggable={!selectMode}
       data-card-id={card.id}
-      role="button"
-      aria-label={`${card.title} — ${pri.label} priority, ${statusLabel}${isSelected ? ", selected" : ""}${isGrabbed ? ", grabbed" : ""}. Enter to open; Space to move.`}
-      aria-keyshortcuts="Enter Space"
-      onDragStart={(e) => { draggedRef.current = true; onDragStart(e); }}
+      role={selectMode ? "checkbox" : "button"}
+      aria-checked={selectMode ? isSelected : undefined}
+      aria-label={`${card.title} — ${pri.label} priority, ${statusLabel}${isSelected ? ", selected" : ""}${isGrabbed ? ", grabbed" : ""}.${selectMode ? " Space to toggle selection." : " Enter to open; Space to move."}`}
+      aria-keyshortcuts={selectMode ? undefined : "Enter Space"}
+      onDragStart={(e) => { if (selectMode) { e.preventDefault(); return; } draggedRef.current = true; onDragStart(e); }}
       onDragEnd={() => { setTimeout(() => { draggedRef.current = false; }, 0); onDragEnd(); }}
-      onPointerDown={onPointerDownTouch}
+      onPointerDown={selectMode ? undefined : onPointerDownTouch}
       onClick={() => { if (draggedRef.current) return; onSelect(); }}
-      onKeyDown={(e) => { if (e.key !== "Enter") return; e.preventDefault(); onSelect(); }}
+      onKeyDown={(e) => {
+        if (selectMode) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); } return; }
+        if (e.key !== "Enter") return; e.preventDefault(); onSelect();
+      }}
       tabIndex={0}
       className={`board-kanban-card board-kanban-card--priority-${card.priority}${
         isSelected ? " board-kanban-card--selected" : ""
@@ -532,6 +541,21 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
         isGrabbed ? " board-kanban-card--grabbed" : ""
       }`}
     >
+      {selectMode && (
+        <span
+          aria-hidden
+          className="board-kanban-card-check"
+          style={{
+            position: "absolute", top: 8, right: 8,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            height: 18, width: 18, borderRadius: 5,
+            border: `1px solid ${isSelected ? "var(--accent-presence)" : "var(--border-strong)"}`,
+            background: isSelected ? "var(--accent-presence)" : "transparent",
+          }}
+        >
+          {isSelected && <Icon name="ph:check-bold" width={12} className="text-white" />}
+        </span>
+      )}
       <div className="board-kanban-card-top">
         <span className={`board-kanban-priority-pill board-kanban-priority-pill--${card.priority}`}>{pri.label}</span>
         <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
