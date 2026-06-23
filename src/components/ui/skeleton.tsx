@@ -41,16 +41,6 @@ export function SkeletonGroup({ children, className }: { children: ReactNode; cl
   return <div className={["ui-skeleton-group", className ?? ""].filter(Boolean).join(" ")}>{children}</div>;
 }
 
-export function SkeletonGrid({ count = 6, className }: { count?: number; className?: string }) {
-  return (
-    <div className={["ui-skeleton-grid", className ?? ""].filter(Boolean).join(" ")} aria-hidden>
-      {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i} variant="card" />
-      ))}
-    </div>
-  );
-}
-
 export function SkeletonRows({ count = 4, className }: { count?: number; className?: string }) {
   return (
     <SkeletonGroup className={className}>

@@ -85,22 +85,6 @@ const RAIL_OPEN_THRESHOLD_PX = RAIL_PEEK_PX + 16;
 const NAV_RAIL_PX = 56;
 const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 
-export type ShellNavSection = {
-  label?: string;
-  items: ShellNavItem[];
-  customContent?: ReactNode;
-};
-
-export type ShellNavItem = {
-  id: string;
-  label: string;
-  icon: IconName;
-  kbd?: string;
-  active?: boolean;
-  onClick?: () => void;
-  presence?: "active" | "idle";
-};
-
 export type ShellHandle = {
   openFamiliar: () => void;
   closeFamiliar: () => void;
@@ -659,75 +643,6 @@ function ShellInner({
 }
 
 export const Shell = forwardRef<ShellHandle, Parameters<typeof ShellInner>[0]>(ShellInner);
-
-export function ShellNav({
-  header,
-  sections,
-}: {
-  header?: ReactNode;
-  sections: ShellNavSection[];
-}) {
-  return (
-    <>
-      {header}
-      {sections.map((section, idx) => (
-        <div key={section.label ?? `section-${idx}`}>
-          {section.label && (
-            <div className="shell-nav-eyebrow">{section.label}</div>
-          )}
-          {section.customContent ?? section.items.map((item) => (
-            <ShellNavButton key={item.id} item={item} />
-          ))}
-        </div>
-      ))}
-    </>
-  );
-}
-
-export function ShellNavButton({ item }: { item: ShellNavItem }) {
-  return (
-    <button
-      type="button"
-      className={`shell-nav-item${item.active ? " shell-nav-item--active" : ""}`}
-      onClick={item.onClick}
-    >
-      <span className="shell-nav-item-icon">
-        <Icon name={item.icon} width={CAVE_ICON_SIZE.shellNav} height={CAVE_ICON_SIZE.shellNav} />
-      </span>
-      <span>{item.label}</span>
-      {item.presence && (
-        <span
-          aria-hidden
-          className={`shell-presence-dot ml-auto${item.presence === "idle" ? " shell-presence-dot--idle" : ""}`}
-        />
-      )}
-      {item.kbd && !item.presence && (
-        <span className="shell-nav-kbd">{item.kbd}</span>
-      )}
-    </button>
-  );
-}
-
-export function ShellNavHeader({
-  initial,
-  label,
-}: {
-  initial: string;
-  label: string;
-}) {
-  return (
-    <button type="button" className="shell-nav-header">
-      <span className="shell-nav-avatar">{initial}</span>
-      <span>{label}</span>
-      <Icon
-        name="ph:caret-down"
-        width={CAVE_ICON_SIZE.shellInline}
-        height={CAVE_ICON_SIZE.shellInline}
-        className="ml-auto opacity-60"
-      />
-    </button>
-  );
-}
 
 function ShellBannerStrip() {
   const { banners, dismissBanner } = useShellBanners();
