@@ -21,8 +21,8 @@ const detail = await readFile(
 // Client speaks the board mutation contract.
 assert.match(
   client,
-  /func updateTask\(cardId: String, status: CardStatus\? = nil,\s*priority: CardPriority\? = nil, steps: \[CardStep\]\? = nil\) async throws -> BoardCard/,
-  "CaveClient should expose updateTask(status:priority:steps:)",
+  /func updateTask\(cardId: String, status: CardStatus\? = nil, priority: CardPriority\? = nil,\s*steps: \[CardStep\]\? = nil, notes: String\? = nil\) async throws -> BoardCard/,
+  "CaveClient should expose updateTask(status:priority:steps:notes:)",
 );
 assert.match(
   client,
