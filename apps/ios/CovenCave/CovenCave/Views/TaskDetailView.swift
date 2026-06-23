@@ -181,7 +181,7 @@ struct TaskDetailView: View {
                 .tint(Theme.color(for: live.status))
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(live.steps ?? []) { step in
-                    Button { Task { await app.toggleStep(live, stepId: step.id) } } label: {
+                    Button { Haptics.tap(); Task { await app.toggleStep(live, stepId: step.id) } } label: {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(step.done ? Color.green : Color.secondary)

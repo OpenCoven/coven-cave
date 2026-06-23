@@ -2,28 +2,22 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
     @State private var editingHost: String = ""
-    @State private var showDeveloper = false
+    @State private var showDisconnectConfirm = false
     @State private var exportArchive: ExportArchive?
     @State private var exportFailed = false
+
+    /// Marketing version + build, e.g. "1.2.0 (34)", read from the bundle.
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String ?? "—"
+        return "\(version) (\(build))"
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Button {
-                        showDeveloper = true
-                    } label: {
-                        Label("Developer", systemImage: "chevron.left.forwardslash.chevron.right")
-                            .foregroundStyle(.primary)
-                    }
-                } header: {
-                    Text("Tools")
-                } footer: {
-                    Text("Code browser, terminal, and GitHub.")
-                }
-
                 Section {
                     Button {
                         do {
@@ -60,34 +54,37 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
                     Button("Save & reconnect") {
-                        Task {
-                            await app.configure(host: editingHost)
-                            dismiss()
-                        }
+                        Task { await app.configure(host: editingHost) }
                     }
                     .disabled(editingHost.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
 
                 Section {
                     Button("Disconnect", role: .destructive) {
-                        app.disconnect()
-                        dismiss()
+                        showDisconnectConfirm = true
                     }
                 } footer: {
                     Text("Connection is trusted via your Tailscale network — there is no token or password to manage.")
+                }
+
+                Section("About") {
+                    LabeledContent("Version") {
+                        Text(appVersion)
+                            .font(.callout.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { editingHost = app.connection?.host ?? "" }
-            // Developer (code/terminal/GitHub) was demoted from a tab; present it
-            // as a full-height sheet so its sub-views' own navigation stacks
-            // render cleanly. Wrapping it in another NavigationStack (e.g. for a
-            // push) would double-nest the nav bars; the sheet's grabber handles
-            // dismissal instead.
-            .sheet(isPresented: $showDeveloper) {
-                DeveloperView()
-                    .presentationDragIndicator(.visible)
+            .confirmationDialog("Disconnect from your desktop?",
+                                isPresented: $showDisconnectConfirm,
+                                titleVisibility: .visible) {
+                Button("Disconnect", role: .destructive) { app.disconnect() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You'll need to re-enter your desktop address to reconnect.")
             }
             .sheet(item: $exportArchive) { archive in
                 ActivityView(items: [archive.url])

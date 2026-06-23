@@ -43,6 +43,9 @@ struct MainTabView: View {
             Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
                 DeveloperView()
             }
+            Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
+                SettingsView()
+            }
         }
         // Command confirmations float above the whole tab bar so they're visible
         // whether a command stays in chat or jumps to the Tasks tab.

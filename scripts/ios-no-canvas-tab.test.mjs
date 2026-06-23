@@ -13,7 +13,7 @@ const slash = await read(`${iosRoot}/Models/SlashCommand.swift`);
 // The bottom-tab enum no longer carries a canvas case.
 assert.match(
   model,
-  /enum AppTab: String \{ case chats, read, tasks, dev \}/,
+  /enum AppTab: String \{ case chats, read, tasks, dev, settings \}/,
   "AppTab should drop the canvas case",
 );
 const appTabLine = model.match(/enum AppTab: String \{[^}]*\}/)?.[0] ?? "";

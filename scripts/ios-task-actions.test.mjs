@@ -78,8 +78,8 @@ assert.match(
 assert.match(detail, /private var actionsMenu: some View/, "detail view should have an actions menu");
 assert.match(
   detail,
-  /Button \{ Task \{ await app\.toggleStep\(live, stepId: step\.id\) \} \}/,
-  "detail steps should be tappable to toggle done",
+  /Button \{ Haptics\.tap\(\); Task \{ await app\.toggleStep\(live, stepId: step\.id\) \} \}/,
+  "detail steps should be tappable to toggle done (with haptic confirmation)",
 );
 assert.match(
   detail,

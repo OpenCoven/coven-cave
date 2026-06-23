@@ -347,7 +347,7 @@ struct ReadingProgressSlider: View {
     var body: some View {
         HStack(spacing: 10) {
             Slider(value: $value, in: 0...100, step: 1) { editing in
-                if !editing { onCommit(Int(value.rounded())) }
+                if !editing { Haptics.tap(); onCommit(Int(value.rounded())) }
             }
             .tint(.accentColor)
             Text("\(Int(value.rounded()))%")
