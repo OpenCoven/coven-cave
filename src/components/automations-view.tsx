@@ -17,7 +17,9 @@ import { formatTimestamp, formatClock, readDateTimePrefs, useDateTimePrefs } fro
 import { relativeTimeSigned } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
+import { useMultiSelect } from "@/lib/use-multi-select";
 import { ProjectTree } from "@/components/project-tree";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
@@ -358,13 +360,19 @@ function DetailPanel({
 function ReminderTaskRow({
   item,
   selected,
+  selectMode,
+  checked,
   familiarLabel,
   onSelect,
+  onToggle,
 }: {
   item: InboxItem;
   selected: boolean;
+  selectMode: boolean;
+  checked: boolean;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
+  onToggle: (id: string) => void;
 }) {
   const workspace = familiarLabel(item.familiarId);
   const isOverdue = isReminderOverdue(item);
@@ -378,23 +386,44 @@ function ReminderTaskRow({
     ? relTime(item.fireAt)
     : "Paused";
 
+  // In select mode the row IS a checkbox (click/Enter/Space toggle); otherwise
+  // it opens the detail panel. The active-row highlight tracks `checked` while
+  // selecting, and the detail-panel `selected` highlight otherwise.
+  const active = selectMode ? checked : selected;
+  const activate = () => (selectMode ? onToggle(item.id) : onSelect(item));
+
   return (
     <li>
       <button
         type="button"
-        onClick={() => onSelect(item)}
+        role={selectMode ? "checkbox" : undefined}
+        aria-checked={selectMode ? checked : undefined}
+        onClick={activate}
         className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
         style={{
-          background: selected ? "rgba(255,255,255,0.05)" : "transparent",
+          background: active ? "rgba(255,255,255,0.05)" : "transparent",
         }}
         onMouseEnter={(e) => {
-          if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)";
+          if (!active) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)";
         }}
         onMouseLeave={(e) => {
-          if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+          if (!active) (e.currentTarget as HTMLButtonElement).style.background = "transparent";
         }}
       >
-        <StatusIcon item={item} />
+        {selectMode ? (
+          <span
+            aria-hidden
+            className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors"
+            style={{
+              borderColor: checked ? "var(--accent-presence)" : "var(--border-strong)",
+              background: checked ? "var(--accent-presence)" : "transparent",
+            }}
+          >
+            {checked && <Icon name="ph:check-bold" width={12} className="text-white" />}
+          </span>
+        ) : (
+          <StatusIcon item={item} />
+        )}
         <span className="flex-1 min-w-0 flex items-baseline gap-2">
           <span className="text-[13px] truncate" style={{ color: "var(--text-primary)" }}>
             {item.title}
@@ -417,14 +446,20 @@ function ReminderTaskSection({
   title,
   items,
   selectedId,
+  selectMode,
+  isSelected,
   familiarLabel,
   onSelect,
+  onToggle,
 }: {
   title: string;
   items: InboxItem[];
   selectedId: string | null;
+  selectMode: boolean;
+  isSelected: (id: string) => boolean;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
+  onToggle: (id: string) => void;
 }) {
   if (items.length === 0) return null;
   const overdueCount = items.filter(isReminderOverdue).length;
@@ -450,8 +485,11 @@ function ReminderTaskSection({
             key={item.id}
             item={item}
             selected={selectedId === item.id}
+            selectMode={selectMode}
+            checked={isSelected(item.id)}
             familiarLabel={familiarLabel}
             onSelect={onSelect}
+            onToggle={onToggle}
           />
         ))}
       </ul>
@@ -465,28 +503,31 @@ function ReminderTaskList({
   oneShots,
   history,
   selectedId,
+  selectMode,
+  isSelected,
   familiarLabel,
   onSelect,
+  onToggle,
 }: {
   current: InboxItem[];
   paused: InboxItem[];
   oneShots: InboxItem[];
   history: InboxItem[];
   selectedId: string | null;
+  selectMode: boolean;
+  isSelected: (id: string) => boolean;
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
+  onToggle: (id: string) => void;
 }) {
+  const shared = { selectedId, selectMode, isSelected, familiarLabel, onSelect, onToggle };
   return (
     <>
-      <ReminderTaskSection title="Repeating" items={current} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
-      <ReminderTaskSection title="Paused" items={paused} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
-      <ReminderTaskSection title="One-time" items={oneShots} selectedId={selectedId}
-        familiarLabel={familiarLabel} onSelect={onSelect} />
+      <ReminderTaskSection title="Repeating" items={current} {...shared} />
+      <ReminderTaskSection title="Paused" items={paused} {...shared} />
+      <ReminderTaskSection title="One-time" items={oneShots} {...shared} />
       {history.length > 0 && (
-        <ReminderTaskSection title="History" items={history} selectedId={selectedId}
-          familiarLabel={familiarLabel} onSelect={onSelect} />
+        <ReminderTaskSection title="History" items={history} {...shared} />
       )}
     </>
   );
@@ -1565,6 +1606,58 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       .slice(0, 20),
     [reminderItems]);
 
+  // Multi-select over exactly the reminders rendered across the four sections,
+  // so "Select all" and the count match what's on screen.
+  const reminderVisible = useMemo(
+    () => [...current, ...paused, ...oneShots, ...history],
+    [current, paused, oneShots, history],
+  );
+  const reminderSelect = useMultiSelect(reminderVisible, (it) => it.id);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const selectedRealIds = () =>
+    reminderSelect
+      .selectedFrom(reminderVisible)
+      .map((it) => it.id)
+      .filter((id) => !id.startsWith("eph:"));
+
+  const bulkPatchReminders = async (body: object) => {
+    const ids = selectedRealIds();
+    if (ids.length === 0) { reminderSelect.exit(); return; }
+    setBulkBusy(true);
+    try {
+      await Promise.all(ids.map((id) =>
+        fetch(`/api/inbox/${id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }).then((r) => { if (!r.ok) throw new Error(`http ${r.status}`); })));
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "bulk action failed");
+    } finally {
+      setBulkBusy(false);
+      reminderSelect.exit();
+    }
+  };
+
+  const bulkDeleteReminders = async () => {
+    const ids = selectedRealIds();
+    if (ids.length === 0) { reminderSelect.exit(); return; }
+    if (!window.confirm(`Delete ${ids.length} reminder${ids.length === 1 ? "" : "s"}? This can't be undone.`)) return;
+    setBulkBusy(true);
+    try {
+      await Promise.all(ids.map((id) =>
+        fetch(`/api/inbox/${id}`, { method: "DELETE" })
+          .then((r) => { if (!r.ok) throw new Error(`http ${r.status}`); })));
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "bulk delete failed");
+    } finally {
+      setBulkBusy(false);
+      reminderSelect.exit();
+    }
+  };
+
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const familiarsById = useMemo(
     () => new Map(resolvedFamiliars.map((f) => [f.id, f])),
@@ -1626,6 +1719,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             Schedules
           </h1>
           <div className="flex items-center gap-2">
+            {activeTab === "reminders" && !remindersEmpty && !reminderSelect.selectMode && (
+              <button
+                type="button"
+                onClick={() => reminderSelect.setSelectMode(true)}
+                className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors hover:bg-white/5"
+                style={{ background: "var(--bg-raised)", border: "1px solid var(--border-hairline)", color: "var(--text-primary)" }}
+              >
+                <Icon name="ph:check-square" width={13} />
+                Select
+              </button>
+            )}
             {activeTab === "automations" && (
               <Button leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
                 New automation
@@ -1722,15 +1826,54 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           ) : (
             <>
               {activeTab === "reminders" ? (
-                <ReminderTaskList
-                  current={current}
-                  paused={paused}
-                  oneShots={oneShots}
-                  history={history}
-                  selectedId={selectedReminderId}
-                  familiarLabel={familiarLabel}
-                  onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
-                />
+                <>
+                  {reminderSelect.selectMode && (
+                    <SelectionToolbar
+                      allSelected={reminderSelect.allSelected(reminderVisible)}
+                      count={reminderSelect.selectedCount}
+                      onToggleSelectAll={() => reminderSelect.toggleSelectAll(reminderVisible)}
+                      onCancel={reminderSelect.exit}
+                    >
+                      <button
+                        type="button"
+                        disabled={bulkBusy || reminderSelect.selectedCount === 0}
+                        onClick={() => void bulkPatchReminders({ status: "dismissed" })}
+                        className="focus-ring rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                      >
+                        Pause
+                      </button>
+                      <button
+                        type="button"
+                        disabled={bulkBusy || reminderSelect.selectedCount === 0}
+                        onClick={() => void bulkPatchReminders({ status: "pending" })}
+                        className="focus-ring rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                      >
+                        Resume
+                      </button>
+                      <button
+                        type="button"
+                        disabled={bulkBusy || reminderSelect.selectedCount === 0}
+                        onClick={() => void bulkDeleteReminders()}
+                        className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+                      >
+                        <Icon name="ph:trash-bold" width={11} aria-hidden />
+                        {bulkBusy ? "Working…" : `Delete${reminderSelect.selectedCount ? ` ${reminderSelect.selectedCount}` : ""}`}
+                      </button>
+                    </SelectionToolbar>
+                  )}
+                  <ReminderTaskList
+                    current={current}
+                    paused={paused}
+                    oneShots={oneShots}
+                    history={history}
+                    selectedId={selectedReminderId}
+                    selectMode={reminderSelect.selectMode}
+                    isSelected={reminderSelect.isSelected}
+                    familiarLabel={familiarLabel}
+                    onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
+                    onToggle={reminderSelect.toggle}
+                  />
+                </>
               ) : activeTab === "inbox" ? (
                 <InboxFeedList
                   needsYou={inboxFeed.needsYou}

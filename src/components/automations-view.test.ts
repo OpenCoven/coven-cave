@@ -43,4 +43,20 @@ assert.match(
 assert.ok(source.includes("focus-ring-inset automation-list-row"), "list rows have a focus ring");
 assert.ok(source.includes("focus-ring rounded p-1 transition-colors hover:bg-white/5"), "panel close buttons have a focus ring");
 
+// Reminders bulk-select: the shared multi-select hook + toolbar drive it.
+assert.match(source, /useMultiSelect\(reminderVisible/, "reminders use the shared useMultiSelect hook over the visible rows");
+assert.match(source, /<SelectionToolbar/, "select mode renders the shared SelectionToolbar");
+assert.match(
+  source,
+  /role=\{selectMode \? "checkbox" : undefined\}/,
+  "reminder rows flip from button to checkbox role in select mode",
+);
+assert.match(source, /aria-checked=\{selectMode \? checked : undefined\}/, "checkbox rows expose aria-checked");
+// The three bulk actions exist and hit the right transitions.
+assert.match(source, /bulkPatchReminders\(\{ status: "dismissed" \}\)/, "bulk Pause dismisses the selected reminders");
+assert.match(source, /bulkPatchReminders\(\{ status: "pending" \}\)/, "bulk Resume re-pends the selected reminders");
+assert.match(source, /const bulkDeleteReminders = async/, "bulk Delete is wired");
+// Ephemeral inbox items can't be mutated server-side, so they're filtered out.
+assert.match(source, /\.filter\(\(id\) => !id\.startsWith\("eph:"\)\)/, "bulk actions skip ephemeral (eph:) ids");
+
 console.log("automations-view.test.ts: ok");

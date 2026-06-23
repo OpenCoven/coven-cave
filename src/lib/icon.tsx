@@ -57,6 +57,7 @@ export const ICON_NAMES = [
   "ph:chat-circle-dots-bold",
   "ph:chat-circle-dots-fill",
   "ph:check-bold",
+  "ph:check-square",
   "ph:circle",
   "ph:circle-fill",
   "ph:circle-half-tilt",
