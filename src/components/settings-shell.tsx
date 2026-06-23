@@ -40,6 +40,15 @@ import {
   setDemoModeEnabled,
 } from "@/lib/demo-mode";
 import { readableTextColor } from "@/lib/readable-text-color";
+import {
+  DATETIME_DENSITY_KEY,
+  DENSITY_OPTIONS,
+  DENSITY_LABEL,
+  normalizeDensity,
+  setDensityFormat,
+  type DensityFormat,
+} from "@/lib/datetime-format";
+import { relativeTimeSigned } from "@/lib/relative-time";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -862,12 +871,14 @@ function AppearanceSection() {
   const [colorEditorBase, setColorEditorBase] = useState<PresetTheme | null>(null);
   const [cornerRadius, setCornerRadius] = useState<CornerRadius>("default");
   const familiarSwitcherStyle = useFamiliarSwitcherStyle();
+  const [density, setDensity] = useState<DensityFormat>("compact");
 
   // Read persisted theme + mode on mount
   useEffect(() => {
     setActiveTheme(readPersistedTheme());
     setMode(readPersistedMode());
     setCornerRadius(readCornerRadius());
+    setDensity(normalizeDensity(typeof window !== "undefined" ? window.localStorage.getItem(DATETIME_DENSITY_KEY) : null));
     const saved = localStorage.getItem(COVEN_THEME_KEY);
     if (saved === "custom") {
       const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
@@ -894,6 +905,11 @@ function AppearanceSection() {
   const handleSetCornerRadius = (next: CornerRadius) => {
     setCornerRadius(next);
     applyCornerRadius(next);
+  };
+
+  const handleSetDensity = (next: DensityFormat) => {
+    setDensity(next);
+    setDensityFormat(next);
   };
 
   const handleSetMode = (next: Mode) => {
@@ -1129,6 +1145,36 @@ function AppearanceSection() {
       </SettingsGroup>
 
       <FontSettings />
+
+      {/* ── Date & time ── compact vs verbose timestamp density */}
+      <SettingsGroup label="Date &amp; time">
+        <div className="px-4 py-3">
+          <p className="mb-2 text-[12px] text-[var(--text-muted)]">Timestamp density</p>
+          <div className="inline-flex items-center rounded-md border border-[var(--border-hairline)] p-0.5">
+            {DENSITY_OPTIONS.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                aria-pressed={density === opt}
+                onClick={() => handleSetDensity(opt)}
+                className={`rounded-[5px] px-3 py-1 text-[12px] font-medium transition-colors ${
+                  density === opt
+                    ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                }`}
+              >
+                {DENSITY_LABEL[opt]}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+            Preview:{" "}
+            {relativeTimeSigned(new Date(Date.now() - 5 * 60000).toISOString(), Date.now(), density)}
+            {" · "}
+            {relativeTimeSigned(new Date(Date.now() - 3 * 86400000).toISOString(), Date.now(), density)}
+          </p>
+        </div>
+      </SettingsGroup>
 
       {/* ── Familiar switcher ── choose the top-bar familiar control: a row of
           quick-switch avatars, or just the switcher dropdown. */}
