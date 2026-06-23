@@ -24,3 +24,5 @@ export const LEGACY_THEME_RENAME: Record<string, string> = {
 };
 
 export type Mode = "light" | "dark";
+/** Stored color-mode preference; "system" follows the OS, resolving to Mode. */
+export type ModePref = Mode | "system";

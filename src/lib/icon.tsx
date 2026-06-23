@@ -59,6 +59,7 @@ export const ICON_NAMES = [
   "ph:check-bold",
   "ph:circle",
   "ph:circle-fill",
+  "ph:circle-half-tilt",
   "ph:gear-six",
   "ph:gear-six-bold",
   "ph:hand",

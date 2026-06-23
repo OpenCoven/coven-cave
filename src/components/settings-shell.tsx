@@ -11,7 +11,7 @@ import { DEMO_FAMILIARS } from "@/lib/demo-seed";
 import type { Familiar } from "@/lib/types";
 import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
-import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode } from "@/lib/theme-storage";
+import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode, type ModePref } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { APP_VERSION } from "@/lib/app-version";
@@ -617,10 +617,15 @@ function applyPreset(theme: PresetTheme) {
   localStorage.setItem(COVEN_THEME_KEY, theme);
 }
 
-function applyMode(mode: Mode) {
+function resolveMode(pref: ModePref): Mode {
+  if (pref === "light" || pref === "dark") return pref;
+  return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyMode(pref: ModePref) {
   const html = document.documentElement;
-  html.setAttribute("data-mode", mode);
-  localStorage.setItem(COVEN_MODE_KEY, mode);
+  html.setAttribute("data-mode", resolveMode(pref));
+  localStorage.setItem(COVEN_MODE_KEY, pref);
 }
 
 // Color tokens mirrored to the daemon so other clients (e.g. the iOS app over
@@ -775,9 +780,9 @@ function readPersistedTheme(): ActiveTheme {
   return "coven";
 }
 
-function readPersistedMode(): Mode {
+function readPersistedMode(): ModePref {
   const raw = localStorage.getItem(COVEN_MODE_KEY);
-  return raw === "light" ? "light" : "dark";
+  return raw === "light" ? "light" : raw === "system" ? "system" : "dark";
 }
 
 // ─── Preset cards ─────────────────────────────────────────────────────────────────────────────
@@ -853,7 +858,7 @@ function ThemePresetCard({
 
 function AppearanceSection() {
   const [activeTheme, setActiveTheme] = useState<ActiveTheme>("coven");
-  const [mode, setMode] = useState<Mode>("dark");
+  const [mode, setMode] = useState<ModePref>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
 
   // Mirror the active theme + resolved tokens to the daemon on change (and mount)
@@ -903,14 +908,26 @@ function AppearanceSection() {
     applyCornerRadius(next);
   };
 
-  const handleSetMode = (next: Mode) => {
+  const handleSetMode = (next: ModePref) => {
     setMode(next);
     applyMode(next);
     // If a custom theme is active, re-apply with the new mode group.
     if (activeTheme === "custom" && customData) {
-      applyCustomVars(customData.cssVars, next);
+      applyCustomVars(customData.cssVars, resolveMode(next));
     }
   };
+
+  // When following the OS ("system"), re-resolve on every prefers-color-scheme flip.
+  useEffect(() => {
+    if (mode !== "system" || typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => {
+      applyMode("system");
+      if (activeTheme === "custom" && customData) applyCustomVars(customData.cssVars, resolveMode("system"));
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [mode, activeTheme, customData]);
 
   const handleResetCustom = () => {
     clearCustomTheme();
@@ -980,7 +997,7 @@ function AppearanceSection() {
       // just the canvas (see enrichTweakcnTheme / tweakcnSemanticVars).
       const data = enrichTweakcnTheme(raw);
 
-      applyCustomVars(data.cssVars, mode);
+      applyCustomVars(data.cssVars, resolveMode(mode));
       localStorage.setItem(COVEN_CUSTOM_THEME_KEY, JSON.stringify(data));
       localStorage.setItem(COVEN_THEME_KEY, "custom");
       setCustomData(data);
@@ -1031,7 +1048,7 @@ function AppearanceSection() {
             <ThemePresetCard
               key={preset.id}
               preset={preset}
-              mode={mode}
+              mode={resolveMode(mode)}
               active={activeTheme === preset.id || colorEditorBase === preset.id}
               onSelect={handleSelectPreset}
             />
@@ -1058,7 +1075,7 @@ function AppearanceSection() {
           <div className="border-t border-[var(--border-hairline)] p-4">
             <ThemeColorEditor
               basePreset={colorEditorBase}
-              mode={mode}
+              mode={resolveMode(mode)}
               onSave={() => {
                 setActiveTheme("custom");
                 try {

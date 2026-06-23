@@ -8,16 +8,17 @@
  */
 
 import { Icon, type IconName } from "@/lib/icon";
-import type { Mode } from "@/lib/theme-storage";
+import type { ModePref } from "@/lib/theme-storage";
 
 interface ModeToggleProps {
-  value: Mode;
-  onChange: (next: Mode) => void;
+  value: ModePref;
+  onChange: (next: ModePref) => void;
 }
 
-const OPTIONS: { id: Mode; label: string; icon: IconName }[] = [
+const OPTIONS: { id: ModePref; label: string; icon: IconName }[] = [
   { id: "light", label: "Light", icon: "ph:sun" },
   { id: "dark", label: "Dark", icon: "ph:moon" },
+  { id: "system", label: "System", icon: "ph:circle-half-tilt" },
 ];
 
 export function ModeToggle({ value, onChange }: ModeToggleProps) {
