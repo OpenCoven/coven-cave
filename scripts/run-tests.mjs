@@ -434,6 +434,7 @@ export const SUITES = {
     "src/lib/server/familiar-startup-context.test.ts",
     "src/lib/server/memory-file-paths.test.ts",
     "src/lib/server/skill-file-paths.test.ts",
+    "src/lib/server/automation-log-paths.test.ts",
     "src/lib/voice/registry.test.ts",
     "src/lib/voice/hydrate-instructions.test.ts",
     "src/lib/voice/append-voice-turn.test.ts",
@@ -526,6 +527,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/familiar-avatar.test.ts",
   "src/lib/workflow-generate.test.ts",
   "src/lib/server/automation-runner.test.ts",
+  "src/lib/server/automation-log-paths.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

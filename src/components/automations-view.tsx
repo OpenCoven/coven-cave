@@ -525,6 +525,24 @@ function CodexDetailPanel({
   const isActive = auto.status === "ACTIVE";
   const parsedSchedule = useMemo(() => parseCodexRrule(auto.rrule), [auto.rrule]);
   const promptParts = splitAutomationPrompt(auto.prompt);
+  const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const [runLog, setRunLog] = useState<string>("");
+  const [runLogLoading, setRunLogLoading] = useState(false);
+  const toggleRunLog = async (runId: string) => {
+    if (openRunId === runId) { setOpenRunId(null); return; }
+    setOpenRunId(runId);
+    setRunLog("");
+    setRunLogLoading(true);
+    try {
+      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}/runs/${encodeURIComponent(runId)}/log`, { cache: "no-store" });
+      const json = await res.json().catch(() => null);
+      setRunLog(json?.ok ? (json.truncated ? "…(truncated)…\n" : "") + (json.log ?? "") : (json?.error ?? "no log"));
+    } catch {
+      setRunLog("failed to load log");
+    } finally {
+      setRunLogLoading(false);
+    }
+  };
   const [name, setName] = useState(auto.name);
   const [goals, setGoals] = useState(promptParts.goals);
   const [deliverables, setDeliverables] = useState(promptParts.deliverables);
@@ -914,11 +932,25 @@ function CodexDetailPanel({
             <FieldLabel>Recent runs</FieldLabel>
             <ul className="mt-1 space-y-1">
               {runs.slice(0, 10).map((r) => (
-                <li key={r.id} className="flex items-center gap-2 text-[12px]">
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background:
-                    r.status === "succeeded" ? "var(--accent-presence)" : r.status === "failed" ? "var(--color-danger)" : "var(--text-muted)" }} />
-                  <span style={{ color: "var(--text-secondary)" }}>{relTime(r.startedAt)}</span>
-                  {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => void toggleRunLog(r.id)}
+                    className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[12px] hover:bg-white/5"
+                  >
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background:
+                      r.status === "succeeded" ? "var(--accent-presence)" : r.status === "failed" ? "var(--color-danger)" : "var(--text-muted)" }} />
+                    <span style={{ color: "var(--text-secondary)" }}>{relTime(r.startedAt)}</span>
+                    {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
+                    <span className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
+                      <Icon name={openRunId === r.id ? "ph:caret-down" : "ph:caret-right"} width={11} />
+                    </span>
+                  </button>
+                  {openRunId === r.id && (
+                    <pre className="mt-1 max-h-48 overflow-auto rounded bg-[var(--bg-base)] p-2 text-[10px] leading-snug" style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                      {runLogLoading ? "Loading…" : (runLog || "(empty log)")}
+                    </pre>
+                  )}
                 </li>
               ))}
             </ul>
@@ -1027,7 +1059,10 @@ function AutomationScheduleRow({
           </span>
         )}
         {lastRun && (
-          <span className="shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <span className="shrink-0 text-[11px]" style={{ color:
+            lastRun.status === "failed" ? "var(--color-danger)"
+            : lastRun.status === "running" ? "var(--accent-presence)"
+            : "var(--text-muted)" }}>
             Run {relTime(lastRun.startedAt)}
           </span>
         )}
