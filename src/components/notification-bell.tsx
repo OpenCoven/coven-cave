@@ -234,7 +234,7 @@ export function NotificationBell({
                   const muted = prefs.mutedFamiliars.includes(f.id);
                   return (
                     <li key={f.id} className="flex items-center justify-between">
-                      <span className="truncate text-[var(--text-secondary)]">{f.display_name}</span>
+                      <span className="truncate text-[var(--text-secondary)]" title={f.display_name}>{f.display_name}</span>
                       <button
                         onClick={() => toggleMute(f.id)}
                         className={`focus-ring rounded border px-1.5 py-0.5 text-[10px] transition-colors ${
@@ -281,7 +281,7 @@ export function NotificationBell({
                       height="0.95rem"
                     />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[12px] font-medium text-[var(--text-primary)]">{it.title}</div>
+                      <div className="truncate text-[12px] font-medium text-[var(--text-primary)]" title={it.title}>{it.title}</div>
                       {it.body ? (
                         <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-[var(--text-muted)]">
                           {it.body}
