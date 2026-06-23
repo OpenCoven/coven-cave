@@ -89,8 +89,13 @@ assert.match(styles, /\.cg-left \{[\s\S]*?grid-template-columns: 190px 58px 58px
 
 // By-familiar grouping colour-codes bars by familiar.
 assert.match(gantt, /const familiarColor = \(id: string \| null\): string \| undefined =>/, "a per-familiar colour helper exists");
-assert.match(gantt, /color: byFamiliar \? familiarColor\(card\.familiarId\) : undefined/, "rows carry a familiar colour only in by-familiar mode");
+assert.match(gantt, /color: byFamiliar \? \(familiarColor\(card\.familiarId\) \?\? "var\(--text-muted\)"\) : undefined/, "rows carry a familiar colour (or neutral fallback) only in by-familiar mode");
 assert.match(gantt, /\.\.\.\(row\.color \? \{ background: row\.color \} : \{\}\)/, "the bar paints the familiar colour when present");
+
+// The legend swaps to per-familiar swatches when grouping by familiar.
+assert.match(gantt, /\{groupMode === "familiar" \? \(/, "the legend is conditional on by-familiar grouping");
+assert.match(gantt, /groups\.map\(\(g\) => \(/, "the legend renders a swatch per familiar group");
+assert.match(gantt, /background: familiarColor\(g\.key === "__unassigned__" \? null : g\.key\) \?\? "var\(--text-muted\)"/, "familiar legend swatches match the bar colours");
 
 // The legend labels match the board's actual statuses (no invented
 // "In Progress"/"At Risk"): Running, Blocked, Done map 1:1; the shared colour

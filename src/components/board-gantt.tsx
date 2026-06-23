@@ -285,7 +285,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
         start: cr.start,
         end: cr.end,
         category: statusCategory(card.status),
-        color: byFamiliar ? familiarColor(card.familiarId) : undefined,
+        color: byFamiliar ? (familiarColor(card.familiarId) ?? "var(--text-muted)") : undefined,
       });
       group.firstStart = Math.min(group.firstStart, cr.start.getTime());
     }
@@ -529,10 +529,23 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
               and Review share the "pending" colour. Labels match those actual
               statuses (no invented "In Progress"/"At Risk"). */}
           <div className="cg-legend">
-            <span className="cg-leg"><span className="cg-sw cg-sw--done" aria-hidden />Done</span>
-            <span className="cg-leg"><span className="cg-sw cg-sw--in-progress" aria-hidden />Running</span>
-            <span className="cg-leg" title="Backlog, Inbox and Review tasks"><span className="cg-sw cg-sw--pending" aria-hidden />Backlog · Inbox · Review</span>
-            <span className="cg-leg"><span className="cg-sw cg-sw--at-risk" aria-hidden />Blocked</span>
+            {groupMode === "familiar" ? (
+              // Bars are coloured by familiar in this mode, so the legend maps
+              // each familiar's colour to its name instead of the statuses.
+              groups.map((g) => (
+                <span key={g.key} className="cg-leg">
+                  <span className="cg-sw" style={{ background: familiarColor(g.key === "__unassigned__" ? null : g.key) ?? "var(--text-muted)" }} aria-hidden />
+                  {g.name}
+                </span>
+              ))
+            ) : (
+              <>
+                <span className="cg-leg"><span className="cg-sw cg-sw--done" aria-hidden />Done</span>
+                <span className="cg-leg"><span className="cg-sw cg-sw--in-progress" aria-hidden />Running</span>
+                <span className="cg-leg" title="Backlog, Inbox and Review tasks"><span className="cg-sw cg-sw--pending" aria-hidden />Backlog · Inbox · Review</span>
+                <span className="cg-leg"><span className="cg-sw cg-sw--at-risk" aria-hidden />Blocked</span>
+              </>
+            )}
             <span className="cg-leg"><span className="cg-diamond cg-diamond--leg" aria-hidden />Milestone</span>
             <span className="cg-leg"><span className="cg-today-sw" aria-hidden />Today</span>
           </div>
