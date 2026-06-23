@@ -22,9 +22,13 @@ function isTab(v: unknown): v is JournalTab {
 export function JournalView({
   familiars,
   activeFamiliarId,
+  scopeFamiliarIds,
 }: {
   familiars: Familiar[];
   activeFamiliarId: string | null;
+  /** Multiselect scope (empty = All) — filters the reflections list to the
+   *  union of these familiars. */
+  scopeFamiliarIds?: ReadonlySet<string>;
 }) {
   const [tab, setTab] = useState<JournalTab>("journal");
 
@@ -84,7 +88,7 @@ export function JournalView({
         {tab === "canvas" ? (
           <CanvasList familiars={familiars} activeFamiliarId={activeFamiliarId} />
         ) : (
-          <JournalEntries familiars={familiars} activeFamiliarId={activeFamiliarId} />
+          <JournalEntries familiars={familiars} activeFamiliarId={activeFamiliarId} scopeFamiliarIds={scopeFamiliarIds} />
         )}
       </div>
     </div>

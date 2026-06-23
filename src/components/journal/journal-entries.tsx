@@ -10,7 +10,12 @@ import { extractNextPaths } from "@/lib/next-paths";
 import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { generateReflection } from "@/lib/journal-generate";
+import { familiarInScope } from "@/lib/familiar-multiselect";
 import type { Familiar } from "@/lib/types";
+
+// Stable empty-scope fallback so the filteredDays memo's identity is steady
+// when no scope set is supplied.
+const EMPTY_SCOPE: ReadonlySet<string> = new Set();
 
 type JournalSummary = { date: string; preview: string; reflectedBy: string | null; modified: string | null };
 type JournalStats = { covenOrigin: number; externalRuntimes: number; runtimeMemory: number };
@@ -49,9 +54,13 @@ function JournalReflection({ text }: { text: string }) {
 export function JournalEntries({
   familiars,
   activeFamiliarId,
+  scopeFamiliarIds,
 }: {
   familiars: Familiar[];
   activeFamiliarId: string | null;
+  /** Multiselect scope (empty = All) — the reflections list filters to days
+   *  whose `reflectedBy` is in this set. */
+  scopeFamiliarIds?: ReadonlySet<string>;
 }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const today = dateSlug(new Date());
@@ -76,10 +85,12 @@ export function JournalEntries({
   // Client-side filter over the day list — matches the date (slug + human
   // labels), the preview text, and the reflecting familiar's name.
   const filteredDays = useMemo(() => {
+    const scope = scopeFamiliarIds ?? EMPTY_SCOPE;
     const q = filter.trim().toLowerCase();
-    if (!q) return days;
     const now = new Date();
     return days.filter((d) => {
+      if (!familiarInScope(scope, d.reflectedBy)) return false;
+      if (!q) return true;
       const dateObj = parseDateSlug(d.date) ?? now;
       const hay = [
         d.date,
@@ -92,12 +103,13 @@ export function JournalEntries({
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [days, filter, familiarName]);
+  }, [days, filter, familiarName, scopeFamiliarIds]);
 
+  // Fetch the full day list once; the familiar multiselect scope is applied
+  // client-side in `filteredDays` so switching scope never needs a refetch.
   const loadDays = useCallback(async () => {
     try {
-      const listQuery = selectedFamiliarId ? `?familiar=${encodeURIComponent(selectedFamiliarId)}` : "";
-      const res = await fetch(`/api/journal${listQuery}`, { cache: "no-store" });
+      const res = await fetch(`/api/journal`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (json.ok) setDays(Array.isArray(json.days) ? json.days : []);
     } catch {
@@ -105,12 +117,14 @@ export function JournalEntries({
     } finally {
       setDaysLoaded(true);
     }
-  }, [selectedFamiliarId]);
+  }, []);
 
   const loadDay = useCallback(async (slug: string) => {
     try {
-      const detailQuery = selectedFamiliarId
-        ? `date=${encodeURIComponent(slug)}&familiar=${encodeURIComponent(selectedFamiliarId)}`
+      // Scope the day's memory stats to the single active familiar; with 0 or
+      // ≥ 2 selected (activeFamiliarId null) the record + stats are unscoped.
+      const detailQuery = activeFamiliarId
+        ? `date=${encodeURIComponent(slug)}&familiar=${encodeURIComponent(activeFamiliarId)}`
         : `date=${encodeURIComponent(slug)}`;
       const res = await fetch(`/api/journal?${detailQuery}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
@@ -118,7 +132,7 @@ export function JournalEntries({
     } catch {
       setDay(null);
     }
-  }, [selectedFamiliarId]);
+  }, [activeFamiliarId]);
 
   useEffect(() => {
     void loadDays();
