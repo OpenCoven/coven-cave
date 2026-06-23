@@ -129,6 +129,10 @@ final class AppModel {
         familiars.first { $0.id == id }
     }
 
+    func project(_ id: String) -> ProjectInfo? {
+        projects.first { $0.id == id }
+    }
+
     func loadTasks() async {
         guard let client else { return }
         do {

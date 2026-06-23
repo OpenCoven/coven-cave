@@ -72,6 +72,7 @@ struct BoardCard: Identifiable, Codable, Hashable {
     var statusRaw: String
     var priorityRaw: String
     var familiarId: String?
+    var projectId: String?
     var sessionId: String?
     var labels: [String]?
     var startDate: String?
@@ -85,7 +86,7 @@ struct BoardCard: Identifiable, Codable, Hashable {
         case id, title, notes
         case statusRaw = "status"
         case priorityRaw = "priority"
-        case familiarId, sessionId, labels, startDate, endDate
+        case familiarId, projectId, sessionId, labels, startDate, endDate
         case createdAt, updatedAt, needsHuman, steps
     }
 

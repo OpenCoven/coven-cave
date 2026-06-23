@@ -13,14 +13,17 @@ func caveParseISO(_ iso: String?) -> Date? {
 
 struct TasksView: View {
     @Environment(AppModel.self) private var app
-    @State private var scope: Scope = .active
+    @AppStorage("cave.tasks.groupBy") private var groupByRaw = GroupBy.status.rawValue
     @State private var query = ""
     @State private var path: [BoardCard] = []
 
-    enum Scope: String, CaseIterable, Identifiable {
-        case active = "Active", all = "All", done = "Done"
+    /// How the task list is partitioned into sections.
+    enum GroupBy: String, CaseIterable, Identifiable {
+        case status = "Status", project = "Project", familiar = "Familiar", priority = "Priority"
         var id: String { rawValue }
     }
+
+    private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .status }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -29,8 +32,11 @@ struct TasksView: View {
                 .navigationDestination(for: BoardCard.self) { TaskDetailView(card: $0) }
                 .searchable(text: $query, prompt: "Search tasks")
                 .refreshable { await app.loadTasks() }
-                .task { if !app.tasksLoaded { await app.loadTasks() } }
-                .safeAreaInset(edge: .top) { scopeBar }
+                .task {
+                    if !app.tasksLoaded { await app.loadTasks() }
+                    if !app.projectsLoaded { await app.loadProjects() }
+                }
+                .safeAreaInset(edge: .top) { groupBar }
                 .onAppear(perform: openRequestedCard)
                 // A chat asked to open one of its linked tasks.
                 .onChange(of: app.cardToOpen) { _, card in openRequestedCard() }
@@ -44,9 +50,9 @@ struct TasksView: View {
         app.cardToOpen = nil
     }
 
-    private var scopeBar: some View {
-        Picker("Scope", selection: $scope) {
-            ForEach(Scope.allCases) { s in Text(s.rawValue).tag(s) }
+    private var groupBar: some View {
+        Picker("Group by", selection: $groupByRaw) {
+            ForEach(GroupBy.allCases) { g in Text(g.rawValue).tag(g.rawValue) }
         }
         .pickerStyle(.segmented)
         .padding(.horizontal, 16)
@@ -73,7 +79,7 @@ struct TasksView: View {
 
     private var taskList: some View {
         List {
-            ForEach(sections, id: \.status) { section in
+            ForEach(sections) { section in
                 Section {
                     ForEach(section.cards) { card in
                         Button { path.append(card) } label: { TaskRow(card: card) }
@@ -82,13 +88,13 @@ struct TasksView: View {
                     }
                 } header: {
                     HStack(spacing: 6) {
-                        Image(systemName: section.status.systemImage)
-                        Text(section.status.label)
+                        if let image = section.systemImage { Image(systemName: image) }
+                        Text(section.title)
                         Spacer()
                         Text("\(section.cards.count)").monospacedDigit()
                     }
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.color(for: section.status))
+                    .foregroundStyle(section.tint ?? .secondary)
                 }
             }
         }
@@ -97,7 +103,7 @@ struct TasksView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label(query.isEmpty ? "No \(scope.rawValue.lowercased()) tasks" : "No matches",
+            Label(query.isEmpty ? "No tasks" : "No matches",
                   systemImage: "checkmark.circle")
         } description: {
             Text(query.isEmpty ? "Tasks from your board appear here." : "Try a different search.")
@@ -106,26 +112,80 @@ struct TasksView: View {
 
     // MARK: - Grouping
 
-    struct StatusSection { let status: CardStatus; let cards: [BoardCard] }
+    /// A list section: a stable id, a header (title + optional icon/tint), a
+    /// sort key, and its cards.
+    struct TaskSection: Identifiable {
+        let id: String
+        let title: String
+        let systemImage: String?
+        let tint: Color?
+        let order: Int
+        let cards: [BoardCard]
+    }
 
     private var filtered: [BoardCard] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return app.tasks }
         return app.tasks.filter { card in
-            switch scope {
-            case .active: if !card.status.isActive { return false }
-            case .done: if card.status != .done { return false }
-            case .all: break
-            }
-            guard !q.isEmpty else { return true }
             if card.title.lowercased().contains(q) { return true }
             return card.labelList.contains { $0.lowercased().contains(q) }
         }
     }
 
-    private var sections: [StatusSection] {
-        Dictionary(grouping: filtered, by: \.status)
-            .map { StatusSection(status: $0.key, cards: sortCards($0.value)) }
-            .sorted { $0.status.sectionOrder < $1.status.sectionOrder }
+    private var sections: [TaskSection] {
+        switch groupBy {
+        case .status: return statusSections
+        case .project: return projectSections
+        case .familiar: return familiarSections
+        case .priority: return prioritySections
+        }
+    }
+
+    private var statusSections: [TaskSection] {
+        Dictionary(grouping: filtered, by: \.status).map { status, cards in
+            TaskSection(id: "status:\(status.rawValue)", title: status.label,
+                        systemImage: status.systemImage, tint: Theme.color(for: status),
+                        order: status.sectionOrder, cards: sortCards(cards))
+        }
+        .sorted { $0.order < $1.order }
+    }
+
+    private var prioritySections: [TaskSection] {
+        Dictionary(grouping: filtered, by: \.priority).map { priority, cards in
+            TaskSection(id: "priority:\(priority.rawValue)", title: priority.label,
+                        systemImage: "flag.fill", tint: Theme.color(for: priority),
+                        order: priority.rank, cards: sortCards(cards))
+        }
+        .sorted { $0.order < $1.order }
+    }
+
+    private var projectSections: [TaskSection] {
+        // Keyed by projectId; unassigned cards collect under a trailing bucket.
+        Dictionary(grouping: filtered, by: { $0.projectId ?? "" }).map { id, cards in
+            let unassigned = id.isEmpty
+            let name = unassigned ? "No project" : (app.project(id)?.name ?? "No project")
+            return TaskSection(id: "project:\(unassigned ? "__none__" : id)", title: name,
+                               systemImage: "folder", tint: .secondary,
+                               order: unassigned ? 1 : 0, cards: sortCards(cards))
+        }
+        .sorted { a, b in
+            if a.order != b.order { return a.order < b.order }
+            return a.title.lowercased() < b.title.lowercased()
+        }
+    }
+
+    private var familiarSections: [TaskSection] {
+        Dictionary(grouping: filtered, by: { $0.familiarId ?? "" }).map { id, cards in
+            let unassigned = id.isEmpty
+            let name = unassigned ? "Unassigned" : (app.familiar(id)?.displayName ?? "Unassigned")
+            return TaskSection(id: "familiar:\(unassigned ? "__none__" : id)", title: name,
+                               systemImage: "person.circle", tint: .secondary,
+                               order: unassigned ? 1 : 0, cards: sortCards(cards))
+        }
+        .sorted { a, b in
+            if a.order != b.order { return a.order < b.order }
+            return a.title.lowercased() < b.title.lowercased()
+        }
     }
 
     private func sortCards(_ cards: [BoardCard]) -> [BoardCard] {
