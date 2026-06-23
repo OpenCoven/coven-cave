@@ -8,16 +8,11 @@ import {
 import { broadcastCreated, startScheduler } from "@/lib/inbox-scheduler";
 import { buildDailySummaryNotification } from "@/lib/daily-summary-notifications";
 import type { SessionRow } from "@/lib/types";
+import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";
 
 startScheduler();
-
-function isLocalOrigin(req: Request): boolean {
-  const host = req.headers.get("host") ?? "";
-  const bare = host.split(":")[0];
-  return bare === "127.0.0.1" || bare === "localhost" || bare === "[::1]";
-}
 
 export async function POST(req: Request) {
   if (!isLocalOrigin(req)) {

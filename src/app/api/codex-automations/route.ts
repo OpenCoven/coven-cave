@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
 import { createCodexAutomation, listCodexAutomations, toCodexAutomationPayload } from "@/lib/codex-automations";
+import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";
-
-function isLocalOrigin(req: Request): boolean {
-  const host = req.headers.get("host") ?? "";
-  const bare = host.split(":")[0];
-  return bare === "127.0.0.1" || bare === "localhost" || bare === "[::1]";
-}
 
 export async function GET() {
   try {

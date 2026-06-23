@@ -7,16 +7,11 @@ import {
   toCodexAutomationPayload,
   updateCodexAutomation,
 } from "@/lib/codex-automations";
+import { isLocalOrigin } from "@/lib/server/local-origin";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
-
-function isLocalOrigin(req: Request): boolean {
-  const host = req.headers.get("host") ?? "";
-  const bare = host.split(":")[0];
-  return bare === "127.0.0.1" || bare === "localhost" || bare === "[::1]";
-}
 
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params;
