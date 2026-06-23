@@ -1621,6 +1621,10 @@
   background: var(--bg-base);
   border-right: 1px solid var(--border-strong);
 }
+/* Grouped by familiar: the Owner column is redundant with the group header, so
+   it's dropped from the markup — narrow the left table to its four columns. */
+.cg--no-owner .cg-left { flex-basis: 332px; grid-template-columns: 190px 58px 58px 26px; }
+.cg--no-owner .cg-grouprow .cg-left { grid-template-columns: auto 1fr auto; }
 .cg-left > span { padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cg-c-owner, .cg-c-date { font-size: 11px; color: var(--text-secondary); }
 .cg-c-date { text-align: right; }

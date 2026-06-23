@@ -336,17 +336,24 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   // Focus: when a group is clicked, render only it (range stays global so bars don't jump).
   const focused = focusedKey && groups.some((g) => g.key === focusedKey) ? focusedKey : null;
   const visibleGroups = focused ? groups.filter((g) => g.key === focused) : groups;
+  // Grouping by familiar already names the owner in every group header, so the
+  // per-row Owner column just repeats it — drop the column in that mode.
+  const hideOwner = groupMode === "familiar";
 
   const min = new Date(Math.min(...allRows.map((r) => r.start.getTime())));
   const max = new Date(Math.max(...allRows.map((r) => r.end.getTime())));
-  const rangeStart = startOfWeekMon(min);
+  // Anchor the timeline on the earliest task itself so the first bar sits flush
+  // against the left edge. Snapping back to that week's Monday left a near-empty
+  // leading column whenever the first task started late in its week.
+  const rangeStart = new Date(Date.UTC(min.getUTCFullYear(), min.getUTCMonth(), min.getUTCDate()));
   const rangeEnd = addDays(startOfWeekMon(max), 7); // complete the final week
   const totalDays = Math.max(7, daysBetween(rangeStart, rangeEnd));
   const timelineW = totalDays * DAY_W;
 
   const weeks: Array<{ left: number; width: number; label: string }> = [];
   for (let i = 0; i < totalDays; i += 7) {
-    weeks.push({ left: i * DAY_W, width: 7 * DAY_W, label: `Week ${isoWeek(addDays(rangeStart, i))}` });
+    // Clamp the trailing column: the range no longer ends on a week boundary.
+    weeks.push({ left: i * DAY_W, width: Math.min(7, totalDays - i) * DAY_W, label: `Week ${isoWeek(addDays(rangeStart, i))}` });
   }
 
   let todayX: number | null = null;
@@ -375,12 +382,12 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
         <button type="button" className="board-group-toggle-btn" onClick={scrollToToday} disabled={todayX === null} title="Scroll the timeline to today">Today</button>
       </div>
       <div className="board-gantt__scroll" ref={scrollRef}>
-        <div className="cg" style={{ ["--cg-day" as string]: `${DAY_W}px`, ["--cg-tl" as string]: `${timelineW}px` }}>
+        <div className={`cg${hideOwner ? " cg--no-owner" : ""}`} style={{ ["--cg-day" as string]: `${DAY_W}px`, ["--cg-tl" as string]: `${timelineW}px` }}>
           {/* Header: left column titles + week band */}
           <div className="cg-head">
             <div className="cg-left cg-left--head">
               <span className="cg-c-task">Group / Task</span>
-              <span className="cg-c-owner">Owner</span>
+              {!hideOwner && <span className="cg-c-owner">Owner</span>}
               <span className="cg-c-date">Start</span>
               <span className="cg-c-date">End</span>
               <span className="cg-c-st">St</span>
@@ -473,7 +480,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                     >
                       <span className="cg-left">
                         <span className="cg-c-task">{row.label}</span>
-                        <span className="cg-c-owner">{row.owner}</span>
+                        {!hideOwner && <span className="cg-c-owner">{row.owner}</span>}
                         <span className="cg-c-date">{formatLabel(previewStart)}</span>
                         <span className="cg-c-date">{formatLabel(previewEnd)}</span>
                         <span className="cg-c-st"><span className={`cg-dot cg-dot--${cat}`} aria-hidden /></span>

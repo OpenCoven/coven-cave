@@ -67,4 +67,22 @@ assert.match(gantt, /\{draggable \? resizeHandle\("start"\) : null\}[\s\S]*?\{dr
 assert.match(styles, /\.cg-bar__resize \{/, "resize-handle styles exist");
 assert.match(styles, /cursor: ew-resize/, "resize handles show the horizontal-resize cursor");
 
+// The timeline anchors on the earliest task itself (flush left) rather than
+// snapping back to that week's Monday, which left a near-empty leading column.
+assert.match(
+  gantt,
+  /const rangeStart = new Date\(Date\.UTC\(min\.getUTCFullYear\(\), min\.getUTCMonth\(\), min\.getUTCDate\(\)\)\)/,
+  "the Gantt window starts on the earliest task so the first bar is flush left",
+);
+assert.doesNotMatch(gantt, /const rangeStart = startOfWeekMon\(min\)/, "the leading Monday-snap is gone");
+assert.match(gantt, /width: Math\.min\(7, totalDays - i\)/, "the trailing week column is clamped to the range");
+
+// Grouping by familiar drops the redundant Owner column (header + cells + grid).
+assert.match(gantt, /const hideOwner = groupMode === "familiar"/, "owner column is hidden when grouping by familiar");
+assert.match(gantt, /className=\{`cg\$\{hideOwner \? " cg--no-owner" : ""\}`\}/, "the no-owner modifier class is applied to the grid");
+assert.match(gantt, /\{!hideOwner && <span className="cg-c-owner">Owner<\/span>\}/, "the Owner header is conditional");
+assert.match(gantt, /\{!hideOwner && <span className="cg-c-owner">\{row\.owner\}<\/span>\}/, "the per-row owner cell is conditional");
+assert.match(styles, /\.cg--no-owner \.cg-left \{ flex-basis: 332px; grid-template-columns: 190px 58px 58px 26px; \}/, "the no-owner layout drops the owner column width");
+assert.match(styles, /\.cg--no-owner \.cg-grouprow \.cg-left \{ grid-template-columns: auto 1fr auto; \}/, "group rows keep their own three-column template");
+
 console.log("board-schedule-window.test.ts: ok");
