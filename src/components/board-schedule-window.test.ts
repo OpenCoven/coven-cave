@@ -85,4 +85,13 @@ assert.match(gantt, /\{!hideOwner && <span className="cg-c-owner">\{row\.owner\}
 assert.match(styles, /\.cg--no-owner \.cg-left \{ flex-basis: 332px; grid-template-columns: 190px 58px 58px 26px; \}/, "the no-owner layout drops the owner column width");
 assert.match(styles, /\.cg--no-owner \.cg-grouprow \.cg-left \{ grid-template-columns: auto 1fr auto; \}/, "group rows keep their own three-column template");
 
+// Task-mode step rows carry the parent card's owner (the Owner column was blank).
+assert.match(gantt, /label: step\.text,\s*owner: ownerName\(card\.familiarId\),/, "task-mode step rows show the card's owner");
+assert.doesNotMatch(gantt, /owner: "",/, "the empty task-mode owner placeholder is gone");
+
+// By-familiar grouping colour-codes bars by familiar.
+assert.match(gantt, /const familiarColor = \(id: string \| null\): string \| undefined =>/, "a per-familiar colour helper exists");
+assert.match(gantt, /color: byFamiliar \? familiarColor\(card\.familiarId\) : undefined/, "rows carry a familiar colour only in by-familiar mode");
+assert.match(gantt, /\.\.\.\(row\.color \? \{ background: row\.color \} : \{\}\)/, "the bar paints the familiar colour when present");
+
 console.log("board-schedule-window.test.ts: ok");

@@ -35,6 +35,8 @@ type GanttRow = {
   start: Date;
   end: Date;
   category: GanttCategory;
+  /** Per-familiar bar colour, set only when grouping by familiar. */
+  color?: string;
 };
 type Group = { key: string; name: string; rows: GanttRow[]; firstStart: number };
 
@@ -203,6 +205,17 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     (id ? familiars?.find((f) => f.id === id)?.display_name : undefined) ?? "—";
   const projectName = (id: string | null | undefined): string =>
     (id ? projects?.find((p) => p.id === id)?.name : undefined) ?? "No project";
+  // A stable per-familiar colour for by-familiar bars: the familiar's own
+  // colour when set, otherwise a hue derived from its id so distinct familiars
+  // stay visually distinct. Unassigned rows keep their status colour.
+  const familiarColor = (id: string | null): string | undefined => {
+    if (!id) return undefined;
+    const set = familiars?.find((f) => f.id === id)?.color;
+    if (set) return set;
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
+    return `hsl(${h} 52% 52%)`;
+  };
 
   // A card's own date range; start/end fall back to each other. null if neither.
   const cardRange = (card: Card): { start: Date; end: Date } | null => {
@@ -240,7 +253,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
           cardId: card.id,
           stepId: step.id,
           label: step.text,
-          owner: "",
+          owner: ownerName(card.familiarId),
           start: a <= b ? a : b,
           end: a <= b ? b : a,
           category: step.done ? "done" : statusCategory(card.status),
@@ -275,6 +288,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
         start: cr.start,
         end: cr.end,
         category: statusCategory(card.status),
+        color: byFamiliar ? familiarColor(card.familiarId) : undefined,
       });
       group.firstStart = Math.min(group.firstStart, cr.start.getTime());
     }
@@ -495,7 +509,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                         ) : (
                           <span
                             className={barClass(`board-gantt-row__bar board-gantt-row__bar--${cat} cg-bar`)}
-                            style={{ left: `${left}px`, width: `${Math.max(DAY_W, previewDur * DAY_W - 3)}px`, touchAction: "none" }}
+                            style={{ left: `${left}px`, width: `${Math.max(DAY_W, previewDur * DAY_W - 3)}px`, touchAction: "none", ...(row.color ? { background: row.color } : {}) }}
                             {...handlers}
                           >
                             {draggable ? resizeHandle("start") : null}
