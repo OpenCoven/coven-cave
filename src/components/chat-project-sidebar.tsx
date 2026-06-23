@@ -7,6 +7,7 @@ import { selectionKey, type ProjectSelection } from "@/lib/chat-project-selectio
 import { setProjectOverride } from "@/lib/chat-project-overrides";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { sessionRailTitle } from "@/lib/session-rail-title";
+import { relativeTime } from "@/lib/relative-time";
 import {
   PINNED_SESSIONS_KEY,
   isSessionPinned,
@@ -71,19 +72,14 @@ function statusDotClass(status: string): string {
   return "bg-[var(--text-muted)]";
 }
 
-/** Compact relative age for the thread-rail rows (kept terse for the 230px width). */
+/**
+ * Compact relative age for the thread-rail rows. Delegates to the shared
+ * `relativeTime` helper for "Xm ago"/"Xh ago" wording (consistent with the rest
+ * of the app), but PINNED to compact density regardless of the Appearance →
+ * Relative time preference — the 230px rail has no room for "X minutes ago".
+ */
 function shortAge(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(ms)) return "";
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return "now";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d`;
-  return `${Math.floor(d / 7)}w`;
+  return relativeTime(iso, Date.now(), "compact");
 }
 
 function repoLabel(group: ChatProjectGroup): string {

@@ -9,6 +9,8 @@ import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 
 export type GroupBy = "status" | "familiar" | "project";
 export type SortKey = "title" | "status" | "priority" | "familiar" | "lifecycle" | "startDate" | "endDate" | "updatedAt";
@@ -75,15 +77,10 @@ function groupCards(cards: Card[], by: GroupBy, familiars: Familiar[], projects:
   return entries;
 }
 
+// Density-aware relative age, shared with the rest of the app: "2m ago" /
+// "2 minutes ago" depending on the Appearance → Relative time preference.
 function relTime(iso: string): string {
-  try {
-    const s = (Date.now() - new Date(iso).getTime()) / 1000;
-    if (s < 60) return `${Math.round(s)}s`;
-    if (s < 3600) return `${Math.round(s / 60)}m`;
-    if (s < 86400) return `${Math.round(s / 3600)}h`;
-    const d = Math.round(s / 86400);
-    return d < 30 ? `${d}d` : `${Math.round(d / 30)}mo`;
-  } catch { return ""; }
+  return relativeTime(iso);
 }
 
 function formatBoardDate(value: string | null | undefined): string {
@@ -116,6 +113,7 @@ type Props = {
 };
 
 export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId, onSelect, onPatch }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["done"]));

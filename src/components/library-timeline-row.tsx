@@ -3,6 +3,8 @@
 import { Icon, type IconName } from "@/lib/icon";
 import type { TimelineEntry } from "@/app/api/library/all/route";
 import type { Familiar } from "@/lib/types";
+import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 
 function listIcon(list: TimelineEntry["list"]): IconName {
   if (list === "github") return "ph:github-logo";
@@ -10,18 +12,10 @@ function listIcon(list: TimelineEntry["list"]): IconName {
   return "ph:bookmark-simple";
 }
 
+// Density-aware relative age, shared with the rest of the app: "2m ago" /
+// "2 minutes ago" depending on the Appearance → Relative time preference.
 function relTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  if (Number.isNaN(diff) || diff < 0) return "now";
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d`;
-  return `${Math.floor(d / 7)}w`;
+  return relativeTime(iso);
 }
 
 function EntryIcon({ entry }: { entry: TimelineEntry }) {
@@ -46,6 +40,7 @@ export function LibraryTimelineRow({
   selected: boolean;
   onSelect: () => void;
 }) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const fam = familiars.find((f) => f.id === entry.familiar);
   const title = entry.item.title || (entry.item as { url?: string }).url || "Untitled";
 
