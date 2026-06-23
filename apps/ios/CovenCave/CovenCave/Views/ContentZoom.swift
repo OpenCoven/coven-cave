@@ -10,8 +10,18 @@ struct ZoomTarget: Identifiable {
     enum Content {
         case image(UIImage)
         case html(String)
+        /// A code block: the highlighted `<pre>` HTML for display plus the raw
+        /// text so the zoom surface can copy it natively.
+        case code(html: String, text: String)
     }
     let content: Content
+
+    /// The raw text a "Copy" affordance should place on the pasteboard, if this
+    /// target carries copyable text (code blocks do).
+    var copyText: String? {
+        if case .code(_, let text) = content, !text.isEmpty { return text }
+        return nil
+    }
 }
 
 extension Notification.Name {
@@ -29,6 +39,9 @@ enum ContentZoom {
     }
     static func image(_ image: UIImage) { present(ZoomTarget(content: .image(image))) }
     static func html(_ html: String) { present(ZoomTarget(content: .html(html))) }
+    static func code(html: String, text: String) {
+        present(ZoomTarget(content: .code(html: html, text: text)))
+    }
 }
 
 /// Full-screen zoom surface with a close button. Images zoom natively; HTML
@@ -37,30 +50,54 @@ enum ContentZoom {
 struct ZoomableContentView: View {
     let target: ZoomTarget
     @Environment(\.dismiss) private var dismiss
+    @State private var copied = false
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack(alignment: .top) {
             Color.black.ignoresSafeArea()
             Group {
                 switch target.content {
                 case .image(let image): ZoomableImageView(image: image)
                 case .html(let html): ZoomableHTMLView(html: html)
+                case .code(let html, _): ZoomableCodeView(html: html)
                 }
             }
             .ignoresSafeArea(edges: .bottom)
 
-            Button { dismiss() } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 30))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, .black.opacity(0.35))
-                    .padding(8)
+            // Top bar: a Copy affordance (when the content carries copyable text,
+            // i.e. a code block) on the left, and a Close button on the right.
+            HStack {
+                if let text = target.copyText {
+                    Button { copy(text) } label: {
+                        Label(copied ? "Copied" : "Copy",
+                              systemImage: copied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(copied ? Color.green.opacity(0.85)
+                                               : Color.white.opacity(0.16), in: Capsule())
+                    }
+                    .accessibilityLabel("Copy code")
+                }
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 30))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, .black.opacity(0.35))
+                }
+                .accessibilityLabel("Close")
             }
-            .accessibilityLabel("Close")
             .padding(.top, 8)
-            .padding(.trailing, 12)
+            .padding(.horizontal, 12)
         }
         .statusBarHidden(true)
+    }
+
+    private func copy(_ text: String) {
+        UIPasteboard.general.string = text
+        Haptics.tap()
+        withAnimation(.snappy) { copied = true }
     }
 }
 
@@ -145,6 +182,52 @@ private struct ZoomableHTMLView: UIViewRepresentable {
         #zoom { width:100%; }
         #zoom table { display:table; width:auto; min-width:100%; overflow:visible; font-size:1em; }
         #zoom img, #zoom svg { max-width:100%; height:auto; }
+        </style>
+        </head><body><div id="zoom">\(fragment)</div></body></html>
+        """
+    }
+
+    private static var cssURL: URL {
+        Bundle.main.url(forResource: "markdown", withExtension: "css")
+            ?? URL(fileURLWithPath: "/dev/null")
+    }
+}
+
+/// Renders a code block (its highlighted `<pre>` HTML) full-screen: top-left
+/// aligned, scrollable in both axes (long lines don't wrap), pinch-zoomable, and
+/// styled with the bundled markdown CSS so syntax colours match the chat.
+private struct ZoomableCodeView: UIViewRepresentable {
+    let html: String
+
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        webView.scrollView.indicatorStyle = .white
+        webView.loadHTMLString(Self.document(for: html), baseURL: nil)
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    private static func document(for fragment: String) -> String {
+        let css = (try? String(contentsOf: cssURL, encoding: .utf8)) ?? ""
+        return """
+        <!doctype html><html><head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">
+        <style>
+        \(css)
+        html,body { margin:0; background:transparent; }
+        /* leave room for the top bar; sit flush top-left so reading starts at the
+           first line, and let long lines scroll horizontally rather than wrap. */
+        body { padding:56px 16px 24px; }
+        #zoom pre {
+          margin:0; border:0; background:transparent;
+          white-space:pre; overflow:visible;
+        }
+        #zoom code { font-size:0.95em; line-height:1.55; white-space:pre; }
         </style>
         </head><body><div id="zoom">\(fragment)</div></body></html>
         """

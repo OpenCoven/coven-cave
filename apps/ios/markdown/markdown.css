@@ -51,7 +51,23 @@ code {
   border-radius: 5px;
 }
 
-/* fenced code block */
+/* fenced code block — the .code-block container owns the frame (border/radius/
+   background) so the header bar and <pre> share one rounded card. */
+.code-block {
+  position: relative;
+  margin: 0 0 0.7em;
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 11px;
+  overflow: hidden;
+}
+.code-block pre {
+  margin: 0; border: 0; border-radius: 0; background: transparent;
+  padding: 12px 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+/* bare <pre> (e.g. lifted into the zoom view without the container) keeps a frame */
 pre {
   margin: 0 0 0.7em;
   background: var(--code-bg);
@@ -66,24 +82,34 @@ pre code {
   font-size: 0.86em; line-height: 1.5; border-radius: 0;
   white-space: pre;
 }
-/* fenced code block: a copy button pinned top-right (no hover on touch, so it
-   stays gently visible and brightens on tap / after copy). */
-.code-block { position: relative; }
-.code-copy {
-  position: absolute; top: 8px; right: 8px;
+
+/* code block header: language label on the left, actions (Expand / Copy) on the
+   right. No hover on touch, so the buttons stay clearly visible. */
+.code-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 5px 8px 5px 12px;
+  background: rgba(255,255,255,0.035);
+  border-bottom: 1px solid var(--code-border);
+}
+.code-lang {
+  font: 600 10.5px ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--txt-muted);
+}
+.code-actions { display: inline-flex; gap: 6px; flex: none; }
+.code-btn {
   -webkit-appearance: none; appearance: none;
+  display: inline-flex; align-items: center; gap: 4px;
   font: 600 11px -apple-system, system-ui, sans-serif;
   padding: 3px 9px; border-radius: 7px;
   border: 1px solid rgba(255,255,255,0.14);
   background: rgba(255,255,255,0.07);
-  color: rgba(255,255,255,0.62);
-  opacity: 0.7; cursor: pointer;
-  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  color: rgba(255,255,255,0.74);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
-.code-copy:active { opacity: 1; background: rgba(255,255,255,0.12); }
-.code-copy.is-copied {
-  opacity: 1; color: #57C878; border-color: rgba(87,200,120,0.5);
-}
+.code-btn:active { background: rgba(255,255,255,0.16); color: #fff; }
+.code-copy.is-copied { color: #57C878; border-color: rgba(87,200,120,0.5); }
 
 /* tables */
 table { border-collapse: collapse; width: 100%; margin: 0 0 0.7em; font-size: 0.92em; display: block; overflow-x: auto; }

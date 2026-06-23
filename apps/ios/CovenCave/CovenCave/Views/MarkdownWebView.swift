@@ -91,11 +91,17 @@ struct MarkdownWebView: UIViewRepresentable {
                         Haptics.tap()
                     }
                 case "enlarge":
-                    // A tapped table / Mermaid diagram / inline image — hand its
-                    // HTML to the full-screen zoom surface (ChatView presents it).
+                    // A tapped table / Mermaid diagram / inline image, or an
+                    // expanded code block — hand it to the full-screen zoom
+                    // surface (ChatView presents it). Code carries its raw text
+                    // so the zoom view's Copy button works.
                     if let html = body["html"] as? String, !html.isEmpty {
                         Haptics.tap()
-                        ContentZoom.html(html)
+                        if body["kind"] as? String == "code" {
+                            ContentZoom.code(html: html, text: body["text"] as? String ?? "")
+                        } else {
+                            ContentZoom.html(html)
+                        }
                     }
                 default:
                     break

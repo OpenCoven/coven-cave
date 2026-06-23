@@ -70,12 +70,23 @@ function highlightCode(code, rawLang) {
   let lang = (rawLang ?? "").trim().toLowerCase().split(/\s+/)[0];
   lang = ALIASES[lang] ?? lang;
   let inner = escapeHtml(code);
+  let resolved = "";
   if (lang && hljs.getLanguage(lang)) {
+    resolved = lang;
     try { inner = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value; } catch {}
   }
-  // Wrap in a positioned container with a copy button; the button reads the
-  // <code> textContent (raw, de-highlighted) and hands it to native on tap.
-  return `<div class="code-block"><button class="code-copy" type="button" aria-label="Copy code">Copy</button><pre class="hljs"><code class="hljs">${inner}</code></pre></div>`;
+  // A header bar (language label + Expand + Copy) sits above the code, like the
+  // desktop chat. Expand lifts the highlighted <pre> to a full-screen viewer;
+  // Copy reads the <code> textContent (raw, de-highlighted) and hands it to
+  // native. Both are explicit buttons so reading/scrolling code never triggers
+  // them by accident.
+  const label = resolved ? `<span class="code-lang">${escapeHtml(resolved)}</span>` : `<span class="code-lang"></span>`;
+  return `<div class="code-block">`
+    + `<div class="code-toolbar">${label}<span class="code-actions">`
+    + `<button class="code-btn code-expand" type="button" aria-label="Expand code">⤢ Expand</button>`
+    + `<button class="code-btn code-copy" type="button" aria-label="Copy code">Copy</button>`
+    + `</span></div>`
+    + `<pre class="hljs"><code class="hljs">${inner}</code></pre></div>`;
 }
 
 async function renderMarkdown(md) {
@@ -145,12 +156,29 @@ document.addEventListener("click", (e) => {
 document.addEventListener("click", (e) => {
   const btn = e.target?.closest?.(".code-copy");
   if (!btn) return;
-  const text = btn.parentElement?.querySelector("code")?.textContent ?? "";
+  const text = btn.closest(".code-block")?.querySelector("code")?.textContent ?? "";
   window.webkit?.messageHandlers?.cave?.postMessage({ type: "copy", text });
   btn.textContent = "Copied";
   btn.classList.add("is-copied");
   clearTimeout(btn._t);
   btn._t = setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("is-copied"); }, 1400);
+});
+
+// Expand a code block: lift the highlighted <pre> into a full-screen, scrollable
+// code viewer (native owns the surface) and pass the raw text so the viewer's
+// own Copy button works without round-tripping through the WebView again.
+document.addEventListener("click", (e) => {
+  const btn = e.target?.closest?.(".code-expand");
+  if (!btn) return;
+  const block = btn.closest(".code-block");
+  const pre = block?.querySelector("pre");
+  const text = block?.querySelector("code")?.textContent ?? "";
+  window.webkit?.messageHandlers?.cave?.postMessage({
+    type: "enlarge",
+    kind: "code",
+    html: pre?.outerHTML ?? "",
+    text,
+  });
 });
 
 // Tap a table, Mermaid diagram, or inline image to enlarge it full-screen —
