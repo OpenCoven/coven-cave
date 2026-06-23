@@ -20,10 +20,10 @@ function projectsFilePath(): string {
 }
 
 function normalizeRoot(root: string): string {
-  let r = root.trim().replace(/\\/g, "/");
-  let i = r.length;
-  while (i > 0 && r[i - 1] === "/") i--;
-  return r.slice(0, i) || "/";
+  const normalized = root.trim().replace(/\\/g, "/");
+  let endIndex = normalized.length;
+  while (endIndex > 0 && normalized[endIndex - 1] === "/") endIndex--;
+  return normalized.slice(0, endIndex) || "/";
 }
 
 function nanoid(len = 10): string {
