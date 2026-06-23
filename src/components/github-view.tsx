@@ -1136,7 +1136,7 @@ function GitHubItemGlassPanel({
               {" · "}
               {item.repo}
               {" · "}
-              {relativeTime(detail?.createdAt ?? item.updatedAt)}
+              <RelativeTime iso={detail?.createdAt ?? item.updatedAt} />
             </span>
           </div>
         </div>

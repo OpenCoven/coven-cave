@@ -9,8 +9,7 @@ import { Icon } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
-import { relativeTime } from "@/lib/relative-time";
-import { useDateTimePrefs } from "@/lib/datetime-format";
+import { RelativeTime } from "@/components/ui/relative-time";
 
 export type GroupBy = "status" | "familiar" | "project";
 export type SortKey = "title" | "status" | "priority" | "familiar" | "lifecycle" | "startDate" | "endDate" | "updatedAt";
@@ -77,12 +76,6 @@ function groupCards(cards: Card[], by: GroupBy, familiars: Familiar[], projects:
   return entries;
 }
 
-// Density-aware relative age, shared with the rest of the app: "2m ago" /
-// "2 minutes ago" depending on the Appearance → Relative time preference.
-function relTime(iso: string): string {
-  return relativeTime(iso);
-}
-
 function formatBoardDate(value: string | null | undefined): string {
   if (!value) return "—";
   const [year, month, day] = value.split("-");
@@ -113,7 +106,6 @@ type Props = {
 };
 
 export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId, onSelect, onPatch }: Props) {
-  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["done"]));
@@ -258,7 +250,7 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                     <td><LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} /></td>
                     <td><span className="board-table-cell-date">{formatBoardDate(card.startDate)}</span></td>
                     <td><span className="board-table-cell-date">{formatBoardDate(card.endDate)}</span></td>
-                    <td style={{ textAlign: "right" }}><span className="board-table-cell-time">{relTime(card.updatedAt)}</span></td>
+                    <td style={{ textAlign: "right" }}><RelativeTime iso={card.updatedAt} className="board-table-cell-time" /></td>
                   </tr>
                 );
               })}
