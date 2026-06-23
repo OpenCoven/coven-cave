@@ -14,6 +14,7 @@ import type {
 import type { AutomationRunRecord } from "@/lib/automation-runs";
 import { Icon } from "@/lib/icon";
 import { formatTimestamp, formatClock, readDateTimePrefs } from "@/lib/datetime-format";
+import { relativeTimeSigned } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
@@ -113,18 +114,7 @@ function isReminderOverdue(item: InboxItem): boolean {
 
 function relTime(iso: string | undefined | null): string {
   if (!iso) return "—";
-  const delta = new Date(iso).getTime() - Date.now();
-  const abs = Math.abs(delta);
-  const m = Math.round(abs / 60000);
-  if (m < 1) return delta > 0 ? "soon" : "just now";
-  if (m < 60) return delta > 0 ? `in ${m}m` : `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return delta > 0 ? `in ${h}h` : `${h}h ago`;
-  const d = Math.round(h / 24);
-  if (d <= 6) return delta > 0 ? `in ${d}d` : `${d}d ago`;
-  // Beyond a week the relative form ("in 42d") is hard to parse — show the
-  // actual date + time, honoring the user's clock and date preferences.
-  return formatTimestamp(iso, readDateTimePrefs());
+  return relativeTimeSigned(iso);
 }
 
 function listInput(values: string[]): string {

@@ -56,3 +56,41 @@ export function relativeTime(
 export function isRelativePhrase(value: string): boolean {
   return value === "just now" || value.endsWith(" ago");
 }
+
+/**
+ * Bidirectional, density-aware relative time: "2m ago" / "in 5m" (compact) or
+ * "2 minutes ago" / "in 5 minutes" (verbose); "just now"/"soon" under a minute;
+ * an absolute date past ~a week. Unlike `relativeTime` (past-only), this also
+ * formats future instants — used for next-fire schedule times.
+ */
+export function relativeTimeSigned(
+  iso: string | null | undefined,
+  now: number | Date = Date.now(),
+  density: DensityFormat = readDensity(),
+): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const nowMs = typeof now === "number" ? now : now.getTime();
+  const deltaMs = nowMs - then; // >0 past, <0 future
+  const future = deltaMs < 0;
+  const deltaMin = Math.round(Math.abs(deltaMs) / 60000);
+  const m = deltaMin;
+  const verbose = density === "verbose";
+  const phrase = (n: number, compactUnit: string, verboseUnit: string): string => {
+    const body = verbose ? `${n} ${n === 1 ? verboseUnit : verboseUnit + "s"}` : `${n}${compactUnit}`;
+    return future ? `in ${body}` : `${body} ago`;
+  };
+  if (m < 1) return future ? "soon" : "just now";
+  if (m < 60) return phrase(m, "m", "minute");
+  const hours = Math.round(m / 60);
+  if (hours < 24) return phrase(hours, "h", "hour");
+  const days = Math.round(hours / 24);
+  if (days < 7) return phrase(days, "d", "day");
+  const sameYear = new Date(then).getFullYear() === new Date(nowMs).getFullYear();
+  return new Intl.DateTimeFormat([], {
+    month: verbose ? "long" : "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  }).format(then);
+}
