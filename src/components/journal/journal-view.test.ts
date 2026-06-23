@@ -77,8 +77,12 @@ assert.match(entries, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Escape"[\s\S]*
 
 // JournalEntries is scoped to the selected familiar and its memory coverage.
 assert.match(entries, /const selectedFamiliarId = activeFamiliarId \?\? familiars\[0\]\?\.id \?\? null/, "JournalEntries derives one selected familiar scope");
-assert.match(entries, /const listQuery = selectedFamiliarId \? `\?familiar=\$\{encodeURIComponent\(selectedFamiliarId\)\}` : ""/, "JournalEntries loads only selected-familiar journal summaries");
-assert.match(entries, /const detailQuery = selectedFamiliarId\s*\?\s*`date=\$\{encodeURIComponent\(slug\)\}&familiar=\$\{encodeURIComponent\(selectedFamiliarId\)\}`\s*:\s*`date=\$\{encodeURIComponent\(slug\)\}`/, "JournalEntries loads selected-familiar journal details");
+// The list is now fetched whole and filtered client-side by the multiselect
+// scope (empty = All), so switching familiars/scope never refetches.
+assert.match(entries, /await fetch\(`\/api\/journal`, \{ cache: "no-store" \}\)/, "JournalEntries fetches the full journal day list");
+assert.match(entries, /if \(!familiarInScope\(scope, d\.reflectedBy\)\) return false/, "JournalEntries filters the day list by the familiar multiselect scope");
+// The day detail scopes its memory stats to the single active familiar (null at 0/≥ 2).
+assert.match(entries, /const detailQuery = activeFamiliarId\s*\?\s*`date=\$\{encodeURIComponent\(slug\)\}&familiar=\$\{encodeURIComponent\(activeFamiliarId\)\}`\s*:\s*`date=\$\{encodeURIComponent\(slug\)\}`/, "JournalEntries scopes day detail stats to the active familiar");
 assert.match(entries, /day\.stats\.covenOrigin[\s\S]*?coven files/, "Journal stats include Coven-origin memory files");
 assert.match(entries, /day\.stats\.externalRuntimes[\s\S]*?external runtime files/, "Journal stats include external runtime memory files");
 assert.match(entries, /day\.stats\.runtimeMemory[\s\S]*?runtime files/, "Journal stats include runtime memory files");

@@ -1798,7 +1798,7 @@ export function Workspace() {
         }}
       />
     ) : mode === "journal" ? (
-      <JournalView familiars={familiars} activeFamiliarId={activeId} />
+      <JournalView familiars={familiars} activeFamiliarId={activeId} scopeFamiliarIds={scopeIds} />
     ) : mode === "inbox" ? (
       <InboxEscalationsView
         onOpenSource={(item) => {
@@ -1855,6 +1855,7 @@ export function Workspace() {
         items={inboxItems}
         familiars={familiars}
         activeFamiliarId={calendarFamiliarId}
+        scopeFamiliarIds={scopeIds}
         deadlines={boardDeadlines}
         onOpenDeadline={(id) => {
           setMode("board");

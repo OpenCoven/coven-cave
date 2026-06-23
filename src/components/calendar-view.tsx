@@ -10,6 +10,7 @@ import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { itemDate, packEventColumns } from "@/lib/calendar-layout";
+import { familiarInScope } from "@/lib/familiar-multiselect";
 import { useIsMobile } from "@/lib/use-viewport";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -35,6 +36,9 @@ type Props = {
    *  Defensive null escape: bypass the familiar filter entirely. Mirrors
    *  BoardView's hard-scope. */
   activeFamiliarId?: string | null;
+  /** Multiselect scope (empty = All). When supplied, the calendar filters to
+   *  the union of these familiars; takes precedence over `activeFamiliarId`. */
+  scopeFamiliarIds?: ReadonlySet<string>;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
   /** Reschedule an item to a new time (drag-and-drop). Optimistic; SSE reconciles. */
@@ -1307,7 +1311,7 @@ function ItemDetailPanel({
 
 // ─── Main CalendarView ────────────────────────────────────────────────────────
 
-export function CalendarView({ items, familiars, activeFamiliarId, deadlines, onAddEntry, onOpenItem, onReschedule, onComplete, onDismiss, onSnooze, onOpenDeadline }: Props) {
+export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliarIds, deadlines, onAddEntry, onOpenItem, onReschedule, onComplete, onDismiss, onSnooze, onOpenDeadline }: Props) {
   const isMobile = useIsMobile();
   // SSR returns false from useIsMobile, so initial render is always "week"
   // on the server; the effect below snaps to agenda on mount when the
@@ -1327,25 +1331,30 @@ export function CalendarView({ items, familiars, activeFamiliarId, deadlines, on
 
   // Hard-scope: filter every downstream view (agenda/day/week/month) to the
   // active familiar. Defensive null escape: bypass the filter entirely.
+  const inScope = useMemo(
+    () =>
+      (familiarId: string | null | undefined): boolean =>
+        scopeFamiliarIds
+          ? familiarInScope(scopeFamiliarIds, familiarId)
+          : activeFamiliarId == null || familiarId === activeFamiliarId,
+    [scopeFamiliarIds, activeFamiliarId],
+  );
+
   const scopedItems = useMemo(
     () =>
-      (activeFamiliarId == null
-        ? items
-        : items.filter((it) => it.familiarId === activeFamiliarId)
-      // Dismissed items are removed from the calendar so a Dismiss reads as
-      // "gone"; done items stay (rendered with a completed treatment).
-      ).filter((it) => it.status !== "dismissed"),
-    [items, activeFamiliarId],
+      items
+        .filter((it) => inScope(it.familiarId))
+        // Dismissed items are removed from the calendar so a Dismiss reads as
+        // "gone"; done items stay (rendered with a completed treatment).
+        .filter((it) => it.status !== "dismissed"),
+    [items, inScope],
   );
 
   // Mirror the items hard-scope for deadlines, so a scoped familiar's calendar
   // only shows that familiar's task due-dates.
   const scopedDeadlines = useMemo(
-    () =>
-      activeFamiliarId == null
-        ? (deadlines ?? [])
-        : (deadlines ?? []).filter((d) => d.familiarId === activeFamiliarId),
-    [deadlines, activeFamiliarId],
+    () => (deadlines ?? []).filter((d) => inScope(d.familiarId)),
+    [deadlines, inScope],
   );
 
   useEffect(() => {
