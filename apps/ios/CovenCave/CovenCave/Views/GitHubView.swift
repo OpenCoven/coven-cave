@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 /// GitHub section: the authenticated user's live activity (open PRs, review
 /// requests, assigned issues, notifications) with a tappable detail view.
@@ -282,7 +283,7 @@ private struct GitHubMarkdown: View {
 
 /// Conversation timeline + inline PR review threads for one issue/PR. Reads via
 /// `GET /api/github/comments`, resolves threads, and posts replies with optional
-/// `@familiar` tagging — the iOS half of the desktop GitHub comments surface.
+/// file attachments — the iOS half of the desktop GitHub comments surface.
 private struct GitHubCommentsSection: View {
     @Environment(AppModel.self) private var app
     let item: GitHubItem
@@ -298,6 +299,19 @@ private struct GitHubCommentsSection: View {
     @State private var draft = ""
     @State private var posting = false
     @State private var postError: String?
+
+    // Attachments mirror GitHub's "add files" affordance: picking an image drops
+    // a thumbnail chip and inserts a markdown image placeholder into the body
+    // (the URL is left for the author to fill — the GitHub REST API has no
+    // asset-upload endpoint, so we can't host the bytes ourselves).
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var attachments: [CommentAttachment] = []
+
+    struct CommentAttachment: Identifiable {
+        let id = UUID()
+        let name: String
+        let image: UIImage
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -397,22 +411,15 @@ private struct GitHubCommentsSection: View {
     @ViewBuilder private var composer: some View {
         if canComment {
             VStack(alignment: .leading, spacing: 6) {
-                TextField("Reply… tag a familiar with @", text: $draft, axis: .vertical)
+                TextField("Add your comment here, be kind", text: $draft, axis: .vertical)
                     .lineLimit(2...6)
                     .textFieldStyle(.roundedBorder)
+                attachFilesBar
+                if !attachments.isEmpty { attachmentChips }
                 if let postError {
                     Text(postError).font(.caption).foregroundStyle(.red)
                 }
                 HStack {
-                    if !app.familiars.isEmpty {
-                        Menu {
-                            ForEach(app.familiars) { f in
-                                Button(f.displayName) { insertMention(f) }
-                            }
-                        } label: {
-                            Label("Tag familiar", systemImage: "at").font(.caption)
-                        }
-                    }
                     Spacer()
                     Button {
                         post()
@@ -428,9 +435,53 @@ private struct GitHubCommentsSection: View {
                 }
             }
             .padding(.top, 4)
+            .onChange(of: photoItems) { _, items in
+                guard !items.isEmpty else { return }
+                Task { await addAttachments(items) }
+            }
         } else {
             Text("Add a PAT (in the desktop GitHub tab) to reply and resolve review threads.")
                 .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    /// GitHub's "Paste, drop, or click to add files" affordance. A tap opens the
+    /// photo picker; each chosen image inserts a markdown placeholder below.
+    private var attachFilesBar: some View {
+        PhotosPicker(selection: $photoItems, maxSelectionCount: 5, matching: .images) {
+            HStack(spacing: 8) {
+                Image(systemName: "photo.on.rectangle.angled")
+                Text("Paste, drop, or click to add files")
+                Spacer(minLength: 0)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    private var attachmentChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(attachments) { att in
+                    HStack(spacing: 6) {
+                        Image(uiImage: att.image)
+                            .resizable().scaledToFill()
+                            .frame(width: 28, height: 28)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        Text(att.name).font(.caption2).lineLimit(1)
+                        Button { removeAttachment(att) } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Remove \(att.name)")
+                    }
+                    .padding(.leading, 4).padding(.trailing, 6).padding(.vertical, 4)
+                    .background(Color(.secondarySystemBackground), in: Capsule())
+                }
+            }
         }
     }
 
@@ -459,13 +510,37 @@ private struct GitHubCommentsSection: View {
         )
     }
 
-    private func insertMention(_ f: Familiar) {
-        let handle = f.displayName.replacingOccurrences(of: " ", with: "-")
-        if draft.isEmpty || draft.hasSuffix(" ") {
-            draft += "@\(handle) "
-        } else {
-            draft += " @\(handle) "
+    private func addAttachments(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let image = UIImage(data: data) else { continue }
+            let name = "image-\(attachments.count + 1).png"
+            attachments.append(CommentAttachment(name: name, image: image.resizedForUpload()))
+            insertImageMarkdown(named: name)
         }
+        photoItems = []
+    }
+
+    /// Append a GitHub markdown image placeholder on its own line — same shape
+    /// GitHub's web composer drops in when you attach a file (the author fills
+    /// the URL once the image is hosted).
+    private func insertImageMarkdown(named name: String) {
+        let md = "![\(name)](url)"
+        if draft.isEmpty {
+            draft = md + "\n"
+        } else if draft.hasSuffix("\n") {
+            draft += md + "\n"
+        } else {
+            draft += "\n" + md + "\n"
+        }
+    }
+
+    private func removeAttachment(_ att: CommentAttachment) {
+        attachments.removeAll { $0.id == att.id }
+        // Strip the matching placeholder line, leaving the rest of the draft intact.
+        let lines = draft.components(separatedBy: "\n")
+        let placeholder = "![\(att.name)](url)"
+        draft = lines.filter { $0 != placeholder }.joined(separator: "\n")
     }
 
     private func toggleResolve(_ thread: GitHubReviewThread) {
@@ -495,6 +570,7 @@ private struct GitHubCommentsSection: View {
                 let r = try await client.postGithubComment(repo: item.repo, number: number, body: text)
                 if r.ok {
                     draft = ""
+                    attachments = []
                     await load()
                 } else {
                     postError = r.error == "auth_required"
