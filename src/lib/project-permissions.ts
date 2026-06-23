@@ -50,7 +50,6 @@ type ProjectPermissionsFile = {
   projectGrants: ProjectGrant[];
   grantProposals: GrantProposal[];
   permissionAudit: PermissionAuditEntry[];
-  legacyConfiguredGrantsBootstrappedAt?: string;
 };
 
 type HumanPermissionConfigFile = {
@@ -122,10 +121,6 @@ export async function loadProjectPermissions(): Promise<ProjectPermissionsFile> 
     projectGrants: Array.isArray(parsed.projectGrants) ? parsed.projectGrants : [],
     grantProposals: Array.isArray(parsed.grantProposals) ? parsed.grantProposals : [],
     permissionAudit: Array.isArray(parsed.permissionAudit) ? parsed.permissionAudit : [],
-    legacyConfiguredGrantsBootstrappedAt:
-      typeof parsed.legacyConfiguredGrantsBootstrappedAt === "string"
-        ? parsed.legacyConfiguredGrantsBootstrappedAt
-        : undefined,
   };
 }
 
@@ -290,47 +285,6 @@ export async function bootstrapSupremeProjectGrants(projects: CaveProject[]): Pr
       source: "bootstrap",
     });
   }
-}
-
-function configuredFamiliarIds(values: readonly string[]): string[] {
-  const unique = new Set<string>();
-  for (const value of values) {
-    const familiarId = value.trim();
-    if (/^[a-z0-9_-]+$/i.test(familiarId)) unique.add(familiarId);
-  }
-  return [...unique];
-}
-
-export async function bootstrapConfiguredFamiliarProjectGrants(
-  projects: CaveProject[],
-  familiarIds: readonly string[],
-): Promise<boolean> {
-  const targetFamiliarIds = configuredFamiliarIds(familiarIds);
-  if (projects.length === 0 || targetFamiliarIds.length === 0) return false;
-
-  return withWriteMutex(async () => {
-    const file = await loadProjectPermissions();
-    if (
-      file.legacyConfiguredGrantsBootstrappedAt ||
-      file.projectGrants.length > 0 ||
-      file.grantProposals.length > 0
-    ) {
-      return false;
-    }
-
-    for (const familiarId of targetFamiliarIds) {
-      for (const project of projects) {
-        ensureProjectGrant(file, {
-          familiarId,
-          projectId: project.id,
-          source: "bootstrap",
-        });
-      }
-    }
-    file.legacyConfiguredGrantsBootstrappedAt = new Date().toISOString();
-    await saveProjectPermissions(file);
-    return true;
-  });
 }
 
 export async function createGrantProposal(input: {

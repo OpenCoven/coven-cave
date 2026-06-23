@@ -62,7 +62,6 @@ import {
   type RuntimeScope,
 } from "@/lib/chat-runtime-scope";
 import {
-  bootstrapConfiguredFamiliarProjectGrants,
   ProjectAccessDeniedError,
   assertProjectAccess,
 } from "@/lib/project-permissions";
@@ -1030,17 +1029,11 @@ export async function POST(req: Request) {
   }
   const chatProjectId = sshRuntime
     ? null
-    : await (async () => {
-        await bootstrapConfiguredFamiliarProjectGrants(
-          await loadProjects(),
-          [body.familiarId, ...Object.keys(config.familiars)],
-        );
-        return chatProjectAccessId({
-          requestedProjectRoot: body.projectRoot,
-          resumeCwd,
-          resolvedCwd: cwd,
-        });
-      })();
+    : await chatProjectAccessId({
+        requestedProjectRoot: body.projectRoot,
+        resumeCwd,
+        resolvedCwd: cwd,
+      });
   if (chatProjectId) {
     try {
       await assertProjectAccess({ familiarId: body.familiarId }, chatProjectId, "chat");

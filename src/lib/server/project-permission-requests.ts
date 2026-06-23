@@ -1,12 +1,10 @@
 import path from "node:path";
 
-import { loadConfig } from "@/lib/cave-config";
 import { loadProjects } from "@/lib/cave-projects";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import {
   ProjectAccessDeniedError,
   assertProjectAccess,
-  bootstrapConfiguredFamiliarProjectGrants,
   type ProjectPermissionSurface,
 } from "@/lib/project-permissions";
 import { MOBILE_ACCESS_HEADER } from "@/proxy-helpers";
@@ -47,11 +45,6 @@ export async function assertProjectApiAccess(args: {
     throw new ProjectAccessDeniedError("missing project path for permission check");
   }
   const projects = await loadProjects();
-  const config = await loadConfig();
-  await bootstrapConfiguredFamiliarProjectGrants(projects, [
-    familiarId,
-    ...Object.keys(config.familiars),
-  ]);
   const project = projectRootForPath(requestedPath, projects);
   if (!project) {
     throw new ProjectAccessDeniedError("project is not registered for permission checks");

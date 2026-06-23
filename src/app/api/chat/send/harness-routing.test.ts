@@ -252,14 +252,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const chatProjectId = sshRuntime[\s\S]*return chatProjectAccessId\(\{[\s\S]*requestedProjectRoot: body\.projectRoot,[\s\S]*resumeCwd,[\s\S]*resolvedCwd: cwd,[\s\S]*\}\);[\s\S]*await assertProjectAccess\(\{ familiarId: body\.familiarId \}, chatProjectId, "chat"\);/,
+  /const chatProjectId = sshRuntime[\s\S]*await chatProjectAccessId\(\{[\s\S]*requestedProjectRoot: body\.projectRoot,[\s\S]*resumeCwd,[\s\S]*resolvedCwd: cwd,[\s\S]*\}\);[\s\S]*await assertProjectAccess\(\{ familiarId: body\.familiarId \}, chatProjectId, "chat"\);/,
   "Local project-scoped chat must assert project access before building the harness prompt",
 );
 
-assert.match(
+assert.doesNotMatch(
   chatRoute,
-  /bootstrapConfiguredFamiliarProjectGrants\([\s\S]*await loadProjects\(\),[\s\S]*\[body\.familiarId, \.\.\.Object\.keys\(config\.familiars\)\]/,
-  "Chat send should migrate legacy configured-familiar grants before enforcing the new project permission chokepoint",
+  /bootstrapConfiguredFamiliarProjectGrants/,
+  "Chat send must not grant configured familiars project access before enforcing the chokepoint",
 );
 
 assert.match(

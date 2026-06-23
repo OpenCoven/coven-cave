@@ -33,10 +33,10 @@ assert.match(
   /export async function assertProjectApiAccess\([\s\S]*familiarId[\s\S]*projectRootForPath[\s\S]*await assertProjectAccess\(\{ familiarId \}, project\.id, surface\)/,
   "project API request helper should resolve a registered project from the requested path/root and assert access",
 );
-assert.match(
+assert.doesNotMatch(
   helper,
-  /bootstrapConfiguredFamiliarProjectGrants\([\s\S]*projects,[\s\S]*familiarId,[\s\S]*\.\.\.Object\.keys\(config\.familiars\)/,
-  "project API request helper should run the legacy configured-familiar grant bootstrap before enforcing access",
+  /bootstrapConfiguredFamiliarProjectGrants/,
+  "project API request helper must not auto-grant configured familiars before enforcing access",
 );
 assert.match(
   helper,

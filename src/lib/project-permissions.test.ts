@@ -12,7 +12,6 @@ process.env.CAVE_SUPREME_FAMILIAR_ID = "supreme";
 try {
   const {
     assertProjectAccess,
-    bootstrapConfiguredFamiliarProjectGrants,
     bootstrapSupremeProjectGrants,
     canAccessProject,
     createGrantProposal,
@@ -110,45 +109,13 @@ try {
     [["cave", "bootstrap"], ["docs", "bootstrap"]],
     "bootstrap records Supreme grants for all existing projects",
   );
-
-  const legacyTmp = await mkdtemp(path.join(tmpdir(), "project-permissions-legacy-"));
-  process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = path.join(legacyTmp, "permissions.json");
-  try {
-    const changed = await bootstrapConfiguredFamiliarProjectGrants(projects, [
-      "nova",
-      "sage",
-      "",
-      "../bad",
-    ]);
-    assert.equal(changed, true, "legacy bootstrap should run once for empty grant stores");
-    const legacyBootstrapped = await loadProjectPermissions();
-    assert.deepEqual(
-      legacyBootstrapped.projectGrants.map((grant) => [
-        grant.familiarId,
-        grant.projectId,
-        grant.source,
-      ]),
-      [
-        ["nova", "cave", "bootstrap"],
-        ["nova", "docs", "bootstrap"],
-        ["sage", "cave", "bootstrap"],
-        ["sage", "docs", "bootstrap"],
-      ],
-      "legacy bootstrap grants every configured familiar to existing projects explicitly",
-    );
-    assert.ok(
-      legacyBootstrapped.legacyConfiguredGrantsBootstrappedAt,
-      "legacy bootstrap should record a migration marker",
-    );
-    assert.equal(
-      await bootstrapConfiguredFamiliarProjectGrants(projects, ["cody"]),
-      false,
-      "legacy bootstrap should not run again after the marker is written",
-    );
-  } finally {
-    await rm(legacyTmp, { recursive: true, force: true });
-    process.env.CAVE_PROJECT_PERMISSIONS_PATH_OVERRIDE = path.join(tmp, "permissions.json");
-  }
+  assert.deepEqual(
+    bootstrapped.projectGrants
+      .filter((grant) => grant.familiarId !== "supreme")
+      .map((grant) => grant.familiarId),
+    ["nova"],
+    "bootstrap must not grant every configured familiar to existing projects",
+  );
 
   console.log("project-permissions.test.ts: ok");
 } finally {
