@@ -19,6 +19,7 @@ struct ChatsHomeView: View {
     @State private var renamingThread: ChatThread?
     /// A group thread awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: ChatThread?
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -92,7 +93,12 @@ struct ChatsHomeView: View {
             Text("Chats")
                 .font(.largeTitle.weight(.bold))
             Spacer()
-            if !app.familiars.isEmpty {
+            if canReorder {
+                Button(editMode.isEditing ? "Done" : "Reorder") {
+                    withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                }
+                .font(.subheadline.weight(.medium))
+            } else if !app.familiars.isEmpty {
                 Text("^[\(app.familiars.count) familiar](inflect: true)")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -104,6 +110,12 @@ struct ChatsHomeView: View {
         .background(.bar)
     }
 
+    /// Reordering is only meaningful with ≥2 familiars and no active search
+    /// filter (drag indices must map to the full, unfiltered list).
+    private var canReorder: Bool {
+        app.familiars.count > 1 && query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var homeList: some View {
         List {
             Section(filteredFamiliars.isEmpty ? "" : "Familiars") {
@@ -112,6 +124,9 @@ struct ChatsHomeView: View {
                         FamiliarRow(familiar: familiar)
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                }
+                .onMove { source, destination in
+                    app.moveFamiliar(fromOffsets: source, toOffset: destination)
                 }
             }
             if !filteredGroups.isEmpty {
@@ -146,6 +161,7 @@ struct ChatsHomeView: View {
             }
         }
         .listStyle(.plain)
+        .environment(\.editMode, $editMode)
         .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
         .confirmationDialog("Delete this group chat?",
                             isPresented: deleteDialogBinding,
@@ -154,6 +170,11 @@ struct ChatsHomeView: View {
             Button("Delete", role: .destructive) { app.deleteThread(thread) }
             Button("Cancel", role: .cancel) {}
         } message: { thread in Text(thread.title) }
+        // A search filters the list, so indices stop matching the full familiar
+        // array — leave reorder mode if the user starts searching.
+        .onChange(of: query) { _, q in
+            if !q.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { editMode = .inactive }
+        }
     }
 
     private var deleteDialogBinding: Binding<Bool> {

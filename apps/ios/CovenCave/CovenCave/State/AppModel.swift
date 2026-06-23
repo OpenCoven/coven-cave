@@ -29,6 +29,9 @@ final class AppModel {
 
     var familiars: [Familiar] = []
     var familiarsError: String?
+    /// User's preferred familiar order (ids), applied over the server's order
+    /// and persisted locally. Unknown/new familiars fall to the end.
+    var familiarOrder: [String] = []
 
     var threads: [ChatThread] = []
 
@@ -112,6 +115,7 @@ final class AppModel {
         connection = CaveConnection.load()
         loadThreads()
         loadCardLinks()
+        loadFamiliarOrder()
         if connection != nil { connectionState = .checking }
     }
 
@@ -369,11 +373,34 @@ final class AppModel {
     func loadFamiliars() async {
         guard let client else { return }
         do {
-            familiars = try await client.familiars()
+            familiars = applyFamiliarOrder(try await client.familiars())
             familiarsError = nil
         } catch {
             familiarsError = error.localizedDescription
         }
+    }
+
+    /// Drag-reorder familiars in the Chats tab; persists the new order.
+    func moveFamiliar(fromOffsets source: IndexSet, toOffset destination: Int) {
+        familiars.move(fromOffsets: source, toOffset: destination)
+        familiarOrder = familiars.map(\.id)
+        persistFamiliarOrder()
+    }
+
+    /// Sort a freshly-loaded familiar list by the saved order; ids not in the
+    /// saved order (new familiars) keep their server order at the end.
+    private func applyFamiliarOrder(_ loaded: [Familiar]) -> [Familiar] {
+        guard !familiarOrder.isEmpty else { return loaded }
+        let rank = Dictionary(uniqueKeysWithValues: familiarOrder.enumerated().map { ($1, $0) })
+        return loaded.enumerated().sorted { a, b in
+            let ra = rank[a.element.id], rb = rank[b.element.id]
+            switch (ra, rb) {
+            case let (.some(x), .some(y)): return x < y
+            case (.some, .none): return true
+            case (.none, .some): return false
+            case (.none, .none): return a.offset < b.offset   // stable
+            }
+        }.map(\.element)
     }
 
     // MARK: - Sessions (server-side, for per-familiar thread lists)
@@ -685,5 +712,28 @@ final class AppModel {
             return
         }
         cardThreadLinks = map
+    }
+
+    private var familiarOrderFileURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("cave-familiar-order.json")
+    }
+
+    private func persistFamiliarOrder() {
+        do {
+            let data = try JSONEncoder().encode(familiarOrder)
+            try data.write(to: familiarOrderFileURL, options: .atomic)
+        } catch {
+            // Non-fatal: best-effort persistence.
+        }
+    }
+
+    private func loadFamiliarOrder() {
+        guard let data = try? Data(contentsOf: familiarOrderFileURL),
+              let order = try? JSONDecoder().decode([String].self, from: data) else {
+            return
+        }
+        familiarOrder = order
     }
 }
