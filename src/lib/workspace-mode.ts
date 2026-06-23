@@ -14,4 +14,5 @@ export type WorkspaceMode =
   | "workflows"
   | "retro"
   | "capabilities"
-  | "journal";
+  | "journal"
+  | "docs";

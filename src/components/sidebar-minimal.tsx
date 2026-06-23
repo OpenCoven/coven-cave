@@ -35,7 +35,8 @@ export type FolderMode =
   | "workflows"
   | "library"
   | "capabilities"
-  | "journal";
+  | "journal"
+  | "docs";
 
 export type AddonsConfig = {
   github?: boolean;
@@ -97,6 +98,7 @@ const FOLDER_MODES: Array<{
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description: "Shell session in your project" },
   { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘8", description: "Chat with a familiar beside your files and terminal" },
   { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description: "Saved docs, links, and reading" },
+  { id: "docs", label: "Docs", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven documentation and guides" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, workflows, skills, and the capabilities your familiars can use" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
   // Add-ons (gated)
