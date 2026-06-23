@@ -12,7 +12,7 @@ const familiarThreads = await read(`${iosRoot}/Views/FamiliarThreadsView.swift`)
 assert.match(thread, /var archived: Bool = false/, "ChatThread should carry an archived flag");
 assert.match(thread, /var archived: Bool\?/, "ThreadSnapshot.archived should be optional for back-compat");
 assert.match(thread, /self\.archived = s\.archived \?\? false/, "snapshot decode should default archived to false");
-assert.match(thread, /ThreadSnapshot\([\s\S]*archived: archived\)/, "snapshot encode should include archived");
+assert.match(thread, /ThreadSnapshot\([\s\S]*archived: archived/, "snapshot encode should include archived");
 
 assert.match(
   model,

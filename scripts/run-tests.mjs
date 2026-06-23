@@ -494,6 +494,7 @@ export const SUITES = {
     "scripts/ios-task-search-familiar-scope.test.mjs",
     "scripts/ios-thread-rename.test.mjs",
     "scripts/ios-archive-threads.test.mjs",
+    "scripts/ios-pin-threads.test.mjs",
     "scripts/ios-reorder-familiars.test.mjs",
     "scripts/ios-github-comment-attach.test.mjs",
     "scripts/mobile-tailscale.test.mjs",

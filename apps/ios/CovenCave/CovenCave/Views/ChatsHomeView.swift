@@ -154,10 +154,19 @@ struct ChatsHomeView: View {
                                 Label("Rename", systemImage: "pencil")
                             }
                             .tint(.accentColor)
+                            Button { app.setThreadPinned(thread, !thread.pinned) } label: {
+                                Label(thread.pinned ? "Unpin" : "Pin",
+                                      systemImage: thread.pinned ? "pin.slash" : "pin")
+                            }
+                            .tint(.orange)
                         }
                         .contextMenu {
                             Button { renamingThread = thread } label: {
                                 Label("Rename", systemImage: "pencil")
+                            }
+                            Button { app.setThreadPinned(thread, !thread.pinned) } label: {
+                                Label(thread.pinned ? "Unpin" : "Pin",
+                                      systemImage: thread.pinned ? "pin.slash" : "pin")
                             }
                             Button { app.setThreadArchived(thread, !thread.archived) } label: {
                                 Label(thread.archived ? "Unarchive" : "Archive",
@@ -335,6 +344,10 @@ struct ThreadRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
                     Text(thread.title).font(.headline).lineLimit(1)
+                    if thread.pinned {
+                        Image(systemName: "pin.fill")
+                            .font(.caption2).foregroundStyle(.orange)
+                    }
                     if thread.isGroup {
                         Image(systemName: "person.2.fill")
                             .font(.caption2).foregroundStyle(.secondary)
