@@ -79,6 +79,10 @@ export function FamiliarMenuBar({
           onSelectFamiliar={onSelectFamiliar}
           placement="bottom-start"
           labeled
+          // Surface every familiar in the top bar, not just the 6 most-recent.
+          // The strip stays pin/recency-ordered and scrolls horizontally when
+          // they overflow the available width.
+          max={familiars.length}
         />
       </div>
 

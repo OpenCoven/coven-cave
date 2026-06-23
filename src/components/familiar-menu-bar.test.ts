@@ -54,6 +54,12 @@ assert.match(
   /<FamiliarQuickSwitch[\s\S]*onSelectFamiliar=\{onSelectFamiliar\}/,
   "embeds the quick-switch strip + switcher for scope/full list",
 );
+// The top bar surfaces EVERY familiar, not just the default 6 most-recent.
+assert.match(
+  source,
+  /<FamiliarQuickSwitch[\s\S]*max=\{familiars\.length\}/,
+  "passes max={familiars.length} so the strip shows all familiars",
+);
 // The avatar bubbles + presence live inside FamiliarQuickSwitch, not inlined
 // here — the menu bar must not hand-roll its own bubble/presence markup.
 assert.doesNotMatch(

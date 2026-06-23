@@ -4695,14 +4695,16 @@ button:active > .edge-rail-chip {
   max-width: 180px;
 }
 
-/* Desktop top bar: cap the quick-switch strip so the labeled switcher and
-   search keep their room; overflow scrolls within the strip. */
+/* Desktop top bar: the strip surfaces every familiar. Let it grow with the
+   available width (responsive cap) so they're visible rather than hidden behind
+   a 6-avatar limit; the search keeps its min-width and the strip scrolls
+   horizontally only when the familiars genuinely overflow the cap. */
 .menu-bar__group--chat .familiar-quickswitch {
   min-width: 0;
 }
 
 .menu-bar__group--chat .familiar-quickswitch__strip {
-  max-width: 280px;
+  max-width: clamp(280px, 40vw, 600px);
 }
 
 .menu-bar__new,
