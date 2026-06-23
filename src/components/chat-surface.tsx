@@ -523,7 +523,7 @@ export function ChatSurface({
             }}
           />
         ) : scope === "projects" && !isCodeSurface ? (
-          <ProjectsView sessions={sessions} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} />
+          <ProjectsView sessions={sessions} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
         ) : (
           <Group
             className="flex min-h-0 min-w-0 flex-1"

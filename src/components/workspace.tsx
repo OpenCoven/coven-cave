@@ -518,7 +518,11 @@ export function Workspace() {
         : Promise.resolve(null);
 
       try {
-        const sessionsResult = await fetch("/api/sessions/list", { cache: "no-store" });
+        // Scope the session list to the active familiar's granted projects so
+        // every surface fed by `sessions` enforces the familiar→projects map.
+        // With "All familiars" (activeId null) the unscoped list is returned.
+        const scope = activeId ? `?familiarId=${encodeURIComponent(activeId)}` : "";
+        const sessionsResult = await fetch(`/api/sessions/list${scope}`, { cache: "no-store" });
         const json = await sessionsResult.json();
         if (!json.ok) return;
 
@@ -547,7 +551,7 @@ export function Workspace() {
 
     loadSessionsInFlightRef.current = request;
     return request;
-  }, [addons.github]);
+  }, [addons.github, activeId]);
 
   useEffect(() => {
     loadFamiliars();

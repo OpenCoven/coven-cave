@@ -118,8 +118,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "chat", label: "Familiars", iconName: "ph:chats", group: "work", kbd: "⌘2", description:/,
-  "Familiars should live at the ⌘2 Work shortcut",
+  /\{ id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2", description:/,
+  "The Chat surface should live at the ⌘2 Work shortcut",
 );
 
 assert.match(

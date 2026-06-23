@@ -10,6 +10,9 @@ import {
   mergeSessionRows,
 } from "@/lib/session-list-merge";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
+import { filterProjectsForFamiliar } from "@/lib/project-permissions";
+import { scopeSessionsToFamiliarProjects } from "@/lib/session-project-scope";
+import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import type { SessionGitContext, SessionInitiator, SessionRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -177,7 +180,26 @@ function enrichSessionsWithGitContext(sessions: SessionRow[]): SessionRow[] {
   });
 }
 
-async function computeSessionsList(includeArchived: boolean): Promise<SessionsListResult> {
+/**
+ * Scope a session list to a familiar's project grants. Sessions in a known
+ * project the familiar lacks access to are dropped; rootless / unknown-project
+ * sessions pass through (the "(no project)" bucket). A null/empty familiarId
+ * is the unscoped operator view — every session is returned.
+ */
+async function scopeForFamiliar(
+  sessions: SessionRow[],
+  projects: Awaited<ReturnType<typeof loadProjects>>,
+  familiarId: string | null,
+): Promise<SessionRow[]> {
+  if (!familiarId) return sessions;
+  const permitted = await filterProjectsForFamiliar(projects, familiarId);
+  return scopeSessionsToFamiliarProjects(sessions, projects, permitted);
+}
+
+async function computeSessionsList(
+  includeArchived: boolean,
+  familiarId: string | null,
+): Promise<SessionsListResult> {
   const [res, state, projects] = await Promise.all([
     callDaemon<DaemonSession[]>({ path: "/api/v1/sessions" }),
     loadState(),
@@ -192,7 +214,9 @@ async function computeSessionsList(includeArchived: boolean): Promise<SessionsLi
           ok: true,
           degraded: true,
           error: res.error ?? `daemon http ${res.status}`,
-          sessions: enrichSessionsWithGitContext(localSessions),
+          sessions: enrichSessionsWithGitContext(
+            await scopeForFamiliar(localSessions, projects, familiarId),
+          ),
         },
       };
     }
@@ -215,10 +239,15 @@ async function computeSessionsList(includeArchived: boolean): Promise<SessionsLi
     isValidDaemonProjectRoot: isKnownProjectOrValidDir,
   });
 
-  return { payload: { ok: true, sessions: enrichSessionsWithGitContext(sessions) } };
+  const scoped = await scopeForFamiliar(sessions, projects, familiarId);
+  return { payload: { ok: true, sessions: enrichSessionsWithGitContext(scoped) } };
 }
 
-async function cachedSessionsList(cacheKey: string, includeArchived: boolean): Promise<SessionsListResult> {
+async function cachedSessionsList(
+  cacheKey: string,
+  includeArchived: boolean,
+  familiarId: string | null,
+): Promise<SessionsListResult> {
   const now = Date.now();
   const cached = sessionsListCache.get(cacheKey);
   if (cached && cached.expiresAt > now) {
@@ -227,7 +256,7 @@ async function cachedSessionsList(cacheKey: string, includeArchived: boolean): P
   const inFlight = sessionsListInFlight.get(cacheKey);
   if (inFlight) return inFlight;
 
-  const promise = computeSessionsList(includeArchived).then((result) => {
+  const promise = computeSessionsList(includeArchived, familiarId).then((result) => {
     sessionsListCache.set(cacheKey, {
       expiresAt: Date.now() + SESSIONS_LIST_CACHE_MS,
       result,
@@ -245,7 +274,12 @@ async function cachedSessionsList(cacheKey: string, includeArchived: boolean): P
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const includeArchived = url.searchParams.get("includeArchived") === "1";
-  const cacheKey = includeArchived ? "archived" : "active";
-  const result = await cachedSessionsList(cacheKey, includeArchived);
+  const familiarId = url.searchParams.get("familiarId")?.trim() || null;
+  if (familiarId && !isValidFamiliarId(familiarId)) {
+    return NextResponse.json({ ok: false, error: "invalid familiar id", sessions: [] }, { status: 400 });
+  }
+  // Cache per (archived, familiar) — scoped views differ by grant set.
+  const cacheKey = `${includeArchived ? "archived" : "active"}:${familiarId ?? "all"}`;
+  const result = await cachedSessionsList(cacheKey, includeArchived, familiarId);
   return NextResponse.json(result.payload, result.init);
 }

@@ -59,7 +59,7 @@ test.describe("mobile command center pages", () => {
   });
 
   test("Chat index and new chat detail keep stable mobile geometry", async ({ page }) => {
-    await page.getByRole("tab", { name: "Familiars" }).click();
+    await page.getByRole("tab", { name: "Chat" }).click();
     await page.waitForSelector(".chat-surface");
 
     await expectNoHorizontalOverflow(page, "Chat index");

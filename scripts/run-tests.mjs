@@ -41,6 +41,7 @@ export const SUITES = {
     "src/lib/chat-project-selection.test.ts",
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-project-overrides.test.ts",
+    "src/lib/session-project-scope.test.ts",
     "src/components/chat-project-sidebar-dnd.test.ts",
     "src/lib/workflows.test.ts",
     "src/lib/workflow-generate.test.ts",
@@ -540,6 +541,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/workflow-generate.test.ts",
   "src/lib/server/automation-runner.test.ts",
   "src/lib/server/automation-log-paths.test.ts",
+  "src/lib/session-project-scope.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */

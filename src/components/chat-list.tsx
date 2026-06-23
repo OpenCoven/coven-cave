@@ -231,7 +231,9 @@ function ChatListSection({
 
 export function ChatList({ familiar, familiars = [], sessions, daemonRunning, onOpen, onNewChat, onSessionsChanged, sessionsLoaded = true, compact = false }: Props) {
   useMinuteTick(); // keep the "Xm ago" timestamps current without a data refresh
-  const { projects } = useProjects();
+  // Scope the project rail to what the active familiar is granted; with no
+  // active familiar (all-familiars view) this loads every project as before.
+  const { projects } = useProjects({ familiarId: familiar?.id ?? null });
   const projectOverrides = useProjectOverrides();
   const dtPrefs = useDateTimePrefs();
   const [error, setError] = useState<string | null>(null);
@@ -408,7 +410,10 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/sessions/list?includeArchived=1", { cache: "no-store" });
+        // Scope archived rows to the active familiar's projects, same as the
+        // live list — keeps forbidden-project sessions out of the archive view.
+        const scope = familiar?.id ? `&familiarId=${encodeURIComponent(familiar.id)}` : "";
+        const res = await fetch(`/api/sessions/list?includeArchived=1${scope}`, { cache: "no-store" });
         const json = await res.json().catch(() => ({ ok: false }));
         if (cancelled || !json.ok || !Array.isArray(json.sessions)) return;
         setArchivedRows((json.sessions as SessionRow[]).filter((s) => s.archived_at));
@@ -417,7 +422,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       }
     })();
     return () => { cancelled = true; };
-  }, [showArchived, archiveNonce]);
+  }, [showArchived, archiveNonce, familiar?.id]);
 
   // Content search fires only for queries of length ≥2, debounced ~300ms so
   // each keystroke doesn't hit disk; a retype aborts the in-flight fetch.

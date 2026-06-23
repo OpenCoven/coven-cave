@@ -203,6 +203,8 @@ type ProjectsViewProps = {
   sessions?: SessionRow[];
   onNewChat?: (projectRoot: string) => void;
   onSessionsChanged?: () => void;
+  /** When set, only projects this familiar has been granted are shown. */
+  activeFamiliarId?: string | null;
 };
 
 function openSessionById(sessionId: string): void {
@@ -662,7 +664,7 @@ function ProjectRow({
   );
 }
 
-export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: ProjectsViewProps) {
+export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, activeFamiliarId = null }: ProjectsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   useMinuteTick(); // keep the per-project "last active" relative times current
   const {
@@ -674,7 +676,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: Pr
     updateRoot,
     deleteProject,
     reload,
-  } = useProjects();
+  } = useProjects({ familiarId: activeFamiliarId });
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);

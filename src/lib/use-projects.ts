@@ -17,9 +17,15 @@ export type ProjectsState = {
 
 export type UseProjectsOptions = {
   enabled?: boolean;
+  /**
+   * When set, the list is scoped server-side to the projects this familiar has
+   * been granted access to (`/api/projects?familiarId=`). Omit (or pass null)
+   * to load every project — the unscoped operator view.
+   */
+  familiarId?: string | null;
 };
 
-export function useProjects({ enabled = true }: UseProjectsOptions = {}): ProjectsState {
+export function useProjects({ enabled = true, familiarId = null }: UseProjectsOptions = {}): ProjectsState {
   const [projects, setProjects] = useState<CaveProject[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +39,10 @@ export function useProjects({ enabled = true }: UseProjectsOptions = {}): Projec
     setError(null);
 
     try {
-      const res = await fetch("/api/projects", { signal: controller.signal });
+      const url = familiarId
+        ? `/api/projects?familiarId=${encodeURIComponent(familiarId)}`
+        : "/api/projects";
+      const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { ok?: boolean; projects?: CaveProject[]; error?: string };
       if (!controller.signal.aborted) {
@@ -50,7 +59,7 @@ export function useProjects({ enabled = true }: UseProjectsOptions = {}): Projec
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, []);
+  }, [familiarId]);
 
   useEffect(() => {
     if (!enabled) {

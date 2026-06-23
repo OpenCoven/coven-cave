@@ -9,7 +9,7 @@ const workspaceMode = readFileSync(new URL("../lib/workspace-mode.ts", import.me
 const iconSource = readFileSync(new URL("../lib/icon.tsx", import.meta.url), "utf8");
 
 assert.match(projectsView, /export function ProjectsView/, "ProjectsView should export the workspace surface");
-assert.match(projectsView, /useProjects\(\)/, "ProjectsView should use the live projects hook");
+assert.match(projectsView, /useProjects\(\{ familiarId: activeFamiliarId \}\)/, "ProjectsView should scope the live projects hook to the active familiar");
 assert.match(projectsView, /createProject\(name, root\)/, "ProjectsView should create projects through the hook");
 assert.match(projectsView, /onRename=\{renameProject\}/, "ProjectsView should wire inline rename");
 assert.match(projectsView, /onUpdateRoot=\{updateRoot\}/, "ProjectsView should wire root updates");
