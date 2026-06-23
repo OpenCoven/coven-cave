@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
 import type { InboxPrefs, SoundMode } from "@/lib/cave-inbox-prefs";
@@ -30,6 +31,7 @@ export function NotificationBell({
   onOpenItem,
   onPrefsChanged,
 }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEven
 
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
@@ -543,6 +544,7 @@ function ProjectRow({
 }
 
 export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged }: ProjectsViewProps) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   useMinuteTick(); // keep the per-project "last active" relative times current
   const {
     projects,

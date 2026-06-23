@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { formatDate } from "@/lib/datetime-format";
+import { formatDate, useDateTimePrefs } from "@/lib/datetime-format";
 import { relativeTime } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -59,6 +59,7 @@ export function LibraryDocList({
   error,
   onRetry,
 }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const filtered = useMemo(() => filterDocs(docs, searchQuery), [docs, searchQuery]);
   const movableCollections = useMemo(() => collections.filter((collection) => collection.id !== "all"), [collections]);
   const movableCollectionIds = useMemo(() => new Set(movableCollections.map((c) => c.id)), [movableCollections]);

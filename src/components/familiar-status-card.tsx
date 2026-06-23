@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { relativeTime } from "@/lib/relative-time";
+import { useDateTimePrefs } from "@/lib/datetime-format";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { parseGlyphString } from "@/lib/familiar-glyph";
 import { Icon } from "@/lib/icon";
@@ -163,6 +164,7 @@ type Props = {
 };
 
 export function FamiliarStatusCard({ card, expanded, onToggle }: Props) {
+  useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const statusClr = statusColor(card.status);
   const label = statusLabel(card.status);
 
