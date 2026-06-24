@@ -43,6 +43,7 @@ export const SUITES = {
     "src/lib/chat-session-order.test.ts",
     "src/lib/chat-project-overrides.test.ts",
     "src/lib/session-project-scope.test.ts",
+    "src/lib/marketplace-catalog.test.ts",
     "src/components/chat-project-sidebar-dnd.test.ts",
     "src/lib/workflows.test.ts",
     "src/lib/workflow-generate.test.ts",
