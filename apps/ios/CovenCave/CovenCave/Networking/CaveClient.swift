@@ -142,6 +142,24 @@ struct CaveClient {
         return try await patchTask(cardId: cardId, payload: payload)
     }
 
+    /// PATCH a task's title.
+    @discardableResult
+    func updateTaskTitle(cardId: String, title: String) async throws -> BoardCard {
+        let payload = try JSONSerialization.data(withJSONObject: ["title": title])
+        return try await patchTask(cardId: cardId, payload: payload)
+    }
+
+    /// PATCH a task's start/due dates (date-only "yyyy-MM-dd" strings). Both keys
+    /// are always sent so passing nil clears that date.
+    @discardableResult
+    func updateTaskDates(cardId: String, startDate: String?, endDate: String?) async throws -> BoardCard {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "startDate": startDate.map { $0 as Any } ?? NSNull(),
+            "endDate": endDate.map { $0 as Any } ?? NSNull(),
+        ])
+        return try await patchTask(cardId: cardId, payload: payload)
+    }
+
     /// `DELETE /api/board/{id}` — remove a task.
     func deleteTask(cardId: String) async throws {
         let req = try request("api/board/\(cardId)", method: "DELETE")

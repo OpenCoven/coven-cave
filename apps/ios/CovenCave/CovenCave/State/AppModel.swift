@@ -202,6 +202,37 @@ final class AppModel {
         }
     }
 
+    /// Optimistically rename a task; reconcile/revert like notes.
+    func setTaskTitle(_ card: BoardCard, _ title: String) async {
+        guard let client else { return }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != card.title else { return }
+        let previous = tasks
+        applyTask(id: card.id) { $0.title = trimmed }
+        do {
+            let updated = try await client.updateTaskTitle(cardId: card.id, title: trimmed)
+            applyTask(id: card.id) { $0 = updated }
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
+    /// Optimistically set a task's start/due dates (date-only strings, nil to
+    /// clear); reconcile/revert.
+    func setTaskDates(_ card: BoardCard, start: String?, end: String?) async {
+        guard let client, start != card.startDate || end != card.endDate else { return }
+        let previous = tasks
+        applyTask(id: card.id) { $0.startDate = start; $0.endDate = end }
+        do {
+            let updated = try await client.updateTaskDates(cardId: card.id, startDate: start, endDate: end)
+            applyTask(id: card.id) { $0 = updated }
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
     /// Optimistically remove a task, then DELETE it. Reinserts on failure.
     func deleteTask(_ card: BoardCard) async {
         guard let client else { return }
