@@ -775,7 +775,10 @@ final class AppModel {
     /// Bundle every thread's Markdown into a single `.zip` and return its URL.
     /// Filenames come from titles (de-duplicated); zipping uses NSFileCoordinator's
     /// `.forUploading`, so there's no third-party dependency.
-    func exportAllThreadsZip() throws -> URL {
+    func exportAllThreadsZip() throws -> URL { try exportThreadsZip(threads) }
+
+    /// Bundle the given threads' Markdown into a single `.zip` and return its URL.
+    func exportThreadsZip(_ threads: [ChatThread]) throws -> URL {
         let fm = FileManager.default
         let staging = fm.temporaryDirectory
             .appendingPathComponent("CovenCave Chats-\(UUID().uuidString)", isDirectory: true)

@@ -18,6 +18,7 @@ struct FamiliarThreadsView: View {
     @State private var selectMode = false
     @State private var selectedIds: Set<String> = []
     @State private var confirmingBulkDelete = false
+    @State private var exportArchive: ExportArchive?
 
     /// One row in the list: an on-device thread or a server-only session.
     private enum Entry: Identifiable {
@@ -95,6 +96,11 @@ struct FamiliarThreadsView: View {
                 HStack {
                     Button(allLocalSelected ? "Deselect All" : "Select All") { toggleSelectAll() }
                     Spacer()
+                    Button { exportSelected() } label: {
+                        Text(selectedIds.isEmpty ? "Export" : "Export (\(selectedIds.count))")
+                    }
+                    .disabled(selectedIds.isEmpty)
+                    Spacer().frame(width: 16)
                     Button(role: .destructive) { confirmingBulkDelete = true } label: {
                         Text(selectedIds.isEmpty ? "Delete" : "Delete (\(selectedIds.count))")
                             .fontWeight(.semibold)
@@ -111,6 +117,9 @@ struct FamiliarThreadsView: View {
                 exitSelect()
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .sheet(item: $exportArchive) { archive in
+            ActivityView(items: [archive.url])
         }
     }
 
@@ -236,6 +245,11 @@ struct FamiliarThreadsView: View {
     }
     private func exitSelect() {
         withAnimation { selectMode = false; selectedIds.removeAll() }
+    }
+    private func exportSelected() {
+        let chosen = localThreads.filter { selectedIds.contains($0.id) }
+        guard !chosen.isEmpty, let url = try? app.exportThreadsZip(chosen) else { return }
+        exportArchive = ExportArchive(url: url)
     }
 
     @ViewBuilder private func selectionMark(for entry: Entry) -> some View {
