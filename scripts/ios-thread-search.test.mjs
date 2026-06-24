@@ -15,7 +15,9 @@ assert.match(home, /\.filter \{ !\$0\.isGroup && \(showArchived \|\| !\$0\.archi
 
 // A "Chats" results section, shown only when there are matches.
 assert.match(home, /if !matchingThreads\.isEmpty \{[\s\S]*Section\("Chats"\) \{[\s\S]*ForEach\(matchingThreads\)/, "should render a Chats results section");
-assert.match(home, /path\.append\(\.thread\(thread\)\)/, "results should open the thread");
+// Rows are selection-tagged so the split view opens the conversation in the
+// detail column (and pushes it when collapsed on iPhone).
+assert.match(home, /ForEach\(matchingThreads\)[\s\S]*\.tag\(ChatRoute\.thread\(thread\)\)/, "results should open the thread via selection");
 
 // Empty-state accounts for thread matches too.
 assert.match(

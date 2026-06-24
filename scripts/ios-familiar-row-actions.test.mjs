@@ -9,7 +9,7 @@ const home = await readFile(
 // Familiar rows gain quick actions (parity with thread rows).
 assert.match(
   home,
-  /private func startNewChat\(with familiar: Familiar\) \{[\s\S]*startFreshThread\(familiarIds: \[familiar\.id\]\)[\s\S]*path\.append\(\.thread\(thread\)\)/,
+  /private func startNewChat\(with familiar: Familiar\) \{[\s\S]*startFreshThread\(familiarIds: \[familiar\.id\]\)[\s\S]*open\(\.thread\(thread\)\)/,
   "startNewChat should open a fresh thread with the familiar",
 );
 

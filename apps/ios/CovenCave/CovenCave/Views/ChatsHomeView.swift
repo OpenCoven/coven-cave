@@ -17,7 +17,14 @@ struct ChatsHomeView: View {
     @State private var query = ""
     /// Drives the accent glow on the search field while it's being edited.
     @FocusState private var searchFocused: Bool
-    @State private var path: [ChatRoute] = []
+    /// The sidebar selection: a familiar (drills into its threads in the detail
+    /// column) or a thread/group (opens the chat directly). On iPad the detail
+    /// fills the pane beside the list; on iPhone `NavigationSplitView` collapses
+    /// and selecting pushes, so the drill-down behaviour is unchanged.
+    @State private var selection: ChatRoute?
+    /// Navigation *within* the detail column — e.g. a familiar's thread list
+    /// pushing a conversation. Reset whenever the sidebar selection changes.
+    @State private var detailPath: [ChatRoute] = []
     @State private var renamingThread: ChatThread?
     /// A group thread awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: ChatThread?
@@ -26,7 +33,7 @@ struct ChatsHomeView: View {
     @State private var showArchived = false
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationSplitView {
             Group {
                 if app.familiars.isEmpty && app.threads.isEmpty {
                     emptyState
@@ -41,21 +48,13 @@ struct ChatsHomeView: View {
             // every tab's header aligns. Search + compose stay in the bottom bar.
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) { header }
-            .navigationDestination(for: ChatRoute.self) { route in
-                switch route {
-                case .familiar(let familiar):
-                    FamiliarThreadsView(familiar: familiar, path: $path)
-                case .thread(let thread):
-                    ChatView(thread: thread)
-                }
-            }
             // Search + compose live in a floating bottom bar (iMessage-style),
             // not the top toolbar; Settings is now its own tab.
             .safeAreaInset(edge: .bottom) { bottomBar }
             .sheet(isPresented: $showNewChat) {
                 NewChatView { thread in
                     showNewChat = false
-                    path.append(.thread(thread))
+                    open(.thread(thread))
                 }
             }
             .refreshable {
@@ -65,19 +64,66 @@ struct ChatsHomeView: View {
             .task { await app.loadSessions() }
             .onAppear(perform: openDeepLinkedThread)
             // A slash command (`/new`, `/familiar <name>`) or a task link asked to
-            // open a specific thread — push it straight onto the stack.
+            // open a specific thread — surface it in the detail column.
             .onChange(of: app.threadToOpen) { _, thread in
                 guard let thread else { return }
-                if lastThreadId != thread.id { path.append(.thread(thread)) }
+                if lastThreadId != thread.id { open(.thread(thread)) }
                 app.threadToOpen = nil
+            }
+        } detail: {
+            detailColumn
+        }
+        // Keep the list visible beside the conversation on iPad; on iPhone the
+        // split view still collapses to a single navigation stack.
+        .navigationSplitViewStyle(.balanced)
+        // A new sidebar selection starts a fresh detail navigation (so a familiar
+        // opens at its thread list, not a stale pushed conversation).
+        .onChange(of: selection) { _, _ in detailPath = [] }
+    }
+
+    /// The detail column: the selected familiar's thread list (which pushes a
+    /// conversation onto `detailPath`), the selected conversation directly, or a
+    /// placeholder on iPad when nothing is chosen yet.
+    @ViewBuilder private var detailColumn: some View {
+        NavigationStack(path: $detailPath) {
+            Group {
+                switch selection {
+                case .familiar(let familiar):
+                    FamiliarThreadsView(familiar: familiar, path: $detailPath)
+                case .thread(let thread):
+                    ChatView(thread: thread)
+                case nil:
+                    ContentUnavailableView {
+                        Label("Select a chat", systemImage: "bubble.left.and.bubble.right")
+                    } description: {
+                        Text("Pick a familiar or conversation to start.")
+                    }
+                }
+            }
+            .navigationDestination(for: ChatRoute.self) { route in
+                switch route {
+                case .familiar(let familiar):
+                    FamiliarThreadsView(familiar: familiar, path: $detailPath)
+                case .thread(let thread):
+                    ChatView(thread: thread)
+                }
             }
         }
     }
 
-    /// The id of the thread currently on top of the stack, if any (so a repeat
-    /// `requestOpen` of the same thread doesn't double-push it).
+    /// Open a route in the detail column (clearing any in-progress detail
+    /// navigation first), used by deep links and the new-chat sheet.
+    private func open(_ route: ChatRoute) {
+        detailPath = []
+        selection = route
+    }
+
+    /// The id of the conversation currently shown in the detail column, if any
+    /// (so a repeat `requestOpen` of the same thread doesn't re-select it). Covers
+    /// both a directly-selected thread and one pushed under a familiar.
     private var lastThreadId: String? {
-        if case .thread(let t) = path.last { return t.id }
+        if case .thread(let t) = detailPath.last { return t.id }
+        if case .thread(let t) = selection { return t.id }
         return nil
     }
 
@@ -86,14 +132,14 @@ struct ChatsHomeView: View {
     /// Start a brand-new chat with a familiar and open it (familiar-row action).
     private func startNewChat(with familiar: Familiar) {
         let thread = app.startFreshThread(familiarIds: [familiar.id])
-        path.append(.thread(thread))
+        open(.thread(thread))
     }
 
     private func openDeepLinkedThread() {
-        guard path.isEmpty,
+        guard selection == nil,
               let id = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"],
               let thread = app.threads.first(where: { $0.id == id }) else { return }
-        path.append(.thread(thread))
+        open(.thread(thread))
     }
 
     /// Large-title header pinned to the top, mirroring the Read / Tasks tabs
@@ -127,12 +173,11 @@ struct ChatsHomeView: View {
     }
 
     private var homeList: some View {
-        List {
+        List(selection: $selection) {
             Section(filteredFamiliars.isEmpty ? "" : "Familiars") {
                 ForEach(filteredFamiliars) { familiar in
-                    NavigationLink(value: ChatRoute.familiar(familiar)) {
-                        FamiliarRow(familiar: familiar)
-                    }
+                    FamiliarRow(familiar: familiar)
+                    .tag(ChatRoute.familiar(familiar))
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .swipeActions(edge: .leading, allowsFullSwipe: true) {
                         Button { startNewChat(with: familiar) } label: {
@@ -166,10 +211,8 @@ struct ChatsHomeView: View {
             if !filteredGroups.isEmpty || archivedGroupCount > 0 {
                 Section {
                     ForEach(filteredGroups) { thread in
-                        Button { path.append(.thread(thread)) } label: {
-                            ThreadRow(thread: thread)
-                        }
-                        .buttonStyle(.plain)
+                        ThreadRow(thread: thread)
+                        .tag(ChatRoute.thread(thread))
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) { pendingDelete = thread } label: {
@@ -236,10 +279,8 @@ struct ChatsHomeView: View {
             if !matchingThreads.isEmpty {
                 Section("Chats") {
                     ForEach(matchingThreads) { thread in
-                        Button { path.append(.thread(thread)) } label: {
-                            ThreadRow(thread: thread)
-                        }
-                        .buttonStyle(.plain)
+                        ThreadRow(thread: thread)
+                        .tag(ChatRoute.thread(thread))
                         .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                         .contextMenu {
                             Button { renamingThread = thread } label: {
@@ -270,7 +311,6 @@ struct ChatsHomeView: View {
         }
         .listStyle(.plain)
         .themedListBackground()
-        .readableListWidth()
         .environment(\.editMode, $editMode)
         .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
         .confirmationDialog("Delete this chat?",
