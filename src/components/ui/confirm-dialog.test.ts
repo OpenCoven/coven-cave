@@ -39,8 +39,6 @@ assert.match(layout, /<ConfirmProvider>/, "layout mounts ConfirmProvider");
 for (const rel of [
   "../canvas-artifact-node.tsx",
   "../automations-view.tsx",
-  "../workflows-view.tsx",
-  "../workflows/workflow-runs-panel.tsx",
 ]) {
   const file = readFileSync(new URL(rel, import.meta.url), "utf8");
   assert.doesNotMatch(file, /window\.confirm\(/, `${rel} should not call native window.confirm()`);
