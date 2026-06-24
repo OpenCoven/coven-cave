@@ -10,6 +10,7 @@ const client = await read(`${base}/Networking/CaveClient.swift`);
 const model = await read(`${base}/State/AppModel.swift`);
 const app = await read(`${base}/CovenCaveApp.swift`);
 const root = await read(`${base}/Views/RootView.swift`);
+const appearance = await read(`${base}/Theme/AppearanceMode.swift`);
 
 // --- Contract types decode GET /api/theme -----------------------------------
 
@@ -112,5 +113,16 @@ assert.match(
   /connectionState == \.connected \{ await app\.loadTheme\(\) \}/,
   "MainTabView should poll the theme while connected",
 );
+
+// Appearance override offers a System option that follows the device's own
+// light/dark setting (resolve returns a nil scheme so SwiftUI follows the OS).
+assert.match(appearance, /case desktop, system, light, dark/, "AppearanceMode includes a System option");
+assert.match(appearance, /case \.system: return "System"/, "System has a label");
+assert.match(
+  appearance,
+  /func resolve\(desktop: ChromePalette\) -> \(chrome: ChromePalette, scheme: ColorScheme\?\)/,
+  "resolve returns an optional scheme so System can mean follow-the-OS",
+);
+assert.match(appearance, /case \.system:\s*return \(\.fallback, nil\)/, "System resolves to the adaptive palette + nil scheme (follow OS)");
 
 console.log("ios-theme: ok");
