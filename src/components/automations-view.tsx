@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
@@ -1219,6 +1219,7 @@ function InboxFeedRow({
       <button
         type="button"
         onClick={() => onSelect(item)}
+        aria-current={selected ? "true" : undefined}
         className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
         style={{ background: selected ? "rgba(255,255,255,0.05)" : "transparent" }}
         onMouseEnter={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
@@ -1259,14 +1260,15 @@ function InboxFeedSection({
   familiarLabel: (fid?: string | null) => string | null;
   onSelect: (item: InboxItem) => void;
 }) {
+  const headingId = useId();
   if (items.length === 0) return null;
   return (
-    <div className="mb-6">
+    <section className="mb-6" aria-labelledby={headingId}>
       <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
         style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
-        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
+        <h3 id={headingId} className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
           {title}
-        </span>
+        </h3>
         <span
           className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
           style={
@@ -1278,7 +1280,7 @@ function InboxFeedSection({
           {items.length}
         </span>
       </div>
-      <ul>
+      <ul aria-labelledby={headingId}>
         {items.map((item) => (
           <InboxFeedRow
             key={item.id}
@@ -1289,7 +1291,7 @@ function InboxFeedSection({
           />
         ))}
       </ul>
-    </div>
+    </section>
   );
 }
 
