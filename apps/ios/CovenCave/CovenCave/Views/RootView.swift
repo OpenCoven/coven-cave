@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
 
     var body: some View {
         Group {
@@ -16,6 +17,9 @@ struct RootView: View {
                 MainTabView()
             }
         }
+        .background(chrome.bgBase.ignoresSafeArea())
+        .foregroundStyle(chrome.textPrimary)
+        .toolbarBackground(chrome.bgRaised, for: .navigationBar, .tabBar)
     }
 }
 
