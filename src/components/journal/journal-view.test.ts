@@ -57,6 +57,44 @@ assert.match(list, /aria-label="Save canvas code"/, "Canvas Code tab renders a s
 assert.match(list, /aria-label="Revert canvas code edits"/, "Canvas Code tab renders a revert action");
 assert.match(list, /e\.key === "s"[\s\S]*?saveCodeEdit/, "Canvas Code tab supports Cmd/Ctrl+S save");
 assert.match(list, /e\.key === "Escape"[\s\S]*?revertCodeEdit/, "Canvas Code tab supports Escape to revert unsaved edits");
+
+// ── Fullscreen detail is a real modal dialog (focus trap + Escape + restore) ──
+// Was: a portaled <section> with a manual Escape handler, no focus trap/restore.
+assert.match(
+  list,
+  /useFocusTrap\(fullscreen, detailRef, \{ onEscape: \(\) => setFullscreen\(false\) \}\)/,
+  "Fullscreen canvas detail traps focus, closes on Escape, and restores focus on exit",
+);
+assert.match(
+  list,
+  /role=\{fullscreen \? "dialog" : undefined\}[\s\S]*?aria-modal=\{fullscreen \? true : undefined\}/,
+  "Fullscreen canvas detail exposes dialog semantics only while full screen",
+);
+assert.doesNotMatch(
+  list,
+  /window\.addEventListener\("keydown", onKeyDown\)/,
+  "the hand-rolled fullscreen Escape listener is replaced by the focus trap",
+);
+// The portal remount defeats useFocusTrap's own restore, so focus is returned to
+// the full-screen toggle explicitly on the next frame after exiting full screen.
+assert.match(
+  list,
+  /if \(wasFullscreenRef\.current && !fullscreen\) \{\s*requestAnimationFrame\(\(\) => fsBtnRef\.current\?\.focus\(\)\)/,
+  "leaving full screen restores focus to the toggle (after the un-portal remount)",
+);
+assert.match(list, /ref=\{fsBtnRef\}/, "the full-screen toggle is the focus-restore target");
+
+// ── Selected canvas item is aria-current (was visual .is-selected only) ──────
+assert.match(list, /aria-current=\{a\.id === selectedId \? "true" : undefined\}/, "the selected canvas item announces itself");
+
+// ── Preview/Code tabs are arrow-navigable with a roving tab stop ─────────────
+assert.match(list, /tabIndex=\{view === "preview" \? 0 : -1\}/, "the preview tab roves the tab stop");
+assert.match(list, /tabIndex=\{view === "code" \? 0 : -1\}/, "the code tab roves the tab stop");
+assert.match(
+  list,
+  /\["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"\]\.includes\(e\.key\)/,
+  "the Preview/Code tablist supports arrow/Home/End navigation",
+);
 assert.match(css, /\.journal-list \{[\s\S]*?min-width:\s*0;/, "Journal master-detail shell can shrink inside the workspace");
 assert.match(css, /\.journal-detail \{[\s\S]*?overflow:\s*hidden;/, "Journal detail pane contains overflowing code surfaces");
 assert.match(css, /\.journal-detail__code \{[\s\S]*?overflow-x:\s*hidden;[\s\S]*?white-space:\s*pre-wrap;[\s\S]*?overflow-wrap:\s*anywhere;/, "Canvas Code tab wraps long source lines instead of overflowing horizontally");

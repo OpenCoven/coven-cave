@@ -7,6 +7,7 @@ import { copyText } from "@/lib/clipboard";
 import { isDemoModeEnabled } from "@/lib/demo-mode";
 import { relativeTime } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
 import {
   buildPreviewSrcDoc,
@@ -69,6 +70,8 @@ export function CanvasList({
   // Transient "Copied" confirmation for the Code tab's copy button.
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const detailRef = useRef<HTMLElement | null>(null);
+  const tablistRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
   // Guards async setState after the tab unmounts — generation is a slow LLM
   // call, so leaving Canvas mid-generate would otherwise setState on a dead tree.
@@ -240,14 +243,21 @@ export function CanvasList({
     setCodeDraft(selected?.code ?? "");
   }, [selected?.id, selected?.code]);
 
-  // Escape exits full-screen; deselecting/closing the pane also exits it.
+  // In full screen the detail is a portaled modal: trap focus inside it and
+  // close on Escape. (useFocusTrap's own focus-restore can't be relied on here —
+  // MaybePortal remounts the subtree on toggle, so the previously-focused node
+  // is gone before the trap captures it; we restore focus explicitly below.)
+  useFocusTrap(fullscreen, detailRef, { onEscape: () => setFullscreen(false) });
+
+  // Restore focus to the full-screen toggle when leaving full screen, on the
+  // next frame so it lands after the un-portal remount has committed.
+  const fsBtnRef = useRef<HTMLButtonElement>(null);
+  const wasFullscreenRef = useRef(fullscreen);
   useEffect(() => {
-    if (!fullscreen) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setFullscreen(false);
+    if (wasFullscreenRef.current && !fullscreen) {
+      requestAnimationFrame(() => fsBtnRef.current?.focus());
     }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    wasFullscreenRef.current = fullscreen;
   }, [fullscreen]);
 
   useEffect(() => {
@@ -369,6 +379,7 @@ export function CanvasList({
                     <button
                       type="button"
                       className="journal-art__select"
+                      aria-current={a.id === selectedId ? "true" : undefined}
                       onClick={() => {
                         setSelectedId(a.id);
                         setView("preview");
@@ -397,15 +408,38 @@ export function CanvasList({
         )}
       </aside>
       <MaybePortal active={fullscreen}>
-      <section className={`journal-detail${fullscreen ? " journal-detail--fullscreen" : ""}`} aria-label="Sketch preview">
+      <section
+        ref={detailRef}
+        className={`journal-detail${fullscreen ? " journal-detail--fullscreen" : ""}`}
+        aria-label="Sketch preview"
+        role={fullscreen ? "dialog" : undefined}
+        aria-modal={fullscreen ? true : undefined}
+        tabIndex={fullscreen ? -1 : undefined}
+      >
         {selected ? (
           <>
             <div className="journal-detail__bar">
-              <div className="journal-seg" role="tablist" aria-label="Preview or code">
+              <div
+                className="journal-seg"
+                role="tablist"
+                aria-label="Preview or code"
+                ref={tablistRef}
+                onKeyDown={(e) => {
+                  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+                  e.preventDefault();
+                  const next =
+                    e.key === "Home" ? "preview"
+                    : e.key === "End" ? "code"
+                    : view === "preview" ? "code" : "preview";
+                  setView(next);
+                  tablistRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next === "preview" ? 0 : 1]?.focus();
+                }}
+              >
                 <button
                   type="button"
                   role="tab"
                   aria-selected={view === "preview"}
+                  tabIndex={view === "preview" ? 0 : -1}
                   className={view === "preview" ? "on" : ""}
                   onClick={() => setView("preview")}
                 >
@@ -415,6 +449,7 @@ export function CanvasList({
                   type="button"
                   role="tab"
                   aria-selected={view === "code"}
+                  tabIndex={view === "code" ? 0 : -1}
                   className={view === "code" ? "on" : ""}
                   onClick={() => setView("code")}
                 >
@@ -423,6 +458,7 @@ export function CanvasList({
               </div>
               <div className="journal-detail__actions">
                 <button
+                  ref={fsBtnRef}
                   type="button"
                   className={`journal-act${fullscreen ? " journal-act--on" : ""}`}
                   aria-label={fullscreen ? "Exit full screen" : "View full screen"}
