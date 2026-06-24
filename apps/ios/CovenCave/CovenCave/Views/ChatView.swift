@@ -36,6 +36,9 @@ struct ChatView: View {
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
     @State private var zoomTarget: ZoomTarget?
 
+    /// Per-thread key for the persisted unsent draft.
+    private var draftKey: String { "cave.chat.draft.\(thread.id)" }
+
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
     private var slashMatches: [SlashCommand] {
@@ -114,6 +117,23 @@ struct ChatView: View {
         // first reply; once streaming stops, push that sessionId onto the card.
         .onChange(of: thread.isStreaming) { _, streaming in
             if !streaming { Task { await app.reconcileCardLinks(for: thread) } }
+        }
+        // Restore an unsent draft for this thread (typed earlier, then the view
+        // was dismissed or the app backgrounded). Only when the live draft is
+        // empty, so a draft already in hand isn't clobbered.
+        .onAppear {
+            if draft.isEmpty, let saved = UserDefaults.standard.string(forKey: draftKey) {
+                draft = saved
+            }
+        }
+        // Persist every edit per-thread; send() clears the draft, which removes
+        // the stored copy here so a sent message leaves nothing behind.
+        .onChange(of: draft) { _, value in
+            if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                UserDefaults.standard.removeObject(forKey: draftKey)
+            } else {
+                UserDefaults.standard.set(value, forKey: draftKey)
+            }
         }
         // Tap-to-enlarge: any chat subview posts a ZoomTarget; present it full
         // screen here (one cover for native images and lifted table/diagram HTML).
