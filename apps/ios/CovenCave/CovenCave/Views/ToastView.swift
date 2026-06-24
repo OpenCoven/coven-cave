@@ -49,7 +49,7 @@ private struct ToastModifier: ViewModifier {
                     .id(message.id)
                     .onAppear { scheduleDismiss(message.id) }
                     // Tap to dismiss immediately.
-                    .onTapGesture { withAnimation(.snappy) { self.message = nil } }
+                    .onTapGesture { withAnimation(reduceMotion ? nil : .snappy) { self.message = nil } }
             }
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: message)

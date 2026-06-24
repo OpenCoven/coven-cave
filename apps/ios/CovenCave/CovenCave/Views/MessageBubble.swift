@@ -157,6 +157,7 @@ struct MessageBubble: View {
                     .foregroundStyle(.secondary)
                     .opacity(Double(min(replyDrag / 50, 1)))
                     .padding(.leading, 14)
+                    .accessibilityHidden(true)
             }
         }
         .simultaneousGesture(replySwipe)
@@ -368,7 +369,8 @@ struct SuggestionPills: View {
                 Button { onTap(suggestion) } label: {
                     HStack(spacing: 5) {
                         if index == 0 {
-                            Image(systemName: "sparkle").font(.system(size: 10, weight: .semibold))
+                            Image(systemName: "sparkle").font(.caption2.weight(.semibold))
+                                .accessibilityHidden(true)
                         }
                         Text(suggestion)
                             .font(.caption.weight(.medium))
