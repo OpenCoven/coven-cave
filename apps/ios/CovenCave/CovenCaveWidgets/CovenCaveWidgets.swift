@@ -67,7 +67,8 @@ struct UpNextEntry: TimelineEntry {
 
 struct UpNextProvider: TimelineProvider {
     private var sample: WidgetSnapshot {
-        WidgetSnapshot(nextReminderTitle: "Stand-up sync",
+        WidgetSnapshot(nextReminderId: "preview",
+                       nextReminderTitle: "Stand-up sync",
                        nextReminderDate: Date().addingTimeInterval(3600),
                        dueTaskCount: 2, runningTaskCount: 1, updatedAt: Date())
     }
@@ -98,6 +99,30 @@ struct UpNextWidgetView: View {
     private var reminderId: String? { entry.snapshot?.nextReminderId }
 
     var body: some View {
+        content
+            // Tapping (outside the home-screen buttons) opens the reminders list.
+            .widgetURL(URL(string: "covencave://reminders"))
+            .containerBackground(for: .widget) {
+                switch family {
+                case .accessoryCircular: AccessoryWidgetBackground()
+                case .accessoryRectangular, .accessoryInline: Color.clear
+                default: Rectangle().fill(.fill.tertiary)
+                }
+            }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch family {
+        case .accessoryInline: inlineView
+        case .accessoryCircular: circularView
+        case .accessoryRectangular: rectangularView
+        default: homeScreenView
+        }
+    }
+
+    // MARK: Home Screen (small / medium)
+
+    private var homeScreenView: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
                 Image(systemName: "sparkles")
@@ -131,8 +156,53 @@ struct UpNextWidgetView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        // Tapping anywhere outside the buttons opens the reminders list.
-        .widgetURL(URL(string: "covencave://reminders"))
+    }
+
+    // MARK: Lock Screen / StandBy (accessory families)
+
+    @ViewBuilder private var inlineView: some View {
+        if let s = entry.snapshot, let title = s.nextReminderTitle {
+            if let when = s.nextReminderDate {
+                Label("\(title) · \(when.formatted(.dateTime.hour().minute()))",
+                      systemImage: "bell.fill")
+            } else {
+                Label(title, systemImage: "bell.fill")
+            }
+        } else {
+            Label("No reminders", systemImage: "bell")
+        }
+    }
+
+    @ViewBuilder private var circularView: some View {
+        VStack(spacing: 1) {
+            Image(systemName: "bell.fill").font(.system(size: 12))
+            if let when = entry.snapshot?.nextReminderDate {
+                Text(when, format: .dateTime.hour().minute())
+                    .font(.system(size: 11, weight: .semibold))
+                    .minimumScaleFactor(0.6)
+            }
+        }
+        .widgetAccentable()
+    }
+
+    @ViewBuilder private var rectangularView: some View {
+        if let s = entry.snapshot, let title = s.nextReminderTitle {
+            VStack(alignment: .leading, spacing: 1) {
+                Label("Up Next", systemImage: "sparkles")
+                    .font(.caption2.weight(.semibold))
+                    .widgetAccentable()
+                Text(title).font(.headline).lineLimit(1)
+                if let when = s.nextReminderDate {
+                    Text(when, format: .dateTime.weekday().hour().minute())
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        } else {
+            Label("No upcoming reminders", systemImage: "bell")
+                .font(.caption)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
     }
 
     private func actionButtons(id: String) -> some View {
@@ -172,11 +242,13 @@ struct UpNextWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "CovenCaveUpNext", provider: UpNextProvider()) { entry in
             UpNextWidgetView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
         }
         .configurationDisplayName("Up Next")
-        .description("Your next reminder and how many tasks are running or due.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .description("Your next reminder — on the Home Screen, Lock Screen, or StandBy.")
+        .supportedFamilies([
+            .systemSmall, .systemMedium,
+            .accessoryRectangular, .accessoryCircular, .accessoryInline,
+        ])
     }
 }
 
