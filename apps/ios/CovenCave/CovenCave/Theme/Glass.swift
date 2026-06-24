@@ -78,10 +78,27 @@ extension View {
         glass(level, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
+    /// The frost *only* — material + palette tint + accent wash, no border or shadow.
+    /// For surfaces that already supply their own border/shadow (a toast with a
+    /// status-tinted ring, a menu with a separator stroke) or for bare inline chips
+    /// that shouldn't gain depth. Still degrades to a solid surface under Reduce
+    /// Transparency.
+    func glassFill<S: InsettableShape>(_ level: GlassLevel, in shape: S) -> some View {
+        modifier(GlassBackground(level: level, shape: shape, border: false, shadow: false))
+    }
+
     /// A top or bottom chrome bar (large-title header, floating bottom bar) whose
     /// frost extends under the safe-area inset so it reads as a single sheet of glass.
     func glassChrome(_ edge: Edge.Set) -> some View {
         modifier(GlassChrome(edge: edge))
+    }
+
+    /// A contained, full-width frosted bar — the faithful, theme-aware replacement
+    /// for `.background(.bar)`: fills its own frame (no safe-area bleed), no boxed
+    /// border, just an accent-infused frost with a single hairline divider on the
+    /// given `divider` edge (default top, for a bar that sits below content).
+    func glassBar(divider: Edge.Set = .top) -> some View {
+        modifier(GlassBar(divider: divider))
     }
 
     /// An accent-coloured halo on a selected/active element (the focused search
@@ -98,6 +115,8 @@ extension View {
 private struct GlassBackground<S: InsettableShape>: ViewModifier {
     let level: GlassLevel
     let shape: S
+    var border: Bool = true
+    var shadow: Bool = true
 
     @Environment(\.chrome) private var chrome
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -109,7 +128,8 @@ private struct GlassBackground<S: InsettableShape>: ViewModifier {
             glassLayers(level: level, shape: shape, chrome: chrome,
                         reduceTransparency: reduceTransparency,
                         increasedContrast: contrast == .increased,
-                        reduceMotion: reduceMotion)
+                        reduceMotion: reduceMotion,
+                        border: border, shadow: shadow)
         }
     }
 }
@@ -133,6 +153,33 @@ private struct GlassChrome: ViewModifier {
     }
 }
 
+/// A contained frosted bar: the layered frost (no box border, no shadow) plus one
+/// hairline divider, so it reads like the system `.bar` material but themed.
+private struct GlassBar: ViewModifier {
+    let divider: Edge.Set
+
+    @Environment(\.chrome) private var chrome
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let increasedContrast = contrast == .increased
+        content.background {
+            glassLayers(level: .chrome, shape: Rectangle(), chrome: chrome,
+                        reduceTransparency: reduceTransparency,
+                        increasedContrast: increasedContrast,
+                        reduceMotion: reduceMotion,
+                        border: false, shadow: false)
+                .overlay(alignment: divider == .bottom ? .bottom : .top) {
+                    Rectangle()
+                        .fill(chrome.border.opacity(increasedContrast ? 1.0 : 0.4))
+                        .frame(height: increasedContrast ? 1.0 : 0.5)
+                }
+        }
+    }
+}
+
 /// The shared layer stack, parameterised by the already-resolved environment so
 /// both `glass()` and `glassChrome()` render identically.
 @ViewBuilder
@@ -142,12 +189,14 @@ private func glassLayers<S: InsettableShape>(
     chrome: ChromePalette,
     reduceTransparency: Bool,
     increasedContrast: Bool,
-    reduceMotion: Bool
+    reduceMotion: Bool,
+    border: Bool = true,
+    shadow: Bool = true
 ) -> some View {
     let tintColor = level == .elevated ? chrome.bgElevated : chrome.bgRaised
     let borderOpacity = increasedContrast ? 1.0 : 0.4
     let lineWidth: CGFloat = increasedContrast ? 1.5 : 0.6
-    let showShadow = !reduceTransparency && !increasedContrast && !reduceMotion
+    let showShadow = shadow && !reduceTransparency && !increasedContrast && !reduceMotion
     let s = level.shadow
 
     ZStack {
@@ -164,7 +213,9 @@ private func glassLayers<S: InsettableShape>(
                 shape.fill(chrome.accent.opacity(level.accentOpacity))
             }
         }
-        shape.strokeBorder(chrome.border.opacity(borderOpacity), lineWidth: lineWidth)
+        if border {
+            shape.strokeBorder(chrome.border.opacity(borderOpacity), lineWidth: lineWidth)
+        }
     }
     .compositingGroup()
     .shadow(color: .black.opacity(showShadow ? s.opacity : 0),

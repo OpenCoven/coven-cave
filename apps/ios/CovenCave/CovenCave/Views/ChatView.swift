@@ -250,7 +250,7 @@ struct ChatView: View {
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(.primary)
                             .frame(width: 36, height: 36)
-                            .background(.regularMaterial, in: Circle())
+                            .glassFill(.control, in: Circle())
                             .overlay(Circle().strokeBorder(Color(.separator).opacity(0.4), lineWidth: 1))
                             .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
                     }
@@ -287,7 +287,7 @@ struct ChatView: View {
         }
         .animation(.snappy(duration: 0.18), value: showingSlashMenu)
         .animation(.snappy(duration: 0.18), value: pendingImages.count)
-        .background(.bar)
+        .glassBar()
         // Live dictation streams its running transcript into the draft.
         .onAppear { dictation.onUpdate = { draft = $0 } }
         .onChange(of: photoItems) { _, items in

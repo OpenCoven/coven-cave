@@ -161,7 +161,7 @@ struct TaskDetailView: View {
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(7)
-                        .background(.thinMaterial, in: Circle())
+                        .glassFill(.control, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Rename task")
@@ -299,7 +299,7 @@ struct TaskDetailView: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(7)
-                        .background(.thinMaterial, in: Circle())
+                        .glassFill(.control, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Edit notes")
@@ -311,7 +311,7 @@ struct TaskDetailView: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .padding(7)
-                        .background(.thinMaterial, in: Circle())
+                        .glassFill(.control, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Open notes in reader")

@@ -18,7 +18,7 @@ struct ToastView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
-        .background(.regularMaterial, in: Capsule())
+        .glassFill(.elevated, in: Capsule())
         .overlay(Capsule().strokeBorder(tint.opacity(0.35), lineWidth: 1))
         .shadow(color: .black.opacity(0.12), radius: 12, y: 4)
         .padding(.horizontal, 24)

@@ -26,7 +26,7 @@ struct SlashCommandMenu: View {
 
             footer
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .glassFill(.elevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color(.separator).opacity(0.6), lineWidth: 1)
