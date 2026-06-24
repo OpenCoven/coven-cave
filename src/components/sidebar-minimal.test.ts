@@ -42,20 +42,19 @@ assert.match(
   "Sidebar nav rows should keep compact side-panel text sizing",
 );
 
-// Delegations/calls used to be a standalone page. It is removed from top-level
-// navigation and workspace routing.
-assert.doesNotMatch(
+// The calls/delegations surface is wired into top-level nav as the "Calls"
+// Tools entry. (It was previously removed in e8b2f117; deliberately re-added.)
+assert.match(
   source,
-  /\{ id: "calls", label: "Delegations", iconName: "ph:graph", group: "tools", description:/,
-  "Delegations should not appear as a Tools surface",
+  /\{ id: "calls", label: "Calls", iconName: "ph:graph", group: "tools", description:/,
+  "Calls appears as a Tools surface",
 );
-assert.doesNotMatch(
+assert.match(
   workspace,
   /mode === "calls" \?\s*\(\s*<CallsView/,
-  "workspace should not render CallsView for a calls mode",
+  "workspace renders CallsView for the calls mode",
 );
-assert.doesNotMatch(workspace, /calls: "Delegations"/, "calls mode should not have a Delegations title");
-assert.doesNotMatch(workspace, /case "\/delegations":|case "\/calls":|setMode\("calls"\)/, "slash commands should not route to a Delegations page");
+assert.match(workspace, /calls: "Calls"/, "calls mode has a Calls title");
 
 assert.match(
   source,

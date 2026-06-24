@@ -45,6 +45,7 @@ import { LibraryView } from "@/components/library-view";
 import { DocsPane } from "@/components/docs-pane";
 import { PluginsView } from "@/components/plugins-view";
 import { WorkflowsView } from "@/components/workflows-view";
+import { CallsView } from "@/components/calls-view";
 import { RetroRunsView } from "@/components/retro-runs-view";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
@@ -94,6 +95,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   github: "GitHub",
   roles: "Roles",
   workflows: "Workflows",
+  calls: "Calls",
   retro: "Retro Runs",
   capabilities: "Capabilities",
   journal: "Journal",
@@ -1851,6 +1853,12 @@ export function Workspace() {
       <WorkflowsView
         initialWorkflowId={workflowDeepLink}
         onDeepLinkConsumed={() => setWorkflowDeepLink(null)}
+      />
+    ) : mode === "calls" ? (
+      <CallsView
+        familiars={familiars}
+        sessions={sessions}
+        onOpenSession={openFamiliarSession}
       />
     ) : mode === "retro" ? (
       <RetroRunsView familiarId={retroFamiliarId} />
