@@ -10,6 +10,8 @@ struct TaskDetailView: View {
     @State private var notesReader: ResponseReaderItem?
     @State private var confirmingDelete = false
     @State private var editingNotes = false
+    @State private var renamingTitle = false
+    @State private var titleDraft = ""
 
     /// The current card from the store, so status/priority/step edits made here
     /// reflect immediately; falls back to the passed-in snapshot.
@@ -24,6 +26,7 @@ struct TaskDetailView: View {
                 chatCard
                 if live.hasSteps { stepsCard }
                 notesSection
+                scheduleCard
                 if !live.labelList.isEmpty { labelsRow }
                 metaCard
             }
@@ -53,6 +56,14 @@ struct TaskDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { Text(live.title) }
+        .alert("Rename task", isPresented: $renamingTitle) {
+            TextField("Title", text: $titleDraft)
+            Button("Save") {
+                let t = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { Task { await app.setTaskTitle(live, t) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     private var actionsMenu: some View {
@@ -134,9 +145,24 @@ struct TaskDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(live.title)
-                .font(.title2.bold())
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(live.title)
+                    .font(.title2.bold())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    titleDraft = live.title
+                    renamingTitle = true
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(7)
+                        .background(.thinMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Rename task")
+            }
             HStack(spacing: 8) {
                 StatusPill(status: live.status)
                 priorityBadge
@@ -261,12 +287,61 @@ struct TaskDetailView: View {
         }
     }
 
+    // MARK: - Schedule (editable start / due dates)
+
+    /// Date-only ("yyyy-MM-dd") parser/formatter — board cards store schedule
+    /// dates this way (matching the web `<input type="date">`), so the datetime
+    /// `caveParseISO` can't read them.
+    private static let dateOnly: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private func parseDateOnly(_ s: String?) -> Date? { s.flatMap { Self.dateOnly.date(from: $0) } }
+    private func formatDateOnly(_ d: Date) -> String { Self.dateOnly.string(from: d) }
+
+    private var scheduleCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Schedule").font(.headline)
+            dateRow("Start", value: live.startDate) { await app.setTaskDates(live, start: $0, end: live.endDate) }
+            Divider()
+            dateRow("Due", value: live.endDate) { await app.setTaskDates(live, start: live.startDate, end: $0) }
+        }
+        .padding(16)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func dateRow(_ label: String, value: String?,
+                        set: @escaping (String?) async -> Void) -> some View {
+        HStack {
+            Text(label).foregroundStyle(.secondary)
+            Spacer()
+            if let date = parseDateOnly(value) {
+                DatePicker("", selection: Binding(
+                    get: { date },
+                    set: { newValue in Task { await set(formatDateOnly(newValue)) } }
+                ), displayedComponents: .date)
+                .labelsHidden()
+                Button { Task { await set(nil) } } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear \(label) date")
+            } else {
+                Button("Add") { Task { await set(formatDateOnly(Date())) } }
+                    .font(.callout)
+            }
+        }
+    }
+
     private var metaCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             metaRow("Created", caveParseISO(live.createdAt))
             metaRow("Updated", caveParseISO(live.updatedAt))
-            if live.startDate != nil { metaRow("Start", caveParseISO(live.startDate)) }
-            if live.endDate != nil { metaRow("Due", caveParseISO(live.endDate)) }
         }
         .font(.footnote)
     }

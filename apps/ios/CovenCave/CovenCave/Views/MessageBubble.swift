@@ -20,6 +20,15 @@ struct MessageBubble: View {
 
     private var isUser: Bool { message.role == .user }
 
+    /// Compact send time under the bubble — time only for today, with an
+    /// abbreviated date for older messages.
+    private var timestampText: String {
+        if Calendar.current.isDateInToday(message.createdAt) {
+            return message.createdAt.formatted(date: .omitted, time: .shortened)
+        }
+        return message.createdAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
     /// Long-press actions shared by the bubble and the system note: copy the
     /// text, optionally retry (regenerate), and delete.
     @ViewBuilder private var messageActions: some View {
@@ -124,6 +133,13 @@ struct MessageBubble: View {
                 if !parsed.visible.isEmpty || message.attachmentDataUrls.isEmpty {
                     bubble
                         .contextMenu { messageActions }
+                }
+
+                if !message.streaming {
+                    Text(timestampText)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(isUser ? .trailing : .leading, 6)
                 }
 
                 if !isUser, isLast, !message.streaming, !parsed.suggestions.isEmpty {
