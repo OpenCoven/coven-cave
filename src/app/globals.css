@@ -5964,7 +5964,7 @@ a.mobile-handoff__link:hover {
   height: 100dvh;
   width: min(496px, 92vw);
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: max-content 1fr;
   background: var(--bg-base);
   border-left: 1px solid var(--border-hairline);
   box-shadow: -12px 0 40px color-mix(in oklch, var(--text-primary) 16%, transparent);
@@ -5978,6 +5978,7 @@ a.mobile-handoff__link:hover {
 @media (prefers-reduced-motion: reduce) {
   .familiar-studio__drawer { animation: none; }
 }
+.familiar-studio__drawer--empty { grid-template-columns: 1fr; }
 .familiar-studio__main { display: grid; grid-template-rows: auto 1fr auto; min-height: 0; }
 .familiar-studio__header { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-hairline); }
 .familiar-studio__heading { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
