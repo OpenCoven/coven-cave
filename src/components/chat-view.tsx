@@ -52,6 +52,11 @@ import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
 import { looksLikeCsv } from "@/lib/csv-import";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
+import {
+  chatUsagePlanTooltip,
+  formatChatUsagePlanSummary,
+  type ChatUsagePlanSnapshot,
+} from "@/lib/chat-usage-plan";
 import { formatTimestamp, useDateTimePrefs } from "@/lib/datetime-format";
 import { computeContextMeter } from "@/lib/context-meter";
 import {
@@ -1266,6 +1271,21 @@ function ContextMeterChip({ usage, model }: { usage?: TurnUsage; model?: string 
   );
 }
 
+function UsagePlanChip({ usagePlan }: { usagePlan: ChatUsagePlanSnapshot | null }) {
+  const summary = formatChatUsagePlanSummary(usagePlan);
+  if (!summary) return null;
+  return (
+    <span
+      className="cave-chat-meta-line__usage-plan inline-flex items-center gap-1"
+      title={chatUsagePlanTooltip(usagePlan) ?? undefined}
+    >
+      {" · "}
+      <Icon name="ph:chart-bar-bold" width={11} aria-hidden />
+      <span>{summary}</span>
+    </span>
+  );
+}
+
 /** Single header row: editable title left, harness/model/status meta right.
  *  Ephemeral state (streaming, failed, daemon offline) recolors the line and
  *  rewrites the meta string instead of emitting separate pills/bars. */
@@ -1280,6 +1300,7 @@ function MetaLine({
   durationMs,
   usage,
   costUsd,
+  usagePlan,
   responseMetadata,
   familiar,
   projectRoot,
@@ -1298,6 +1319,7 @@ function MetaLine({
   durationMs: number | undefined;
   usage?: TurnUsage;
   costUsd?: number;
+  usagePlan: ChatUsagePlanSnapshot | null;
   responseMetadata?: ChatResponseMetadata;
   familiar: Familiar;
   projectRoot?: string;
@@ -1358,6 +1380,7 @@ function MetaLine({
         {state === "streaming" && pendingSince ? <MetaLineElapsed since={pendingSince} /> : null}
         {state === "streaming" ? " · esc to cancel" : null}
         {state === "complete" ? <ContextMeterChip usage={usage} model={metaModel} /> : null}
+        {state === "complete" ? <UsagePlanChip usagePlan={usagePlan} /> : null}
       </span>
       {children}
     </div>
@@ -1688,6 +1711,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   );
   const [archivingChat, setArchivingChat] = useState(false);
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
+  const [usagePlan, setUsagePlan] = useState<ChatUsagePlanSnapshot | null>(null);
   const [thinkingEffort, setThinkingEffort] = useState<ComposerThinkingEffort>(() => readComposerPrefs().thinkingEffort);
   const [responseSpeed, setResponseSpeed] = useState<ComposerResponseSpeed>(() => readComposerPrefs().responseSpeed);
   const [input, setInput] = useState(() => readComposerDraft());
@@ -1766,6 +1790,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   }, [familiar.id, sessionId]);
 
+  const refreshUsagePlan = useCallback(
+    async (modelOverride?: string | null): Promise<ChatUsagePlanSnapshot | null> => {
+      const params = new URLSearchParams({ familiarId: familiar.id });
+      if (sessionId) params.set("sessionId", sessionId);
+      const model =
+        modelOverride ??
+        (modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : visibleModelId(session?.model ?? familiar.model ?? undefined, familiar.harness ?? undefined));
+      if (model) params.set("model", model);
+      try {
+        const res = await fetch(`/api/chat/usage?${params.toString()}`, { cache: "no-store" });
+        const json = (await res.json()) as { ok?: boolean; snapshot?: ChatUsagePlanSnapshot };
+        const next = json.ok && json.snapshot ? json.snapshot : null;
+        setUsagePlan(next);
+        return next;
+      } catch {
+        setUsagePlan(null);
+        return null;
+      }
+    },
+    [familiar.harness, familiar.id, familiar.model, modelState?.effectiveModel, session?.model, sessionId],
+  );
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -1778,6 +1826,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       cancelled = true;
     };
   }, [refreshModelState]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const next = await refreshUsagePlan();
+      if (cancelled && next) return;
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshUsagePlan]);
 
   useEffect(() => {
     writeComposerPrefs({ thinkingEffort, responseSpeed });
@@ -3071,6 +3130,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ),
         );
         if (ev.isError) setLastFailedSend(request);
+        void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
           liveSessionIdRef.current = ev.sessionId;
           currentSessionRef.current = ev.sessionId;
@@ -3443,6 +3503,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           durationMs={lastSettledAssistantTurn?.durationMs}
           usage={lastSettledAssistantTurn?.usage}
           costUsd={lastSettledAssistantTurn?.costUsd}
+          usagePlan={usagePlan}
           responseMetadata={lastSettledAssistantTurn?.responseMetadata}
           familiar={familiar}
           projectRoot={projectRoot}
