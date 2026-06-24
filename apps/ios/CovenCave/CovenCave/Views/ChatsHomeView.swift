@@ -83,6 +83,12 @@ struct ChatsHomeView: View {
 
     /// Open a thread named by the `CAVE_OPEN_THREAD` launch env var. This is the
     /// same hook Phase 2 notification taps will use to jump straight into a chat.
+    /// Start a brand-new chat with a familiar and open it (familiar-row action).
+    private func startNewChat(with familiar: Familiar) {
+        let thread = app.startFreshThread(familiarIds: [familiar.id])
+        path.append(.thread(thread))
+    }
+
     private func openDeepLinkedThread() {
         guard path.isEmpty,
               let id = ProcessInfo.processInfo.environment["CAVE_OPEN_THREAD"],
@@ -128,6 +134,30 @@ struct ChatsHomeView: View {
                         FamiliarRow(familiar: familiar)
                     }
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                        Button { startNewChat(with: familiar) } label: {
+                            Label("New chat", systemImage: "square.and.pencil")
+                        }
+                        .tint(.accentColor)
+                    }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        if app.hasUnread(familiar.id) {
+                            Button { app.markFamiliarViewed([familiar.id]) } label: {
+                                Label("Mark read", systemImage: "checkmark")
+                            }
+                            .tint(.gray)
+                        }
+                    }
+                    .contextMenu {
+                        Button { startNewChat(with: familiar) } label: {
+                            Label("New chat", systemImage: "square.and.pencil")
+                        }
+                        if app.hasUnread(familiar.id) {
+                            Button { app.markFamiliarViewed([familiar.id]) } label: {
+                                Label("Mark all read", systemImage: "checkmark.circle")
+                            }
+                        }
+                    }
                 }
                 .onMove { source, destination in
                     app.moveFamiliar(fromOffsets: source, toOffset: destination)
