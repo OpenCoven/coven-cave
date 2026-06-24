@@ -1001,8 +1001,10 @@
   background: color-mix(in oklch, var(--bg-elevated) 78%, transparent);
   padding: 8px 11px;
   color: var(--text-muted);
+  /* Inline metadata card, not a floating modal — keep the lift subtle so it sits
+   * in the page rather than hovering above it. */
   box-shadow:
-    0 4px 16px oklch(0 0 0 / 14%),
+    0 2px 8px oklch(0 0 0 / 10%),
     inset 0 1px 0 oklch(1 0 0 / 5%);
 }
 
@@ -1091,6 +1093,9 @@
 .cave-chat-empty-prompt svg {
   flex: 0 0 auto;
   color: var(--text-muted);
+  transition:
+    color 140ms ease,
+    transform 140ms ease;
 }
 
 .cave-chat-empty-prompt:hover {
@@ -1098,6 +1103,28 @@
   background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
   color: var(--text-primary);
   transform: translateY(-1px);
+}
+
+/* Arrow leans into the direction of travel on hover, and picks up the accent
+ * so the affordance reads as "this sends" rather than a static glyph. */
+.cave-chat-empty-prompt:hover svg {
+  color: var(--accent-presence);
+  transform: translateX(2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-chat-empty-prompt,
+  .cave-chat-empty-prompt svg {
+    transition: none;
+  }
+
+  .cave-chat-empty-prompt:hover {
+    transform: none;
+  }
+
+  .cave-chat-empty-prompt:hover svg {
+    transform: none;
+  }
 }
 
 .cave-chat-empty-prompt:focus-visible {
