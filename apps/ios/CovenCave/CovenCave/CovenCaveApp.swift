@@ -4,6 +4,7 @@ import SwiftUI
 struct CovenCaveApp: App {
     @State private var app = AppModel()
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         // Mirror the desktop appearance by default; a fixed Light/Dark override
@@ -20,8 +21,17 @@ struct CovenCaveApp: App {
                 .preferredColorScheme(resolved.scheme)
                 .task {
                     if app.connection != nil {
-                        await app.refreshConnection()
+                        await app.connectWithRetry()
                     }
+                }
+                // Returning to the foreground after the desktop was unreachable
+                // (locked the phone, desktop blipped/restarted) should recover on
+                // its own — retry unless we're already connected or mid-check.
+                .onChange(of: scenePhase) { _, phase in
+                    guard phase == .active, app.connection != nil,
+                          app.connectionState != .connected,
+                          app.connectionState != .checking else { return }
+                    Task { await app.connectWithRetry() }
                 }
         }
     }

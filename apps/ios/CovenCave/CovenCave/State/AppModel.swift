@@ -457,6 +457,29 @@ final class AppModel {
         await loadTheme()
     }
 
+    /// Connect with a few backoff retries before surfacing the "unreachable" setup
+    /// screen — a slow tailnet, or a desktop still spinning up on a cold launch,
+    /// shouldn't read as a configuration failure. Between attempts the state is held
+    /// at `.checking` so a transient miss shows the "Connecting…" screen (cold
+    /// launch) or recovers invisibly in the background (once familiars are loaded),
+    /// never a flash of the unreachable screen. Drives launch + foreground reconnect.
+    func connectWithRetry() async {
+        guard connection != nil else { connectionState = .unconfigured; return }
+        // Delays BETWEEN attempts (4 attempts total, ~7s before giving up).
+        let backoffSeconds: [UInt64] = [1, 2, 4]
+        await refreshConnection()
+        var attempt = 0
+        while connectionState != .connected, attempt < backoffSeconds.count {
+            connectionState = .checking
+            try? await Task.sleep(nanoseconds: backoffSeconds[attempt] * 1_000_000_000)
+            if Task.isCancelled { return }
+            // The user may have disconnected/reconfigured during the wait.
+            guard connection != nil else { connectionState = .unconfigured; return }
+            await refreshConnection()
+            attempt += 1
+        }
+    }
+
     /// Probe candidate base URLs in order; return the first that answers. Uses a
     /// short per-candidate timeout so trying a few ports stays snappy.
     static func discoverBaseURL(_ candidates: [URL]) async -> URL? {
