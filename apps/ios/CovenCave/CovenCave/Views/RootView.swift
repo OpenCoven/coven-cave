@@ -34,8 +34,8 @@ struct RootView: View {
 struct MainTabView: View {
     @Environment(AppModel.self) private var app
 
-    /// Tab order, used to map ⌘1–4 to the right tab.
-    private let tabOrder: [AppTab] = [.chats, .tasks, .dev, .settings]
+    /// Tab order, used to map ⌘1–5 to the right tab.
+    private let tabOrder: [AppTab] = [.chats, .tasks, .calendar, .dev, .settings]
 
     var body: some View {
         @Bindable var app = app
@@ -45,6 +45,9 @@ struct MainTabView: View {
             }
             Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
                 TasksView()
+            }
+            Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
+                CalendarView()
             }
             Tab("Developer", systemImage: "chevron.left.forwardslash.chevron.right", value: AppTab.dev) {
                 DeveloperView()

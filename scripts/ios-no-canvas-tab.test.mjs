@@ -13,8 +13,8 @@ const slash = await read(`${iosRoot}/Models/SlashCommand.swift`);
 // The bottom-tab enum no longer carries a canvas case (or a read case).
 assert.match(
   model,
-  /enum AppTab: String \{ case chats, tasks, dev, settings \}/,
-  "AppTab should drop the canvas and read cases",
+  /enum AppTab: String \{ case chats, tasks, calendar, dev, settings \}/,
+  "AppTab should drop the canvas and read cases (calendar is fine)",
 );
 const appTabLine = model.match(/enum AppTab: String \{[^}]*\}/)?.[0] ?? "";
 assert.doesNotMatch(appTabLine, /\bcanvas\b/, "AppTab case list should not include canvas");
