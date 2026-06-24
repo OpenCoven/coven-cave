@@ -231,8 +231,8 @@ function AttachTaskModal({
         <div className="gh-modal-header">
           <Icon name="ph:clipboard-text" width={14} />
           <span>Attach to Task</span>
-          <button type="button" className="gh-modal-close" onClick={onClose}>
-            <Icon name="ph:x" width={13} />
+          <button type="button" className="gh-modal-close" aria-label="Close" onClick={onClose}>
+            <Icon name="ph:x" width={13} aria-hidden />
           </button>
         </div>
 
@@ -443,8 +443,8 @@ function HandoffModal({
         <div className="gh-modal-header">
           <Icon name="ph:share-network" width={14} />
           <span>Handoff to Familiar</span>
-          <button type="button" className="gh-modal-close" onClick={onClose}>
-            <Icon name="ph:x" width={13} />
+          <button type="button" className="gh-modal-close" aria-label="Close" onClick={onClose}>
+            <Icon name="ph:x" width={13} aria-hidden />
           </button>
         </div>
 

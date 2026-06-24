@@ -225,10 +225,10 @@ function DetailPanel({
         <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
           {isDailySummary ? "Daily summary details" : "Reminder details"}
         </h2>
-        <button type="button" onClick={onClose}
+        <button type="button" onClick={onClose} aria-label="Close"
           className="focus-ring rounded p-1 transition-colors hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}>
-          <Icon name="ph:x" width={14} />
+          <Icon name="ph:x" width={14} aria-hidden />
         </button>
       </div>
 
@@ -698,10 +698,10 @@ function CodexDetailPanel({
         <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
           Automation details
         </h2>
-        <button type="button" onClick={onClose}
+        <button type="button" onClick={onClose} aria-label="Close"
           className="focus-ring rounded p-1 transition-colors hover:bg-white/5"
           style={{ color: "var(--text-muted)" }}>
-          <Icon name="ph:x" width={14} />
+          <Icon name="ph:x" width={14} aria-hidden />
         </button>
       </div>
 

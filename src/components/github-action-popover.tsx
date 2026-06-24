@@ -368,9 +368,10 @@ export function GitHubActionPopover({
         <button
           type="button"
           onClick={onClose}
+          aria-label="Close"
           className="rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
         >
-          <Icon name="ph:x" width={12} />
+          <Icon name="ph:x" width={12} aria-hidden />
         </button>
       </div>
 
