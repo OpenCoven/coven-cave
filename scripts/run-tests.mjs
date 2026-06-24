@@ -534,6 +534,7 @@ export const SUITES = {
     "scripts/ios-swipe-reply.test.mjs",
     "scripts/ios-unread-badges.test.mjs",
     "scripts/ios-familiar-row-actions.test.mjs",
+    "scripts/ios-group-mentions.test.mjs",
     "scripts/ios-markdown-accent.test.mjs",
     "scripts/ios-message-forwarding.test.mjs",
     "scripts/ios-chat-thread-no-search.test.mjs",

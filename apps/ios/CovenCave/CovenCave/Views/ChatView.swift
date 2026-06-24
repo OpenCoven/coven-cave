@@ -67,6 +67,17 @@ struct ChatView: View {
     }
     private var showingSlashMenu: Bool { !slashMatches.isEmpty }
 
+    // @-mention autocomplete (group chats only): the trailing `@token` matches
+    // the group's familiars by name.
+    private var mentionMatches: [Familiar] {
+        guard thread.isGroup, let partial = MentionInput.partial(draft) else { return [] }
+        let members = thread.familiarIds.compactMap(app.familiar)
+        guard !partial.isEmpty else { return members }
+        let q = partial.lowercased()
+        return members.filter { $0.displayName.lowercased().contains(q) || $0.id.lowercased().contains(q) }
+    }
+    private var showingMentionMenu: Bool { !mentionMatches.isEmpty }
+
     var body: some View {
         VStack(spacing: 0) {
             messageScroll
@@ -286,6 +297,15 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+            if showingMentionMenu {
+                MentionMenu(familiars: mentionMatches,
+                            avatarURL: { app.client?.avatarURL(for: $0) }) { familiar in
+                    draft = MentionInput.insert(name: familiar.displayName, into: draft)
+                    composerFocused = true
+                }
+                .padding(.horizontal, 12)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if !pendingImages.isEmpty {
                 attachmentPreviews
             }
@@ -295,6 +315,7 @@ struct ChatView: View {
             composerBar
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingSlashMenu)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingMentionMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
         .glassBar()
