@@ -101,6 +101,7 @@ struct ReadingView: View {
                 }
                 .listStyle(.plain)
                 .themedListBackground()
+                .readableListWidth()
             }
         }
         // Pin the filter chips above the list (and empty state) with their

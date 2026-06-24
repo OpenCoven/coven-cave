@@ -66,6 +66,7 @@ struct GitHubView: View {
             }
             .listStyle(.insetGrouped)
             .themedListBackground()
+            .readableListWidth()
         }
     }
 

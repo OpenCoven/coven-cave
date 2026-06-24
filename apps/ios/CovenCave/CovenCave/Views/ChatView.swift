@@ -72,9 +72,12 @@ struct ChatView: View {
             }
             composer
         }
+        // Keep the conversation in a centred reading column on iPad.
+        .readableWidth(740)
         // Let the desktop theme's base colour show behind the transcript instead
         // of the opaque system background the navigation stack paints; the
-        // bubbles and composer float on the themed floor.
+        // bubbles and composer float on the themed floor (full-width, so the
+        // themed floor fills the iPad side margins too).
         .background(chrome.bgBase.ignoresSafeArea())
         .navigationTitle(thread.title)
         .navigationBarTitleDisplayMode(.inline)

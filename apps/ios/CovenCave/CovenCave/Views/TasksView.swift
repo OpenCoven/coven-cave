@@ -190,6 +190,7 @@ struct TasksView: View {
         }
         .listStyle(.insetGrouped)
         .themedListBackground()
+        .readableListWidth()
     }
 
     private var emptyState: some View {
