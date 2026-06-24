@@ -178,7 +178,7 @@ export function LibraryDocList({
                   onClick={() => onSelect(doc)}
                 >
                   <div className="library-doclist-item-header">
-                    <span className="library-doclist-item-title">{doc.title}</span>
+                    <span className="library-doclist-item-title" title={doc.title}>{doc.title}</span>
                     <span className="library-doclist-item-date">{relDate(doc.modifiedAt)}</span>
                   </div>
                   <div className="library-doclist-item-meta">
