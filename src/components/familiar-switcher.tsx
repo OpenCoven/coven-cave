@@ -268,6 +268,11 @@ export function FamiliarSwitcher({
                   </li>
                 );
               })}
+              {query.trim() && filtered.length === 0 ? (
+                <li className="familiar-switcher__empty" role="presentation">
+                  No familiars match “{query.trim()}”.
+                </li>
+              ) : null}
             </ul>
           )}
 
