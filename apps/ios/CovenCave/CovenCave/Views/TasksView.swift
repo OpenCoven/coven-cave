@@ -308,10 +308,15 @@ struct TasksView: View {
                             .tag(card)
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 12))
                             .contextMenu { taskMenu(card) }
+                            // Trailing = destructive (delete); leading = the
+                            // positive quick-action (done/reopen), full-swipe to
+                            // complete — matching RemindersView + iOS convention.
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) { pendingDelete = card } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
+                            }
+                            .swipeActions(edge: .leading, allowsFullSwipe: true) {
                                 Button { Task { await app.setTaskStatus(card, card.status == .done ? .running : .done) } } label: {
                                     Label(card.status == .done ? "Reopen" : "Done",
                                           systemImage: card.status == .done ? "arrow.uturn.backward" : "checkmark")
