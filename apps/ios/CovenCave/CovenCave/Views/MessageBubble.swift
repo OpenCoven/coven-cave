@@ -211,6 +211,21 @@ struct MessageBubble: View {
                         .contextMenu { messageActions }
                 }
 
+                // A failed reply gets a visible Retry button, not just the
+                // long-press menu — a flaky network shouldn't leave a dead-end
+                // red bubble. (Retry re-streams just this bubble's familiar.)
+                if !isUser, message.isError, let onRetry {
+                    Button(action: onRetry) {
+                        Label("Retry", systemImage: "arrow.clockwise")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.red)
+                    .padding(.leading, 2)
+                    .accessibilityLabel("Retry sending this message")
+                }
+
                 if !message.streaming {
                     Text(timestampText)
                         .font(.caption2)

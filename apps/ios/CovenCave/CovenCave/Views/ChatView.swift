@@ -499,28 +499,22 @@ struct ChatView: View {
         thread.send(text, client: client) { app.touch(thread) }
     }
 
-    /// Retry is offered on the latest, settled assistant reply of a 1:1 chat
-    /// (group fan-out would re-trigger every familiar, duplicating replies).
+    /// Retry is offered on a failed reply (any time — a flaky network shouldn't
+    /// leave a dead-end error bubble) or on the latest settled reply (regenerate).
+    /// `ChatThread.retry` re-streams a single familiar in place, so this is safe
+    /// for group threads too — only the one bubble's familiar re-runs.
     private func canRetry(_ message: DisplayMessage) -> Bool {
-        guard !thread.isGroup, message.role == .assistant, !message.streaming,
-              message.id == thread.messages.last?.id,
+        guard message.role == .assistant, !message.streaming,
               let idx = thread.messages.firstIndex(where: { $0.id == message.id }),
-              idx > 0, thread.messages[idx - 1].role == .user else { return false }
-        return true
+              thread.messages[..<idx].contains(where: { $0.role == .user }) else { return false }
+        return message.isError || message.id == thread.messages.last?.id
     }
 
-    /// Regenerate the latest reply: drop it and the user prompt that produced
-    /// it, then re-send that prompt (a clean replace, not a duplicate).
+    /// Re-run a reply in place (re-stream its familiar with the original prompt).
     private func retryAssistant(_ assistant: DisplayMessage) {
-        guard let client = app.client,
-              let idx = thread.messages.firstIndex(where: { $0.id == assistant.id }),
-              idx > 0, thread.messages[idx - 1].role == .user else { return }
-        let userMessage = thread.messages[idx - 1]
-        let prompt = userMessage.text
-        thread.deleteMessage(assistant.id)
-        thread.deleteMessage(userMessage.id)
+        guard let client = app.client else { return }
         Haptics.tap()
-        thread.send(prompt, client: client) { app.touch(thread) }
+        thread.retry(assistant.id, client: client) { app.touch(thread) }
     }
 
     /// Tap a row in the inline autocomplete. Commands that take arguments get

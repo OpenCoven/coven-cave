@@ -122,6 +122,25 @@ final class ChatThread: Identifiable, Hashable {
         updatedAt = Date()
     }
 
+    /// Re-run a failed (or the latest) assistant reply in place: reset its bubble
+    /// to streaming and re-stream the SAME familiar with the prompt that produced
+    /// it. Re-streaming one familiar — not `send`'s fan-out — means a single
+    /// familiar's failure in a group is retried without re-firing the others, and
+    /// a 1:1 retry doesn't duplicate the user prompt. No-ops if the bubble has no
+    /// familiar or no preceding user prompt to replay.
+    func retry(_ messageId: String, client: CaveClient, onChange: @escaping () -> Void) {
+        guard let idx = messages.firstIndex(where: { $0.id == messageId }),
+              messages[idx].role == .assistant,
+              let familiarId = messages[idx].familiarId else { return }
+        let prompt = messages[..<idx].last(where: { $0.role == .user })?.text ?? ""
+        guard !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        mutate(messageId) { $0.text = ""; $0.isError = false; $0.streaming = true }
+        updatedAt = Date()
+        onChange()
+        Task { await self.stream(familiarId: familiarId, prompt: prompt,
+                                 into: messageId, client: client, onChange: onChange) }
+    }
+
     /// Append an inline system note (slash-command output) and return its id so
     /// callers can stream into it — e.g. `/daemon`'s "running…" → result.
     @discardableResult

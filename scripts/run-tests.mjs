@@ -535,6 +535,7 @@ export const SUITES = {
     "scripts/ios-unread-badges.test.mjs",
     "scripts/ios-markdown-accent.test.mjs",
     "scripts/ios-message-forwarding.test.mjs",
+    "scripts/ios-message-retry.test.mjs",
     "scripts/ios-chat-thread-no-search.test.mjs",
     "scripts/ios-development-code-title.test.mjs",
     "scripts/ios-development-github-title.test.mjs",
