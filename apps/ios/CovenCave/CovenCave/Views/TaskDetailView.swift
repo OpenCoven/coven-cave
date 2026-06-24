@@ -3,6 +3,7 @@ import SwiftUI
 struct TaskDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.chrome) private var chrome
     let card: BoardCard
 
     @State private var showFamiliarPicker = false
@@ -33,6 +34,7 @@ struct TaskDetailView: View {
             }
             .padding(20)
         }
+        .background(chrome.bgBase.ignoresSafeArea())
         .navigationTitle("Task")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { actionsMenu } }

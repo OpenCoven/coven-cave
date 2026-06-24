@@ -90,6 +90,7 @@ struct SettingsView: View {
                     }
                 }
             }
+            .themedListBackground()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear { editingHost = app.connection?.host ?? "" }
