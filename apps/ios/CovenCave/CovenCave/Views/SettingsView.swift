@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
+    @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @State private var editingHost: String = ""
     @State private var showDisconnectConfirm = false
     @State private var exportArchive: ExportArchive?
@@ -34,6 +35,20 @@ struct SettingsView: View {
                     Text("Chats")
                 } footer: {
                     Text("Save every conversation as Markdown files in a single .zip.")
+                }
+
+                Section {
+                    Picker(selection: $appearanceRaw) {
+                        ForEach(AppearanceMode.allCases) { mode in
+                            Label(mode.label, systemImage: mode.icon).tag(mode.rawValue)
+                        }
+                    } label: {
+                        Label("Appearance", systemImage: "circle.lefthalf.filled")
+                    }
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("“Match desktop” follows your Cave desktop's light/dark mode. Light or Dark sets it just on this phone.")
                 }
 
                 Section("Desktop") {
