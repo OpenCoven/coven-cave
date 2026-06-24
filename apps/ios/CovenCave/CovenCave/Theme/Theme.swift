@@ -72,8 +72,10 @@ private struct ThemedListBackground: ViewModifier {
 
 extension View {
     /// Reveal the desktop theme's `bgBase` behind a `List` instead of the opaque
-    /// system background. Apply after `.listStyle(…)`. Pair with
-    /// `.listRowBackground(Color.clear)` on rows that set their own fill.
+    /// system background. Apply after `.listStyle(…)`. Works for both `.plain`
+    /// and `.insetGrouped` — the inset cards keep their adaptive system surface
+    /// (which reads as themed cards floating on the `bgBase` floor and preserves
+    /// row contrast), only the floor behind/around them becomes `bgBase`.
     func themedListBackground() -> some View { modifier(ThemedListBackground()) }
 }
 

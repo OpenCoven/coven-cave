@@ -85,6 +85,7 @@ struct CodeBrowserView: View {
             }
         }
         .listStyle(.plain)
+        .themedListBackground()
     }
 
     // MARK: - Search (scoped to the focused project)
@@ -121,6 +122,7 @@ struct CodeBrowserView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .themedListBackground()
         }
     }
 

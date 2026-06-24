@@ -19,7 +19,7 @@ assert.match(
   "Theme should expose the themedListBackground() View extension",
 );
 
-// Every primary browse list adopts it after its listStyle so the themed
+// Every primary plain browse list adopts it after its listStyle so the themed
 // background shows through.
 for (const view of [
   "ChatsHomeView.swift",
@@ -32,6 +32,17 @@ for (const view of [
     src,
     /\.listStyle\(\.plain\)\s*\n\s*\.themedListBackground\(\)/,
     `${view} should apply .themedListBackground() right after .listStyle(.plain)`,
+  );
+}
+
+// Inset-grouped surfaces adopt the same modifier (the themed bgBase floor shows
+// behind the cards), applied after .listStyle(.insetGrouped).
+for (const view of ["TasksView.swift", "GitHubView.swift", "CodeBrowserView.swift"]) {
+  const src = await read(`Views/${view}`);
+  assert.match(
+    src,
+    /\.listStyle\(\.insetGrouped\)\s*\n\s*\.themedListBackground\(\)/,
+    `${view} should apply .themedListBackground() right after .listStyle(.insetGrouped)`,
   );
 }
 
