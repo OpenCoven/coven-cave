@@ -184,6 +184,7 @@ export const SUITES = {
     "src/lib/library-doc-sort.test.ts",
     "src/lib/github-search.test.ts",
     "src/lib/use-refresh-on-focus.test.ts",
+    "src/lib/use-pausable-poll.test.ts",
     "src/lib/comux-projects.test.ts",
     "src/lib/comux-project-order.test.ts",
     "src/lib/code-lang.test.ts",

@@ -57,15 +57,15 @@
 /* ── Hero ────────────────────────────────────────────────────────────────── */
 .home-composer-hero {
   text-align: center;
-  margin-bottom: 8px;
+  margin-bottom: 18px;
 }
 
 .home-composer-headline {
   font-family: var(--font-fredoka, "Fredoka", system-ui, sans-serif);
-  font-weight: 600;
-  font-size: clamp(24px, 3.5vw, 40px);
+  font-weight: 500;
+  font-size: clamp(26px, 3.8vw, 44px);
   line-height: 1.1;
-  color: var(--text-primary);
+  color: color-mix(in oklch, var(--text-primary) 88%, var(--text-muted));
   letter-spacing: -0.02em;
   margin: 0 0 6px;
 }
@@ -90,11 +90,11 @@
 .home-composer-card {
   width: 100%;
   max-width: 100%;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 16px;
+  background: color-mix(in oklch, var(--bg-raised) 70%, var(--bg-base));
+  border: 1px solid var(--border-hairline);
+  border-radius: 22px;
   overflow: hidden;
-  box-shadow: 0 8px 32px color-mix(in oklch, var(--text-primary) 12%, transparent),
+  box-shadow: 0 12px 40px color-mix(in oklch, var(--text-primary) 14%, transparent),
               0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
@@ -118,9 +118,9 @@
      worth a (pointer: coarse) gate. */
   font-size: 16px;
   line-height: 1.6;
-  padding: 18px 18px 10px;
+  padding: 22px 22px 8px;
   font-family: inherit;
-  min-height: 72px;
+  min-height: 92px;
   max-height: 240px;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -142,8 +142,61 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 10px 12px;
-  border-top: 1px solid var(--border-hairline);
+  padding: 10px 14px 14px;
+}
+
+/* ── "＋" command launcher ───────────────────────────────────────────────── */
+.hc-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.hc-add-btn:hover {
+  background: var(--bg-base);
+  border-color: var(--border-hairline);
+  color: var(--text-secondary);
+}
+
+/* ── Model chip ──────────────────────────────────────────────────────────── */
+.hc-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.hc-model-chip:hover {
+  background: var(--bg-base);
+  border-color: var(--border-hairline);
+  color: var(--text-secondary);
+}
+.hc-model-bolt {
+  color: var(--accent-presence);
+  flex-shrink: 0;
+}
+.hc-model-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Familiar selector ───────────────────────────────────────────────────── */
@@ -258,8 +311,9 @@
 
   .hc-send-btn {
     min-height: var(--touch-target);
-    border-radius: 8px;
-    padding-inline: 16px;
+    width: var(--touch-target);
+    border-radius: 999px;
+    padding-inline: 0;
   }
 
   .hc-dest-pills {
@@ -285,28 +339,22 @@
   }
 }
 
-/* ── Send button ─────────────────────────────────────────────────────────── */
+/* ── Send button (circular, icon-only — matches the Codex-style composer) ──── */
 .hc-send-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 999px;
   border: none;
   background: var(--accent-presence);
   color: #fff;
   cursor: pointer;
   flex-shrink: 0;
-  margin-left: auto;
   transition: background 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
-}
-
-.hc-send-label {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
 }
 
 .hc-send-btn:hover:not(:disabled) {
@@ -314,9 +362,12 @@
   transform: scale(1.05);
 }
 
+/* Empty/disabled reads as a neutral grey disc (no green) until there's a prompt
+ * to send — mirrors the screenshot's idle send affordance. */
 .hc-send-btn.empty,
 .hc-send-btn:disabled {
-  opacity: 0.3;
+  background: color-mix(in oklch, var(--text-muted) 24%, var(--bg-base));
+  color: var(--text-muted);
   cursor: default;
   transform: none;
 }
@@ -325,14 +376,6 @@
   opacity: 0.75;
   cursor: wait;
   transform: none;
-}
-
-@media (max-width: 520px) {
-  .hc-send-btn {
-    min-height: var(--touch-target);
-    border-radius: 8px;
-    padding-inline: 16px;
-  }
 }
 
 /* Spinner */
@@ -350,7 +393,11 @@
   to { transform: rotate(360deg); }
 }
 
-/* ── Suggestions ─────────────────────────────────────────────────────────── */
+/* ── Connector cards ─────────────────────────────────────────────────────────
+ *   Codex-style cold-start cards: one-tap entry points into the marketplace
+ *   for the integrations that give a familiar real context. The wrapper keeps
+ *   the `.home-composer-suggestions` class so it inherits the home layout's
+ *   1200px content cap and viewport centering. */
 .home-composer-suggestions {
   display: flex;
   flex-wrap: wrap;
@@ -361,69 +408,89 @@
   margin-inline: auto;
 }
 
-.hc-suggestion {
+.home-composer-connectors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.hc-connector {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 10px;
+  min-width: 0;
+  padding: 18px 18px 20px;
+  border-radius: 16px;
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 55%, var(--bg-base));
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+}
+
+.hc-connector:hover {
+  background: color-mix(in oklch, var(--bg-raised) 80%, var(--bg-base));
+  border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
+  transform: translateY(-1px);
+}
+
+.hc-connector-glyph {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  border-radius: 20px;
-  border: 1px solid var(--border-hairline);
-  background: var(--bg-raised);
-  color: var(--text-muted);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.12s ease;
-  /* Cap each chip so long suggestions ellipsis inside the chip instead of
-   * extending past the suggestion row's edge — without this the chip stays
-   * one wide line and clips its tail at the viewport on phones. */
-  max-width: min(100%, 360px);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  justify-content: flex-start;
+  height: 24px;
 }
 
-@media (max-width: 520px) {
-  .hc-suggestion {
-    min-height: var(--touch-target);
-    justify-content: flex-start;
-    padding: 10px 14px;
-    border-radius: 999px;
-    font-size: 13px;
-  }
-}
-
-/* The label inside each chip needs its own overflow context with min-width: 0
- * because the chip is `display: inline-flex` — text-overflow on the flex
- * parent doesn't reach individual flex children. */
-.hc-suggestion > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hc-suggestion:hover {
-  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
-  border-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+.hc-connector-title {
+  font-size: 15px;
+  font-weight: 600;
   color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
 
-.hc-suggestion-icon {
-  flex-shrink: 0;
-  opacity: 0.5;
+.hc-connector-sub {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+  .home-composer-connectors {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .hc-connector {
+    min-height: var(--touch-target);
+    grid-template-rows: none;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "glyph title"
+      "glyph sub";
+    align-items: center;
+    column-gap: 14px;
+    row-gap: 2px;
+    padding: 14px 16px;
+  }
+  .hc-connector-glyph { grid-area: glyph; }
+  .hc-connector-title { grid-area: title; }
+  .hc-connector-sub { grid-area: sub; }
 }
 
 /* ── Focus rings (keyboard-only) ─────────────────────────────────────────── */
 .hc-dest-pill,
 .hc-send-btn,
-.hc-suggestion,
+.hc-connector,
+.hc-add-btn,
+.hc-model-chip,
 .hc-familiar-select {
   outline: none;
 }
 .hc-dest-pill:focus-visible,
 .hc-send-btn:focus-visible,
-.hc-suggestion:focus-visible {
+.hc-connector:focus-visible,
+.hc-add-btn:focus-visible,
+.hc-model-chip:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: var(--ring-offset);
 }
@@ -432,26 +499,6 @@
 .hc-familiar-selector:focus-within {
   outline: var(--ring-width) solid var(--ring-focus);
   outline-offset: var(--ring-offset);
-}
-
-/* ── Suggestions skeleton (during initial fetch) ─────────────────────────── */
-.hc-suggestion-skeleton {
-  height: 28px;
-  width: 100%;
-  max-width: 280px;
-  border-radius: 999px;
-  background:
-    linear-gradient(
-      90deg,
-      var(--bg-raised) 0%,
-      color-mix(in oklch, var(--bg-raised) 70%, var(--bg-elevated) 30%) 50%,
-      var(--bg-raised) 100%
-    );
-  background-size: 200% 100%;
-  animation: ui-skeleton-shimmer 1.4s ease-in-out infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .hc-suggestion-skeleton { animation: none; opacity: 0.65; }
 }
 
 /* ── Slash command menu ──────────────────────────────────────────────────────

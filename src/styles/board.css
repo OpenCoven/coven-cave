@@ -223,6 +223,43 @@
 .board-table-cell-date { color:var(--text-secondary); font-size:11px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .board-table-cell-time { color:var(--text-muted); font-size:11px; font-variant-numeric:tabular-nums; }
 
+/* ── Spreadsheet-grade tasks table (board-table--grid only; the library list
+   reuses .board-table and must stay untouched) ─────────────────────────────
+   Larger/more legible type, zebra striping, fixed layout so columns honour the
+   user's drag-to-resize widths, draggable headers, and resize/autofit handles. */
+.board-table--grid { table-layout:fixed; font-size:13px; }
+.board-table--grid td { padding:9px 10px; overflow:hidden; }
+.board-table--grid thead th { font-size:12px; padding:8px 10px; }
+.board-table--grid .board-table-title { max-width:none; font-size:13px; color:var(--text-primary); }
+.board-table--grid .board-table-cell-status,
+.board-table--grid .board-table-cell-priority,
+.board-table--grid .board-table-cell-familiar { font-size:12.5px; }
+.board-table--grid .board-table-cell-date,
+.board-table--grid .board-table-cell-time { font-size:12.5px; }
+.board-table--grid .board-table-familiar-select { font-size:12.5px; max-width:none; }
+
+/* Slight zebra striping; hover + selected always win (hence :not()). */
+.board-table--grid tbody tr.board-table-row--alt:not(:hover):not(.selected) td {
+  background:color-mix(in oklch,var(--foreground) 3.5%,transparent);
+}
+
+/* Header is a flex row: draggable label + a resize gutter pinned right. */
+.board-table--grid thead th { position:relative; }
+.board-table-col-head { display:flex; align-items:center; min-width:0; width:100%; cursor:grab; }
+.board-table-col-head:active { cursor:grabbing; }
+.board-table--grid thead th.board-table-col--dragover { box-shadow:inset 2px 0 0 var(--accent-presence); }
+.board-table--grid thead th.board-table-col--dragover .board-table-col-head { opacity:0.7; }
+.board-table-col-resize {
+  position:absolute; top:0; right:0; height:100%; width:8px; z-index:11;
+  cursor:col-resize; user-select:none; touch-action:none;
+}
+.board-table-col-resize::after {
+  content:""; position:absolute; right:3px; top:5px; bottom:5px; width:2px; border-radius:2px;
+  background:var(--border-strong); opacity:0; transition:opacity .12s ease;
+}
+.board-table--grid thead th:hover .board-table-col-resize::after,
+.board-table-col-resize:hover::after { opacity:1; }
+
 .board-swimlane { flex-shrink:0; border-bottom:1px solid var(--border-hairline); }
 .board-swimlane-header { display:flex; align-items:center; gap:8px; padding:8px 16px 6px; font-size:11px; font-weight:600; color:var(--text-secondary); letter-spacing:.05em; text-transform:uppercase; user-select:none; }
 .board-swimlane-toggle { display:inline-flex; align-items:center; gap:8px; background:none; border:none; padding:0; margin:0; font:inherit; color:inherit; letter-spacing:inherit; text-transform:inherit; cursor:pointer; }

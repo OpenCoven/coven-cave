@@ -20,8 +20,9 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("Library")
+                .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .searchable(text: $query, prompt: "Search library")
                 .safeAreaInset(edge: .top) { kindPicker }
                 .task(id: kind) { await load() }
