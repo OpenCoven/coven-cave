@@ -77,6 +77,24 @@ assert.match(entries, /<UndoToast/, "JournalEntries renders an UndoToast for del
 assert.match(entries, /aria-label="Edit journal entry"/, "JournalEntries renders an edit affordance");
 assert.match(entries, /aria-label="Delete journal entry"/, "JournalEntries renders a delete affordance");
 assert.match(entries, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Escape"[\s\S]*?cancelEdit/, "Journal edit textarea cancels on Escape");
+// ⌘/Ctrl+Enter saves the reflection editor (was: Save reachable only by tabbing
+// to the ✓ button), and focus returns to the Edit button when leaving the editor.
+assert.match(
+  entries,
+  /e\.key === "Enter" && \(e\.metaKey \|\| e\.ctrlKey\)[\s\S]*?void saveEdit\(\)/,
+  "Journal edit textarea saves on ⌘/Ctrl+Enter",
+);
+assert.match(
+  entries,
+  /if \(wasEditingRef\.current && !editing\) editBtnRef\.current\?\.focus\(\)/,
+  "Leaving the journal editor restores focus to the Edit button",
+);
+assert.match(entries, /ref=\{editBtnRef\}/, "the Edit button is the focus-restore target");
+assert.match(
+  entries,
+  /await loadDays\(\);[\s\S]*?requestAnimationFrame\(\(\) => \{[\s\S]*?editBtnRef\.current\?\.focus\(\)/,
+  "save re-asserts focus on the next frame, after the reload's re-render commits",
+);
 
 // JournalEntries is scoped to the selected familiar and its memory coverage.
 assert.match(entries, /const selectedFamiliarId = activeFamiliarId \?\? familiars\[0\]\?\.id \?\? null/, "JournalEntries derives one selected familiar scope");

@@ -92,6 +92,15 @@ export function JournalEntries({
     return () => { mountedRef.current = false; };
   }, []);
 
+  // Return focus to the Edit button when leaving the inline editor (save/cancel),
+  // so a keyboard/SR user doesn't get dropped to <body>.
+  const editBtnRef = useRef<HTMLButtonElement>(null);
+  const wasEditingRef = useRef(editing);
+  useEffect(() => {
+    if (wasEditingRef.current && !editing) editBtnRef.current?.focus();
+    wasEditingRef.current = editing;
+  }, [editing]);
+
   const familiarName = useCallback(
     (id: string | null) => (id ? familiars.find((f) => f.id === id)?.display_name ?? id : null),
     [familiars],
@@ -226,6 +235,15 @@ export function JournalEntries({
       cancelEdit();
       await loadDay(day.date);
       await loadDays();
+      // The reload's setState re-renders the detail AFTER this point and steals
+      // focus from the Edit button the editing→false effect restored. Re-assert
+      // it on the next frame, once that re-render has committed and painted, so
+      // a keyboard/SR user lands back on a real control instead of <body>.
+      if (mountedRef.current) {
+        requestAnimationFrame(() => {
+          if (mountedRef.current) editBtnRef.current?.focus();
+        });
+      }
     } catch (err) {
       if (mountedRef.current) setError(err instanceof Error ? err.message : "Could not save journal entry.");
     } finally {
@@ -404,6 +422,7 @@ export function JournalEntries({
                     </>
                   ) : (
                     <button
+                      ref={editBtnRef}
                       type="button"
                       className="journal-entry__action"
                       onClick={startEdit}
@@ -436,8 +455,12 @@ export function JournalEntries({
                     onChange={(e) => setDraftReflection(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Escape") cancelEdit();
+                      else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        if (!saving && draftReflection.trim()) void saveEdit();
+                      }
                     }}
-                    aria-label="Journal reflection"
+                    aria-label="Journal reflection (⌘↵ to save, Esc to cancel)"
                     autoFocus
                   />
                 ) : (
