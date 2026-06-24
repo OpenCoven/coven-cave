@@ -21,6 +21,7 @@ struct ChatView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
     @Environment(\.chrome) private var chrome
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Bindable var thread: ChatThread
     @AppStorage("cave.dev.section") private var devSectionRaw = DevSection.code.rawValue
     @State private var draft: String = ""
@@ -285,8 +286,8 @@ struct ChatView: View {
             }
             composerBar
         }
-        .animation(.snappy(duration: 0.18), value: showingSlashMenu)
-        .animation(.snappy(duration: 0.18), value: pendingImages.count)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingSlashMenu)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
         .glassBar()
         // Live dictation streams its running transcript into the draft.
         .onAppear { dictation.onUpdate = { draft = $0 } }
@@ -428,9 +429,9 @@ struct ChatView: View {
                 }
             }
             .overlay(Capsule().strokeBorder(dictation.isRecording ? Color.red.opacity(0.5) : borderColor, lineWidth: 1))
-            .animation(.snappy(duration: 0.18), value: canSend)
-            .animation(.snappy(duration: 0.18), value: isCommand)
-            .animation(.snappy(duration: 0.18), value: dictation.isRecording)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: canSend)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: isCommand)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: dictation.isRecording)
         }
         .padding(.horizontal, 12)
         .padding(.top, 6)

@@ -62,9 +62,9 @@ struct SlashCommandMenu: View {
     private var footer: some View {
         HStack(spacing: 4) {
             Image(systemName: "command")
-                .font(.system(size: 9))
+                .font(.caption2)
             Text("Tap to run · type to filter")
-                .font(.system(size: 10))
+                .font(.caption2)
         }
         .foregroundStyle(.tertiary)
         .frame(maxWidth: .infinity, alignment: .leading)
