@@ -151,7 +151,7 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
   }
 
   const visibleIterations = state?.iterations
-    .filter((i) => activeTrack === "all" || i.track === activeTrack)
+    ?.filter((i) => activeTrack === "all" || i.track === activeTrack)
     .slice(0, 20) ?? [];
 
   return (
