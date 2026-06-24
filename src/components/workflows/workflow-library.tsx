@@ -88,7 +88,7 @@ export function WorkflowLibrary({
         onClick={() => onSelectWorkflow(workflow)}
       >
         <span className="workflow-library-item-title">
-          <span className="workflow-library-item-name">{workflow.name ?? workflow.id}</span>
+          <span className="workflow-library-item-name" title={workflow.name ?? workflow.id}>{workflow.name ?? workflow.id}</span>
           {active && dirty && <span className="workflow-dirty-dot" title="Unsaved changes" />}
           <span
             className={`workflow-origin-dot workflow-origin-dot-${personal ? "personal" : "public"}`}

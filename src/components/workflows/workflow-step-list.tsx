@@ -95,8 +95,8 @@ export function WorkflowStepList({
                 </span>
                 <span className="workflow-step-body">
                   <span className="workflow-step-kind">{data.kind}</span>
-                  <span className="workflow-step-label">{data.label}</span>
-                  {data.uses && <span className="workflow-step-uses">{data.uses}</span>}
+                  <span className="workflow-step-label" title={data.label}>{data.label}</span>
+                  {data.uses && <span className="workflow-step-uses" title={data.uses}>{data.uses}</span>}
                 </span>
                 {phase ? (
                   <span className={`workflow-step-pill workflow-node-phase-pill-${phase}`}>
