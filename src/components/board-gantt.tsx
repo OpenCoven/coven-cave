@@ -423,6 +423,22 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     weeks.push({ left: i * DAY_W, width: Math.min(7, totalDays - i) * DAY_W, label: `Week ${isoWeek(addDays(rangeStart, i))}` });
   }
 
+  // Month band above the week ruler so "Week N" has calendar context.
+  const monthFmt = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+  const months: Array<{ key: number; left: number; width: number; label: string }> = [];
+  for (
+    let m = new Date(Date.UTC(rangeStart.getUTCFullYear(), rangeStart.getUTCMonth(), 1));
+    daysBetween(rangeStart, m) < totalDays;
+    m = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 1))
+  ) {
+    const next = new Date(Date.UTC(m.getUTCFullYear(), m.getUTCMonth() + 1, 1));
+    const startDays = Math.max(0, daysBetween(rangeStart, m));
+    const endDays = Math.min(totalDays, daysBetween(rangeStart, next));
+    if (endDays > startDays) {
+      months.push({ key: m.getTime(), left: startDays * DAY_W, width: (endDays - startDays) * DAY_W, label: monthFmt.format(m) });
+    }
+  }
+
   let todayX: number | null = null;
   if (todayMs !== null) {
     const now = new Date(todayMs);
@@ -430,6 +446,12 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     const offset = daysBetween(rangeStart, todayUtc);
     if (offset >= 0 && offset <= totalDays) todayX = offset * DAY_W + DAY_W / 2;
   }
+
+  // Weekend shading + today-column tint are painted into the track background
+  // via CSS vars (avoids stacking issues). Shift the 2-day weekend band so it
+  // lands on Sat/Sun given the (arbitrary) range start.
+  const weekendShiftPx = ((6 - rangeStart.getUTCDay() + 7) % 7) * DAY_W;
+  const todayColLeftPx = todayX === null ? -9999 : todayX - DAY_W / 2;
 
   // Scroll the timeline so today sits in the middle of the viewport. Returns
   // whether it actually scrolled (used by the auto-center effect to know when
@@ -481,8 +503,16 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
         <button type="button" className="board-group-toggle-btn" onClick={scrollToToday} disabled={todayX === null} title="Scroll the timeline to today">Today</button>
       </div>
       <div className="board-gantt__scroll" ref={scrollRef}>
-        <div className="cg" style={{ ["--cg-day" as string]: `${DAY_W}px`, ["--cg-tl" as string]: `${timelineW}px` }}>
-          {/* Header: left column titles + week band */}
+        <div
+          className="cg"
+          style={{
+            ["--cg-day" as string]: `${DAY_W}px`,
+            ["--cg-tl" as string]: `${timelineW}px`,
+            ["--cg-weekend-shift" as string]: `${weekendShiftPx}px`,
+            ["--cg-today-x" as string]: `${todayColLeftPx}px`,
+          }}
+        >
+          {/* Header: left column titles + month band over the week ruler */}
           <div className="cg-head">
             <div className="cg-left cg-left--head">
               <span className="cg-c-task">Group / Task</span>
@@ -490,12 +520,21 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
               <span className="cg-c-date">End</span>
               <span className="cg-c-st">St</span>
             </div>
-            <div className="cg-weeks" style={{ width: `${timelineW}px` }}>
-              {weeks.map((w) => (
-                <span key={w.left} className="cg-week" style={{ left: `${w.left}px`, width: `${w.width}px` }}>
-                  {w.label}
-                </span>
-              ))}
+            <div className="cg-headstack">
+              <div className="cg-months" style={{ width: `${timelineW}px` }}>
+                {months.map((m) => (
+                  <span key={m.key} className="cg-month" style={{ left: `${m.left}px`, width: `${m.width}px` }}>
+                    {m.label}
+                  </span>
+                ))}
+              </div>
+              <div className="cg-weeks" style={{ width: `${timelineW}px` }}>
+                {weeks.map((w) => (
+                  <span key={w.left} className="cg-week" style={{ left: `${w.left}px`, width: `${w.width}px` }}>
+                    {w.label}
+                  </span>
+                ))}
+              </div>
             </div>
           </div>
 

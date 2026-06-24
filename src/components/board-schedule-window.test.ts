@@ -141,4 +141,19 @@ assert.match(gantt, /g\.rows\.filter\(\(r\) => !hiddenCats\.has\(r\.category\)\)
 assert.match(gantt, /cg-filter-chip\$\{off \? " cg-filter-chip--off" : ""\}/, "chips show an off state");
 assert.match(styles, /\.cg-filter-chip/, "filter chips are styled");
 
+// Timeline readability: a month band over the week ruler + weekend shading and
+// a today-column tint painted into the track background.
+assert.match(gantt, /const months: Array<\{ key: number; left: number; width: number; label: string \}>/, "a month band is computed across the range");
+assert.match(gantt, /month: "short", year: "numeric"/, "month labels include the year");
+assert.match(gantt, /<div className="cg-months"/, "the header renders a month band");
+assert.match(gantt, /className="cg-month"/, "month segments render");
+assert.match(gantt, /const weekendShiftPx = \(\(6 - rangeStart\.getUTCDay\(\) \+ 7\) % 7\) \* DAY_W/, "the weekend band is shifted to land on Sat/Sun");
+assert.match(gantt, /const todayColLeftPx = todayX === null \? -9999 : todayX - DAY_W \/ 2/, "the today column resolves to its left edge (off-screen when out of range)");
+assert.match(gantt, /"--cg-weekend-shift" as string\]: `\$\{weekendShiftPx\}px`/, "weekend shift feeds the track via a CSS var");
+assert.match(gantt, /"--cg-today-x" as string\]: `\$\{todayColLeftPx\}px`/, "today column feeds the track via a CSS var");
+assert.match(styles, /\.cg-headstack/, "the header stacks the month band over the week ruler");
+assert.match(styles, /\.cg-month \{/, "month segments are styled");
+assert.match(styles, /var\(--cg-weekend-shift, 0px\) 0/, "weekend shading is offset by the CSS var");
+assert.match(styles, /var\(--cg-today-x, -9999px\)/, "the today column tint reads the CSS var");
+
 console.log("board-schedule-window.test.ts: ok");

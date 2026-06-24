@@ -1719,7 +1719,7 @@
 /* header */
 .cg-head {
   position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: stretch; height: 30px;
+  display: flex; align-items: stretch;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border-strong);
 }
@@ -1727,7 +1727,16 @@
   z-index: 6; background: var(--bg-raised);
   font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted);
 }
-.cg-weeks { position: relative; height: 30px; flex: 0 0 auto; }
+/* stack the month band over the week ruler in the timeline side of the header */
+.cg-headstack { display: flex; flex-direction: column; flex: 0 0 auto; }
+.cg-months { position: relative; height: 16px; flex: 0 0 auto; border-bottom: 1px solid var(--border-hairline); }
+.cg-month {
+  position: absolute; top: 0; bottom: 0;
+  display: flex; align-items: center; padding-left: 7px;
+  font-size: 10px; font-weight: 700; color: var(--text-primary);
+  border-left: 1px solid var(--border-strong); white-space: nowrap; overflow: hidden;
+}
+.cg-weeks { position: relative; height: 28px; flex: 0 0 auto; }
 .cg-week {
   position: absolute; top: 0; bottom: 0;
   display: flex; align-items: center; padding-left: 7px;
@@ -1742,10 +1751,24 @@
 .cg-track, .cg-grouptl {
   position: relative; height: var(--cg-row-h); flex: 0 0 auto;
   background:
+    /* today column tint (off-screen when there's no today in range) */
+    linear-gradient(to right,
+      transparent var(--cg-today-x, -9999px),
+      color-mix(in oklch, var(--accent-presence) 12%, transparent) var(--cg-today-x, -9999px),
+      color-mix(in oklch, var(--accent-presence) 12%, transparent) calc(var(--cg-today-x, -9999px) + var(--cg-day)),
+      transparent calc(var(--cg-today-x, -9999px) + var(--cg-day))),
+    /* weekend shading: 2 shaded days every 7, shifted so they land on Sat/Sun */
+    repeating-linear-gradient(to right,
+      color-mix(in oklch, var(--text-muted) 9%, transparent) 0,
+      color-mix(in oklch, var(--text-muted) 9%, transparent) calc(var(--cg-day) * 2),
+      transparent calc(var(--cg-day) * 2), transparent calc(var(--cg-day) * 7)),
+    /* day (light) + week (strong) gridlines */
     repeating-linear-gradient(to right, transparent 0, transparent calc(var(--cg-day) - 1px),
       color-mix(in oklch, var(--border-hairline) 55%, transparent) calc(var(--cg-day) - 1px), color-mix(in oklch, var(--border-hairline) 55%, transparent) var(--cg-day)),
     repeating-linear-gradient(to right, transparent 0, transparent calc(var(--cg-day) * 7 - 1px),
       var(--border-strong) calc(var(--cg-day) * 7 - 1px), var(--border-strong) calc(var(--cg-day) * 7));
+  background-position: 0 0, var(--cg-weekend-shift, 0px) 0, 0 0, 0 0;
+  background-repeat: no-repeat, repeat, repeat, repeat;
 }
 
 /* group header row */
