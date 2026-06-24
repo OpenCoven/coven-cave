@@ -215,6 +215,7 @@ export function Workspace() {
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
   const [githubAssignedCount, setGithubAssignedCount] = useState(0);
+  const [callsActiveCount, setCallsActiveCount] = useState(0);
   // Open (not-done) board cards, kept with their familiar so the Tasks badge can
   // show a per-familiar count when a familiar is scoped, and the grand total
   // only when "All familiars" is selected.
@@ -518,6 +519,15 @@ export function Workspace() {
             .then((res) => (res.ok ? res.json() : null))
             .catch(() => null)
         : Promise.resolve(null);
+      // In-flight delegation-call count, surfaced as the Calls nav badge.
+      const callsPromise = fetch("/api/coven-calls", { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null);
+      void callsPromise.then((callsJson) => {
+        if (callsJson?.ok && Array.isArray(callsJson.calls)) {
+          setCallsActiveCount(callsJson.calls.filter((c: { status?: string }) => c.status === "running").length);
+        }
+      });
 
       try {
         // Scope the session list to the active familiar's granted projects so
@@ -1123,6 +1133,13 @@ export function Workspace() {
         return;
       }
 
+      // ⌘⇧C -> Calls (no free ⌘-digit; the digits 1–9/0 are all assigned).
+      if (meta && !alt && e.shiftKey && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        setMode("calls");
+        return;
+      }
+
       // ⌘[ / ⌘] -> previous / next surface, cycling through SURFACE_ORDER in the
       // same top-to-bottom order as ⌘1..⌘8 (wraps at the ends). From an off-list
       // surface (Journal/Roles/Workflows), ⌘] lands on the first surface and ⌘[
@@ -1667,6 +1684,7 @@ export function Workspace() {
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
       githubAssignedCount={githubAssignedCount}
+      callsActiveCount={callsActiveCount}
     />
   );
 

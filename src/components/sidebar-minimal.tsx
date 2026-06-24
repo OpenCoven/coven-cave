@@ -68,6 +68,8 @@ export type SidebarMinimalProps = {
   boardOpenCount?: number;
   scheduleNeedsCount?: number;
   githubAssignedCount?: number;
+  /** Number of in-flight delegation calls (status "running"). */
+  callsActiveCount?: number;
 };
 
 // Format a count as a compact nav badge; 0/undefined yields no badge.
@@ -102,7 +104,7 @@ const FOLDER_MODES: Array<{
   { id: "docs", label: "Docs", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven documentation and guides" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, workflows, skills, and the capabilities your familiars can use" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
-  { id: "calls", label: "Calls", iconName: "ph:graph", group: "tools", description: "Live familiar activity and delegation traces" },
+  { id: "calls", label: "Calls", iconName: "ph:graph", group: "tools", kbd: "⌘⇧C", description: "Live familiar activity and delegation traces", badge: (p) => badgeText(p.callsActiveCount) },
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount) },
 ];
