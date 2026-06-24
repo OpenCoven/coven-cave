@@ -32,7 +32,17 @@ struct RemindersView: View {
                 .safeAreaInset(edge: .bottom) {
                     if selectMode {
                         HStack {
-                            Button(allSelected ? "Deselect All" : "Select All") { toggleSelectAll() }
+                            Menu {
+                                Button(allSelected ? "Deselect all" : "Select all") { toggleSelectAll() }
+                                if !statusesPresent.isEmpty {
+                                    Divider()
+                                    ForEach(statusesPresent, id: \.self) { status in
+                                        Button("\(statusLabel(status)) (\(statusCount(status)))") { selectStatus(status) }
+                                    }
+                                }
+                            } label: {
+                                Label("Select", systemImage: "line.3.horizontal.decrease.circle")
+                            }
                             Spacer()
                             Menu {
                                 Button { Task { await app.markRemindersDone(selectedIds); exitSelect() } } label: {
@@ -143,6 +153,21 @@ struct RemindersView: View {
     }
     private func toggleSelectAll() {
         if allSelected { selectedIds.removeAll() } else { selectedIds = Set(app.reminders.map(\.id)) }
+    }
+
+    private let statusOrder = ["pending", "fired", "snoozed", "dismissed", "done"]
+    /// Statuses actually present among the reminders, in a stable order.
+    private var statusesPresent: [String] {
+        let present = Set(app.reminders.map(\.status))
+        return statusOrder.filter(present.contains)
+    }
+    private func statusCount(_ status: String) -> Int {
+        app.reminders.filter { $0.status == status }.count
+    }
+    private func statusLabel(_ status: String) -> String { status.capitalized }
+    /// Add every reminder of a given status to the current selection.
+    private func selectStatus(_ status: String) {
+        selectedIds.formUnion(app.reminders.filter { $0.status == status }.map(\.id))
     }
     private func exitSelect() { withAnimation { selectMode = false; selectedIds.removeAll() } }
 }
