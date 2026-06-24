@@ -55,6 +55,7 @@ export const SUITES = {
     "src/lib/flow/flow-doc.test.ts",
     "src/lib/flow/flow-catalog.test.ts",
     "src/lib/flow/flow-compile.test.ts",
+    "src/lib/flow/flow-progress.test.ts",
     "src/lib/workflow-source.test.ts",
     "src/lib/workflow-edit.test.ts",
     "src/lib/workflow-draft.test.ts",
@@ -597,6 +598,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/flow/flow-progress.test.ts",
   "src/lib/familiar-card-data.test.ts",
   "src/lib/dashboard-model.test.ts",
   "src/lib/slash-commands.test.ts",

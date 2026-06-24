@@ -146,6 +146,27 @@ export async function listFlowRuns(flowId?: string): Promise<FlowRunRecord[]> {
   return file.runs.filter((run) => run.flowId === flowId);
 }
 
+/**
+ * Patch an existing run in place (status/steps/finishedAt as a run finishes).
+ * The run id is immutable; everything else is shallow-merged. Returns the
+ * updated record, or null if no run matched.
+ */
+export async function updateFlowRun(
+  id: string,
+  patch: Partial<Omit<FlowRunRecord, "id">>,
+): Promise<FlowRunRecord | null> {
+  return withRunsLock(async () => {
+    const file = await loadRunsFile();
+    const index = file.runs.findIndex((run) => run.id === id);
+    if (index < 0) return null;
+    const updated: FlowRunRecord = { ...file.runs[index], ...patch, id };
+    file.runs[index] = updated;
+    await mkdir(path.dirname(runsPath()), { recursive: true });
+    await writeJsonAtomic(runsPath(), file);
+    return updated;
+  });
+}
+
 export async function clearFlowRuns(flowId?: string): Promise<number> {
   return withRunsLock(async () => {
     const file = await loadRunsFile();

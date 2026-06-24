@@ -14,6 +14,8 @@ export type FlowToolbarProps = {
   tab: FlowTab;
   saving: boolean;
   executing: boolean;
+  /** A live agent-session run is in progress — show Stop instead of Execute. */
+  running: boolean;
   onRename: (name: string) => void;
   onToggleActive: () => void;
   onTab: (tab: FlowTab) => void;
@@ -21,6 +23,7 @@ export type FlowToolbarProps = {
   onRedo: () => void;
   onSave: () => void;
   onExecute: () => void;
+  onStop: () => void;
 };
 
 export function FlowToolbar(props: FlowToolbarProps) {
@@ -95,15 +98,22 @@ export function FlowToolbar(props: FlowToolbarProps) {
         >
           {props.saving ? "Saving…" : "Save"}
         </button>
-        <button
-          type="button"
-          className="flow-toolbar-execute"
-          onClick={props.onExecute}
-          disabled={props.executing}
-        >
-          <Icon name="ph:play" width={13} />
-          {props.executing ? "Running…" : "Execute"}
-        </button>
+        {props.running ? (
+          <button type="button" className="flow-toolbar-stop" onClick={props.onStop}>
+            <span className="flow-toolbar-stop-spinner" aria-hidden />
+            Stop
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="flow-toolbar-execute"
+            onClick={props.onExecute}
+            disabled={props.executing}
+          >
+            <Icon name="ph:play" width={13} />
+            {props.executing ? "Running…" : "Execute"}
+          </button>
+        )}
       </div>
     </header>
   );

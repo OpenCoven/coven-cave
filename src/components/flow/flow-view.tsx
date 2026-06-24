@@ -31,6 +31,7 @@ import {
   type FlowStickyData,
 } from "@/lib/flow/flow-doc";
 import { flowRunBlockReason } from "@/lib/flow/flow-compile";
+import { finalizeFlowSteps } from "@/lib/flow/flow-progress";
 import {
   clearFlowRuns,
   deleteFlow,
@@ -39,6 +40,7 @@ import {
   recordFlowRun,
   runFlow,
   saveFlow,
+  updateFlowRun,
   type FlowRunRecord,
 } from "@/lib/flows";
 import { FlowCanvas } from "./flow-canvas";
@@ -47,6 +49,7 @@ import { FlowLibrary } from "./flow-library";
 import { FlowToolbar, type FlowTab } from "./flow-toolbar";
 import { NodeCatalogPanel } from "./node-catalog-panel";
 import { NodeDetailView, type NodeDetailOption } from "./node-detail-view";
+import { useFlowRun } from "./use-flow-run";
 
 function slugifyFlowId(name: string): string {
   return (
@@ -76,6 +79,13 @@ export function FlowView() {
   const [runsLoading, setRunsLoading] = useState(false);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
+  // The run currently overlaid on the canvas (live session, or a finished run
+  // whose final state we keep painted until the user switches flows).
+  const [activeRun, setActiveRun] = useState<FlowRunRecord | null>(null);
+
+  // Live per-node phases parsed from the active run's agent-session transcript.
+  const progress = useFlowRun(activeRun);
+  const running = activeRun?.status === "running" && !progress.done;
 
   const addPositionRef = useRef<FlowPosition>({ x: 160, y: 160 });
   const mountedRef = useRef(true);
@@ -137,7 +147,15 @@ export function FlowView() {
     setRunsLoading(true);
     try {
       const result = await listFlowRuns(flowId);
-      if (mountedRef.current) setRuns(result.ok ? result.runs : []);
+      if (!mountedRef.current) return;
+      const list = result.ok ? result.runs : [];
+      setRuns(list);
+      // Resume the live overlay if the newest run is still running and we aren't
+      // already tracking one (e.g. returning to a flow whose execution is live).
+      const top = list[0];
+      if (top?.status === "running" && top.sessionId) {
+        setActiveRun((current) => current ?? top);
+      }
     } finally {
       if (mountedRef.current) setRunsLoading(false);
     }
@@ -168,6 +186,20 @@ export function FlowView() {
   useEffect(() => {
     if (selectedId) void loadRuns(selectedId);
   }, [selectedId, loadRuns]);
+
+  // When the live run's markers report every node resolved, finalize it once:
+  // freeze the overlay at its final colours and persist the verdict + steps.
+  useEffect(() => {
+    if (!activeRun || activeRun.status !== "running" || !progress.done) return;
+    const { steps, status } = finalizeFlowSteps(activeRun.steps, progress.steps);
+    const finishedAt = new Date().toISOString();
+    const finalized: FlowRunRecord = { ...activeRun, status, steps, finishedAt };
+    setActiveRun(finalized); // status flips off "running" → polling stops
+    void updateFlowRun(activeRun.id, { status, steps, finishedAt }).then(() => {
+      if (selectedId) void loadRuns(selectedId);
+    });
+    showNotice(status === "succeeded" ? "Flow finished." : "Flow finished with a failed step.");
+  }, [progress.done, progress.steps, activeRun, selectedId, loadRuns, showNotice]);
 
   const familiarOptions = useMemo<NodeDetailOption[]>(
     () =>
@@ -218,6 +250,7 @@ export function FlowView() {
       if (!flow) return;
       setSelectedId(id);
       setSelectedNodeId(null);
+      setActiveRun(null);
       setTab("editor");
       dispatchDraft({ type: "reset", doc: flow });
     },
@@ -240,6 +273,7 @@ export function FlowView() {
     await loadFlows();
     setSelectedId(result.flow.id);
     setSelectedNodeId(null);
+    setActiveRun(null);
     setTab("editor");
     dispatchDraft({ type: "reset", doc: result.flow });
     showNotice("New flow created.");
@@ -266,6 +300,7 @@ export function FlowView() {
       }
       await loadFlows();
       setSelectedId(result.flow.id);
+      setActiveRun(null);
       dispatchDraft({ type: "reset", doc: result.flow });
       showNotice(`Duplicated as ${result.flow.name}.`);
     },
@@ -353,19 +388,39 @@ export function FlowView() {
         showNotice(result.error ?? "couldn't start the flow");
         return;
       }
-      await loadRuns(doc.id);
-      setTab("executions");
-      if (result.sessionId) {
-        showNotice("Running as a live agent session — open it from Executions.");
+      if (result.run && result.sessionId) {
+        // Live session run — overlay it on the canvas and stay on the editor so
+        // the nodes light up as the agent works through them.
+        setActiveRun(result.run);
+        setSelectedNodeId(null);
+        setTab("editor");
+        showNotice("Running — watch the nodes light up, or open the session in Chat.");
       } else {
         showNotice("Execution started.");
       }
+      await loadRuns(doc.id);
     } catch (err) {
       showNotice(err instanceof Error ? err.message : "run failed");
     } finally {
       setExecuting(false);
     }
   }, [dirty, dispatchDraft, doc, loadRuns, recordFlowRun, runFlow, saveFlow, showNotice]);
+
+  const stop = useCallback(async () => {
+    if (!activeRun) return;
+    if (activeRun.sessionId) {
+      await fetch(`/api/sessions/${encodeURIComponent(activeRun.sessionId)}/kill`, { method: "POST" }).catch(
+        () => undefined,
+      );
+    }
+    const finishedAt = new Date().toISOString();
+    const stopped: FlowRunRecord = { ...activeRun, status: "failed", finishedAt, summary: "stopped" };
+    setActiveRun(stopped);
+    void updateFlowRun(activeRun.id, { status: "failed", finishedAt, summary: "stopped" }).then(() => {
+      if (selectedId) void loadRuns(selectedId);
+    });
+    showNotice("Flow stopped.");
+  }, [activeRun, loadRuns, selectedId, showNotice]);
 
   const openSession = useCallback((sessionId: string) => {
     if (typeof window !== "undefined") window.location.hash = `chat-${sessionId}`;
@@ -466,6 +521,8 @@ export function FlowView() {
               onRedo={() => dispatchDraft({ type: "redo" })}
               onSave={() => void save()}
               onExecute={() => void execute()}
+              running={running}
+              onStop={() => void stop()}
             />
 
             {notice && <div className="flow-notice" role="status">{notice}</div>}
@@ -475,8 +532,8 @@ export function FlowView() {
                 <FlowCanvas
                   doc={doc}
                   selectedNodeId={selectedNodeId}
-                  phases={null}
-                  activeNodeId={null}
+                  phases={activeRun ? progress.phases : null}
+                  activeNodeId={running ? progress.activeNodeId : null}
                   viewResetKey={viewResetKey}
                   onSelectNode={setSelectedNodeId}
                   onOpenNode={setSelectedNodeId}

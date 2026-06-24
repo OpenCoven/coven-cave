@@ -93,6 +93,18 @@ export async function recordFlowRun(input: Omit<FlowRunRecord, "id">): Promise<{
   return readJson<{ ok: boolean; run?: FlowRunRecord }>(response);
 }
 
+export async function updateFlowRun(
+  id: string,
+  patch: Partial<Pick<FlowRunRecord, "status" | "steps" | "finishedAt" | "summary">>,
+): Promise<{ ok: boolean; run?: FlowRunRecord }> {
+  const response = await fetch("/api/flows/runs", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, ...patch }),
+  });
+  return readJson<{ ok: boolean; run?: FlowRunRecord }>(response);
+}
+
 export async function clearFlowRuns(flowId: string): Promise<{ ok: boolean; cleared?: number }> {
   const response = await fetch(`/api/flows/runs?flowId=${encodeURIComponent(flowId)}`, {
     method: "DELETE",

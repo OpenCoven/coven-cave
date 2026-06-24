@@ -4,9 +4,10 @@ import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { Icon } from "@/lib/icon";
 import type { FlowNodeType } from "@/lib/flow/flow-catalog";
 import type { FlowNode } from "@/lib/flow/flow-doc";
+import type { FlowNodePhase } from "@/lib/flow/flow-progress";
 
 /** Live run phase overlaid by the canvas while an execution/preview walks. */
-export type FlowNodePhase = "pending" | "running" | "succeeded" | "failed" | "skipped";
+export type { FlowNodePhase };
 
 export type FlowNodeData = {
   node: FlowNode;

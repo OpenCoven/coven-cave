@@ -105,6 +105,9 @@
 .flow-toolbar-execute { display: inline-flex; align-items: center; gap: 5px; padding: 5px 14px; font-size: var(--text-sm); font-weight: 600; border: 1px solid color-mix(in oklch, var(--accent-presence) 60%, transparent); border-radius: var(--radius-control); background: color-mix(in oklch, var(--accent-presence) 26%, var(--bg-elevated)); color: var(--text-primary); cursor: pointer; }
 .flow-toolbar-execute:hover:not(:disabled) { background: color-mix(in oklch, var(--accent-presence) 38%, var(--bg-elevated)); }
 .flow-toolbar-execute:disabled { opacity: 0.6; cursor: default; }
+.flow-toolbar-stop { display: inline-flex; align-items: center; gap: 6px; padding: 5px 14px; font-size: var(--text-sm); font-weight: 600; border: 1px solid color-mix(in oklch, var(--color-danger) 55%, transparent); border-radius: var(--radius-control); background: color-mix(in oklch, var(--color-danger) 22%, var(--bg-elevated)); color: var(--text-primary); cursor: pointer; }
+.flow-toolbar-stop:hover { background: color-mix(in oklch, var(--color-danger) 34%, var(--bg-elevated)); }
+.flow-toolbar-stop-spinner { width: 11px; height: 11px; border-radius: 50%; border: 2px solid color-mix(in oklch, var(--color-danger) 35%, transparent); border-top-color: var(--color-danger); animation: flow-spin 0.7s linear infinite; }
 
 .flow-notice { padding: 7px var(--space-3); font-size: var(--text-sm); color: var(--text-primary); background: color-mix(in oklch, var(--accent-presence) 16%, var(--bg-raised)); border-bottom: 1px solid var(--border-hairline); }
 
