@@ -2,11 +2,27 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+const route = await readFile(new URL("./route.ts", import.meta.url), "utf8");
+const source = await readFile(
+  new URL("../../../../lib/opencoven-tools-status.ts", import.meta.url),
+  "utf8",
+);
+
+assert.match(
+  route,
+  /import \{ openCovenToolStatuses \} from "@\/lib\/opencoven-tools-status"/,
+  "the route uses the shared OpenCoven tool detector",
+);
+
+assert.match(
+  route,
+  /const tools = await openCovenToolStatuses\(\)/,
+  "GET reports shared OpenCoven tool statuses",
+);
 
 assert.match(
   source,
-  /const TOOLS = \[/,
+  /export const OPEN_COVEN_TOOLS = \[/,
   "tool status lives in a fixed server-side allowlist",
 );
 
@@ -36,7 +52,7 @@ assert.match(
 
 assert.match(
   source,
-  /Promise\.all\(TOOLS\.map\(toolStatus\)\)/,
+  /Promise\.all\(OPEN_COVEN_TOOLS\.map\(toolStatus\)\)/,
   "GET reports all allowlisted OpenCoven tools together",
 );
 

@@ -42,6 +42,18 @@ function isInstallTarget(id: string): id is InstallTarget {
   return id === "coven-cli" || id === "coven-code";
 }
 
+function toolVersionText(tool: ToolStatus): string {
+  if (!tool.installed) return "Not installed";
+  if (!tool.current) return "Installed, version unknown";
+  return tool.outdated ? `${tool.current} -> ${tool.latest}` : tool.current;
+}
+
+function toolStatusText(tool: ToolStatus): string {
+  if (!tool.installed) return "Not found";
+  if (!tool.current) return "Version unknown";
+  return "Up to date";
+}
+
 export function OpenCovenToolsUpdate() {
   const [tools, setTools] = useState<ToolStatus[]>([]);
   const [checking, setChecking] = useState(true);
@@ -215,11 +227,7 @@ export function OpenCovenToolsUpdate() {
             <div className="min-w-0">
               <p className="text-[12px] text-[var(--text-secondary)]">{tool.label}</p>
               <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
-                {tool.installed
-                  ? tool.outdated
-                    ? `${tool.current ?? "unknown"} -> ${tool.latest}`
-                    : (tool.current ?? "unknown")
-                  : "Not installed"}
+                {toolVersionText(tool)}
               </p>
               {result ? (
                 <p
@@ -253,7 +261,7 @@ export function OpenCovenToolsUpdate() {
                 </button>
               ) : (
                 <span className="text-[12px] text-[var(--text-muted)]">
-                  {tool.installed ? "Up to date" : "Not found"}
+                  {toolStatusText(tool)}
                 </span>
               )}
             </div>

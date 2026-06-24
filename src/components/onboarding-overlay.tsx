@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
-import { setDemoModeEnabled } from "@/lib/demo-mode";
 import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
@@ -38,6 +37,20 @@ type OnboardingStatus = {
     familiars: Step;
     binding: Step;
   };
+  tools?: OpenCovenToolStatus[];
+};
+
+type OpenCovenToolStatus = {
+  id: "coven-cli" | "coven-code";
+  label: string;
+  packageName: string;
+  binary: string;
+  installed: boolean;
+  path: string | null;
+  current: string | null;
+  latest: string | null;
+  outdated: boolean;
+  checkedAt?: string;
 };
 
 type HarnessReport = {
@@ -66,7 +79,13 @@ type CaveFamiliar = {
   role?: string;
 };
 
-type InstallTarget = "coven-cli" | "codex" | "claude" | "openclaw" | "hermes";
+type InstallTarget =
+  | "coven-cli"
+  | "coven-code"
+  | "codex"
+  | "claude"
+  | "openclaw"
+  | "hermes";
 
 type InstallResult = {
   ok: boolean;
@@ -87,6 +106,7 @@ type InstallJobView = {
  *  one client-side busy lock. */
 const INSTALL_TARGET_KIND: Record<InstallTarget, "npm" | "script"> = {
   "coven-cli": "npm",
+  "coven-code": "npm",
   codex: "npm",
   claude: "npm",
   openclaw: "npm",
@@ -104,6 +124,8 @@ type SshCheckState =
   | { state: "fail"; detail: string };
 
 const COVEN_CLI_INSTALL_COMMAND = "npm i -g @opencoven/cli@latest";
+const OPENCLAW_AGENT_ROOT = "~/.openclaw/agents";
+const OPENCLAW_WORKSPACE_ROOT = "~/.openclaw/workspace";
 
 /** Every chat harness Cave can install itself. `command` is the manual
  *  equivalent shown beside the button; `windowsCommand` overrides it on
@@ -133,7 +155,7 @@ const HARNESS_ONE_CLICK: Partial<
     target: "openclaw",
     command: "npm i -g openclaw@latest",
     afterInstall:
-      "then connect or create an agent under ~/.openclaw/agents (Option B in the familiar step)",
+      `then connect an agent from ${OPENCLAW_AGENT_ROOT} in the familiar step`,
   },
   hermes: {
     target: "hermes",
@@ -286,7 +308,6 @@ type GuidedStep = {
 export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [platform, setPlatform] = useState<PlatformId>("unknown");
-  const [shownPlatform, setShownPlatform] = useState<PlatformId | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
   const [startingDaemon, setStartingDaemon] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
@@ -449,8 +470,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     if (familiarsOk) void loadFamiliars();
   }, [familiarsOk, loadFamiliars]);
 
-  const activePlatform = shownPlatform ?? platform;
-  const platformCopy = PLATFORM_COPY[activePlatform];
+  const platformCopy = PLATFORM_COPY[platform];
   const chatHarnesses = harnesses.filter((adapter) => adapter.chatSupported);
   const selectedHarness =
     chatHarnesses.find((adapter) => adapter.id === selectedHarnessId) ?? null;
@@ -832,16 +852,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   };
 
-  const enableDemoMode = () => {
-    setDemoModeEnabled(true);
-    try {
-      localStorage.setItem("cave:onboarding:dismissed", "1");
-    } catch {
-      /* private mode */
-    }
-    onDismiss();
-  };
-
   const createLocalFamiliar = async () => {
     if (!status?.steps.daemon.ok) {
       setSetupError("Start the daemon before creating or connecting a familiar.");
@@ -1047,31 +1057,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       <div className="mx-auto flex min-h-full w-full max-w-[1100px] flex-col px-4 py-5 sm:px-6 lg:px-8">
         <header className="flex flex-col gap-4 border-b border-[var(--border-hairline)] pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wider text-[var(--accent-presence)]">
-              <span>Welcome</span>
-              <label className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5 normal-case tracking-normal text-[var(--text-secondary)]">
-                <span className="sr-only">Platform</span>
-                <select
-                  aria-label="Show instructions for platform"
-                  value={activePlatform}
-                  onChange={(e) =>
-                    setShownPlatform(e.target.value as PlatformId)
-                  }
-                  className="focus-ring bg-transparent"
-                >
-                  <option value="mac">macOS</option>
-                  <option value="windows">Windows</option>
-                  <option value="linux">Linux</option>
-                  <option value="unknown">Other</option>
-                </select>
-              </label>
-              {process.env.NEXT_PUBLIC_DEMO === "true" ? (
-                <span className="rounded-full border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-2 py-0.5 normal-case tracking-normal text-[var(--color-warning)]">
-                  Demo mode
-                </span>
-              ) : null}
-            </div>
-            <h1 className="mt-2 text-2xl font-semibold text-[var(--text-primary)] sm:text-3xl">
+            <h1 className="text-2xl font-semibold text-[var(--text-primary)] sm:text-3xl">
               Set up CovenCave, step by step.
             </h1>
             <p className="mt-2 max-w-2xl text-[13px] leading-6 text-[var(--text-secondary)]">
@@ -1250,9 +1236,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                           <StepCovenCli
                             platformCopy={platformCopy}
                             installJobs={installJobs}
-                            installResult={installResults["coven-cli"]}
+                            installResults={installResults}
+                            tools={status?.tools ?? []}
                             nodeHint={nodeHint}
-                            onInstall={() => void runInstall("coven-cli")}
+                            onInstall={(target) => void runInstall(target)}
                             onCopy={copyText}
                           />
                         ) : step.key === "covenHome" ? (
@@ -1278,7 +1265,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                         ) : step.key === "adapters" ? (
                           <StepRuntimes
                             chatHarnesses={chatHarnesses}
-                            platform={activePlatform}
+                            platform={platform}
                             installJobs={installJobs}
                             installResults={installResults}
                             nodeHint={nodeHint}
@@ -1422,34 +1409,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             </div>
           </details>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <section className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
-                    Tester demo mode
-                  </h2>
-                  <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                    Explore Cave with sample data — no installs needed. Demo
-                    data is opt-in for testers and never appears in normal
-                    installs.
-                  </p>
-                </div>
-                <Icon
-                  name="ph:toggle-right-bold"
-                  className="text-[var(--text-muted)]"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={enableDemoMode}
-                className="focus-ring mt-3 inline-flex items-center justify-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-2 text-[12px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
-              >
-                <Icon name="ph:sparkle" />
-                Open demo Cave
-              </button>
-            </section>
-
+          <div>
             <MaintenancePanel prune={prune} setPrune={setPrune} />
           </div>
         </main>
@@ -1471,8 +1431,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           {status?.complete ? (
             <button
               onClick={onDismiss}
-              className="focus-ring rounded-md bg-[color-mix(in_oklch,var(--color-success)_90%,transparent)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--color-success)_85%,#000)]"
+              className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
             >
+              <Icon name="ph:rocket-launch-bold" />
               Open Cave
             </button>
           ) : (
@@ -1615,19 +1576,34 @@ function InstallResultNote({ result }: { result?: InstallResult }) {
   );
 }
 
+function openCovenToolVersionText(tool: OpenCovenToolStatus): string {
+  if (!tool.installed) return "Not installed";
+  if (!tool.current) return "Installed, version unknown";
+  return tool.outdated && tool.latest ? `${tool.current} -> ${tool.latest}` : tool.current;
+}
+
+function openCovenToolStatusText(tool: OpenCovenToolStatus): string {
+  if (!tool.installed) return "Not found";
+  if (!tool.current) return "Version unknown";
+  if (tool.outdated) return "Update available";
+  return "Up to date";
+}
+
 function StepCovenCli({
   platformCopy,
   installJobs,
-  installResult,
+  installResults,
+  tools,
   nodeHint,
   onInstall,
   onCopy,
 }: {
   platformCopy: (typeof PLATFORM_COPY)[PlatformId];
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
-  installResult?: InstallResult;
+  installResults: Partial<Record<InstallTarget, InstallResult>>;
+  tools: OpenCovenToolStatus[];
   nodeHint: string | null;
-  onInstall: () => void;
+  onInstall: (target: "coven-cli" | "coven-code") => void;
   onCopy: (text: string) => Promise<boolean>;
 }) {
   const npmJobRunning = anyNpmInstallRunning(installJobs);
@@ -1641,7 +1617,7 @@ function StepCovenCli({
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <button
-          onClick={onInstall}
+          onClick={() => onInstall("coven-cli")}
           disabled={busy || npmJobRunning}
           aria-busy={busy}
           className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
@@ -1661,7 +1637,77 @@ function StepCovenCli({
       </div>
       <CommandRow command={platformCopy.installCommand} onCopy={onCopy} />
       {busy && job ? <InstallLiveTail tail={job.tail} /> : null}
-      <InstallResultNote result={installResult} />
+      <InstallResultNote result={installResults["coven-cli"]} />
+      {tools.length > 0 ? (
+        <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            OpenCoven tools
+          </div>
+          <div className="grid gap-2">
+            {tools.map((tool) => {
+              const toolJob = installJobs[tool.id];
+              const toolBusy = toolJob?.status === "running";
+              const needsAction = !tool.installed || tool.outdated;
+              const result = installResults[tool.id];
+              return (
+                <div
+                  key={tool.id}
+                  className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/45 px-3 py-2"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-[12px] font-medium text-[var(--text-primary)]">
+                        {tool.label}
+                      </div>
+                      <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--text-muted)]">
+                        {openCovenToolVersionText(tool)}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] ${
+                          tool.installed && !tool.outdated
+                            ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] text-[var(--color-success)]"
+                            : "border-[color-mix(in_oklch,var(--color-warning)_45%,transparent)] text-[var(--color-warning)]"
+                        }`}
+                      >
+                        {tool.installed && !tool.outdated ? (
+                          <Icon name="ph:check-bold" />
+                        ) : (
+                          <Icon name="ph:warning-fill" />
+                        )}
+                        {openCovenToolStatusText(tool)}
+                      </span>
+                      {needsAction ? (
+                        <button
+                          type="button"
+                          onClick={() => onInstall(tool.id)}
+                          disabled={toolBusy || npmJobRunning}
+                          aria-busy={toolBusy}
+                          className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
+                        >
+                          {toolBusy ? (
+                            <Icon name="ph:circle-notch-bold" className="animate-spin" />
+                          ) : (
+                            <Icon name="ph:arrow-down-bold" />
+                          )}
+                          {toolBusy && toolJob
+                            ? `Installing… ${formatElapsed(toolJob.elapsedMs)}`
+                            : tool.outdated
+                              ? "Update"
+                              : "Install"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  {toolBusy && toolJob ? <InstallLiveTail tail={toolJob.tail} /> : null}
+                  <InstallResultNote result={result} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
       {nodeHint ? (
         <NodeSetupNotice hint={nodeHint} nodeSetup={platformCopy.nodeSetup} />
       ) : null}
@@ -1720,20 +1766,43 @@ function StepRuntimes({
           const result = oneClick ? installResults[oneClick.target] : undefined;
           const job = oneClick ? installJobs[oneClick.target] : undefined;
           const busy = job?.status === "running";
+          const openClaw = adapter.id === "openclaw";
           return (
             <div
               key={adapter.id}
               className={`rounded-lg border p-3 ${
-                adapter.installed
+                openClaw && adapter.installed
+                  ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]"
+                  : openClaw
+                    ? "border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]"
+                    : adapter.installed
                   ? "border-[color-mix(in_oklch,var(--color-success)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_8%,transparent)]"
                   : "border-[var(--border-hairline)] bg-[var(--bg-base)]/45"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-[13px] font-medium text-[var(--text-primary)]">
-                  {adapter.label}
-                </span>
-                {adapter.installed ? (
+                <div className="min-w-0">
+                  <span className="truncate text-[13px] font-medium text-[var(--text-primary)]">
+                    {adapter.label}
+                  </span>
+                  {openClaw ? (
+                    <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">
+                      Bridge existing OpenClaw agents into Cave.
+                    </div>
+                  ) : null}
+                </div>
+                {openClaw ? (
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {adapter.installed ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-success)]">
+                        <Icon name="ph:check-bold" /> installed
+                      </span>
+                    ) : null}
+                    <span className="inline-flex items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-presence)]">
+                      <Icon name="ph:git-fork" /> bridge
+                    </span>
+                  </div>
+                ) : adapter.installed ? (
                   <span className="inline-flex items-center gap-1 text-[11px] text-[var(--color-success)]">
                     <Icon name="ph:check-bold" /> installed
                   </span>
@@ -1744,6 +1813,19 @@ function StepRuntimes({
                   ? (adapter.path ?? adapter.binary)
                   : adapter.binary}
               </div>
+              {openClaw ? (
+                <div className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 px-3 py-2 text-[11px] leading-4 text-[var(--text-secondary)]">
+                  Agents are discovered from{" "}
+                  <code className="font-mono text-[var(--text-primary)]">
+                    {OPENCLAW_AGENT_ROOT}
+                  </code>
+                  . Their workspaces stay under{" "}
+                  <code className="font-mono text-[var(--text-primary)]">
+                    {OPENCLAW_WORKSPACE_ROOT}
+                  </code>
+                  .
+                </div>
+              ) : null}
               {/* A successful in-session install flips installed=true on the harness
                   refresh, unmounting the not-installed branch's hint — keep it visible. */}
               {adapter.installed && adapter.id === "hermes" && result?.ok ? (
@@ -1878,6 +1960,13 @@ function StepFamiliar(props: {
   } = props;
   const glyphInvalid =
     familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:");
+  const selectedOpenClawAgent =
+    selectedAgentId != null
+      ? openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null
+      : null;
+  const openClawAgentCountLabel = agentsLoading
+    ? "Scanning"
+    : `${openclawAgents.length} ${openclawAgents.length === 1 ? "agent" : "agents"}`;
   return (
     <div className="flex flex-col gap-4">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -1936,17 +2025,39 @@ function StepFamiliar(props: {
           </div>
         </div>
 
-        <div>
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
-              Option B — connect an existing OpenClaw agent
-            </h3>
+        <div className="rounded-lg border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)] p-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
+                  Option B — connect an existing OpenClaw agent
+                </h3>
+                <span className="inline-flex items-center gap-1 rounded-full border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] px-2 py-0.5 text-[10px] font-medium text-[var(--accent-presence)]">
+                  <Icon name="ph:git-fork" /> {openClawAgentCountLabel}
+                </span>
+              </div>
+              <p className="mt-1 text-[11px] leading-4 text-[var(--text-secondary)]">
+                Use an existing OpenClaw agent as a Cave familiar. Cave scans{" "}
+                <code className="font-mono text-[var(--text-primary)]">
+                  {OPENCLAW_AGENT_ROOT}
+                </code>
+                {" "}and preserves its workspace under{" "}
+                <code className="font-mono text-[var(--text-primary)]">
+                  {OPENCLAW_WORKSPACE_ROOT}
+                </code>
+                .
+              </p>
+            </div>
             <button
               onClick={props.onRefreshAgents}
               disabled={agentsLoading}
-              className="focus-ring rounded border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+              className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2.5 py-1.5 text-[11px] text-[var(--text-secondary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
             >
-              {agentsLoading ? "Loading..." : "Refresh"}
+              <Icon
+                name="ph:arrows-clockwise-bold"
+                className={agentsLoading ? "animate-spin" : undefined}
+              />
+              {agentsLoading ? "Scanning..." : "Refresh"}
             </button>
           </div>
           {agentsError ? (
@@ -1954,22 +2065,39 @@ function StepFamiliar(props: {
               {agentsError}
             </div>
           ) : openclawAgents.length === 0 ? (
-            <div className="mt-2 rounded border border-dashed border-[var(--border-hairline)] px-3 py-4 text-center text-[12px] text-[var(--text-muted)]">
-              No OpenClaw agents found under ~/.openclaw/agents — Option A is
-              your path.
+            <div className="mt-3 rounded-md border border-dashed border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[var(--bg-base)]/35 px-3 py-4 text-[12px] leading-5 text-[var(--text-secondary)]">
+              <div className="flex items-start gap-2">
+                <Icon
+                  name="ph:magnifying-glass"
+                  className="mt-0.5 shrink-0 text-[var(--accent-presence)]"
+                />
+                <div>
+                  <p className="font-medium text-[var(--text-primary)]">
+                    No OpenClaw agents found yet.
+                  </p>
+                  <p className="mt-1">
+                    Create or sync one under{" "}
+                    <code className="font-mono text-[var(--text-primary)]">
+                      {OPENCLAW_AGENT_ROOT}
+                    </code>
+                    , then refresh this list. Option A remains available for a
+                    brand-new Coven familiar.
+                  </p>
+                </div>
+              </div>
             </div>
           ) : (
-            <div className="mt-2 grid max-h-[12rem] gap-2 overflow-y-auto pr-1">
+            <div className="mt-3 grid max-h-[16rem] gap-2 overflow-y-auto pr-1">
               {openclawAgents.map((agent) => {
                 const active = selectedAgentId === agent.id;
                 return (
                   <button
                     key={agent.id}
                     onClick={() => props.onSelectAgent(agent)}
-                    className={`focus-ring rounded-lg border p-2.5 text-left ${
+                    className={`focus-ring rounded-lg border p-3 text-left ${
                       active
-                        ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
-                        : "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+                        ? "border-[color-mix(in_oklch,var(--accent-presence)_60%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] text-[var(--text-primary)]"
+                        : "border-[var(--border-hairline)] bg-[var(--bg-base)]/55 text-[var(--text-secondary)] hover:border-[var(--accent-presence)]"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -1983,9 +2111,17 @@ function StepFamiliar(props: {
                         />
                       ) : null}
                     </div>
-                    <div className="mt-0.5 truncate font-mono text-[10px] text-[var(--text-muted)]">
-                      {agent.id}
+                    <div className="mt-1 grid gap-0.5 font-mono text-[10px] text-[var(--text-muted)]">
+                      <div className="truncate">{agent.id}</div>
+                      {agent.workspacePath ? (
+                        <div className="truncate">{agent.workspacePath}</div>
+                      ) : null}
                     </div>
+                    {agent.role ? (
+                      <div className="mt-1 truncate text-[11px] text-[var(--text-secondary)]">
+                        {agent.role}
+                      </div>
+                    ) : null}
                   </button>
                 );
               })}
@@ -2193,12 +2329,14 @@ function StepFamiliar(props: {
               familiarName.trim().length === 0 ||
               (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
             }
-            className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-4 py-2 text-[13px] text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
+            className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
           >
-            <Icon name="ph:sparkle" />
+            <Icon name="ph:git-fork" />
             {picking === "familiar"
               ? "Connecting..."
-              : "Connect selected existing agent"}
+              : selectedOpenClawAgent
+                ? `Connect ${selectedOpenClawAgent.displayName}`
+                : "Connect OpenClaw agent"}
           </button>
         ) : null}
       </div>
@@ -2255,7 +2393,7 @@ function StepMeetFamiliars({
       {complete ? (
         <button
           onClick={onOpenCave}
-          className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_90%,transparent)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--color-success)_85%,#000)]"
+          className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
         >
           <Icon name="ph:rocket-launch-bold" />
           Open Cave

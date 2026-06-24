@@ -8,6 +8,10 @@ import { callDaemon } from "@/lib/coven-daemon";
 import { loadConfig } from "@/lib/cave-config";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import {
+  openCovenToolStatuses,
+  type OpenCovenToolStatus,
+} from "@/lib/opencoven-tools-status";
+import {
   COMPATIBILITY_ADAPTERS,
   covenHelpSupportsAdapterList,
   mergeAdapterReports,
@@ -49,9 +53,14 @@ async function checkGit(): Promise<Step> {
   };
 }
 
-async function checkCovenCli(): Promise<Step> {
-  const found = await commandPath("coven");
-  if (found) return { ok: true, detail: found };
+function checkCovenCli(tool: OpenCovenToolStatus | undefined): Step {
+  if (tool?.installed) {
+    const location = tool.path ?? tool.binary;
+    return {
+      ok: true,
+      detail: tool.current ? `${tool.current} at ${location}` : `${location} (version unknown)`,
+    };
+  }
   return {
     ok: false,
     hint: `Install the coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
@@ -83,7 +92,9 @@ async function countOpenClawAgents(): Promise<number> {
   }
 }
 
-async function checkHarnessAdapters(openclawAgentCount: number): Promise<Step> {
+async function checkHarnessAdapters(
+  openclawAgentCount: number,
+): Promise<{ step: Step; reports: AdapterReport[] }> {
   const localReports: AdapterReport[] = await Promise.all(
     COMPATIBILITY_ADAPTERS.map(async (adapter) => {
       const found = await commandPath(adapter.binary);
@@ -105,7 +116,7 @@ async function checkHarnessAdapters(openclawAgentCount: number): Promise<Step> {
     localReports,
     await loadCovenAdapterSummaries(),
   );
-  return runtimeSourceSetupState(reports, openclawAgentCount);
+  return { step: runtimeSourceSetupState(reports, openclawAgentCount), reports };
 }
 
 async function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
@@ -176,9 +187,44 @@ async function checkFamiliars(): Promise<{ step: Step; count: number }> {
   };
 }
 
-async function checkBinding(familiarsAvailable: boolean, daemonOk: boolean): Promise<Step> {
+// A configured default harness is only a real binding if something can
+// actually back it: an installed runtime adapter, or — for OpenClaw —
+// at least one discoverable agent. Without this, a stale `defaults.harness`
+// (e.g. "openclaw") advertises a confident binding on a machine where neither
+// the runtime nor any agent exists.
+function defaultHarnessAvailable(
+  harness: string,
+  reports: AdapterReport[],
+  openclawAgentCount: number,
+): boolean {
+  if (harness === "openclaw" && openclawAgentCount > 0) return true;
+  return reports.some((report) => report.id === harness && report.installed);
+}
+
+function availableRuntimeLabels(
+  reports: AdapterReport[],
+  openclawAgentCount: number,
+): string[] {
+  const labels = reports
+    .filter((report) => report.installed)
+    .map((report) => report.label);
+  if (openclawAgentCount > 0 && !labels.includes("OpenClaw")) {
+    labels.push(
+      `OpenClaw (${openclawAgentCount} agent${openclawAgentCount === 1 ? "" : "s"})`,
+    );
+  }
+  return labels;
+}
+
+async function checkBinding(
+  familiarsAvailable: boolean,
+  daemonOk: boolean,
+  reports: AdapterReport[],
+  openclawAgentCount: number,
+): Promise<Step> {
   const config = await loadConfig();
-  const hasDefaults = !!config.defaults.harness && !!config.defaults.model;
+  const { harness, model } = config.defaults;
+  const hasDefaults = !!harness && !!model;
   if (!hasDefaults) {
     return {
       ok: false,
@@ -195,29 +241,56 @@ async function checkBinding(familiarsAvailable: boolean, daemonOk: boolean): Pro
         : "Waiting for the daemon — familiars load once it starts.",
     };
   }
+  // Defaults + familiars exist, but the default harness itself must be live —
+  // otherwise the binding detail advertises a runtime the user can't use.
+  if (!defaultHarnessAvailable(harness, reports, openclawAgentCount)) {
+    const report = reports.find((entry) => entry.id === harness);
+    const label = report?.label ?? harness;
+    const available = availableRuntimeLabels(reports, openclawAgentCount);
+    if (available.length > 0) {
+      return {
+        ok: false,
+        hint: `Default binding "${harness} · ${model}" points at ${label}, which has no installed runtime or agent. Create a familiar from ${available.join(", ")} to update your default.`,
+      };
+    }
+    return {
+      ok: false,
+      hint: `Default binding "${harness} · ${model}" has no installed runtime or OpenClaw agent.${
+        report?.installHint ? ` ${report.installHint}` : ""
+      }`,
+    };
+  }
   return {
     ok: true,
-    detail: `${config.defaults.harness} · ${config.defaults.model}`,
+    detail: `${harness} · ${model}`,
   };
 }
 
 export async function GET() {
   const openclawAgentCount = await countOpenClawAgents();
-  const [covenCli, covenHome, git, daemon, familiarsRes] = await Promise.all([
-    checkCovenCli(),
+  const [openCovenTools, covenHome, git, daemon, familiarsRes] = await Promise.all([
+    openCovenToolStatuses(),
     checkCovenHome(),
     checkGit(),
     checkDaemon(),
     checkFamiliars(),
   ]);
+  const covenCli = checkCovenCli(
+    openCovenTools.find((tool) => tool.id === "coven-cli"),
+  );
   const adapters = await checkHarnessAdapters(openclawAgentCount);
-  const binding = await checkBinding(familiarsRes.count > 0, daemon.ok);
+  const binding = await checkBinding(
+    familiarsRes.count > 0,
+    daemon.ok,
+    adapters.reports,
+    openclawAgentCount,
+  );
 
   const steps = {
     covenCli,
     covenHome,
     git,
-    adapters,
+    adapters: adapters.step,
     daemon,
     familiars: familiarsRes.step,
     binding,
@@ -225,5 +298,5 @@ export async function GET() {
   // Optional steps (git) surface in the checklist but never gate completion.
   const complete = Object.values(steps).every((s) => s.ok || s.optional);
 
-  return NextResponse.json({ ok: true, complete, steps });
+  return NextResponse.json({ ok: true, complete, steps, tools: openCovenTools });
 }

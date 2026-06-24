@@ -10,8 +10,8 @@ const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /checkBinding\(familiarsAvailable: boolean, daemonOk: boolean\)/,
-  "checkBinding receives daemon health so it can attribute the blocker correctly",
+  /checkBinding\(\s*familiarsAvailable: boolean,\s*daemonOk: boolean,\s*reports: AdapterReport\[\],\s*openclawAgentCount: number,\s*\)/,
+  "checkBinding receives daemon health and live runtime detection so it can attribute the blocker correctly",
 );
 
 assert.match(
@@ -22,14 +22,58 @@ assert.match(
 
 assert.match(
   source,
-  /checkBinding\(familiarsRes\.count > 0, daemon\.ok\)/,
-  "GET passes the daemon step result into checkBinding",
+  /checkBinding\(\s*familiarsRes\.count > 0,\s*daemon\.ok,\s*adapters\.reports,\s*openclawAgentCount,\s*\)/,
+  "GET passes the daemon step result and live adapter reports into checkBinding",
+);
+
+// A stale default harness (e.g. "openclaw") must not advertise a confident
+// binding when neither its runtime nor any agent actually exists.
+assert.match(
+  source,
+  /function defaultHarnessAvailable\(/,
+  "binding validates the configured default against installed runtimes / OpenClaw agents",
+);
+
+assert.match(
+  source,
+  /harness === "openclaw" && openclawAgentCount > 0/,
+  "OpenClaw counts as available only when a discoverable agent exists",
+);
+
+assert.match(
+  source,
+  /has no installed runtime or OpenClaw agent/,
+  "binding hint is honest when the default harness has no live backing",
 );
 
 assert.match(
   source,
   /npm i -g @opencoven\/cli@latest/,
   "onboarding status should return the npm-published Coven CLI install command",
+);
+
+assert.match(
+  source,
+  /openCovenToolStatuses/,
+  "onboarding status uses the shared OpenCoven tool detector",
+);
+
+assert.match(
+  source,
+  /checkCovenCli\(tool: OpenCovenToolStatus \| undefined\)/,
+  "coven CLI status is derived from the shared coven-cli tool result",
+);
+
+assert.match(
+  source,
+  /openCovenTools\.find\(\(tool\) => tool\.id === "coven-cli"\)/,
+  "startup identifies the coven CLI by the shared tool id",
+);
+
+assert.match(
+  source,
+  /steps, tools: openCovenTools/,
+  "startup returns OpenCoven tool statuses for the install screen",
 );
 
 assert.doesNotMatch(

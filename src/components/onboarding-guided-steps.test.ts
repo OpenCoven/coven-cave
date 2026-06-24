@@ -100,10 +100,22 @@ assert.match(
   "every platform carries SSH key setup instructions",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
   /aria-label="Show instructions for platform"/,
-  "the platform is switchable so instructions are never locked to autodetect",
+  "the first-viewport welcome/platform selector is removed from startup",
+);
+
+assert.doesNotMatch(
+  source,
+  /setShownPlatform/,
+  "startup no longer keeps visible platform-selector state",
+);
+
+assert.match(
+  source,
+  /const platformCopy = PLATFORM_COPY\[platform\]/,
+  "startup still uses detected platform copy for install commands",
 );
 
 // ── SSH runtime ─────────────────────────────────────────────────────────────
@@ -144,8 +156,32 @@ assert.match(
 
 assert.match(
   source,
-  /selectedHarnessId \? \([\s\S]*Create new Coven familiar[\s\S]*\) : selectedAgentId \? \([\s\S]*Connect selected existing agent[\s\S]*\) : null/,
+  /selectedHarnessId \? \([\s\S]*Create new Coven familiar[\s\S]*\) : selectedAgentId \? \([\s\S]*Connect OpenClaw agent[\s\S]*\) : null/,
   "the familiar binding step shows only the CTA for the selected setup path",
+);
+
+assert.match(
+  source,
+  /OPENCLAW_AGENT_ROOT = "~\/\.openclaw\/agents"/,
+  "OpenClaw startup copy centralizes the agent discovery root",
+);
+
+assert.match(
+  source,
+  /Bridge existing OpenClaw agents into Cave/,
+  "the OpenClaw install card explains the bridge startup path",
+);
+
+assert.match(
+  source,
+  /Use an existing OpenClaw agent as a Cave familiar/,
+  "the familiar startup step promotes the existing-agent path",
+);
+
+assert.match(
+  source,
+  /Connect OpenClaw agent/,
+  "the OpenClaw startup path has a dedicated connect CTA",
 );
 
 assert.match(
@@ -272,6 +308,42 @@ assert.match(
   source,
   /NPM_INSTALL_TARGETS/,
   "npm-kind targets share a busy lock (mirrors the server's 409)",
+);
+
+assert.match(
+  source,
+  /type InstallTarget =[\s\S]*"coven-cli"[\s\S]*"coven-code"/,
+  "startup one-click installs include coven-code as an OpenCoven tool target",
+);
+
+assert.match(
+  source,
+  /"coven-code": "npm"/,
+  "coven-code uses the npm install lane",
+);
+
+assert.match(
+  source,
+  /tools=\{status\?\.tools \?\? \[\]\}/,
+  "the startup CLI step receives OpenCoven tool status from onboarding status",
+);
+
+assert.match(
+  source,
+  /OpenCoven tools/,
+  "the startup CLI step renders both OpenCoven tool statuses",
+);
+
+assert.match(
+  source,
+  /onClick=\{\(\) => onInstall\(tool\.id\)\}/,
+  "missing or outdated OpenCoven tools install by their allowlisted target id",
+);
+
+assert.match(
+  source,
+  /function openCovenToolStatusText\(tool: OpenCovenToolStatus\): string/,
+  "startup formats tool status explicitly instead of treating unknown versions as up to date",
 );
 
 assert.match(
