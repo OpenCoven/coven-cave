@@ -326,11 +326,12 @@ export function YoutubeViewer({ defaultSrc = DEFAULT_SRC }: { defaultSrc?: strin
         />
       </div>
       {/* Mini player — shown only when collapsed (CSS). Full width, one row:
-          transport + scrolling title + volume + an expand caret. */}
+          a primary play button, next, a now-playing equalizer + title, volume,
+          and an expand caret. */}
       <div className="youtube-viewer__mini">
         <button
           type="button"
-          className="youtube-viewer__mini-btn focus-ring"
+          className="youtube-viewer__mini-btn youtube-viewer__mini-btn--primary focus-ring"
           onClick={togglePlay}
           aria-label={playing ? "Pause" : "Play"}
           title={playing ? "Pause" : "Play"}
@@ -346,8 +347,11 @@ export function YoutubeViewer({ defaultSrc = DEFAULT_SRC }: { defaultSrc?: strin
         >
           <Icon name="ph:skip-forward-fill" width={13} />
         </button>
-        <span className="youtube-viewer__mini-title" title={title || "YouTube"}>
-          {title || "YouTube"}
+        <span className="youtube-viewer__nowplaying">
+          <Equalizer playing={playing} />
+          <span className="youtube-viewer__mini-title" title={title || "YouTube"}>
+            {title || "YouTube"}
+          </span>
         </span>
         <button
           type="button"
@@ -378,6 +382,31 @@ export function YoutubeViewer({ defaultSrc = DEFAULT_SRC }: { defaultSrc?: strin
           <Icon name="ph:caret-up" width={14} />
         </button>
       </div>
+      {/* Vertical "now playing" strip — shown only when the whole rail is
+          collapsed to its peek width (CSS, under .companion-rail--video-strip).
+          The iframe keeps playing audio (hidden); this is a calm, upright
+          now-playing indicator instead of a sideways-rotated video. The rail's
+          transparent overlay handles tap-to-expand. */}
+      <div className="youtube-viewer__strip" aria-hidden="true">
+        <Equalizer playing={playing} className="youtube-viewer__eq--lg" />
+        <span className="youtube-viewer__strip-title">{title || "YouTube"}</span>
+      </div>
     </div>
+  );
+}
+
+/** A tiny three-bar "now playing" equalizer; the bars animate while `playing`
+ *  and rest at a low flat line when paused. Decorative (aria-hidden). */
+function Equalizer({ playing, className }: { playing: boolean; className?: string }) {
+  return (
+    <span
+      className={`youtube-viewer__eq${className ? ` ${className}` : ""}`}
+      data-playing={playing ? "true" : undefined}
+      aria-hidden="true"
+    >
+      <i />
+      <i />
+      <i />
+    </span>
   );
 }

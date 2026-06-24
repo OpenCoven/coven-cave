@@ -76,15 +76,22 @@ assert.match(
   /familiarOpen \|\| rightPanelPeek \? agent : null/,
   "the rail content stays mounted while peeking so the video keeps playing",
 );
+// In the narrow peek strip the video is NOT shown sideways; the iframe stays a
+// hidden sliver (audio keeps playing) and an upright "now playing" strip shows.
 assert.match(
   css,
-  /\.companion-rail--video-strip[\s\S]*?rotate\(90deg\)/,
-  "the collapsed strip rotates the video 90° to run top→bottom",
+  /\.companion-rail--video-strip\s+\.youtube-viewer__frame\s*\{[\s\S]*?flex:\s*0 0 1px[\s\S]*?opacity:\s*0/,
+  "the strip keeps the iframe a hidden sliver (audio continues, no sideways video)",
 );
 assert.match(
   css,
-  /\.companion-rail--video-strip\s+\.youtube-viewer__frame\s*\{[\s\S]*?container-type:\s*size/,
-  "the strip uses a size container so the rotated iframe fills it",
+  /\.companion-rail--video-strip\s+\.youtube-viewer__strip\s*\{[\s\S]*?display:\s*flex/,
+  "the strip shows the upright now-playing indicator",
+);
+assert.match(
+  css,
+  /\.youtube-viewer__strip-title\s*\{[\s\S]*?writing-mode:\s*vertical-rl/,
+  "the strip title runs vertically (upright text, not a rotated video)",
 );
 assert.match(
   css,
