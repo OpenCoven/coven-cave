@@ -187,11 +187,18 @@ function BoardCardStackRow({
         isSelected ? " board-card-stack__row--selected" : ""
       }`}
     >
-      <button
-        type="button"
+      {/* role=button (not a real <button>) so the card body can hold flow
+          content — title/notes/footer — and real, focusable action buttons as
+          descendants, mirroring the accessible KanbanCard idiom. */}
+      <div
         className="board-card-stack__row-main"
-        onClick={onSelect}
+        role="button"
+        tabIndex={0}
         aria-pressed={isSelected}
+        onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); }
+        }}
       >
         <div className="board-card-stack__row-top">
           <span className={`board-card-stack__priority-pill board-card-stack__priority-pill--${card.priority}`}>
@@ -238,10 +245,10 @@ function BoardCardStackRow({
             </span>
           ) : null}
           {session ? (
-            <span
+            <button
+              type="button"
               className="board-card-stack__row-action board-card-stack__row-action--chat"
-              role="link"
-              tabIndex={-1}
+              aria-label={`Open linked session for ${card.title}`}
               onClick={(e) => {
                 e.stopPropagation();
                 onJumpToSession?.(session.id, session.familiarId ?? null);
@@ -249,13 +256,14 @@ function BoardCardStackRow({
             >
               <Icon name="ph:arrow-square-out" width={11} />
               Open
-            </span>
+            </button>
           ) : (
-            <span
+            <button
+              type="button"
               className="board-card-stack__row-action board-card-stack__row-action--chat"
-              role="link"
-              tabIndex={-1}
+              disabled={chatLinking}
               title="Start chat"
+              aria-label={`Start a chat for ${card.title}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!chatLinking) void onOpenTaskChat?.(card.id);
@@ -263,10 +271,10 @@ function BoardCardStackRow({
             >
               <Icon name="ph:chat-circle-dots" width={11} />
               {chatLinking ? "Starting…" : "Start"}
-            </span>
+            </button>
           )}
         </div>
-      </button>
+      </div>
       <button
         ref={menuButtonRef}
         type="button"
