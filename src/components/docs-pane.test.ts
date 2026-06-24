@@ -62,4 +62,21 @@ assert.match(
   "CovenPane keeps an open-in-new-tab link to the active tab",
 );
 
+// Non-embeddable hosts (github.com, x.com refuse framing) don't get a dead
+// iframe — only the embeddable Docs tab is framed; the rest open in a new tab.
+assert.match(source, /label: "Docs"[\s\S]{0,120}?embeddable: true/, "Docs is embeddable");
+assert.match(source, /label: "Feedback"[\s\S]{0,120}?embeddable: false/, "Feedback (github) is not embeddable");
+assert.match(source, /label: "X"[\s\S]{0,120}?embeddable: false/, "X is not embeddable");
+assert.match(source, /\{activeTab\.embeddable \? \([\s\S]*?<iframe/, "the iframe only renders for an embeddable tab");
+assert.match(source, /opens in a new tab/, "non-embeddable tabs show an open-in-new-tab panel");
+assert.match(source, /Open \{activeTab\.label\}/, "the panel has a prominent Open action");
+
+// The tab bar is a complete tablist: roving tabIndex, aria-controls → a labelled
+// tabpanel, and Left/Right arrow navigation.
+assert.match(source, /id=\{`coven-tab-\$\{tab\.id\}`\}/, "each tab has a stable id");
+assert.match(source, /aria-controls="coven-tabpanel"/, "tabs point at the panel");
+assert.match(source, /tabIndex=\{tab\.id === activeTabId \? 0 : -1\}/, "tablist uses a roving tab stop");
+assert.match(source, /role="tabpanel"\s*\n\s*id="coven-tabpanel"\s*\n\s*aria-labelledby=\{`coven-tab-\$\{activeTabId\}`\}/, "the content area is a labelled tabpanel");
+assert.match(source, /function onTablistKeyDown[\s\S]{0,200}?ArrowRight/, "Left/Right arrows navigate the tablist");
+
 console.log("docs-pane.test.ts passed");
