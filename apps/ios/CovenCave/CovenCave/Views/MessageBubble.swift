@@ -17,6 +17,9 @@ struct MessageBubble: View {
     // prose must follow the app's light/dark appearance (the WebView doesn't
     // pick up `prefers-color-scheme` on its own).
     @Environment(\.colorScheme) private var colorScheme
+    // The desktop theme palette: its accent drives inline-code / link colours in
+    // the markdown so they match the selected theme instead of a fixed lavender.
+    @Environment(\.chrome) private var chrome
 
     @State private var mdHeight: CGFloat = 0
     /// Set when the markdown WebView can't render (missing/stale bundle, JS
@@ -200,6 +203,7 @@ struct MessageBubble: View {
             MarkdownWebView(markdown: parsed.visible, height: $mdHeight,
                             streaming: message.streaming && !isUser,
                             theme: colorScheme == .light ? .light : .dark,
+                            accentHex: chrome.accentHex,
                             onFailure: { markdownFailed = true })
                 .frame(height: max(mdHeight, 1))
                 .padding(.horizontal, 14).padding(.vertical, 10)

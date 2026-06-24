@@ -10,9 +10,13 @@
   --code-bg: #16161C;
   --code-border: rgba(255,255,255,0.08);
   --hairline: rgba(255,255,255,0.10);
-  /* themeable so inline code + table headers adapt with the prose */
-  --code-inline-bg: rgba(139,133,240,0.16);
-  --code-inline-fg: #C8C2FF;
+  /* Inline code + links follow --accent so they match the selected desktop
+     theme (the renderer overrides --accent with the published accent). Derived
+     via color-mix off --accent: a translucent pill, with the text lifted toward
+     white on the dark default for contrast. THEME_VARS re-points the text mix
+     toward black on the light/sepia reader pages. */
+  --code-inline-bg: color-mix(in srgb, var(--accent) 18%, transparent);
+  --code-inline-fg: color-mix(in srgb, var(--accent), #ffffff 34%);
   --th-bg: rgba(255,255,255,0.04);
 }
 

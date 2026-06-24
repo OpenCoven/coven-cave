@@ -19,6 +19,11 @@ struct ChromePalette: Equatable {
     /// `accent` mirrors the asset-catalog accent, so `.tint(accent)` is a no-op
     /// until the desktop publishes `--accent-presence`.
     var accent: Color = .accentColor
+    /// The raw `--accent-presence` hex, kept alongside `accent` so it can be
+    /// handed to the markdown WebView (which colours inline code / links off a
+    /// CSS `--accent`). `nil` until the desktop publishes a theme, so the chat
+    /// bubble keeps its built-in lavender accent when disconnected.
+    var accentHex: String? = nil
     /// Drives `preferredColorScheme` so the whole app flips light/dark with the
     /// desktop. Defaults to dark — the app's original fixed scheme.
     var colorScheme: ColorScheme = .dark
@@ -40,7 +45,7 @@ extension ChromePalette {
         if let c = Color(hex: t["--text-secondary"]) { textSecondary = c }
         if let c = Color(hex: t["--text-muted"]) { textMuted = c }
         if let c = Color(hex: t["--border-hairline"]) { border = c }
-        if let c = Color(hex: t["--accent-presence"]) { accent = c }
+        if let c = Color(hex: t["--accent-presence"]) { accent = c; accentHex = t["--accent-presence"] }
         colorScheme = snapshot.mode.lowercased() == "light" ? .light : .dark
     }
 }

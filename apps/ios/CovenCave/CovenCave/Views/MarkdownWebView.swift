@@ -62,6 +62,10 @@ struct MarkdownWebView: UIViewRepresentable {
     var scrollable: Bool = false
     var fontScale: CGFloat = 1
     var theme: ReaderTheme = .dark
+    /// Optional accent (`#rrggbb`) from the desktop theme. When set, the renderer
+    /// colours inline code / links / markers off it so they match the selected
+    /// theme; `nil` keeps the bundle's built-in accent. The reader leaves this nil.
+    var accentHex: String? = nil
     var scrollCommand: ReaderScrollCommand? = nil
     /// Called if the bundled renderer can't run (missing/stale `markdown.html`,
     /// `window.caveRender` undefined, or a JS error) so the caller can fall back
@@ -81,7 +85,7 @@ struct MarkdownWebView: UIViewRepresentable {
         c.onHeadings = onHeadings
         c.setScrollable(scrollable)
         c.apply(markdown: markdown, streaming: streaming,
-                fontScale: fontScale, theme: theme, reader: scrollable)
+                fontScale: fontScale, theme: theme, accentHex: accentHex, reader: scrollable)
         c.applyScroll(scrollCommand)
     }
 
@@ -106,6 +110,7 @@ struct MarkdownWebView: UIViewRepresentable {
             var streaming = false
             var fontScale: CGFloat = 1
             var theme: ReaderTheme = .dark
+            var accentHex: String? = nil
             var reader = false
         }
         private var opts = Opts()
@@ -140,14 +145,14 @@ struct MarkdownWebView: UIViewRepresentable {
             }
         }
 
-        func apply(markdown md: String, streaming: Bool, fontScale: CGFloat, theme: ReaderTheme, reader: Bool) {
-            opts = Opts(streaming: streaming, fontScale: fontScale, theme: theme, reader: reader)
+        func apply(markdown md: String, streaming: Bool, fontScale: CGFloat, theme: ReaderTheme, accentHex: String?, reader: Bool) {
+            opts = Opts(streaming: streaming, fontScale: fontScale, theme: theme, accentHex: accentHex, reader: reader)
             if failed { reportFailure(); return }
             // Markdown / streaming / reader changes need a full re-render; a pure
-            // font-size or theme change is applied without rebuilding the DOM so
-            // the reader's scroll position survives.
+            // font-size / theme / accent change is applied without rebuilding the
+            // DOM so the reader's scroll position survives.
             let renderKey = "\(streaming)|\(reader)|\(md)"
-            let styleKey = "\(fontScale)|\(theme.rawValue)"
+            let styleKey = "\(fontScale)|\(theme.rawValue)|\(accentHex ?? "")"
             if renderKey == lastRenderKey {
                 if styleKey != lastStyleKey { lastStyleKey = styleKey; applyStyleOnly() }
                 return
@@ -169,7 +174,8 @@ struct MarkdownWebView: UIViewRepresentable {
         private func applyStyleOnly() {
             guard ready, !failed else { return }
             let o = opts
-            let js = "window.caveStyle && window.caveStyle({fontScale:\(Double(o.fontScale)),theme:'\(o.theme.rawValue)',reader:\(o.reader)})"
+            let accent = o.accentHex.map { "'\($0)'" } ?? "null"
+            let js = "window.caveStyle && window.caveStyle({fontScale:\(Double(o.fontScale)),theme:'\(o.theme.rawValue)',accent:\(accent),reader:\(o.reader)})"
             webView.evaluateJavaScript(js, completionHandler: nil)
         }
 
@@ -205,6 +211,7 @@ struct MarkdownWebView: UIViewRepresentable {
                                 "streaming": o.streaming,
                                 "fontScale": Double(o.fontScale),
                                 "theme": o.theme.rawValue,
+                                "accent": o.accentHex ?? "",
                                 "reader": o.reader,
                             ],
                         ],

@@ -140,10 +140,15 @@ async function renderMarkdown(md, { streaming = false } = {}) {
 // markdown.css) so the same bundle can render dark / light / sepia. Code blocks
 // keep their dark card (we deliberately DON'T touch --code-bg / hljs colours) —
 // a dark code card on a light page is intentional and dodges contrast problems.
+// Inline-code bg/fg are color-mixed off var(--accent) (declared in markdown.css)
+// so they track whatever --accent ends up being — the per-theme accent here, or
+// the desktop's published accent layered on top by applyAccent(). Light/sepia
+// pages mix the pill text toward black (the dark default lifts toward white) so
+// it stays legible on a light bubble.
 const THEME_VARS = {
   dark: null,
-  light: { "--txt": "#1c1c22", "--txt-muted": "#5b5b66", "--accent": "#5a51d6", "--hairline": "rgba(0,0,0,0.14)", "--code-inline-bg": "rgba(90,81,214,0.12)", "--code-inline-fg": "#4b43c4", "--th-bg": "rgba(0,0,0,0.04)", bg: "#ffffff" },
-  sepia: { "--txt": "#43382a", "--txt-muted": "#7a6a55", "--accent": "#9a5a2a", "--hairline": "rgba(0,0,0,0.16)", "--code-inline-bg": "rgba(154,90,42,0.14)", "--code-inline-fg": "#8a4a1a", "--th-bg": "rgba(0,0,0,0.05)", bg: "#f4ecd8" },
+  light: { "--txt": "#1c1c22", "--txt-muted": "#5b5b66", "--accent": "#5a51d6", "--hairline": "rgba(0,0,0,0.14)", "--code-inline-bg": "color-mix(in srgb, var(--accent) 13%, transparent)", "--code-inline-fg": "color-mix(in srgb, var(--accent), #000000 14%)", "--th-bg": "rgba(0,0,0,0.04)", bg: "#ffffff" },
+  sepia: { "--txt": "#43382a", "--txt-muted": "#7a6a55", "--accent": "#9a5a2a", "--hairline": "rgba(0,0,0,0.16)", "--code-inline-bg": "color-mix(in srgb, var(--accent) 15%, transparent)", "--code-inline-fg": "color-mix(in srgb, var(--accent), #000000 22%)", "--th-bg": "rgba(0,0,0,0.05)", bg: "#f4ecd8" },
 };
 const THEME_KEYS = ["--txt", "--txt-muted", "--accent", "--hairline", "--code-inline-bg", "--code-inline-fg", "--th-bg"];
 function applyTheme(name) {
@@ -154,11 +159,25 @@ function applyTheme(name) {
   document.body.style.background = t && t.bg ? t.bg : "";
 }
 
+// Override --accent with the desktop theme's published accent (a `#rrggbb[aa]`)
+// so inline code, links, and list markers match the selected theme rather than
+// the bundle's built-in lavender. Inline-code bg/fg are color-mixed off --accent
+// (markdown.css / THEME_VARS), so they follow this automatically. Runs AFTER
+// applyTheme (which clears --accent), so a falsy/invalid accent cleanly falls
+// back to the per-theme accent.
+function applyAccent(accent) {
+  if (typeof accent !== "string") return;
+  const v = accent.trim();
+  if (!/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(v)) return;
+  document.documentElement.style.setProperty("--accent", v[0] === "#" ? v : "#" + v);
+}
+
 // fontScale zooms the whole document uniformly (px + em both scale); reader mode
 // adds page padding so the full-screen scroll view isn't edge-to-edge.
 function applyStyle(opts = {}) {
-  const { fontScale = 1, theme = "dark", reader = false } = opts || {};
+  const { fontScale = 1, theme = "dark", reader = false, accent = null } = opts || {};
   applyTheme(theme);
+  applyAccent(accent);
   document.body.style.zoom = fontScale && fontScale !== 1 ? String(fontScale) : "";
   document.body.style.padding = reader ? "18px 18px 80px" : "";
 }
