@@ -1959,6 +1959,15 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                               {previewPath ? (
                                 <p className="font-mono text-[10px] text-[var(--text-muted)]">{previewPath.split("/").pop()}</p>
                               ) : null}
+                              {previewPath ? (
+                                <Button
+                                  size="xs"
+                                  leadingIcon="ph:arrow-clockwise"
+                                  onClick={() => void openFilePreview(previewPath, previewLine)}
+                                >
+                                  Retry
+                                </Button>
+                              ) : null}
                             </div>
                           ) : preview?.kind === "image" ? (
                             <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] p-4">
