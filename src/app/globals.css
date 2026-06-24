@@ -1927,6 +1927,18 @@ select {
 @media (prefers-reduced-motion: reduce) {
   .projects-expand-enter { animation: none; }
 }
+
+/* Projects tab: render-virtualize off-screen session rows (same content-visibility
+   strategy as chat turns + library doc rows). The row IS the focusable element
+   and its only fixed/portaled descendant — the right-click context menu — is a
+   SIBLING, not a child, so layout/paint containment is safe here. The auto
+   intrinsic-size caches each row's real height after first paint (works across
+   comfortable/compact densities), so scroll never jumps. Keeping rows in the DOM
+   (vs JS windowing) preserves keyboard roving, dnd-kit sorting, and find-in-page. */
+.projects-session-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 32px;
+}
 .ui-popover-body {
   padding: 6px;
 }

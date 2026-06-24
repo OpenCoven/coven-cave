@@ -7,6 +7,7 @@ const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspaceMode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const iconSource = readFileSync(new URL("../lib/icon.tsx", import.meta.url), "utf8");
+const globalsCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 assert.match(projectsView, /export function ProjectsView/, "ProjectsView should export the workspace surface");
 assert.match(projectsView, /useProjects\(\{ familiarId: activeFamiliarId \}\)/, "ProjectsView should scope the live projects hook to the active familiar");
@@ -374,5 +375,15 @@ assert.match(
   "undo restores the prior override, or clears it when there wasn't one",
 );
 assert.match(projectsView, /<MoveUndoToast\s+key=\{moveToast\.sessionId\}/, "the toast renders, keyed so a new move restarts its timer");
+
+// Render-virtualization: off-screen session rows skip layout/paint via
+// content-visibility (the repo's established strategy — see chat turns + library
+// doc rows), keeping them in the DOM so keyboard roving / dnd / find still work.
+assert.match(projectsView, /focus-ring projects-session-row/, "each session row carries the render-virtualization class");
+assert.match(
+  globalsCss,
+  /\.projects-session-row \{[\s\S]*?content-visibility:\s*auto;[\s\S]*?contain-intrinsic-size:\s*auto 32px;[\s\S]*?\}/,
+  "session rows set content-visibility:auto with a cached intrinsic-size",
+);
 
 console.log("projects-view.test.ts: ok");
