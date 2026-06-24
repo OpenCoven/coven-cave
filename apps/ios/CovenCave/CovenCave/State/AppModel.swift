@@ -99,6 +99,10 @@ final class AppModel {
     var readingError: String?
     var readingLoaded = false
 
+    var reminders: [Reminder] = []
+    var remindersError: String?
+    var remindersLoaded = false
+
     // MARK: - Developer tab
 
     /// Configured project roots, shared across the Code and Terminal surfaces.
@@ -363,6 +367,32 @@ final class AppModel {
         } catch {
             reading = previous
             readingError = error.localizedDescription
+        }
+    }
+
+    // MARK: - Reminders
+
+    func loadReminders() async {
+        guard let client else { return }
+        do {
+            reminders = try await client.reminders()
+            remindersError = nil
+        } catch {
+            remindersError = error.localizedDescription
+        }
+        remindersLoaded = true
+    }
+
+    /// Optimistically remove reminders, then DELETE each; reverts on failure.
+    func deleteReminders(_ ids: Set<String>) async {
+        guard let client, !ids.isEmpty else { return }
+        let previous = reminders
+        reminders.removeAll { ids.contains($0.id) }
+        do {
+            for id in ids { try await client.deleteReminder(id: id) }
+        } catch {
+            reminders = previous
+            remindersError = error.localizedDescription
         }
     }
 

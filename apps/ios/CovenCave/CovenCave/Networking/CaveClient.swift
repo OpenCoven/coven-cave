@@ -363,6 +363,27 @@ struct CaveClient {
         }
     }
 
+    /// `GET /api/inbox` — the reminders/inbox feed, filtered to reminders.
+    func reminders() async throws -> [Reminder] {
+        let req = try request("api/inbox")
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(InboxResponse.self, from: data).items
+                .filter { $0.kind == "reminder" }
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// `DELETE /api/inbox/{id}` — remove a reminder.
+    func deleteReminder(id: String) async throws {
+        let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let req = try request("api/inbox/\(escaped)", method: "DELETE")
+        let (_, resp) = try await session.data(for: req)
+        try Self.check(resp)
+    }
+
     private struct ReadingPatch: Encodable {
         var id: String
         var status: String

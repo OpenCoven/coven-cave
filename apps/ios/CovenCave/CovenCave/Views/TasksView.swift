@@ -19,6 +19,7 @@ struct TasksView: View {
     @State private var path: [BoardCard] = []
     /// A task awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: BoardCard?
+    @State private var showReminders = false
 
     /// How the task list is partitioned into sections.
     enum GroupBy: String, CaseIterable, Identifiable {
@@ -51,6 +52,12 @@ struct TasksView: View {
                 .searchable(text: $query, prompt: "Search tasks")
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
+                        Button { showReminders = true } label: {
+                            Image(systemName: "bell")
+                        }
+                        .accessibilityLabel("Reminders")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
                         Menu {
                             Picker("Sort by", selection: $sortByRaw) {
                                 ForEach(SortBy.allCases) { s in
@@ -78,6 +85,7 @@ struct TasksView: View {
                     Button("Delete", role: .destructive) { Task { await app.deleteTask(card) } }
                     Button("Cancel", role: .cancel) {}
                 } message: { card in Text(card.title) }
+                .sheet(isPresented: $showReminders) { RemindersView() }
         }
     }
 
