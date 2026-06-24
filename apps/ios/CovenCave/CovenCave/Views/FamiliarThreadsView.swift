@@ -108,7 +108,7 @@ struct FamiliarThreadsView: View {
                     .disabled(selectedIds.isEmpty)
                 }
                 .padding(.horizontal, 20).padding(.vertical, 12)
-                .background(.bar)
+                .glassBar()
             }
         }
         .confirmationDialog(bulkDeleteTitle, isPresented: $confirmingBulkDelete, titleVisibility: .visible) {

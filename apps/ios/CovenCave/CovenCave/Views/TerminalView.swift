@@ -68,7 +68,7 @@ struct TerminalView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
         }
-        .background(.bar)
+        .glassBar()
     }
 
     /// `label` is the compact glyph shown on the key; `accessibility` spells it

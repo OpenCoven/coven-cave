@@ -218,7 +218,7 @@ struct MessageBubble: View {
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
                                 .padding(7)
-                                .background(.thinMaterial, in: Circle())
+                                .glassFill(.control, in: Circle())
                         }
                         .buttonStyle(.plain)
                         .padding(6)

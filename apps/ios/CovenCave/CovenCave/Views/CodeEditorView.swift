@@ -181,7 +181,7 @@ struct CodeEditorView: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16).padding(.vertical, 8)
-            .background(.bar)
+            .glassBar()
     }
 
     private func load() async {

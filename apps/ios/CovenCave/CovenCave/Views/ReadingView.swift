@@ -129,7 +129,7 @@ struct ReadingView: View {
         // A horizontal ScrollView reports a flexible (≈zero) ideal height, so
         // without a fixed height it collapses inside a VStack / safeAreaInset.
         .frame(height: 56)
-        .background(.bar)
+        .glassBar()
     }
 
     private func chip(_ value: ReadingFilter, _ label: String, _ symbol: String) -> some View {

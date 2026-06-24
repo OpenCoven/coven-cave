@@ -67,7 +67,7 @@ struct RemindersView: View {
                             .disabled(selectedIds.isEmpty)
                         }
                         .padding(.horizontal, 20).padding(.vertical, 12)
-                        .background(.bar)
+                        .glassBar()
                     }
                 }
                 .confirmationDialog(bulkTitle, isPresented: $confirmingBulkDelete, titleVisibility: .visible) {
