@@ -70,6 +70,16 @@ private struct ThemedListBackground: ViewModifier {
     }
 }
 
+private struct ThemedSheetBackground: ViewModifier {
+    @Environment(\.chrome) private var chrome
+    func body(content: Content) -> some View {
+        // Theme the sheet's own presentation surface so the area around the
+        // List (nav bar, search field, insets) matches the desktop background
+        // rather than the system sheet material.
+        content.presentationBackground(chrome.bgBase)
+    }
+}
+
 extension View {
     /// Reveal the desktop theme's `bgBase` behind a `List` instead of the opaque
     /// system background. Apply after `.listStyle(…)`. Works for both `.plain`
@@ -77,6 +87,11 @@ extension View {
     /// (which reads as themed cards floating on the `bgBase` floor and preserves
     /// row contrast), only the floor behind/around them becomes `bgBase`.
     func themedListBackground() -> some View { modifier(ThemedListBackground()) }
+
+    /// Theme a modal sheet's presentation background to the desktop `bgBase`.
+    /// Apply to the sheet's root (e.g. its `NavigationStack`); pair with
+    /// `.themedListBackground()` on the list inside.
+    func themedSheetBackground() -> some View { modifier(ThemedSheetBackground()) }
 }
 
 extension Color {

@@ -54,6 +54,7 @@ struct NewChatView: View {
                     }
                 }
             }
+            .themedListBackground()
             .navigationTitle("New chat")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -71,6 +72,7 @@ struct NewChatView: View {
                 importFromFile(result)
             }
         }
+        .themedSheetBackground()
     }
 
     /// Read the picked Markdown file into a new thread and open it.

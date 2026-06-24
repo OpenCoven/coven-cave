@@ -46,4 +46,28 @@ for (const view of ["TasksView.swift", "GitHubView.swift", "CodeBrowserView.swif
   );
 }
 
+// Theme.swift exposes the sheet-background modifier (presentationBackground).
+assert.match(
+  theme,
+  /struct ThemedSheetBackground: ViewModifier \{[\s\S]*@Environment\(\\\.chrome\)[\s\S]*\.presentationBackground\(chrome\.bgBase\)/,
+  "Theme should define a ThemedSheetBackground modifier that themes the sheet's presentation surface",
+);
+assert.match(
+  theme,
+  /func themedSheetBackground\(\) -> some View \{ modifier\(ThemedSheetBackground\(\)\) \}/,
+  "Theme should expose the themedSheetBackground() View extension",
+);
+
+// Modal sheets theme both their list and their presentation background.
+for (const view of [
+  "CommandsSheet.swift",
+  "LinkedTasksSheet.swift",
+  "NewChatView.swift",
+  "ChatModelControl.swift",
+]) {
+  const src = await read(`Views/${view}`);
+  assert.match(src, /\.themedListBackground\(\)/, `${view} should theme its list`);
+  assert.match(src, /\.themedSheetBackground\(\)/, `${view} should theme its sheet presentation background`);
+}
+
 console.log("ios-theme-list-background: ok");

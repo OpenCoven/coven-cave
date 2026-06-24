@@ -41,6 +41,7 @@ struct CommandsSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .themedListBackground()
             .navigationTitle("Commands")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
@@ -51,6 +52,7 @@ struct CommandsSheet: View {
                 }
             }
         }
+        .themedSheetBackground()
     }
 
     private func row(_ command: SlashCommand) -> some View {

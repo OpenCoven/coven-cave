@@ -153,6 +153,7 @@ struct ModelPickerSheet: View {
                     Text("Applies to this chat. The familiar uses the chosen model for its next replies.")
                 }
             }
+            .themedListBackground()
             .navigationTitle("Model")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -162,5 +163,6 @@ struct ModelPickerSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .themedSheetBackground()
     }
 }

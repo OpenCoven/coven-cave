@@ -67,6 +67,7 @@ struct LinkedTasksSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .themedListBackground()
             .searchable(text: $query, prompt: "Search tasks to assign")
             .navigationTitle("Tasks")
             .navigationBarTitleDisplayMode(.inline)
@@ -75,6 +76,7 @@ struct LinkedTasksSheet: View {
             }
             .task { if !app.tasksLoaded { await app.loadTasks() } }
         }
+        .themedSheetBackground()
     }
 
     private func open(_ card: BoardCard) {
