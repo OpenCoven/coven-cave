@@ -3,7 +3,7 @@ import Observation
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
-enum AppTab: String { case chats, tasks, dev, settings }
+enum AppTab: String { case chats, tasks, calendar, dev, settings }
 
 /// A transient confirmation banner shown over the chat after a command runs.
 struct ToastMessage: Identifiable, Equatable {
