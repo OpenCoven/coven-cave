@@ -569,7 +569,6 @@ export function FlowView() {
                 onSubmit={(event) => {
                   event.preventDefault();
                   void createFlowFromPrompt(onboardingPrompt);
-                  setOnboardingPrompt("");
                 }}
               >
                 <textarea
