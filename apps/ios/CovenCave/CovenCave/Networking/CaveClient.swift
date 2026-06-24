@@ -453,6 +453,17 @@ struct CaveClient {
         }
     }
 
+    /// `POST /api/inbox` — create a reminder (used by the New Reminder App Intent).
+    func createReminder(title: String, fireAt: Date) async throws {
+        let iso = ISO8601DateFormatter().string(from: fireAt)
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "kind": "reminder", "title": title, "fireAt": iso, "source": "user",
+        ])
+        let req = try request("api/inbox", method: "POST", body: payload)
+        let (_, resp) = try await session.data(for: req)
+        try Self.check(resp)
+    }
+
     /// `DELETE /api/inbox/{id}` — remove a reminder.
     func deleteReminder(id: String) async throws {
         let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
