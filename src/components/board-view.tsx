@@ -19,6 +19,7 @@ import { BoardGantt } from "@/components/board-gantt";
 import { BoardTable, type GroupBy } from "@/components/board-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { BoardCardStack } from "@/components/board-card-stack";
 import { BoardInspector } from "@/components/board-inspector";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -43,6 +44,32 @@ type Props = {
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenUrl?: (url: string) => void;
 };
+
+// First-load placeholder that previews the kanban structure (ghost columns +
+// cards) instead of a bare spinner, matching the app-wide skeleton convention
+// (library/schedules/chat/board-inspector). Reuses the real column classes so
+// it's pixel-matched and theme-aware; the shimmer comes from <Skeleton>.
+function BoardKanbanSkeleton() {
+  return (
+    <div className="board-kanban-rail-wrap" aria-hidden>
+      <div className="board-kanban-rail">
+        {Array.from({ length: 4 }).map((_, col) => (
+          <div key={col} className="board-kanban-column">
+            <div className="board-kanban-column-header">
+              <Skeleton variant="avatar" width={7} height={7} />
+              <Skeleton variant="text" width={88} />
+            </div>
+            <div className="flex flex-col gap-2 p-3">
+              {Array.from({ length: 3 - (col % 2) }).map((_, card) => (
+                <Skeleton key={card} variant="card" height={66} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliarIds, onJumpToSession, onOpenUrl }: Props) {
   const isMobile = useIsMobile();
@@ -782,8 +809,14 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           </div>
         )}
         {!hasLoaded && !error ? (
-          <div className="flex h-full items-center justify-center p-6" role="status" aria-label="Loading tasks">
-            <Icon name="ph:circle-notch-bold" width={20} className="animate-spin text-[var(--text-muted)]" aria-hidden />
+          <div className="h-full min-h-0" role="status" aria-label="Loading tasks">
+            {viewMode === "kanban" ? (
+              <BoardKanbanSkeleton />
+            ) : (
+              <div className="p-4">
+                <SkeletonRows count={8} />
+              </div>
+            )}
           </div>
         ) : cards.length === 0 && !error ? (
           <div className="flex h-full items-center justify-center p-6">
