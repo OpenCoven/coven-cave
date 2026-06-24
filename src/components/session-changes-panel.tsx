@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { SyntaxBlock } from "@/components/message-bubble";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 
 /**
@@ -83,6 +84,28 @@ function StatusChip({ status }: { status: FileStatus }) {
     >
       {meta.letter}
     </span>
+  );
+}
+
+// First-load placeholder shaped like the FileRow list (caret · status chip ·
+// path · ± counts), matching the app-wide skeleton convention instead of a bare
+// "Loading changes…" string.
+function ChangesSkeleton() {
+  return (
+    <div className="flex flex-col gap-1" aria-hidden>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="rounded-md border border-[var(--border-hairline)]">
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <Skeleton variant="text" width={10} height={10} />
+            <Skeleton variant="text" width={20} height={12} />
+            <div className="min-w-0 flex-1">
+              <Skeleton variant="text" width={`${62 - i * 7}%`} />
+            </div>
+            <Skeleton variant="text" width={34} height={10} />
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -725,7 +748,7 @@ export function SessionChangesInner({
         )}
 
         {!loaded && !error ? (
-          <div className="py-6 text-center text-[11px] text-[var(--text-muted)]">Loading changes…</div>
+          <ChangesSkeleton />
         ) : notARepo ? (
           <div className="px-2 py-6 text-center text-[11px] text-[var(--text-muted)]">
             <p className="font-medium text-[var(--text-secondary)]">Not a git repository.</p>
