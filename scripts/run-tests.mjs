@@ -298,6 +298,7 @@ export const SUITES = {
     "src/lib/codex-automations.test.ts",
     "src/lib/coven-calls-types.test.ts",
     "src/components/calls-graph-fallback.test.ts",
+    "src/components/calls-view-a11y.test.ts",
     "src/components/coven-floor-table.test.ts",
     "src/lib/coven-spawn-error.test.ts",
     "src/lib/daemon-sync-status.test.ts",
