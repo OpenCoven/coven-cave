@@ -28,6 +28,9 @@ struct RootView: View {
 struct MainTabView: View {
     @Environment(AppModel.self) private var app
 
+    /// Tab order, used to map ⌘1–5 to the right tab.
+    private let tabOrder: [AppTab] = [.chats, .read, .tasks, .dev, .settings]
+
     var body: some View {
         @Bindable var app = app
         TabView(selection: $app.selectedTab) {
@@ -50,6 +53,16 @@ struct MainTabView: View {
         // Command confirmations float above the whole tab bar so they're visible
         // whether a command stays in chat or jumps to the Tasks tab.
         .toast($app.toast)
+        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–5.
+        // Hidden buttons keep the shortcuts active without affecting layout.
+        .background {
+            ForEach(Array(tabOrder.enumerated()), id: \.element) { index, tab in
+                Button {
+                    app.selectedTab = tab
+                } label: { EmptyView() }
+                .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+            }
+        }
     }
 }
 

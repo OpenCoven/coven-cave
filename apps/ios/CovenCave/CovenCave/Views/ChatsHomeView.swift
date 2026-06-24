@@ -337,6 +337,7 @@ struct ChatsHomeView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("New chat")
+            .keyboardShortcut("n", modifiers: .command)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)

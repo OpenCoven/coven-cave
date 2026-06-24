@@ -29,8 +29,10 @@ struct ChatView: View {
     @State private var showTasks = false
     @State private var atBottom = true
     @State private var dictation = SpeechDictation()
-    @State private var photoItem: PhotosPickerItem?
-    @State private var pendingImage: PendingImage?
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var pendingImages: [PendingImage] = []
+    /// How many images one message can carry.
+    private let maxAttachments = 4
     @State private var responseReader: ResponseReaderItem?
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
@@ -200,48 +202,55 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            if let pendingImage {
-                attachmentPreview(pendingImage)
+            if !pendingImages.isEmpty {
+                attachmentPreviews
             }
             composerBar
         }
         .animation(.snappy(duration: 0.18), value: showingSlashMenu)
-        .animation(.snappy(duration: 0.18), value: pendingImage?.id)
+        .animation(.snappy(duration: 0.18), value: pendingImages.count)
         .background(.bar)
         // Live dictation streams its running transcript into the draft.
         .onAppear { dictation.onUpdate = { draft = $0 } }
-        .onChange(of: photoItem) { _, item in
-            guard let item else { return }
-            Task { await loadPickedImage(item) }
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            let picked = items
+            photoItems = []
+            // Load in order so the thumbnails (and sent attachments) keep the
+            // user's selection order.
+            Task { for item in picked { await loadPickedImage(item) } }
         }
     }
 
-    /// Thumbnail of the attached image above the composer, with a remove button.
-    private func attachmentPreview(_ pending: PendingImage) -> some View {
-        HStack {
-            ZStack(alignment: .topTrailing) {
-                Image(uiImage: pending.image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 64, height: 64)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color(.separator).opacity(0.5), lineWidth: 1))
-                Button {
-                    pendingImage = nil
-                    photoItem = nil
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(.white, .black.opacity(0.55))
+    /// A scrollable row of attached-image thumbnails above the composer, each
+    /// with its own remove button.
+    private var attachmentPreviews: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(pendingImages) { pending in
+                    ZStack(alignment: .topTrailing) {
+                        Image(uiImage: pending.image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(Color(.separator).opacity(0.5), lineWidth: 1))
+                        Button {
+                            pendingImages.removeAll { $0.id == pending.id }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(.white, .black.opacity(0.55))
+                        }
+                        .offset(x: 6, y: -6)
+                        .accessibilityLabel("Remove image")
+                    }
                 }
-                .offset(x: 6, y: -6)
-                .accessibilityLabel("Remove image")
             }
-            Spacer()
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 4)
     }
 
     private func startDictation() {
@@ -259,9 +268,12 @@ struct ChatView: View {
         guard let jpeg = resized.jpegData(compressionQuality: 0.8) else { return }
         let dataUrl = "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
         await MainActor.run {
-            pendingImage = PendingImage(image: resized, dataUrl: dataUrl,
-                                        mimeType: "image/jpeg", name: "photo.jpg")
-            photoItem = nil
+            guard pendingImages.count < maxAttachments else { return }
+            // Unique per-image name so several attachments on one message don't
+            // collide server-side.
+            let name = "photo-\(UUID().uuidString.prefix(8)).jpg"
+            pendingImages.append(PendingImage(image: resized, dataUrl: dataUrl,
+                                              mimeType: "image/jpeg", name: name))
             Haptics.tap()
         }
     }
@@ -269,14 +281,17 @@ struct ChatView: View {
     private var composerBar: some View {
         HStack(alignment: .bottom, spacing: 10) {
             // Attach an image; the server delivers it to the familiar.
-            PhotosPicker(selection: $photoItem, matching: .images, photoLibrary: .shared()) {
+            PhotosPicker(selection: $photoItems,
+                         maxSelectionCount: maxAttachments,
+                         matching: .images,
+                         photoLibrary: .shared()) {
                 Image(systemName: "plus")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 34, height: 34)
                     .background(Color(.secondarySystemBackground), in: Circle())
             }
-            .accessibilityLabel("Attach image")
+            .accessibilityLabel("Attach images")
 
             // Hairline capsule with the field and a trailing control inside it:
             // a mic when empty, a filled send/run button once there's text.
@@ -345,7 +360,7 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || pendingImage != nil
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
     }
 
     /// True when the draft is a recognised command — tints the send affordance
@@ -375,12 +390,12 @@ struct ChatView: View {
             app.touch(thread)
         case .prose(let text):
             guard let client = app.client else { return }
-            let attachments = pendingImage.map {
-                [CaveClient.ChatAttachment(name: $0.name, mimeType: $0.mimeType, dataUrl: $0.dataUrl)]
-            } ?? []
+            let attachments = pendingImages.map {
+                CaveClient.ChatAttachment(name: $0.name, mimeType: $0.mimeType, dataUrl: $0.dataUrl)
+            }
             guard !text.isEmpty || !attachments.isEmpty else { return }
             draft = ""
-            pendingImage = nil
+            pendingImages = []
             Haptics.tap()
             thread.send(text, attachments: attachments, client: client) { app.touch(thread) }
         }
