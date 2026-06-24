@@ -25,6 +25,7 @@ import { FamiliarStudio } from "@/components/familiar-studio";
 import { CompanionRail, type CompanionTab } from "@/components/companion-rail";
 import { RailInspector } from "@/components/inspector-pane";
 import { FamiliarsView } from "@/components/familiars-view";
+import { GroupChatView } from "@/components/group-chat-view";
 import {
   getFamiliarScope,
   setFamiliarScope,
@@ -87,6 +88,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   agents: "Familiars",
   home: "Home",
   chat: "Familiars",
+  groupchat: "Group Chat",
   board: "Board",
   calendar: "Calendar",
   inbox: "Schedules",
@@ -1762,6 +1764,12 @@ export function Workspace() {
         onInboxItemChanged={refreshInbox}
         onSessionsChanged={loadSessions}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
+        onOpenUrl={openUrlInCompanionBrowser}
+      />
+    ) : mode === "groupchat" ? (
+      <GroupChatView
+        familiars={resolvedFamiliars}
+        onSessionStarted={loadSessions}
         onOpenUrl={openUrlInCompanionBrowser}
       />
     ) : mode === "code" ? (

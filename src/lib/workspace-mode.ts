@@ -2,6 +2,7 @@ export type WorkspaceMode =
   | "agents"
   | "home"
   | "chat"
+  | "groupchat"
   | "board"
   | "calendar"
   | "inbox"
