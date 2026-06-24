@@ -27,20 +27,28 @@ export const runtime = "nodejs";
 
 const MARKETPLACE_DIR = path.join(process.cwd(), "marketplace");
 
-async function inCatalog(id: string): Promise<boolean> {
+/**
+ * Resolve the user-provided id to the matching catalog entry's OWN name string
+ * (from the trusted marketplace.json, not the request). Returns null when the
+ * id is not in the catalog. Downstream filesystem paths are built from this
+ * file-derived name — the request value only selects from the allowlist, it
+ * never constructs a path (avoids js/path-injection).
+ */
+async function resolveCatalogName(id: string): Promise<string | null> {
   try {
     const raw = JSON.parse(await readFile(path.join(MARKETPLACE_DIR, "marketplace.json"), "utf8"));
     const plugins = raw && Array.isArray(raw.plugins) ? raw.plugins : [];
-    return plugins.some((p: { name?: string }) => p.name === id);
+    const match = plugins.find((p: { name?: string }) => p.name === id);
+    return match && typeof match.name === "string" ? match.name : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
-async function requiredConfigFor(id: string): Promise<RequiredConfigField[]> {
+async function requiredConfigFor(name: string): Promise<RequiredConfigField[]> {
   try {
     const manifest = JSON.parse(
-      await readFile(path.join(MARKETPLACE_DIR, "plugins", id, "plugin.json"), "utf8"),
+      await readFile(path.join(MARKETPLACE_DIR, "plugins", name, "plugin.json"), "utf8"),
     ) as PluginManifest;
     return requiredConfigFromManifest(manifest);
   } catch {
@@ -57,10 +65,11 @@ function writeEnvLocal(updates: Record<string, string | null>): void {
 
 export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get("id") ?? "";
-  if (!id || !(await inCatalog(id))) {
+  const name = id ? await resolveCatalogName(id) : null;
+  if (!name) {
     return NextResponse.json({ ok: false, error: `unknown plugin "${id}"` }, { status: 400 });
   }
-  const fields = await requiredConfigFor(id);
+  const fields = await requiredConfigFor(name);
   const vault = getVaultStatuses();
   const out = fields.map((f) => {
     const inEnv = readEnvLocalValue(f.env) !== undefined || !!process.env[f.env]?.trim();
@@ -91,10 +100,11 @@ export async function POST(req: Request) {
   const id = typeof body?.id === "string" ? body.id : "";
   const key = typeof body?.key === "string" ? body.key : "";
   const value = typeof body?.value === "string" ? body.value : "";
-  if (!id || !(await inCatalog(id))) {
+  const name = id ? await resolveCatalogName(id) : null;
+  if (!name) {
     return NextResponse.json({ ok: false, error: `unknown plugin "${id}"` }, { status: 400 });
   }
-  const field = (await requiredConfigFor(id)).find((f) => f.key === key);
+  const field = (await requiredConfigFor(name)).find((f) => f.key === key);
   if (!field) {
     return NextResponse.json({ ok: false, error: `unknown config key "${key}"` }, { status: 400 });
   }
@@ -121,10 +131,11 @@ export async function DELETE(req: Request) {
   }
   const id = typeof body?.id === "string" ? body.id : "";
   const key = typeof body?.key === "string" ? body.key : "";
-  if (!id || !(await inCatalog(id))) {
+  const name = id ? await resolveCatalogName(id) : null;
+  if (!name) {
     return NextResponse.json({ ok: false, error: `unknown plugin "${id}"` }, { status: 400 });
   }
-  const field = (await requiredConfigFor(id)).find((f) => f.key === key);
+  const field = (await requiredConfigFor(name)).find((f) => f.key === key);
   if (!field || field.sensitive) {
     return NextResponse.json({ ok: false, error: `unknown config key "${key}"` }, { status: 400 });
   }
