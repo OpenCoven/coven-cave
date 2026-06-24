@@ -420,6 +420,25 @@ struct CaveClient {
         try Self.check(resp)
     }
 
+    struct ReminderActionResponse: Decodable { var ok: Bool; var error: String?; var item: Reminder? }
+
+    /// `POST /api/inbox/{id}/{action}` — done / dismiss / snooze. Returns the
+    /// server's updated item when present.
+    @discardableResult
+    private func inboxAction(_ id: String, _ action: String, body: Data? = nil) async throws -> Reminder? {
+        let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let req = try request("api/inbox/\(escaped)/\(action)", method: "POST", body: body)
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        return try? JSONDecoder().decode(ReminderActionResponse.self, from: data).item
+    }
+
+    @discardableResult func markReminderDone(id: String) async throws -> Reminder? { try await inboxAction(id, "done") }
+    @discardableResult func dismissReminder(id: String) async throws -> Reminder? { try await inboxAction(id, "dismiss") }
+    @discardableResult func snoozeReminder(id: String, minutes: Int) async throws -> Reminder? {
+        try await inboxAction(id, "snooze", body: try JSONEncoder().encode(["minutes": minutes]))
+    }
+
     private struct ReadingPatch: Encodable {
         var id: String
         var status: String
