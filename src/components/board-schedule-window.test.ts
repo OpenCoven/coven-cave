@@ -58,7 +58,7 @@ assert.match(gantt, /function clampDelta\(mode: DragMode, delta: number, dur: nu
 assert.match(gantt, /if \(mode === "resize-start"\) return Math\.min\(delta, dur - 1\)/, "resize-start can't drag the start past the end");
 assert.match(gantt, /if \(mode === "resize-end"\) return Math\.max\(delta, -\(dur - 1\)\)/, "resize-end can't drag the end past the start");
 // The left edge patches startDate, the right edge patches endDate.
-assert.match(gantt, /d\.mode === "resize-start"[\s\S]*?\{\s*patch\.startDate = newStart;/, "resize-start persists a new startDate");
+assert.match(gantt, /mode === "resize-start"[\s\S]*?\{\s*patch\.startDate = newStart;/, "resize-start persists a new startDate");
 assert.match(gantt, /else \{\s*patch\.endDate = newEnd;/, "resize-end persists a new endDate");
 // Each non-milestone bar renders a grab handle at each edge.
 assert.match(gantt, /const resizeHandle = \(which: "start" \| "end"\)/, "bars render edge resize handles");
@@ -170,5 +170,14 @@ assert.match(gantt, /onPatch\(cardId, \{ startDate: date, endDate: date \}\)/, "
 assert.match(gantt, /onDragOver=\{onTimelineDragOver\}[\s\S]{0,80}onDrop=\{onTimelineDrop\}/, "the body is wired as the drop zone");
 assert.match(gantt, /className="cg-drop-hint"/, "a drop-hint marks the landing day");
 assert.match(styles, /\.cg-drop-hint/, "the drop hint is styled");
+
+// Re-center on zoom change + keyboard reschedule.
+assert.match(gantt, /const prevZoomRef = useRef\(zoom\)/, "tracks the previous zoom to detect changes");
+assert.match(gantt, /if \(prevZoomRef\.current === zoom\) return;[\s\S]{0,120}centerOnTodayRef\.current\(\)/, "zoom change re-centers on today");
+// Pointer drag-end and keyboard reschedule share one commit path.
+assert.match(gantt, /const commitShift = \(row: GanttRow, mode: DragMode, rawDelta: number\)/, "a shared commitShift applies a day-shift");
+assert.match(gantt, /if \(d\.moved\) commitShift\(row, d\.mode, active\?\.deltaDays \?\? 0\)/, "drag-end routes through commitShift");
+assert.match(gantt, /commitShift\(row, e\.shiftKey \? "resize-end" : "move", dir\)/, "arrow keys reschedule the focused bar (Shift to resize)");
+assert.match(gantt, /e\.key !== "ArrowLeft" && e\.key !== "ArrowRight"/, "only left/right arrows reschedule");
 
 console.log("board-schedule-window.test.ts: ok");

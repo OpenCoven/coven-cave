@@ -173,6 +173,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   // ref and the effect (declared above the return) calls through it.
   const didAutoCenterRef = useRef(false);
   const centerOnTodayRef = useRef<() => boolean>(() => false);
+  const prevZoomRef = useRef(zoom);
 
   const beginDrag = (e: React.PointerEvent, rowId: string, mode: DragMode) => {
     if (!draggable) return;
@@ -191,26 +192,23 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     if (Math.abs(dx) > 3) d.moved = true;
     setDrag({ id: d.id, mode: d.mode, deltaDays: Math.round(dx / DAY_W) });
   };
-  const endDrag = (e: React.PointerEvent, row: GanttRow) => {
-    const d = dragRef.current;
-    const active = drag;
-    dragRef.current = null;
-    setDrag(null);
-    if (!d) return;
-    if (d.moved) suppressClickRef.current = true; // swallow the trailing click
+  // Apply a day-shift to a row in the given mode, persisting via onPatch.
+  // Shared by pointer drag-end and keyboard reschedule.
+  const commitShift = (row: GanttRow, mode: DragMode, rawDelta: number) => {
+    if (!onPatch) return;
     const dur = daysBetween(row.start, row.end) + 1;
-    const delta = clampDelta(d.mode, active?.deltaDays ?? 0, dur);
-    if (!(d.moved && delta !== 0 && onPatch)) return;
+    const delta = clampDelta(mode, rawDelta, dur);
+    if (delta === 0) return;
     const card = cards.find((c) => c.id === row.cardId);
     if (!card) return;
     const newStart = fmtISO(addDays(row.start, delta));
     const newEnd = fmtISO(addDays(row.end, delta));
     const curStart = fmtISO(row.start);
     const curEnd = fmtISO(row.end);
-    // Resolve the new {start,end} for the dragged mode.
+    // Resolve the new {start,end} for the shifted mode.
     const next =
-      d.mode === "move" ? { startDate: newStart, endDate: newEnd }
-      : d.mode === "resize-start" ? { startDate: newStart, endDate: curEnd }
+      mode === "move" ? { startDate: newStart, endDate: newEnd }
+      : mode === "resize-start" ? { startDate: newStart, endDate: curEnd }
       : { startDate: curStart, endDate: newEnd };
     if (row.stepId) {
       // Task mode: write this step's dates (promoting a card-range fallback to
@@ -223,16 +221,25 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
       // Project mode: a move shifts whichever of the task's own dates are set;
       // a resize sets the dragged end explicitly.
       const patch: Partial<Card> = {};
-      if (d.mode === "move") {
+      if (mode === "move") {
         if (parseDate(card.startDate)) patch.startDate = newStart;
         if (parseDate(card.endDate)) patch.endDate = newEnd;
-      } else if (d.mode === "resize-start") {
+      } else if (mode === "resize-start") {
         patch.startDate = newStart;
       } else {
         patch.endDate = newEnd;
       }
       if (patch.startDate || patch.endDate) onPatch(row.cardId, patch);
     }
+  };
+  const endDrag = (e: React.PointerEvent, row: GanttRow) => {
+    const d = dragRef.current;
+    const active = drag;
+    dragRef.current = null;
+    setDrag(null);
+    if (!d) return;
+    if (d.moved) suppressClickRef.current = true; // swallow the trailing click
+    if (d.moved) commitShift(row, d.mode, active?.deltaDays ?? 0);
   };
 
   const ownerName = (id: string | null): string =>
@@ -344,6 +351,15 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     if (didAutoCenterRef.current) return;
     if (centerOnTodayRef.current()) didAutoCenterRef.current = true;
   }, [todayMs, zoom, allRows.length]);
+
+  // Changing the zoom rescales every px position, which can scroll "now" out of
+  // view — re-center on today after the new scale lays out (a deliberate user
+  // action, so it won't fight a passive scroll).
+  useEffect(() => {
+    if (prevZoomRef.current === zoom) return;
+    prevZoomRef.current = zoom;
+    requestAnimationFrame(() => centerOnTodayRef.current());
+  }, [zoom]);
 
   // Quick-schedule presets for undated tasks: drop a task onto this/next week
   // (Mon–Sun) without opening the date pickers.
@@ -665,7 +681,16 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                         if (suppressClickRef.current) { suppressClickRef.current = false; return; }
                         onSelect(row.cardId);
                       }}
-                      title={`${row.label} · ${formatLabel(previewStart)}–${formatLabel(previewEnd)}${draggable ? " · drag to move, drag edges to resize" : ""}`}
+                      onKeyDown={(e) => {
+                        // Keyboard reschedule on the focused bar: ←/→ move both
+                        // dates by a day, Shift+←/→ resize the end. (Tab already
+                        // moves focus between bars.)
+                        if (!draggable || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+                        e.preventDefault();
+                        const dir = e.key === "ArrowRight" ? 1 : -1;
+                        commitShift(row, e.shiftKey ? "resize-end" : "move", dir);
+                      }}
+                      title={`${row.label} · ${formatLabel(previewStart)}–${formatLabel(previewEnd)}${draggable ? " · drag to move, drag edges to resize · ←/→ to reschedule" : ""}`}
                     >
                       <span className="cg-left">
                         <span className="cg-c-task">{row.label}</span>
