@@ -103,9 +103,9 @@ function fmtDateHeading(d: Date): string {
 // around now ("Today" / "Tomorrow" / "Yesterday"), falling back to the full
 // weekday + date for anything further out.
 // "Today" / "Tomorrow" / "Yesterday" for the days right around now, else null.
-function relDayWord(date: Date): string | null {
+function relDayWord(date: Date, now: Date = new Date()): string | null {
   const days = Math.round(
-    (startOfDay(date).getTime() - startOfDay(new Date()).getTime()) / 86_400_000,
+    (startOfDay(date).getTime() - startOfDay(now).getTime()) / 86_400_000,
   );
   if (days === 0) return "Today";
   if (days === 1) return "Tomorrow";
@@ -113,8 +113,22 @@ function relDayWord(date: Date): string | null {
   return null;
 }
 
-function agendaDayLabel(date: Date): string {
-  return relDayWord(date) ?? fmtDateHeading(date);
+function agendaDayLabel(date: Date, now: Date = new Date()): string {
+  return relDayWord(date, now) ?? fmtDateHeading(date);
+}
+
+// A hydration-safe, live-ticking "now". Null on the server / first client
+// render (so today-highlights and the now-line aren't painted into SSR markup,
+// which would mismatch the client clock), then resolves on mount and re-ticks
+// each minute so the current-time indicator tracks the clock without a reload.
+function useNow(): Date | null {
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
 }
 
 function fmtHourLabel(h: number): string {
@@ -255,6 +269,7 @@ function AgendaView({
   onOpenDeadline?: (id: string) => void;
 }) {
   const [showPast, setShowPast] = useState(false);
+  const now = useNow();
 
   const pastCount = useMemo(
     () => items.filter((it) => {
@@ -337,12 +352,12 @@ function AgendaView({
           <div className="mb-2 flex items-center gap-2 rounded-md border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)] px-3 py-1.5">
             <span
               className={`text-[12px] font-bold uppercase tracking-wider ${
-                isSameDay(date, new Date())
+                now && isSameDay(date, now)
                   ? "text-[var(--accent-presence)]"
                   : "text-[var(--text-primary)]"
               }`}
             >
-              {agendaDayLabel(date)}
+              {now ? agendaDayLabel(date, now) : fmtDateHeading(date)}
             </span>
             <span className="ml-auto font-mono text-[11px] text-[var(--text-secondary)] opacity-80">
               {total} item{total !== 1 ? "s" : ""}
@@ -380,11 +395,15 @@ const MAX_ALLDAY_VISIBLE = 3;
 function AllDayStrip({
   columns,
   onOpenItem,
-  onDayClick,
+  onMore,
+  maxVisible = MAX_ALLDAY_VISIBLE,
 }: {
   columns: { date: Date; items: InboxItem[] }[];
   onOpenItem?: (item: InboxItem) => void;
-  onDayClick?: (day: Date) => void;
+  /** Reveal a column's overflow items (jump to that day). Omit when uncapped. */
+  onMore?: (day: Date) => void;
+  /** Per-column cap before "+N more". Infinity = show every item (Day view). */
+  maxVisible?: number;
 }) {
   return (
     <div className="flex shrink-0 overflow-x-auto border-b border-[var(--border-hairline)] bg-[var(--bg-panel)]">
@@ -402,9 +421,11 @@ function AllDayStrip({
           columns.length > 1 ? "min-w-[560px]" : "min-w-[180px]"
         }`}
       >
-        {columns.map((col, i) => (
+        {columns.map((col, i) => {
+          const cap = Number.isFinite(maxVisible) ? maxVisible : col.items.length;
+          return (
           <div key={i} className="flex-1 min-w-[80px] flex flex-col gap-0.5 p-1">
-            {col.items.slice(0, MAX_ALLDAY_VISIBLE).map((item) => (
+            {col.items.slice(0, cap).map((item) => (
               <button
                 key={item.id}
                 onClick={() => onOpenItem?.(item)}
@@ -414,17 +435,18 @@ function AllDayStrip({
                 <span className="truncate text-[var(--text-primary)]">{item.title}</span>
               </button>
             ))}
-            {col.items.length > MAX_ALLDAY_VISIBLE && (
+            {col.items.length > cap && (
               <button
-                onClick={() => onDayClick?.(col.date)}
+                onClick={() => onMore?.(col.date)}
                 className="focus-ring-inset text-[9px] text-[var(--text-muted)] px-1 hover:text-[var(--accent-presence)] transition-colors text-left w-full"
-                title={`${col.items.length - MAX_ALLDAY_VISIBLE} more — click to see all`}
+                title={`${col.items.length - cap} more — click to open the day`}
               >
-                +{col.items.length - MAX_ALLDAY_VISIBLE} more
+                +{col.items.length - cap} more
               </button>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -543,11 +565,18 @@ function TimeGrid({
   const dragRef = useRef<{ id: string; grabY: number } | null>(null);
   const nowRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
-  const today = new Date();
+  const now = useNow();
+  const scrolledRef = useRef(false);
 
+  // Center the grid on the current time once it's known (after mount, since
+  // `now` is null on the server / first paint). Latched so it never fights a
+  // later manual scroll or the per-minute tick.
   useEffect(() => {
-    nowRef.current?.scrollIntoView({ block: "center" });
-  }, []);
+    if (now && !scrolledRef.current && nowRef.current) {
+      nowRef.current.scrollIntoView({ block: "center" });
+      scrolledRef.current = true;
+    }
+  }, [now]);
 
   useRovingTabIndex({
     containerRef: gridRef,
@@ -555,9 +584,12 @@ function TimeGrid({
     orientation: "vertical",
   });
 
+  // Lane-pack each column once per columns change rather than on every render
+  // (a drag re-renders the grid continuously).
+  const packedColumns = useMemo(() => columns.map((c) => packEventColumns(c.items)), [columns]);
+
   const totalHeight = 24 * HOUR_HEIGHT;
-  const nowMinutes = today.getHours() * 60 + today.getMinutes();
-  const nowTop = (nowMinutes / 60) * HOUR_HEIGHT;
+  const nowTop = now ? ((now.getHours() * 60 + now.getMinutes()) / 60) * HOUR_HEIGHT : 0;
 
   return (
     <div ref={gridRef} className="flex flex-1 overflow-auto">
@@ -586,7 +618,7 @@ function TimeGrid({
         {columns.map((col, ci) => (
           <div
             key={ci}
-            className={`calendar-daycol flex-1 relative min-w-[80px] ${
+            className={`flex-1 relative min-w-[80px] ${
               col.isToday ? "bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]" : ""
             } ${onAddEntry ? "cursor-pointer" : ""}`}
             style={{ height: totalHeight }}
@@ -642,8 +674,8 @@ function TimeGrid({
               />
             ))}
 
-            {/* Current time indicator (today's column only) */}
-            {col.isToday && (
+            {/* Current time indicator (today's column only, once `now` resolves) */}
+            {col.isToday && now && (
               <div
                 ref={nowRef}
                 className="absolute left-0 right-0 flex items-center z-10"
@@ -655,7 +687,7 @@ function TimeGrid({
             )}
 
             {/* Items — lane-packed so overlaps sit side by side */}
-            {packEventColumns(col.items).map((ev) => {
+            {packedColumns[ci].map((ev) => {
               const widthPct = 100 / ev.lanes;
               const leftPct = ev.lane * widthPct;
               const height = Math.max(18, ((ev.end - ev.start) / 60) * HOUR_HEIGHT - 2);
@@ -724,7 +756,7 @@ function DayView({
   onReschedule?: (id: string, fireAtIso: string) => void;
   onOpenDeadline?: (id: string) => void;
 }) {
-  const today = new Date();
+  const now = useNow();
 
   const allDayItems = useMemo(
     () => items.filter((it) => {
@@ -753,18 +785,19 @@ function DayView({
   const columns = useMemo(() => [{
     label: fmtDateHeading(anchor),
     date: anchor,
-    isToday: isSameDay(anchor, today),
+    isToday: now ? isSameDay(anchor, now) : false,
     items: timedItems,
-  }], [anchor, timedItems]);
+  }], [anchor, timedItems, now]);
 
+  const rel = now ? relDayWord(anchor, now) : null;
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* Header */}
       <div className="shrink-0 border-b border-[var(--border-hairline)] px-3 py-3 sm:px-6">
         <h2 className="text-sm font-medium text-[var(--text-primary)]">
-          {relDayWord(anchor) ? (
-            <span className="text-[var(--accent-presence)]">{relDayWord(anchor)} · </span>
+          {rel ? (
+            <span className="text-[var(--accent-presence)]">{rel} · </span>
           ) : null}
           {fmtDateHeading(anchor)}
         </h2>
@@ -776,11 +809,12 @@ function DayView({
           onOpen={onOpenDeadline}
         />
       )}
-      {/* All-day strip */}
+      {/* All-day strip — single wide column, so show every all-day item. */}
       {allDayItems.length > 0 && (
         <AllDayStrip
           columns={[{ date: anchor, items: allDayItems }]}
           onOpenItem={onOpenItem}
+          maxVisible={Infinity}
         />
       )}
       {/* Time grid — always rendered for visual parity with Week */}
@@ -801,6 +835,7 @@ function WeekView({
   onOpenItem,
   onReschedule,
   onOpenDeadline,
+  onOpenDay,
 }: {
   items: InboxItem[];
   deadlines?: CalendarDeadline[];
@@ -809,22 +844,30 @@ function WeekView({
   onOpenItem?: (item: InboxItem) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
   onOpenDeadline?: (id: string) => void;
+  /** Jump to the single-day view (used by all-day overflow). */
+  onOpenDay?: (day: Date) => void;
 }) {
-  const weekStart = startOfWeek(anchor);
-  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  const today = new Date();
+  const now = useNow();
+  // Key the week's day list on the week-start timestamp so the memo below is
+  // stable across renders (Array.from + startOfWeek would otherwise mint a new
+  // `days` identity every render and defeat the column memoisation).
+  const weekStartMs = startOfWeek(anchor).getTime();
+  const days = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(new Date(weekStartMs), i)),
+    [weekStartMs],
+  );
 
   const columns = useMemo(() => {
     return days.map((day) => ({
       label: `${WEEKDAYS[day.getDay()]} ${day.getDate()}`,
       date: day,
-      isToday: isSameDay(day, today),
+      isToday: now ? isSameDay(day, now) : false,
       items: items.filter((it) => {
         const d = itemDate(it);
         return d && isSameDay(d, day) && !isAllDay(it);
       }),
     }));
-  }, [items, days]);
+  }, [items, days, now]);
 
   const allDayColumns = useMemo(() => {
     return days.map((day) => ({
@@ -890,9 +933,9 @@ function WeekView({
       {deadlineColumns.some((c) => c.deadlines.length > 0) && (
         <DeadlineStrip columns={deadlineColumns} onOpen={onOpenDeadline} />
       )}
-      {/* All-day strip */}
+      {/* All-day strip — overflow "+N more" opens that day's single-day view. */}
       {allDayColumns.some((c) => c.items.length > 0) && (
-        <AllDayStrip columns={allDayColumns} onOpenItem={onOpenItem} />
+        <AllDayStrip columns={allDayColumns} onOpenItem={onOpenItem} onMore={onOpenDay} />
       )}
       <div className="relative flex flex-1 overflow-hidden">
         <TimeGrid columns={columns} onOpenItem={onOpenItem} onAddEntry={onAddEntry} onReschedule={onReschedule} />
@@ -920,7 +963,7 @@ function MonthView({
   onAddEntry?: (opts: { fireAt: string }) => void;
   onOpenDeadline?: (id: string) => void;
 }) {
-  const today = new Date();
+  const now = useNow();
   const monthStart = startOfMonth(anchor);
   const gridStart = startOfWeek(monthStart);
 
@@ -935,6 +978,11 @@ function MonthView({
       const key = startOfDay(d).toISOString();
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(item);
+    }
+    // Show each day's items in chronological order, like the other views (the
+    // map preserves feed order, which is otherwise arbitrary).
+    for (const list of map.values()) {
+      list.sort((a, b) => (itemDate(a)?.getTime() ?? 0) - (itemDate(b)?.getTime() ?? 0));
     }
     return map;
   }, [items]);
@@ -973,7 +1021,7 @@ function MonthView({
               const dayItems = byDay.get(key) ?? [];
               const dayDeadlines = deadlinesByDay.get(key) ?? [];
               const isCurrentMonth = day.getMonth() === anchor.getMonth();
-              const isToday = isSameDay(day, today);
+              const isToday = now ? isSameDay(day, now) : false;
 
               return (
                 <div
@@ -1023,6 +1071,18 @@ function MonthView({
                     {dayDeadlines.slice(0, 2).map((d) => (
                       <DeadlineChip key={d.id} deadline={d} onOpen={onOpenDeadline} size="xs" />
                     ))}
+                    {dayDeadlines.length > 2 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDayClick?.(day);
+                        }}
+                        className="focus-ring w-full rounded px-1 text-left text-[9px] text-[var(--text-muted)] transition-colors hover:text-[var(--color-warning)]"
+                        title={`${dayDeadlines.length - 2} more deadlines — click to see all`}
+                      >
+                        +{dayDeadlines.length - 2} due
+                      </button>
+                    )}
                     {dayItems.slice(0, 3).map((item) => {
                       const done = item.status === "done";
                       return (
@@ -1350,6 +1410,19 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     [items, inScope],
   );
 
+  // Pending count for the header pill (computed once, not twice inline).
+  const pendingCount = useMemo(
+    () => scopedItems.filter((i) => i.status === "pending").length,
+    [scopedItems],
+  );
+
+  // Open a specific day in the single-day view (from a month cell or an
+  // all-day "+N more" overflow).
+  const goToDay = (day: Date) => {
+    setAnchor(day);
+    setViewMode("day");
+  };
+
   // Mirror the items hard-scope for deadlines, so a scoped familiar's calendar
   // only shows that familiar's task due-dates.
   const scopedDeadlines = useMemo(
@@ -1366,8 +1439,6 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   }, []);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
     const handler = (e: KeyboardEvent) => {
       // Don't fire when focus is inside an editable field (incl. contenteditable).
       const target = e.target as HTMLElement;
@@ -1468,9 +1539,9 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
           >
             {headingLabel()}
           </button>
-          {scopedItems.filter((i) => i.status === "pending").length > 0 && (
+          {pendingCount > 0 && (
             <span className="shrink-0 rounded-full bg-[var(--bg-raised)] border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-muted)] font-medium tabular-nums">
-              {scopedItems.filter((i) => i.status === "pending").length} pending
+              {pendingCount} pending
             </span>
           )}
           {pickerOpen ? (
@@ -1484,11 +1555,12 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
 
         {/* View mode toggle — hidden on phones (only agenda is usable
             there; see the useEffect that pins viewMode to "agenda"). */}
-        <div className="hidden max-w-full shrink-0 items-center overflow-hidden rounded-lg border border-[var(--border-hairline)] md:flex">
+        <div role="group" aria-label="Calendar view" className="hidden max-w-full shrink-0 items-center overflow-hidden rounded-lg border border-[var(--border-hairline)] md:flex">
           {VIEW_MODES.map(({ id, label }) => (
             <button
               key={id}
               onClick={() => setViewMode(id)}
+              aria-pressed={viewMode === id}
               className={`focus-ring-inset inline-flex h-7 items-center px-2.5 text-[11px] transition-colors sm:px-3 ${
                 viewMode === id
                   ? "bg-[var(--accent-presence)] text-white"
@@ -1546,6 +1618,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             onReschedule={onReschedule}
             onOpenItem={(item) => setSelectedItem(item)}
             onOpenDeadline={onOpenDeadline}
+            onOpenDay={goToDay}
           />
         )}
         {viewMode === "month" && (
@@ -1556,10 +1629,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             onOpenItem={(item) => setSelectedItem(item)}
             onAddEntry={onAddEntry}
             onOpenDeadline={onOpenDeadline}
-            onDayClick={(day) => {
-              setAnchor(day);
-              setViewMode("day");
-            }}
+            onDayClick={goToDay}
           />
         )}
       </div>
