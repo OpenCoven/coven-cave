@@ -2,9 +2,14 @@ import SwiftUI
 
 /// Circular familiar avatar: remote image if available, else coloured initials.
 struct AvatarView: View {
+    @Environment(\.chrome) private var chrome
     let familiar: Familiar?
     var url: URL?
     var size: CGFloat = 44
+    /// Show a presence dot (online/idle/busy/offline) in the bottom-trailing
+    /// corner when the familiar reports a status. Opt-in so it only appears on
+    /// "who's around" surfaces (chat list, header), not every avatar.
+    var showStatus: Bool = false
 
     var body: some View {
         let color = Theme.color(for: familiar)
@@ -26,6 +31,19 @@ struct AvatarView: View {
         .frame(width: size, height: size)
         .clipShape(Circle())
         .overlay(Circle().strokeBorder(color.opacity(0.35), lineWidth: 1))
+        .overlay(alignment: .bottomTrailing) { statusDot }
+    }
+
+    @ViewBuilder private var statusDot: some View {
+        if showStatus, let dot = Presence.color(for: familiar?.status) {
+            Circle()
+                .fill(dot)
+                // Ring in the surrounding background colour so the dot reads as
+                // separate from the avatar on the themed floor.
+                .overlay(Circle().strokeBorder(chrome.bgBase, lineWidth: max(1.5, size * 0.06)))
+                .frame(width: size * 0.32, height: size * 0.32)
+                .offset(x: size * 0.04, y: size * 0.04)
+        }
     }
 
     private func initials(_ color: Color) -> some View {

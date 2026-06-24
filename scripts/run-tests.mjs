@@ -530,6 +530,7 @@ export const SUITES = {
     "scripts/ios-github-comment-attach.test.mjs",
     "scripts/ios-theme.test.mjs",
     "scripts/ios-theme-list-background.test.mjs",
+    "scripts/ios-presence-dots.test.mjs",
     "scripts/ios-markdown-accent.test.mjs",
     "scripts/ios-message-forwarding.test.mjs",
     "scripts/ios-chat-thread-no-search.test.mjs",

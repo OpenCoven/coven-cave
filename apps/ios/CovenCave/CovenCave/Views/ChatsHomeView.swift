@@ -373,7 +373,7 @@ struct FamiliarRow: View {
         HStack(spacing: 12) {
             AvatarView(familiar: familiar,
                        url: app.client?.avatarURL(for: familiar),
-                       size: 48)
+                       size: 48, showStatus: true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(familiar.displayName).font(.headline).lineLimit(1)
                 if let role = familiar.role, !role.isEmpty {
