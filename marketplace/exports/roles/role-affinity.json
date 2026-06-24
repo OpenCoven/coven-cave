@@ -381,5 +381,450 @@
         "devrel-liaison"
       ]
     }
+  ],
+  "serena": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer",
+        "debugger"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher",
+        "librarian"
+      ]
+    }
+  ],
+  "context7": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher",
+        "librarian"
+      ]
+    }
+  ],
+  "markitdown": [
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher",
+        "librarian"
+      ]
+    },
+    {
+      "familiar": "echo",
+      "roles": [
+        "archivist"
+      ]
+    },
+    {
+      "familiar": "kitty",
+      "roles": [
+        "general-helper"
+      ]
+    }
+  ],
+  "playwright": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher"
+      ]
+    }
+  ],
+  "chrome-devtools": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "debugger",
+        "implementer"
+      ]
+    }
+  ],
+  "firecrawl": [
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher",
+        "librarian"
+      ]
+    },
+    {
+      "familiar": "charm",
+      "roles": [
+        "copywriter",
+        "devrel-liaison"
+      ]
+    }
+  ],
+  "tavily": [
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher",
+        "librarian"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator"
+      ]
+    }
+  ],
+  "brightdata": [
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator"
+      ]
+    }
+  ],
+  "apify": [
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator"
+      ]
+    }
+  ],
+  "searxng": [
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher",
+        "librarian"
+      ]
+    }
+  ],
+  "dbhub": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher"
+      ]
+    }
+  ],
+  "supabase": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator"
+      ]
+    }
+  ],
+  "mongodb": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher"
+      ]
+    }
+  ],
+  "azure": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator",
+        "coordination-layer"
+      ]
+    }
+  ],
+  "azure-devops": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "coordination-layer"
+      ]
+    }
+  ],
+  "terraform": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator"
+      ]
+    }
+  ],
+  "notion": [
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher",
+        "librarian"
+      ]
+    },
+    {
+      "familiar": "echo",
+      "roles": [
+        "archivist"
+      ]
+    },
+    {
+      "familiar": "charm",
+      "roles": [
+        "copywriter"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "coordination-layer"
+      ]
+    }
+  ],
+  "atlassian": [
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator",
+        "coordination-layer"
+      ]
+    },
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer"
+      ]
+    },
+    {
+      "familiar": "echo",
+      "roles": [
+        "archivist"
+      ]
+    }
+  ],
+  "figma": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer"
+      ]
+    },
+    {
+      "familiar": "charm",
+      "roles": [
+        "copywriter",
+        "social-voice"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator"
+      ]
+    }
+  ],
+  "stripe": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator"
+      ]
+    }
+  ],
+  "microsoft-learn": [
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher",
+        "librarian"
+      ]
+    },
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer"
+      ]
+    }
+  ],
+  "activepieces": [
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator",
+        "coordination-layer"
+      ]
+    },
+    {
+      "familiar": "charm",
+      "roles": [
+        "devrel-liaison"
+      ]
+    },
+    {
+      "familiar": "kitty",
+      "roles": [
+        "general-helper"
+      ]
+    }
+  ],
+  "desktop-commander": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    }
+  ],
+  "netdata": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "debugger"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "coordination-layer"
+      ]
+    }
+  ],
+  "fabric": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher"
+      ]
+    }
+  ],
+  "unity": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    }
+  ],
+  "nuget": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer"
+      ]
+    }
+  ],
+  "nuxt-dev": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    }
+  ],
+  "stackql": [
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator"
+      ]
+    },
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    }
+  ],
+  "next-devtools": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger"
+      ]
+    }
   ]
 }

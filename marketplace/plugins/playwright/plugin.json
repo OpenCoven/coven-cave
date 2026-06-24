@@ -1,0 +1,64 @@
+{
+  "name": "playwright",
+  "version": "0.1.0",
+  "description": "Drive real web browsers via accessibility trees for testing, navigation, and data extraction.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "browser",
+    "automation",
+    "testing",
+    "playwright",
+    "scraping"
+  ],
+  "capabilities": [
+    "network",
+    "shell",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/playwright",
+  "x-coven": {
+    "displayName": "Playwright",
+    "category": "Browser & Web",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/microsoft/playwright-mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "type": "stdio"
+    }
+  }
+}

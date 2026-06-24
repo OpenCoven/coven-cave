@@ -1,0 +1,66 @@
+{
+  "name": "fabric",
+  "version": "0.1.0",
+  "description": "Microsoft Fabric REST/OpenAPI context for AI-assisted Fabric development, served locally.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "fabric",
+    "microsoft",
+    "data",
+    "analytics",
+    "openapi"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/fabric",
+  "x-coven": {
+    "displayName": "Microsoft Fabric",
+    "category": "Cloud & Infrastructure",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/microsoft/mcp/tree/main/servers/Fabric.Mcp.Server"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "fabric": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@microsoft/fabric-mcp@latest",
+        "server",
+        "start",
+        "--mode",
+        "all"
+      ],
+      "type": "stdio"
+    }
+  }
+}

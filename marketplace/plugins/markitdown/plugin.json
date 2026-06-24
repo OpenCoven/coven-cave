@@ -1,0 +1,68 @@
+{
+  "name": "markitdown",
+  "version": "0.1.0",
+  "description": "Convert PDF, Office, image, and audio files to Markdown for agent ingestion.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "markdown",
+    "documents",
+    "pdf",
+    "office",
+    "ingestion"
+  ],
+  "capabilities": [
+    "read_files",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/markitdown",
+  "x-coven": {
+    "displayName": "Markitdown",
+    "category": "Agents & Harnesses",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/microsoft/markitdown"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      },
+      {
+        "familiar": "echo",
+        "roles": [
+          "archivist"
+        ]
+      },
+      {
+        "familiar": "kitty",
+        "roles": [
+          "general-helper"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "markitdown": {
+      "command": "uvx",
+      "args": [
+        "markitdown-mcp"
+      ],
+      "type": "stdio"
+    }
+  }
+}

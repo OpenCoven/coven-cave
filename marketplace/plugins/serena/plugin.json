@@ -1,0 +1,72 @@
+{
+  "name": "serena",
+  "version": "0.1.0",
+  "description": "Semantic code retrieval and editing toolkit purpose-built for coding agents and harnesses.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "coding-agent",
+    "semantic-code",
+    "lsp",
+    "refactor",
+    "harness"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/serena",
+  "x-coven": {
+    "displayName": "Serena",
+    "category": "Agents & Harnesses",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/oraios/serena",
+      "https://github.com/mcp-use/mcp-use"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer",
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server",
+        "--context",
+        "ide-assistant"
+      ],
+      "type": "stdio"
+    }
+  }
+}

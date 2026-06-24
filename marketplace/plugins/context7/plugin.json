@@ -1,0 +1,61 @@
+{
+  "name": "context7",
+  "version": "0.1.0",
+  "description": "Up-to-date, version-accurate library documentation injected into agent prompts on demand.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "docs",
+    "libraries",
+    "context",
+    "coding-agent",
+    "reference"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/context7",
+  "x-coven": {
+    "displayName": "Context7",
+    "category": "Agents & Harnesses",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://github.com/upstash/context7",
+      "https://github.com/mcp-use/mcp-use"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "context7": {
+      "url": "https://mcp.context7.com/mcp",
+      "type": "http"
+    }
+  }
+}

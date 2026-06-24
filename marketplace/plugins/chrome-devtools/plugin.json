@@ -1,0 +1,58 @@
+{
+  "name": "chrome-devtools",
+  "version": "0.1.0",
+  "description": "Inspect and control Chrome via the DevTools protocol for debugging and performance work.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "chrome",
+    "devtools",
+    "debugging",
+    "performance",
+    "browser"
+  ],
+  "capabilities": [
+    "network",
+    "shell",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/chrome-devtools",
+  "x-coven": {
+    "displayName": "Chrome DevTools",
+    "category": "Browser & Web",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/ChromeDevTools/chrome-devtools-mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "debugger",
+          "implementer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ],
+      "type": "stdio"
+    }
+  }
+}

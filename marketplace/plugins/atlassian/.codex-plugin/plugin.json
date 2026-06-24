@@ -1,0 +1,24 @@
+{
+  "name": "atlassian",
+  "version": "0.1.0",
+  "description": "Search, create, and manage Jira, Confluence, and Compass work via Atlassian's official MCP.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Atlassian Rovo",
+    "shortDescription": "Search, create, and manage Jira, Confluence, and Compass work via Atlassian's official MCP.",
+    "longDescription": "Use Atlassian Rovo for Jira/Confluence context while keeping writes intentional and approved.",
+    "developerName": "OpenCoven",
+    "category": "Project Management",
+    "capabilities": [
+      "jira",
+      "confluence",
+      "atlassian",
+      "issues",
+      "wiki"
+    ],
+    "defaultPrompt": "Help me use Atlassian Rovo safely."
+  }
+}

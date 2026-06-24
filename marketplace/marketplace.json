@@ -584,6 +584,871 @@
           ]
         }
       ]
+    },
+    {
+      "name": "serena",
+      "displayName": "Serena",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/serena"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "context7",
+      "displayName": "Context7",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/context7"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "markitdown",
+      "displayName": "Markitdown",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/markitdown"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "playwright",
+      "displayName": "Playwright",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/playwright"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chrome-devtools",
+      "displayName": "Chrome DevTools",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/chrome-devtools"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger",
+            "implementer"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "firecrawl",
+      "displayName": "Firecrawl",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/firecrawl"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter",
+            "devrel-liaison"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tavily",
+      "displayName": "Tavily",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tavily"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "brightdata",
+      "displayName": "Bright Data",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/brightdata"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "apify",
+      "displayName": "Apify",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/apify"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "searxng",
+      "displayName": "SearXNG Search",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/searxng"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "local-tool",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dbhub",
+      "displayName": "DBHub",
+      "category": "Databases",
+      "source": {
+        "source": "local",
+        "path": "./plugins/dbhub"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "supabase",
+      "displayName": "Supabase",
+      "category": "Databases",
+      "source": {
+        "source": "local",
+        "path": "./plugins/supabase"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "mongodb",
+      "displayName": "MongoDB",
+      "category": "Databases",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mongodb"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "azure",
+      "displayName": "Azure MCP Server",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/azure"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "azure-devops",
+      "displayName": "Azure DevOps",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/azure-devops"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "terraform",
+      "displayName": "Terraform",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/terraform"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "notion",
+      "displayName": "Notion",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/notion"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "atlassian",
+      "displayName": "Atlassian Rovo",
+      "category": "Project Management",
+      "source": {
+        "source": "local",
+        "path": "./plugins/atlassian"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "figma",
+      "displayName": "Figma",
+      "category": "Design",
+      "source": {
+        "source": "local",
+        "path": "./plugins/figma"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter",
+            "social-voice"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stripe",
+      "displayName": "Stripe",
+      "category": "Commerce",
+      "source": {
+        "source": "local",
+        "path": "./plugins/stripe"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "microsoft-learn",
+      "displayName": "Microsoft Learn",
+      "category": "Knowledge & Docs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/microsoft-learn"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "activepieces",
+      "displayName": "Activepieces",
+      "category": "Automation",
+      "source": {
+        "source": "local",
+        "path": "./plugins/activepieces"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "desktop-commander",
+      "displayName": "Desktop Commander",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/desktop-commander"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "local-tool",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "netdata",
+      "displayName": "Netdata",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/netdata"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fabric",
+      "displayName": "Microsoft Fabric",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/fabric"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unity",
+      "displayName": "Unity",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/unity"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nuget",
+      "displayName": "NuGet",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/nuget"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "nuxt-dev",
+      "displayName": "Nuxt Dev",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/nuxt-dev"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stackql",
+      "displayName": "StackQL",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/stackql"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "next-devtools",
+      "displayName": "Next.js DevTools",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/next-devtools"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
+      ]
     }
   ]
 }

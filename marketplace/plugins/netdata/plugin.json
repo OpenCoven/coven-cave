@@ -1,0 +1,68 @@
+{
+  "name": "netdata",
+  "version": "0.1.0",
+  "description": "Real-time infrastructure metrics, logs, alerts, and anomaly detection for AI troubleshooting.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "monitoring",
+    "metrics",
+    "observability",
+    "logs",
+    "alerts"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/netdata",
+  "x-coven": {
+    "displayName": "Netdata",
+    "category": "Cloud & Infrastructure",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://learn.netdata.cloud/docs/netdata-ai/mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "coordination-layer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "netdata": {
+      "url": "${NETDATA_MCP_URL}",
+      "type": "http"
+    }
+  },
+  "userConfig": {
+    "netdata_mcp_url": {
+      "type": "string",
+      "title": "Netdata MCP URL",
+      "description": "MCP endpoint of your Netdata agent (e.g. http://localhost:19999/mcp). Requires Netdata v2.6.0+.",
+      "required": true,
+      "sensitive": false,
+      "env": "NETDATA_MCP_URL"
+    }
+  }
+}

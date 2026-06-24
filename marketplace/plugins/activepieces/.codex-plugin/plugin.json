@@ -1,0 +1,24 @@
+{
+  "name": "activepieces",
+  "version": "0.1.0",
+  "description": "Reach 280+ open-source integrations (\"pieces\") as tools through a self-hosted Activepieces MCP server.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Activepieces",
+    "shortDescription": "Reach 280+ open-source integrations (\"pieces\") as tools through a self-hosted Activepieces MCP server.",
+    "longDescription": "Use Activepieces to invoke prebuilt integrations and flows instead of wiring each API by hand.",
+    "developerName": "OpenCoven",
+    "category": "Automation",
+    "capabilities": [
+      "automation",
+      "workflows",
+      "integrations",
+      "zapier-alternative",
+      "no-code"
+    ],
+    "defaultPrompt": "Help me use Activepieces safely."
+  }
+}

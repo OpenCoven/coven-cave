@@ -1,0 +1,77 @@
+{
+  "name": "firecrawl",
+  "version": "0.1.0",
+  "description": "Crawl, scrape, and extract structured web data through the Firecrawl platform.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "scraping",
+    "crawl",
+    "web",
+    "extract",
+    "research"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/firecrawl",
+  "x-coven": {
+    "displayName": "Firecrawl",
+    "category": "Browser & Web",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/firecrawl/firecrawl-mcp-server"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      },
+      {
+        "familiar": "charm",
+        "roles": [
+          "copywriter",
+          "devrel-liaison"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "firecrawl": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "firecrawl-mcp"
+      ],
+      "type": "stdio",
+      "env": {
+        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+      }
+    }
+  },
+  "userConfig": {
+    "firecrawl_api_key": {
+      "type": "string",
+      "title": "Firecrawl API Key",
+      "description": "API key for the Firecrawl scraping platform.",
+      "required": true,
+      "sensitive": true,
+      "env": "FIRECRAWL_API_KEY"
+    }
+  }
+}

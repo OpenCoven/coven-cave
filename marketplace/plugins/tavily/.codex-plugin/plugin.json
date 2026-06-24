@@ -1,0 +1,24 @@
+{
+  "name": "tavily",
+  "version": "0.1.0",
+  "description": "Advanced web search and answer extraction tuned for AI agents.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Tavily",
+    "shortDescription": "Advanced web search and answer extraction tuned for AI agents.",
+    "longDescription": "Use Tavily for fast, agent-friendly web search with concise sourced answers.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "search",
+      "web",
+      "research",
+      "answers",
+      "tavily"
+    ],
+    "defaultPrompt": "Help me use Tavily safely."
+  }
+}

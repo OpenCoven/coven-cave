@@ -1,0 +1,24 @@
+{
+  "name": "playwright",
+  "version": "0.1.0",
+  "description": "Drive real web browsers via accessibility trees for testing, navigation, and data extraction.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Playwright",
+    "shortDescription": "Drive real web browsers via accessibility trees for testing, navigation, and data extraction.",
+    "longDescription": "Use Playwright to navigate and verify web pages through the accessibility tree, not screenshots alone.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "browser",
+      "automation",
+      "testing",
+      "playwright",
+      "scraping"
+    ],
+    "defaultPrompt": "Help me use Playwright safely."
+  }
+}

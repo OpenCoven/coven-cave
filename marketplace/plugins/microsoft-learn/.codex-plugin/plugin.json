@@ -1,0 +1,24 @@
+{
+  "name": "microsoft-learn",
+  "version": "0.1.0",
+  "description": "Pull trusted Microsoft Learn documentation directly into agent workflows.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Microsoft Learn",
+    "shortDescription": "Pull trusted Microsoft Learn documentation directly into agent workflows.",
+    "longDescription": "Use Microsoft Learn MCP for authoritative, current Microsoft/Azure documentation.",
+    "developerName": "OpenCoven",
+    "category": "Knowledge & Docs",
+    "capabilities": [
+      "docs",
+      "microsoft",
+      "learn",
+      "reference",
+      "azure"
+    ],
+    "defaultPrompt": "Help me use Microsoft Learn safely."
+  }
+}

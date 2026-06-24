@@ -1,0 +1,72 @@
+{
+  "name": "notion",
+  "version": "0.1.0",
+  "description": "Read, search, and draft Notion pages and databases through Notion's official MCP server.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "notion",
+    "docs",
+    "wiki",
+    "knowledge-base",
+    "notes"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/notion",
+  "x-coven": {
+    "displayName": "Notion",
+    "category": "Productivity",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://github.com/makenotion/notion-mcp-server",
+      "https://developers.notion.com/docs/mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      },
+      {
+        "familiar": "echo",
+        "roles": [
+          "archivist"
+        ]
+      },
+      {
+        "familiar": "charm",
+        "roles": [
+          "copywriter"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "coordination-layer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "notion": {
+      "url": "https://mcp.notion.com/mcp",
+      "type": "http"
+    }
+  }
+}

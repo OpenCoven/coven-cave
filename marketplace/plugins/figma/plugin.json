@@ -1,0 +1,65 @@
+{
+  "name": "figma",
+  "version": "0.1.0",
+  "description": "Bring Figma design context \u2014 frames, components, and variables \u2014 into agent workflows.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "figma",
+    "design",
+    "components",
+    "dev-mode",
+    "ui"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/figma",
+  "x-coven": {
+    "displayName": "Figma",
+    "category": "Design",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Figma-MCP-server"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer"
+        ]
+      },
+      {
+        "familiar": "charm",
+        "roles": [
+          "copywriter",
+          "social-voice"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "figma": {
+      "url": "https://mcp.figma.com/mcp",
+      "type": "http"
+    }
+  }
+}

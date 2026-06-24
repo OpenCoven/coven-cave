@@ -1,0 +1,59 @@
+{
+  "name": "nuget",
+  "version": "0.1.0",
+  "description": "Real-time NuGet package info, vulnerability remediation, and upgrade planning for .NET.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "nuget",
+    "dotnet",
+    "packages",
+    "dependencies",
+    "security"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/nuget",
+  "x-coven": {
+    "displayName": "NuGet",
+    "category": "Developer Tools",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://learn.microsoft.com/en-us/nuget/concepts/nuget-mcp-server"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "nuget": {
+      "command": "dnx",
+      "args": [
+        "NuGet.Mcp.Server",
+        "--source",
+        "https://api.nuget.org/v3/index.json",
+        "--yes"
+      ],
+      "type": "stdio"
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "name": "nuxt-dev",
+  "version": "0.1.0",
+  "description": "Lets models understand your running Vite/Nuxt app via an MCP endpoint on the dev server.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "nuxt",
+    "vite",
+    "frontend",
+    "dev-server",
+    "vue"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/nuxt-dev",
+  "x-coven": {
+    "displayName": "Nuxt Dev",
+    "category": "Developer Tools",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/antfu/nuxt-mcp-dev"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "nuxt-dev": {
+      "url": "${NUXT_MCP_URL}",
+      "type": "sse"
+    }
+  },
+  "userConfig": {
+    "nuxt_mcp_url": {
+      "type": "string",
+      "title": "Nuxt Dev MCP URL",
+      "description": "SSE endpoint exposed by the nuxt-mcp-dev module or vite-plugin-mcp (e.g. http://localhost:3000/__mcp/sse).",
+      "required": true,
+      "sensitive": false,
+      "env": "NUXT_MCP_URL"
+    }
+  }
+}
