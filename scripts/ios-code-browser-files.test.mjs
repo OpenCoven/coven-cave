@@ -5,10 +5,6 @@ const browser = await readFile(
   new URL("../apps/ios/CovenCave/CovenCave/Views/CodeBrowserView.swift", import.meta.url),
   "utf8",
 );
-const reading = await readFile(
-  new URL("../apps/ios/CovenCave/CovenCave/Views/ReadingView.swift", import.meta.url),
-  "utf8",
-);
 const tasks = await readFile(
   new URL("../apps/ios/CovenCave/CovenCave/Views/TasksView.swift", import.meta.url),
   "utf8",
@@ -19,11 +15,6 @@ assert.doesNotMatch(
   browser,
   /\.navigationBarTitleDisplayMode\(\.inline\)/,
   "iOS Code view should not render its own navigation title inside Development",
-);
-assert.match(
-  reading,
-  /\.navigationBarTitleDisplayMode\(\.inline\)/,
-  "iOS Reading view should use the compact navigation title",
 );
 assert.match(
   tasks,

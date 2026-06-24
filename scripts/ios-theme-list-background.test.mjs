@@ -24,7 +24,6 @@ assert.match(
 for (const view of [
   "ChatsHomeView.swift",
   "FamiliarThreadsView.swift",
-  "ReadingView.swift",
   "RemindersView.swift",
 ]) {
   const src = await read(`Views/${view}`);
