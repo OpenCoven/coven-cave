@@ -186,6 +186,46 @@ final class AppModel {
         }
     }
 
+    /// Append a new checklist step.
+    func addStep(_ card: BoardCard, text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var steps = card.steps ?? []
+        steps.append(CardStep(id: UUID().uuidString, text: trimmed, done: false, doneAt: nil))
+        await commitSteps(card, steps)
+    }
+
+    /// Remove a checklist step.
+    func deleteStep(_ card: BoardCard, stepId: String) async {
+        guard var steps = card.steps else { return }
+        steps.removeAll { $0.id == stepId }
+        await commitSteps(card, steps)
+    }
+
+    /// Move a step up (delta -1) or down (delta +1) in the list.
+    func moveStep(_ card: BoardCard, stepId: String, by delta: Int) async {
+        guard var steps = card.steps, let i = steps.firstIndex(where: { $0.id == stepId }) else { return }
+        let j = i + delta
+        guard j >= 0, j < steps.count else { return }
+        steps.swapAt(i, j)
+        await commitSteps(card, steps)
+    }
+
+    /// Optimistically persist a new step list, reconciling with the server's
+    /// echoed card (reverts on failure) — shared by add/delete/move.
+    private func commitSteps(_ card: BoardCard, _ steps: [CardStep]) async {
+        guard let client else { return }
+        let previous = tasks
+        applyTask(id: card.id) { $0.steps = steps }
+        do {
+            let updated = try await client.updateTask(cardId: card.id, steps: steps)
+            applyTask(id: card.id) { $0 = updated }
+        } catch {
+            tasks = previous
+            tasksError = error.localizedDescription
+        }
+    }
+
     /// Optimistically set a task's notes (pass "" to clear); reconcile/revert.
     func setTaskNotes(_ card: BoardCard, _ notes: String) async {
         guard let client else { return }

@@ -12,6 +12,7 @@ struct TaskDetailView: View {
     @State private var editingNotes = false
     @State private var renamingTitle = false
     @State private var titleDraft = ""
+    @State private var newStep = ""
 
     /// The current card from the store, so status/priority/step edits made here
     /// reflect immediately; falls back to the passed-in snapshot.
@@ -24,7 +25,7 @@ struct TaskDetailView: View {
                 header
                 if let familiar { assigneeRow(familiar) }
                 chatCard
-                if live.hasSteps { stepsCard }
+                stepsCard
                 notesSection
                 scheduleCard
                 if !live.labelList.isEmpty { labelsRow }
@@ -196,17 +197,22 @@ struct TaskDetailView: View {
     }
 
     private var stepsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let steps = live.steps ?? []
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Steps").font(.headline)
                 Spacer()
-                Text("\(live.doneStepCount)/\(live.stepCount)")
-                    .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                if live.hasSteps {
+                    Text("\(live.doneStepCount)/\(live.stepCount)")
+                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                }
             }
-            ProgressView(value: live.stepFraction)
-                .tint(Theme.color(for: live.status))
+            if live.hasSteps {
+                ProgressView(value: live.stepFraction)
+                    .tint(Theme.color(for: live.status))
+            }
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(live.steps ?? []) { step in
+                ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
                     Button { Haptics.tap(); Task { await app.toggleStep(live, stepId: step.id) } } label: {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: step.done ? "checkmark.circle.fill" : "circle")
@@ -219,11 +225,49 @@ struct TaskDetailView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    // Reorder + delete live in a long-press menu so the row itself
+                    // stays a clean tap-to-toggle target (drag-reorder isn't
+                    // available for a VStack inside the detail ScrollView).
+                    .contextMenu {
+                        Button { Task { await app.moveStep(live, stepId: step.id, by: -1) } } label: {
+                            Label("Move up", systemImage: "arrow.up")
+                        }.disabled(index == 0)
+                        Button { Task { await app.moveStep(live, stepId: step.id, by: 1) } } label: {
+                            Label("Move down", systemImage: "arrow.down")
+                        }.disabled(index == steps.count - 1)
+                        Divider()
+                        Button(role: .destructive) { Task { await app.deleteStep(live, stepId: step.id) } } label: {
+                            Label("Delete step", systemImage: "trash")
+                        }
+                    }
                 }
             }
+            addStepRow
         }
         .padding(16)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var addStepRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "plus.circle.fill")
+                .foregroundStyle(.secondary)
+            TextField("Add step", text: $newStep)
+                .submitLabel(.done)
+                .onSubmit(commitNewStep)
+            if !newStep.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button("Add", action: commitNewStep)
+                    .font(.callout.weight(.semibold))
+            }
+        }
+    }
+
+    private func commitNewStep() {
+        let text = newStep.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        newStep = ""
+        Haptics.tap()
+        Task { await app.addStep(live, text: text) }
     }
 
     private var hasNotes: Bool {
