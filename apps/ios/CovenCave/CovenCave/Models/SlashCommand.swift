@@ -84,6 +84,10 @@ enum SlashCatalog {
         SlashCommand(name: "/shortcuts", aliases: ["/keys"], hint: "commands",
                      description: "Show the command reference.",
                      section: .chat, availability: .native, action: .help),
+        SlashCommand(name: "/model", aliases: ["/m"], hint: "switch model",
+                     description: "Switch the active model — on the desktop for now.",
+                     argPlaceholder: "model", section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Model selection")),
 
         // MARK: Familiar
         SlashCommand(name: "/familiar", aliases: ["/agent"], hint: "switch",

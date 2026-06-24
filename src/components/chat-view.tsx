@@ -44,7 +44,7 @@ import { Modal } from "@/components/ui/modal";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
-import { ChatModelControl } from "@/components/chat-model-control";
+import { modelSlashOptions, resolveModelArg, formatModelList } from "@/lib/slash-model";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
@@ -1978,6 +1978,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Esc hides the menu for the current input; any edit brings it back.
   const [slashDismissed, setSlashDismissed] = useState(false);
   const slashSuggestions: SlashCommand[] = slashDismissed ? [] : slashMatches;
+  // While typing "/model <partial>", the menu shows model options instead of
+  // commands (an inline picker). null ⇒ not in /model arg position.
+  const modelHarness = modelState?.harness ?? familiar.harness ?? "claude";
+  const modelOptions = useMemo(
+    () => (slashDismissed ? null : modelSlashOptions(input, modelHarness)),
+    [input, modelHarness, slashDismissed],
+  );
+  const modelMenuActive = (modelOptions?.length ?? 0) > 0;
   // Stable per-mount listbox id — the home composer mounts its own slash menu,
   // so ids must be unique across simultaneously mounted composers.
   const slashListboxId = useId();
@@ -2465,6 +2473,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     if (command === "/help") {
       appendSystem(formatHelp());
+      setInput("");
+      return true;
+    }
+    if (command === "/model") {
+      const current =
+        modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+          ? modelState.effectiveModel
+          : null;
+      if (!args.trim()) {
+        appendSystem(formatModelList(modelHarness, current));
+        setInput("");
+        return true;
+      }
+      const id = resolveModelArg(args, modelHarness);
+      if (!id) {
+        appendSystem(`Unknown model "${args.trim()}". Type /model to list the options.`);
+        setInput("");
+        return true;
+      }
+      handleSelectModel(id);
+      appendSystem(`Model set to ${id}.`);
       setInput("");
       return true;
     }
@@ -3088,6 +3117,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
     }
+    if (modelMenuActive && modelOptions) {
+      const opts = modelOptions;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIdx((i) => Math.min(i + 1, opts.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIdx((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const m = opts[slashIdx];
+        if (m) setInput(`/model ${m.id}`);
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const m = opts[slashIdx];
+        if (m) {
+          handleSelectModel(m.id);
+          appendSystem(`Model set to ${m.id}.`);
+          setInput("");
+        }
+        return;
+      }
+    }
     if (slashSuggestions.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -3640,7 +3698,40 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             </div>
           ) : null}
-          {slashSuggestions.length > 0 ? (
+          {modelMenuActive && modelOptions ? (
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
+              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Models">
+                {modelOptions.map((m, i) => {
+                  const active = i === slashIdx;
+                  return (
+                    <li key={m.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        ref={active ? activeSlashOptionRef : null}
+                        onMouseEnter={() => setSlashIdx(i)}
+                        onClick={() => {
+                          handleSelectModel(m.id);
+                          appendSystem(`Model set to ${m.id}.`);
+                          setInput("");
+                          inputRef.current?.focus();
+                        }}
+                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        }`}
+                      >
+                        <span className="text-[var(--text-primary)]">{m.label}</span>
+                        <span className="flex-1 truncate font-mono text-[10px] text-[var(--text-muted)]">{m.id}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
+                {keys.up}{keys.down} navigate · {keys.enter} switch · esc cancel
+              </div>
+            </div>
+          ) : slashSuggestions.length > 0 ? (
             <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Slash commands">
                 {slashSuggestions.map((cmd, i) => {
@@ -3853,7 +3944,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
               <div className="cave-composer-divider" aria-hidden />
               <div className="cave-composer-settings-row" aria-label="Chat response controls">
-                <ChatModelControl state={modelState} onSelectModel={handleSelectModel} busy={busy} />
                 <ComposerControlSelect
                   label="Thinking"
                   icon="ph:sparkle-bold"
