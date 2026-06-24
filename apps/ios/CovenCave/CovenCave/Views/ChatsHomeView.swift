@@ -237,6 +237,7 @@ struct ChatsHomeView: View {
             }
         }
         .listStyle(.plain)
+        .themedListBackground()
         .environment(\.editMode, $editMode)
         .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
         .confirmationDialog("Delete this chat?",

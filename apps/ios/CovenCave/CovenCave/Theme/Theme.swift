@@ -58,6 +58,25 @@ extension EnvironmentValues {
     }
 }
 
+private struct ThemedListBackground: ViewModifier {
+    @Environment(\.chrome) private var chrome
+    func body(content: Content) -> some View {
+        content
+            // Hide the List's opaque system fill and paint the desktop theme's
+            // base colour instead; clear row backgrounds so that fill shows
+            // through each cell rather than the default system cell colour.
+            .scrollContentBackground(.hidden)
+            .background(chrome.bgBase)
+    }
+}
+
+extension View {
+    /// Reveal the desktop theme's `bgBase` behind a `List` instead of the opaque
+    /// system background. Apply after `.listStyle(…)`. Pair with
+    /// `.listRowBackground(Color.clear)` on rows that set their own fill.
+    func themedListBackground() -> some View { modifier(ThemedListBackground()) }
+}
+
 extension Color {
     /// Parse a `#RRGGBB` / `#RRGGBBAA` hex string. Returns nil if unparseable.
     init?(hex: String?) {

@@ -139,6 +139,7 @@ struct RemindersView: View {
                 }
             }
             .listStyle(.plain)
+            .themedListBackground()
         }
     }
 
