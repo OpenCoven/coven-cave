@@ -3424,6 +3424,16 @@ details[open] > .cave-tool-summary::before {
    CALENDAR DETAIL PANEL
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
+.cave-cal-detail-backdrop {
+  position: absolute;
+  inset: 0;
+  /* Keep below the detail panel (z-index: 10 in globals.css) while still
+     intercepting clicks to the calendar surface behind it. */
+  z-index: 9;
+  background: var(--backdrop-scrim);
+  animation: ui-modal-fade-in var(--duration-fast) var(--ease-decelerate);
+}
+
 .cave-cal-detail-panel {
   position: absolute;
   top: 0;
