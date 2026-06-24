@@ -183,7 +183,7 @@ async function renderCodeBlock(
 
   const labelHtml = `<span class="cave-code-lang">${escHtml(lang)}</span>`;
   const filenameHtml = filename
-    ? `<span class="cave-code-filename">${escHtml(filename)}</span>`
+    ? `<span class="cave-code-filename" title="${escHtml(filename)}">${escHtml(filename)}</span>`
     : "";
   // Collapse toggle (chevron) folds the block down to just this header so a
   // long code dump can be tucked away; blocks render expanded by default. The
