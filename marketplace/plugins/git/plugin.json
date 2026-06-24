@@ -69,7 +69,8 @@
       "title": "Git Repository",
       "description": "Repository path the Git MCP server may inspect.",
       "required": true,
-      "sensitive": false
+      "sensitive": false,
+      "env": "COVEN_MCP_GIT_REPOSITORY"
     }
   }
 }

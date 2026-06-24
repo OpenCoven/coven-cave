@@ -97,7 +97,8 @@
       "title": "GitHub Token",
       "description": "Personal access token used by the GitHub MCP server.",
       "required": true,
-      "sensitive": true
+      "sensitive": true,
+      "env": "GITHUB_PERSONAL_ACCESS_TOKEN"
     }
   }
 }

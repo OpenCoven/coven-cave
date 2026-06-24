@@ -32,7 +32,8 @@
           "title": "GitHub Token",
           "description": "Personal access token used by the GitHub MCP server.",
           "required": true,
-          "sensitive": true
+          "sensitive": true,
+          "env": "GITHUB_PERSONAL_ACCESS_TOKEN"
         }
       },
       "roleAffinity": [
@@ -301,7 +302,8 @@
           "title": "Allowed Filesystem Root",
           "description": "Root directory the filesystem MCP server may access.",
           "required": true,
-          "sensitive": false
+          "sensitive": false,
+          "env": "COVEN_MCP_FILESYSTEM_ROOT"
         }
       },
       "roleAffinity": [
@@ -339,7 +341,8 @@
           "title": "Git Repository",
           "description": "Repository path the Git MCP server may inspect.",
           "required": true,
-          "sensitive": false
+          "sensitive": false,
+          "env": "COVEN_MCP_GIT_REPOSITORY"
         }
       },
       "roleAffinity": [

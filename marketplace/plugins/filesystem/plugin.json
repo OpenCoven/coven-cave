@@ -80,7 +80,8 @@
       "title": "Allowed Filesystem Root",
       "description": "Root directory the filesystem MCP server may access.",
       "required": true,
-      "sensitive": false
+      "sensitive": false,
+      "env": "COVEN_MCP_FILESYSTEM_ROOT"
     }
   }
 }
