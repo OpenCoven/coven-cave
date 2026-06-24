@@ -61,3 +61,17 @@ test("shell exposes a skip-to-content link targeting the main landmark", async (
   // The link must reveal itself on focus, not stay permanently off-screen.
   assert.match(css, /\.skip-link:focus[\s\S]*?transform:\s*translateY\(0\)/);
 });
+
+test("nav count badge uses a solid accent fill (WCAG contrast)", async () => {
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  // A 60%-alpha accent over the dark app background composited to ~1:1 against
+  // the paired foreground; the fill must be solid so the count stays legible.
+  assert.match(
+    css,
+    /\.menu-bar__badge\s*\{[\s\S]*?color:\s*var\(--accent-presence-foreground\)[\s\S]*?background:\s*var\(--accent-presence\);/,
+  );
+  assert.doesNotMatch(
+    css,
+    /\.menu-bar__badge\s*\{[\s\S]*?background:\s*color-mix\(in oklch, var\(--accent-presence\) 60%, transparent\)/,
+  );
+});
