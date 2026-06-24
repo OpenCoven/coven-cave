@@ -99,7 +99,7 @@ assert.match(
 );
 assert.match(projectsView, /useDroppable\(\{\s*id: `pcard:/, "project cards are drop targets");
 assert.match(projectsView, /applyProjectOverrides\(sessions, projectOverrides\)/, "chats are grouped with Cave-local project overrides applied");
-assert.match(projectsView, /setProjectOverride\(activeId, targetRoot\)/, "cross-project drop moves the chat via an override");
+assert.match(projectsView, /setProjectOverride\(sessionId, targetRoot\)/, "cross-project move applies a Cave-local project override");
 assert.match(projectsView, /mergeVisibleOrder[\s\S]{0,120}writeSessionOrder/, "same-project drop reorders via the shared manual order");
 assert.match(projectsView, /cave:agents-open-session/, "clicking a chat opens it via the agents-open-session event");
 // Long chat lists are capped with a Show all / Show less toggle.
@@ -341,9 +341,10 @@ assert.match(
   /import \{ PopoverItem, PopoverSeparator \} from "@\/components\/ui\/popover"/,
   "menu items use the shared Popover item/separator",
 );
-// Two onContextMenu triggers: the project header and each session row.
+// Two onContextMenu triggers: the project header and each session row (the row
+// wraps the helper to reset the menu's drill-in view first).
 assert.ok(
-  (projectsView.match(/onContextMenu=\{openContextMenuAt\(setMenu\)\}/g) ?? []).length >= 2,
+  (projectsView.match(/openContextMenuAt\(setMenu\)/g) ?? []).length >= 2,
   "both the project header and session rows open a context menu at the cursor",
 );
 assert.match(projectsView, /Actions for \$\{project\.name\}/, "the project header has a context menu");
@@ -367,8 +368,8 @@ assert.match(projectsView, /isOver[\s\S]{0,140}?ring-1 ring-inset ring-\[var\(--
 assert.match(projectsView, /import \{ applyProjectOverrides, setProjectOverride, clearProjectOverride \}/, "imports clearProjectOverride for undo");
 assert.match(projectsView, /function MoveUndoToast/, "a move-undo toast component exists");
 assert.match(projectsView, /window\.setTimeout\(\(\) => dismissRef\.current\(\), 5000\)/, "the toast auto-dismisses");
-assert.match(projectsView, /const prevRoot = projectOverrides\[activeId\] \?\? null/, "the move captures the prior override for a precise undo");
-assert.match(projectsView, /setMoveToast\(\{ sessionId: activeId, prevRoot, label:/, "a cross-project move raises the undo toast");
+assert.match(projectsView, /const prevRoot = projectOverrides\[sessionId\] \?\? null/, "the move captures the prior override for a precise undo");
+assert.match(projectsView, /setMoveToast\(\{ sessionId, prevRoot, label:/, "a cross-project move raises the undo toast");
 assert.match(
   projectsView,
   /moveToast\.prevRoot\) setProjectOverride\(moveToast\.sessionId, moveToast\.prevRoot\)[\s\S]{0,90}?clearProjectOverride\(moveToast\.sessionId\)/,
@@ -401,5 +402,26 @@ assert.match(projectsView, /state\.buffer \+= e\.key/, "keystrokes accumulate in
 assert.match(projectsView, /typeAheadRef\.current\.buffer = ""/, "the buffer resets after a pause");
 assert.match(projectsView, /const next = nextTypeAheadIndex\(labels, current, state\.buffer\)/, "the next focus comes from the pure matcher");
 assert.match(projectsView, /items\[next\]\.focus\(\);\s*setActiveIndex\(next\)/, "a match focuses the item and updates the roving tab stop");
+
+// "Move to project" submenu: the session context menu drills into a list of the
+// other projects; selecting one moves the chat there (same move+undo path as
+// drag), shared via the extracted moveSessionToProject.
+assert.match(projectsView, /const moveSessionToProject = \(sessionId: string, targetRoot: string\)/, "the cross-project move is a shared helper");
+assert.match(projectsView, /\/\/ Different project → move[\s\S]{0,80}?moveSessionToProject\(activeId, targetRoot\)/, "drag-and-drop reuses the shared move helper");
+assert.match(projectsView, /onMoveSession=\{moveSessionToProject\}/, "the move helper is wired into project rows");
+assert.match(
+  projectsView,
+  /allProjects[\s\S]{0,160}?normalizeProjectRoot\(p\.root\) !== cardKey/,
+  "each row offers the OTHER projects as move targets",
+);
+assert.match(projectsView, /const \[menuView, setMenuView\] = useState<"root" \| "move">/, "the session menu tracks a root/move drill-in view");
+assert.match(projectsView, /onSelect=\{\(\) => setMenuView\("move"\)\}/, '"Move to project…" drills into the project picker');
+assert.match(projectsView, /Move to project…/, "the session menu offers Move to project");
+assert.match(
+  projectsView,
+  /moveTargets\.map\(\(target\)[\s\S]{0,260}?onMoveSession\(session\.id, target\.root\)/,
+  "picking a target project moves the chat there",
+);
+assert.match(projectsView, /onSelect=\{\(\) => setMenuView\("root"\)\}[\s\S]{0,40}?Back/, "the picker has a Back affordance");
 
 console.log("projects-view.test.ts: ok");

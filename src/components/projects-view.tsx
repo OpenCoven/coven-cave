@@ -138,6 +138,9 @@ function MoveUndoToast({
   );
 }
 
+/** A project a chat can be moved into (from the row's context menu). root is normalized. */
+type MoveTarget = { id: string; name: string; root: string };
+
 function ProjectChatRow({
   session,
   displayTitle,
@@ -147,6 +150,8 @@ function ProjectChatRow({
   selected,
   onToggleSelect,
   density,
+  moveTargets,
+  onMoveSession,
 }: {
   session: SessionRow;
   displayTitle?: string;
@@ -156,6 +161,8 @@ function ProjectChatRow({
   selected: boolean;
   onToggleSelect: (id: string) => void;
   density: ProjectsDensity;
+  moveTargets: MoveTarget[];
+  onMoveSession: (sessionId: string, targetRoot: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: session.id,
@@ -169,6 +176,7 @@ function ProjectChatRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [menu, setMenu] = useState<ContextMenuState>(null);
+  const [menuView, setMenuView] = useState<"root" | "move">("root");
   const activate = () => (selectMode ? onToggleSelect(session.id) : onOpen());
   return (
     <li
@@ -183,7 +191,10 @@ function ProjectChatRow({
         tabIndex={0}
         data-proj-nav
         data-proj-label={title}
-        onContextMenu={openContextMenuAt(setMenu)}
+        onContextMenu={(e) => {
+          setMenuView("root");
+          openContextMenuAt(setMenu)(e);
+        }}
         onClick={activate}
         onKeyDown={(e) => {
           // ARIA button/checkbox pattern: Enter and Space both activate.
@@ -301,14 +312,43 @@ function ProjectChatRow({
           </button>
         )}
       </div>
-      <ContextMenu state={menu} onClose={() => setMenu(null)} ariaLabel={`Actions for ${title}`}>
-        <PopoverItem icon="ph:chat-circle-dots-bold" onSelect={() => { setMenu(null); onOpen(); }}>
-          Open chat
-        </PopoverItem>
-        <PopoverSeparator />
-        <PopoverItem icon="ph:trash-bold" danger onSelect={() => { setMenu(null); setConfirmDelete(true); }}>
-          Delete chat…
-        </PopoverItem>
+      <ContextMenu
+        state={menu}
+        onClose={() => { setMenu(null); setMenuView("root"); }}
+        ariaLabel={`Actions for ${title}`}
+      >
+        {menuView === "root" ? (
+          <>
+            <PopoverItem icon="ph:chat-circle-dots-bold" onSelect={() => { setMenu(null); onOpen(); }}>
+              Open chat
+            </PopoverItem>
+            {moveTargets.length > 0 ? (
+              <PopoverItem icon="ph:folder-open-bold" onSelect={() => setMenuView("move")}>
+                Move to project…
+              </PopoverItem>
+            ) : null}
+            <PopoverSeparator />
+            <PopoverItem icon="ph:trash-bold" danger onSelect={() => { setMenu(null); setConfirmDelete(true); }}>
+              Delete chat…
+            </PopoverItem>
+          </>
+        ) : (
+          <>
+            <PopoverItem icon="ph:caret-left" onSelect={() => setMenuView("root")}>
+              Back
+            </PopoverItem>
+            <PopoverSeparator />
+            {moveTargets.map((target) => (
+              <PopoverItem
+                key={target.id}
+                icon="ph:folder-simple-dashed"
+                onSelect={() => { setMenu(null); setMenuView("root"); onMoveSession(session.id, target.root); }}
+              >
+                {target.name}
+              </PopoverItem>
+            ))}
+          </>
+        )}
       </ContextMenu>
     </li>
   );
@@ -340,6 +380,8 @@ type ProjectRowProps = {
   density: ProjectsDensity;
   expanded: boolean;
   onSetExpanded: (next: boolean) => void;
+  allProjects: CaveProject[];
+  onMoveSession: (sessionId: string, targetRoot: string) => void;
 };
 
 function ProjectRow({
@@ -355,6 +397,8 @@ function ProjectRow({
   density,
   expanded,
   onSetExpanded,
+  allProjects,
+  onMoveSession,
 }: ProjectRowProps) {
   const chatCount = chats.length;
   const stats = projectStats(chats);
@@ -364,6 +408,14 @@ function ProjectRow({
   const setExpanded = (next: boolean | ((value: boolean) => boolean)) =>
     onSetExpanded(typeof next === "function" ? next(expanded) : next);
   const cardKey = normalizeProjectRoot(project.root);
+  // Other projects this card's chats can be moved into (normalized roots).
+  const moveTargets = useMemo<MoveTarget[]>(
+    () =>
+      allProjects
+        .filter((p) => normalizeProjectRoot(p.root) !== cardKey)
+        .map((p) => ({ id: p.id, name: p.name, root: normalizeProjectRoot(p.root) })),
+    [allProjects, cardKey],
+  );
 
   // The command palette's "Open project" rows expand + scroll a project into
   // view via this event (the Projects tab is opened first, then focused).
@@ -803,6 +855,8 @@ function ProjectRow({
                   selected={selectedIds.has(session.id)}
                   onToggleSelect={toggleSelect}
                   density={density}
+                  moveTargets={moveTargets}
+                  onMoveSession={onMoveSession}
                 />
               ))}
             </ul>
@@ -1014,16 +1068,22 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
       return;
     }
     // Different project → move (cave-local override; agent cwd untouched).
-    // Capture the prior override first so the move can be undone precisely
-    // (restore the old override, or clear it if there wasn't one).
-    const prevRoot = projectOverrides[activeId] ?? null;
-    const moved = sessions.find((s) => s.id === activeId);
+    moveSessionToProject(activeId, targetRoot);
+  }
+
+  // Move a session to another project (shared by drag-and-drop and the row's
+  // "Move to project" context-menu). targetRoot must be normalized. Captures the
+  // prior override first so the move can be undone precisely (restore the old
+  // override, or clear it if there wasn't one), then raises the undo toast.
+  const moveSessionToProject = (sessionId: string, targetRoot: string) => {
+    const prevRoot = projectOverrides[sessionId] ?? null;
+    const moved = sessions.find((s) => s.id === sessionId);
     const destName =
       projects.find((p) => normalizeProjectRoot(p.root) === targetRoot)?.name ?? shortRoot(targetRoot);
     const movedTitle = moved ? stripLeadingTrailingEmoji(stripTaskPrefix(moved.title)) || "chat" : "chat";
-    setProjectOverride(activeId, targetRoot);
-    setMoveToast({ sessionId: activeId, prevRoot, label: `Moved “${movedTitle}” to ${destName}` });
-  }
+    setProjectOverride(sessionId, targetRoot);
+    setMoveToast({ sessionId, prevRoot, label: `Moved “${movedTitle}” to ${destName}` });
+  };
 
   const undoMove = () => {
     if (!moveToast) return;
@@ -1315,6 +1375,8 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
                     density={density}
                     expanded={isExpanded(project.id)}
                     onSetExpanded={(next) => setExpanded(project.id, next)}
+                    allProjects={projects}
+                    onMoveSession={moveSessionToProject}
                   />
                 ))}
               </DndContext>
