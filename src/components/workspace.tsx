@@ -1931,6 +1931,7 @@ export function Workspace() {
         onNavigateToInbox={() => setMode("inbox")}
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
+        onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
       />
     )}
     </div>
