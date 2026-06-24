@@ -180,8 +180,12 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       const ids = has
         ? group.familiarIds.filter((id) => id !== familiarId)
         : [...group.familiarIds, familiarId];
-      // Auto-name a fresh coven from its members until the user renames it.
-      const autoNamed = group.name === "New coven" || group.name.trim() === "";
+      // Keep auto-naming from the roster until the user types their own name.
+      // "Auto" means the current name still matches what the previous roster
+      // would have produced (or the untouched default / empty).
+      const prevAutoName = defaultGroupName(group.familiarIds.map((id) => byId.get(id)?.display_name ?? ""));
+      const autoNamed =
+        group.name === "New coven" || group.name.trim() === "" || group.name === prevAutoName;
       let next = setGroupParticipants(group, ids, nowIso());
       if (autoNamed) {
         next = {
