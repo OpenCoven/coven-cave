@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, saveConfig } from "@/lib/cave-config";
 import { loadConversation, saveConversation } from "@/lib/cave-conversations";
 import { cleanModelId, resolveChatModelState } from "@/lib/chat-model-state";
+import { catalogForRuntime } from "@/lib/runtime-models";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -68,7 +69,16 @@ export async function GET(req: Request) {
   if (!familiarId) return jsonError("familiarId is required", 400);
 
   const state = await currentState(familiarId, sessionId);
-  return NextResponse.json({ ok: true, state });
+  // Also hand back the pickable model menu for this chat's runtime so non-web
+  // clients (the iOS app) don't have to mirror the catalog. Web ignores it and
+  // reads the catalog directly. `allowCustom` means a free-typed id is valid.
+  const catalog = catalogForRuntime(state.harness);
+  return NextResponse.json({
+    ok: true,
+    state,
+    options: catalog?.models ?? [],
+    allowCustom: catalog?.allowCustom ?? true,
+  });
 }
 
 export async function PATCH(req: Request) {

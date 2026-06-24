@@ -67,6 +67,9 @@ struct ChatView: View {
     var body: some View {
         VStack(spacing: 0) {
             messageScroll
+            if !thread.isGroup, let familiarId = thread.familiarIds.first {
+                ChatModelBar(thread: thread, familiarId: familiarId)
+            }
             composer
         }
         .navigationTitle(thread.title)
