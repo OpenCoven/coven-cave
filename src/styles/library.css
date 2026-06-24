@@ -3443,6 +3443,9 @@ h3:hover .library-heading-anchor,
 }
 .library-undo-toast-undo {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   font-weight: 600;
   color: var(--accent-presence);
@@ -3452,6 +3455,16 @@ h3:hover .library-heading-anchor,
   padding: 2px 6px;
   border-radius: 4px;
   transition: background 0.1s;
+}
+.library-undo-toast-kbd {
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  background: color-mix(in oklch, var(--text-muted) 14%, transparent);
+  border-radius: 3px;
+  padding: 2px 4px;
 }
 .library-undo-toast-undo:hover {
   background: color-mix(in oklch, var(--accent-presence) 15%, transparent);

@@ -62,6 +62,8 @@ export function UndoToast({
         <span className="library-undo-toast-label">{message}</span>
         <button className="library-undo-toast-undo" onClick={onUndo} aria-label={undoAriaLabel}>
           Undo
+          {/* The same action is bound to ⌘Z while the toast is up (useUndoDelete). */}
+          <kbd className="library-undo-toast-kbd" aria-hidden>⌘Z</kbd>
         </button>
         <button className="library-undo-toast-dismiss" onClick={onDismiss} aria-label="Dismiss">
           <Icon name="ph:x-bold" aria-hidden />

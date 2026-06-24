@@ -103,6 +103,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     entries: [
       { keys: "⌘,", description: "Open Settings" },
       { keys: "⌘S", description: "Save (daily notes, journal)" },
+      { keys: "⌘Z", description: "Undo the last delete (while the undo toast is showing)" },
       { keys: "⌘↵", description: "Run the refine (artifact viewer)" },
       { keys: "⌘/", description: "Open this shortcuts sheet" },
       { keys: "?", description: "Open the shortcuts sheet (when not typing in a field)" },

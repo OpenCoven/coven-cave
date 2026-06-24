@@ -316,6 +316,7 @@ export const SUITES = {
     "src/lib/url-safety.test.ts",
     "src/lib/use-focus-trap.test.ts",
     "src/lib/use-prefers-reduced-motion.test.ts",
+    "src/lib/use-undo-delete-keyboard.test.ts",
     "src/lib/use-roving-tabindex.test.ts",
     "src/lib/vault.test.ts",
     "src/app/globals-background.test.ts",
