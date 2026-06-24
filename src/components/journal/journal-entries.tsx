@@ -5,6 +5,8 @@ import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { UndoToast } from "@/components/ui/undo-toast";
+import { useUndoDelete } from "@/lib/use-undo-delete";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { extractNextPaths } from "@/lib/next-paths";
 import { dateSlug, longDateLabel, relativeDayLabel, relativeTime, parseDateSlug } from "@/lib/daily-report";
@@ -75,7 +77,9 @@ export function JournalEntries({
   const [editing, setEditing] = useState(false);
   const [draftReflection, setDraftReflection] = useState("");
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  // Deferred + undoable delete: the day reads as empty immediately, the DELETE
+  // fires only after the undo window, and Undo restores the reflection.
+  const { pending: deletePending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<string>();
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const selectedFamiliarId = activeFamiliarId ?? familiars[0]?.id ?? null;
@@ -229,27 +233,28 @@ export function JournalEntries({
     }
   }
 
-  async function deleteEntry() {
+  function deleteEntry() {
     if (!day || !hasEntry) return;
-    setDeleting(true);
+    const date = day.date;
+    cancelEdit();
     setError(null);
-    try {
-      const res = await fetch(`/api/journal?date=${encodeURIComponent(day.date)}`, { method: "DELETE" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json.ok) throw new Error(json.error ?? "Could not delete journal entry.");
-      if (!mountedRef.current) return;
-      cancelEdit();
-      await loadDay(day.date);
-      await loadDays();
-    } catch (err) {
-      if (mountedRef.current) setError(err instanceof Error ? err.message : "Could not delete journal entry.");
-    } finally {
-      if (mountedRef.current) setDeleting(false);
-    }
+    scheduleDelete(date, `entry for ${longDateLabel(parseDateSlug(date) ?? new Date())}`, async () => {
+      try {
+        const res = await fetch(`/api/journal?date=${encodeURIComponent(date)}`, { method: "DELETE" });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json.ok) throw new Error(json.error ?? "Could not delete journal entry.");
+      } catch (err) {
+        if (mountedRef.current) setError(err instanceof Error ? err.message : "Could not delete journal entry.");
+      } finally {
+        if (mountedRef.current) { await loadDay(date); await loadDays(); }
+      }
+    });
   }
 
   const canGenerate = Boolean(selectedFamiliarId);
-  const hasEntry = Boolean(day?.exists && day.entry.reflection.trim());
+  // A pending delete makes the day read as empty (EmptyState) during the undo
+  // window without touching the loaded `day` — Undo just clears the pending flag.
+  const hasEntry = Boolean(day?.exists && day.entry.reflection.trim()) && day?.date !== deletePending?.item;
 
   // Chronological navigation across the *visible* (scoped + filtered) days.
   // The list is newest-first, so "newer" = lower index, "older" = higher.
@@ -380,7 +385,7 @@ export function JournalEntries({
                         type="button"
                         className="journal-entry__action journal-entry__action--primary"
                         onClick={() => { void saveEdit(); }}
-                        disabled={saving || deleting || !draftReflection.trim()}
+                        disabled={saving || !draftReflection.trim()}
                         aria-label="Save journal entry"
                         title="Save"
                       >
@@ -390,7 +395,7 @@ export function JournalEntries({
                         type="button"
                         className="journal-entry__action"
                         onClick={cancelEdit}
-                        disabled={saving || deleting}
+                        disabled={saving}
                         aria-label="Cancel journal edit"
                         title="Cancel"
                       >
@@ -402,7 +407,7 @@ export function JournalEntries({
                       type="button"
                       className="journal-entry__action"
                       onClick={startEdit}
-                      disabled={saving || deleting}
+                      disabled={saving}
                       aria-label="Edit journal entry"
                       title="Edit"
                     >
@@ -412,8 +417,8 @@ export function JournalEntries({
                   <button
                     type="button"
                     className="journal-entry__action journal-entry__action--danger"
-                    onClick={() => { void deleteEntry(); }}
-                    disabled={saving || deleting}
+                    onClick={() => deleteEntry()}
+                    disabled={saving}
                     aria-label="Delete journal entry"
                     title="Delete"
                   >
@@ -471,6 +476,15 @@ export function JournalEntries({
           <div className="journal-empty journal-empty--pane"><SkeletonRows count={5} /></div>
         )}
       </section>
+      {deletePending ? (
+        <UndoToast
+          key={deletePending.id}
+          message={`Deleted ${deletePending.label}`}
+          undoAriaLabel="Undo delete"
+          onUndo={undoDelete}
+          onDismiss={commitDelete}
+        />
+      ) : null}
     </div>
   );
 }

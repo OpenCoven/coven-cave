@@ -45,7 +45,7 @@ assert.match(automations, /id: "inbox"[\s\S]*id: "reminders"[\s\S]*id: "automati
 assert.match(automations, /<Tabs[\s\S]{0,200}variant="segment"/, "Schedules tabs use the shared segment Tabs");
 assert.match(automations, /type ScheduleTab = "reminders" \| "automations" \| "inbox"/, "Schedules tab state should include inbox");
 assert.match(automations, /function InboxFeedList/, "Inbox tab should render through a feed-list component");
-assert.match(automations, /groupInboxFeed\(items\)/, "Inbox tab should group the full inbox feed (every kind)");
+assert.match(automations, /groupInboxFeed\(items\.filter\(\(it\) => !hiddenIds\.has\(it\.id\)\)\)/, "Inbox tab groups the full inbox feed (every kind), minus rows pending an undoable delete");
 
 assert.match(
   automations,
@@ -54,8 +54,8 @@ assert.match(
 );
 assert.match(
   automations,
-  /const reminderItems = useMemo\(\(\) =>\s*items\.filter\(isScheduleInboxItem\)/,
-  "Reminders tab should use the schedule inbox item filter",
+  /const reminderItems = useMemo\(\(\) =>\s*items\.filter\(\(it\) => isScheduleInboxItem\(it\) && !hiddenIds\.has\(it\.id\)\)/,
+  "Reminders tab should use the schedule inbox item filter (minus rows pending an undoable delete)",
 );
 assert.match(
   automations,

@@ -18,6 +18,8 @@ import { relativeTimeSigned } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { UndoToast } from "@/components/ui/undo-toast";
+import { useUndoDelete } from "@/lib/use-undo-delete";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useMultiSelect } from "@/lib/use-multi-select";
@@ -1320,7 +1322,10 @@ function InboxFeedList({
 // ── Root ──────────────────────────────────────────────────────────────────────
 export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  const confirm = useConfirm();
+  const confirm = useConfirm(); // still used by "Run now" (a non-delete action)
+  // Deferred + undoable deletes (reminders, automations, bulk): rows hide at
+  // once, the DELETEs fire only after the undo window, and Undo restores them.
+  const { pending: deletePending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<string[]>();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -1465,21 +1470,21 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     } finally { setBusyId(null); }
   }, [load]);
 
-  const removeItem = useCallback(async (id: string) => {
+  const removeItem = useCallback((id: string) => {
     if (id.startsWith("eph:")) return;
     const target = items.find((i) => i.id === id);
-    const label = target?.title ? `“${target.title}”` : "this reminder";
-    if (!(await confirm({ title: `Delete ${label}?`, body: "This can't be undone.", confirmLabel: "Delete", danger: true }))) return;
-    setBusyId(id);
-    try {
-      const res = await fetch(`/api/inbox/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`http ${res.status}`);
-      setSelectedItem((prev) => prev?.id === id ? null : prev);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "delete failed");
-    } finally { setBusyId(null); }
-  }, [items, load]);
+    const label = target?.title ? `“${target.title}”` : "reminder";
+    setSelectedItem((prev) => prev?.id === id ? null : prev);
+    scheduleDelete([id], label, async () => {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+      try {
+        const res = await fetch(`/api/inbox/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(`http ${res.status}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "delete failed");
+      } finally { await load(); }
+    });
+  }, [items, scheduleDelete, load]);
 
   const runNow = (id: string) =>
     patchItem(id, { fireAt: new Date().toISOString(), status: "pending" });
@@ -1528,21 +1533,19 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, [load]);
 
-  const deleteCodex = useCallback(async (auto: CodexAutomation) => {
-    if (!(await confirm({ title: `Delete automation “${auto.name}”?`, body: "This removes its file.", confirmLabel: "Delete", danger: true }))) return;
-    setBusyId(auto.id);
-    try {
-      const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, { method: "DELETE" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
-      setSelectedCodex(null);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "codex delete failed");
-    } finally {
-      setBusyId(null);
-    }
-  }, [load]);
+  const deleteCodex = useCallback((auto: CodexAutomation) => {
+    setSelectedCodex(null);
+    scheduleDelete([auto.id], `automation “${auto.name}”`, async () => {
+      setCodexAutos((prev) => prev.filter((a) => a.id !== auto.id));
+      try {
+        const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, { method: "DELETE" });
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "codex delete failed");
+      } finally { await load(); }
+    });
+  }, [scheduleDelete, load]);
 
   const runCodexNow = useCallback(async (auto: CodexAutomation) => {
     if (!(await confirm({ title: `Run “${auto.name}” now?`, body: "This executes the agent immediately.", confirmLabel: "Run now" }))) return;
@@ -1575,10 +1578,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, [load]);
 
+  // Ids whose delete is pending in the undo window — hidden everywhere until the
+  // window lapses (committing the delete) or Undo restores them.
+  const hiddenIds = useMemo(() => new Set(deletePending?.item ?? []), [deletePending]);
+
   // ── Sections ──────────────────────────────────────────────────────────────
   const reminderItems = useMemo(() =>
-    items.filter(isScheduleInboxItem),
-    [items]);
+    items.filter((it) => isScheduleInboxItem(it) && !hiddenIds.has(it.id)),
+    [items, hiddenIds]);
 
   const current = useMemo(() =>
     reminderItems.filter((it) =>
@@ -1642,22 +1649,21 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   };
 
-  const bulkDeleteReminders = async () => {
+  const bulkDeleteReminders = () => {
     const ids = selectedRealIds();
     if (ids.length === 0) { reminderSelect.exit(); return; }
-    if (!(await confirm({ title: `Delete ${ids.length} reminder${ids.length === 1 ? "" : "s"}?`, body: "This can't be undone.", confirmLabel: "Delete", danger: true }))) return;
-    setBulkBusy(true);
-    try {
-      await Promise.all(ids.map((id) =>
-        fetch(`/api/inbox/${id}`, { method: "DELETE" })
-          .then((r) => { if (!r.ok) throw new Error(`http ${r.status}`); })));
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "bulk delete failed");
-    } finally {
-      setBulkBusy(false);
-      reminderSelect.exit();
-    }
+    reminderSelect.exit();
+    scheduleDelete(ids, `${ids.length} reminder${ids.length === 1 ? "" : "s"}`, async () => {
+      const idSet = new Set(ids);
+      setItems((prev) => prev.filter((i) => !idSet.has(i.id)));
+      try {
+        await Promise.all(ids.map((id) =>
+          fetch(`/api/inbox/${id}`, { method: "DELETE" })
+            .then((r) => { if (!r.ok) throw new Error(`http ${r.status}`); })));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "bulk delete failed");
+      } finally { await load(); }
+    });
   };
 
   const resolvedFamiliars = useResolvedFamiliars(familiars);
@@ -1683,20 +1689,20 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const codexActive = useMemo(
     () =>
       codexAutos.filter(
-        (a) => a.status === "ACTIVE" && automationMatchesFilter(a.familiars, familiarFilter),
+        (a) => a.status === "ACTIVE" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter),
       ),
-    [codexAutos, familiarFilter],
+    [codexAutos, familiarFilter, hiddenIds],
   );
   const codexPaused = useMemo(
     () =>
       codexAutos.filter(
-        (a) => a.status === "PAUSED" && automationMatchesFilter(a.familiars, familiarFilter),
+        (a) => a.status === "PAUSED" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter),
       ),
-    [codexAutos, familiarFilter],
+    [codexAutos, familiarFilter, hiddenIds],
   );
 
   // Inbox tab: the FULL feed (every kind), grouped by attention tier.
-  const inboxFeed = useMemo(() => groupInboxFeed(items), [items]);
+  const inboxFeed = useMemo(() => groupInboxFeed(items.filter((it) => !hiddenIds.has(it.id))), [items, hiddenIds]);
   const remindersEmpty = current.length + paused.length + oneShots.length + history.length === 0;
   const automationsEmpty = codexAutos.length === 0;
   const inboxEmpty = items.length === 0;
@@ -1954,6 +1960,16 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           onCreate={(i) => void createCodex(i)}
         />
       )}
+
+      {deletePending ? (
+        <UndoToast
+          key={deletePending.id}
+          message={`Deleted ${deletePending.label}`}
+          undoAriaLabel="Undo delete"
+          onUndo={undoDelete}
+          onDismiss={commitDelete}
+        />
+      ) : null}
     </section>
   );
 }

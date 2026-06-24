@@ -55,7 +55,8 @@ assert.match(source, /aria-checked=\{selectMode \? checked : undefined\}/, "chec
 // The three bulk actions exist and hit the right transitions.
 assert.match(source, /bulkPatchReminders\(\{ status: "dismissed" \}\)/, "bulk Pause dismisses the selected reminders");
 assert.match(source, /bulkPatchReminders\(\{ status: "pending" \}\)/, "bulk Resume re-pends the selected reminders");
-assert.match(source, /const bulkDeleteReminders = async/, "bulk Delete is wired");
+assert.match(source, /const bulkDeleteReminders = \(\) =>/, "bulk Delete is wired (deferred + undoable, no async confirm)");
+assert.match(source, /scheduleDelete\(ids,/, "bulk Delete routes through the deferred useUndoDelete helper");
 // Ephemeral inbox items can't be mutated server-side, so they're filtered out.
 assert.match(source, /\.filter\(\(id\) => !id\.startsWith\("eph:"\)\)/, "bulk actions skip ephemeral (eph:) ids");
 

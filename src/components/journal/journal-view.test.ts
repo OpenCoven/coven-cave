@@ -69,8 +69,11 @@ assert.match(entries, /draftReflection,\s*setDraftReflection/, "JournalEntries k
 assert.match(entries, /function startEdit\(\)/, "JournalEntries exposes an edit action");
 assert.match(entries, /async function saveEdit\(\)/, "JournalEntries saves edited reflections");
 assert.match(entries, /fetch\("\/api\/journal",\s*\{[\s\S]*?method:\s*"POST"[\s\S]*?reflection:\s*draftReflection/, "JournalEntries persists edited reflection text through /api/journal POST");
-assert.match(entries, /async function deleteEntry\(\)/, "JournalEntries exposes a delete action");
-assert.match(entries, /fetch\(`\/api\/journal\?date=\$\{encodeURIComponent\(day\.date\)\}`,\s*\{ method: "DELETE" \}/, "JournalEntries deletes the selected persisted day through /api/journal DELETE");
+assert.match(entries, /function deleteEntry\(\)/, "JournalEntries exposes a delete action");
+assert.match(entries, /fetch\(`\/api\/journal\?date=\$\{encodeURIComponent\(date\)\}`,\s*\{ method: "DELETE" \}/, "JournalEntries deletes the selected persisted day through /api/journal DELETE");
+// Delete is deferred + undoable: it routes through the shared useUndoDelete helper.
+assert.match(entries, /scheduleDelete\(date,/, "JournalEntries defers the delete through useUndoDelete");
+assert.match(entries, /<UndoToast/, "JournalEntries renders an UndoToast for deletes");
 assert.match(entries, /aria-label="Edit journal entry"/, "JournalEntries renders an edit affordance");
 assert.match(entries, /aria-label="Delete journal entry"/, "JournalEntries renders a delete affordance");
 assert.match(entries, /onKeyDown=\{\(e\) => \{[\s\S]*?e\.key === "Escape"[\s\S]*?cancelEdit/, "Journal edit textarea cancels on Escape");

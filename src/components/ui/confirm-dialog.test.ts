@@ -34,9 +34,9 @@ assert.match(src, /onClose=\{\(\) => settle\(false\)\}/, "dismiss (backdrop/Esc)
 assert.match(layout, /import \{ ConfirmProvider \}/, "layout imports ConfirmProvider");
 assert.match(layout, /<ConfirmProvider>/, "layout mounts ConfirmProvider");
 
-// The native window.confirm() is gone from the migrated surfaces.
+// Surfaces still gated by the in-app confirm (non-delete actions like run-now,
+// discard-unsaved, workflow/sketch delete, clear-history).
 for (const rel of [
-  "../vault-panel.tsx",
   "../canvas-artifact-node.tsx",
   "../automations-view.tsx",
   "../workflows-view.tsx",
@@ -45,6 +45,12 @@ for (const rel of [
   const file = readFileSync(new URL(rel, import.meta.url), "utf8");
   assert.doesNotMatch(file, /window\.confirm\(/, `${rel} should not call native window.confirm()`);
   assert.match(file, /useConfirm\(\)/, `${rel} should use the in-app confirm`);
+}
+
+// The native window.confirm() is gone everywhere, including the now-undo surfaces.
+for (const rel of ["../vault-panel.tsx", "../journal/journal-entries.tsx"]) {
+  const file = readFileSync(new URL(rel, import.meta.url), "utf8");
+  assert.doesNotMatch(file, /window\.confirm\(/, `${rel} should not call native window.confirm()`);
 }
 
 console.log("confirm-dialog.test.ts OK");

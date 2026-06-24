@@ -6,7 +6,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { useConfirm } from "@/components/ui/confirm-dialog";
+import { UndoToast } from "@/components/ui/undo-toast";
+import { useUndoDelete } from "@/lib/use-undo-delete";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -137,13 +138,14 @@ function AddMappingForm({
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export function VaultPanel() {
-  const confirm = useConfirm();
+  // Deferred + undoable delete: the row hides immediately, the DELETE fires only
+  // after the undo window, and Undo restores it (recoverable, unlike a confirm).
+  const { pending: deletePending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<Mapping>();
   const [mappings, setMappings]     = useState<Mapping[]>([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
   const [adding, setAdding]         = useState(false);
   const [editing, setEditing]       = useState<Mapping | null>(null);
-  const [deleting, setDeleting]     = useState<string | null>(null);
   const [copiedKey, setCopiedKey]   = useState<string | null>(null);
 
   async function handleCopyRef(key: string, ref: string) {
@@ -174,24 +176,21 @@ export function VaultPanel() {
 
   useEffect(() => { void load(); }, []);
 
-  async function handleDelete(key: string) {
-    if (!(await confirm({
-      title: `Delete the secret “${key}”?`,
-      body: "Anything mapped to it will stop resolving. This can't be undone.",
-      confirmLabel: "Delete",
-      danger: true,
-    }))) return;
-    setDeleting(key);
-    try {
-      await fetch("/api/vault", {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key }),
-      });
-      await load();
-    } finally {
-      setDeleting(null);
-    }
+  function handleDelete(key: string) {
+    const mapping = mappings.find((m) => m.key === key);
+    if (!mapping) return;
+    scheduleDelete(mapping, `secret “${key}”`, async () => {
+      setMappings((prev) => prev.filter((m) => m.key !== key));
+      try {
+        await fetch("/api/vault", {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ key }),
+        });
+      } finally {
+        await load();
+      }
+    });
   }
 
   return (
@@ -267,7 +266,7 @@ export function VaultPanel() {
         />
       ) : (
         <div className="vault-list">
-          {mappings.map((m) => (
+          {(deletePending ? mappings.filter((m) => m.key !== deletePending.item.key) : mappings).map((m) => (
             <div key={m.key} className={`vault-row${m.status === "error" || m.status === "unresolved" ? " vault-row--warn" : ""}`}>
               <div className="vault-row-main">
                 <code className="vault-row-key">{m.key}</code>
@@ -307,8 +306,7 @@ export function VaultPanel() {
                   type="button"
                   className="vault-action-btn vault-action-btn--danger"
                   title="Remove mapping"
-                  disabled={deleting === m.key}
-                  onClick={() => void handleDelete(m.key)}
+                  onClick={() => handleDelete(m.key)}
                 >
                   <Icon name="ph:trash" width={11} />
                 </button>
@@ -323,6 +321,16 @@ export function VaultPanel() {
         Secrets are never stored on disk — resolved live via <code>op read</code> and
         cached in process memory. Requires 1Password desktop app + CLI authed.
       </div>
+
+      {deletePending ? (
+        <UndoToast
+          key={deletePending.id}
+          message={`Deleted ${deletePending.label}`}
+          undoAriaLabel="Undo delete"
+          onUndo={undoDelete}
+          onDismiss={commitDelete}
+        />
+      ) : null}
     </div>
   );
 }
