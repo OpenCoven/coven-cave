@@ -328,7 +328,7 @@ export function JournalEntries({
                     </span>
                     {d.reflectedBy ? <span className="journal-day__by">{familiarName(d.reflectedBy)}</span> : null}
                   </span>
-                  <span className="journal-day__prev">{d.preview || "—"}</span>
+                  <span className="journal-day__prev" title={d.preview || undefined}>{d.preview || "—"}</span>
                 </button>
               </li>
             ))}

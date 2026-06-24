@@ -365,7 +365,7 @@ export function CanvasList({
                         setView("preview");
                       }}
                     >
-                      <span className="journal-art__title">{a.title || "Untitled sketch"}</span>
+                      <span className="journal-art__title" title={a.title || "Untitled sketch"}>{a.title || "Untitled sketch"}</span>
                       <span className="journal-art__meta">
                         <span className={`journal-kind journal-kind--${a.kind ?? "html"}`}>{a.kind ?? "html"}</span>
                         {generating.has(a.id) ? " · generating…" : ` · ${relativeTime(a.updatedAt)}`}
