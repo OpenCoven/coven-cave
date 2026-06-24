@@ -7,8 +7,6 @@ struct GitHubView: View {
     @Environment(AppModel.self) private var app
 
     @State private var items: [GitHubItem] = []
-    @State private var login: String?
-    @State private var authed = false
     @State private var loading = true
     @State private var error: String?
     @State private var hint: String?
@@ -20,14 +18,6 @@ struct GitHubView: View {
                 .searchable(text: $query, prompt: "Search issues & PRs")
                 .navigationDestination(for: GitHubItem.self) { item in
                     GitHubItemDetailView(item: item)
-                }
-                .toolbar {
-                    if let login {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Label("@\(login)", systemImage: authed ? "person.crop.circle.badge.checkmark" : "person.crop.circle")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
                 }
                 .refreshable { await load() }
                 .task { await load() }
@@ -117,8 +107,6 @@ struct GitHubView: View {
             let resp = try await client.githubActivity()
             if resp.ok {
                 items = resp.items ?? []
-                login = resp.login
-                authed = resp.authed ?? false
                 error = nil
                 hint = nil
             } else {
