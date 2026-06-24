@@ -417,7 +417,7 @@ function BoardSnapshot({ byStatus, total, active, loaded, familiars }: {
             <li key={c.id}>
               <a className="cockpit-cardrow" href={`/#card-${c.id}`}>
                 <span className="cockpit-dot" style={{ background: STATUS_META[c.status].color }} />
-                <span className="cockpit-cardrow__title">{c.title}</span>
+                <span className="cockpit-cardrow__title" title={c.title}>{c.title}</span>
                 {famName(c.familiarId) ? <span className="cockpit-cardrow__who">{famName(c.familiarId)}</span> : null}
               </a>
             </li>
@@ -444,8 +444,8 @@ function AgentsPanel({ familiars, loaded }: { familiars: Familiar[]; loaded: boo
               {active ? <span className="cockpit-agent__on" /> : null}
             </span>
             <span className="cockpit-agent__body">
-              <span className="cockpit-agent__name">{f.display_name}</span>
-              <span className="cockpit-agent__role">{f.role || f.model || "familiar"}</span>
+              <span className="cockpit-agent__name" title={f.display_name}>{f.display_name}</span>
+              <span className="cockpit-agent__role" title={f.role || f.model || "familiar"}>{f.role || f.model || "familiar"}</span>
             </span>
             {active ? <span className="cockpit-agent__busy">{f.active_sessions} active</span> : null}
           </li>
@@ -469,7 +469,7 @@ function GithubPanel({ items, loaded }: { items: GitHubItem[]; loaded: boolean }
         <li key={g.id}>
           <a className="cockpit-ghrow" href={g.url} target="_blank" rel="noreferrer">
             <Icon name={GH_ICON[g.kind]} className="cockpit-ghrow__icon" aria-hidden />
-            <span className="cockpit-ghrow__title">{g.title}</span>
+            <span className="cockpit-ghrow__title" title={g.title}>{g.title}</span>
             <span className="cockpit-ghrow__meta">
               {checkDot(g.checkStatus)}
               <span className="cockpit-ghrow__repo">{shortRepo(g.repo)}{g.number ? ` #${g.number}` : ""}</span>
@@ -500,7 +500,7 @@ function AgendaPanel({ items, now, loaded }: { items: InboxItem[]; now: Date; lo
       {items.map((i) => (
         <li key={i.id} className="cockpit-agendarow">
           <span className="cockpit-agendarow__when">{whenLabel(i.fireAt!, now)}</span>
-          <span className="cockpit-agendarow__title">{i.title}</span>
+          <span className="cockpit-agendarow__title" title={i.title}>{i.title}</span>
         </li>
       ))}
     </ul>
@@ -529,7 +529,7 @@ function ReadingPanel({ items, loaded }: { items: ReadingItem[]; loaded: boolean
           <li key={r.id}>
             <a className="cockpit-readrow" href={r.url || "#"} target={r.url ? "_blank" : undefined} rel="noreferrer">
               <span className="cockpit-dot" style={{ background: reading ? "var(--accent-presence)" : "var(--text-muted)" }} />
-              <span className="cockpit-readrow__title">{r.title}</span>
+              <span className="cockpit-readrow__title" title={r.title}>{r.title}</span>
               {host(r.url) ? <span className="cockpit-readrow__host">{host(r.url)}</span> : null}
             </a>
           </li>
