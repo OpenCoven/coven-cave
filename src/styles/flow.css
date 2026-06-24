@@ -130,6 +130,26 @@
 .flow-canvas .react-flow__edge.flow-edge-active .react-flow__edge-path { stroke: var(--accent-presence); stroke-width: 2.4; }
 .flow-canvas .react-flow__connection-path { stroke: var(--accent-presence); stroke-width: 2; }
 
+/* Mid-edge "+" insert button (n8n-style). Subtle until the edge/button is hovered. */
+.flow-edge-add {
+  display: grid; place-items: center;
+  width: 18px; height: 18px; padding: 0;
+  border: 1px solid var(--border); border-radius: 50%;
+  background: var(--bg-elevated); color: var(--text-secondary);
+  font-size: 13px; line-height: 1; font-weight: 600;
+  cursor: pointer; opacity: 0; box-shadow: 0 2px 8px rgb(0 0 0 / 30%);
+  transition: opacity 120ms var(--ease-standard), background 120ms var(--ease-standard), color 120ms var(--ease-standard);
+}
+.react-flow__edge:hover .flow-edge-add,
+.flow-edge-add:hover,
+.flow-edge-add:focus-visible { opacity: 1; }
+.flow-edge-add:hover {
+  background: color-mix(in oklch, var(--accent-presence) 30%, var(--bg-elevated));
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border));
+}
+@media (prefers-reduced-motion: reduce) { .flow-edge-add { transition: none; } }
+
 /* ---- Node card ---------------------------------------------------------- */
 .flow-node {
   position: relative; box-sizing: border-box;

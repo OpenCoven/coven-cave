@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  addConnectedNode,
   addNode,
   connect,
   disconnect,
@@ -14,6 +15,7 @@ import {
   sameDoc,
   setActive,
   setNodeParam,
+  spliceNodeOnEdge,
   uniqueNodeName,
   type FlowDoc,
   type FlowNode,
@@ -149,6 +151,37 @@ function base(): FlowDoc {
   const b = { ...a, updatedAt: "2099-01-01T00:00:00.000Z" };
   assert.equal(sameDoc(a, b), true);
   assert.equal(sameDoc(a, setActive(a, true)), false);
+}
+
+// spliceNodeOnEdge: A→B becomes A→mid→B
+{
+  let doc = base();
+  doc = connect(doc, "a", "main", "b", "in");
+  const eid = doc.edges[0].id;
+  const mid = node("mid", "logic.filter");
+  doc = spliceNodeOnEdge(doc, eid, mid, "in", "main");
+  assert.ok(doc.nodes.some((n) => n.id === "mid"), "node added");
+  assert.ok(!doc.edges.some((e) => e.id === eid), "original edge removed");
+  assert.ok(doc.edges.some((e) => e.source === "a" && e.target === "mid"), "A→mid");
+  assert.ok(doc.edges.some((e) => e.source === "mid" && e.target === "b"), "mid→B");
+  assert.equal(doc.edges.length, 2);
+  // bad edge id → no-op
+  assert.equal(spliceNodeOnEdge(doc, "nope", node("z"), "in", "main").nodes.length, doc.nodes.length);
+}
+
+// addConnectedNode: drag from an output connects output→new
+{
+  let doc = base();
+  doc = addConnectedNode(doc, node("fresh", "familiar"), { nodeId: "a", handleId: "main", handleType: "source" }, "in", "main");
+  assert.ok(doc.nodes.some((n) => n.id === "fresh"));
+  assert.ok(doc.edges.some((e) => e.source === "a" && e.sourceHandle === "main" && e.target === "fresh" && e.targetHandle === "in"));
+}
+
+// addConnectedNode: drag from an input connects new→input
+{
+  let doc = base();
+  doc = addConnectedNode(doc, node("up", "familiar"), { nodeId: "b", handleId: "in", handleType: "target" }, "in", "main");
+  assert.ok(doc.edges.some((e) => e.source === "up" && e.sourceHandle === "main" && e.target === "b" && e.targetHandle === "in"));
 }
 
 console.log("flow-doc.test.ts OK");

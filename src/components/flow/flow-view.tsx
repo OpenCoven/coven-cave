@@ -9,6 +9,7 @@ import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { catalogNode, createNode } from "@/lib/flow/flow-catalog";
 import {
+  addConnectedNode,
   connect,
   disconnect,
   emptyFlow,
@@ -21,6 +22,7 @@ import {
   setActive,
   setNodeNotes,
   setNodeParam,
+  spliceNodeOnEdge,
   toggleNodeDisabled,
   updateSticky,
   type FlowDoc,
@@ -43,13 +45,18 @@ import {
   updateFlowRun,
   type FlowRunRecord,
 } from "@/lib/flows";
-import { FlowCanvas } from "./flow-canvas";
+import { FlowCanvas, type FlowConnectFrom } from "./flow-canvas";
 import { FlowExecutions } from "./flow-executions";
 import { FlowLibrary } from "./flow-library";
 import { FlowToolbar, type FlowTab } from "./flow-toolbar";
 import { NodeCatalogPanel } from "./node-catalog-panel";
 import { NodeDetailView, type NodeDetailOption } from "./node-detail-view";
 import { useFlowRun } from "./use-flow-run";
+
+type CatalogIntent =
+  | { kind: "add"; position: FlowPosition }
+  | { kind: "connect"; from: FlowConnectFrom; position: FlowPosition }
+  | { kind: "splice"; edgeId: string };
 
 function slugifyFlowId(name: string): string {
   return (
@@ -87,7 +94,9 @@ export function FlowView() {
   const progress = useFlowRun(activeRun);
   const running = activeRun?.status === "running" && !progress.done;
 
-  const addPositionRef = useRef<FlowPosition>({ x: 160, y: 160 });
+  // What picking a catalog node should do: drop it free, wire it to a dragged
+  // handle, or splice it into an edge.
+  const catalogIntentRef = useRef<CatalogIntent>({ kind: "add", position: { x: 160, y: 160 } });
   const mountedRef = useRef(true);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -428,21 +437,63 @@ export function FlowView() {
 
   // ---- Canvas / node mutation handlers ----
   const requestAdd = useCallback((position: FlowPosition) => {
-    addPositionRef.current = position;
+    catalogIntentRef.current = { kind: "add", position };
+    setCatalogOpen(true);
+  }, []);
+
+  const requestConnectToNew = useCallback((from: FlowConnectFrom, position: FlowPosition) => {
+    catalogIntentRef.current = { kind: "connect", from, position };
+    setCatalogOpen(true);
+  }, []);
+
+  const requestInsertEdge = useCallback((edgeId: string) => {
+    catalogIntentRef.current = { kind: "splice", edgeId };
     setCatalogOpen(true);
   }, []);
 
   const pickNode = useCallback(
     (type: string) => {
+      const intent = catalogIntentRef.current;
       setCatalogOpen(false);
       setDraftState((current) => {
         if (!current) return current;
-        const node = createNode(current.doc, type, addPositionRef.current);
+        const doc = current.doc;
+        const def = catalogNode(type);
+        const inHandle = def?.inputs[0]?.id ?? "in";
+        const outHandle = def?.outputs[0]?.id ?? "main";
+
+        // Splicing positions the node at the edge's midpoint; otherwise use the
+        // intent's drop point.
+        let position: FlowPosition;
+        if (intent.kind === "splice") {
+          const edge = doc.edges.find((e) => e.id === intent.edgeId);
+          const src = edge && doc.nodes.find((n) => n.id === edge.source);
+          const tgt = edge && doc.nodes.find((n) => n.id === edge.target);
+          position =
+            src && tgt
+              ? { x: (src.position.x + tgt.position.x) / 2, y: (src.position.y + tgt.position.y) / 2 }
+              : { x: 200, y: 200 };
+        } else {
+          position = intent.position;
+        }
+
+        const node = createNode(doc, type, position);
         if (!node) return current;
-        // Stagger the next add so repeated picks don't stack exactly.
-        addPositionRef.current = { x: addPositionRef.current.x + 40, y: addPositionRef.current.y + 40 };
+
+        // Sticky notes have no ports — never wire them, just drop them.
+        let next: FlowDoc;
+        if (def?.sticky || intent.kind === "add") {
+          next = { ...doc, nodes: [...doc.nodes, node] };
+        } else if (intent.kind === "connect") {
+          next = addConnectedNode(doc, node, intent.from, inHandle, outHandle);
+        } else {
+          next = spliceNodeOnEdge(doc, intent.edgeId, node, inHandle, outHandle);
+        }
+
+        // Stagger the next plain add so repeated picks don't stack exactly.
+        catalogIntentRef.current = { kind: "add", position: { x: position.x + 40, y: position.y + 40 } };
         setSelectedNodeId(node.id);
-        return flowDraftReducer(current, { type: "apply", next: { ...current.doc, nodes: [...current.doc.nodes, node] } });
+        return flowDraftReducer(current, { type: "apply", next });
       });
     },
     [],
@@ -542,6 +593,8 @@ export function FlowView() {
                   onRemoveNode={onRemoveNode}
                   onMoveNodes={onMoveNodes}
                   onRequestAdd={requestAdd}
+                  onConnectToNew={requestConnectToNew}
+                  onInsertEdge={requestInsertEdge}
                 />
                 {selectedNode && (
                   <NodeDetailView

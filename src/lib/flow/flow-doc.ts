@@ -194,6 +194,48 @@ export function disconnectEndpoints(doc: FlowDoc, source: string, target: string
   return { ...doc, edges: doc.edges.filter((edge) => !(edge.source === source && edge.target === target)) };
 }
 
+/**
+ * Splice a new node into an existing edge: `A → B` becomes `A → node → B`.
+ * The original edge is removed and two new edges wire the node in through its
+ * given input/output handles. No-op if the edge or node is missing.
+ */
+export function spliceNodeOnEdge(
+  doc: FlowDoc,
+  edgeId: string,
+  node: FlowNode,
+  inHandle: string,
+  outHandle: string,
+): FlowDoc {
+  const edge = doc.edges.find((e) => e.id === edgeId);
+  if (!edge) return doc;
+  let next = addNode(doc, node);
+  next = disconnect(next, edgeId);
+  next = connect(next, edge.source, edge.sourceHandle, node.id, inHandle);
+  next = connect(next, node.id, outHandle, edge.target, edge.targetHandle);
+  return next;
+}
+
+/**
+ * Add a node and wire it to a handle a connection was dragged from. Dragging
+ * from an output (`source`) connects that output into the new node's input;
+ * dragging from an input (`target`) connects the new node's output into it.
+ */
+export function addConnectedNode(
+  doc: FlowDoc,
+  node: FlowNode,
+  from: { nodeId: string; handleId: string; handleType: "source" | "target" },
+  inHandle: string,
+  outHandle: string,
+): FlowDoc {
+  let next = addNode(doc, node);
+  if (from.handleType === "target") {
+    next = connect(next, node.id, outHandle, from.nodeId, from.handleId);
+  } else {
+    next = connect(next, from.nodeId, from.handleId, node.id, inHandle);
+  }
+  return next;
+}
+
 function mapNode(doc: FlowDoc, id: string, fn: (node: FlowNode) => FlowNode): FlowDoc {
   let changed = false;
   const nodes = doc.nodes.map((node) => {

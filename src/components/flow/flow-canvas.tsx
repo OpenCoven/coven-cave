@@ -12,10 +12,12 @@ import {
   useReactFlow,
   type Connection,
   type Edge,
+  type EdgeTypes,
   type Node,
   type NodeChange,
   type NodeMouseHandler,
   type NodeTypes,
+  type OnConnectStartParams,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
@@ -29,8 +31,13 @@ import {
   type FlowNodeData,
   type FlowNodePhase,
 } from "./flow-node";
+import { FlowEdge } from "./flow-edge";
 
 const nodeTypes: NodeTypes = { flowNode: FlowNodeView, flowSticky: FlowStickyView };
+const edgeTypes: EdgeTypes = { flowEdge: FlowEdge };
+
+/** A handle a connection was dragged from (output `source` or input `target`). */
+export type FlowConnectFrom = { nodeId: string; handleId: string; handleType: "source" | "target" };
 
 export type FlowCanvasProps = {
   doc: FlowDoc;
@@ -47,6 +54,10 @@ export type FlowCanvasProps = {
   onMoveNodes: (positions: Record<string, FlowPosition>) => void;
   /** Open the node catalog to add a node at this flow-space position. */
   onRequestAdd: (position: FlowPosition) => void;
+  /** Dragged a connection onto empty canvas — add a node wired to that handle. */
+  onConnectToNew: (from: FlowConnectFrom, position: FlowPosition) => void;
+  /** Clicked the "+" on an edge — splice a node into that connection. */
+  onInsertEdge: (edgeId: string) => void;
 };
 
 function FlowCanvasInner(props: FlowCanvasProps) {
@@ -63,9 +74,14 @@ function FlowCanvasInner(props: FlowCanvasProps) {
     onRemoveNode,
     onMoveNodes,
     onRequestAdd,
+    onConnectToNew,
+    onInsertEdge,
   } = props;
   const [showMiniMap, setShowMiniMap] = useState(false);
   const { screenToFlowPosition } = useReactFlow();
+  // The handle a connection drag started from, captured so a drop on empty
+  // canvas can wire the new node back to it.
+  const connectFrom = useRef<FlowConnectFrom | null>(null);
 
   // Nodes live in local state so drags stay smooth; the doc is the source of
   // truth for structure, local state only owns in-flight positions.
@@ -128,13 +144,14 @@ function FlowCanvasInner(props: FlowCanvasProps) {
           target: edge.target,
           sourceHandle: edge.sourceHandle,
           targetHandle: edge.targetHandle,
-          type: "smoothstep",
+          type: "flowEdge",
           animated: isActive,
           className: isActive ? "flow-edge-active" : undefined,
           markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#7d83a8" },
+          data: { onInsert: () => onInsertEdge(edge.id) },
         } satisfies Edge;
       }),
-    [doc.edges, activeNodeId],
+    [doc.edges, activeNodeId, onInsertEdge],
   );
 
   const handleNodesChange = useCallback((changes: NodeChange<Node<FlowNodeData>>[]) => {
@@ -170,6 +187,34 @@ function FlowCanvasInner(props: FlowCanvasProps) {
       );
     },
     [onConnect],
+  );
+
+  const handleConnectStart = useCallback(
+    (_event: unknown, params: OnConnectStartParams) => {
+      connectFrom.current = params.nodeId
+        ? {
+            nodeId: params.nodeId,
+            handleId: params.handleId ?? (params.handleType === "target" ? "in" : "main"),
+            handleType: params.handleType === "target" ? "target" : "source",
+          }
+        : null;
+    },
+    [],
+  );
+
+  const handleConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent, connectionState: { isValid: boolean | null }) => {
+      const from = connectFrom.current;
+      connectFrom.current = null;
+      if (!from) return;
+      // A valid drop (onto a handle) becomes a real connection via onConnect.
+      // Only an invalid drop — empty canvas — opens the catalog for a new node.
+      if (connectionState?.isValid) return;
+      const point = "changedTouches" in event ? event.changedTouches[0] : event;
+      const position = screenToFlowPosition({ x: point.clientX, y: point.clientY });
+      onConnectToNew(from, position);
+    },
+    [onConnectToNew, screenToFlowPosition],
   );
 
   const handleEdgesDelete = useCallback(
@@ -226,6 +271,7 @@ function FlowCanvasInner(props: FlowCanvasProps) {
         nodes={renderNodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         nodesDraggable
         minZoom={0.2}
@@ -234,6 +280,8 @@ function FlowCanvasInner(props: FlowCanvasProps) {
         onNodeDragStop={handleNodeDragStop}
         onNodeClick={handleNodeClick}
         onNodeDoubleClick={handleNodeDoubleClick}
+        onConnectStart={handleConnectStart}
+        onConnectEnd={handleConnectEnd}
         onPaneClick={() => onSelectNode(null)}
         onConnect={handleConnect}
         onEdgesDelete={handleEdgesDelete}
