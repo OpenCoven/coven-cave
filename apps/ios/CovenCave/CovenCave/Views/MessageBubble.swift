@@ -12,6 +12,12 @@ struct MessageBubble: View {
     var onForward: ((DisplayMessage) -> Void)? = nil
     /// Regenerate this reply (assistant messages only); nil hides the action.
     var onRetry: (() -> Void)? = nil
+    /// Quote this message into the composer — swipe the bubble right, or use the
+    /// long-press menu. nil hides the action.
+    var onReply: ((DisplayMessage) -> Void)? = nil
+
+    /// Horizontal offset while swiping right to reply.
+    @State private var replyDrag: CGFloat = 0
 
     // The bubble's WebView is transparent over a system-coloured bubble, so its
     // prose must follow the app's light/dark appearance (the WebView doesn't
@@ -57,6 +63,14 @@ struct MessageBubble: View {
                 Label("Open in Reader", systemImage: "text.page")
             }
         }
+        if canReply {
+            Button {
+                fireReply()
+                Haptics.tap()
+            } label: {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
+        }
         if canForward {
             Button {
                 var forwarded = message
@@ -100,12 +114,52 @@ struct MessageBubble: View {
         !message.streaming && !parsed.visible.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && onForward != nil
     }
 
+    private var canReply: Bool {
+        onReply != nil && !message.streaming
+            && !parsed.visible.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Swipe a bubble to the right to quote it into the composer. Runs alongside
+    /// the scroll view's pan (simultaneousGesture) and only tracks clearly
+    /// horizontal drags, so vertical scrolling is unaffected.
+    private var replySwipe: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onChanged { value in
+                guard canReply, value.translation.width > 0,
+                      abs(value.translation.width) > abs(value.translation.height) else { return }
+                replyDrag = min(value.translation.width, 64)
+            }
+            .onEnded { _ in
+                if replyDrag > 48 { Haptics.tap(); fireReply() }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { replyDrag = 0 }
+            }
+    }
+
+    private func fireReply() {
+        var quoted = message
+        quoted.text = parsed.visible
+        onReply?(quoted)
+    }
+
     var body: some View {
-        if message.role == .system {
-            systemNote
-        } else {
-            chatBubble
+        Group {
+            if message.role == .system {
+                systemNote
+            } else {
+                chatBubble
+            }
         }
+        .offset(x: replyDrag)
+        .overlay(alignment: .leading) {
+            if replyDrag > 6 {
+                Image(systemName: "arrowshape.turn.up.left.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .opacity(Double(min(replyDrag / 50, 1)))
+                    .padding(.leading, 14)
+            }
+        }
+        .simultaneousGesture(replySwipe)
     }
 
     /// Inline slash-command output — a subtle monospaced card so it reads as
