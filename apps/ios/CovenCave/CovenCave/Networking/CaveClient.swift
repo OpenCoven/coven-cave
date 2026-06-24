@@ -382,22 +382,7 @@ struct CaveClient {
         }
     }
 
-    // MARK: - Reading list (library)
-
-    private struct ReadingListResponse: Decodable { var items: [ReadingItem] }
-    private struct ReadingItemResponse: Decodable { var ok: Bool; var item: ReadingItem? }
-
-    /// `GET /api/library/reading` — the reading list, newest first (server-sorted).
-    func reading() async throws -> [ReadingItem] {
-        let req = try request("api/library/reading")
-        let (data, resp) = try await session.data(for: req)
-        try Self.check(resp)
-        do {
-            return try JSONDecoder().decode(ReadingListResponse.self, from: data).items
-        } catch {
-            throw CaveError.decoding(String(describing: error))
-        }
-    }
+    // MARK: - Reminders / inbox
 
     /// `GET /api/inbox` — the reminders/inbox feed, filtered to reminders.
     func reminders() async throws -> [Reminder] {
@@ -437,31 +422,6 @@ struct CaveClient {
     @discardableResult func dismissReminder(id: String) async throws -> Reminder? { try await inboxAction(id, "dismiss") }
     @discardableResult func snoozeReminder(id: String, minutes: Int) async throws -> Reminder? {
         try await inboxAction(id, "snooze", body: try JSONEncoder().encode(["minutes": minutes]))
-    }
-
-    private struct ReadingPatch: Encodable {
-        var id: String
-        var status: String
-        var progress: Double?   // synthesised Encodable omits this when nil
-    }
-
-    /// `PATCH /api/library/reading` — change an item's status (and optionally
-    /// progress). Returns the server's updated item.
-    @discardableResult
-    func updateReading(id: String, status: ReadingStatus, progress: Double? = nil) async throws -> ReadingItem? {
-        let payload = try JSONEncoder().encode(ReadingPatch(id: id, status: status.rawValue, progress: progress))
-        let req = try request("api/library/reading", method: "PATCH", body: payload)
-        let (data, resp) = try await session.data(for: req)
-        try Self.check(resp)
-        return try? JSONDecoder().decode(ReadingItemResponse.self, from: data).item
-    }
-
-    /// `DELETE /api/library/reading?id=…` — remove an item.
-    func deleteReading(id: String) async throws {
-        let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? id
-        let req = try request("api/library/reading?id=\(escaped)", method: "DELETE")
-        let (_, resp) = try await session.data(for: req)
-        try Self.check(resp)
     }
 
     // MARK: - Helpers

@@ -25,7 +25,7 @@ struct RootView: View {
     }
 }
 
-/// Bottom tab bar shown once connected: Chats + Tasks.
+/// Bottom tab bar shown once connected: Chats, Tasks, Developer, Settings.
 ///
 /// Uses the modern `Tab(value:)` API (iOS 18+). The legacy `.tabItem`/`.tag`
 /// TabView on the iOS 26 SDK reset the selection to the first tab on a cold
@@ -34,17 +34,14 @@ struct RootView: View {
 struct MainTabView: View {
     @Environment(AppModel.self) private var app
 
-    /// Tab order, used to map ⌘1–5 to the right tab.
-    private let tabOrder: [AppTab] = [.chats, .read, .tasks, .dev, .settings]
+    /// Tab order, used to map ⌘1–4 to the right tab.
+    private let tabOrder: [AppTab] = [.chats, .tasks, .dev, .settings]
 
     var body: some View {
         @Bindable var app = app
         TabView(selection: $app.selectedTab) {
             Tab("Chats", systemImage: "bubble.left.and.bubble.right.fill", value: AppTab.chats) {
                 ChatsHomeView()
-            }
-            Tab("Read", systemImage: "books.vertical.fill", value: AppTab.read) {
-                ReadingView()
             }
             Tab("Tasks", systemImage: "checklist", value: AppTab.tasks) {
                 TasksView()
@@ -59,7 +56,7 @@ struct MainTabView: View {
         // Command confirmations float above the whole tab bar so they're visible
         // whether a command stays in chat or jumps to the Tasks tab.
         .toast($app.toast)
-        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–5.
+        // Hardware-keyboard tab switching (iPad / Mac over Tailscale): ⌘1–4.
         // Hidden buttons keep the shortcuts active without affecting layout.
         .background {
             ForEach(Array(tabOrder.enumerated()), id: \.element) { index, tab in
