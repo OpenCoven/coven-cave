@@ -196,6 +196,13 @@ export function Workspace() {
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
+  // Sticky offline signal for the banner. A crash-looping / codesigning-zombie
+  // daemon flaps: it briefly answers health (running:true) then dies again. The
+  // banner keys off this instead of the raw per-poll status so a single transient
+  // "running" doesn't flicker it away — it shows on the first failed poll and
+  // only clears after the daemon is *consistently* healthy (see the streak ref).
+  const [daemonOffline, setDaemonOffline] = useState(false);
+  const daemonHealthyStreakRef = useRef(0);
   // Pending Workflow Studio deep link (set when opening a workflow from Roles).
   const [workflowDeepLink, setWorkflowDeepLink] = useState<string | null>(null);
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
@@ -265,13 +272,25 @@ export function Workspace() {
   activeIdRef.current = activeId;
 
   const refreshDaemonStatus = useCallback(async () => {
+    let running = false;
     try {
       const res = await fetch("/api/daemon/status", { cache: "no-store" });
       const json = (await res.json()) as { running?: boolean };
-      setDaemonRunning(json.running === true);
+      running = json.running === true;
+      setDaemonRunning(running);
     } catch {
       setDaemonRunning(false);
     } finally {
+      // Drive the sticky offline signal: any failed poll marks the daemon
+      // offline immediately, but it takes two *consecutive* healthy polls to
+      // clear — otherwise a flapping zombie daemon keeps dismissing the banner.
+      if (running) {
+        daemonHealthyStreakRef.current += 1;
+        if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
+      } else {
+        daemonHealthyStreakRef.current = 0;
+        setDaemonOffline(true);
+      }
       // The first poll has now produced a real answer — only after this may the
       // offline banner appear, so a fresh load doesn't flash it before we know.
       setDaemonStatusResolved(true);
@@ -445,7 +464,7 @@ export function Workspace() {
   // Push / dismiss the daemon-offline banner into the shared shell channel so
   // it appears at the top of every surface, not just Chat.
   useEffect(() => {
-    if (daemonRunning) {
+    if (!daemonOffline) {
       dismissBanner("daemon-offline");
       dismissBanner("daemon-start-error");
     } else if (daemonStatusResolved) {
@@ -463,7 +482,7 @@ export function Workspace() {
         },
       });
     }
-  }, [daemonRunning, daemonStatusResolved, pushBanner, dismissBanner, startDaemon]);
+  }, [daemonOffline, daemonStatusResolved, pushBanner, dismissBanner, startDaemon]);
 
   const loadFamiliars = useCallback(async () => {
     try {
