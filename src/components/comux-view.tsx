@@ -1476,7 +1476,11 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       </div>
                     </div>
 
-                    <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                    {/* No top padding on the scroller: the sticky PROJECTS
+                        header must stick flush at the scrollport top, or rows
+                        scrolling up bleed into the gap above it. Top breathing
+                        room lives inside the header instead (its own padding). */}
+                    <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
                     {/* Projects — merged into this column above the file tree so
                         the project switcher and the file browser share one
                         explorer. Collapsible; the Code toolbar's Projects toggle
@@ -1485,7 +1489,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       <button
                         type="button"
                         onClick={() => setProjectListVisible(projectListCollapsed)}
-                        className="comux-project-header sticky top-0 z-10 -mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1.5 rounded px-2 py-[5px] text-left transition-colors hover:bg-[var(--bg-raised)]"
+                        className="comux-project-header sticky top-0 z-10 -mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1.5 rounded px-2 pb-[6px] pt-2.5 text-left transition-colors hover:bg-[var(--bg-raised)]"
                       >
                         <svg
                           width="7" height="7" viewBox="0 0 8 8"

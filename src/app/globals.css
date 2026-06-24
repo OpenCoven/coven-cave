@@ -2528,9 +2528,11 @@ tr[role="checkbox"]:focus-visible {
     box-shadow var(--duration-fast, 120ms);
 }
 .comux-project-row:hover {
-  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
-  backdrop-filter: blur(8px) saturate(130%);
-  -webkit-backdrop-filter: blur(8px) saturate(130%);
+  /* Opaque fill (no backdrop-filter): a blur layer per hovered row is a real
+     GPU cost for negligible gain over a list, since the row sits on a near-
+     opaque column. The frost is reserved for the single persistent --active
+     row below, where it earns its paint. */
+  background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
   border-color: color-mix(in oklch, var(--foreground) 8%, transparent);
   transform: translateY(-1px);
 }
@@ -2566,11 +2568,14 @@ tr[role="checkbox"]:focus-visible {
   background: color-mix(in oklch, var(--tile, var(--accent-presence)) 22%, transparent);
   border-color: color-mix(in oklch, var(--tile, var(--accent-presence)) 40%, transparent);
 }
-/* Frosted, in-flow section header for the merged explorer (projects + search +
-   file tree share one scroll, so a true sticky header would collide with the
-   sections below — we frost it in place instead). */
+/* Frosted PROJECTS header. Sticks flush at the scrollport top (the scroller has
+   no top padding) so rows scrolling past frost under it rather than bleeding
+   into a gap above. Kept mostly opaque — a header, not a pane — so row text
+   doesn't read through; the blur only softens the sliver that shows at the
+   stick line. Releases when its section scrolls away (sticky scoped to the
+   projects wrapper, so it never collides with the search box / file tree). */
 .comux-project-header {
-  background: color-mix(in oklch, var(--bg-base) 70%, transparent);
+  background: color-mix(in oklch, var(--bg-base) 88%, transparent);
   backdrop-filter: blur(12px) saturate(135%);
   -webkit-backdrop-filter: blur(12px) saturate(135%);
 }
