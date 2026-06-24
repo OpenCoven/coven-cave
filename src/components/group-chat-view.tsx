@@ -35,6 +35,10 @@ import {
   removeGroup,
   setGroupSession,
   setGroupParticipants,
+  parseMentions,
+  findActiveMention,
+  matchMentions,
+  applyMention,
   loadGroups,
   saveGroups,
   loadTranscript,
@@ -43,6 +47,7 @@ import {
   type GroupTurn,
   type GroupUserTurn,
   type GroupReply,
+  type MentionableFamiliar,
 } from "@/lib/group-chat";
 
 type Props = {
@@ -71,10 +76,17 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  // @mention autocomplete in the composer.
+  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
 
   const addBtnRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Caret to restore after we programmatically rewrite the draft (mention insert).
+  const pendingCaretRef = useRef<number | null>(null);
   const groupsRef = useRef<CovenGroup[]>(groups);
   const transcriptRef = useRef<GroupTurn[]>(transcript);
   groupsRef.current = groups;
@@ -119,6 +131,18 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [transcript]);
+
+  // --- restore caret after a programmatic draft rewrite (mention insert) ---
+  useEffect(() => {
+    const caret = pendingCaretRef.current;
+    if (caret == null) return;
+    pendingCaretRef.current = null;
+    const el = textareaRef.current;
+    if (el) {
+      el.focus();
+      el.setSelectionRange(caret, caret);
+    }
+  }, [draft]);
 
   const persistGroups = useCallback((next: CovenGroup[]) => {
     setGroups(next);
@@ -265,9 +289,23 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     const group = activeGroupRef.current;
     const text = draft.trim();
     if (!group || group.familiarIds.length === 0 || !text || busy) return;
+    // Tagging a subset of familiars with `@mentions` targets the message at just
+    // those participants; with no mention it broadcasts to the whole coven.
+    const mentionable: MentionableFamiliar[] = group.familiarIds.map((id) => ({
+      id,
+      name: byId.get(id)?.display_name ?? "",
+    }));
+    const mentioned = parseMentions(text, mentionable);
+    const targetIds = mentioned.length > 0 ? group.familiarIds.filter((id) => mentioned.includes(id)) : group.familiarIds;
     const at = nowIso();
-    const userTurn: GroupUserTurn = { id: newId(), role: "user", text, createdAt: at };
-    const replies: GroupReply[] = group.familiarIds.map((fid) => ({
+    const userTurn: GroupUserTurn = {
+      id: newId(),
+      role: "user",
+      text,
+      targetFamiliarIds: mentioned.length > 0 ? targetIds : undefined,
+      createdAt: at,
+    };
+    const replies: GroupReply[] = targetIds.map((fid) => ({
       id: newId(),
       role: "assistant",
       familiarId: fid,
@@ -279,17 +317,52 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     }));
     setTranscript((prev) => [...prev, userTurn, ...replies]);
     setDraft("");
+    setMention(null);
     setBusy(true);
     const controller = new AbortController();
     abortRef.current = controller;
     await Promise.all(replies.map((r) => streamOne(group, r, text, controller.signal)));
     abortRef.current = null;
     setBusy(false);
-  }, [draft, busy, streamOne]);
+  }, [draft, busy, streamOne, byId]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
+
+  // --- @mention autocomplete ----------------------------------------------
+  const mentionable = useMemo<MentionableFamiliar[]>(() => {
+    if (!activeGroup) return [];
+    return activeGroup.familiarIds
+      .map((id) => byId.get(id))
+      .filter((f): f is ResolvedFamiliar => Boolean(f))
+      .map((f) => ({ id: f.id, name: f.display_name }));
+  }, [activeGroup, byId]);
+  const mentionMatches = useMemo(
+    () => (mention ? matchMentions(mention.query, mentionable) : []),
+    [mention, mentionable],
+  );
+  const mentionOpen = mention !== null && mentionMatches.length > 0;
+
+  // Recompute the active mention token from the textarea's current caret.
+  const syncMention = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const next = findActiveMention(el.value, el.selectionStart ?? el.value.length);
+    setMention(next);
+    setMentionIndex(0);
+  }, []);
+
+  const chooseMention = useCallback(
+    (f: MentionableFamiliar) => {
+      if (!mention) return;
+      const { text, caret } = applyMention(draft, mention.start, mention.query, f.name);
+      pendingCaretRef.current = caret;
+      setDraft(text);
+      setMention(null);
+    },
+    [mention, draft],
+  );
 
   // --- derived transcript view --------------------------------------------
   // Group replies under the user turn they answer for a clean threaded layout.
@@ -505,8 +578,20 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                 </div>
               ) : (
                 <div className="mx-auto flex max-w-3xl flex-col gap-5">
-                  {threads.map(({ user, replies }) => (
+                  {threads.map(({ user, replies }) => {
+                    const targets = user.targetFamiliarIds
+                      ?.map((id) => byId.get(id))
+                      .filter((f): f is ResolvedFamiliar => Boolean(f));
+                    return (
                     <div key={user.id} className="flex flex-col gap-2">
+                      {targets && targets.length > 0 && (
+                        <div className="flex items-center gap-1.5 self-end text-[11px]" style={{ color: "var(--text-muted)" }}>
+                          <Icon name="ph:at" width={12} height={12} />
+                          <span>
+                            to {targets.map((f) => f.display_name).join(", ")}
+                          </span>
+                        </div>
+                      )}
                       <MessageBubble role="user" content={user.text} timestamp={user.createdAt} onOpenUrl={onOpenUrl} />
                       <div className="flex flex-col gap-3 pl-1">
                         {replies.map((r) => {
@@ -541,18 +626,48 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                         })}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
 
             {/* Composer */}
             <div className="border-t px-4 py-3" style={{ borderColor: "var(--border-hairline)" }}>
-              <div className="mx-auto flex max-w-3xl items-end gap-2">
+              <div ref={composerRef} className="mx-auto flex max-w-3xl items-end gap-2">
                 <textarea
+                  ref={textareaRef}
                   value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
+                  onChange={(e) => {
+                    setDraft(e.target.value);
+                    syncMention();
+                  }}
+                  onKeyUp={syncMention}
+                  onClick={syncMention}
+                  onBlur={() => setMention(null)}
                   onKeyDown={(e) => {
+                    if (mentionOpen) {
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setMentionIndex((i) => (i + 1) % mentionMatches.length);
+                        return;
+                      }
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
+                        return;
+                      }
+                      if (e.key === "Enter" || e.key === "Tab") {
+                        e.preventDefault();
+                        chooseMention(mentionMatches[mentionIndex] ?? mentionMatches[0]);
+                        return;
+                      }
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        setMention(null);
+                        return;
+                      }
+                    }
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
                       void send();
@@ -562,12 +677,57 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                   placeholder={
                     participants.length === 0
                       ? "Add familiars to this coven first…"
-                      : `Message ${participants.length} familiar${participants.length === 1 ? "" : "s"}…`
+                      : `Message ${participants.length} familiar${participants.length === 1 ? "" : "s"}… (@ to tag one)`
                   }
                   disabled={participants.length === 0}
                   className="max-h-40 min-h-[40px] flex-1 resize-none rounded-lg border px-3 py-2 text-[14px] outline-none disabled:opacity-50"
                   style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)", color: "var(--text-primary)" }}
                 />
+                <Popover
+                  open={mentionOpen}
+                  onOpenChange={(next) => {
+                    if (!next) setMention(null);
+                  }}
+                  anchorRef={composerRef}
+                  placement="top-start"
+                  ariaLabel="Tag a familiar"
+                  minWidth={220}
+                >
+                  <div className="max-h-64 overflow-y-auto p-1">
+                    {mentionMatches.map((f, i) => {
+                      const resolved = byId.get(f.id);
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left"
+                          style={i === mentionIndex ? { background: "var(--bg-raised)" } : undefined}
+                          // Use mousedown so the textarea's onBlur doesn't fire first and close us.
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            chooseMention(f);
+                          }}
+                          onMouseEnter={() => setMentionIndex(i)}
+                        >
+                          {resolved && (
+                            <FamiliarAvatar familiar={resolved} size="md" className="rounded-full object-cover" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-[13px]" style={{ color: "var(--text-primary)" }}>
+                              {f.name}
+                            </div>
+                            {resolved?.role && (
+                              <div className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+                                {resolved.role}
+                              </div>
+                            )}
+                          </div>
+                          <Icon name="ph:at" width={14} height={14} className="text-[var(--text-muted)]" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Popover>
                 {busy ? (
                   <Button variant="danger-ghost" leadingIcon="ph:stop-fill" onClick={stop}>
                     Stop

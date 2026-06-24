@@ -9,8 +9,19 @@ import {
   removeGroup,
   setGroupSession,
   setGroupParticipants,
+  parseMentions,
+  findActiveMention,
+  matchMentions,
+  applyMention,
   type GroupReply,
+  type MentionableFamiliar,
 } from "./group-chat.ts";
+
+const ROSTER: MentionableFamiliar[] = [
+  { id: "nova", name: "Nova" },
+  { id: "nova-star", name: "Nova Star" },
+  { id: "sage", name: "Sage" },
+];
 
 function baseReply(overrides: Partial<GroupReply> = {}): GroupReply {
   return {
@@ -140,4 +151,79 @@ test("setGroupParticipants: drops session pins for removed familiars", () => {
   assert.deepEqual(g.familiarIds, ["a", "c"]);
   assert.equal(g.sessions.a, "sess-a");
   assert.equal(g.sessions.b, undefined);
+});
+
+// --- @mentions -------------------------------------------------------------
+
+test("parseMentions: no mention ⇒ empty (broadcast to all)", () => {
+  assert.deepEqual(parseMentions("what does everyone think?", ROSTER), []);
+});
+
+test("parseMentions: single tag targets just that familiar", () => {
+  assert.deepEqual(parseMentions("@Nova can you double-check?", ROSTER), ["nova"]);
+});
+
+test("parseMentions: is case-insensitive", () => {
+  assert.deepEqual(parseMentions("hey @sage", ROSTER), ["sage"]);
+});
+
+test("parseMentions: multiple tags, deduped in first-seen order", () => {
+  assert.deepEqual(parseMentions("@Sage and @Nova and @Sage again", ROSTER), ["sage", "nova"]);
+});
+
+test("parseMentions: prefers the longest matching name", () => {
+  assert.deepEqual(parseMentions("@Nova Star ship it", ROSTER), ["nova-star"]);
+});
+
+test("parseMentions: trailing word char is not a match (@Novak ≠ @Nova)", () => {
+  assert.deepEqual(parseMentions("@Novak hi", ROSTER), []);
+});
+
+test("parseMentions: @ mid-word (email) is not a mention", () => {
+  assert.deepEqual(parseMentions("mail me at me@Nova.dev", ROSTER), []);
+});
+
+test("parseMentions: punctuation after a name still matches", () => {
+  assert.deepEqual(parseMentions("@Nova, thoughts?", ROSTER), ["nova"]);
+});
+
+test("findActiveMention: caret inside a fresh token returns start + query", () => {
+  const text = "hey @Nov";
+  assert.deepEqual(findActiveMention(text, text.length), { start: 4, query: "Nov" });
+});
+
+test("findActiveMention: bare @ has an empty query", () => {
+  const text = "ask @";
+  assert.deepEqual(findActiveMention(text, text.length), { start: 4, query: "" });
+});
+
+test("findActiveMention: not in a token returns null", () => {
+  assert.equal(findActiveMention("plain text", 5), null);
+});
+
+test("findActiveMention: @ glued to a word is not a token start", () => {
+  const text = "me@host";
+  assert.equal(findActiveMention(text, text.length), null);
+});
+
+test("findActiveMention: does not span a newline", () => {
+  const text = "@Nova\nhello";
+  assert.equal(findActiveMention(text, text.length), null);
+});
+
+test("matchMentions: blank query lists everyone", () => {
+  assert.equal(matchMentions("", ROSTER).length, ROSTER.length);
+});
+
+test("matchMentions: prefix filters case-insensitively", () => {
+  assert.deepEqual(
+    matchMentions("nov", ROSTER).map((f) => f.id),
+    ["nova", "nova-star"],
+  );
+});
+
+test("applyMention: replaces the token with '@name ' and moves caret after", () => {
+  const out = applyMention("hey @Nov rest", 4, "Nov", "Nova");
+  assert.equal(out.text, "hey @Nova  rest");
+  assert.equal(out.caret, "hey @Nova ".length);
 });
