@@ -16,12 +16,14 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Familiar } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
 import { modelSlashOptions, resolveModelArg } from "@/lib/slash-model";
 import type { ChatModelState } from "@/lib/chat-model-state";
 import { draftReminderFromText } from "@/lib/reminder-draft";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
+import { sessionRailTitle } from "@/lib/session-rail-title";
+import { relativeTime } from "@/lib/relative-time";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -73,6 +75,7 @@ const CONNECTORS: Connector[] = [
 type Props = {
   familiars: Familiar[];
   activeFamiliarId: string | null;
+  sessions: SessionRow[];
   onSetActiveFamiliar: (id: string) => void;
   /** Open a new chat that sends `prompt` through ChatView's streaming path.
    *  Home never talks to the chat API itself — a fire-and-cancel send here
@@ -84,6 +87,8 @@ type Props = {
   /** Submit a slash command. Mirrors the chat composer's escape hatch so
    *  `/inbox`, `/board`, `/remind …` etc. work from the home screen too. */
   onSlash?: (command: string, args: string) => void;
+  /** Resume a recent chat from the "Jump back in" strip. */
+  onOpenSession?: (sessionId: string, familiarId: string | null) => void;
   /** Open the marketplace for a connector card (Slack / Gmail / Drive). */
   onConnect?: (connectorId: string) => void;
 };
@@ -118,12 +123,14 @@ function writeHomeDraft(text: string) {
 export function HomeComposer({
   familiars,
   activeFamiliarId,
+  sessions,
   onSetActiveFamiliar,
   onStartChat,
   onNavigateToBoard,
   onNavigateToInbox,
   onToast,
   onSlash,
+  onOpenSession,
   onConnect,
 }: Props) {
   const [text, setText] = useState(() => readHomeDraft());
@@ -247,6 +254,23 @@ export function HomeComposer({
     setText("/model ");
     setTimeout(() => textareaRef.current?.focus(), 0);
   }, []);
+
+  // "Jump back in" — the most recent non-archived chats, for one-click resume.
+  const familiarNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of familiars) m.set(f.id, f.display_name);
+    return m;
+  }, [familiars]);
+  const recentSessions = useMemo(
+    () =>
+      [...sessions]
+        .filter((s) => !s.archived_at && s.title)
+        .sort((a, b) =>
+          (b.updated_at ?? b.created_at ?? "").localeCompare(a.updated_at ?? a.created_at ?? ""),
+        )
+        .slice(0, 4),
+    [sessions],
+  );
 
   // Auto-grow textarea
   const autoGrow = useCallback(() => {
@@ -654,6 +678,37 @@ export function HomeComposer({
       <div className="hc-keyboard-hint">
         ⏎ send · ⇧⏎ newline · ↑↓ history · / commands
       </div>
+
+      {/* Jump back in — resume a recent chat. The composer above starts new
+          intent; this is the "continue where you left off" path. */}
+      {onOpenSession && recentSessions.length > 0 && (
+        <div className="home-recent">
+          <div className="home-recent-label">Jump back in</div>
+          <div className="home-recent-list" role="list">
+            {recentSessions.map((s) => {
+              const title = sessionRailTitle(s);
+              const famName = s.familiarId ? familiarNameById.get(s.familiarId) : null;
+              const when = relativeTime(s.updated_at ?? s.created_at);
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="listitem"
+                  className="home-recent-item"
+                  onClick={() => onOpenSession(s.id, s.familiarId ?? null)}
+                  title={`Resume “${title}”`}
+                >
+                  <Icon name="ph:chat-circle-dots" width={13} className="home-recent-icon" aria-hidden />
+                  <span className="home-recent-text">
+                    <span className="home-recent-title">{title}</span>
+                    <span className="home-recent-meta">{[famName, when].filter(Boolean).join(" · ")}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Connector cards — one-tap entry points into the marketplace. */}
       <div className="home-composer-suggestions home-composer-connectors">
