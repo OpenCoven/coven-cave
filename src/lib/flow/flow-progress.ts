@@ -11,6 +11,7 @@ import {
   type WorkflowStepProgressStatus,
 } from "@/lib/workflow-step-progress";
 import type { FlowRunStepRecord, FlowRunStepStatus, FlowRunStatus } from "@/lib/flows";
+import type { FlowEdge } from "./flow-doc.ts";
 
 /** Phase overlaid on a canvas node while a run/preview walks the graph. */
 export type FlowNodePhase = "pending" | "running" | "succeeded" | "failed" | "skipped";
@@ -43,6 +44,36 @@ export function parseFlowRunProgress(transcript: string, orderedNodeIds: string[
     markersFound: result.markersFound,
     steps: result.steps,
   };
+}
+
+export type FlowNodeRunData = {
+  status: FlowNodePhase;
+  /** This node's narration from the run (its "output"). */
+  output: string;
+  /** Upstream nodes feeding this one, with their narration (its "input"). */
+  inputs: Array<{ nodeId: string; detail: string }>;
+};
+
+/**
+ * The run "data" for one node, the way n8n's node view shows it: this node's
+ * own output narration plus the narration of the upstream nodes that feed it
+ * (its input). Grounded in the agent's per-step transcript — never fabricated.
+ */
+export function selectNodeRunData(
+  edges: FlowEdge[],
+  steps: WorkflowStepProgress[],
+  nodeId: string,
+): FlowNodeRunData {
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const self = byId.get(nodeId);
+  const seen = new Set<string>();
+  const inputs: Array<{ nodeId: string; detail: string }> = [];
+  for (const edge of edges) {
+    if (edge.target !== nodeId || seen.has(edge.source)) continue;
+    seen.add(edge.source);
+    inputs.push({ nodeId: edge.source, detail: byId.get(edge.source)?.detail ?? "" });
+  }
+  return { status: flowPhase(self?.status ?? "pending"), output: self?.detail ?? "", inputs };
 }
 
 /** Live marker status → persisted run-step status (for a finished run). */
