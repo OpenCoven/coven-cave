@@ -23,7 +23,7 @@
 .board-search-clear:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-search-clear:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
 
-.board-toolbar-btn { display:inline-flex; align-items:center; gap:5px; height:28px; padding:0 10px; border-radius:7px; border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-secondary); font-size:12px; font-weight:450; cursor:pointer; transition:background .12s,color .12s,border-color .12s; white-space:nowrap; }
+.board-toolbar-btn { display:inline-flex; align-items:center; gap:5px; height:30px; padding:0 10px; border-radius:7px; border:1px solid var(--border-strong); background:var(--bg-raised); color:var(--text-secondary); font-size:12px; font-weight:450; cursor:pointer; transition:background .12s,color .12s,border-color .12s; white-space:nowrap; }
 .board-toolbar-btn:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-toolbar-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
 .board-toolbar-btn--active { background:color-mix(in oklch,var(--accent-presence) 14%,var(--bg-raised)); border-color:color-mix(in oklch,var(--accent-presence) 40%,transparent); color:var(--text-primary); }
@@ -54,7 +54,7 @@
 .board-view-toggle-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:-1px; z-index:1; position:relative; }
 .board-view-toggle-btn--active { background:color-mix(in oklch,var(--accent-presence) 16%,var(--bg-raised)); color:var(--text-primary); }
 
-.board-new-card-btn { height:28px; padding:0 12px; border-radius:7px; border:1px solid var(--border-strong); background:var(--accent-presence); color:var(--text-primary); font-size:12px; font-weight:500; cursor:pointer; transition:background .12s,transform .1s; white-space:nowrap; }
+.board-new-card-btn { height:30px; padding:0 12px; border-radius:7px; border:1px solid var(--border-strong); background:var(--accent-presence); color:var(--text-primary); font-size:12px; font-weight:500; cursor:pointer; transition:background .12s,transform .1s; white-space:nowrap; }
 .board-new-card-btn:hover { background:color-mix(in oklch, var(--accent-presence) 85%, #000); transform:scale(1.02); }
 .board-new-card-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:2px; }
 
