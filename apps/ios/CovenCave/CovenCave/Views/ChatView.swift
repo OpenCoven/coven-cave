@@ -37,6 +37,11 @@ struct ChatView: View {
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
     @State private var zoomTarget: ZoomTarget?
+    // In-thread message search: the sheet, the message to scroll to after a hit
+    // is picked, and the message briefly highlighted once it scrolls into view.
+    @State private var showSearch = false
+    @State private var searchScrollTarget: String?
+    @State private var highlightedMessageId: String?
 
     /// Per-thread key for the persisted unsent draft.
     private var draftKey: String { "cave.chat.draft.\(thread.id)" }
@@ -86,6 +91,13 @@ struct ChatView: View {
                 .accessibilityLabel("Linked tasks")
             }
             ToolbarItem(placement: .topBarTrailing) {
+                Button { showSearch = true } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+                .accessibilityLabel("Search this chat")
+                .disabled(thread.messages.isEmpty)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button { showCommands = true } label: {
                     Image(systemName: "command")
                 }
@@ -111,6 +123,17 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showTasks) {
             LinkedTasksSheet(thread: thread)
+        }
+        .sheet(isPresented: $showSearch) {
+            ThreadSearchView(
+                messages: thread.messages,
+                resolveSender: { message in
+                    message.role == .user
+                        ? "You"
+                        : (message.familiarId.flatMap(app.familiar)?.displayName ?? "Assistant")
+                },
+                onSelect: { id in searchScrollTarget = id }
+            )
         }
         .sheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
@@ -161,6 +184,13 @@ struct ChatView: View {
                                       onOpenReader: { openReader(text: $0, familiar: message.familiarId.flatMap(app.familiar)) },
                                       onRetry: canRetry(message) ? { retryAssistant(message) } : nil)
                         .id(message.id)
+                        .background(
+                            message.id == highlightedMessageId
+                                ? Color.accentColor.opacity(0.12)
+                                : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 12)
+                        )
+                        .animation(.easeInOut(duration: 0.3), value: highlightedMessageId)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -208,6 +238,25 @@ struct ChatView: View {
             }
             .onChange(of: thread.messages.count) { _, _ in
                 withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            // A search hit was picked: let the sheet dismiss, scroll the message
+            // to centre, flash a highlight, then fade it.
+            .onChange(of: searchScrollTarget) { _, target in
+                guard let target else { return }
+                Task {
+                    try? await Task.sleep(for: .milliseconds(350))
+                    await MainActor.run {
+                        withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(target, anchor: .center) }
+                        highlightedMessageId = target
+                        searchScrollTarget = nil
+                    }
+                    try? await Task.sleep(for: .milliseconds(1600))
+                    await MainActor.run {
+                        if highlightedMessageId == target {
+                            withAnimation(.easeOut(duration: 0.4)) { highlightedMessageId = nil }
+                        }
+                    }
+                }
             }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
         }
