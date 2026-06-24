@@ -66,7 +66,14 @@ type Props = {
 
 function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; timeoutMs?: number }) {
   const [, setTick] = useState(0);
-  useEffect(() => { const id = setInterval(() => setTick((n) => n + 1), 60_000); return () => clearInterval(id); }, []);
+  // Re-render once a minute so the relative "running for…" text advances — but
+  // not while the tab is hidden (no point ticking a badge nobody can see).
+  useEffect(() => {
+    const id = setInterval(() => { if (!document.hidden) setTick((n) => n + 1); }, 60_000);
+    const onVisible = () => { if (!document.hidden) setTick((n) => n + 1); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
+  }, []);
   const text = formatTimeoutBadge(runningSince, timeoutMs, DEFAULT_TIMEOUT_MS);
   if (!text) return null;
   const over = runningSince ? Date.now() - new Date(runningSince).getTime() > (timeoutMs ?? DEFAULT_TIMEOUT_MS) : false;
@@ -184,10 +191,14 @@ function GitHubAttachSection({
 
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
     setLoading(true);
+    setErr(null);
     fetch("/api/github/assigned", { cache: "no-store" })
       .then((r) => r.json())
       .then((d: { ok: boolean; items?: GitHubItem[]; configured?: boolean; error?: string }) => {
+        // Drop a superseded/post-close response (open toggled or PAT re-saved).
+        if (cancelled) return;
         if (d.ok) {
           setItems(d.items ?? []);
           setConfigured(d.configured ?? true);
@@ -195,8 +206,9 @@ function GitHubAttachSection({
           setErr(d.error ?? "failed");
         }
       })
-      .catch(() => setErr("fetch failed"))
-      .finally(() => setLoading(false));
+      .catch(() => { if (!cancelled) setErr("fetch failed"); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [open, fetchKey]); // fetchKey bumped to force refetch after PAT save
 
   const attachedUrls = new Set([...(card.links ?? []), ...(card.github ?? []).map((item) => item.url)]);
@@ -412,6 +424,10 @@ function LinksSection({
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const [savedToLibrary, setSavedToLibrary] = useState<Record<string, "saving" | "done" | "error">>({});
+  // The save flow clears its badge on a 2–3s timer; don't touch state if the
+  // inspector closed in the meantime.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const links = card.links ?? [];
 
@@ -433,7 +449,14 @@ function LinksSection({
   }
 
   async function saveToLibrary(url: string) {
-    setSavedToLibrary((prev) => ({ ...prev, [url]: "saving" }));
+    const setState = (v: "saving" | "done" | "error") => {
+      if (mountedRef.current) setSavedToLibrary((prev) => ({ ...prev, [url]: v }));
+    };
+    const clearLater = (ms: number) => setTimeout(() => {
+      if (!mountedRef.current) return;
+      setSavedToLibrary((prev) => { const next = { ...prev }; delete next[url]; return next; });
+    }, ms);
+    setState("saving");
     try {
       let title = url;
       try { title = new URL(url).hostname.replace(/^www./, ""); } catch { /* use url */ }
@@ -444,21 +467,15 @@ function LinksSection({
       });
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
-        setSavedToLibrary((prev) => ({ ...prev, [url]: "done" }));
-        setTimeout(() => setSavedToLibrary((prev) => {
-          const next = { ...prev }; delete next[url]; return next;
-        }), 2000);
+        setState("done");
+        clearLater(2000);
       } else {
-        setSavedToLibrary((prev) => ({ ...prev, [url]: "error" }));
-        setTimeout(() => setSavedToLibrary((prev) => {
-          const next = { ...prev }; delete next[url]; return next;
-        }), 3000);
+        setState("error");
+        clearLater(3000);
       }
     } catch {
-      setSavedToLibrary((prev) => ({ ...prev, [url]: "error" }));
-      setTimeout(() => setSavedToLibrary((prev) => {
-        const next = { ...prev }; delete next[url]; return next;
-      }), 3000);
+      setState("error");
+      clearLater(3000);
     }
   }
 
@@ -601,9 +618,24 @@ function LinksSection({
       </div>
 
       {/* CSS for hover reveal on link actions */}
-      <style>{".link-item-anchor:hover { text-decoration: underline; } .step-actions { opacity: 0; transition: opacity 0.1s; } li:hover .step-actions, li:focus-within .step-actions { opacity: 1; }"}</style>
+      <style>{".link-item-anchor:hover { text-decoration: underline; } .step-actions { opacity: 0; transition: opacity 0.1s; } li:hover .step-actions, li:focus-within .step-actions { opacity: 1; } @media (prefers-reduced-motion: reduce) { .step-actions { transition: none; } }"}</style>
     </div>
   );
+}
+
+// SSR-safe prefers-reduced-motion subscription, so inline-style transitions
+// can opt out for users who ask for reduced motion.
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduced(mq.matches);
+    const onChange = () => setReduced(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return reduced;
 }
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
@@ -616,6 +648,7 @@ function StepsSection({
 }) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const reducedMotion = usePrefersReducedMotion();
 
   const steps = card.steps ?? [];
   const doneCount = steps.filter((s) => s.done).length;
@@ -708,7 +741,7 @@ function StepsSection({
             height: "100%",
             width: pct + "%",
             background: pct === 100 ? "var(--color-success)" : "var(--accent-presence)",
-            transition: "width 0.2s ease, background 0.2s ease",
+            transition: reducedMotion ? "none" : "width 0.2s ease, background 0.2s ease",
           }} />
         </div>
       )}
@@ -733,6 +766,9 @@ function StepsSection({
               {/* Checkbox */}
               <button
                 type="button"
+                role="checkbox"
+                aria-checked={step.done}
+                aria-label={step.text || "Step"}
                 onClick={() => toggleStep(step.id)}
                 style={{
                   flexShrink: 0,
@@ -746,7 +782,7 @@ function StepsSection({
                   alignItems: "center",
                   justifyContent: "center",
                   cursor: "pointer",
-                  transition: "background 0.15s",
+                  transition: reducedMotion ? "none" : "background 0.15s",
                 }}
                 title={step.done ? "Mark incomplete" : "Mark complete"}
               >
