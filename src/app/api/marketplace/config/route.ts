@@ -11,50 +11,15 @@
  */
 
 import { NextResponse } from "next/server";
-import { readFile } from "node:fs/promises";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { canResolve, getVaultStatuses } from "@/lib/vault";
 import { envLocalPath, readEnvLocalValue, upsertEnvContent } from "@/lib/env-file";
-import {
-  requiredConfigFromManifest,
-  type PluginManifest,
-  type RequiredConfigField,
-} from "@/lib/marketplace-catalog";
+import { hasValidator } from "@/lib/secret-validators";
+import { resolveCatalogName, requiredConfigFor } from "./catalog-config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-const MARKETPLACE_DIR = path.join(process.cwd(), "marketplace");
-
-/**
- * Resolve the user-provided id to the matching catalog entry's OWN name string
- * (from the trusted marketplace.json, not the request). Returns null when the
- * id is not in the catalog. Downstream filesystem paths are built from this
- * file-derived name — the request value only selects from the allowlist, it
- * never constructs a path (avoids js/path-injection).
- */
-async function resolveCatalogName(id: string): Promise<string | null> {
-  try {
-    const raw = JSON.parse(await readFile(path.join(MARKETPLACE_DIR, "marketplace.json"), "utf8"));
-    const plugins = raw && Array.isArray(raw.plugins) ? raw.plugins : [];
-    const match = plugins.find((p: { name?: string }) => p.name === id);
-    return match && typeof match.name === "string" ? match.name : null;
-  } catch {
-    return null;
-  }
-}
-
-async function requiredConfigFor(name: string): Promise<RequiredConfigField[]> {
-  try {
-    const manifest = JSON.parse(
-      await readFile(path.join(MARKETPLACE_DIR, "plugins", name, "plugin.json"), "utf8"),
-    ) as PluginManifest;
-    return requiredConfigFromManifest(manifest);
-  } catch {
-    return [];
-  }
-}
 
 function writeEnvLocal(updates: Record<string, string | null>): void {
   const envPath = envLocalPath();
@@ -82,6 +47,7 @@ export async function GET(req: Request) {
       title: f.title,
       description: f.description ?? null,
       sensitive: f.sensitive,
+      validatable: hasValidator(f.env),
       satisfied,
       source,
       ref: vaultEntry?.ref ?? null, // an op:// reference, never a secret value
