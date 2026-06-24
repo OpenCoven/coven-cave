@@ -192,7 +192,7 @@ function ProjectChatRow({
           }
         }}
         data-selected={selectMode && selected ? "true" : undefined}
-        className={`focus-ring flex w-full items-center gap-2 px-4 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] data-[selected=true]:bg-[var(--accent-presence)]/10 data-[selected=true]:text-[var(--text-primary)] ${density === "compact" ? "py-0.5" : "py-1"}`}
+        className={`focus-ring projects-session-row flex w-full items-center gap-2 px-4 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] data-[selected=true]:bg-[var(--accent-presence)]/10 data-[selected=true]:text-[var(--text-primary)] ${density === "compact" ? "py-0.5" : "py-1"}`}
       >
         {selectMode ? (
           <span
