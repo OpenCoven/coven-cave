@@ -27,12 +27,41 @@ assert.match(view, /\.filter\(\(it\) => it\.status !== "dismissed"\)/, "Dismisse
 
 // ───────── Overlap-aware time grid ─────────
 assert.match(view, /import \{ itemDate, packEventColumns \} from "@\/lib\/calendar-layout"/, "TimeGrid uses the extracted lane packer");
-assert.match(view, /packEventColumns\(col\.items\)\.map/, "Time-grid events render from packed lanes");
+// Lane packing is memoised per columns change (a drag re-renders the grid
+// continuously) and rendered from the cached result, not recomputed inline.
+assert.match(view, /const packedColumns = useMemo\(\(\) => columns\.map\(\(c\) => packEventColumns\(c\.items\)\), \[columns\]\)/, "Time-grid lane packing is memoised on columns");
+assert.match(view, /packedColumns\[ci\]\.map/, "Time-grid events render from the packed lanes");
 assert.match(view, /data-calendar-event="true"/, "Events keep the roving-tabindex hook attribute");
 assert.doesNotMatch(view, /minHeight: 20/, "Old fixed 20px event height must be gone");
 
+// ───────── Hydration-safe, live-ticking "now" ─────────
+// `now` is null on the server / first paint, then resolves on mount and
+// re-ticks each minute, so today-highlights + the now-line don't mismatch SSR
+// and the current-time indicator tracks the clock.
+assert.match(view, /function useNow\(\): Date \| null \{[\s\S]*?setInterval\(\(\) => setNow\(new Date\(\)\), 60_000\)/, "useNow ticks every minute");
+assert.match(view, /col\.isToday && now &&/, "the now-line only renders once `now` resolves");
+// The grid sub-views derive "today" from useNow (hydration-safe + live), not a
+// render-time `new Date()` (Agenda, Day, Week, Month, TimeGrid).
+assert.ok((view.match(/const now = useNow\(\)/g) ?? []).length >= 5, "every grid sub-view uses useNow for today");
+
 // ───────── Month-cell keyboard access ─────────
 assert.match(view, /role="button"[\s\S]*?tabIndex=\{0\}[\s\S]*?onKeyDown=\{\(e\) => \{[\s\S]*?Enter[\s\S]*?onDayClick/, "Month day cells must be keyboard-operable");
+// Month cells list a day's items in chronological order, like every other view.
+assert.match(view, /list\.sort\(\(a, b\) => \(itemDate\(a\)\?\.getTime\(\) \?\? 0\) - \(itemDate\(b\)\?\.getTime\(\) \?\? 0\)\)/, "Month items are sorted by time");
+// Month deadline overflow surfaces a "+N due" affordance instead of dropping silently.
+assert.match(view, /\+\{dayDeadlines\.length - 2\} due/, "Month shows a deadline-overflow indicator");
+
+// ───────── All-day overflow is reachable (was a dead no-op in Day/Week) ─────────
+// AllDayStrip's "+N more" routes through onMore; Week wires it to open the day,
+// Day uncaps entirely (single wide column).
+assert.match(view, /onClick=\{\(\) => onMore\?\.\(col\.date\)\}/, "all-day overflow calls onMore");
+assert.match(view, /<AllDayStrip columns=\{allDayColumns\} onOpenItem=\{onOpenItem\} onMore=\{onOpenDay\} \/>/, "Week wires all-day overflow to open the day");
+assert.match(view, /onOpenItem=\{onOpenItem\}\s*\n\s*maxVisible=\{Infinity\}/, "Day view shows every all-day item");
+assert.match(view, /const goToDay = \(day: Date\) => \{[\s\S]*?setViewMode\("day"\)/, "goToDay opens the single-day view");
+
+// ───────── View toggle is an accessible group ─────────
+assert.match(view, /role="group" aria-label="Calendar view"/, "view-mode toggle is a labelled group");
+assert.match(view, /aria-pressed=\{viewMode === id\}/, "each view-mode button announces its pressed state");
 
 // ───────── Shortcut guard ignores contenteditable ─────────
 assert.match(view, /target\.isContentEditable/, "Single-key shortcuts must not fire inside contenteditable");
