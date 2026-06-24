@@ -967,6 +967,7 @@ struct FamiliarPickerSheet: View {
                     .buttonStyle(.plain)
                 }
             }
+            .themedListBackground()
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -975,5 +976,6 @@ struct FamiliarPickerSheet: View {
                 }
             }
         }
+        .themedSheetBackground()
     }
 }

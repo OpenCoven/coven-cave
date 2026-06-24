@@ -136,7 +136,7 @@ struct TaskDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glass(.raised, cornerRadius: 14)
     }
 
     private func chatSubtitle(_ thread: ChatThread) -> String {
@@ -195,7 +195,7 @@ struct TaskDetailView: View {
             Spacer()
         }
         .padding(14)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glass(.raised, cornerRadius: 14)
     }
 
     private var stepsCard: some View {
@@ -247,7 +247,7 @@ struct TaskDetailView: View {
             addStepRow
         }
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glass(.raised, cornerRadius: 14)
     }
 
     private var addStepRow: some View {
@@ -321,7 +321,7 @@ struct TaskDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glass(.raised, cornerRadius: 14)
     }
 
     private var labelsRow: some View {
@@ -358,7 +358,7 @@ struct TaskDetailView: View {
             dateRow("Due", value: live.endDate) { await app.setTaskDates(live, start: live.startDate, end: $0) }
         }
         .padding(16)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glass(.raised, cornerRadius: 14)
     }
 
     private func dateRow(_ label: String, value: String?,
@@ -407,6 +407,7 @@ struct TaskDetailView: View {
 /// actually changes from what was passed in.
 struct NotesEditorView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.chrome) private var chrome
     let initialText: String
     let onSave: (String) -> Void
 
@@ -423,6 +424,8 @@ struct NotesEditorView: View {
         NavigationStack {
             TextEditor(text: $text)
                 .font(.body)
+                .scrollContentBackground(.hidden)
+                .background(chrome.bgBase)
                 .padding(16)
                 .focused($focused)
                 .navigationTitle("Notes")
@@ -438,6 +441,7 @@ struct NotesEditorView: View {
                 }
                 .onAppear { focused = true }
         }
+        .themedSheetBackground()
     }
 }
 

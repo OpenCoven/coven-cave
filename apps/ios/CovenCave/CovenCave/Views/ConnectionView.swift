@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ConnectionView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
     @State private var host: String = ""
     @State private var busy = false
     @FocusState private var focused: Bool
@@ -20,7 +21,8 @@ struct ConnectionView: View {
                             .keyboardType(.URL)
                             .focused($focused)
                             .padding(12)
-                            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                            .glass(.control, cornerRadius: 12)
+                            .accentGlow(active: focused)
                         Text("Your desktop’s Tailscale MagicDNS name or 100.x address. Found in the Cave desktop app under “Open on phone”.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
@@ -46,6 +48,7 @@ struct ConnectionView: View {
                 }
                 .padding(24)
             }
+            .background(chrome.bgBase.ignoresSafeArea())
             .navigationTitle("Coven Cave")
             .onAppear {
                 host = app.connection?.host ?? ""
@@ -73,7 +76,7 @@ struct ConnectionView: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding(12)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .glass(.raised, cornerRadius: 12)
     }
 
     private func connect() {

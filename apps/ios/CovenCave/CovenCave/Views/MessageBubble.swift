@@ -123,8 +123,7 @@ struct MessageBubble: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Color(.secondarySystemBackground).opacity(0.6),
-                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .glassFill(.raised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(Color(.separator).opacity(0.5), lineWidth: 1)
