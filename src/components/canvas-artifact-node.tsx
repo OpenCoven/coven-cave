@@ -3,6 +3,7 @@
 import { NodeResizer, type NodeProps, type Node } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { buildPreviewSrcDoc, type CanvasArtifact } from "@/lib/canvas-artifacts";
 import { buildReactSrcDoc } from "@/lib/canvas-react-harness";
 
@@ -22,6 +23,7 @@ export type ArtifactFlowNode = Node<ArtifactNodeData & Record<string, unknown>, 
 
 export function ArtifactNode({ data, selected }: NodeProps<ArtifactFlowNode>) {
   const { artifact, view, generating } = data;
+  const confirm = useConfirm();
   const isReact = artifact.kind === "react";
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -107,10 +109,10 @@ export function ArtifactNode({ data, selected }: NodeProps<ArtifactFlowNode>) {
             className="canvas-artifact__btn canvas-artifact__btn--danger"
             title="Delete"
             aria-label="Delete"
-            onClick={() => {
+            onClick={async () => {
               // Deleting a sketch is destructive and not undoable, so confirm first.
               const name = artifact.title?.trim() || "this sketch";
-              if (window.confirm(`Delete ${name}? This can't be undone.`)) {
+              if (await confirm({ title: `Delete ${name}?`, body: "This can't be undone.", confirmLabel: "Delete", danger: true })) {
                 data.onDelete(artifact.id);
               }
             }}

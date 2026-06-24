@@ -10,6 +10,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import type { WorkflowPlaybackState } from "@/lib/workflow-playback";
 import { WorkflowRunProgress } from "@/components/workflows/workflow-run-progress";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type {
   WorkflowRunRecord,
   WorkflowRunStepRecord,
@@ -80,6 +81,7 @@ function summarizeRuns(runs: WorkflowRunRecord[]): string {
 /** Run history for the selected workflow: plan snapshots and executions. */
 export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayRun, onClearRuns }: WorkflowRunsPanelProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  const confirm = useConfirm();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<WorkflowRunFilter>("all");
   const replaying = playback?.source === "replay" && playback.workflowId === workflow?.id;
@@ -87,8 +89,13 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
   const activeFilter = RUN_FILTERS.find((entry) => entry.id === filter) ?? RUN_FILTERS[0];
   const visibleRuns = filter === "all" ? runs : runs.filter(activeFilter.match);
 
-  const handleClear = () => {
-    if (window.confirm("Clear this workflow's run history? Recorded plan snapshots and run records are removed.")) {
+  const handleClear = async () => {
+    if (await confirm({
+      title: "Clear this workflow's run history?",
+      body: "Recorded plan snapshots and run records are removed.",
+      confirmLabel: "Clear history",
+      danger: true,
+    })) {
       onClearRuns();
     }
   };

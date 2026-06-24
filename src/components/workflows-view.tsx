@@ -51,6 +51,7 @@ import {
   type WorkflowStudioActionState,
 } from "./workflows/workflow-studio";
 import type { WorkflowUsesOption } from "./workflows/workflow-inspector";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export function WorkflowsView({
   initialWorkflowId = null,
@@ -61,6 +62,7 @@ export function WorkflowsView({
   /** Called after the deep-link target is selected, so the parent can clear it. */
   onDeepLinkConsumed?: () => void;
 } = {}) {
+  const confirm = useConfirm();
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -353,14 +355,19 @@ export function WorkflowsView({
     if (typeof window !== "undefined") window.location.hash = `chat-${sessionId}`;
   }, []);
 
-  const confirmDiscard = useCallback((): boolean => {
+  const confirmDiscard = useCallback(async (): Promise<boolean> => {
     if (!dirty) return true;
-    return window.confirm("Discard unsaved workflow changes?");
-  }, [dirty]);
+    return confirm({
+      title: "Discard unsaved workflow changes?",
+      body: "Your edits to this workflow will be lost.",
+      confirmLabel: "Discard",
+      danger: true,
+    });
+  }, [dirty, confirm]);
 
-  const selectWorkflow = (workflow: WorkflowSummary) => {
+  const selectWorkflow = async (workflow: WorkflowSummary) => {
     if (workflow.id === selectedWorkflowId) return;
-    if (!confirmDiscard()) return;
+    if (!(await confirmDiscard())) return;
     setSelectedWorkflowId(workflow.id);
     setSelectedNodeId(null);
     setDraftState(initialWorkflowDraft(workflow));
@@ -535,7 +542,7 @@ export function WorkflowsView({
   );
 
   const handleCreate = async (input: { name: string; pattern: WorkflowPattern; familiar?: string }) => {
-    if (!confirmDiscard()) return;
+    if (!(await confirmDiscard())) return;
     const id = uniqueId(slugifyWorkflowId(input.name));
     const workflow = createWorkflowFromTemplate({
       id,
@@ -558,7 +565,7 @@ export function WorkflowsView({
   };
 
   const handleImport = async (manifest: Record<string, unknown>) => {
-    if (!confirmDiscard()) return;
+    if (!(await confirmDiscard())) return;
     // Land imports in the user's personal library with a unique id; clear the
     // public flag so the runtime routes the copy to ~/.coven (never the repo).
     const rawName = typeof manifest.name === "string" ? manifest.name : "";
@@ -586,7 +593,7 @@ export function WorkflowsView({
   };
 
   const handleCreateFromManifest = async (manifest: Record<string, unknown>) => {
-    if (!confirmDiscard()) return;
+    if (!(await confirmDiscard())) return;
     // Same landing rules as import: personal library, unique id, cave-visible.
     const rawName = typeof manifest.name === "string" && manifest.name.trim() ? manifest.name : "";
     const rawId = typeof manifest.id === "string" && manifest.id.trim() ? manifest.id : rawName || "workflow";
@@ -638,7 +645,7 @@ export function WorkflowsView({
       showNotice("Templates are read-only — duplicate to make an editable copy.");
       return;
     }
-    if (!window.confirm(`Delete workflow \`${workflow.id}\`? The manifest file is removed.`)) return;
+    if (!(await confirm({ title: `Delete workflow “${workflow.id}”?`, body: "The manifest file is removed.", confirmLabel: "Delete", danger: true }))) return;
     const result = await deleteWorkflow(
       workflow.path ? { path: workflow.path } : { id: workflow.id },
     );

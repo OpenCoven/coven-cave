@@ -363,6 +363,7 @@ export const SUITES = {
     "src/components/ui/context-menu.test.ts",
     "src/components/ui/undo-toast.test.ts",
     "src/components/ui/modal.test.ts",
+    "src/components/ui/confirm-dialog.test.ts",
     "src/components/ui/relative-time.test.ts",
     "src/lib/workflow-source-bundle.test.ts",
     "src/lib/vault-bundle.test.ts",

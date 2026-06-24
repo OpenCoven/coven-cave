@@ -17,6 +17,7 @@ import { formatTimestamp, formatClock, readDateTimePrefs, useDateTimePrefs } fro
 import { relativeTimeSigned } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useMultiSelect } from "@/lib/use-multi-select";
@@ -1319,6 +1320,7 @@ function InboxFeedList({
 // ── Root ──────────────────────────────────────────────────────────────────────
 export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  const confirm = useConfirm();
   const [items, setItems] = useState<InboxItem[]>([]);
   const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -1467,7 +1469,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     if (id.startsWith("eph:")) return;
     const target = items.find((i) => i.id === id);
     const label = target?.title ? `“${target.title}”` : "this reminder";
-    if (!window.confirm(`Delete ${label}? This can't be undone.`)) return;
+    if (!(await confirm({ title: `Delete ${label}?`, body: "This can't be undone.", confirmLabel: "Delete", danger: true }))) return;
     setBusyId(id);
     try {
       const res = await fetch(`/api/inbox/${id}`, { method: "DELETE" });
@@ -1527,7 +1529,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   }, [load]);
 
   const deleteCodex = useCallback(async (auto: CodexAutomation) => {
-    if (!window.confirm(`Delete automation "${auto.name}"? This removes its file.`)) return;
+    if (!(await confirm({ title: `Delete automation “${auto.name}”?`, body: "This removes its file.", confirmLabel: "Delete", danger: true }))) return;
     setBusyId(auto.id);
     try {
       const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}`, { method: "DELETE" });
@@ -1543,7 +1545,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   }, [load]);
 
   const runCodexNow = useCallback(async (auto: CodexAutomation) => {
-    if (!window.confirm(`Run "${auto.name}" now? This executes the agent immediately.`)) return;
+    if (!(await confirm({ title: `Run “${auto.name}” now?`, body: "This executes the agent immediately.", confirmLabel: "Run now" }))) return;
     setBusyId(auto.id);
     try {
       const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}/run`, { method: "POST" });
@@ -1643,7 +1645,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const bulkDeleteReminders = async () => {
     const ids = selectedRealIds();
     if (ids.length === 0) { reminderSelect.exit(); return; }
-    if (!window.confirm(`Delete ${ids.length} reminder${ids.length === 1 ? "" : "s"}? This can't be undone.`)) return;
+    if (!(await confirm({ title: `Delete ${ids.length} reminder${ids.length === 1 ? "" : "s"}?`, body: "This can't be undone.", confirmLabel: "Delete", danger: true }))) return;
     setBulkBusy(true);
     try {
       await Promise.all(ids.map((id) =>

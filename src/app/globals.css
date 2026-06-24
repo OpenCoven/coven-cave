@@ -1000,6 +1000,20 @@ tr[role="checkbox"]:focus-visible {
   flex: 1;
 }
 
+/* In-app confirm dialog (ConfirmProvider) — title + supporting detail. */
+.ui-confirm-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg-base, var(--foreground));
+}
+.ui-confirm-body {
+  margin-top: var(--space-2);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 .ui-modal-footer {
   display: flex;
   align-items: center;

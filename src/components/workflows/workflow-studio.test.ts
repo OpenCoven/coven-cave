@@ -432,7 +432,7 @@ assert.match(css, /\.workflow-manifest-changes/, "CSS should style the unsaved-c
 // The runs panel can clear this workflow's history.
 assert.match(runsPanel, /onClearRuns/, "Runs panel should accept a clear-history handler");
 assert.match(runsPanel, /workflow-runs-clear/, "Runs panel should render a clear-history button");
-assert.match(runsPanel, /window\.confirm/, "Clearing run history should confirm first");
+assert.match(runsPanel, /await confirm\(\{[\s\S]*?Clear this workflow's run history/, "Clearing run history should confirm first (via the in-app ConfirmDialog)");
 assert.match(studio, /onClearRuns=\{props\.onClearRuns\}/, "Studio should thread the clear-history handler");
 assert.match(css, /\.workflow-runs-clear/, "CSS should style the clear-history button");
 

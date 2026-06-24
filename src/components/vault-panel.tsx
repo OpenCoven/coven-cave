@@ -6,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -136,6 +137,7 @@ function AddMappingForm({
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export function VaultPanel() {
+  const confirm = useConfirm();
   const [mappings, setMappings]     = useState<Mapping[]>([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
@@ -173,7 +175,12 @@ export function VaultPanel() {
   useEffect(() => { void load(); }, []);
 
   async function handleDelete(key: string) {
-    if (!window.confirm(`Delete the secret “${key}”? Anything mapped to it will stop resolving. This can't be undone.`)) return;
+    if (!(await confirm({
+      title: `Delete the secret “${key}”?`,
+      body: "Anything mapped to it will stop resolving. This can't be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    }))) return;
     setDeleting(key);
     try {
       await fetch("/api/vault", {

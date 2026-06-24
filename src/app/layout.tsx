@@ -15,6 +15,7 @@ import { CornerRadiusController } from "@/components/corner-radius-controller";
 import { ThemeScript } from "@/components/theme-script";
 import { ShellBannersProvider } from "@/lib/shell-banners";
 import { LiveRegionProvider } from "@/components/ui/live-region";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { PwaRegister } from "@/components/pwa-register";
 import { DevCacheResetScript } from "@/components/dev-cache-reset-script";
 
@@ -71,6 +72,7 @@ export default function RootLayout({
         <SidecarAuthBridge />
         <ShellBannersProvider>
           <LiveRegionProvider>
+            <ConfirmProvider>
             <SidecarAuthMonitor />
             <ScreenMagnificationController />
             <ReadingLeadingController />
@@ -83,6 +85,7 @@ export default function RootLayout({
             <CornerRadiusController />
             <PwaRegister />
             {children}
+            </ConfirmProvider>
           </LiveRegionProvider>
         </ShellBannersProvider>
       </body>
