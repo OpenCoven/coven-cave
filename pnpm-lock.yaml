@@ -107,9 +107,6 @@ importers:
       sucrase:
         specifier: 3.35.1
         version: 3.35.1
-      three:
-        specifier: 0.184.0
-        version: 0.184.0
       ws:
         specifier: 8.21.0
         version: 8.21.0
@@ -135,9 +132,6 @@ importers:
       '@types/react-dom':
         specifier: 19.2.3
         version: 19.2.3(@types/react@19.2.17)
-      '@types/three':
-        specifier: 0.184.1
-        version: 0.184.1
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
@@ -295,9 +289,6 @@ packages:
     peerDependencies:
       '@create-markdown/core': '>=2.0.3'
       react: '>=18.0.0'
-
-  '@dimforge/rapier3d-compat@0.12.0':
-    resolution: {integrity: sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow==}
 
   '@dnd-kit/accessibility@3.1.1':
     resolution: {integrity: sha512-2P+YgaXF+gRsIihwwY1gCsQSYnu9Zyj2py8kY5fFvUM1qm2WA2u639R6YNVfU4GWr+ZM5mqEsfHZZLoRONbemw==}
@@ -1031,9 +1022,6 @@ packages:
   '@tauri-apps/plugin-updater@2.10.1':
     resolution: {integrity: sha512-NFYMg+tWOZPJdzE/PpFj2qfqwAWwNS3kXrb1tm1gnBJ9mYzZ4WDRrwy8udzWoAnfGCHLuePNLY1WVCNHnh3eRA==}
 
-  '@tweenjs/tween.js@23.1.3':
-    resolution: {integrity: sha512-vJmvvwFxYuGnF2axRtPYocag6Clbb5YS7kLL+SO/TeVFzHqDIWrNKYtcsPMibjDx9O+bu+psAy9NKfWklassUA==}
-
   '@types/d3-array@3.2.2':
     resolution: {integrity: sha512-hOLWVbm7uRza0BYXpIIW5pxfrKe0W+D5lrFiAEYR+pb6w3N2SwSMaJbXdUfSEv+dT4MfHBLtn5js0LAWaO6otw==}
 
@@ -1150,20 +1138,11 @@ packages:
   '@types/react@19.2.17':
     resolution: {integrity: sha512-MXfmqaVPEVgkBT/aY0aGCkRWWtByiYQXo3xdQ8r5RzuFrPiRn8Gar2tQdXSUQ2GKV3bkXckek89V8wQBY2Q/Aw==}
 
-  '@types/stats.js@0.17.4':
-    resolution: {integrity: sha512-jIBvWWShCvlBqBNIZt0KAshWpvSjhkwkEu4ZUcASoAvhmrgAUI2t1dXrjSL4xXVLB4FznPrIsX3nKXFl/Dt4vA==}
-
-  '@types/three@0.184.1':
-    resolution: {integrity: sha512-6q4VdiqVsrTRqmk62/BnlcAvIrnDM0zf2ZDVKI5kZiniWrSaOHaQzmbp+BNzoggc/8tgW412pL//wZIxu2PPTA==}
-
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
 
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
-
-  '@types/webxr@0.5.24':
-    resolution: {integrity: sha512-h8fgEd/DpoS9CBrjEQXR+dIDraopAEfu4wYVNY2tEPwk60stPWhvZMf4Foo5FakuQ7HFZoa8WceaWFervK2Ovg==}
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
@@ -1517,9 +1496,6 @@ packages:
       picomatch:
         optional: true
 
-  fflate@0.8.3:
-    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
-
   find-up@4.1.0:
     resolution: {integrity: sha512-PpOwAdQ/YlXQ2vj8a3h8IipDuYRi3wceVQQGYWxNINccq40Anw7BlsEXCMbt1Zt+OLA6Fq9suIpIWD0OsnISlw==}
     engines: {node: '>=8'}
@@ -1684,9 +1660,6 @@ packages:
 
   mermaid@11.15.0:
     resolution: {integrity: sha512-pTMbcf3rWdtLiYGpmoTjHEpeY8seiy6sR+9nD7LOs8KfUbHE4lOUAprTRqRAcWSQ6MQpdX+YEsxShtGsINtPtw==}
-
-  meshoptimizer@1.1.1:
-    resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
 
   micromark-util-character@2.1.1:
     resolution: {integrity: sha512-wv8tdUTJ3thSFFFJKtpYKOYiGP2+v96Hvk4Tu8KpCAsTMs6yi+nVmGh1syvSCsaxz45J6Jbw+9DD6g97+NV67Q==}
@@ -1940,9 +1913,6 @@ packages:
 
   thenify@3.3.1:
     resolution: {integrity: sha512-RVZSIV5IG10Hk3enotrhvz0T9em6cyHBLkH/YAZuKqd8hRkKhSfCGIcP2KUY0EPxndzANBmNllzWPwak+bheSw==}
-
-  three@0.184.0:
-    resolution: {integrity: sha512-wtTRjG92pM5eUg/KuUnHsqSAlPM296brTOcLgMRqEeylYTh/CdtvKUvCyyCQTzFuStieWxvZb8mVTMvdPyUpxg==}
 
   tinyexec@1.2.4:
     resolution: {integrity: sha512-SHf/r48b7vOrjve9PxJo3MN5v5yuyjHvdUcrQffT3WXMUfnGmHDVbC4k3sHJaJTgZCwpUplIaAo5ANtMyp3YHg==}
@@ -2314,8 +2284,6 @@ snapshots:
     dependencies:
       '@create-markdown/core': 2.0.3
       react: 19.2.4
-
-  '@dimforge/rapier3d-compat@0.12.0': {}
 
   '@dnd-kit/accessibility@3.1.1(react@19.2.4)':
     dependencies:
@@ -2895,8 +2863,6 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.11.0
 
-  '@tweenjs/tween.js@23.1.3': {}
-
   '@types/d3-array@3.2.2': {}
 
   '@types/d3-axis@3.0.6':
@@ -3040,23 +3006,10 @@ snapshots:
     dependencies:
       csstype: 3.2.3
 
-  '@types/stats.js@0.17.4': {}
-
-  '@types/three@0.184.1':
-    dependencies:
-      '@dimforge/rapier3d-compat': 0.12.0
-      '@tweenjs/tween.js': 23.1.3
-      '@types/stats.js': 0.17.4
-      '@types/webxr': 0.5.24
-      fflate: 0.8.3
-      meshoptimizer: 1.1.1
-
   '@types/trusted-types@2.0.7':
     optional: true
 
   '@types/unist@3.0.3': {}
-
-  '@types/webxr@0.5.24': {}
 
   '@types/ws@8.18.1':
     dependencies:
@@ -3486,8 +3439,6 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.4
 
-  fflate@0.8.3: {}
-
   find-up@4.1.0:
     dependencies:
       locate-path: 5.0.0
@@ -3646,8 +3597,6 @@ snapshots:
       stylis: 4.4.0
       ts-dedent: 2.3.0
       uuid: 14.0.0
-
-  meshoptimizer@1.1.1: {}
 
   micromark-util-character@2.1.1:
     dependencies:
@@ -3915,8 +3864,6 @@ snapshots:
   thenify@3.3.1:
     dependencies:
       any-promise: 1.3.0
-
-  three@0.184.0: {}
 
   tinyexec@1.2.4: {}
 

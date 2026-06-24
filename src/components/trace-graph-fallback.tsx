@@ -18,8 +18,6 @@ type Props = {
   onSelect: (selection: Selection) => void;
   /** Mirrors calls-view's local edgeKey so selection round-trips identically. */
   edgeKey: (edge: DelegationGraphEdge) => string;
-  /** Why the 2D list is showing — drives the header copy. */
-  reason: "mobile" | "webgl";
 };
 
 function familiarName(familiars: Map<string, Familiar>, id: string): string {
@@ -27,13 +25,11 @@ function familiarName(familiars: Map<string, Familiar>, id: string): string {
 }
 
 /**
- * 2D, dependency-free alternative to the Three.js delegation graph. Used on
- * mobile (where a pan/zoom 3D canvas is impractical and Three is heavy) and as
- * the WebGLErrorBoundary fallback when the GPU canvas can't initialize. Renders
- * the same edges the graph would, as a selectable caller → callee list, so no
- * delegation data is lost when the 3D view is unavailable.
+ * 2D, dependency-free delegation view: the graph's edges rendered as a
+ * selectable caller → callee list. (Replaced a Three.js 3D graph that was
+ * removed to drop the heavy `three` dependency.)
  */
-export function TraceGraphFallback({ graph, familiars, selection, onSelect, edgeKey, reason }: Props) {
+export function TraceGraphFallback({ graph, familiars, selection, onSelect, edgeKey }: Props) {
   const edges = useMemo(
     () => [...graph.edges].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt)),
     [graph.edges],
@@ -46,11 +42,7 @@ export function TraceGraphFallback({ graph, familiars, selection, onSelect, edge
     >
       <header className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2 text-[11px] text-[var(--text-muted)]">
         <Icon name="ph:graph" width={13} aria-hidden />
-        <span>
-          {reason === "webgl"
-            ? "3D graph unavailable on this device — showing the delegation list."
-            : "Delegations"}
-        </span>
+        <span>Delegations</span>
       </header>
       {edges.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-4 py-8 text-[11px] text-[var(--text-muted)]">
