@@ -57,6 +57,14 @@ final class AppModel {
         toast = ToastMessage(text: text, systemImage: systemImage, style: style)
     }
 
+    /// An optimistic edit failed and was reverted: surface a single error toast
+    /// + error haptic so the change doesn't silently snap back. Callers still set
+    /// their `*Error` string for any inline display.
+    private func reportRevert(_ what: String) {
+        showToast("Couldn’t \(what) — reverted", systemImage: "exclamationmark.triangle.fill", style: .error)
+        Haptics.error()
+    }
+
     /// Ask the chat list to open a thread (switches to Chats first).
     func requestOpen(_ thread: ChatThread) {
         selectedTab = .chats
@@ -172,9 +180,11 @@ final class AppModel {
         do {
             let updated = try await client.updateTask(cardId: card.id, status: status)
             applyTask(id: card.id) { $0 = updated }
+            Haptics.tap()
         } catch {
             tasks = previous
             tasksError = error.localizedDescription
+            reportRevert("update the task")
         }
     }
 
@@ -186,9 +196,11 @@ final class AppModel {
         do {
             let updated = try await client.updateTask(cardId: card.id, priority: priority)
             applyTask(id: card.id) { $0 = updated }
+            Haptics.tap()
         } catch {
             tasks = previous
             tasksError = error.localizedDescription
+            reportRevert("update the task")
         }
     }
 
@@ -290,9 +302,11 @@ final class AppModel {
         do {
             let updated = try await client.updateTaskDates(cardId: card.id, startDate: start, endDate: end)
             applyTask(id: card.id) { $0 = updated }
+            Haptics.tap()
         } catch {
             tasks = previous
             tasksError = error.localizedDescription
+            reportRevert("reschedule the task")
         }
     }
 
@@ -303,9 +317,11 @@ final class AppModel {
         tasks.removeAll { $0.id == card.id }
         do {
             try await client.deleteTask(cardId: card.id)
+            Haptics.success()
         } catch {
             tasks = previous
             tasksError = error.localizedDescription
+            reportRevert("delete the task")
         }
     }
 
@@ -349,9 +365,11 @@ final class AppModel {
         reminders.removeAll { ids.contains($0.id) }
         do {
             for id in ids { try await client.deleteReminder(id: id) }
+            Haptics.success()
         } catch {
             reminders = previous
             remindersError = error.localizedDescription
+            reportRevert(ids.count == 1 ? "delete the reminder" : "delete the reminders")
         }
     }
 
@@ -374,9 +392,11 @@ final class AppModel {
         applyReminder(id: reminder.id) { $0.status = optimistic }
         do {
             if let updated = try await call(client) { applyReminder(id: reminder.id) { $0 = updated } }
+            Haptics.success()
         } catch {
             reminders = previous
             remindersError = error.localizedDescription
+            reportRevert("update the reminder")
         }
     }
 
@@ -404,9 +424,11 @@ final class AppModel {
             for id in ids {
                 if let updated = try await call(client, id) { applyReminder(id: id) { $0 = updated } }
             }
+            Haptics.success()
         } catch {
             reminders = previous
             remindersError = error.localizedDescription
+            reportRevert("update the reminders")
         }
     }
 
@@ -816,13 +838,18 @@ final class AppModel {
     func deleteThread(_ thread: ChatThread) {
         threads.removeAll { $0.id == thread.id }
         persistThreads()
+        Haptics.success()
+        showToast("Chat deleted", systemImage: "trash.fill")
     }
 
     /// Delete several threads at once (bulk select); persists once.
     func deleteThreads(_ ids: Set<String>) {
         guard !ids.isEmpty else { return }
+        let n = ids.count
         threads.removeAll { ids.contains($0.id) }
         persistThreads()
+        Haptics.success()
+        showToast("\(n) chat\(n == 1 ? "" : "s") deleted", systemImage: "trash.fill")
     }
 
     /// Rename a thread (local title only); no-ops on a blank or unchanged name.
