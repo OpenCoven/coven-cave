@@ -1,10 +1,16 @@
 import SwiftUI
+import UIKit
 
 struct ConnectionView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
+    @Environment(\.scenePhase) private var scenePhase
     @State private var host: String = ""
     @State private var busy = false
+    /// Whether the clipboard holds text — drives the "Paste" affordance. We only
+    /// READ the clipboard when the user taps Paste, so there's no surprise
+    /// "pasted from" banner just for showing the button.
+    @State private var canPaste = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -14,7 +20,18 @@ struct ConnectionView: View {
                     header
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Desktop address").font(.subheadline.weight(.semibold))
+                        HStack {
+                            Text("Desktop address").font(.subheadline.weight(.semibold))
+                            Spacer()
+                            if canPaste {
+                                Button(action: pasteHost) {
+                                    Label("Paste", systemImage: "doc.on.clipboard")
+                                        .font(.subheadline.weight(.medium))
+                                }
+                                .buttonStyle(.borderless)
+                                .accessibilityHint("Pastes the desktop address from the clipboard")
+                            }
+                        }
                         TextField("my-mac.tailnet.ts.net", text: $host)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
@@ -23,8 +40,13 @@ struct ConnectionView: View {
                             .padding(12)
                             .glass(.control, cornerRadius: 12)
                             .accentGlow(active: focused)
-                        Text("Your desktop’s Tailscale MagicDNS name or 100.x address. Found in the Cave desktop app under “Open on phone”.")
-                            .font(.footnote).foregroundStyle(.secondary)
+                        if let hostHint {
+                            Label(hostHint, systemImage: "exclamationmark.circle")
+                                .font(.caption).foregroundStyle(.orange)
+                        } else {
+                            Text("Your desktop’s Tailscale MagicDNS name or 100.x address. Found in the Cave desktop app under “Open on phone”.")
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
                     }
 
                     if case .unreachable(let message) = app.connectionState {
@@ -53,6 +75,12 @@ struct ConnectionView: View {
             .onAppear {
                 host = app.connection?.host ?? ""
                 focused = host.isEmpty
+                canPaste = UIPasteboard.general.hasStrings
+            }
+            // The user may copy the address from the desktop, then return — keep
+            // the Paste affordance in step with the clipboard.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { canPaste = UIPasteboard.general.hasStrings }
             }
         }
     }
@@ -81,10 +109,38 @@ struct ConnectionView: View {
 
     private func connect() {
         focused = false
+        host = cleanHost(host)
         busy = true
         Task {
             await app.configure(host: host)
             busy = false
         }
+    }
+
+    /// Fill the field from the clipboard (only read on this explicit tap), cleaned.
+    private func pasteHost() {
+        guard let pasted = UIPasteboard.general.string else { return }
+        host = cleanHost(pasted)
+        focused = true
+        Haptics.tap()
+    }
+
+    /// Tidy a pasted/typed address: trim whitespace, drop wrapping quotes/brackets
+    /// a copy sometimes carries, and strip a trailing slash. The scheme is left
+    /// intact — a full `http(s)://` URL is trusted verbatim by the connection.
+    private func cleanHost(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        s = s.trimmingCharacters(in: CharacterSet(charactersIn: "\"'<>"))
+        while s.hasSuffix("/") { s.removeLast() }
+        return s
+    }
+
+    /// A gentle, non-blocking nudge when the address is obviously malformed — most
+    /// commonly a stray space from copying a label along with the host.
+    private var hostHint: String? {
+        let s = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !s.isEmpty else { return nil }
+        if s.contains(" ") { return "That has a space — paste just the address." }
+        return nil
     }
 }
