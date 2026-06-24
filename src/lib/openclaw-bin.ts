@@ -10,7 +10,18 @@ import { covenSpawnEnv } from "./coven-bin";
 
 let cachedBin: string | null = null;
 
-const FORBIDDEN_SPAWN_ENV_KEYS = ["GITHUB_PAT"] as const;
+const FORBIDDEN_SPAWN_ENV_KEYS = new Set(["GITHUB_PAT"]);
+const FORBIDDEN_SPAWN_ENV_RE =
+  /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|PASS|PAT|CREDENTIALS?|COOKIE|SESSION)(?:_|$)/i;
+
+function allowedOpenClawEnvKeys(): Set<string> {
+  return new Set(
+    (process.env.OPENCLAW_ALLOW_ENV_KEYS ?? "")
+      .split(",")
+      .map((key) => key.trim())
+      .filter(Boolean),
+  );
+}
 
 function dedupe(values: string[]): string[] {
   const seen = new Set<string>();
@@ -117,8 +128,14 @@ export function openClawSpawnArgs(argv: string[]): string[] {
 
 export function openClawSpawnEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...covenSpawnEnv() };
-  for (const key of FORBIDDEN_SPAWN_ENV_KEYS) {
-    delete env[key];
+  const allowed = allowedOpenClawEnvKeys();
+  for (const key of Object.keys(env)) {
+    if (
+      (FORBIDDEN_SPAWN_ENV_KEYS.has(key) || FORBIDDEN_SPAWN_ENV_RE.test(key)) &&
+      !allowed.has(key)
+    ) {
+      delete env[key];
+    }
   }
   return env;
 }

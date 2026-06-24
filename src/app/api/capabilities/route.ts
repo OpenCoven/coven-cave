@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import {
+  openClawBridgeCapabilities,
+  type OpenClawBridgeCapabilities,
+} from "@/lib/openclaw-bridge";
 import { scanClaudeUserSkills } from "@/lib/server/skill-scan";
 
 export const dynamic = "force-dynamic";
@@ -48,6 +52,7 @@ export type HarnessCapabilityManifest = {
   skills: HarnessSkill[];
   plugins: HarnessPlugin[];
   warnings: CapabilityWarning[];
+  bridge_capabilities?: OpenClawBridgeCapabilities;
 };
 
 export type CapabilitiesResponse = {
@@ -105,11 +110,54 @@ function isManifest(data: unknown): data is HarnessCapabilityManifest {
 }
 
 async function fetchHarnessManifest(harness: string, refresh: string): Promise<HarnessCapabilityManifest | null> {
+  if (harness === "openclaw") {
+    return openClawCapabilityManifest(new Date().toISOString());
+  }
   const res = await callDaemon<HarnessCapabilityManifest>({
     path: `/api/v1/capabilities/${encodeURIComponent(harness)}${refresh}`,
   });
   if (!res.ok || !isManifest(res.data)) return null;
   return supplementClaudeSkills(res.data);
+}
+
+function openClawCapabilityManifest(scannedAt: string): HarnessCapabilityManifest {
+  return {
+    harness_id: "openclaw",
+    scanned_at: scannedAt,
+    global_instructions: { present: false },
+    skills: [],
+    plugins: [
+      {
+        id: "openclaw-native-bridge",
+        name: "OpenClaw native bridge",
+        source: "cave",
+        harness_id: "openclaw",
+        kind: "bridge",
+        enabled: true,
+        transport: "local-cli",
+        command: "openclaw",
+        args: ["agent", "--json", "--session-key"],
+      },
+    ],
+    warnings: [
+      {
+        kind: "unsupported-local-file-attachments",
+        path: "openclaw://bridge",
+        message: "OpenClaw bridge chat does not deliver local file paths or image payloads.",
+      },
+      {
+        kind: "unsupported-ssh-runtime",
+        path: "openclaw://bridge",
+        message: "OpenClaw over SSH is not supported by Cave's local native bridge.",
+      },
+      {
+        kind: "unsupported-model-override",
+        path: "openclaw://bridge",
+        message: "Cave records OpenClaw model intent but does not pass model overrides to OpenClaw agents.",
+      },
+    ],
+    bridge_capabilities: openClawBridgeCapabilities(),
+  };
 }
 
 /**
@@ -140,6 +188,10 @@ export async function GET(req: Request) {
   const harness = url.searchParams.get("harness");
 
   if (harness) {
+    if (harness === "openclaw") {
+      const manifest = openClawCapabilityManifest(new Date().toISOString());
+      return NextResponse.json({ ok: true, coven_skills: [], harness_capabilities: [manifest], scanned_at: manifest.scanned_at });
+    }
     const res = await callDaemon<HarnessCapabilityManifest>({
       path: `/api/v1/capabilities/${encodeURIComponent(harness)}${refresh}`,
     });

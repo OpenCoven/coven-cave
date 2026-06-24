@@ -78,14 +78,32 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /resolveOpenClawAgentId\(args\.body\.familiarId\)/,
-  "OpenClaw native chat should resolve Cave familiar ids to real OpenClaw agent ids",
+  /resolveOpenClawAgentBinding\(args\.body\.familiarId\)/,
+  "OpenClaw native chat should resolve Cave familiar ids to typed OpenClaw agent bindings",
 );
 
 assert.match(
   chatRoute,
   /import \{ openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv \} from "@\/lib\/openclaw-bin";/,
   "OpenClaw native chat should use the Windows-aware binary resolver instead of spawning a bare command",
+);
+
+assert.match(
+  openclawBridge,
+  /export interface RuntimeBridge[\s\S]*id: "openclaw";[\s\S]*resolveAgent\(familiarId: string\): Promise<OpenClawAgentBinding>;/,
+  "OpenClaw native chat should expose a typed runtime bridge contract separate from adapter manifests",
+);
+
+assert.match(
+  openclawBridge,
+  /type OpenClawBridgeRequest = \{[\s\S]*familiarId: string;[\s\S]*conversationId\?: string;[\s\S]*controls\?:/,
+  "OpenClaw bridge requests should capture Cave conversation ids, attachments, and response controls",
+);
+
+assert.match(
+  openclawBridge,
+  /export type OpenClawBridgeCapabilities = \{[\s\S]*stableSessionKey: boolean;[\s\S]*localFileAttachments: false;[\s\S]*nativeMemory: true;/,
+  "OpenClaw bridge should expose first-class capability flags for UI/runtime code",
 );
 
 assert.match(
@@ -126,10 +144,25 @@ assert.match(
   /const sessionId: string = conversationId/,
   "Conversation identity stays cave-owned across turns",
 );
+assert.match(
+  chatRoute,
+  /openclawAgentId: agentBinding\.openclawAgentId,[\s\S]*caveSessionId: conversationId,[\s\S]*gatewaySessionId: undefined,[\s\S]*sessionKey: openClawSessionKey\(conversationId\)/,
+  "OpenClaw transcript metadata should persist Cave id, session key, agent id, and diagnostic gateway id separately",
+);
+assert.match(
+  chatRoute,
+  /responseMetadata\.gatewaySessionId = gatewaySessionId;/,
+  "OpenClaw gateway session ids should be surfaced only as response diagnostics",
+);
 assert.doesNotMatch(
   chatRoute,
   /sessionId = extractOpenClawSessionId/,
   "The gateway's rotating session id must never become the conversation key",
+);
+assert.match(
+  chatRoute,
+  /error instanceof OpenClawAgentResolutionError[\s\S]*pushProgress\("openclaw-resolve", "OpenClaw agent resolution failed", "error", error\.message\)/,
+  "Missing OpenClaw agents should stream a clear bridge error before spawning",
 );
 assert.doesNotMatch(
   chatRoute,

@@ -10,6 +10,11 @@ export type ChatResponseMetadata = {
   modelSource?: ModelScope;
   modelApplicationState?: ModelApplicationState;
   modelApplicationReason?: string;
+  openclawAgentId?: string;
+  openclawAgentSource?: "explicit" | "id-match" | "name-match" | "fallback";
+  caveSessionId?: string;
+  gatewaySessionId?: string;
+  sessionKey?: string;
 };
 
 /** Collapse a user home prefix to "~" so the directory reads as a location the

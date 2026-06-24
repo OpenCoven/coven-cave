@@ -40,5 +40,15 @@ assert.match(
   /delete env\[key\]/,
   "OpenClaw spawn env should strip forbidden secret keys before subprocess launch",
 );
+assert.match(
+  src,
+  /FORBIDDEN_SPAWN_ENV_RE/,
+  "OpenClaw spawn env should scrub secret-like Cave process variables by pattern, not a single hard-coded key",
+);
+assert.match(
+  src,
+  /OPENCLAW_ALLOW_ENV_KEYS/,
+  "OpenClaw spawn env should require explicit allowlisting before passing secret-like variables through",
+);
 
 console.log("openclaw-bin.test.ts: ok");

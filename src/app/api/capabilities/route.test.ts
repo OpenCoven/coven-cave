@@ -28,6 +28,24 @@ assert.match(
 
 assert.match(
   source,
+  /openClawCapabilityManifest\(new Date\(\)\.toISOString\(\)\)/,
+  "OpenClaw should expose a synthetic bridge capability manifest when the daemon has no harness manifest",
+);
+
+assert.match(
+  source,
+  /if \(harness === "openclaw"\)[\s\S]*harness_capabilities: \[manifest\]/,
+  "The per-harness capabilities route should return OpenClaw bridge capabilities directly",
+);
+
+assert.match(
+  source,
+  /bridge_capabilities: openClawBridgeCapabilities\(\)/,
+  "The synthetic OpenClaw manifest should include structured bridge capability flags",
+);
+
+assert.match(
+  source,
   /const missing = COMPATIBILITY_ADAPTERS\.map\(\(adapter\) => adapter\.id\)\.filter\(\(id\) => !present\.has\(id\)\)/,
   "Coverage backfill only fetches harnesses the daemon aggregate omitted",
 );
