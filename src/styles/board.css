@@ -1542,120 +1542,10 @@
   text-align: center;
   color: var(--text-muted);
 }
-/* Title / timeline / dates columns are fixed so the header axis and the "today"
-   overlay (which reuse this exact grid) line up with the bar tracks. */
-.board-gantt-header {
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) 132px;
-  gap: 10px;
-  /* 11px = a row's 1px border + 10px padding, so the axis column starts exactly
-     where the tracks below it do. */
-  padding: 0 11px 8px;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-/* The timeline axis cell carries the start/end labels and the "today" caption,
-   positioned by the same percentage the overlay line uses. */
-.board-gantt-axis {
-  position: relative;
-  display: flex;
-  justify-content: space-between;
-}
-.board-gantt-axis__today {
-  position: absolute;
-  top: 0;
-  transform: translateX(-50%);
-  color: var(--accent-presence);
-  font-weight: 650;
-  white-space: nowrap;
-}
-.board-gantt-plot {
-  position: relative;
-}
-.board-gantt-list {
-  display: grid;
-  gap: 4px;
-}
-/* Full-height vertical "today" guide over the whole list. Mirrors a row's grid
-   + 11px inset so its middle column maps onto the bar tracks. */
-.board-gantt-today {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) 132px;
-  gap: 10px;
-  padding: 0 11px;
-  pointer-events: none;
-  z-index: 1;
-}
-.board-gantt-today__col {
-  position: relative;
-}
-.board-gantt-today__line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 0;
-  border-left: 1px dashed color-mix(in oklch, var(--accent-presence) 60%, transparent);
-}
-.board-gantt-row {
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) 132px;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 34px;
-  border: 1px solid var(--border-hairline);
-  border-radius: 8px;
-  background: var(--bg-raised);
-  color: var(--text-primary);
-  padding: 5px 10px;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color .12s, background .12s;
-}
-.board-gantt-row:hover,
-.board-gantt-row--selected {
-  border-color: color-mix(in oklch,var(--accent-presence) 42%,var(--border-hairline));
-  background: color-mix(in oklch,var(--accent-presence) 8%,var(--bg-raised));
-}
-.board-gantt-row__title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 600;
-}
-.board-gantt-row__track {
-  position: relative;
-  height: 12px;
-  border-radius: 999px;
-  background: var(--bg-base);
-  border: 1px solid var(--border-hairline);
-  overflow: hidden;
-}
-.board-gantt-row__bar {
-  position: absolute;
-  top: 2px;
-  bottom: 2px;
-  min-width: 12px;
-  border-radius: 999px;
-  background: var(--accent-presence);
-}
-.board-gantt-row__bar--urgent { background: var(--color-danger); }
-.board-gantt-row__bar--high { background: var(--color-warning); }
-.board-gantt-row__bar--medium { background: var(--accent-presence); }
-.board-gantt-row__bar--low { background: color-mix(in oklch,var(--text-muted) 55%,transparent); }
-.board-gantt-row__dates {
-  color: var(--text-secondary);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: right;
-}
+/* NOTE: the pre-rewrite grid/axis/today/priority-bar rules that lived here were
+   removed once the dense `.cg-*` timeline (below) replaced them — they had zero
+   references left in the markup. The current bars + categories are defined in
+   the "Compact Gantt" block further down. */
 .board-gantt-unscheduled {
   margin-top: 10px;
   color: var(--text-muted);
@@ -1850,6 +1740,11 @@
 /* overdue bar: ended before today and not done — outline + danger ring */
 .cg-bar--overdue { outline: 1.5px solid var(--color-danger); outline-offset: 1px; }
 .cg-diamond.cg-bar--overdue { outline: none; box-shadow: 0 0 0 1.5px var(--color-danger); }
+/* Inferred (task-mode) bars: the step had no dates of its own, so its position
+   is an equal slice of the task range — render translucent + dashed so it reads
+   as a hint, not a real schedule. */
+.cg-bar--inferred { opacity: 0.5; border: 1px dashed color-mix(in oklch, var(--text-primary) 45%, transparent); }
+.cg-diamond.cg-bar--inferred { opacity: 0.5; }
 /* drop hint while dragging an undated task onto the timeline */
 .cg-drop-hint { position: absolute; top: 0; bottom: 0; z-index: 3; background: color-mix(in oklch, var(--accent-presence) 22%, transparent); border-left: 2px solid var(--accent-presence); border-right: 2px solid var(--accent-presence); pointer-events: none; }
 .cg-drag-label {

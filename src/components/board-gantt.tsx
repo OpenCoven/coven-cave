@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { Familiar } from "@/lib/types";
 import { useDateTimePrefs, readDateTimePrefs } from "@/lib/datetime-format";
@@ -37,6 +37,12 @@ type GanttRow = {
   category: GanttCategory;
   /** Per-familiar bar colour, set only when grouping by familiar. */
   color?: string;
+  /**
+   * Task mode only: the step had no dates of its own, so its position is an
+   * equal slice of the task's range (a waterfall by step order) rather than a
+   * real schedule. Rendered de-emphasised; dragging promotes it to real dates.
+   */
+  inferred?: boolean;
 };
 type Group = { key: string; name: string; rows: GanttRow[]; firstStart: number };
 
@@ -126,6 +132,16 @@ function statusCategory(status: CardStatus): GanttCategory {
   return "pending"; // backlog · inbox · review
 }
 
+// A card's own date range; start/end fall back to each other. null if neither.
+function cardRange(card: Card): { start: Date; end: Date } | null {
+  const s = parseDate(card.startDate);
+  const e = parseDate(card.endDate);
+  if (!s && !e) return null;
+  const a = s ?? e!;
+  const b = e ?? s!;
+  return a <= b ? { start: a, end: b } : { start: b, end: a };
+}
+
 export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelect, onPatch, groupMode = "project" }: Props) {
   // Click a group header to focus it (hide the others); click again to show all.
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -165,6 +181,13 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   const draggable = !!onPatch;
   const [drag, setDrag] = useState<{ id: string; mode: DragMode; deltaDays: number } | null>(null);
   const dragRef = useRef<{ id: string; mode: DragMode; startX: number; moved: boolean } | null>(null);
+  // Keyboard reschedule (←/→ on a focused bar) accumulates consecutive presses
+  // into ONE patch — committing per keystroke would fire a write + an undo
+  // entry on every tap. kbShift drives the same live preview as a pointer drag;
+  // the pending shift flushes on idle, blur, or Escape.
+  const [kbShift, setKbShift] = useState<{ rowId: string; mode: DragMode; delta: number } | null>(null);
+  const kbShiftRef = useRef<{ row: GanttRow; mode: DragMode; delta: number } | null>(null);
+  const kbTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Suppresses the row's select-click that would otherwise fire after a drag.
   const suppressClickRef = useRef(false);
   // Center the timeline on "today" the first time it opens, so a long project
@@ -242,105 +265,147 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     if (d.moved) commitShift(row, d.mode, active?.deltaDays ?? 0);
   };
 
-  const ownerName = (id: string | null): string =>
-    (id ? familiars?.find((f) => f.id === id)?.display_name : undefined) ?? "—";
-  const projectName = (id: string | null | undefined): string =>
-    (id ? projects?.find((p) => p.id === id)?.name : undefined) ?? "No project";
+  // Commit the accumulated keyboard shift (if any) as a single patch.
+  const flushKbShift = () => {
+    if (kbTimerRef.current) { clearTimeout(kbTimerRef.current); kbTimerRef.current = null; }
+    const pending = kbShiftRef.current;
+    kbShiftRef.current = null;
+    setKbShift(null);
+    if (pending && pending.delta !== 0) commitShift(pending.row, pending.mode, pending.delta);
+  };
+  // Add one arrow-key step to the running shift for this row+mode, restarting
+  // (and flushing the prior) if the target row or mode changed.
+  const pushKbShift = (row: GanttRow, mode: DragMode, dir: number) => {
+    const cur = kbShiftRef.current;
+    if (cur && (cur.row.rowId !== row.rowId || cur.mode !== mode)) {
+      commitShift(cur.row, cur.mode, cur.delta); // different target — commit the old one now
+      kbShiftRef.current = null;
+    }
+    const base = kbShiftRef.current?.delta ?? 0;
+    const next = { row, mode, delta: base + dir };
+    kbShiftRef.current = next;
+    setKbShift({ rowId: row.rowId, mode, delta: next.delta });
+    if (kbTimerRef.current) clearTimeout(kbTimerRef.current);
+    kbTimerRef.current = setTimeout(flushKbShift, 350);
+  };
+  // Drop the pending timer on unmount (the shift itself is best-effort).
+  useEffect(() => () => { if (kbTimerRef.current) clearTimeout(kbTimerRef.current); }, []);
+
+  const ownerName = useCallback(
+    (id: string | null): string =>
+      (id ? familiars?.find((f) => f.id === id)?.display_name : undefined) ?? "—",
+    [familiars],
+  );
+  const projectName = useCallback(
+    (id: string | null | undefined): string =>
+      (id ? projects?.find((p) => p.id === id)?.name : undefined) ?? "No project",
+    [projects],
+  );
   // A stable per-familiar colour for by-familiar bars: the familiar's own
   // colour when set, otherwise a hue derived from its id so distinct familiars
   // stay visually distinct. Unassigned rows keep their status colour.
-  const familiarColor = (id: string | null): string | undefined => {
-    if (!id) return undefined;
-    const set = familiars?.find((f) => f.id === id)?.color;
-    if (set) return set;
-    let h = 0;
-    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
-    return `hsl(${h} 52% 52%)`;
-  };
+  const familiarColor = useCallback(
+    (id: string | null): string | undefined => {
+      if (!id) return undefined;
+      const set = familiars?.find((f) => f.id === id)?.color;
+      if (set) return set;
+      let h = 0;
+      for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
+      return `hsl(${h} 52% 52%)`;
+    },
+    [familiars],
+  );
 
-  // A card's own date range; start/end fall back to each other. null if neither.
-  const cardRange = (card: Card): { start: Date; end: Date } | null => {
-    const s = parseDate(card.startDate);
-    const e = parseDate(card.endDate);
-    if (!s && !e) return null;
-    const a = s ?? e!;
-    const b = e ?? s!;
-    return a <= b ? { start: a, end: b } : { start: b, end: a };
-  };
+  // Build the grouped row model. Memoised so a drag/keyboard reschedule (which
+  // re-renders on every pointer move) doesn't rebuild and re-sort every group.
+  const { groups, allRows, unscheduledCards } = useMemo(() => {
+    const groups: Group[] = [];
+    const placedCardIds = new Set<string>();
 
-  const groups: Group[] = [];
-  const placedCardIds = new Set<string>();
-
-  if (groupMode === "task") {
-    // One group per task; one bar per step, placed by the step's own dates and
-    // falling back to the task's range for undated steps.
-    for (const card of cards) {
-      const steps = card.steps ?? [];
-      if (steps.length === 0) continue;
-      const cr = cardRange(card);
-      const rows: GanttRow[] = [];
-      for (const step of steps) {
-        let s = parseDate(step.startDate);
-        let e = parseDate(step.endDate);
-        if (!s && !e) {
-          if (!cr) continue; // no step dates and no task range — can't place it
-          s = cr.start;
-          e = cr.end;
-        }
-        const a = s ?? e!;
-        const b = e ?? s!;
-        rows.push({
-          rowId: `${card.id}:${step.id}`,
-          cardId: card.id,
-          stepId: step.id,
-          label: step.text,
-          start: a <= b ? a : b,
-          end: a <= b ? b : a,
-          category: step.done ? "done" : statusCategory(card.status),
+    if (groupMode === "task") {
+      // One group per task; one bar per step. A step with its own dates uses
+      // them; an undated step is laid out as an equal slice of the task's range
+      // (a waterfall in step order) so undated steps no longer all collapse
+      // onto the full range as identical, overlapping bars.
+      for (const card of cards) {
+        const steps = card.steps ?? [];
+        if (steps.length === 0) continue;
+        const cr = cardRange(card);
+        const rangeDays = cr ? daysBetween(cr.start, cr.end) + 1 : 0;
+        const n = steps.length;
+        const rows: GanttRow[] = [];
+        steps.forEach((step, i) => {
+          let s = parseDate(step.startDate);
+          let e = parseDate(step.endDate);
+          let inferred = false;
+          if (!s && !e) {
+            if (!cr) return; // no step dates and no task range — can't place it
+            inferred = true;
+            // Contiguous equal slice for step i of n across the task range.
+            const sliceStart = Math.floor((i * rangeDays) / n);
+            const sliceEndExcl = Math.floor(((i + 1) * rangeDays) / n);
+            s = addDays(cr.start, sliceStart);
+            e = addDays(cr.start, Math.max(sliceStart, sliceEndExcl - 1));
+          }
+          const a = s ?? e!;
+          const b = e ?? s!;
+          rows.push({
+            rowId: `${card.id}:${step.id}`,
+            cardId: card.id,
+            stepId: step.id,
+            label: step.text,
+            start: a <= b ? a : b,
+            end: a <= b ? b : a,
+            category: step.done ? "done" : statusCategory(card.status),
+            inferred,
+          });
         });
+        if (rows.length === 0) continue;
+        placedCardIds.add(card.id);
+        groups.push({ key: card.id, name: card.title, rows, firstStart: Math.min(...rows.map((r) => r.start.getTime())) });
       }
-      if (rows.length === 0) continue;
-      placedCardIds.add(card.id);
-      groups.push({ key: card.id, name: card.title, rows, firstStart: Math.min(...rows.map((r) => r.start.getTime())) });
-    }
-  } else {
-    // One group per project (or familiar); one bar per scheduled task.
-    const byFamiliar = groupMode === "familiar";
-    const groupMap = new Map<string, Group>();
-    for (const card of cards) {
-      const cr = cardRange(card);
-      if (!cr) continue;
-      placedCardIds.add(card.id);
-      const key = byFamiliar ? (card.familiarId ?? "__unassigned__") : (card.projectId ?? "__none__");
-      let group = groupMap.get(key);
-      if (!group) {
-        const name = byFamiliar
-          ? (card.familiarId ? ownerName(card.familiarId) : "Unassigned")
-          : projectName(card.projectId);
-        group = { key, name, rows: [], firstStart: cr.start.getTime() };
-        groupMap.set(key, group);
+    } else {
+      // One group per project (or familiar); one bar per scheduled task.
+      const byFamiliar = groupMode === "familiar";
+      const groupMap = new Map<string, Group>();
+      for (const card of cards) {
+        const cr = cardRange(card);
+        if (!cr) continue;
+        placedCardIds.add(card.id);
+        const key = byFamiliar ? (card.familiarId ?? "__unassigned__") : (card.projectId ?? "__none__");
+        let group = groupMap.get(key);
+        if (!group) {
+          const name = byFamiliar
+            ? (card.familiarId ? ownerName(card.familiarId) : "Unassigned")
+            : projectName(card.projectId);
+          group = { key, name, rows: [], firstStart: cr.start.getTime() };
+          groupMap.set(key, group);
+        }
+        group.rows.push({
+          rowId: card.id,
+          cardId: card.id,
+          label: card.title,
+          start: cr.start,
+          end: cr.end,
+          category: statusCategory(card.status),
+          color: byFamiliar ? (familiarColor(card.familiarId) ?? "var(--text-muted)") : undefined,
+        });
+        group.firstStart = Math.min(group.firstStart, cr.start.getTime());
       }
-      group.rows.push({
-        rowId: card.id,
-        cardId: card.id,
-        label: card.title,
-        start: cr.start,
-        end: cr.end,
-        category: statusCategory(card.status),
-        color: byFamiliar ? (familiarColor(card.familiarId) ?? "var(--text-muted)") : undefined,
-      });
-      group.firstStart = Math.min(group.firstStart, cr.start.getTime());
+      groups.push(...groupMap.values());
     }
-    groups.push(...groupMap.values());
-  }
 
-  groups.sort((a, b) => a.firstStart - b.firstStart);
-  for (const g of groups) {
-    g.rows.sort((a, b) => a.start.getTime() - b.start.getTime() || a.end.getTime() - b.end.getTime());
-  }
+    groups.sort((a, b) => a.firstStart - b.firstStart);
+    for (const g of groups) {
+      g.rows.sort((a, b) => a.start.getTime() - b.start.getTime() || a.end.getTime() - b.end.getTime());
+    }
 
-  const allRows = groups.flatMap((g) => g.rows);
-  const unscheduledCards = cards.filter((c) => !placedCardIds.has(c.id));
+    return {
+      groups,
+      allRows: groups.flatMap((g) => g.rows),
+      unscheduledCards: cards.filter((c) => !placedCardIds.has(c.id)),
+    };
+  }, [cards, groupMode, ownerName, projectName, familiarColor]);
   const unscheduledCount = unscheduledCards.length;
 
   // Auto-center on today once the timeline can be drawn (keyed on the clock +
@@ -633,9 +698,13 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                   const offset = Math.max(0, daysBetween(rangeStart, start));
                   const dur = Math.max(1, daysBetween(start, end) + 1);
                   const milestone = dur === 1;
-                  // Live drag state for this row, clamped so a resize can't
-                  // invert the bar. A diamond has no edges, so it only moves.
-                  const active = drag?.id === row.rowId ? drag : null;
+                  // Live reschedule state for this row, clamped so a resize
+                  // can't invert the bar — from a pointer drag or, failing that,
+                  // an in-flight keyboard shift (both preview identically).
+                  const active =
+                    drag?.id === row.rowId ? { mode: drag.mode, deltaDays: drag.deltaDays }
+                    : kbShift?.rowId === row.rowId ? { mode: kbShift.mode, deltaDays: kbShift.delta }
+                    : null;
                   const mode: DragMode = active?.mode ?? "move";
                   const dragDelta = active ? clampDelta(mode, active.deltaDays, dur) : 0;
                   const dragging = active !== null && dragDelta !== 0;
@@ -653,7 +722,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                   const overdue =
                     todayStartMs !== null && cat !== "done" && previewEnd.getTime() < todayStartMs;
                   const barClass = (base: string) =>
-                    `${base}${draggable ? " cg-bar--grab" : ""}${dragging ? " cg-bar--dragging" : ""}${overdue ? " cg-bar--overdue" : ""}`;
+                    `${base}${draggable ? " cg-bar--grab" : ""}${dragging ? " cg-bar--dragging" : ""}${overdue ? " cg-bar--overdue" : ""}${row.inferred ? " cg-bar--inferred" : ""}`;
                   const handlers = draggable
                     ? {
                         onPointerDown: (e: React.PointerEvent) => beginDrag(e, row.rowId, "move"),
@@ -683,14 +752,17 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                       }}
                       onKeyDown={(e) => {
                         // Keyboard reschedule on the focused bar: ←/→ move both
-                        // dates by a day, Shift+←/→ resize the end. (Tab already
-                        // moves focus between bars.)
+                        // dates by a day, Shift+←/→ resize the end. Consecutive
+                        // presses coalesce into one patch (flushed on idle/blur);
+                        // Escape commits immediately. (Tab moves focus between bars.)
+                        if (e.key === "Escape" && kbShift?.rowId === row.rowId) { e.preventDefault(); flushKbShift(); return; }
                         if (!draggable || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
                         e.preventDefault();
                         const dir = e.key === "ArrowRight" ? 1 : -1;
-                        commitShift(row, e.shiftKey ? "resize-end" : "move", dir);
+                        pushKbShift(row, e.shiftKey ? "resize-end" : "move", dir);
                       }}
-                      title={`${row.label} · ${formatLabel(previewStart)}–${formatLabel(previewEnd)}${draggable ? " · drag to move, drag edges to resize · ←/→ to reschedule" : ""}`}
+                      onBlur={() => { if (kbShiftRef.current?.row.rowId === row.rowId) flushKbShift(); }}
+                      title={`${row.label} · ${formatLabel(previewStart)}–${formatLabel(previewEnd)}${row.inferred ? " · inferred from task range — drag to set real dates" : ""}${draggable ? " · drag to move, drag edges to resize · ←/→ to reschedule" : ""}`}
                     >
                       <span className="cg-left">
                         <span className="cg-c-task">{row.label}</span>

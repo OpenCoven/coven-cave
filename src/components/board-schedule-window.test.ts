@@ -88,7 +88,7 @@ assert.doesNotMatch(styles, /cg-c-owner|cg--no-owner/, "Owner column styles are 
 assert.match(styles, /\.cg-left \{[\s\S]*?grid-template-columns: 300px 58px 58px 26px;/, "the left table uses the four-column (ownerless) layout with a wide task column");
 
 // By-familiar grouping colour-codes bars by familiar.
-assert.match(gantt, /const familiarColor = \(id: string \| null\): string \| undefined =>/, "a per-familiar colour helper exists");
+assert.match(gantt, /const familiarColor = useCallback\(\s*\n\s*\(id: string \| null\): string \| undefined =>/, "a per-familiar colour helper exists");
 assert.match(gantt, /color: byFamiliar \? \(familiarColor\(card\.familiarId\) \?\? "var\(--text-muted\)"\) : undefined/, "rows carry a familiar colour (or neutral fallback) only in by-familiar mode");
 assert.match(gantt, /\.\.\.\(row\.color \? \{ background: row\.color \} : \{\}\)/, "the bar paints the familiar colour when present");
 
@@ -177,7 +177,31 @@ assert.match(gantt, /if \(prevZoomRef\.current === zoom\) return;[\s\S]{0,120}ce
 // Pointer drag-end and keyboard reschedule share one commit path.
 assert.match(gantt, /const commitShift = \(row: GanttRow, mode: DragMode, rawDelta: number\)/, "a shared commitShift applies a day-shift");
 assert.match(gantt, /if \(d\.moved\) commitShift\(row, d\.mode, active\?\.deltaDays \?\? 0\)/, "drag-end routes through commitShift");
-assert.match(gantt, /commitShift\(row, e\.shiftKey \? "resize-end" : "move", dir\)/, "arrow keys reschedule the focused bar (Shift to resize)");
 assert.match(gantt, /e\.key !== "ArrowLeft" && e\.key !== "ArrowRight"/, "only left/right arrows reschedule");
+
+// Keyboard reschedule COALESCES consecutive presses into a single patch (and a
+// single undo entry) instead of committing per keystroke — it accumulates into
+// kbShift, previews live like a drag, and flushes on idle/blur/Escape.
+assert.match(gantt, /pushKbShift\(row, e\.shiftKey \? "resize-end" : "move", dir\)/, "arrow keys feed the coalescing accumulator (Shift to resize)");
+assert.match(gantt, /const flushKbShift = \(\) => \{[\s\S]*?commitShift\(pending\.row, pending\.mode, pending\.delta\)/, "the accumulated keyboard shift commits as one patch");
+assert.match(gantt, /setTimeout\(flushKbShift, 350\)/, "consecutive presses debounce into one flush");
+assert.match(gantt, /onBlur=\{\(\) => \{ if \(kbShiftRef\.current\?\.row\.rowId === row\.rowId\) flushKbShift\(\); \}\}/, "leaving the bar flushes the pending shift");
+assert.match(gantt, /kbShift\?\.rowId === row\.rowId \? \{ mode: kbShift\.mode, deltaDays: kbShift\.delta \}/, "the keyboard shift drives the same live preview as a drag");
+
+// The group model is memoised so a drag/keyboard re-render doesn't rebuild it.
+assert.match(gantt, /const \{ groups, allRows, unscheduledCards \} = useMemo\(\(\) => \{/, "the grouped row model is memoised");
+assert.match(gantt, /\}, \[cards, groupMode, ownerName, projectName, familiarColor\]\);/, "the memo is keyed on its real inputs");
+
+// Task mode: undated steps are laid out as equal slices of the task range (a
+// waterfall by step order), marked `inferred` and rendered de-emphasised —
+// they no longer all collapse onto the full range as identical bars.
+assert.match(gantt, /const sliceStart = Math\.floor\(\(i \* rangeDays\) \/ n\);/, "an undated step takes a contiguous equal slice of the task range");
+assert.match(gantt, /inferred,/, "rows carry whether their dates were inferred");
+assert.match(gantt, /\$\{row\.inferred \? " cg-bar--inferred" : ""\}/, "inferred bars get a de-emphasis class");
+assert.match(styles, /\.cg-bar--inferred \{/, "inferred bars are styled (translucent + dashed)");
+// Milestone diamonds stay a deliberately-neutral glyph (white !important) in
+// every mode, matching the legend's white "Milestone" swatch — so they must NOT
+// be painted with the per-familiar bar colour.
+assert.match(styles, /\.cg-diamond \{[\s\S]*?background: var\(--text-primary\) !important;/, "milestone diamonds are a neutral marker in all modes");
 
 console.log("board-schedule-window.test.ts: ok");
