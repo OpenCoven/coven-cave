@@ -195,7 +195,7 @@ export function FamiliarSwitcher({
           ) : null}
 
           {reordering ? (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <DndContext id="familiar-switcher" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={familiarIds} strategy={verticalListSortingStrategy}>
                 <ul className="familiar-switcher__list" aria-label="Reorder familiars">
                   {familiars.map((f) => (

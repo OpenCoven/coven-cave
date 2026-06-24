@@ -506,7 +506,7 @@ export function ChatProjectSidebar({
               No sessions match your search
             </p>
           ) : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <DndContext id="chat-sidebar-projects" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={displayIds} strategy={verticalListSortingStrategy}>
                 <ul>
                   <li>
@@ -533,7 +533,7 @@ export function ChatProjectSidebar({
           <>
             {hasSearch ? <div className="mt-1 border-t border-[var(--border-hairline)]" /> : null}
 
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFolderDragEnd}>
+            <DndContext id="cps-folders" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFolderDragEnd}>
               {groups.map((group) => {
                 const key = selectionKey(group.projectId, group.projectRoot);
                 const expanded = expandedKeys.includes(key);

@@ -522,7 +522,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
                 No projects match “{query.trim()}”.
               </p>
             ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <DndContext id="projects-grid" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 {visibleProjects.map((project) => (
                   <ProjectRow
                     key={project.id}

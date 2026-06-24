@@ -273,7 +273,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       </div>
 
       {/* Main grid — panels drag to rearrange (hover for the grip) */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext id="dashboard-cockpit" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <div className="cockpit-grid">
           {(["main", "rail"] as const).map((col) => {
             const ids = layout[col].filter(isVisible);

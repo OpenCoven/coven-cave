@@ -90,7 +90,7 @@ export function FamiliarPinOrder() {
   return (
     <div className="familiar-pin-order">
       {pinned.length > 0 ? (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext id="familiar-pin-order" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={pinnedIds} strategy={verticalListSortingStrategy}>
             <ul className="familiar-pin-order__list" aria-label="Reorder pinned familiars">
               {pinned.map((f) => (

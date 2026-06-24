@@ -1025,6 +1025,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           )}
           {visibleRows > 0 && (
           <DndContext
+            id="chat-list"
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragEnd={(event) => handleDragEnd(event, displayIds)}
