@@ -211,6 +211,11 @@ struct MessageBubble: View {
                         .contextMenu { messageActions }
                 }
 
+                // Rich preview card for the first link in a finished message.
+                if !message.streaming, let link = firstLink(in: parsed.visible) {
+                    LinkPreviewCard(url: link)
+                }
+
                 // A failed reply gets a visible Retry button, not just the
                 // long-press menu — a flaky network shouldn't leave a dead-end
                 // red bubble. (Retry re-streams just this bubble's familiar.)
