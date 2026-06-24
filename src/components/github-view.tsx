@@ -1358,6 +1358,12 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
+  // Guards against setState after unmount from an in-flight fetch (mirrors useCards).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const familiars = useFamiliars();
   const { cards, reload: reloadCards } = useCards();
@@ -1375,12 +1381,21 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     } catch { /* non-fatal */ }
   }
 
+  // Schedule the next poll, unless the tab is hidden — a backgrounded tab keeps
+  // burning the GitHub rate limit for output nobody's looking at. The
+  // visibilitychange effect refetches (and reschedules) on return.
+  function schedulePoll(ms: number) {
+    if (typeof document !== "undefined" && document.hidden) return;
+    timerRef.current = window.setTimeout(() => void fetchActivity(true), ms);
+  }
+
   async function fetchActivity(silent = false) {
     if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/github/activity");
       const data = await res.json().catch(() => null);
+      if (!mountedRef.current) return;
 
       if (res.status === 401 && data?.error === "no_user") {
         setError("no_user");
@@ -1391,19 +1406,19 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       if (!res.ok || !data?.ok) {
         setError(data?.error ?? `GitHub error (${res.status})`);
         setLoading(false);
-        timerRef.current = window.setTimeout(() => void fetchActivity(true), 60_000);
+        schedulePoll(60_000);
         return;
       }
 
       setActivity(data as ActivityResult);
       setError(null);
-      const interval = (data as ActivityResult).authed ? 90_000 : 120_000;
-      timerRef.current = window.setTimeout(() => void fetchActivity(true), interval);
+      schedulePoll((data as ActivityResult).authed ? 90_000 : 120_000);
     } catch (e) {
+      if (!mountedRef.current) return;
       setError(e instanceof Error ? e.message : "Failed to load GitHub activity");
-      timerRef.current = window.setTimeout(() => void fetchActivity(true), 60_000);
+      schedulePoll(60_000);
     } finally {
-      setLoading(false);
+      if (mountedRef.current) setLoading(false);
     }
   }
 
@@ -1411,6 +1426,20 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     void fetchPatStatus();
     void fetchActivity();
     return () => { if (timerRef.current !== null) window.clearTimeout(timerRef.current); };
+  }, []);
+
+  // Pause polling while the tab is hidden; refetch (and resume the chain) on
+  // return so a backgrounded tab doesn't keep spending the rate limit.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.hidden) {
+        if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
+      } else {
+        void fetchActivity(true);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   useEffect(() => {
@@ -1425,13 +1454,17 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       e.preventDefault();
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
       void fetchActivity();
+      reloadCards(); // keep the linked-task chips fresh too (parity with the toolbar refresh)
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const items = activity?.items ?? [];
-  const filtered = filter === "all" ? items : items.filter((i) => i.kind === filter);
+  const filtered = useMemo(
+    () => (filter === "all" ? items : items.filter((i) => i.kind === filter)),
+    [items, filter],
+  );
 
   // Organization options come from the kind-filtered set; repository options
   // narrow to the chosen org so the two selects cascade (org → repo).
@@ -1524,12 +1557,15 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     return Array.from(m.entries());
   }, [sorted, groupBy]);
 
-  const counts: Record<Filter, number> = {
-    all: items.length,
-    pr: items.filter((i) => i.kind === "pr").length,
-    review_request: items.filter((i) => i.kind === "review_request").length,
-    issue: items.filter((i) => i.kind === "issue").length,
-  };
+  const counts: Record<Filter, number> = useMemo(
+    () => ({
+      all: items.length,
+      pr: items.filter((i) => i.kind === "pr").length,
+      review_request: items.filter((i) => i.kind === "review_request").length,
+      issue: items.filter((i) => i.kind === "issue").length,
+    }),
+    [items],
+  );
 
   useEffect(() => {
     if (sorted.length === 0) {
@@ -1551,6 +1587,53 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir(key === "updatedAt" || key === "tasks" ? "desc" : "asc"); }
   }
+
+  // Keyboard navigation for the rows: ↑/↓ + Home/End move a roving tab stop
+  // (the selected row carries tabIndex 0), selection follows focus so the
+  // detail panel tracks the keyboard, and Enter opens the item on GitHub. Keyed
+  // on the row count so the listeners (re)bind once the table mounts after the
+  // async fetch — the table isn't in the DOM during the loading/empty states.
+  const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
+  useEffect(() => {
+    const tbody = tbodyRef.current;
+    if (!tbody) return;
+    const rowOf = (el: EventTarget | null) =>
+      (el as HTMLElement | null)?.closest?.('tr[data-gh-row="true"]') as HTMLElement | null;
+    const rows = () => Array.from(tbody.querySelectorAll<HTMLElement>('tr[data-gh-row="true"]'));
+    const focusRow = (i: number) => {
+      const list = rows();
+      if (list.length === 0) return;
+      const row = list[Math.max(0, Math.min(list.length - 1, i))];
+      if (row.dataset.itemId) setSelectedItemId(row.dataset.itemId);
+      row.focus();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const cur = rowOf(document.activeElement);
+      const list = rows();
+      const i = cur ? list.indexOf(cur) : list.findIndex((r) => r.getAttribute("aria-selected") === "true");
+      switch (e.key) {
+        case "ArrowDown": e.preventDefault(); focusRow((i < 0 ? -1 : i) + 1); break;
+        case "ArrowUp": e.preventDefault(); focusRow((i < 0 ? list.length : i) - 1); break;
+        case "Home": e.preventDefault(); focusRow(0); break;
+        case "End": e.preventDefault(); focusRow(list.length - 1); break;
+        case "Enter": {
+          const url = cur?.dataset.url;
+          if (url) { e.preventDefault(); window.open(url, "_blank", "noopener,noreferrer"); }
+          break;
+        }
+      }
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      const row = rowOf(e.target);
+      if (row?.dataset.itemId) setSelectedItemId(row.dataset.itemId);
+    };
+    tbody.addEventListener("keydown", onKey);
+    tbody.addEventListener("focusin", onFocusIn);
+    return () => {
+      tbody.removeEventListener("keydown", onKey);
+      tbody.removeEventListener("focusin", onFocusIn);
+    };
+  }, [sorted.length]);
 
   return (
     <section className="github-surface flex h-full flex-col text-[var(--text-primary)]">
@@ -1731,7 +1814,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
         ) : (
           <div className="gh-workspace">
             <div className="board-table-wrap gh-list-panel">
-              <table className="board-table gh-table">
+              <table className="board-table gh-table" role="grid" aria-label="GitHub activity — use arrow keys to navigate rows">
                 <thead>
                   <tr>
                     {COLS.map((col, i) => (
@@ -1782,7 +1865,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                     ))}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody ref={tbodyRef}>
                   {(() => {
                     const renderRow = (item: GitHubItem) => {
                   const linked = linkedMap.get(item.id) ?? [];
@@ -1796,6 +1879,10 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                   return (
                     <tr
                       key={item.id}
+                      data-gh-row="true"
+                      data-item-id={item.id}
+                      data-url={item.url}
+                      tabIndex={selectedItem?.id === item.id ? 0 : -1}
                       className={`gh-row${selectedItem?.id === item.id ? " is-selected" : ""}`}
                       onClick={() => setSelectedItemId(item.id)}
                       aria-selected={selectedItem?.id === item.id}
@@ -1964,7 +2051,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
 
       {/* ── Footer ── */}
       <footer className="github-surface-footer shrink-0 px-5 py-1.5 text-[10px] text-[var(--text-muted)] flex items-center justify-between gap-3">
-        <span>⌘R refresh · click a row to inspect · open icon launches GitHub</span>
+        <span>↑↓ navigate · Enter opens on GitHub · ⌘R refresh</span>
         <span className="inline-flex items-center gap-3">
           {activity?.rateLimit && activity.rateLimit.remaining < 10 && (
             <span className="inline-flex items-center gap-1 text-[var(--color-warning)]">
