@@ -8,6 +8,7 @@ export default defineConfig({
       "**/.next/**",
       "**/.worktrees/**",
       "**/node_modules/**",
+      "**/*.spec.ts",
       "**/src-tauri/gen/**",
       "**/src-tauri/target/**",
     ],
