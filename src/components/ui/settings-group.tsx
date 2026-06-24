@@ -1,5 +1,11 @@
 import type { ReactNode } from "react";
 
+/** Stable DOM id for a group, derived from its label, so Settings search can
+ *  scroll/highlight the matching group. Shared with the search index. */
+export function settingsGroupId(label: string): string {
+  return `settings-group-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
+}
+
 /**
  * A labeled settings group: an uppercase caption over a boxed, divided list of
  * rows. Shared by the settings sections (Mode, Theme, …) and FontSettings so the
@@ -16,7 +22,7 @@ export function SettingsGroup({
   children: ReactNode;
 }) {
   return (
-    <div>
+    <div id={settingsGroupId(label)} data-settings-group className="scroll-mt-4 settings-group">
       <p
         className={`text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)] ${
           description ? "mb-1" : "mb-2"

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
-import { SettingsGroup } from "@/components/ui/settings-group";
+import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
+import { SearchInput } from "@/components/ui/search-input";
+import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { PermissionsSection } from "@/components/settings-permissions";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -74,6 +76,35 @@ const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: "about",      label: "About",      icon: "ph:info" },
 ];
 
+// ─── Search index ───────────────────────────────────────────────────────────
+// One entry per searchable settings group. `group` matches the SettingsGroup
+// label (so settingsGroupId() resolves the scroll target); omit it for sections
+// without boxed groups (open the section, no in-page scroll). `keywords` carry
+// the synonyms a user is likely to type.
+type SettingsIndexEntry = { section: Section; group?: string; keywords: string };
+const SETTINGS_INDEX: SettingsIndexEntry[] = [
+  { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
+  { section: "general", group: "Startup", keywords: "startup launch autostart open boot demo mode" },
+  { section: "daemon", group: "Status", keywords: "daemon status running start stop restart" },
+  { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },
+  { section: "familiars", keywords: "familiars agents personas avatar name look" },
+  { section: "permissions", keywords: "permissions allow deny tools access guard security" },
+  { section: "addons", group: "Integrations", keywords: "add-ons addons integrations plugins github youtube sidebar" },
+  { section: "mobile", group: "Steps", keywords: "phone mobile connect qr pair tailscale" },
+  { section: "mobile", group: "Why there’s no password", keywords: "password security auth login" },
+  { section: "mobile", group: "Get the app", keywords: "app download ios testflight install" },
+  { section: "appearance", group: "Mode", keywords: "mode dark light system appearance scheme" },
+  { section: "appearance", group: "Theme", keywords: "theme color palette swatch preset" },
+  { section: "appearance", group: "Theme tokens", keywords: "theme tokens colors hex custom background accent border" },
+  { section: "appearance", group: "Import from tweakcn", keywords: "import tweakcn css variables theme" },
+  { section: "appearance", group: "Familiar switcher", keywords: "familiar switcher style strip scope" },
+  { section: "appearance", group: "Corners", keywords: "corners radius rounded sharp square" },
+  { section: "appearance", group: "Reading text", keywords: "font typeface family size reading text density relative time chat library" },
+  { section: "about", group: "CovenCave", keywords: "about version covencave build" },
+  { section: "about", group: "OpenCoven tools", keywords: "tools update cli opencoven" },
+  { section: "about", group: "Links", keywords: "links docs help github support" },
+];
+
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
 export function SettingsShell() {
@@ -88,6 +119,39 @@ export function SettingsShell() {
   const [pickerView, setPickerView] = useState(false);
   const activeSection = SECTIONS.find((s) => s.id === section);
   const showPicker = isMobile && pickerView;
+
+  // ── Search across settings ────────────────────────────────────────────────
+  const [query, setQuery] = useState("");
+  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  const sectionLabel = (s: Section) => SECTIONS.find((x) => x.id === s)?.label ?? s;
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return SETTINGS_INDEX.filter((e) =>
+      `${sectionLabel(e.section)} ${e.group ?? ""} ${e.keywords}`.toLowerCase().includes(q));
+  }, [query]);
+
+  function goToSetting(entry: SettingsIndexEntry) {
+    openSection(entry.section);
+    setQuery("");
+    setScrollTarget(entry.group ? settingsGroupId(entry.group) : null);
+  }
+
+  // After the target section renders, scroll its group into view and flash a
+  // highlight so the eye lands on the right control.
+  useEffect(() => {
+    if (!scrollTarget) return;
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(scrollTarget);
+      if (el) {
+        el.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+        el.classList.add("settings-group--found");
+        window.setTimeout(() => el.classList.remove("settings-group--found"), 1600);
+      }
+      setScrollTarget(null);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [scrollTarget, section]);
 
   function openSection(id: Section) {
     setSection(id);
@@ -177,6 +241,32 @@ export function SettingsShell() {
           <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
             Settings
           </p>
+          <div className={`mb-2 ${showPicker ? "px-3" : "px-2"}`}>
+            <SearchInput
+              value={query}
+              onValueChange={setQuery}
+              onClear={() => setQuery("")}
+              placeholder="Search settings…"
+              aria-label="Search settings"
+            />
+          </div>
+          {query.trim() ? (
+            <div className={`space-y-px ${showPicker ? "px-3" : "px-2"}`} role="listbox" aria-label="Settings search results">
+              {results.length === 0 ? (
+                <p className="px-2.5 py-2 text-[11px] text-[var(--text-muted)]">No settings match “{query.trim()}”.</p>
+              ) : results.map((e) => (
+                <button
+                  key={`${e.section}:${e.group ?? ""}`}
+                  type="button"
+                  onClick={() => goToSetting(e)}
+                  className="focus-ring flex w-full flex-col items-start rounded-[5px] px-2.5 py-[5px] text-left text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                >
+                  <span className="text-[12px] font-medium">{e.group ?? sectionLabel(e.section)}</span>
+                  <span className="text-[10px] text-[var(--text-muted)]">{sectionLabel(e.section)}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
           <div className={`space-y-px ${showPicker ? "px-3" : "px-2"}`}>
             {SECTIONS.map((s) => (
               <button
@@ -206,6 +296,7 @@ export function SettingsShell() {
               </button>
             ))}
           </div>
+          )}
         </nav>
 
         {/* Content */}
