@@ -518,6 +518,7 @@ export const SUITES = {
     "scripts/ios-export-selected-zip.test.mjs",
     "scripts/ios-reorder-familiars.test.mjs",
     "scripts/ios-github-comment-attach.test.mjs",
+    "scripts/ios-theme.test.mjs",
     "scripts/mobile-tailscale.test.mjs",
     "scripts/mobile-tailscale-native.test.mjs",
     "src/components/mobile-handoff.test.ts",

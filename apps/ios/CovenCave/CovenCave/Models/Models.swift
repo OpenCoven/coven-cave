@@ -30,6 +30,23 @@ struct FamiliarsResponse: Codable {
     let familiars: [Familiar]
 }
 
+// MARK: - Theme
+
+/// The desktop's published appearance (`GET /api/theme`). `tokens` are resolved
+/// hex strings keyed by CSS custom-property name (e.g. `--bg-base`), so the app
+/// can use them directly without knowing the desktop's CSS preset definitions.
+struct ThemeSnapshot: Codable {
+    var themeId: String
+    var mode: String
+    var tokens: [String: String]
+    var updatedAt: String
+}
+
+struct ThemeResponse: Codable {
+    let ok: Bool
+    let theme: ThemeSnapshot
+}
+
 // MARK: - Sessions
 
 /// A chat session as returned by `GET /api/sessions/list`.

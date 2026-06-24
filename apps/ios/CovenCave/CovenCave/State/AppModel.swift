@@ -106,6 +106,24 @@ final class AppModel {
     var projectsError: String?
     var projectsLoaded = false
 
+    // MARK: - Appearance (desktop theme)
+
+    /// App-chrome palette mirrored from the desktop's published theme
+    /// (`GET /api/theme`). Starts at the built-in look and is replaced once the
+    /// desktop theme loads. One-way (desktop → iOS), per the design.
+    var chrome: ChromePalette = .fallback
+
+    /// Fetch the desktop theme and adopt its palette. Best-effort: on any
+    /// failure the current palette stands, so there's no flash back to the
+    /// fallback when a poll briefly can't reach the desktop.
+    func loadTheme() async {
+        guard let client else { return }
+        if let snapshot = try? await client.fetchTheme() {
+            let next = ChromePalette(snapshot: snapshot)
+            if next != chrome { chrome = next }
+        }
+    }
+
     var client: CaveClient? {
         guard let connection else { return nil }
         return CaveClient(connection: connection)
@@ -412,6 +430,7 @@ final class AppModel {
         }
         connectionState = .connected
         await loadFamiliars()
+        await loadTheme()
     }
 
     /// Probe candidate base URLs in order; return the first that answers. Uses a

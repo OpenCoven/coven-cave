@@ -330,6 +330,22 @@ struct CaveClient {
         return try JSONDecoder().decode(RouteLinkResult.self, from: data)
     }
 
+    // MARK: - Theme
+
+    /// `GET /api/theme` — the desktop's active theme + resolved colour tokens, so
+    /// the app chrome can match the desktop appearance. Same connection as
+    /// `api/familiars` etc.; one-way (desktop → iOS).
+    func fetchTheme() async throws -> ThemeSnapshot {
+        let req = try request("api/theme")
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(ThemeResponse.self, from: data).theme
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
     // MARK: - Reading list (library)
 
     private struct ReadingListResponse: Decodable { var items: [ReadingItem] }

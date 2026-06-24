@@ -63,6 +63,15 @@ struct MainTabView: View {
                 .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
             }
         }
+        // Keep the app chrome in step with desktop theme changes: re-fetch while
+        // connected. `loadTheme` is best-effort and only assigns on change, so an
+        // unchanged theme is a cheap no-op.
+        .task {
+            while !Task.isCancelled {
+                if app.connectionState == .connected { await app.loadTheme() }
+                try? await Task.sleep(for: .seconds(20))
+            }
+        }
     }
 }
 

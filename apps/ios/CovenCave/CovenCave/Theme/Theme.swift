@@ -1,4 +1,62 @@
 import SwiftUI
+import UIKit
+
+// MARK: - App-chrome palette
+
+/// The desktop's active appearance, resolved from the colour tokens it publishes
+/// at `GET /api/theme`. Every colour defaults to the value the app shipped with,
+/// so a missing or partial payload (the desktop hasn't published a theme yet, or
+/// only sent some tokens) never produces an unreadable screen — and `.fallback`
+/// is exactly the pre-theme look, so nothing changes until a theme arrives.
+struct ChromePalette: Equatable {
+    var bgBase: Color = Color(uiColor: .systemBackground)
+    var bgRaised: Color = Color(uiColor: .secondarySystemBackground)
+    var bgElevated: Color = Color(uiColor: .tertiarySystemBackground)
+    var textPrimary: Color = .primary
+    var textSecondary: Color = .secondary
+    var textMuted: Color = Color(uiColor: .tertiaryLabel)
+    var border: Color = Color(uiColor: .separator)
+    /// `accent` mirrors the asset-catalog accent, so `.tint(accent)` is a no-op
+    /// until the desktop publishes `--accent-presence`.
+    var accent: Color = .accentColor
+    /// Drives `preferredColorScheme` so the whole app flips light/dark with the
+    /// desktop. Defaults to dark — the app's original fixed scheme.
+    var colorScheme: ColorScheme = .dark
+
+    /// The built-in look used before (and as a backstop after) a theme loads.
+    static let fallback = ChromePalette()
+}
+
+extension ChromePalette {
+    /// Build a palette from a published theme, keeping the fallback colour for
+    /// any token the desktop didn't send.
+    init(snapshot: ThemeSnapshot) {
+        self.init()
+        let t = snapshot.tokens
+        if let c = Color(hex: t["--bg-base"]) { bgBase = c }
+        if let c = Color(hex: t["--bg-raised"]) { bgRaised = c }
+        if let c = Color(hex: t["--bg-elevated"]) { bgElevated = c }
+        if let c = Color(hex: t["--text-primary"]) { textPrimary = c }
+        if let c = Color(hex: t["--text-secondary"]) { textSecondary = c }
+        if let c = Color(hex: t["--text-muted"]) { textMuted = c }
+        if let c = Color(hex: t["--border-hairline"]) { border = c }
+        if let c = Color(hex: t["--accent-presence"]) { accent = c }
+        colorScheme = snapshot.mode.lowercased() == "light" ? .light : .dark
+    }
+}
+
+/// Reach the desktop palette from any view (`@Environment(\.chrome)`); defaults
+/// to the built-in look so previews and disconnected screens still render.
+private struct ChromePaletteKey: EnvironmentKey {
+    static let defaultValue: ChromePalette = .fallback
+}
+
+extension EnvironmentValues {
+    var chrome: ChromePalette {
+        get { self[ChromePaletteKey.self] }
+        set { self[ChromePaletteKey.self] = newValue }
+    }
+}
 
 extension Color {
     /// Parse a `#RRGGBB` / `#RRGGBBAA` hex string. Returns nil if unparseable.
