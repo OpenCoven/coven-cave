@@ -170,6 +170,7 @@ struct GitHubItemRow: View {
 /// Full detail of one issue / PR (`GET /api/github/item`).
 struct GitHubItemDetailView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
     let item: GitHubItem
 
     @State private var detail: GitHubItemDetail?
@@ -199,6 +200,7 @@ struct GitHubItemDetailView: View {
             }
             .padding(16)
         }
+        .background(chrome.bgBase.ignoresSafeArea())
         .navigationTitle(item.number.map { "#\($0)" } ?? "Item")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
