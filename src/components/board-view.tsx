@@ -115,6 +115,16 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     return () => window.removeEventListener(DEMO_MODE_EVENT, onDemoModeChange);
   }, [load]);
   useEffect(() => { localStorage.setItem("cave:board:viewMode", viewMode); }, [viewMode]);
+  // The command palette can switch the board view directly (e.g. "Board: Gantt
+  // timeline"); honor it live when the board is already mounted.
+  useEffect(() => {
+    const onSetView = (e: Event) => {
+      const v = (e as CustomEvent<{ view?: string }>).detail?.view;
+      if (v === "kanban" || v === "table" || v === "gantt") setViewMode(v);
+    };
+    window.addEventListener("cave:board:set-view", onSetView);
+    return () => window.removeEventListener("cave:board:set-view", onSetView);
+  }, []);
   useEffect(() => { localStorage.setItem("cave:board:groupBy", groupBy); }, [groupBy]);
   useEffect(() => { localStorage.setItem("cave:board:ganttGroup", ganttGroup); }, [ganttGroup]);
 
