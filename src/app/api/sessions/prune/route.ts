@@ -39,7 +39,21 @@ export async function POST(req: Request) {
   });
 
   if (native.ok && native.data) {
-    return NextResponse.json({ ok: true, pruned: native.data.pruned, method: "daemon" });
+    // For a dry run the daemon reports how many sessions *would* be pruned in
+    // `pruned`; surface it under `wouldPrune` (and keep `pruned: 0`) so the
+    // client reads the count the same way it does for the fallback path below.
+    // Without this the Maintenance "Check" action always saw `wouldPrune`
+    // undefined → count 0 → "Nothing to prune", and the Delete button never
+    // appeared, so a prune could never actually run.
+    return dryRun
+      ? NextResponse.json({
+          ok: true,
+          pruned: 0,
+          wouldPrune: native.data.pruned,
+          dryRun: true,
+          method: "daemon",
+        })
+      : NextResponse.json({ ok: true, pruned: native.data.pruned, method: "daemon" });
   }
 
   // Daemon doesn't support prune natively — do client-side pruning.
