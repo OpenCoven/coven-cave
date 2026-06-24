@@ -107,8 +107,8 @@ assert.match(
 
 assert.match(
   chatView,
-  /historyState === "loading"[\s\S]*Loading chat history/,
-  "ChatView should not show an empty new-chat state while an existing chat history is loading",
+  /historyState === "loading"[\s\S]*ChatHistorySkeleton/,
+  "ChatView should show a message-shaped skeleton (not an empty new-chat state) while an existing chat history is loading",
 );
 
 assert.match(

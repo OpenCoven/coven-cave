@@ -11,6 +11,7 @@ import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/ch
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon, type IconName } from "@/lib/icon";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
 import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
@@ -808,6 +809,35 @@ function HeaderDeleteButton({
         </PopoverBody>
       </Popover>
     </>
+  );
+}
+
+// Message-shaped placeholder shown while an existing transcript is restoring —
+// alternating assistant (left) / user (right) ghost bubbles instead of a bare
+// notice, matching the app-wide skeleton convention.
+function ChatHistorySkeleton() {
+  const rows: { side: "left" | "right"; width: string; lines: number }[] = [
+    { side: "left", width: "62%", lines: 3 },
+    { side: "right", width: "46%", lines: 2 },
+    { side: "left", width: "70%", lines: 2 },
+    { side: "right", width: "38%", lines: 1 },
+    { side: "left", width: "56%", lines: 3 },
+  ];
+  return (
+    <div className="flex flex-col gap-5 py-4" role="status" aria-label="Loading chat history">
+      {rows.map((row, i) => (
+        <div key={i} className={`flex ${row.side === "right" ? "justify-end" : "justify-start"}`}>
+          <div
+            className="flex flex-col gap-2 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3"
+            style={{ width: row.width, maxWidth: "72%" }}
+          >
+            {Array.from({ length: row.lines }).map((_, l) => (
+              <Skeleton key={l} variant="text" width={l === row.lines - 1 ? "70%" : "100%"} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -3469,7 +3499,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         >
           {turns.length === 0 ? (
             historyState === "loading" ? (
-              <ChatHistoryNotice title="Loading chat history" body="Restoring this session transcript..." />
+              <ChatHistorySkeleton />
             ) : historyState === "missing" ? (
               <ChatHistoryNotice
                 title="Chat history unavailable"
