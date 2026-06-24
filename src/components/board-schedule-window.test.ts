@@ -115,8 +115,17 @@ assert.match(gantt, /className="cg-zoom-cell"[\s\S]{0,80}name="ph:magnifying-gla
 assert.match(gantt, /\["day", "Day", "D",/, "day zoom carries a short label + hint");
 assert.match(gantt, /\["month", "Month", "M",/, "month zoom carries a short label + hint");
 assert.match(gantt, /aria-label=\{`Zoom: \$\{full\}`\}/, "each zoom button announces the full word");
-assert.match(gantt, /title=\{`\$\{full\} — \$\{hint\}`\}/, "each zoom button explains what the scale does");
+assert.match(gantt, /title=\{`\$\{full\} — \$\{hint\}\. Or pinch \/ ⌘-scroll to zoom freely\.`\}/, "each zoom button explains the scale + the pinch/⌘-scroll gesture");
 assert.match(gantt, />\s*\{short\}\s*<\/button>/, "buttons render the compact single-letter label");
+
+// Continuous zoom: pinch / ⌘-scroll resizes the timeline (px-per-day), anchored
+// at the cursor; the D/W/M buttons snap to presets.
+assert.match(gantt, /const \[DAY_W, setDayWRaw\] = useState<number>/, "the timeline scale is continuous state, not a fixed preset");
+assert.match(gantt, /if \(!\(e\.ctrlKey \|\| e\.metaKey\)\) return;[\s\S]{0,80}e\.preventDefault\(\)/, "wheel zoom only fires on pinch / ⌘-scroll and prevents the browser page-zoom");
+assert.match(gantt, /clampDayW\(prev \* Math\.exp\(-e\.deltaY \* 0\.0025\)\)/, "zoom scales multiplicatively from the wheel delta");
+assert.match(gantt, /el\.scrollLeft = dayUnderCursor \* next - \(cursorX - LEFT_W\)/, "zoom re-anchors so the day under the cursor stays put");
+assert.match(gantt, /addEventListener\("wheel", onWheel, \{ passive: false \}\)/, "the wheel listener is non-passive so preventDefault works");
+assert.match(gantt, /onClick=\{\(\) => \{\s*setDayW\(ZOOM_DAY_W\[z\]\)/, "the D/W/M buttons snap to preset scales");
 assert.match(styles, /\.board-group-toggle \.cg-zoom-cell/, "the zoom glyph cell is styled to match the segmented control");
 
 // Auto-center: opening the Gantt scrolls the timeline to today once (latched,
@@ -171,9 +180,13 @@ assert.match(gantt, /onDragOver=\{onTimelineDragOver\}[\s\S]{0,80}onDrop=\{onTim
 assert.match(gantt, /className="cg-drop-hint"/, "a drop-hint marks the landing day");
 assert.match(styles, /\.cg-drop-hint/, "the drop hint is styled");
 
-// Re-center on zoom change + keyboard reschedule.
-assert.match(gantt, /const prevZoomRef = useRef\(zoom\)/, "tracks the previous zoom to detect changes");
-assert.match(gantt, /if \(prevZoomRef\.current === zoom\) return;[\s\S]{0,120}centerOnTodayRef\.current\(\)/, "zoom change re-centers on today");
+// Snapping to a preset scale re-centers on today (the continuous pinch zoom
+// keeps its own cursor anchor instead).
+assert.match(
+  gantt,
+  /setDayW\(ZOOM_DAY_W\[z\]\);\s*requestAnimationFrame\(\(\) => centerOnTodayRef\.current\(\)\)/,
+  "a preset click sets the scale and re-centers on today",
+);
 // Pointer drag-end and keyboard reschedule share one commit path.
 assert.match(gantt, /const commitShift = \(row: GanttRow, mode: DragMode, rawDelta: number\)/, "a shared commitShift applies a day-shift");
 assert.match(gantt, /if \(d\.moved\) commitShift\(row, d\.mode, active\?\.deltaDays \?\? 0\)/, "drag-end routes through commitShift");

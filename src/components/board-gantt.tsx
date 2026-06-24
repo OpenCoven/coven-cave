@@ -56,6 +56,10 @@ const ZOOM_LABELS: Array<[GanttZoom, string, string, string]> = [
   ["week", "Week", "W", "Medium zoom — a week spans the view"],
   ["month", "Month", "M", "Zoom out — months fit on screen"],
 ];
+// Pinch / ⌘-scroll zooms continuously between these bounds; D/W/M snap to presets.
+const DAY_W_MIN = 2; // zoomed out — months at a glance
+const DAY_W_MAX = 64; // zoomed in — a fat column per day
+const clampDayW = (w: number) => Math.max(DAY_W_MIN, Math.min(DAY_W_MAX, w));
 const LEFT_W = 442; // sum of the left table columns (300+58+58+26) — keep in sync with .cg-left
 // Status-filter chips: [category, short chip label, full status names]. Labels
 // match the legend's actual-status wording (Running/Blocked, not In Progress).
@@ -164,15 +168,22 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   const [todayMs, setTodayMs] = useState<number | null>(null);
   useEffect(() => setTodayMs(Date.now()), []);
   useDateTimePrefs();
-  // Timeline zoom (px/day) + a ref to the scroller so "Today" can recenter.
-  const [zoom, setZoom] = useState<GanttZoom>(() => {
-    if (typeof window === "undefined") return "day";
-    const v = window.localStorage.getItem("cave:board:ganttZoom");
-    return v === "day" || v === "week" || v === "month" ? v : "day";
+  // Timeline scale = px per day. Continuous — pinch or ⌘-scroll resizes it (see
+  // the wheel handler below); the D/W/M buttons snap to presets. Persisted so the
+  // zoom level survives reloads.
+  const [DAY_W, setDayWRaw] = useState<number>(() => {
+    if (typeof window === "undefined") return ZOOM_DAY_W.day;
+    const v = Number(window.localStorage.getItem("cave:board:ganttDayW"));
+    return Number.isFinite(v) && v >= DAY_W_MIN && v <= DAY_W_MAX ? v : ZOOM_DAY_W.day;
   });
-  useEffect(() => { try { window.localStorage.setItem("cave:board:ganttZoom", zoom); } catch { /* ignore */ } }, [zoom]);
-  const DAY_W = ZOOM_DAY_W[zoom];
+  const setDayW = (w: number) => setDayWRaw(clampDayW(w));
+  useEffect(() => {
+    try { window.localStorage.setItem("cave:board:ganttDayW", String(DAY_W)); } catch { /* ignore */ }
+  }, [DAY_W]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Latest scale for the (mount-only) wheel listener, avoiding a stale closure.
+  const dayWRef = useRef(DAY_W);
+  dayWRef.current = DAY_W;
 
   // Drag a bar to reschedule it: grab the middle to MOVE both dates together,
   // or grab a left/right edge handle to RESIZE one end — changing the start or
@@ -196,7 +207,6 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   // ref and the effect (declared above the return) calls through it.
   const didAutoCenterRef = useRef(false);
   const centerOnTodayRef = useRef<() => boolean>(() => false);
-  const prevZoomRef = useRef(zoom);
 
   const beginDrag = (e: React.PointerEvent, rowId: string, mode: DragMode) => {
     if (!draggable) return;
@@ -415,16 +425,31 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   useEffect(() => {
     if (didAutoCenterRef.current) return;
     if (centerOnTodayRef.current()) didAutoCenterRef.current = true;
-  }, [todayMs, zoom, allRows.length]);
+  }, [todayMs, DAY_W, allRows.length]);
 
-  // Changing the zoom rescales every px position, which can scroll "now" out of
-  // view — re-center on today after the new scale lays out (a deliberate user
-  // action, so it won't fight a passive scroll).
+  // Pinch / ⌘-scroll to zoom the timeline, anchored at the cursor (the day under
+  // the pointer stays put). A native non-passive listener so we can preventDefault
+  // the browser's page-zoom; plain scroll is left alone (it pans the timeline).
   useEffect(() => {
-    if (prevZoomRef.current === zoom) return;
-    prevZoomRef.current = zoom;
-    requestAnimationFrame(() => centerOnTodayRef.current());
-  }, [zoom]);
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return; // trackpad pinch → ctrlKey; ⌘-scroll → metaKey
+      e.preventDefault();
+      const prev = dayWRef.current;
+      const next = clampDayW(prev * Math.exp(-e.deltaY * 0.0025));
+      if (next === prev) return;
+      const cursorX = e.clientX - el.getBoundingClientRect().left; // px within the scroller
+      const dayUnderCursor = (el.scrollLeft + cursorX - LEFT_W) / prev;
+      setDayWRaw(next);
+      // Re-anchor once the new width lays out so the day stays under the cursor.
+      requestAnimationFrame(() => {
+        el.scrollLeft = dayUnderCursor * next - (cursorX - LEFT_W);
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   // Quick-schedule presets for undated tasks: drop a task onto this/next week
   // (Mon–Sun) without opening the date pickers.
@@ -604,21 +629,27 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
             );
           })}
         </div>
-        <div className="board-group-toggle" role="group" aria-label="Timeline zoom">
+        <div className="board-group-toggle" role="group" aria-label="Timeline zoom — or pinch / ⌘-scroll the timeline">
           <span className="cg-zoom-cell" aria-hidden><Icon name="ph:magnifying-glass" width={13} /></span>
-          {ZOOM_LABELS.map(([z, full, short, hint]) => (
-            <button
-              key={z}
-              type="button"
-              className={`board-group-toggle-btn${zoom === z ? " board-group-toggle-btn--active" : ""}`}
-              onClick={() => setZoom(z)}
-              aria-pressed={zoom === z}
-              aria-label={`Zoom: ${full}`}
-              title={`${full} — ${hint}`}
-            >
-              {short}
-            </button>
-          ))}
+          {ZOOM_LABELS.map(([z, full, short, hint]) => {
+            const active = DAY_W === ZOOM_DAY_W[z];
+            return (
+              <button
+                key={z}
+                type="button"
+                className={`board-group-toggle-btn${active ? " board-group-toggle-btn--active" : ""}`}
+                onClick={() => {
+                  setDayW(ZOOM_DAY_W[z]);
+                  requestAnimationFrame(() => centerOnTodayRef.current());
+                }}
+                aria-pressed={active}
+                aria-label={`Zoom: ${full}`}
+                title={`${full} — ${hint}. Or pinch / ⌘-scroll to zoom freely.`}
+              >
+                {short}
+              </button>
+            );
+          })}
         </div>
         <button type="button" className="board-group-toggle-btn board-group-toggle-btn--solo" onClick={scrollToToday} disabled={todayX === null} title="Scroll the timeline to today">Today</button>
       </div>
