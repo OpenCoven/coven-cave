@@ -69,6 +69,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // snapshots the cleared cards so they can be re-created via POST.
   const [clearConfirm, setClearConfirm] = useState(false);
   const [clearedBanner, setClearedBanner] = useState<{ snapshot: Card[] } | null>(null);
+  // Transient undo for a gantt drag/drop reschedule — snapshots the prior dates
+  // so an accidental drag is one click to revert.
+  const [rescheduleUndo, setRescheduleUndo] = useState<{ id: string; title: string; prev: Partial<Card> } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -187,6 +190,13 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     return () => window.clearTimeout(t);
   }, [clearedBanner]);
 
+  // The reschedule-undo banner is transient too.
+  useEffect(() => {
+    if (!rescheduleUndo) return;
+    const t = window.setTimeout(() => setRescheduleUndo(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [rescheduleUndo]);
+
   // Familiar grouping is redundant once the board is scoped to a single
   // familiar — fall back to status there. Status and project grouping stay
   // meaningful regardless of the familiar scope.
@@ -211,8 +221,22 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     return "queued" as const;
   };
 
-  const patchCard = async (id: string, patch: Partial<Card>) => {
+  const patchCard = async (id: string, patch: Partial<Card>, armUndo = true) => {
     if ("cwd" in patch || "projectId" in patch) setChatLinkError(null);
+    // A date-only patch is a gantt reschedule — snapshot the prior dates so it
+    // can be undone in one click (skipped when the patch IS an undo).
+    const keys = Object.keys(patch);
+    const isReschedule = armUndo && keys.length > 0 && keys.every((k) => k === "startDate" || k === "endDate");
+    if (isReschedule) {
+      const before = cards.find((c) => c.id === id);
+      if (before) {
+        setRescheduleUndo({
+          id,
+          title: before.title,
+          prev: { startDate: before.startDate ?? null, endDate: before.endDate ?? null },
+        });
+      }
+    }
     setCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
     try {
       const res = await fetch(`/api/board/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
@@ -374,6 +398,14 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       setActionError("Couldn't restore all cleared tasks — reload to check.");
     }
     await load();
+  };
+
+  // Revert a gantt reschedule to its snapshotted dates (without re-arming undo).
+  const handleUndoReschedule = () => {
+    const u = rescheduleUndo;
+    if (!u) return;
+    setRescheduleUndo(null);
+    void patchCard(u.id, u.prev, false);
   };
 
   const startTaskChat = async (id: string, projectRoot?: string) => {
@@ -637,6 +669,27 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           <button
             type="button"
             onClick={() => void handleUndoClear()}
+            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--text-muted)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
+          >
+            <Icon name="ph:arrow-counter-clockwise" width={12} aria-hidden />
+            Undo
+          </button>
+        </div>
+      )}
+      {rescheduleUndo && (
+        <div
+          role="status"
+          className="flex items-center justify-between gap-3 border-b border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,var(--bg-base))] px-5 py-1.5 text-xs text-[var(--text-secondary)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:calendar-blank" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">
+              Rescheduled “{rescheduleUndo.title}”
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={handleUndoReschedule}
             className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--text-muted)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
           >
             <Icon name="ph:arrow-counter-clockwise" width={12} aria-hidden />
