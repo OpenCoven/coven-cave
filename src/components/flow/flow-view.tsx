@@ -49,9 +49,12 @@ import {
 import { FlowCanvas, type FlowConnectFrom } from "./flow-canvas";
 import { FlowExecutions } from "./flow-executions";
 import { FlowLibrary } from "./flow-library";
+import { FlowTemplateGallery } from "./flow-template-gallery";
+import { FLOW_TEMPLATES, instantiateTemplate } from "@/lib/flow/flow-templates";
 import { FlowToolbar, type FlowTab } from "./flow-toolbar";
 import { NodeCatalogPanel } from "./node-catalog-panel";
 import { NodeDetailView, type NodeDetailOption } from "./node-detail-view";
+import { FlowRunSteps } from "./flow-run-steps";
 import { useFlowRun } from "./use-flow-run";
 
 type CatalogIntent =
@@ -88,6 +91,7 @@ export function FlowView() {
   const [runsLoading, setRunsLoading] = useState(false);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
+  const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false);
   // The run currently overlaid on the canvas (live session, or a finished run
   // whose final state we keep painted until the user switches flows).
   const [activeRun, setActiveRun] = useState<FlowRunRecord | null>(null);
@@ -273,6 +277,31 @@ export function FlowView() {
       dispatchDraft({ type: "reset", doc: flow });
     },
     [confirmDiscard, dispatchDraft, flows, selectedId],
+  );
+
+  const fromTemplate = useCallback(
+    async (templateId: string) => {
+      if (!(await confirmDiscard())) return;
+      const template = FLOW_TEMPLATES.find((t) => t.id === templateId);
+      if (!template) return;
+      const now = new Date().toISOString();
+      const id = uniqueId(templateId);
+      const flow = instantiateTemplate(template, id, now);
+      const result = await saveFlow(flow);
+      if (!result.ok || !result.flow) {
+        showNotice(result.error ?? "couldn't create from template");
+        return;
+      }
+      await loadFlows();
+      setSelectedId(result.flow.id);
+      setSelectedNodeId(null);
+      setActiveRun(null);
+      setTab("editor");
+      dispatchDraft({ type: "reset", doc: result.flow });
+      setTemplateGalleryOpen(false);
+      showNotice(`Created from template: ${result.flow.name}`);
+    },
+    [confirmDiscard, dispatchDraft, loadFlows, saveFlow, showNotice, uniqueId],
   );
 
   const createFlow = useCallback(async () => {
@@ -592,6 +621,11 @@ export function FlowView() {
             </div>
           }
         />
+        <FlowTemplateGallery
+          isEmpty
+          onUse={(id) => void fromTemplate(id)}
+          onClose={() => void createFlow()}
+        />
       </div>
     );
   }
@@ -607,7 +641,20 @@ export function FlowView() {
         onCreateFromPrompt={(prompt) => void createFlowFromPrompt(prompt)}
         onDuplicate={(id) => void duplicateFlow(id)}
         onDelete={(id) => void removeFlow(id)}
+        onTemplate={() => setTemplateGalleryOpen(true)}
       />
+
+      {templateGalleryOpen && (
+        <div className="flow-template-overlay" role="dialog" aria-modal aria-label="Flow templates">
+          <div className="flow-template-overlay-backdrop" onClick={() => setTemplateGalleryOpen(false)} />
+          <div className="flow-template-overlay-panel">
+            <FlowTemplateGallery
+              onUse={(id) => void fromTemplate(id)}
+              onClose={() => setTemplateGalleryOpen(false)}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="flow-main">
         {doc ? (
@@ -654,6 +701,18 @@ export function FlowView() {
                   onStickyText={(id, text) => onChangeSticky(id, { text })}
                   onStickySize={(id, width, height) => onChangeSticky(id, { width, height })}
                 />
+                {activeRun && activeRun.steps.length > 0 && (
+                  <FlowRunSteps
+                    doc={doc}
+                    run={activeRun}
+                    progress={progress}
+                    running={running}
+                    selectedNodeId={selectedNodeId}
+                    onSelectNode={setSelectedNodeId}
+                    onOpenSession={openSession}
+                    onStop={() => void stop()}
+                  />
+                )}
                 {selectedNode && (
                   <NodeDetailView
                     node={selectedNode}

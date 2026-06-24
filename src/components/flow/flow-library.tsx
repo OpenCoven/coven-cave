@@ -14,6 +14,8 @@ export type FlowLibraryProps = {
   onCreateFromPrompt: (prompt: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  /** Open the template gallery. */
+  onTemplate: () => void;
 };
 
 export function FlowLibrary(props: FlowLibraryProps) {
@@ -37,9 +39,19 @@ export function FlowLibrary(props: FlowLibraryProps) {
     <aside className="flow-library" aria-label="Flows">
       <div className="flow-library-head">
         <span className="flow-library-title">Flows</span>
-        <button type="button" className="flow-library-new" onClick={props.onCreate} title="New flow">
-          <Icon name="ph:plus" width={14} /> New
-        </button>
+        <div className="flow-library-head-actions">
+          <button
+            type="button"
+            className="flow-library-template-btn"
+            onClick={props.onTemplate}
+            title="Browse templates"
+          >
+            <Icon name="ph:squares-four" width={13} />
+          </button>
+          <button type="button" className="flow-library-new" onClick={props.onCreate} title="New flow">
+            <Icon name="ph:plus" width={14} /> New
+          </button>
+        </div>
       </div>
       <div className="flow-library-search">
         <Icon name="ph:magnifying-glass" width={13} aria-hidden />
@@ -71,7 +83,9 @@ export function FlowLibrary(props: FlowLibraryProps) {
         </ul>
       ) : filtered.length === 0 ? (
         <p className="flow-library-empty">
-          {props.flows.length === 0 ? "No flows yet — create your first one." : "No flows match your search."}
+          {props.flows.length === 0
+            ? "No flows yet — pick a template or start blank."
+            : "No flows match your search."}
         </p>
       ) : (
         <ul className="flow-library-list">
