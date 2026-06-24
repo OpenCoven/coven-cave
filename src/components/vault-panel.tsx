@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -144,6 +145,7 @@ export function VaultPanel() {
   const [mappings, setMappings]     = useState<Mapping[]>([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
+  const [query, setQuery]           = useState("");
   const [adding, setAdding]         = useState(false);
   const [editing, setEditing]       = useState<Mapping | null>(null);
   const [copiedKey, setCopiedKey]   = useState<string | null>(null);
@@ -192,6 +194,18 @@ export function VaultPanel() {
       }
     });
   }
+
+  // Hide the row pending an undoable delete, then apply the text filter
+  // (key / 1Password reference / description, case-insensitive).
+  const visibleMappings = useMemo(() => {
+    const afterPending = deletePending
+      ? mappings.filter((m) => m.key !== deletePending.item.key)
+      : mappings;
+    const q = query.trim().toLowerCase();
+    if (!q) return afterPending;
+    return afterPending.filter((m) =>
+      [m.key, m.ref ?? "", m.description ?? ""].join(" ").toLowerCase().includes(q));
+  }, [mappings, deletePending, query]);
 
   return (
     <div className="vault-panel">
@@ -265,8 +279,22 @@ export function VaultPanel() {
           }
         />
       ) : (
+        <>
+          {mappings.length > 3 ? (
+            <SearchInput
+              value={query}
+              onValueChange={setQuery}
+              onClear={() => setQuery("")}
+              placeholder="Filter secrets…"
+              aria-label="Filter secrets"
+              containerClassName="vault-filter"
+            />
+          ) : null}
+          {visibleMappings.length === 0 ? (
+            <div className="vault-footer-note">No secrets match “{query.trim()}”.</div>
+          ) : (
         <div className="vault-list">
-          {(deletePending ? mappings.filter((m) => m.key !== deletePending.item.key) : mappings).map((m) => (
+          {visibleMappings.map((m) => (
             <div key={m.key} className={`vault-row${m.status === "error" || m.status === "unresolved" ? " vault-row--warn" : ""}`}>
               <div className="vault-row-main">
                 <code className="vault-row-key">{m.key}</code>
@@ -314,6 +342,8 @@ export function VaultPanel() {
             </div>
           ))}
         </div>
+          )}
+        </>
       )}
 
       {/* Footer note */}

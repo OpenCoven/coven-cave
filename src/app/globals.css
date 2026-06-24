@@ -2637,6 +2637,10 @@ tr[role="checkbox"]:focus-visible {
   flex-direction: column;
   gap: 4px;
 }
+
+.vault-filter {
+  padding: 8px 8px 0;
+}
 .vault-row {
   position: relative;
   display: flex;

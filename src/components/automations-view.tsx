@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
+import { SearchInput } from "@/components/ui/search-input";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { useMultiSelect } from "@/lib/use-multi-select";
@@ -1326,6 +1327,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // Deferred + undoable deletes (reminders, automations, bulk): rows hide at
   // once, the DELETEs fire only after the undo window, and Undo restores them.
   const { pending: deletePending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<string[]>();
+  const [query, setQuery] = useState("");
   const [items, setItems] = useState<InboxItem[]>([]);
   const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -1581,11 +1583,13 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // Ids whose delete is pending in the undo window — hidden everywhere until the
   // window lapses (committing the delete) or Undo restores them.
   const hiddenIds = useMemo(() => new Set(deletePending?.item ?? []), [deletePending]);
+  // Normalized text filter applied to whichever tab is active (title/name).
+  const q = query.trim().toLowerCase();
 
   // ── Sections ──────────────────────────────────────────────────────────────
   const reminderItems = useMemo(() =>
-    items.filter((it) => isScheduleInboxItem(it) && !hiddenIds.has(it.id)),
-    [items, hiddenIds]);
+    items.filter((it) => isScheduleInboxItem(it) && !hiddenIds.has(it.id) && (!q || (it.title ?? "").toLowerCase().includes(q))),
+    [items, hiddenIds, q]);
 
   const current = useMemo(() =>
     reminderItems.filter((it) =>
@@ -1689,20 +1693,20 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const codexActive = useMemo(
     () =>
       codexAutos.filter(
-        (a) => a.status === "ACTIVE" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter),
+        (a) => a.status === "ACTIVE" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
       ),
-    [codexAutos, familiarFilter, hiddenIds],
+    [codexAutos, familiarFilter, hiddenIds, q],
   );
   const codexPaused = useMemo(
     () =>
       codexAutos.filter(
-        (a) => a.status === "PAUSED" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter),
+        (a) => a.status === "PAUSED" && !hiddenIds.has(a.id) && automationMatchesFilter(a.familiars, familiarFilter) && (!q || a.name.toLowerCase().includes(q)),
       ),
-    [codexAutos, familiarFilter, hiddenIds],
+    [codexAutos, familiarFilter, hiddenIds, q],
   );
 
   // Inbox tab: the FULL feed (every kind), grouped by attention tier.
-  const inboxFeed = useMemo(() => groupInboxFeed(items.filter((it) => !hiddenIds.has(it.id))), [items, hiddenIds]);
+  const inboxFeed = useMemo(() => groupInboxFeed(items.filter((it) => !hiddenIds.has(it.id) && (!q || (it.title ?? "").toLowerCase().includes(q)))), [items, hiddenIds, q]);
   const remindersEmpty = current.length + paused.length + oneShots.length + history.length === 0;
   const automationsEmpty = codexAutos.length === 0;
   const inboxEmpty = items.length === 0;
@@ -1711,6 +1715,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   const selectTab = (tab: ScheduleTab) => {
     setActiveTab(tab);
+    setQuery(""); // the filter is scoped to one tab at a time
+
     // Reminders and Inbox both select InboxItems (DetailPanel); Automations
     // selects CodexAutomations. Clear the other selection on switch.
     if (tab === "automations") setSelectedItem(null);
@@ -1775,6 +1781,24 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           />
         </div>
 
+        {/* Text filter for the active tab. Gated on the UNfiltered presence of
+            rows so filtering to zero never hides the box (you can still clear). */}
+        {initialLoadDone && !reminderSelect.selectMode && (
+          activeTab === "inbox" ? items.length > 0
+          : activeTab === "automations" ? codexAutos.length > 0
+          : items.some(isScheduleInboxItem)
+        ) ? (
+          <div className="px-8 pb-4">
+            <SearchInput
+              value={query}
+              onValueChange={setQuery}
+              onClear={() => setQuery("")}
+              placeholder={activeTab === "automations" ? "Filter automations…" : activeTab === "inbox" ? "Filter inbox…" : "Filter reminders…"}
+              aria-label="Filter schedules"
+            />
+          </div>
+        ) : null}
+
         {error && (
           <div
             role="alert"
@@ -1803,6 +1827,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                 />
               ))}
             </div>
+          ) : q && (
+            (activeTab === "reminders" && remindersEmpty) ||
+            (activeTab === "automations" && codexActive.length + codexPaused.length === 0) ||
+            (activeTab === "inbox" && inboxFeed.needsYou.length + inboxFeed.active.length + inboxFeed.resolved.length === 0)
+          ) ? (
+            <EmptyState
+              className="mt-12"
+              icon="ph:magnifying-glass"
+              headline={`No matches for “${query.trim()}”`}
+              subtitle="Try a different search term."
+            />
           ) : activeTab === "reminders" && remindersEmpty ? (
             <EmptyState
               className="mt-12"
