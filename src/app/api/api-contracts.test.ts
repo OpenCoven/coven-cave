@@ -73,6 +73,7 @@ const contracts: RouteContract[] = [
   { route: "/launch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/library/all", methods: ["GET"], kind: "json" },
   { route: "/library/bookmarks", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true },
+  { route: "/library/chat", methods: ["POST"], kind: "stream", readsJson: true },
   { route: "/library/doc", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/library/github", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true },
   { route: "/library/pdf", methods: ["GET"], kind: "stream" },
