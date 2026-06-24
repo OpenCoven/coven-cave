@@ -12,6 +12,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
+import { githubItemMatchesQuery } from "@/lib/github-search";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { gfmAutolink } from "@/lib/gfm-autolink";
@@ -1349,6 +1350,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   const [filter, setFilter] = useState<Filter>("all");
   const [orgFilter, setOrgFilter] = useState<string>("all");
   const [repoFilter, setRepoFilter] = useState<string>("all");
+  const [query, setQuery] = useState("");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [showPatModal, setShowPatModal] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("updatedAt");
@@ -1495,9 +1497,10 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       filtered.filter(
         (i) =>
           (orgFilter === "all" || orgOf(i.repo) === orgFilter) &&
-          (repoFilter === "all" || i.repo === repoFilter),
+          (repoFilter === "all" || i.repo === repoFilter) &&
+          githubItemMatchesQuery(i, query),
       ),
-    [filtered, orgFilter, repoFilter],
+    [filtered, orgFilter, repoFilter, query],
   );
 
   const linkedMap = useMemo(() => {
@@ -1684,6 +1687,29 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
         />
 
         <div className="gh-compact-filters">
+          <div className="gh-search">
+            <Icon name="ph:magnifying-glass" width={12} className="gh-search-icon" aria-hidden />
+            <input
+              type="search"
+              className="gh-search-input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape" && query) { e.preventDefault(); setQuery(""); } }}
+              placeholder="Search…"
+              aria-label="Search GitHub items by title, repo, or number"
+              spellCheck={false}
+            />
+            {query && (
+              <button
+                type="button"
+                className="gh-search-clear"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+              >
+                <Icon name="ph:x" width={10} />
+              </button>
+            )}
+          </div>
           <select
             className="gh-select"
             value={orgFilter}
@@ -1801,11 +1827,19 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
 
         ) : sorted.length === 0 ? (
           <div className="flex h-full items-center justify-center px-8">
-            <EmptyState
-              icon="ph:check-circle"
-              headline={filter === "all" ? "Nothing open right now" : `No open ${filter === "review_request" ? "review requests" : filter + "s"}`}
-              subtitle={filter === "all" ? "Pull requests, reviews, and issues that need you will show up here." : undefined}
-            />
+            {query.trim() ? (
+              <EmptyState
+                icon="ph:magnifying-glass"
+                headline={`No items match “${query.trim()}”`}
+                subtitle="Try a shorter query, or clear the search to see everything."
+              />
+            ) : (
+              <EmptyState
+                icon="ph:check-circle"
+                headline={filter === "all" ? "Nothing open right now" : `No open ${filter === "review_request" ? "review requests" : filter + "s"}`}
+                subtitle={filter === "all" ? "Pull requests, reviews, and issues that need you will show up here." : undefined}
+              />
+            )}
           </div>
 
         ) : (

@@ -332,4 +332,13 @@ assert.doesNotMatch(
 );
 assert.match(source, /useCopy/, "GitHub view copies via the shared useCopy hook");
 
+// ── Free-text search over the activity list ──
+assert.match(source, /import \{ githubItemMatchesQuery \} from "@\/lib\/github-search"/, "uses the pure search matcher");
+assert.match(source, /const \[query, setQuery\] = useState\(""\)/, "tracks a search query");
+assert.match(source, /githubItemMatchesQuery\(i, query\)/, "the scoped list filters by the query");
+assert.match(source, /\[filtered, orgFilter, repoFilter, query\]/, "query is a dependency of the scoped memo");
+assert.match(source, /aria-label="Search GitHub items by title, repo, or number"/, "the search input is labelled");
+assert.match(source, /No items match/, "a no-match query gets its own empty state");
+assert.match(boardCss, /\.gh-search \{/, "the search box is styled to match the toolbar controls");
+
 console.log("github-view-polish.test.ts OK");
