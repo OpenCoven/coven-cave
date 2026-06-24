@@ -19,6 +19,9 @@ struct GitHubView: View {
     var body: some View {
         NavigationSplitView {
             content
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.hidden, for: .navigationBar)
                 .searchable(text: $query, prompt: "Search issues & PRs")
                 .refreshable { await load() }
                 .task { await load() }
