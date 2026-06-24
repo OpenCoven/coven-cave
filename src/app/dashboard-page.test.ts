@@ -26,4 +26,16 @@ assert.match(cockpit, /\/api\/github/, "cockpit pulls GitHub activity");
 assert.match(cockpit, /\/api\/library\/reading/, "cockpit pulls the reading queue");
 assert.match(cockpit, /cockpit-kpis/, "cockpit renders the KPI rail");
 
+// Action inbox supports bulk triage: select several items → done/dismiss/snooze together.
+const inboxUrl = new URL("../components/dashboard/action-inbox.tsx", import.meta.url);
+const inbox = readFileSync(inboxUrl, "utf8");
+assert.match(inbox, /const \[selectMode, setSelectMode\] = useState\(false\)/, "action inbox has a select mode");
+assert.match(inbox, /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/, "selected ids live in a Set");
+assert.match(inbox, /async function bulkAct\(action: Action, minutes = 60\)/, "a bulk action applies to every selected item");
+assert.match(inbox, /Promise\.all\(\s*ids\.map\(\(id\) => fetch\(`\/api\/inbox\/\$\{id\}\/\$\{action\}`/, "bulk action POSTs each item in parallel");
+assert.match(inbox, /onClick=\{selectMode \? \(\) => toggleSelect\(item\.id\) : undefined\}/, "rows select on click in select mode");
+assert.match(inbox, /\{allSelected \? "Clear" : "Select all"\}/, "the bulk bar offers select-all / clear");
+assert.match(inbox, /onClick=\{\(\) => void bulkAct\("done"\)\}/, "bulk Done is wired");
+assert.match(inbox, /void bulkAct\("snooze", minutes\)/, "bulk Snooze is wired through the menu");
+
 console.log("dashboard-page.test.ts: ok");
