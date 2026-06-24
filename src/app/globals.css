@@ -1913,6 +1913,20 @@ select {
   from { opacity: 0; transform: translateY(-2px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/* Projects tab: a project's session list slides+fades in when expanded.
+   Enter-only (collapse stays instant) so the section can stay conditionally
+   rendered — keeping collapsed rows out of the DOM for the keyboard rove set. */
+@keyframes projects-expand-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.projects-expand-enter {
+  animation: projects-expand-enter var(--duration-fast, 150ms) var(--ease-decelerate, ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .projects-expand-enter { animation: none; }
+}
 .ui-popover-body {
   padding: 6px;
 }

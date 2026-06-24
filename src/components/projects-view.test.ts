@@ -355,4 +355,24 @@ assert.match(projectsView, /Delete chat…/, "session menu offers delete (routes
 // menu-triggered delete's Cancel/Delete buttons aren't hidden behind hover.
 assert.match(projectsView, /confirmDelete\s*\?\s*"opacity-100"/, "the action cluster stays visible while confirming a delete");
 
+// Phase 4 — motion + cross-project-move undo.
+// Expand animates in (enter-only; collapse stays instant so collapsed rows stay
+// out of the DOM / rove set), respecting prefers-reduced-motion (CSS).
+assert.match(projectsView, /className="projects-expand-enter"/, "the session list animates in on expand");
+// Drag feedback: the dragged row lifts; the drop-target card shows an accent ring.
+assert.match(projectsView, /data-\[dragging=true\]:shadow-/, "the dragged row lifts (shadow) while dragging");
+assert.match(projectsView, /isOver[\s\S]{0,140}?ring-1 ring-inset ring-\[var\(--accent-presence\)\]/, "the drop-target project card shows an accent ring");
+// Cross-project move is undoable via a transient toast.
+assert.match(projectsView, /import \{ applyProjectOverrides, setProjectOverride, clearProjectOverride \}/, "imports clearProjectOverride for undo");
+assert.match(projectsView, /function MoveUndoToast/, "a move-undo toast component exists");
+assert.match(projectsView, /window\.setTimeout\(\(\) => dismissRef\.current\(\), 5000\)/, "the toast auto-dismisses");
+assert.match(projectsView, /const prevRoot = projectOverrides\[activeId\] \?\? null/, "the move captures the prior override for a precise undo");
+assert.match(projectsView, /setMoveToast\(\{ sessionId: activeId, prevRoot, label:/, "a cross-project move raises the undo toast");
+assert.match(
+  projectsView,
+  /moveToast\.prevRoot\) setProjectOverride\(moveToast\.sessionId, moveToast\.prevRoot\)[\s\S]{0,90}?clearProjectOverride\(moveToast\.sessionId\)/,
+  "undo restores the prior override, or clears it when there wasn't one",
+);
+assert.match(projectsView, /<MoveUndoToast\s+key=\{moveToast\.sessionId\}/, "the toast renders, keyed so a new move restarts its timer");
+
 console.log("projects-view.test.ts: ok");

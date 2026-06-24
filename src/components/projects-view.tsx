@@ -19,7 +19,7 @@ import {
   readSessionOrder,
   writeSessionOrder,
 } from "@/lib/chat-session-order";
-import { applyProjectOverrides, setProjectOverride } from "@/lib/chat-project-overrides";
+import { applyProjectOverrides, setProjectOverride, clearProjectOverride } from "@/lib/chat-project-overrides";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
 import { deriveProjectStatus } from "@/lib/project-status";
@@ -93,6 +93,50 @@ function shortRoot(p: string): string {
 // In select mode the leading drag handle becomes a checkbox and the row's
 // primary click toggles selection instead of opening the chat, so several chats
 // can be deleted together via the card's bulk toolbar.
+// Transient toast shown after a cross-project drag, offering a one-click Undo.
+// Auto-dismisses after a few seconds; remount (via a key) restarts the timer.
+function MoveUndoToast({
+  label,
+  onUndo,
+  onDismiss,
+}: {
+  label: string;
+  onUndo: () => void;
+  onDismiss: () => void;
+}) {
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
+  useEffect(() => {
+    const t = window.setTimeout(() => dismissRef.current(), 5000);
+    return () => window.clearTimeout(t);
+  }, []);
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-4 left-1/2 z-50 flex max-w-[90vw] -translate-x-1/2 items-center gap-3 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-3 py-2 text-[12px] text-[var(--text-primary)] shadow-[0_16px_40px_oklch(0_0_0/45%)]"
+    >
+      <Icon name="ph:arrow-right-bold" width={13} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
+      <span className="min-w-0 truncate">{label}</span>
+      <button
+        type="button"
+        onClick={onUndo}
+        className="focus-ring shrink-0 rounded px-1.5 py-0.5 font-medium text-[var(--accent-presence)] hover:bg-[var(--bg-hover)]"
+      >
+        Undo
+      </button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="focus-ring shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+      >
+        <Icon name="ph:x-bold" width={12} aria-hidden />
+      </button>
+    </div>
+  );
+}
+
 function ProjectChatRow({
   session,
   displayTitle,
@@ -126,7 +170,12 @@ function ProjectChatRow({
   const [menu, setMenu] = useState<ContextMenuState>(null);
   const activate = () => (selectMode ? onToggleSelect(session.id) : onOpen());
   return (
-    <li ref={setNodeRef} style={style} data-dragging={isDragging ? "true" : undefined} className="group/pc relative">
+    <li
+      ref={setNodeRef}
+      style={style}
+      data-dragging={isDragging ? "true" : undefined}
+      className="group/pc relative rounded-md data-[dragging=true]:z-10 data-[dragging=true]:bg-[var(--bg-raised)] data-[dragging=true]:opacity-90 data-[dragging=true]:shadow-[0_8px_24px_oklch(0_0_0/35%)] data-[dragging=true]:ring-1 data-[dragging=true]:ring-[var(--border-strong)]"
+    >
       <div
         role={selectMode ? "checkbox" : "button"}
         aria-checked={selectMode ? selected : undefined}
@@ -462,7 +511,7 @@ function ProjectRow({
         "group border-b border-[var(--border-hairline)] px-2 transition-colors",
         density === "compact" ? "py-1.5" : "py-3",
         isOver
-          ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]"
+          ? "rounded-md bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] ring-1 ring-inset ring-[var(--accent-presence)]/50"
           : "hover:bg-[var(--bg-raised)]/40",
       ].join(" ")}
     >
@@ -641,7 +690,7 @@ function ProjectRow({
       </div>
 
       {expanded ? (
-        <>
+        <div className="projects-expand-enter">
       <div className="mt-2 flex min-w-0 items-center gap-2 pl-6">
         <Icon
           name="ph:folder-simple-dashed"
@@ -771,7 +820,7 @@ function ProjectRow({
           No sessions yet — drag one here or start a new session.
         </p>
       )}
-        </>
+        </div>
       ) : null}
       <ContextMenu state={menu} onClose={() => setMenu(null)} ariaLabel={`Actions for ${project.name}`}>
         <PopoverItem icon="ph:chat-circle-dots-bold" onSelect={() => { setMenu(null); onNewChat?.(project.root); }}>
@@ -815,6 +864,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   const [rootDraft, setRootDraft] = useState("");
   const [creating, setCreating] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [moveToast, setMoveToast] = useState<{ sessionId: string; prevRoot: string | null; label: string } | null>(null);
   const projectOverrides = useProjectOverrides();
   const { density, setDensity, isExpanded, setExpanded } = useProjectsUiState();
   // Roving keyboard navigation (WAI-ARIA) over the flattened list of project
@@ -925,8 +975,23 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
       return;
     }
     // Different project → move (cave-local override; agent cwd untouched).
+    // Capture the prior override first so the move can be undone precisely
+    // (restore the old override, or clear it if there wasn't one).
+    const prevRoot = projectOverrides[activeId] ?? null;
+    const moved = sessions.find((s) => s.id === activeId);
+    const destName =
+      projects.find((p) => normalizeProjectRoot(p.root) === targetRoot)?.name ?? shortRoot(targetRoot);
+    const movedTitle = moved ? stripLeadingTrailingEmoji(stripTaskPrefix(moved.title)) || "chat" : "chat";
     setProjectOverride(activeId, targetRoot);
+    setMoveToast({ sessionId: activeId, prevRoot, label: `Moved “${movedTitle}” to ${destName}` });
   }
+
+  const undoMove = () => {
+    if (!moveToast) return;
+    if (moveToast.prevRoot) setProjectOverride(moveToast.sessionId, moveToast.prevRoot);
+    else clearProjectOverride(moveToast.sessionId);
+    setMoveToast(null);
+  };
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1218,6 +1283,14 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
           </div>
         )}
       </main>
+      {moveToast ? (
+        <MoveUndoToast
+          key={moveToast.sessionId}
+          label={moveToast.label}
+          onUndo={undoMove}
+          onDismiss={() => setMoveToast(null)}
+        />
+      ) : null}
     </div>
   );
 }
