@@ -52,17 +52,21 @@ targets:
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+        CODE_SIGN_ENTITLEMENTS: CovenCave/CovenCave.entitlements
     dependencies:
       - target: CovenCaveWidgets
 
   # Widget extension hosting the "task running" Live Activity (Lock Screen +
-  # Dynamic Island). Shares TaskActivityAttributes.swift with the app target.
+  # Dynamic Island) and the home-screen "Up Next" widget. Shares
+  # TaskActivityAttributes.swift + WidgetSnapshot.swift with the app target;
+  # the App Group lets the widget read the snapshot the app publishes.
   CovenCaveWidgets:
     type: app-extension
     platform: iOS
     sources:
       - path: CovenCaveWidgets
       - path: CovenCave/LiveActivity/TaskActivityAttributes.swift
+      - path: CovenCave/LiveActivity/WidgetSnapshot.swift
     settings:
       base:
         INFOPLIST_FILE: CovenCaveWidgets/Info.plist
@@ -70,3 +74,4 @@ targets:
         PRODUCT_NAME: CovenCaveWidgets
         IPHONEOS_DEPLOYMENT_TARGET: "18.0"
         SKIP_INSTALL: YES
+        CODE_SIGN_ENTITLEMENTS: CovenCaveWidgets/CovenCaveWidgets.entitlements

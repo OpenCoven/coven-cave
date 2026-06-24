@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import WidgetKit
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
@@ -173,6 +174,7 @@ final class AppModel {
         tasksLoaded = true
         // A task that finished on the desktop should drop its Lock Screen activity.
         await LiveActivityManager.shared.reconcile(tasks)
+        publishWidgetSnapshot()
     }
 
     // MARK: - Task actions
@@ -188,6 +190,7 @@ final class AppModel {
             applyTask(id: card.id) { $0 = updated }
             Haptics.tap()
             await LiveActivityManager.shared.reconcile(tasks)
+            publishWidgetSnapshot()
         } catch {
             tasks = previous
             tasksError = error.localizedDescription
@@ -363,6 +366,34 @@ final class AppModel {
             remindersError = error.localizedDescription
         }
         remindersLoaded = true
+        publishWidgetSnapshot()
+    }
+
+    /// Publish a compact snapshot to the shared App Group so the home-screen
+    /// "Up Next" widget renders the next reminder + task counts without its own
+    /// network access. Cheap; called whenever reminders/tasks load or change.
+    func publishWidgetSnapshot() {
+        let now = Date()
+        let next = reminders
+            .filter { $0.status == "pending" || $0.status == "fired" }
+            .compactMap { r -> (Reminder, Date)? in caveParseISO(r.whenISO).map { (r, $0) } }
+            .filter { $0.1 >= now }
+            .min { $0.1 < $1.1 }
+        let cal = Calendar.current
+        let endOfToday = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) ?? now
+        let due = tasks.filter { $0.status != .done }.filter { card in
+            guard let d = caveParseISO(card.endDate) else { return false }
+            return d < endOfToday
+        }.count
+        let running = tasks.filter { $0.status == .running }.count
+        WidgetSnapshotStore.write(WidgetSnapshot(
+            nextReminderTitle: next?.0.title,
+            nextReminderDate: next?.1,
+            dueTaskCount: due,
+            runningTaskCount: running,
+            updatedAt: now
+        ))
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     func loadJournal() async {
