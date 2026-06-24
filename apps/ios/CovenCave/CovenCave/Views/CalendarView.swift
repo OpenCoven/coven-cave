@@ -9,6 +9,8 @@ struct CalendarView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
     @State private var taskSelection: BoardCard?
+    /// A reminder awaiting delete confirmation (swipe or context menu).
+    @State private var pendingDelete: Reminder?
 
     var body: some View {
         NavigationStack {
@@ -23,7 +25,20 @@ struct CalendarView: View {
                 .sheet(item: $taskSelection) { card in
                     NavigationStack { TaskDetailView(card: card) }
                 }
+                .confirmationDialog("Delete this reminder?",
+                                    isPresented: deleteDialogBinding,
+                                    titleVisibility: .visible,
+                                    presenting: pendingDelete) { reminder in
+                    Button("Delete", role: .destructive) {
+                        Task { await app.deleteReminders([reminder.id]) }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: { reminder in Text(reminder.title) }
         }
+    }
+
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
     }
 
     // MARK: - State buckets
@@ -74,37 +89,37 @@ struct CalendarView: View {
             AgendaReminderRow(reminder: reminder)
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) {
-                        Haptics.tap(); Task { await app.deleteReminders([reminder.id]) }
-                    } label: { Label("Delete", systemImage: "trash") }
+                    Button(role: .destructive) { pendingDelete = reminder } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                 }
                 .swipeActions(edge: .leading) {
-                    Button {
-                        Haptics.success(); Task { await app.markReminderDone(reminder) }
-                    } label: { Label("Done", systemImage: "checkmark.circle") }
+                    Button { Task { await app.markReminderDone(reminder) } } label: {
+                        Label("Done", systemImage: "checkmark.circle")
+                    }
                     .tint(.green)
                 }
                 .contextMenu {
-                    Button { Haptics.success(); Task { await app.markReminderDone(reminder) } } label: {
+                    Button { Task { await app.markReminderDone(reminder) } } label: {
                         Label("Mark done", systemImage: "checkmark.circle")
                     }
                     Menu {
-                        Button("15 minutes") { Haptics.tap(); Task { await app.snoozeReminder(reminder, minutes: 15) } }
-                        Button("1 hour") { Haptics.tap(); Task { await app.snoozeReminder(reminder, minutes: 60) } }
-                        Button("1 day") { Haptics.tap(); Task { await app.snoozeReminder(reminder, minutes: 1440) } }
+                        Button("15 minutes") { Task { await app.snoozeReminder(reminder, minutes: 15) } }
+                        Button("1 hour") { Task { await app.snoozeReminder(reminder, minutes: 60) } }
+                        Button("1 day") { Task { await app.snoozeReminder(reminder, minutes: 1440) } }
                     } label: { Label("Snooze", systemImage: "moon.zzz") }
-                    Button(role: .destructive) { Haptics.tap(); Task { await app.deleteReminders([reminder.id]) } } label: {
+                    Button(role: .destructive) { pendingDelete = reminder } label: {
                         Label("Delete", systemImage: "trash")
                     }
                 }
         case .task(let card):
-            Button { Haptics.tap(); taskSelection = card } label: { AgendaTaskRow(card: card) }
+            Button { taskSelection = card } label: { AgendaTaskRow(card: card) }
                 .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .contextMenu {
                     Button { reschedule(card, byDays: 1) } label: { Label("Due tomorrow", systemImage: "calendar.badge.clock") }
                     Button { reschedule(card, byDays: 7) } label: { Label("Due next week", systemImage: "calendar") }
-                    Button { Task { Haptics.tap(); await app.setTaskDates(card, start: card.startDate, end: nil) } } label: {
+                    Button { Task { await app.setTaskDates(card, start: card.startDate, end: nil) } } label: {
                         Label("Clear due date", systemImage: "calendar.badge.minus")
                     }
                 }
@@ -113,7 +128,6 @@ struct CalendarView: View {
 
     private func reschedule(_ card: BoardCard, byDays days: Int) {
         let target = Calendar.current.date(byAdding: .day, value: days, to: Calendar.current.startOfDay(for: Date())) ?? Date()
-        Haptics.tap()
         Task { await app.setTaskDates(card, start: card.startDate, end: Self.dayOnly.string(from: target)) }
     }
 

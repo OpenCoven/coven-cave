@@ -9,6 +9,8 @@ struct RemindersView: View {
     @State private var selectMode = false
     @State private var selectedIds: Set<String> = []
     @State private var confirmingBulkDelete = false
+    /// A single reminder awaiting delete confirmation (swipe or context menu).
+    @State private var pendingDelete: Reminder?
 
     var body: some View {
         NavigationStack {
@@ -76,6 +78,15 @@ struct RemindersView: View {
                     }
                     Button("Cancel", role: .cancel) {}
                 }
+                .confirmationDialog("Delete this reminder?",
+                                    isPresented: deleteDialogBinding,
+                                    titleVisibility: .visible,
+                                    presenting: pendingDelete) { reminder in
+                    Button("Delete", role: .destructive) {
+                        Task { await app.deleteReminders([reminder.id]) }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: { reminder in Text(reminder.title) }
         }
     }
 
@@ -111,7 +122,7 @@ struct RemindersView: View {
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
-                            Task { await app.deleteReminders([reminder.id]) }
+                            pendingDelete = reminder
                         } label: { Label("Delete", systemImage: "trash") }
                     }
                     .swipeActions(edge: .leading) {
@@ -132,7 +143,7 @@ struct RemindersView: View {
                         Button { Task { await app.dismissReminder(reminder) } } label: {
                             Label("Dismiss", systemImage: "xmark.circle")
                         }
-                        Button(role: .destructive) { Task { await app.deleteReminders([reminder.id]) } } label: {
+                        Button(role: .destructive) { pendingDelete = reminder } label: {
                             Label("Delete", systemImage: "trash")
                         }
                     }
@@ -145,6 +156,9 @@ struct RemindersView: View {
 
     private var bulkTitle: String {
         "Delete \(selectedIds.count) reminder\(selectedIds.count == 1 ? "" : "s")?"
+    }
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
     }
     private var allSelected: Bool {
         !app.reminders.isEmpty && Set(app.reminders.map(\.id)).isSubset(of: selectedIds)
