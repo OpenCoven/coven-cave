@@ -91,6 +91,7 @@ const contracts: RouteContract[] = [
   { route: "/marketplace/uninstall", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/marketplace/config", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/marketplace/config/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/marketplace/validate-endpoint", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/memory/delete", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/memory/file", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/memory/inspector", methods: ["GET"], kind: "json" },

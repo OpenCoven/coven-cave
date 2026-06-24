@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   requiredConfigFromManifest,
+  remoteUrlFromManifest,
   type PluginManifest,
   type RequiredConfigField,
 } from "@/lib/marketplace-catalog";
@@ -35,5 +36,17 @@ export async function requiredConfigFor(name: string): Promise<RequiredConfigFie
     return requiredConfigFromManifest(manifest);
   } catch {
     return [];
+  }
+}
+
+/** The remote MCP endpoint URL for a trusted plugin name, or undefined. */
+export async function remoteUrlFor(name: string): Promise<string | undefined> {
+  try {
+    const manifest = JSON.parse(
+      await readFile(path.join(MARKETPLACE_DIR, "plugins", name, "plugin.json"), "utf8"),
+    ) as PluginManifest;
+    return remoteUrlFromManifest(manifest);
+  } catch {
+    return undefined;
   }
 }
