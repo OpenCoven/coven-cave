@@ -46,6 +46,16 @@ struct ChatView: View {
     /// Per-thread key for the persisted unsent draft.
     private var draftKey: String { "cave.chat.draft.\(thread.id)" }
 
+    /// True when the message at `index` opens a new calendar day (or is the very
+    /// first message) — drives the date dividers in the transcript.
+    private func shouldShowDaySeparator(at index: Int) -> Bool {
+        let messages = thread.messages
+        guard index >= 0, index < messages.count else { return false }
+        if index == 0 { return true }
+        return !Calendar.current.isDate(messages[index].createdAt,
+                                        inSameDayAs: messages[index - 1].createdAt)
+    }
+
     // The slash autocomplete is driven purely off the in-progress draft: a
     // leading "/" on the first word (no whitespace committed yet).
     private var slashMatches: [SlashCommand] {
@@ -174,7 +184,10 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
-                    ForEach(thread.messages) { message in
+                    ForEach(Array(thread.messages.enumerated()), id: \.element.id) { index, message in
+                        if shouldShowDaySeparator(at: index) {
+                            DaySeparator(date: message.createdAt)
+                        }
                         MessageBubble(message: message,
                                       isGroup: thread.isGroup,
                                       familiar: message.familiarId.flatMap(app.familiar),
@@ -682,6 +695,33 @@ struct ChatView: View {
 
     private func openReader(text: String, familiar: Familiar?) {
         responseReader = ResponseReaderItem(title: familiar?.displayName ?? "Response", markdown: text)
+    }
+}
+
+/// A centered date divider between messages from different days — "Today",
+/// "Yesterday", a weekday name within the last week, else an abbreviated date.
+private struct DaySeparator: View {
+    let date: Date
+
+    private var label: String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "Today" }
+        if cal.isDateInYesterday(date) { return "Yesterday" }
+        if let days = cal.dateComponents([.day], from: cal.startOfDay(for: date),
+                                         to: cal.startOfDay(for: Date())).day, days >= 0, days < 7 {
+            return date.formatted(.dateTime.weekday(.wide))
+        }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12).padding(.vertical, 4)
+            .background(Color(.secondarySystemBackground), in: Capsule())
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
     }
 }
 
