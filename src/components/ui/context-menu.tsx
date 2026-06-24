@@ -34,6 +34,10 @@ export function ContextMenu({
       <span
         ref={anchorRef}
         aria-hidden
+        tabIndex={-1}
+        // tabIndex makes the anchor programmatically focusable so the Popover's
+        // close-time focus-return (which focuses the anchor when focus would
+        // otherwise be lost to <body>) actually works for keyboard users.
         style={{ position: "fixed", left: state?.x ?? 0, top: state?.y ?? 0, width: 0, height: 0 }}
       />
       <Popover

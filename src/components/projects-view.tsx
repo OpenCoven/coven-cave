@@ -21,6 +21,7 @@ import { useProjects } from "@/lib/use-projects";
 import { useProjectsUiState } from "@/lib/projects/use-projects-ui-state";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { nextTypeAheadIndex } from "@/lib/projects/type-ahead";
+import { UndoToast } from "@/components/ui/undo-toast";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -37,50 +38,6 @@ import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 
 import { ProjectRow } from "./projects/project-row";
 import { lastActiveMs, shortRoot, openSessionById } from "./projects/projects-shared";
-
-// Transient toast shown after a cross-project drag, offering a one-click Undo.
-// Auto-dismisses after a few seconds; remount (via a key) restarts the timer.
-function MoveUndoToast({
-  label,
-  onUndo,
-  onDismiss,
-}: {
-  label: string;
-  onUndo: () => void;
-  onDismiss: () => void;
-}) {
-  const dismissRef = useRef(onDismiss);
-  dismissRef.current = onDismiss;
-  useEffect(() => {
-    const t = window.setTimeout(() => dismissRef.current(), 5000);
-    return () => window.clearTimeout(t);
-  }, []);
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="fixed bottom-4 left-1/2 z-50 flex max-w-[90vw] -translate-x-1/2 items-center gap-3 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-3 py-2 text-[12px] text-[var(--text-primary)] shadow-[0_16px_40px_oklch(0_0_0/45%)]"
-    >
-      <Icon name="ph:arrow-right-bold" width={13} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
-      <span className="min-w-0 truncate">{label}</span>
-      <button
-        type="button"
-        onClick={onUndo}
-        className="focus-ring shrink-0 rounded px-1.5 py-0.5 font-medium text-[var(--accent-presence)] hover:bg-[var(--bg-hover)]"
-      >
-        Undo
-      </button>
-      <button
-        type="button"
-        onClick={onDismiss}
-        aria-label="Dismiss"
-        className="focus-ring shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-      >
-        <Icon name="ph:x-bold" width={12} aria-hidden />
-      </button>
-    </div>
-  );
-}
 
 type ProjectsViewProps = {
   sessions?: SessionRow[];
@@ -574,11 +531,15 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
         )}
       </main>
       {moveToast ? (
-        <MoveUndoToast
+        <UndoToast
           key={moveToast.sessionId}
-          label={moveToast.label}
+          message={moveToast.label}
+          icon="ph:arrow-right-bold"
+          undoAriaLabel="Undo move"
           onUndo={undoMove}
           onDismiss={() => setMoveToast(null)}
+          durationMs={5000}
+          autoDismiss
         />
       ) : null}
     </div>

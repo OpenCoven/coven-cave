@@ -375,8 +375,7 @@ assert.match(projectsView, /data-\[dragging=true\]:shadow-/, "the dragged row li
 assert.match(projectsView, /isOver[\s\S]{0,140}?ring-1 ring-inset ring-\[var\(--accent-presence\)\]/, "the drop-target project card shows an accent ring");
 // Cross-project move is undoable via a transient toast.
 assert.match(projectsView, /import \{ applyProjectOverrides, setProjectOverride, clearProjectOverride \}/, "imports clearProjectOverride for undo");
-assert.match(projectsView, /function MoveUndoToast/, "a move-undo toast component exists");
-assert.match(projectsView, /window\.setTimeout\(\(\) => dismissRef\.current\(\), 5000\)/, "the toast auto-dismisses");
+assert.match(projectsView, /import \{ UndoToast \} from "@\/components\/ui\/undo-toast"/, "uses the shared UndoToast primitive");
 assert.match(projectsView, /const prevRoot = projectOverrides\[sessionId\] \?\? null/, "the move captures the prior override for a precise undo");
 assert.match(projectsView, /setMoveToast\(\{ sessionId, prevRoot, label:/, "a cross-project move raises the undo toast");
 assert.match(
@@ -384,7 +383,11 @@ assert.match(
   /moveToast\.prevRoot\) setProjectOverride\(moveToast\.sessionId, moveToast\.prevRoot\)[\s\S]{0,90}?clearProjectOverride\(moveToast\.sessionId\)/,
   "undo restores the prior override, or clears it when there wasn't one",
 );
-assert.match(projectsView, /<MoveUndoToast\s+key=\{moveToast\.sessionId\}/, "the toast renders, keyed so a new move restarts its timer");
+assert.match(
+  projectsView,
+  /<UndoToast\s+key=\{moveToast\.sessionId\}[\s\S]{0,400}?autoDismiss/,
+  "the toast renders (keyed, self-dismissing) via the shared UndoToast",
+);
 
 // Render-virtualization: off-screen session rows skip layout/paint via
 // content-visibility (the repo's established strategy — see chat turns + library
