@@ -6,6 +6,7 @@ import {
   pluginBadgeState,
   filterPlugins,
   categoriesFrom,
+  requiredConfigFromManifest,
 } from "./marketplace-catalog.ts";
 
 const marketplacePlugins = [
@@ -14,7 +15,7 @@ const marketplacePlugins = [
   { name: "legacy", displayName: "Legacy", category: "Other", trust: "preview-local", policy: { installation: "UNAVAILABLE", authentication: "NONE" } },
 ];
 const manifests = {
-  github: { version: "0.1.0", description: "Repos, issues, PRs.", author: { name: "OpenCoven" }, keywords: ["git", "pull-requests"], capabilities: ["network", "mcp"], homepage: "https://opencoven.ai", userConfig: { github_token: { required: true, sensitive: true } } },
+  github: { version: "0.1.0", description: "Repos, issues, PRs.", author: { name: "OpenCoven" }, keywords: ["git", "pull-requests"], capabilities: ["network", "mcp"], homepage: "https://opencoven.ai", userConfig: { github_token: { required: true, sensitive: true, env: "GITHUB_PERSONAL_ACCESS_TOKEN" } } },
   fetch: { version: "0.2.0", description: "HTTP fetch.", author: "Anthropic", keywords: ["http"], capabilities: ["network"] },
   // legacy: intentionally no manifest -> degraded card
 };
@@ -57,7 +58,7 @@ assert.equal(deriveRequiresSetup({ a: { required: true } }), true);
 
 // pluginBadgeState
 assert.equal(pluginBadgeState({ available: false, installed: false, requiresSetup: false }), "unavailable");
-assert.equal(pluginBadgeState({ available: true, installed: true, requiresSetup: true }), "added");
+assert.equal(pluginBadgeState({ available: true, installed: true, requiresSetup: true, configured: true }), "added");
 assert.equal(pluginBadgeState({ available: true, installed: false, requiresSetup: true }), "needs-setup");
 assert.equal(pluginBadgeState({ available: true, installed: false, requiresSetup: false }), "add");
 
@@ -69,5 +70,38 @@ assert.deepEqual(filterPlugins(merged, { query: "", category: "All" }).map((p) =
 
 // categoriesFrom — "All" first, then by count desc then name
 assert.deepEqual(categoriesFrom(merged), ["All", "Developer Tools", "Other"]);
+
+// --- requiredConfig + configured + badge state (credential collection) ---
+const rcManifests = {
+  github: { userConfig: { github_token: { required: true, sensitive: true, title: "GitHub Token", description: "PAT", env: "GITHUB_PERSONAL_ACCESS_TOKEN" } } },
+  fs: { userConfig: { filesystem_root: { required: true, sensitive: false, type: "directory", title: "Root", env: "COVEN_MCP_FILESYSTEM_ROOT" } } },
+  none: { userConfig: { opt: { required: false, env: "X" }, noenv: { required: true } } }, // neither qualifies
+};
+
+assert.deepEqual(requiredConfigFromManifest(rcManifests.github), [
+  { key: "github_token", env: "GITHUB_PERSONAL_ACCESS_TOKEN", title: "GitHub Token", description: "PAT", sensitive: true },
+]);
+assert.deepEqual(requiredConfigFromManifest(rcManifests.fs), [
+  { key: "filesystem_root", env: "COVEN_MCP_FILESYSTEM_ROOT", title: "Root", description: undefined, sensitive: false },
+]);
+assert.deepEqual(requiredConfigFromManifest(rcManifests.none), []); // opt not required; noenv has no env
+assert.deepEqual(requiredConfigFromManifest({}), []);
+
+const rcMerged = mergeCatalog(
+  [{ name: "github", displayName: "GitHub", category: "Developer Tools", trust: "reference-local", policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" } }],
+  { github: rcManifests.github },
+  {},
+);
+const gh = rcMerged[0];
+assert.equal(gh.requiresSetup, true);
+assert.equal(gh.configured, false);
+assert.deepEqual(gh.requiredConfig.map((f) => f.env), ["GITHUB_PERSONAL_ACCESS_TOKEN"]);
+
+assert.equal(pluginBadgeState({ available: true, installed: false, requiresSetup: true, configured: false }), "needs-setup");
+assert.equal(pluginBadgeState({ available: true, installed: true, requiresSetup: true, configured: false }), "needs-setup");
+assert.equal(pluginBadgeState({ available: true, installed: true, requiresSetup: true, configured: true }), "added");
+assert.equal(pluginBadgeState({ available: true, installed: false, requiresSetup: true, configured: true }), "add");
+assert.equal(pluginBadgeState({ available: true, installed: false, requiresSetup: false, configured: false }), "add");
+assert.equal(pluginBadgeState({ available: false, installed: false, requiresSetup: true, configured: false }), "unavailable");
 
 console.log("marketplace-catalog.test.ts: ok");

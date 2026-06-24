@@ -21,6 +21,7 @@ export type PluginUserConfigField = {
   type?: string;
   title?: string;
   description?: string;
+  env?: string;
 };
 
 export type PluginManifest = {
@@ -33,6 +34,28 @@ export type PluginManifest = {
   capabilities?: string[];
   userConfig?: Record<string, PluginUserConfigField>;
 };
+
+export type RequiredConfigField = {
+  key: string;
+  env: string;
+  title: string;
+  description?: string;
+  sensitive: boolean;
+};
+
+/** Required userConfig fields that declare a target env var (collectable). */
+export function requiredConfigFromManifest(manifest: PluginManifest): RequiredConfigField[] {
+  const uc = manifest.userConfig ?? {};
+  return Object.entries(uc)
+    .filter(([, f]) => f?.required === true && typeof f?.env === "string" && f.env.length > 0)
+    .map(([key, f]) => ({
+      key,
+      env: f.env as string,
+      title: f.title ?? key,
+      description: f.description,
+      sensitive: f.sensitive === true,
+    }));
+}
 
 export type InstalledMap = Record<string, { version: string; source: string; installedAt: string }>;
 
@@ -54,6 +77,8 @@ export type MarketplacePlugin = {
   installed: boolean;
   requiresSetup: boolean;
   available: boolean;
+  requiredConfig: RequiredConfigField[];
+  configured: boolean;
 };
 
 export function deriveRequiresSetup(userConfig: PluginManifest["userConfig"]): boolean {
@@ -76,6 +101,7 @@ export function mergeCatalog(
     .map((p) => {
       const manifest = manifests[p.name] ?? {};
       const installation = p.policy?.installation ?? "AVAILABLE";
+      const requiredConfig = requiredConfigFromManifest(manifest);
       return {
         id: p.name,
         displayName: p.displayName ?? p.name,
@@ -95,8 +121,10 @@ export function mergeCatalog(
         kind: "mcp" as const,
         version: manifest.version ?? "0.0.0",
         installed: Boolean(installed[p.name]),
-        requiresSetup: deriveRequiresSetup(manifest.userConfig),
+        requiresSetup: requiredConfig.length > 0,
         available: installation === "AVAILABLE",
+        requiredConfig,
+        configured: false,
       };
     })
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -105,11 +133,11 @@ export function mergeCatalog(
 export type PluginBadgeState = "add" | "added" | "needs-setup" | "unavailable";
 
 export function pluginBadgeState(
-  p: Pick<MarketplacePlugin, "available" | "installed" | "requiresSetup">,
+  p: Pick<MarketplacePlugin, "available" | "installed" | "requiresSetup" | "configured">,
 ): PluginBadgeState {
   if (!p.available) return "unavailable";
+  if (p.requiresSetup && !p.configured) return "needs-setup";
   if (p.installed) return "added";
-  if (p.requiresSetup) return "needs-setup";
   return "add";
 }
 
