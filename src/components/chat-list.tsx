@@ -9,6 +9,8 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { useIsMobile } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
+import { UndoToast } from "@/components/ui/undo-toast";
+import { useUndoDelete } from "@/lib/use-undo-delete";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { relativeTime, isRelativePhrase } from "@/lib/relative-time";
@@ -268,6 +270,9 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Bulk delete is deferred + undoable: rows hide immediately, the DELETEs fire
+  // only after the undo window, and Undo restores the batch.
+  const { pending: deletePending, scheduleDelete: scheduleBulkDelete, undo: undoBulkDelete, commit: commitBulkDelete } = useUndoDelete<SessionRow[]>();
   useEffect(() => { setSelectMode(false); setSelectedIds(new Set()); }, [familiar?.id]);
   // Content search (CHAT-D9-02) — hits from /api/chat/search for the current
   // query; cleared the moment the query drops below the 2-char threshold.
@@ -307,8 +312,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       const seen = new Set(sessions.map((s) => s.id));
       rows = [...sessions, ...archivedRows.filter((s) => !seen.has(s.id))];
     }
+    // Hide chats whose bulk delete is pending in the undo window (still on the
+    // server; restored if the user hits Undo).
+    const hidden = new Set((deletePending?.item ?? []).map((s) => s.id));
+    if (hidden.size) rows = rows.filter((s) => !hidden.has(s.id));
     return filterVisibleChatSessions(rows, familiar?.id ?? null);
-  }, [sessions, showArchived, archivedRows, familiar?.id]);
+  }, [sessions, showArchived, archivedRows, familiar?.id, deletePending]);
 
   const filtered = useMemo(() => {
     let rows = mine;
@@ -621,26 +630,31 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     });
   const selectedVisibleCount = displayIds.filter((id) => selectedIds.has(id)).length;
 
-  const bulkDelete = async () => {
-    const ids = displayIds.filter((id) => selectedIds.has(id));
-    if (ids.length === 0) return;
-    setBulkBusy(true);
+  // Deferred + undoable: hide the selected chats now, fire the DELETEs only
+  // after the undo window, refetch once. Undo restores the whole batch.
+  const bulkDelete = () => {
+    const idSet = new Set(displayIds.filter((id) => selectedIds.has(id)));
+    const removed = mine.filter((s) => idSet.has(s.id));
+    if (removed.length === 0) return;
     setError(null);
-    const results = await Promise.all(
-      ids.map((id) =>
-        fetch(`/api/chat/conversation/${encodeURIComponent(id)}`, { method: "DELETE" })
-          .then((r) => r.json().catch(() => ({ ok: false })))
-          .then((j) => !!j.ok)
-          .catch(() => false),
-      ),
-    );
-    setBulkBusy(false);
-    if (results.some(Boolean)) {
-      setActiveId((cur) => (cur && ids.includes(cur) ? null : cur));
-      onSessionsChanged?.();
-    }
-    if (results.some((ok) => !ok)) setError("Some chats couldn't be deleted.");
+    setActiveId((cur) => (cur && idSet.has(cur) ? null : cur));
     exitSelect();
+    scheduleBulkDelete(
+      removed,
+      `${removed.length} chat${removed.length === 1 ? "" : "s"}`,
+      async () => {
+        const results = await Promise.all(
+          removed.map((s) =>
+            fetch(`/api/chat/conversation/${encodeURIComponent(s.id)}`, { method: "DELETE" })
+              .then((r) => r.json().catch(() => ({ ok: false })))
+              .then((j) => !!j.ok)
+              .catch(() => false),
+          ),
+        );
+        if (results.some(Boolean)) onSessionsChanged?.();
+        if (results.some((ok) => !ok)) setError("Some chats couldn't be deleted.");
+      },
+    );
   };
 
   const bulkArchive = async (archived: boolean) => {
@@ -1372,6 +1386,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         {keys.enter} open · {keys.mod}K palette · / commands in chat
       </footer>
       </section>
+      {deletePending ? (
+        <UndoToast
+          key={deletePending.id}
+          message={`Deleted ${deletePending.label}`}
+          undoAriaLabel="Undo delete"
+          onUndo={undoBulkDelete}
+          onDismiss={commitBulkDelete}
+        />
+      ) : null}
     </div>
   );
 }

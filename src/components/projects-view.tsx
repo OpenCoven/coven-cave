@@ -22,6 +22,7 @@ import { useProjectsUiState } from "@/lib/projects/use-projects-ui-state";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { nextTypeAheadIndex } from "@/lib/projects/type-ahead";
 import { UndoToast } from "@/components/ui/undo-toast";
+import { useUndoDelete } from "@/lib/use-undo-delete";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -68,6 +69,9 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   const [creating, setCreating] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [moveToast, setMoveToast] = useState<{ sessionId: string; prevRoot: string | null; label: string } | null>(null);
+  // Bulk delete is deferred + undoable: the rows hide immediately, the actual
+  // DELETEs fire only after the undo window, and Undo restores the batch.
+  const { pending: deletePending, scheduleDelete: scheduleSessionDelete, undo: undoSessionDelete, commit: commitSessionDelete } = useUndoDelete<SessionRow[]>();
   const projectOverrides = useProjectOverrides();
   const { density, setDensity, isExpanded, setExpanded } = useProjectsUiState();
   // Roving keyboard navigation (WAI-ARIA) over the flattened list of project
@@ -140,7 +144,11 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   // Group sessions under their (override-aware) project root, applying the
   // shared manual order, so each project card lists its chats in drag order.
   const chatsByRoot = useMemo(() => {
-    const overridden = applyProjectOverrides(sessions, projectOverrides);
+    // Hide chats whose delete is pending in the undo window (still on the
+    // server; restored if the user hits Undo).
+    const hidden = new Set((deletePending?.item ?? []).map((s) => s.id));
+    const visible = hidden.size ? sessions.filter((s) => !hidden.has(s.id)) : sessions;
+    const overridden = applyProjectOverrides(visible, projectOverrides);
     const byRoot = new Map<string, SessionRow[]>();
     for (const session of overridden) {
       const root = normalizeProjectRoot(session.project_root);
@@ -150,7 +158,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     }
     for (const [root, list] of byRoot) byRoot.set(root, applyManualOrder(list, order));
     return byRoot;
-  }, [sessions, projectOverrides, order]);
+  }, [sessions, projectOverrides, order, deletePending]);
 
   const rootBySession = useMemo(() => {
     const map = new Map<string, string>();
@@ -276,14 +284,23 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     if (await deleteOneSession(sessionId)) onSessionsChanged?.();
   };
 
-  // Bulk-delete the chats selected in a project card. Runs the deletes in
-  // parallel, then refetches once if anything succeeded so the surviving rows
-  // (if a delete failed) stay accurate.
+  // Bulk-delete the chats selected in a project card — deferred + undoable:
+  // hide them now, fire the DELETEs only after the undo window, refetch once.
   const handleDeleteSessions = async (sessionIds: string[]) => {
     setSessionError(null);
     if (sessionIds.length === 0) return;
-    const results = await Promise.all(sessionIds.map((id) => deleteOneSession(id)));
-    if (results.some(Boolean)) onSessionsChanged?.();
+    const ids = new Set(sessionIds);
+    const removed = sessions.filter((s) => ids.has(s.id));
+    if (removed.length === 0) return;
+    setMoveToast(null); // one bottom toast at a time
+    scheduleSessionDelete(
+      removed,
+      `${removed.length} chat${removed.length === 1 ? "" : "s"}`,
+      async () => {
+        const results = await Promise.all(removed.map((s) => deleteOneSession(s.id)));
+        if (results.some(Boolean)) onSessionsChanged?.();
+      },
+    );
   };
 
   return (
@@ -540,6 +557,15 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
           onDismiss={() => setMoveToast(null)}
           durationMs={5000}
           autoDismiss
+        />
+      ) : null}
+      {deletePending ? (
+        <UndoToast
+          key={deletePending.id}
+          message={`Deleted ${deletePending.label}`}
+          undoAriaLabel="Undo delete"
+          onUndo={undoSessionDelete}
+          onDismiss={commitSessionDelete}
         />
       ) : null}
     </div>

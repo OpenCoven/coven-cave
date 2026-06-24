@@ -330,9 +330,14 @@ assert.match(source, /setSelectMode\(\(v\) => !v\); setSelectedIds\(new Set\(\)\
 assert.match(source, /useEffect\(\(\) => \{ setSelectMode\(false\); setSelectedIds\(new Set\(\)\); \}, \[familiar\?\.id\]\)/, "selection resets when the active familiar changes");
 assert.match(source, /role=\{selectMode \? "checkbox" : "button"\}/, "rows are checkboxes in select mode");
 assert.match(source, /if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} setActiveId\(s\.id\); onOpen/, "a row click selects in select mode, otherwise opens");
-assert.match(source, /const bulkDelete = async \(\)/, "bulk delete handler exists");
+assert.match(source, /const bulkDelete = \(\) =>/, "bulk delete handler exists (deferred/undoable)");
 assert.match(source, /const bulkArchive = async \(archived: boolean\)/, "bulk archive/unarchive handler exists");
-assert.match(source, /Promise\.all\([\s\S]{0,60}fetch\(`\/api\/chat\/conversation\//, "bulk delete runs the per-chat deletes in parallel");
+assert.match(source, /Promise\.all\([\s\S]{0,80}fetch\(`\/api\/chat\/conversation\//, "bulk delete runs the per-chat deletes in parallel");
+// Bulk delete is deferred + undoable via the shared undo toast.
+assert.match(source, /useUndoDelete<SessionRow\[\]>\(\)/, "bulk delete routes through useUndoDelete");
+assert.match(source, /scheduleBulkDelete\(\s*removed,/, "bulk delete schedules the batch through the undo window");
+assert.match(source, /const hidden = new Set\(\(deletePending\?\.item \?\? \[\]\)\.map\(\(s\) => s\.id\)\)/, "pending-deleted rows are hidden from the list until commit");
+assert.match(source, /<UndoToast[\s\S]{0,160}onUndo=\{undoBulkDelete\}[\s\S]{0,40}onDismiss=\{commitBulkDelete\}/, "an undo toast offers to restore the batch");
 assert.match(source, /const allVisibleSelected = displayIds\.length > 0 && displayIds\.every\(\(id\) => selectedIds\.has\(id\)\)/, "select-all is visible-aware");
 assert.match(source, /\{allVisibleSelected \? "Clear" : "Select all"\}/, "toolbar offers select-all / clear");
 
