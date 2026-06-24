@@ -51,7 +51,7 @@ export function FamiliarStudio({ familiars }: Props) {
   );
   const drawerOpen = Boolean(activeFamiliarId || listView);
   const disableNonLifecycle = listView && !familiar;
-  const drawerActiveTab = activeTab === "brain" ? "identity" : activeTab;
+  const drawerActiveTab = activeTab === "brain" || activeTab === "vault" ? "identity" : activeTab;
   const openBrainStudio = useCallback(() => {
     setActiveTab("brain");
     window.location.assign("/settings");

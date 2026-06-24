@@ -747,6 +747,20 @@ function SessionOverflowMenu({
   );
 }
 
+function HeaderDebugButton({ onOpenDebug }: { onOpenDebug: () => void }) {
+  return (
+    <button
+      type="button"
+      className="focus-ring cave-chat-icon-button"
+      aria-label="Debug chat"
+      title="Debug chat"
+      onClick={onOpenDebug}
+    >
+      <Icon name="ph:bug-bold" width={15} aria-hidden />
+    </button>
+  );
+}
+
 /** Standalone delete control for the chat header — a one-click trash button that
  *  opens a small confirm popover before committing. Mirrors the overflow menu's
  *  two-step guard, but surfaced at the top of the session for quick access. Uses
@@ -3362,6 +3376,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onPrev={findPrev}
               />
             ) : null}
+            {sessionId && (
+              <HeaderDebugButton onOpenDebug={openDebug} />
+            )}
             {sessionId && (
               <HeaderDeleteButton key={sessionId} onDelete={() => void deleteChat()} deleting={deleting} />
             )}

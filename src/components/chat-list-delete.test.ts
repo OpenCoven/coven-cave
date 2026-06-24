@@ -295,8 +295,18 @@ assert.match(
 // The three row action buttons (pin/archive/delete) must be uniform squares.
 {
   const squares = source.match(/touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md/g) ?? [];
-  assert.equal(squares.length, 3, "pin/archive/delete must be uniform h-6 w-6 square icon buttons");
+  assert.equal(squares.length, 4, "pin/archive/debug/delete must be uniform h-6 w-6 square icon buttons");
 }
+assert.match(
+  source,
+  /aria-label=\{`Debug chat \$\{rowName\}`\}[\s\S]*?<Icon name="ph:bug-bold"/,
+  "Chat rows should expose a bug-icon Debug action next to delete",
+);
+assert.match(
+  source,
+  /window\.dispatchEvent\(new CustomEvent\("cave:debug-open"\)\)/,
+  "Chat row Debug action should reuse the existing debug panel event bridge",
+);
 assert.doesNotMatch(
   source,
   /touch-always-visible shrink-0 rounded border border-\[var\(--border-hairline\)\] px-1\.5 py-0\.5/,

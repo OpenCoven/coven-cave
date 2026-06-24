@@ -6,7 +6,6 @@ import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
-import { VaultPanel } from "@/components/vault-panel";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Icon, type IconName } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -18,7 +17,7 @@ import type { AdapterReport } from "@/lib/harness-adapters";
 import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 
-type Tab = "memory" | "familiar" | "inbox" | "vault";
+type Tab = "memory" | "familiar" | "inbox";
 
 
 
@@ -62,10 +61,9 @@ const TAB_LABEL: Record<Tab, string> = {
   memory: "Memory",
   familiar: "Familiar",
   inbox: "Automations",
-  vault: "Vault",
 };
 
-const INSPECTOR_TABS: Tab[] = ["memory", "familiar", "inbox", "vault"];
+const INSPECTOR_TABS: Tab[] = ["memory", "familiar", "inbox"];
 
 function InspectorEmpty({
   icon,
@@ -196,7 +194,6 @@ export function InspectorPane({
             onInboxItemChanged={onInboxItemChanged}
           />
         ) : null}
-        {tab === "vault" ? <VaultPanel /> : null}
       </div>
     </aside>
   );

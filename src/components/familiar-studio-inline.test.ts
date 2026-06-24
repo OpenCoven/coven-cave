@@ -25,12 +25,14 @@ assert.match(
 assert.doesNotMatch(source, /familiar-studio__scrim/, "Inline panel must not render the modal scrim");
 assert.doesNotMatch(source, /familiar-studio__drawer/, "Inline panel must not render the fixed drawer root");
 
-// All five studio tabs are wired with the same prop shapes the drawer uses.
+// Familiar-specific studio tabs are wired with the same prop shapes the drawer uses.
 for (const tab of ["Identity", "Look", "Brain", "Lifecycle", "Memory"]) {
   assert.match(source, new RegExp(`FamiliarStudio${tab}Tab`), `Wires the ${tab} tab body`);
 }
 assert.match(source, /<FamiliarStudioLookTab familiar=\{familiar\} allFamiliars=\{resolved\} \/>/, "Look tab gets all resolved familiars for group colors");
 assert.match(source, /<FamiliarStudioMemoryTab familiar=\{familiar\} allFamiliars=\{familiars\} \/>/, "Memory tab gets the raw roster");
+assert.match(source, /VaultPanel/, "Wires the Vault settings panel inside familiar settings");
+assert.match(source, /id: "vault", label: "Vault"/, "Exposes Vault as a familiar settings tab");
 
 // Detail pane is never empty on entry: auto-selects the first familiar and
 // recovers when the current selection disappears.

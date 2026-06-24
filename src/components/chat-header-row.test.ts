@@ -127,8 +127,13 @@ assert.match(
 );
 assert.match(
   source,
-  /<HeaderDeleteButton key=\{sessionId\} onDelete=\{\(\) => void deleteChat\(\)\} deleting=\{deleting\} \/>/,
-  "the chat header mounts the standalone delete button (keyed on sessionId) wired to deleteChat",
+  /function HeaderDebugButton[\s\S]*?aria-label="Debug chat"[\s\S]*?<Icon name="ph:bug-bold"/,
+  "HeaderDebugButton renders a visible bug trigger for the debug panel",
+);
+assert.match(
+  source,
+  /<HeaderDebugButton onOpenDebug=\{openDebug\} \/>[\s\S]*?<HeaderDeleteButton key=\{sessionId\} onDelete=\{\(\) => void deleteChat\(\)\} deleting=\{deleting\} \/>/,
+  "the chat header mounts the visible debug bug immediately before the standalone delete button",
 );
 // The overflow (kebab) menu no longer offers delete — it's header-only.
 assert.doesNotMatch(
