@@ -178,6 +178,7 @@ export const SUITES = {
     "src/components/task-chat-cwd.test.ts",
     "src/lib/board-search.test.ts",
     "src/lib/board-wip.test.ts",
+    "src/lib/use-refresh-on-focus.test.ts",
     "src/lib/comux-projects.test.ts",
     "src/lib/comux-project-order.test.ts",
     "src/lib/code-lang.test.ts",
@@ -606,6 +607,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/use-refresh-on-focus.test.ts",
   "src/lib/flow/flow-progress.test.ts",
   "src/lib/familiar-card-data.test.ts",
   "src/lib/dashboard-model.test.ts",
