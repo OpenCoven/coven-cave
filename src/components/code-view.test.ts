@@ -63,6 +63,12 @@ assert.match(toolbar, /cave:toggle-right-panel/, "the panel toggle asks the shel
 assert.doesNotMatch(codeView, /toggleProjects|aria-label=\{?"?(Hide|Show) projects/i, "the collapse toggle is not in the Code toolbar anymore");
 assert.match(comux, /onClick=\{\(\) => setProjectListVisible\(projectListCollapsed\)\}/, "the merged Projects section header toggles its own collapse");
 assert.match(comux, /comux-project-row/, "the projects list renders project rows in the explorer column");
+// Right-click a project row → a context menu with cwd-scoped actions.
+assert.match(comux, /onContextMenu=\{\(e\) => \{[\s\S]*?setProjectMenuTarget\(project\);[\s\S]*?openContextMenuAt\(setProjectMenu\)\(e\);/, "project rows open a context menu at the cursor, recording which project");
+assert.match(comux, /ariaLabel=\{projectMenuTarget \? `Actions for \$\{projectMenuTarget\.name\}`/, "the project context menu is labelled per project");
+assert.match(comux, /onNewChat\(projectMenuTarget\.root\)/, "menu can start a chat in the project cwd");
+assert.match(comux, /addSession\(projectMenuTarget\.root\)/, "menu can open a terminal in the project cwd");
+assert.match(comux, /copyText\(projectMenuTarget\.root\)/, "menu can copy the project path");
 assert.match(comux, /Projects — merged into this column/, "the projects list is merged into the file-explorer column");
 assert.match(comux, /\{!projectListCollapsed && \(/, "comux hides the projects list when collapsed");
 assert.match(
