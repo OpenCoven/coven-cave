@@ -187,6 +187,42 @@ struct CaveClient {
         }
     }
 
+    // MARK: - Model control
+
+    private func urlQuery(_ value: String) -> String {
+        value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value
+    }
+
+    /// The model this chat resolves to, plus the pickable menu for its runtime.
+    func chatModelState(familiarId: String, sessionId: String?) async throws -> ChatModelStateResponse {
+        var path = "api/chat/model-state?familiarId=\(urlQuery(familiarId))"
+        if let sessionId, !sessionId.isEmpty { path += "&sessionId=\(urlQuery(sessionId))" }
+        let req = try request(path)
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(ChatModelStateResponse.self, from: data)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// Set the model for this chat (`session` scope) or the familiar (`familiar-default`).
+    @discardableResult
+    func setChatModel(familiarId: String, sessionId: String?, model: String, scope: String) async throws -> ChatModelStateResponse {
+        var body: [String: String] = ["familiarId": familiarId, "model": model, "scope": scope]
+        if let sessionId, !sessionId.isEmpty { body["sessionId"] = sessionId }
+        let payload = try JSONEncoder().encode(body)
+        let req = try request("api/chat/model-state", method: "PATCH", body: payload)
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(ChatModelStateResponse.self, from: data)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
     // MARK: - Chat streaming
 
     /// An image attachment the server delivers to the familiar alongside the
