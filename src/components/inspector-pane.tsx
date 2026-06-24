@@ -587,10 +587,12 @@ function MemoryTab({
   const [reveal, setReveal] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
       try {
         const res = await fetch("/api/coven-memory", { cache: "no-store" });
         const json = await res.json();
+        if (cancelled) return;
         if (json.ok) {
           const fetched: CovenMemoryEntry[] = json.entries ?? [];
           setCovenEntries(fetched);
@@ -600,9 +602,10 @@ function MemoryTab({
       } catch {
         /* Inspector remains the default; the legacy Coven tab can stay empty. */
       } finally {
-        setCovenLoaded(true);
+        if (!cancelled) setCovenLoaded(true);
       }
     })();
+    return () => { cancelled = true; };
   }, []);
 
   // Scope the file inventory to the active familiar AT THE SOURCE so another
@@ -610,6 +613,7 @@ function MemoryTab({
   // this familiar's files + ownerless/global pools and drops every other
   // familiar's. Re-fetch when the active familiar changes.
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
       try {
         const url = familiar
@@ -617,15 +621,20 @@ function MemoryTab({
           : "/api/memory";
         const res = await fetch(url, { cache: "no-store" });
         const json = await res.json();
+        // Drop a stale response: switching familiars must not let the previous
+        // familiar's file list overwrite the current one.
+        if (cancelled) return;
         if (!json.ok) {
           setError(json.error ?? "memory list failed");
           return;
         }
         setEntries(json.entries ?? []);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : "fetch failed");
       }
     })();
+    return () => { cancelled = true; };
   }, [familiar?.id]);
 
   useEffect(() => {
@@ -633,6 +642,7 @@ function MemoryTab({
       setOpenFile(null);
       return;
     }
+    let cancelled = false;
     void (async () => {
       try {
         const res = await fetch(
@@ -640,8 +650,12 @@ function MemoryTab({
           { cache: "no-store" },
         );
         const json = (await res.json()) as MemoryFile;
+        // Drop a stale response: switching files quickly must not let an earlier
+        // file's contents overwrite the newer selection.
+        if (cancelled) return;
         setOpenFile(json);
       } catch (err) {
+        if (cancelled) return;
         setOpenFile({
           ok: false,
           path: openPath,
@@ -653,6 +667,7 @@ function MemoryTab({
         });
       }
     })();
+    return () => { cancelled = true; };
   }, [openPath, reveal]);
 
   // Strict per-familiar scoping (defense in depth alongside the server filter):

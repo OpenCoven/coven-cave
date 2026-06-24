@@ -278,6 +278,7 @@ export const SUITES = {
     "src/components/inbox-calendar-familiar-scope.test.ts",
     "src/components/inspector-inbox.test.ts",
     "src/components/inspector-pane-polish.test.ts",
+    "src/components/inspector-pane-load-guards.test.ts",
     "src/components/inspector-pane-surface.test.ts",
     "src/components/library-error-retry.test.ts",
     "src/components/library-reader-keyboard.test.ts",
