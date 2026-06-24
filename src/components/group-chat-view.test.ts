@@ -22,6 +22,22 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
   assert.match(view, /abortRef\.current\?\.abort\(\)/, "Stop aborts the broadcast");
 });
 
+test("@mentions target a subset of the coven", () => {
+  // Send routes to mentioned familiars only, falling back to the full roster.
+  assert.match(view, /const mentioned = parseMentions\(text, mentionable\)/, "parses @mentions on send");
+  assert.match(
+    view,
+    /mentioned\.length > 0 \? group\.familiarIds\.filter/,
+    "targets only mentioned familiars, else broadcasts to all",
+  );
+  assert.match(view, /targetFamiliarIds: mentioned\.length > 0/, "records the targeted ids on the user turn");
+  assert.match(view, /replies: GroupReply\[\] = targetIds\.map/, "only the targets reply");
+  // Composer autocomplete reuses the tested pure helpers.
+  assert.match(view, /findActiveMention\(el\.value/, "detects the active mention token");
+  assert.match(view, /matchMentions\(mention\.query, mentionable\)/, "filters the roster by the query");
+  assert.match(view, /applyMention\(draft, mention\.start, mention\.query/, "inserts the chosen familiar");
+});
+
 test("Group Chat is wired into navigation", () => {
   assert.match(mode, /\| "groupchat"/, "groupchat is a valid WorkspaceMode");
   assert.match(sidebar, /id: "groupchat", label: "Group"/, "sidebar exposes the Group surface");

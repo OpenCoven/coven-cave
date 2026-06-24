@@ -32,6 +32,12 @@ export type GroupUserTurn = {
   id: string;
   role: "user";
   text: string;
+  /**
+   * Familiar ids this prompt was directed at via `@mentions`. When present the
+   * message was *targeted* — only these participants replied. Absent/undefined
+   * means it was broadcast to the whole coven.
+   */
+  targetFamiliarIds?: string[];
   createdAt: string;
 };
 
@@ -145,6 +151,100 @@ export function defaultGroupName(names: string[]): string {
   if (clean.length === 1) return clean[0];
   if (clean.length === 2) return `${clean[0]} & ${clean[1]}`;
   return `${clean[0]}, ${clean[1]} +${clean.length - 2}`;
+}
+
+// ---------------------------------------------------------------------------
+// @mentions — tag specific familiars to target a message at them (pure)
+// ---------------------------------------------------------------------------
+
+/** A coven member as seen by the mention parser/autocomplete. */
+export type MentionableFamiliar = { id: string; name: string };
+
+/** True for a char that may not abut the end of a matched `@name` (a word char,
+ *  so `@Nova` does not greedily match a participant named `Nov`). */
+function isWordChar(ch: string | undefined): boolean {
+  return ch !== undefined && /[a-z0-9_]/i.test(ch);
+}
+
+/** True if char `before` permits an `@` to *start* a mention (start-of-string
+ *  or whitespace — so an email like `a@b` is never read as a mention). */
+function isMentionBoundary(before: string): boolean {
+  return before === "" || /\s/.test(before);
+}
+
+/**
+ * Scan free text for `@mentions` of the given participants and return the ids
+ * of every familiar named (deduped, in first-seen order). Matching is
+ * case-insensitive and prefers the longest participant name, so `@Nova Star`
+ * resolves to "Nova Star" rather than a shorter "Nova". Only ids present in
+ * `participants` are ever returned. Empty result ⇒ no valid mention ⇒ caller
+ * should broadcast to the whole coven.
+ */
+export function parseMentions(text: string, participants: MentionableFamiliar[]): string[] {
+  const byLongest = [...participants]
+    .filter((p) => p.name.trim())
+    .sort((a, b) => b.name.length - a.name.length);
+  if (byLongest.length === 0) return [];
+  const lower = text.toLowerCase();
+  const ids: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "@") continue;
+    if (!isMentionBoundary(i === 0 ? "" : text[i - 1])) continue;
+    const rest = lower.slice(i + 1);
+    for (const p of byLongest) {
+      const name = p.name.toLowerCase();
+      if (!rest.startsWith(name)) continue;
+      if (isWordChar(rest[name.length])) continue; // `@Novak` ≠ `@Nova`
+      if (!ids.includes(p.id)) ids.push(p.id);
+      break;
+    }
+  }
+  return ids;
+}
+
+/**
+ * Locate the `@mention` token the caret is currently editing, for autocomplete.
+ * Returns the `@`'s index and the partial query typed after it, or `null` when
+ * the caret is not inside a mention. The token starts at an `@` preceded by
+ * whitespace/start and does not span an `@` or newline.
+ */
+export function findActiveMention(
+  text: string,
+  caret: number,
+): { start: number; query: string } | null {
+  let i = caret - 1;
+  while (i >= 0 && text[i] !== "@" && text[i] !== "\n") i--;
+  if (i < 0 || text[i] !== "@") return null;
+  if (!isMentionBoundary(i === 0 ? "" : text[i - 1])) return null;
+  return { start: i, query: text.slice(i + 1, caret) };
+}
+
+/**
+ * Filter participants matching an in-progress mention query (case-insensitive
+ * prefix on the display name). A blank query lists everyone.
+ */
+export function matchMentions(
+  query: string,
+  participants: MentionableFamiliar[],
+): MentionableFamiliar[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return participants;
+  return participants.filter((p) => p.name.toLowerCase().startsWith(q));
+}
+
+/**
+ * Replace the active mention token (`@<query>` at `start`) with the chosen
+ * familiar's full `@name `, returning the new text and caret position.
+ */
+export function applyMention(
+  text: string,
+  start: number,
+  query: string,
+  name: string,
+): { text: string; caret: number } {
+  const insert = `@${name} `;
+  const end = start + 1 + query.length;
+  return { text: text.slice(0, start) + insert + text.slice(end), caret: start + insert.length };
 }
 
 export function makeGroup(
