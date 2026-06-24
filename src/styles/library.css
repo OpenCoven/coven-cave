@@ -1438,7 +1438,7 @@
 .library-bulk-bar__delete:hover:not(:disabled) { background: color-mix(in oklch, var(--color-danger) 20%, transparent); }
 .library-bulk-bar__delete:disabled { opacity: 0.5; cursor: default; }
 .library-bulk-check { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--border-strong); color: transparent; flex: 0 0 auto; }
-.library-bulk-check[data-checked="true"] { border-color: var(--accent-presence); background: var(--accent-presence); color: #fff; }
+.library-bulk-check[data-checked="true"] { border-color: var(--accent-presence); background: var(--accent-presence); color: var(--accent-presence-foreground); }
 .library-reading-row.is-selected { background: color-mix(in oklch, var(--accent-presence) 12%, transparent); }
 
 .library-row-delete {

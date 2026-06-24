@@ -119,3 +119,20 @@ test("priority pills darken their text in light mode (WCAG contrast)", async () 
     );
   }
 });
+
+test("bulk-select checkmark glyphs pair with the accent's semantic foreground", async () => {
+  // The check sits on a filled var(--accent-presence) box; white failed the 3:1
+  // non-text-contrast threshold in dark mode. Route to the paired foreground.
+  const dashboard = await readFile(new URL("../styles/dashboard.css", import.meta.url), "utf8");
+  const library = await readFile(new URL("../styles/library.css", import.meta.url), "utf8");
+  assert.match(
+    dashboard,
+    /\.dash-inbox__check\[data-checked="true"\]\s*\{[^}]*color:\s*var\(--accent-presence-foreground\)/,
+  );
+  assert.match(
+    library,
+    /\.library-bulk-check\[data-checked="true"\]\s*\{[^}]*color:\s*var\(--accent-presence-foreground\)/,
+  );
+  assert.doesNotMatch(dashboard, /\.dash-inbox__check\[data-checked="true"\]\s*\{[^}]*color:\s*#fff/);
+  assert.doesNotMatch(library, /\.library-bulk-check\[data-checked="true"\]\s*\{[^}]*color:\s*#fff/);
+});

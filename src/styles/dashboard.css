@@ -59,7 +59,7 @@
   display: inline-grid; place-items: center; width: 18px; height: 18px; flex: 0 0 auto;
   border: 1px solid var(--border-strong); border-radius: 5px; color: transparent;
 }
-.dash-inbox__check[data-checked="true"] { border-color: var(--accent-presence); background: var(--accent-presence); color: #fff; }
+.dash-inbox__check[data-checked="true"] { border-color: var(--accent-presence); background: var(--accent-presence); color: var(--accent-presence-foreground); }
 .dash-inbox__check svg { width: 11px; height: 11px; }
 
 .dash-inbox__actions {
