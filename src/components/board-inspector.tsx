@@ -8,6 +8,8 @@ import { STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-badge";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import type { CardStep } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import {
@@ -66,14 +68,9 @@ type Props = {
 
 function TimeoutBadge({ runningSince, timeoutMs }: { runningSince?: string; timeoutMs?: number }) {
   const [, setTick] = useState(0);
-  // Re-render once a minute so the relative "running for…" text advances — but
-  // not while the tab is hidden (no point ticking a badge nobody can see).
-  useEffect(() => {
-    const id = setInterval(() => { if (!document.hidden) setTick((n) => n + 1); }, 60_000);
-    const onVisible = () => { if (!document.hidden) setTick((n) => n + 1); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
-  }, []);
+  // Re-render once a minute so the relative "running for…" text advances — paused
+  // while the tab is hidden, refreshed on return (see usePausablePoll).
+  usePausablePoll(() => setTick((n) => n + 1), 60_000);
   const text = formatTimeoutBadge(runningSince, timeoutMs, DEFAULT_TIMEOUT_MS);
   if (!text) return null;
   const over = runningSince ? Date.now() - new Date(runningSince).getTime() > (timeoutMs ?? DEFAULT_TIMEOUT_MS) : false;
@@ -621,21 +618,6 @@ function LinksSection({
       <style>{".link-item-anchor:hover { text-decoration: underline; } .step-actions { opacity: 0; transition: opacity 0.1s; } li:hover .step-actions, li:focus-within .step-actions { opacity: 1; } @media (prefers-reduced-motion: reduce) { .step-actions { transition: none; } }"}</style>
     </div>
   );
-}
-
-// SSR-safe prefers-reduced-motion subscription, so inline-style transitions
-// can opt out for users who ask for reduced motion.
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(false);
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mq.matches);
-    const onChange = () => setReduced(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return reduced;
 }
 
 // ── Steps ─────────────────────────────────────────────────────────────────────
