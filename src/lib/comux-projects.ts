@@ -17,6 +17,24 @@ export function projectName(root: string): string {
   return parts[parts.length - 1] ?? root;
 }
 
+/**
+ * Stable identity tint for a project's explorer icon tile. Deterministic from
+ * the root path — a project keeps the same colour across renders and sessions —
+ * so the Projects list reads like a set of distinct objects rather than a
+ * uniform monochrome stack. Moderate chroma + a fixed lightness keep every hue
+ * tasteful against both the dark and light themes; callers feed it to the
+ * `--tile` custom property the `.comux-project-tile` glass chip reads.
+ */
+export function projectTint(root: string): string {
+  let hash = 0;
+  for (let i = 0; i < root.length; i += 1) {
+    // Simple deterministic string hash (xorshift-ish, stays in uint32).
+    hash = (hash * 31 + root.charCodeAt(i)) >>> 0;
+  }
+  const hue = hash % 360;
+  return `oklch(0.74 0.12 ${hue})`;
+}
+
 /** Strip trailing slashes so `/x/app` and `/x/app/` bucket as one project. */
 function normalizeRoot(root: string): string {
   const stripped = root.replace(/\\/g, "/").replace(/\/+$/, "");

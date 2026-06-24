@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import {
   deriveComuxProjects,
   projectName,
+  projectTint,
   type ComuxProject,
 } from "@/lib/comux-projects";
 import {
@@ -1484,7 +1485,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       <button
                         type="button"
                         onClick={() => setProjectListVisible(projectListCollapsed)}
-                        className="flex w-full items-center gap-1.5 rounded px-1 py-[3px] text-left transition-colors hover:bg-[var(--bg-raised)]"
+                        className="comux-project-header sticky top-0 z-10 -mx-1 flex w-[calc(100%+0.5rem)] items-center gap-1.5 rounded px-2 py-[5px] text-left transition-colors hover:bg-[var(--bg-raised)]"
                       >
                         <svg
                           width="7" height="7" viewBox="0 0 8 8"
@@ -1500,7 +1501,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         </span>
                       </button>
                       {!projectListCollapsed && (
-                        <div className="mt-0.5 space-y-px">
+                        <div className="comux-project-list mt-1 space-y-0.5 p-0.5">
                           {projects.map((project) => {
                             const isActive = selectedProject?.root === project.root;
                             const meta: string[] = [];
@@ -1514,28 +1515,31 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                                 type="button"
                                 onClick={() => selectProject(project)}
                                 title={project.root}
-                                className={`comux-project-row group flex w-full items-center gap-2 rounded-[6px] px-2 py-[6px] text-left text-[12px] transition-colors ${
+                                style={{ ["--tile" as string]: projectTint(project.root) }}
+                                className={`comux-project-row group flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-left text-[12px] ${
                                   isActive
                                     ? "comux-project-row--active text-[var(--text-primary)]"
-                                    : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                                    : "text-[var(--text-primary)]"
                                 }`}
                               >
-                                <Icon
-                                  name={project.runningCount > 0 ? "ph:folder-open" : "ph:folder"}
-                                  width={14}
-                                  className={`shrink-0 ${isActive ? "text-[var(--accent-presence)]" : "text-[var(--text-muted)]"}`}
-                                />
+                                <span className="comux-project-tile relative shrink-0">
+                                  <Icon
+                                    name={project.runningCount > 0 ? "ph:folder-open-bold" : "ph:folder-bold"}
+                                    width={15}
+                                    aria-hidden
+                                  />
+                                </span>
                                 <span className="flex min-w-0 flex-1 flex-col">
                                   <span className="truncate font-medium leading-tight">{project.name}</span>
                                   {meta.length > 0 && (
-                                    <span className="truncate text-[10px] leading-tight text-[var(--text-muted)]">
+                                    <span className="truncate text-[10px] leading-tight tabular-nums text-[var(--text-muted)]">
                                       {meta.join(" · ")}
                                     </span>
                                   )}
                                 </span>
                                 {project.runningCount > 0 && (
                                   <span
-                                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--color-success)]"
+                                    className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-success)] shadow-[0_0_8px_var(--color-success)]"
                                     title={`${project.runningCount} running`}
                                   />
                                 )}
