@@ -9,7 +9,7 @@ const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
 const inbox = read("./automations-view.tsx");
 assert.match(
   inbox,
-  /initialLoadDone[\s\S]*?finally \{\s*setInitialLoadDone\(true\);/,
+  /initialLoadDone[\s\S]*?finally \{\s*(?:if \(mountedRef\.current\) )?setInitialLoadDone\(true\);/,
   "Inbox/automations tracks first-fetch settlement (success or failure)",
 );
 assert.match(

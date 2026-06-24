@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
@@ -1340,6 +1340,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const [createOpen, setCreateOpen] = useState(false);
   const [automationRuns, setAutomationRuns] = useState<AutomationRunRecord[]>([]);
   const [lastRunById, setLastRunById] = useState<Map<string, AutomationRunRecord>>(new Map());
+  // Guards async setState after unmount; runsReqRef drops a stale per-automation
+  // runs fetch when a faster, later selection won.
+  const mountedRef = useRef(true);
+  const runsReqRef = useRef(0);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -1348,22 +1356,27 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         fetch("/api/codex-automations", { cache: "no-store" }),
       ]);
       const inboxJson = await inboxRes.json();
+      if (!mountedRef.current) return;
       if (!inboxJson.ok) { setError(inboxJson.error ?? "load failed"); return; }
       setItems(inboxJson.items ?? []);
       const codexJson = await codexRes.json();
+      if (!mountedRef.current) return;
       if (codexJson.ok) setCodexAutos(codexJson.automations ?? []);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "fetch failed");
+      if (mountedRef.current) setError(err instanceof Error ? err.message : "fetch failed");
     } finally {
-      setInitialLoadDone(true);
+      if (mountedRef.current) setInitialLoadDone(true);
     }
   }, []);
 
   const refreshRuns = useCallback(async (id: string) => {
+    const reqId = ++runsReqRef.current;
     try {
       const res = await fetch(`/api/codex-automations/${encodeURIComponent(id)}/runs`);
       const json = await res.json().catch(() => null);
+      // Drop a stale runs response: a later selection (or poll) superseded it.
+      if (reqId !== runsReqRef.current || !mountedRef.current) return;
       if (json?.ok && Array.isArray(json.runs)) setAutomationRuns(json.runs);
     } catch {
       /* ignore */
@@ -1380,6 +1393,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             .catch(() => [a.id, undefined] as const),
         ),
       );
+      if (!mountedRef.current) return;
       const map = new Map<string, AutomationRunRecord>();
       for (const [id, run] of entries) {
         if (run) map.set(id, run);
@@ -1390,10 +1404,19 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, [codexAutos]);
 
+  // Background polling pauses while the tab is hidden — Schedules otherwise kept
+  // hitting /api/inbox + /api/codex-automations every 15s with nobody looking.
+  // A refetch on return brings it current immediately.
   useEffect(() => {
     void load();
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
+    const tick = () => { if (!document.hidden) void load(); };
+    const t = setInterval(tick, 15000);
+    const onVis = () => { if (!document.hidden) void load(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [load]);
 
   // Keep selectedCodex in sync after reload
@@ -1419,6 +1442,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     if (!automationRuns.some((r) => r.status === "running")) return;
     const id = selectedCodex.id;
     const t = setInterval(() => {
+      if (document.hidden) return; // don't poll a backgrounded tab
       void refreshRuns(id);
       void refreshLastRuns();
     }, 2500);

@@ -60,4 +60,15 @@ assert.match(source, /scheduleDelete\(ids,/, "bulk Delete routes through the def
 // Ephemeral inbox items can't be mutated server-side, so they're filtered out.
 assert.match(source, /\.filter\(\(id\) => !id\.startsWith\("eph:"\)\)/, "bulk actions skip ephemeral (eph:) ids");
 
+// ── Polling pauses while hidden + async fetch guards ────────────────────────
+// The 15s list poll + 2.5s in-flight run poll otherwise keep firing in a
+// backgrounded tab; a refetch on return brings the surface current.
+assert.match(source, /const tick = \(\) => \{ if \(!document\.hidden\) void load\(\); \}/, "the 15s poll skips a hidden tab");
+assert.match(source, /addEventListener\("visibilitychange", onVis\)/, "polling resumes when the tab returns");
+assert.match(source, /if \(document\.hidden\) return;.*don't poll a backgrounded tab/, "the in-flight run poll skips a hidden tab");
+// All loaders guard against setState after unmount; refreshRuns also drops stale responses.
+assert.match(source, /const mountedRef = useRef\(true\)/, "tracks mounted state for async guards");
+assert.match(source, /const runsReqRef = useRef\(0\)/, "refreshRuns tracks a request id");
+assert.match(source, /if \(reqId !== runsReqRef\.current \|\| !mountedRef\.current\) return/, "a stale/late runs fetch is dropped");
+
 console.log("automations-view.test.ts: ok");
