@@ -33,7 +33,7 @@ import {
   type FlowStickyData,
 } from "@/lib/flow/flow-doc";
 import { flowRunBlockReason } from "@/lib/flow/flow-compile";
-import { finalizeFlowSteps } from "@/lib/flow/flow-progress";
+import { finalizeFlowSteps, selectNodeRunData } from "@/lib/flow/flow-progress";
 import {
   clearFlowRuns,
   deleteFlow,
@@ -229,6 +229,13 @@ export function FlowView() {
     () => (doc && selectedNodeId ? doc.nodes.find((n) => n.id === selectedNodeId) ?? null : null),
     [doc, selectedNodeId],
   );
+
+  // Input/output data shown in the detail view, from the active/last run's
+  // per-node narration. Null until a run has produced markers.
+  const selectedRunData = useMemo(() => {
+    if (!doc || !selectedNode || !activeRun || !progress.markersFound) return null;
+    return selectNodeRunData(doc.edges, progress.steps, selectedNode.id);
+  }, [doc, selectedNode, activeRun, progress.markersFound, progress.steps]);
 
   const uniqueId = useCallback(
     (base: string) => {
@@ -604,6 +611,7 @@ export function FlowView() {
                     def={catalogNode(selectedNode.type)}
                     familiarOptions={familiarOptions}
                     skillOptions={skillOptions}
+                    runData={selectedRunData}
                     onRename={(name) => onRenameNode(selectedNode.id, name)}
                     onChangeParam={(key, value) => onChangeParam(selectedNode.id, key, value)}
                     onChangeNotes={(notes) => onChangeNotes(selectedNode.id, notes)}

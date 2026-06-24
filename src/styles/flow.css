@@ -261,6 +261,24 @@
 .flow-ndv-textarea { resize: vertical; line-height: 1.5; }
 .flow-ndv-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-xs); }
 .flow-ndv-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: var(--text-sm); color: var(--text-primary); }
+
+/* Run-data view (n8n-style input/output panels). */
+.flow-ndv-data { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-3); margin-top: var(--space-1); border-top: 1px solid var(--border-hairline); }
+.flow-ndv-data-head { display: flex; align-items: center; gap: 8px; }
+.flow-ndv-data-title { font-size: var(--text-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.flow-ndv-data-status { padding: 1px 8px; font-size: var(--text-2xs); font-weight: 700; border-radius: 999px; }
+.flow-ndv-data-status-pending { background: var(--bg-elevated); color: var(--text-muted); }
+.flow-ndv-data-status-running { background: color-mix(in oklch, var(--color-warning) 22%, transparent); color: var(--color-warning); }
+.flow-ndv-data-status-succeeded { background: color-mix(in oklch, var(--color-success) 22%, transparent); color: var(--color-success); }
+.flow-ndv-data-status-failed { background: color-mix(in oklch, var(--color-danger) 22%, transparent); color: var(--color-danger); }
+.flow-ndv-data-status-skipped { background: var(--bg-hover); color: var(--text-muted); }
+.flow-ndv-data-block { display: flex; flex-direction: column; gap: 4px; }
+.flow-ndv-data-label { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-sm); font-weight: 600; color: var(--text-secondary); }
+.flow-ndv-data-empty { margin: 0; font-size: var(--text-xs); color: var(--text-muted); }
+.flow-ndv-data-io { display: flex; flex-direction: column; gap: 3px; }
+.flow-ndv-data-from { font-size: var(--text-2xs); color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.flow-ndv-data-text { margin: 0; max-height: 160px; overflow: auto; padding: 7px 9px; border: 1px solid var(--border-hairline); border-radius: var(--radius-control); background: var(--bg-base); color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--text-xs); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+
 .flow-ndv-foot { display: flex; gap: 8px; padding: var(--space-3); border-top: 1px solid var(--border-hairline); }
 .flow-ndv-action { display: inline-flex; align-items: center; gap: 5px; padding: 6px 11px; font-size: var(--text-sm); font-weight: 500; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg-elevated); color: var(--text-primary); cursor: pointer; }
 .flow-ndv-action:hover { border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border)); }

@@ -296,6 +296,7 @@ export const ICON_NAMES = [
   "ph:flow-arrow",
   "ph:pause",
   "ph:clock-counter-clockwise",
+  "ph:arrow-down",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

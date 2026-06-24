@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Icon } from "@/lib/icon";
 import { STICKY_COLORS, type FlowNodeType, type FlowParamField } from "@/lib/flow/flow-catalog";
 import type { FlowNode, FlowParamValue, FlowStickyData } from "@/lib/flow/flow-doc";
+import type { FlowNodeRunData } from "@/lib/flow/flow-progress";
 
 export type NodeDetailOption = { value: string; label: string };
 
@@ -12,6 +13,8 @@ export type NodeDetailViewProps = {
   def: FlowNodeType | undefined;
   familiarOptions: NodeDetailOption[];
   skillOptions: NodeDetailOption[];
+  /** Input/output data from the latest run, when there is one. */
+  runData: FlowNodeRunData | null;
   onRename: (name: string) => void;
   onChangeParam: (key: string, value: FlowParamValue) => void;
   onChangeNotes: (notes: string) => void;
@@ -19,6 +22,14 @@ export type NodeDetailViewProps = {
   onChangeSticky: (patch: Partial<FlowStickyData>) => void;
   onDelete: () => void;
   onClose: () => void;
+};
+
+const RUN_STATUS_LABEL: Record<FlowNodeRunData["status"], string> = {
+  pending: "Not run",
+  running: "Running",
+  succeeded: "Succeeded",
+  failed: "Failed",
+  skipped: "Skipped",
 };
 
 export function NodeDetailView(props: NodeDetailViewProps) {
@@ -64,6 +75,8 @@ export function NodeDetailView(props: NodeDetailViewProps) {
             onChange={(event) => props.onChangeNotes(event.target.value)}
           />
         </label>
+
+        {props.runData && <RunDataSection data={props.runData} />}
       </div>
 
       <footer className="flow-ndv-foot">
@@ -77,6 +90,44 @@ export function NodeDetailView(props: NodeDetailViewProps) {
         </button>
       </footer>
     </aside>
+  );
+}
+
+/** n8n-style data view: what fed into this node and what it produced, from the
+ *  latest run's per-node narration. */
+function RunDataSection({ data }: { data: FlowNodeRunData }) {
+  return (
+    <div className="flow-ndv-data">
+      <div className="flow-ndv-data-head">
+        <span className={`flow-ndv-data-status flow-ndv-data-status-${data.status}`}>
+          {RUN_STATUS_LABEL[data.status]}
+        </span>
+        <span className="flow-ndv-data-title">Run data</span>
+      </div>
+
+      <div className="flow-ndv-data-block">
+        <span className="flow-ndv-data-label">
+          <Icon name="ph:arrow-down" width={11} aria-hidden /> Input
+        </span>
+        {data.inputs.length === 0 ? (
+          <p className="flow-ndv-data-empty">No upstream node.</p>
+        ) : (
+          data.inputs.map((input) => (
+            <div key={input.nodeId} className="flow-ndv-data-io">
+              <span className="flow-ndv-data-from">from {input.nodeId}</span>
+              <pre className="flow-ndv-data-text">{input.detail.trim() || "—"}</pre>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="flow-ndv-data-block">
+        <span className="flow-ndv-data-label">
+          <Icon name="ph:arrow-up" width={11} aria-hidden /> Output
+        </span>
+        <pre className="flow-ndv-data-text">{data.output.trim() || "—"}</pre>
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { finalizeFlowSteps, flowPhase, parseFlowRunProgress } from "./flow-progress.ts";
+import { finalizeFlowSteps, flowPhase, parseFlowRunProgress, selectNodeRunData } from "./flow-progress.ts";
 import type { FlowRunStepRecord } from "../flows.ts";
+import type { FlowEdge } from "./flow-doc.ts";
 
 // flowPhase mapping
 {
@@ -66,6 +67,30 @@ const ORDER = ["t", "a", "b"];
   const failTranscript = ["@@step-start t", "@@step-fail t"].join("\n");
   const failProgress = parseFlowRunProgress(failTranscript, ORDER);
   assert.equal(finalizeFlowSteps(runSteps, failProgress.steps).status, "failed");
+}
+
+// selectNodeRunData: node output + upstream inputs from the parsed transcript
+{
+  const transcript = [
+    "@@step-start t", "trigger fired", "@@step-done t",
+    "@@step-start a", "researcher gathered 3 sources", "@@step-done a",
+    "@@step-start b", "writing the summary now",
+  ].join("\n");
+  const progress = parseFlowRunProgress(transcript, ["t", "a", "b"]);
+  const edges: FlowEdge[] = [
+    { id: "t->a", source: "t", sourceHandle: "main", target: "a", targetHandle: "in" },
+    { id: "a->b", source: "a", sourceHandle: "main", target: "b", targetHandle: "in" },
+  ];
+  const dataB = selectNodeRunData(edges, progress.steps, "b");
+  assert.equal(dataB.status, "running");
+  assert.match(dataB.output, /writing the summary/);
+  assert.equal(dataB.inputs.length, 1);
+  assert.equal(dataB.inputs[0].nodeId, "a");
+  assert.match(dataB.inputs[0].detail, /researcher gathered/, "input = upstream node's output");
+
+  const dataT = selectNodeRunData(edges, progress.steps, "t");
+  assert.equal(dataT.inputs.length, 0, "a root node has no inputs");
+  assert.equal(dataT.status, "succeeded");
 }
 
 console.log("flow-progress.test.ts OK");
