@@ -4839,7 +4839,9 @@ button:active > .edge-rail-chip {
   font-weight: 600;
   line-height: 1;
   color: var(--accent-presence-foreground);
-  background: color-mix(in oklch, var(--accent-presence) 60%, transparent);
+  /* Solid accent so the paired foreground keeps its contrast. A 60%-alpha fill
+     composited over the dark app background dropped the count to ~1:1 (WCAG). */
+  background: var(--accent-presence);
 }
 
 .menu-bar__badge--alert {
