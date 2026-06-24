@@ -35,4 +35,13 @@ assert.match(kanban, /aria-checked=\{selectMode \? isSelected : undefined\}/, "k
 assert.match(table, /onClick=\{\(\) => \(selectMode \? onToggleSelect\?\.\(card\.id\) : onSelect\(card\.id\)\)\}/, "table rows toggle selection in select mode");
 assert.match(table, /aria-checked=\{selectMode \? rowChecked : undefined\}/, "table checkbox rows expose aria-checked");
 
+// ── Extended bulk-edit: priority + label (#4) ──
+assert.match(view, /const bulkSetPriority = async \(priority: CardPriority\)/, "bulk set-priority handler");
+assert.match(view, /const bulkAddLabel = async \(raw: string\)/, "bulk add-label handler");
+assert.match(view, /\.filter\(\(c\) => !c\.labels\.includes\(label\)\)/, "bulk label skips cards that already have it");
+assert.match(view, /id="board-bulk-priority"/, "toolbar exposes a priority control");
+assert.match(view, /void bulkSetPriority\(e\.target\.value as CardPriority\)/, "priority select wires bulkSetPriority");
+assert.match(view, /list="board-bulk-label-options"/, "label input is backed by a datalist of existing labels");
+assert.match(view, /void bulkAddLabel\(labelDraft\)/, "label form submits bulkAddLabel");
+
 console.log("board-bulk-select.test.ts: ok");
