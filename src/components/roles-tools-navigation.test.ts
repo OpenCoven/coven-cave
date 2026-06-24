@@ -90,6 +90,16 @@ assert.match(
   "Role cards should explain roles with no MCP server bindings instead of treating MCP as generic tools",
 );
 
+// --- Roles tab bar is an accessible tablist (not just styled buttons) ---
+assert.match(pluginsView, /role="tablist"\s+aria-label="Roles sections"/, "the tab bar is a labelled tablist");
+assert.match(pluginsView, /role="tab"\s*\n\s*id=\{`plugins-tab-\$\{nextTab\}`\}/, "each tab carries role=tab + a stable id");
+assert.match(pluginsView, /aria-selected=\{tab === nextTab\}/, "the active tab is aria-selected");
+assert.match(pluginsView, /aria-controls=\{`plugins-panel-\$\{nextTab\}`\}/, "tabs point at their panel via aria-controls");
+assert.match(pluginsView, /tabIndex=\{tab === nextTab \? 0 : -1\}/, "the tablist uses a roving tab stop");
+assert.match(pluginsView, /e\.key === "ArrowRight"[\s\S]{0,80}?\(i \+ 1\) % tabSet\.length/, "Left/Right arrows move between tabs");
+assert.match(pluginsView, /role="tabpanel"\s*\n\s*id=\{`plugins-panel-\$\{tab\}`\}\s*\n\s*aria-labelledby=\{`plugins-tab-\$\{tab\}`\}/, "the content panels are tabpanels labelled by their tab");
+assert.match(pluginsView, /aria-label=\{`Search \$\{TAB_LABEL\[tab\]\.toLowerCase\(\)\}`\}/, "the search input has an accessible name");
+
 // --- Keyboard shortcuts sheet (CHAT-D11-03) ---
 
 assert.match(
