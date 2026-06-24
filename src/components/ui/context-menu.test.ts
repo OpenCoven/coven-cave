@@ -15,6 +15,9 @@ assert.match(src, /open=\{state !== null\}/, "menu is open when state is set");
 
 // Anchors to a 0-size element pinned at the cursor so it opens where clicked.
 assert.match(src, /position: "fixed", left: state\?\.x[\s\S]{0,60}width: 0, height: 0/, "anchors a 0-size element at the cursor");
+// The anchor is programmatically focusable (tabIndex=-1) so the Popover's
+// close-time focus-return works instead of stranding focus on <body>.
+assert.match(src, /tabIndex=\{-1\}/, "the cursor anchor is focusable for focus-return on close");
 
 // The helper preventDefaults the native menu and records the click position.
 assert.match(src, /e\.preventDefault\(\)/, "suppresses the browser's native context menu");
