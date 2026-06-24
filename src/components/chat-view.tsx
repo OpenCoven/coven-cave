@@ -4504,7 +4504,7 @@ function ProgressGroup({
           Progress
         </span>
         {current ? (
-          <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)] normal-case tracking-normal">
+          <span className="min-w-0 flex-1 truncate text-[var(--text-secondary)] normal-case tracking-normal" title={current.label}>
             {current.label}
           </span>
         ) : null}
@@ -4516,25 +4516,55 @@ function ProgressGroup({
       </summary>
       <div className="cave-progress-list">
         {progress.map((event) => (
-          <div key={event.id} className={`cave-progress-row cave-progress-row--${event.status}`}>
-            <Icon
-              name={
-                event.status === "error"
-                  ? "ph:warning-circle"
-                  : event.status === "done"
-                    ? "ph:check-circle"
-                    : "ph:circle-dashed"
-              }
-              width={12}
-              aria-hidden
-            />
-            <span className="min-w-0 flex-1 truncate">{event.label}</span>
-            {event.detail ? <span className="min-w-0 max-w-[18rem] truncate text-[var(--text-muted)]">{event.detail}</span> : null}
-            <DurationText durationMs={event.durationMs} />
-          </div>
+          <ProgressRow key={event.id} event={event} />
         ))}
       </div>
     </details>
+  );
+}
+
+// A single progress step. Its `detail` (often a long file path or tool call)
+// truncates inline; clicking it expands a full, wrapped, selectable panel below
+// the row so the cut-off text can actually be read on desktop and touch alike.
+// `title` keeps a hover tooltip as a fallback.
+function ProgressRow({ event }: { event: ProgressEvent }) {
+  const [open, setOpen] = useState(false);
+  const statusIcon =
+    event.status === "error"
+      ? "ph:warning-circle"
+      : event.status === "done"
+        ? "ph:check-circle"
+        : "ph:circle-dashed";
+  return (
+    <div>
+      <div className={`cave-progress-row cave-progress-row--${event.status}`}>
+        <Icon name={statusIcon} width={12} aria-hidden />
+        <span className="min-w-0 flex-1 truncate" title={event.label}>{event.label}</span>
+        {event.detail ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            title={open ? "Hide detail" : event.detail}
+            className="focus-ring inline-flex min-w-0 max-w-[18rem] items-center gap-1 truncate rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+          >
+            <span className="truncate">{event.detail}</span>
+            <Icon
+              name="ph:caret-down"
+              width={9}
+              className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </button>
+        ) : null}
+        <DurationText durationMs={event.durationMs} />
+      </div>
+      {open && event.detail ? (
+        <div className="mt-1 ml-5 whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-2 py-1 font-mono text-[10px] leading-relaxed text-[var(--text-secondary)]">
+          {event.detail}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
