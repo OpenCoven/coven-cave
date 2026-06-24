@@ -51,3 +51,13 @@ test("calendar urgency dots carry a text alternative", async () => {
   assert.match(src, /role="img" aria-label=\{urgencyLabel\(item\)\}/);
   assert.match(src, /role="img" aria-label=\{urgencyLabel\(ev\.item\)\}/);
 });
+
+test("shell exposes a skip-to-content link targeting the main landmark", async () => {
+  const shell = await read("./shell.tsx");
+  assert.match(shell, /<a className="skip-link" href="#shell-main-content">Skip to main content<\/a>/);
+  assert.match(shell, /<main className="shell-detail" id="shell-main-content" tabIndex=\{-1\}/);
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /\.skip-link\s*\{[\s\S]*?position:\s*absolute/);
+  // The link must reveal itself on focus, not stay permanently off-screen.
+  assert.match(css, /\.skip-link:focus[\s\S]*?transform:\s*translateY\(0\)/);
+});

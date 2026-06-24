@@ -413,6 +413,39 @@ select {
   outline-offset: calc(-1 * var(--ring-width));
 }
 
+/* Skip-to-content link: off-screen until it receives keyboard focus, then it
+   slides into the top-left so the first Tab on any surface reaches it. */
+.skip-link {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  margin: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--bg-elevated, var(--background));
+  color: var(--fg-base, var(--foreground));
+  border: 1px solid var(--ring-focus);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  transform: translateY(-150%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skip-link { transition: none; }
+}
+
 /* Bulk-select rows expose role="checkbox" in select mode; give the keyboard
    focus an inset ring without changing their pinned className strings. */
 tr[role="checkbox"]:focus { outline: none; }

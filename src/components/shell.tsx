@@ -477,7 +477,7 @@ function ShellInner({
         </>
       )}
       <Panel id="detail" className="shell-detail-panel">
-        <main className="shell-detail" ref={detailElRef}>
+        <main className="shell-detail" id="shell-main-content" tabIndex={-1} ref={detailElRef}>
           <UpdateBannerTrigger />
           <ShellBannerStrip />
           {detail}
@@ -600,6 +600,9 @@ function ShellInner({
       style={shellFrameStyle}
       data-settled={settled ? "" : undefined}
     >
+      {/* Keyboard/SR users can jump straight past the chrome to the active
+          surface. Visually hidden until focused (see .skip-link in globals). */}
+      <a className="skip-link" href="#shell-main-content">Skip to main content</a>
       <div className="shell-top">
         {navToggle}
         <div className="shell-top__bar">{renderedTopBar}</div>
