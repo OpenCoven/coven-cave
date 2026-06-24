@@ -11,6 +11,7 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { OpenCovenSubmissionPanel } from "@/components/opencoven-submission-panel";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import {
   filterCapabilityItems,
@@ -382,6 +383,8 @@ export function CapabilitiesViewSurface({
               </div>
             </div>
           </div>
+
+          <OpenCovenSubmissionPanel />
 
           {!loaded ? (
             <CapabilitiesSkeleton />

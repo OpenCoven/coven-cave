@@ -44,6 +44,7 @@ import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { CovenPane } from "@/components/docs-pane";
 import { PluginsView } from "@/components/plugins-view";
+import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { WorkflowsView } from "@/components/workflows-view";
 import { CallsView } from "@/components/calls-view";
 import { RetroRunsView } from "@/components/retro-runs-view";
@@ -95,6 +96,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   github: "GitHub",
   roles: "Roles",
   workflows: "Workflows",
+  submissions: "Submissions",
   calls: "Calls",
   retro: "Retro Runs",
   capabilities: "Capabilities",
@@ -1878,6 +1880,8 @@ export function Workspace() {
         onOpenWorkflow={(id) => { setWorkflowDeepLink(id); setMode("workflows"); }}
         onCreateSkill={() => setMode("capabilities")}
       />
+    ) : mode === "submissions" ? (
+      <OpenCovenSubmissionPage />
     ) : mode === "workflows" ? (
       <WorkflowsView
         initialWorkflowId={workflowDeepLink}

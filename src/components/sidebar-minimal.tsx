@@ -33,6 +33,7 @@ export type FolderMode =
   | "github"
   | "roles"
   | "workflows"
+  | "submissions"
   | "calls"
   | "library"
   | "capabilities"
@@ -104,6 +105,7 @@ const FOLDER_MODES: Array<{
   { id: "docs", label: "Coven", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven docs, feedback, and social tabs" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, workflows, skills, and the capabilities your familiars can use" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
+  { id: "submissions", label: "Submissions", iconName: "ph:package-bold", group: "tools", description: "Submit OpenCoven runtimes and harnesses" },
   { id: "calls", label: "Calls", iconName: "ph:graph", group: "tools", kbd: "⌘⇧C", description: "Live familiar activity and delegation traces", badge: (p) => badgeText(p.callsActiveCount) },
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount) },
