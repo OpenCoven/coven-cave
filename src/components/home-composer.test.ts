@@ -97,8 +97,8 @@ for (const [name, src] of [
   assert.match(src, /aria-haspopup="listbox"/, `${name} composer textarea should advertise the listbox popup`);
   assert.match(
     src,
-    /aria-expanded=\{(?:menuOpen|slashSuggestions\.length > 0)\}/,
-    `${name} composer textarea should track whether the inline menu is open`,
+    /aria-expanded=\{menuOpen\}/,
+    `${name} composer textarea should track whether either inline menu (slash or /model) is open`,
   );
   assert.doesNotMatch(
     src,
@@ -107,13 +107,21 @@ for (const [name, src] of [
   );
   assert.match(
     src,
-    /aria-controls=\{(?:menuOpen|slashSuggestions\.length > 0) \? slashListboxId : undefined\}/,
+    /aria-controls=\{menuOpen \? slashListboxId : undefined\}/,
     `${name} aria-controls should reference the listbox only while the menu is open`,
   );
   assert.match(
     src,
-    /aria-activedescendant=\{\s*(?:menuOpen|slashSuggestions\.length > 0) \? `\$\{slashListboxId\}-opt-\$\{slashIdx\}` : undefined\s*\}/,
+    /aria-activedescendant=\{\s*menuOpen \? `\$\{slashListboxId\}-opt-\$\{slashIdx\}` : undefined\s*\}/,
     `${name} aria-activedescendant should track the highlighted index and be absent when the menu is closed`,
+  );
+  // menuOpen unifies the slash-command and /model listboxes (both share the
+  // listbox id), so the combobox ARIA covers the /model picker too — not just
+  // the slash menu. Both composers must use it.
+  assert.match(
+    src,
+    /const menuOpen = modelMenuActive \|\| slashSuggestions\.length > 0;/,
+    `${name} combobox ARIA must reflect either inline menu (slash or /model)`,
   );
 }
 

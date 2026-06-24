@@ -2075,6 +2075,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [input, modelHarness, slashDismissed],
   );
   const modelMenuActive = (modelOptions?.length ?? 0) > 0;
+  // The slash-command and /model pickers are mutually exclusive inline listboxes
+  // sharing one listbox id, so the composer's combobox ARIA tracks whichever is
+  // open (was: slash-only, leaving the /model picker unannounced).
+  const menuOpen = modelMenuActive || slashSuggestions.length > 0;
   // Stable per-mount listbox id — the home composer mounts its own slash menu,
   // so ids must be unique across simultaneously mounted composers.
   const slashListboxId = useId();
@@ -3977,10 +3981,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               aria-label="Message"
               aria-autocomplete="list"
               aria-haspopup="listbox"
-              aria-expanded={slashSuggestions.length > 0}
-              aria-controls={slashSuggestions.length > 0 ? slashListboxId : undefined}
+              aria-expanded={menuOpen}
+              aria-controls={menuOpen ? slashListboxId : undefined}
               aria-activedescendant={
-                slashSuggestions.length > 0 ? `${slashListboxId}-opt-${slashIdx}` : undefined
+                menuOpen ? `${slashListboxId}-opt-${slashIdx}` : undefined
               }
               {...mentionAriaOverrides}
             />
