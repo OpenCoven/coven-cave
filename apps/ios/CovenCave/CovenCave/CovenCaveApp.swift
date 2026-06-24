@@ -1,8 +1,10 @@
 import SwiftUI
+import UserNotifications
 
 @main
 struct CovenCaveApp: App {
     @State private var app = AppModel()
+    @State private var notificationDelegate = CaveNotificationDelegate()
     @AppStorage(AppearanceMode.storageKey) private var appearanceRaw = AppearanceMode.desktop.rawValue
     @Environment(\.scenePhase) private var scenePhase
 
@@ -20,6 +22,10 @@ struct CovenCaveApp: App {
                 .tint(resolved.chrome.accent)
                 .preferredColorScheme(resolved.scheme)
                 .task {
+                    // Route notification taps to the reminders list, and show
+                    // reminder banners while the app is foregrounded.
+                    notificationDelegate.onOpen = { app.handleDeepLink($0) }
+                    UNUserNotificationCenter.current().delegate = notificationDelegate
                     if app.connection != nil {
                         await app.connectWithRetry()
                     }

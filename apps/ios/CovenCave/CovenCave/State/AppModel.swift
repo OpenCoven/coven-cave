@@ -367,6 +367,10 @@ final class AppModel {
         }
         remindersLoaded = true
         publishWidgetSnapshot()
+        // Mirror upcoming reminders as on-device notifications so the phone buzzes
+        // when one is due. Asks for permission the first time reminders load.
+        await ReminderNotifications.requestAuthorizationIfNeeded()
+        await ReminderNotifications.sync(reminders)
     }
 
     /// Publish a compact snapshot to the shared App Group so the home-screen
