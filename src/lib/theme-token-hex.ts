@@ -7,11 +7,13 @@
 // a resolved colour. Clients with a plain `#RRGGBB` parser (iOS `Color(hex:)`)
 // can't read those, so they silently fall back.
 //
-// The browser side resolves each token through a `<canvas>` 2D `fillStyle`
-// round-trip — the most reliable CSS-colour→sRGB normaliser available — which
-// yields `#rrggbb` (opaque) or `rgba(r, g, b, a)` (translucent). This module is
-// the pure tail of that: turn a canvas-normalised colour string into the
-// `#RRGGBB` / `#RRGGBBAA` form every client understands.
+// The browser side resolves each token by *rasterising* it: paint the colour
+// onto a 1×1 `<canvas>` (whose backing store is sRGB) and read the pixel back
+// with `getImageData`, which always yields sRGB bytes regardless of the input
+// colour space. Reading `ctx.fillStyle` back is NOT enough — modern engines
+// preserve `lab()`/`oklch()` there (CSS Color 4), so the wide-gamut string
+// would survive untouched. This module is the pure tail of that: turn the
+// sRGB RGBA bytes into the `#RRGGBB` / `#RRGGBBAA` form every client understands.
 
 function clampByte(n: number): number {
   if (!Number.isFinite(n)) return 0;
@@ -23,48 +25,12 @@ function hex2(n: number): string {
 }
 
 /**
- * Convert a canvas-normalised colour string to `#RRGGBB` (opaque) or
- * `#RRGGBBAA` (translucent). Accepts:
- *   - `#rgb` / `#rgba` / `#rrggbb` / `#rrggbbaa` (passed through, expanded, and
- *     lower-cased; a fully-opaque alpha is dropped)
- *   - `rgb(r, g, b)` / `rgba(r, g, b, a)` (canvas's serialisation)
- * Anything unrecognised is returned unchanged, so callers can keep the raw
- * token rather than corrupt it.
+ * Build `#RRGGBB` (opaque) or `#RRGGBBAA` (translucent) from sRGB RGBA byte
+ * channels (0–255), as produced by a canvas `getImageData` read. A fully-opaque
+ * alpha is dropped so the common case stays `#RRGGBB`.
  */
-export function normalizedColorToHex(input: string): string {
-  const value = input.trim();
-  if (!value) return input;
-
-  if (value.startsWith("#")) {
-    const h = value.slice(1).toLowerCase();
-    // #rgb / #rgba → expand each nibble.
-    if (h.length === 3 || h.length === 4) {
-      const expanded = h
-        .split("")
-        .map((c) => c + c)
-        .join("");
-      return collapseOpaque(`#${expanded}`);
-    }
-    if (h.length === 6 || h.length === 8) return collapseOpaque(`#${h}`);
-    return input;
-  }
-
-  const m = value.match(/^rgba?\(([^)]+)\)$/i);
-  if (!m) return input;
-  // Pull the channel numbers out, tolerating both comma- and space-separated
-  // forms. Percentages on RGB channels aren't part of canvas's serialisation,
-  // so a plain numeric parse is sufficient.
-  const nums = m[1].match(/-?[\d.]+/g);
-  if (!nums || nums.length < 3) return input;
-  const r = clampByte(parseFloat(nums[0]));
-  const g = clampByte(parseFloat(nums[1]));
-  const b = clampByte(parseFloat(nums[2]));
-  const a = nums.length >= 4 ? clampByte(parseFloat(nums[3]) * 255) : 255;
-  return a >= 255 ? `#${hex2(r)}${hex2(g)}${hex2(b)}` : `#${hex2(r)}${hex2(g)}${hex2(b)}${hex2(a)}`;
-}
-
-/** Drop a redundant fully-opaque alpha so `#rrggbbff` → `#rrggbb`. */
-function collapseOpaque(hex: string): string {
-  if (hex.length === 9 && hex.slice(7).toLowerCase() === "ff") return hex.slice(0, 7);
-  return hex;
+export function rgbaBytesToHex(r: number, g: number, b: number, a = 255): string {
+  const alpha = clampByte(a);
+  const base = `#${hex2(r)}${hex2(g)}${hex2(b)}`;
+  return alpha >= 255 ? base : `${base}${hex2(alpha)}`;
 }
