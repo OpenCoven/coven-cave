@@ -138,7 +138,7 @@ struct ReadingView: View {
             withAnimation(.snappy(duration: 0.18)) { filter = value }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: symbol).font(.caption2)
+                Image(systemName: symbol).font(.caption2).accessibilityHidden(true)
                 Text(label).font(.subheadline.weight(.medium))
                 if n > 0 {
                     Text("\(n)")
@@ -170,6 +170,7 @@ struct ReadingView: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(done ? "Mark as unread" : "Mark as read")
         .animation(.snappy(duration: 0.2), value: done)
         .accessibilityLabel(done ? "Mark as unread" : "Mark as read")
     }
@@ -387,6 +388,8 @@ struct ReadingCard: View {
             .foregroundStyle(Color.accentColor)
             .frame(width: 38, height: 38)
             .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            // The source type is conveyed only by this glyph, so name it for VoiceOver.
+            .accessibilityLabel(item.sourceType.label)
     }
 
     private var byline: String? {
@@ -415,7 +418,7 @@ struct ReadingCard: View {
     private var statusBadge: some View {
         let status = item.status
         return HStack(spacing: 3) {
-            Image(systemName: status.symbol).font(.system(size: 9))
+            Image(systemName: status.symbol).font(.system(size: 9)).accessibilityHidden(true)
             Text(status.chipLabel).font(.caption2.weight(.medium))
         }
         .padding(.horizontal, 7).padding(.vertical, 2)

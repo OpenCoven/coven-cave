@@ -178,7 +178,7 @@ struct TasksView: View {
                     }
                 } header: {
                     HStack(spacing: 6) {
-                        if let image = section.systemImage { Image(systemName: image) }
+                        if let image = section.systemImage { Image(systemName: image).accessibilityHidden(true) }
                         Text(section.title)
                         Spacer()
                         Text("\(section.cards.count)").monospacedDigit()
@@ -319,6 +319,7 @@ struct TaskRow: View {
                         Image(systemName: "flag.fill")
                             .font(.caption2)
                             .foregroundStyle(Theme.color(for: card.priority))
+                            .accessibilityLabel("\(card.priority.label) priority")
                     }
                     Text(card.title)
                         .font(.callout.weight(.medium))

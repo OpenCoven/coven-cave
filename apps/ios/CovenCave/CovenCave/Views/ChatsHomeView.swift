@@ -411,14 +411,17 @@ struct ThreadRow: View {
                     if thread.pinned {
                         Image(systemName: "pin.fill")
                             .font(.caption2).foregroundStyle(.orange)
+                            .accessibilityLabel("Pinned")
                     }
                     if thread.muted {
                         Image(systemName: "bell.slash.fill")
                             .font(.caption2).foregroundStyle(.secondary)
+                            .accessibilityLabel("Muted")
                     }
                     if thread.isGroup {
                         Image(systemName: "person.2.fill")
                             .font(.caption2).foregroundStyle(.secondary)
+                            .accessibilityLabel("Group chat")
                     }
                     Spacer()
                     Text(thread.updatedAt, format: .relative(presentation: .numeric))
