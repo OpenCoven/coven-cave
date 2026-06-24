@@ -1104,6 +1104,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                         <div
                           role={selectMode ? "checkbox" : "button"}
                           aria-checked={selectMode ? selectedIds.has(s.id) : undefined}
+                          aria-current={!selectMode && isActive ? "true" : undefined}
                           tabIndex={0}
                           onClick={() => { if (selectMode) { toggleSelect(s.id); return; } setActiveId(s.id); onOpen(s.id, s.familiarId); }}
                           onKeyDown={(e) => {

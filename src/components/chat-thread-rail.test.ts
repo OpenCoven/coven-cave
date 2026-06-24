@@ -186,4 +186,12 @@ assert.match(
   "Search sits directly under the header and separates the project tree with a hairline",
 );
 
+// The open conversation row announces itself to assistive tech (was visual-only:
+// a background tint + accent bar with no aria-current).
+assert.match(
+  chatList,
+  /aria-current=\{!selectMode && isActive \? "true" : undefined\}/,
+  "the active conversation row is aria-current (not just visually highlighted)",
+);
+
 console.log("chat-thread-rail.test.ts: ok");
