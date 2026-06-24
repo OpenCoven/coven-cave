@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 export const SUITES = {
   app: [
     "src/lib/app-version.test.ts",
+    "src/lib/endpoint-validators.test.ts",
     "src/lib/familiar-avatar-src.test.ts",
     "src/lib/app-update.test.ts",
     "src/lib/coven-version.test.ts",
