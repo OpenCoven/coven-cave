@@ -7,6 +7,7 @@ import { DEMO_BOARD_CARDS } from "@/lib/demo-seed";
 import { DEMO_MODE_EVENT, isDemoModeEnabled } from "@/lib/demo-mode";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
+import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, STATUSES } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
@@ -181,6 +182,13 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     window.addEventListener("cave:board:reload", onReload);
     return () => window.removeEventListener("cave:board:reload", onReload);
   }, [load]);
+
+  // Re-sync when the app regains focus. The board has no poll and no daemon
+  // subscription, so a familiar finishing a task (or any change made while the
+  // window was in the background) would otherwise sit stale until a manual
+  // reload — most visibly in the installed desktop app, where the OS window
+  // manager doesn't fire the web visibility events that browser tabs do.
+  useRefreshOnFocus(load);
 
   // Honour `#card-<id>` in the URL: workspace's `focus-card` palette intent
   // (e.g. the Task chip in chat-view) routes to /?…#card-<id>; we pick that
