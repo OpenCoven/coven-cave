@@ -386,4 +386,20 @@ assert.match(
   "session rows set content-visibility:auto with a cached intrinsic-size",
 );
 
+// Type-ahead jump: typing letters moves focus to the next project/session whose
+// label matches, staying in sync with the roving tab stop (pure matcher).
+assert.match(projectsView, /import \{ nextTypeAheadIndex \} from "@\/lib\/projects\/type-ahead"/, "uses the pure type-ahead matcher");
+assert.match(projectsView, /const \{ setActiveIndex \} = useRovingTabIndex/, "captures the roving setActiveIndex to keep nav in sync");
+// Each rove stop carries a clean label to match against (not the aria-label,
+// which is prefixed with Expand/Collapse).
+assert.match(projectsView, /data-proj-label=\{project\.name\}/, "project headers expose their name for type-ahead");
+assert.match(projectsView, /data-proj-label=\{title\}/, "session rows expose their title for type-ahead");
+// The handler ignores modifiers/fields, accumulates a buffer that resets on a
+// pause, and focuses the match.
+assert.match(projectsView, /e\.key\.length !== 1 \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/, "type-ahead only handles plain printable keys");
+assert.match(projectsView, /state\.buffer \+= e\.key/, "keystrokes accumulate into a type-ahead buffer");
+assert.match(projectsView, /typeAheadRef\.current\.buffer = ""/, "the buffer resets after a pause");
+assert.match(projectsView, /const next = nextTypeAheadIndex\(labels, current, state\.buffer\)/, "the next focus comes from the pure matcher");
+assert.match(projectsView, /items\[next\]\.focus\(\);\s*setActiveIndex\(next\)/, "a match focuses the item and updates the roving tab stop");
+
 console.log("projects-view.test.ts: ok");

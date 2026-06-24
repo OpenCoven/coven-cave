@@ -129,6 +129,7 @@ export const SUITES = {
     "src/lib/projects/projects-ui-state.test.ts",
     "src/lib/projects/session-glyph.test.ts",
     "src/lib/projects/project-stats.test.ts",
+    "src/lib/projects/type-ahead.test.ts",
     "src/components/onboarding-guided-steps.test.ts",
     "src/components/familiar-studio.test.ts",
     "src/components/familiar-studio-look-tab.test.ts",

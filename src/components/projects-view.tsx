@@ -28,6 +28,7 @@ import type { ProjectsDensity } from "@/lib/projects/projects-ui-state";
 import { sessionGlyph, glyphToneClass, stripTaskPrefix } from "@/lib/projects/session-glyph";
 import { projectStats } from "@/lib/projects/project-stats";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { nextTypeAheadIndex } from "@/lib/projects/type-ahead";
 import { ContextMenu, openContextMenuAt, type ContextMenuState } from "@/components/ui/context-menu";
 import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -181,6 +182,7 @@ function ProjectChatRow({
         aria-checked={selectMode ? selected : undefined}
         tabIndex={0}
         data-proj-nav
+        data-proj-label={title}
         onContextMenu={openContextMenuAt(setMenu)}
         onClick={activate}
         onKeyDown={(e) => {
@@ -519,6 +521,7 @@ function ProjectRow({
         <button
           type="button"
           data-proj-nav
+          data-proj-label={project.name}
           onClick={() => setExpanded((value) => !value)}
           onKeyDown={(e) => {
             // Tree-style disclosure: → expands, ← collapses (no-op when already
@@ -871,7 +874,43 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   // headers + their visible session rows: ↑/↓ + Home/End move focus, Enter/Space
   // open/select (per-row handlers), and →/← expand/collapse a focused header.
   const listRef = useRef<HTMLElement>(null);
-  useRovingTabIndex({ containerRef: listRef, itemSelector: "[data-proj-nav]", orientation: "vertical" });
+  const { setActiveIndex } = useRovingTabIndex({ containerRef: listRef, itemSelector: "[data-proj-nav]", orientation: "vertical" });
+  // Type-ahead: typing letters jumps focus to the next project / session whose
+  // label starts with what you typed (Finder-style), staying in sync with the
+  // roving tab stop. The buffer resets after a short pause.
+  const typeAheadRef = useRef<{ buffer: string; timer: number }>({ buffer: "", timer: 0 });
+  useEffect(() => {
+    const container = listRef.current;
+    if (!container) return;
+    function onKey(e: KeyboardEvent) {
+      // Only printable single characters, no modifiers; never while typing in a
+      // field, and only when focus is on a navigable item in the list.
+      if (e.key.length !== 1 || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (!t || t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (!t.closest("[data-proj-nav]")) return;
+      const root = listRef.current;
+      if (!root) return;
+      const items = Array.from(root.querySelectorAll<HTMLElement>("[data-proj-nav]"));
+      if (items.length === 0) return;
+      e.preventDefault();
+      const state = typeAheadRef.current;
+      window.clearTimeout(state.timer);
+      state.buffer += e.key;
+      state.timer = window.setTimeout(() => {
+        typeAheadRef.current.buffer = "";
+      }, 600);
+      const labels = items.map((el) => el.getAttribute("data-proj-label") ?? el.textContent ?? "");
+      const current = items.indexOf(t.closest("[data-proj-nav]") as HTMLElement);
+      const next = nextTypeAheadIndex(labels, current, state.buffer);
+      if (next >= 0) {
+        items[next].focus();
+        setActiveIndex(next);
+      }
+    }
+    container.addEventListener("keydown", onKey);
+    return () => container.removeEventListener("keydown", onKey);
+  }, [setActiveIndex]);
   const [order, setOrder] = useState<string[]>([]);
   useEffect(() => {
     setOrder(readSessionOrder());
