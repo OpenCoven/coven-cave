@@ -251,6 +251,23 @@
 .board-kanban-column-dot--done { background:var(--color-success); color:var(--color-success); }
 .board-kanban-column-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:700; color:var(--text-primary); letter-spacing:.01em; }
 .board-kanban-column-count { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:16px; padding:0 5px; border-radius:8px; background:var(--bg-raised); border:1px solid var(--border-hairline); color:var(--text-secondary); font-size:10px; font-weight:600; }
+/* WIP-limit control: the count badge becomes a clickable button. "n/limit"
+   reads as a budget; over the limit it turns danger and the column gets a
+   subtle warning rail. */
+.board-kanban-column-count--btn { cursor:pointer; font-variant-numeric:tabular-nums; transition:background .12s,color .12s,border-color .12s; }
+.board-kanban-column-count--btn:hover { border-color:var(--border-strong); color:var(--text-primary); }
+.board-kanban-column-count--btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
+.board-kanban-column-count--wip { color:var(--text-primary); }
+.board-kanban-column-count--over { background:color-mix(in oklch,var(--color-danger) 18%,var(--bg-raised)); border-color:color-mix(in oklch,var(--color-danger) 45%,var(--border-hairline)); color:var(--color-danger); }
+.board-kanban-column--wip-over { border-color:color-mix(in oklch,var(--color-danger) 30%,var(--border-hairline)); box-shadow:inset 0 2px 0 color-mix(in oklch,var(--color-danger) 55%,transparent); }
+.board-wip-form { display:flex; flex-direction:column; gap:7px; padding:10px; min-width:150px; }
+.board-wip-label { font-size:11px; font-weight:600; color:var(--text-secondary); }
+.board-wip-input { width:100%; height:30px; padding:0 9px; border-radius:7px; border:1px solid var(--border-strong); background:var(--bg-base); color:var(--text-primary); font-size:13px; outline:none; }
+.board-wip-input:focus { border-color:color-mix(in oklch,var(--accent-presence) 55%,var(--border-strong)); box-shadow:0 0 0 3px color-mix(in oklch,var(--accent-presence) 16%,transparent); }
+.board-wip-actions { display:flex; align-items:center; gap:6px; }
+.board-wip-set { flex:1; height:28px; border-radius:6px; border:none; background:var(--accent-presence); color:#fff; font-size:12px; font-weight:600; cursor:pointer; }
+.board-wip-clear { height:28px; padding:0 10px; border-radius:6px; border:1px solid var(--border-hairline); background:transparent; color:var(--text-secondary); font-size:12px; cursor:pointer; }
+.board-wip-clear:hover { border-color:var(--border-strong); color:var(--text-primary); }
 .board-kanban-column-add { display:grid; place-items:center; width:22px; height:22px; border-radius:6px; border:none; background:transparent; color:var(--text-muted); cursor:pointer; transition:background .12s,color .12s; }
 .board-kanban-column-add:hover { background:var(--bg-hover); color:var(--text-primary); }
 .board-kanban-column-add:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }

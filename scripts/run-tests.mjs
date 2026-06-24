@@ -176,6 +176,7 @@ export const SUITES = {
     "src/components/calendar-keyboard.test.ts",
     "src/components/task-chat-cwd.test.ts",
     "src/lib/board-search.test.ts",
+    "src/lib/board-wip.test.ts",
     "src/lib/comux-projects.test.ts",
     "src/lib/comux-project-order.test.ts",
     "src/lib/code-lang.test.ts",

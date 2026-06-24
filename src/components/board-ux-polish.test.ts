@@ -130,4 +130,13 @@ assert.match(
 );
 assert.match(view, /onQuickAdd=\{quickAdd\}/, "BoardView wires the quick-add create path");
 
+// ── WIP limits per column (#3) ──
+assert.match(kanban, /wipLimits\?:\s*WipLimits/, "BoardKanban accepts WIP limits");
+assert.match(kanban, /const wipEnabled = groupBy === "status" && !!onSetWipLimit/, "WIP UI is scoped to status grouping where the count is the status total");
+assert.match(kanban, /board-kanban-column--wip-over/, "an over-limit column gets a warning treatment");
+assert.match(kanban, /\{limit != null \? `\$\{count\}\/\$\{limit\}` : count\}/, "the badge shows count/limit when a limit is set");
+assert.match(styles, /\.board-kanban-column-count--over\s*\{[^}]*--color-danger/, "over-limit count badge turns danger");
+assert.match(view, /onSetWipLimit=\{setWipLimitFor\}/, "BoardView wires the WIP-limit setter");
+assert.match(view, /writeWipLimits\(next\)/, "WIP limits persist on change");
+
 console.log("board-ux-polish.test.ts: ok");

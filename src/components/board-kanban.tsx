@@ -13,6 +13,8 @@ import type { GroupBy } from "@/components/board-table";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { Popover } from "@/components/ui/popover";
+import { type WipLimits, wipState } from "@/lib/board-wip";
 
 const COLUMNS: { id: CardStatus; label: string; hint: string }[] = [
   { id: "backlog",  label: "Backlog",  hint: "Ideas and work not ready to dispatch." },
@@ -44,6 +46,10 @@ type Props = {
   isSelected?: (id: string) => boolean;
   onToggleSelect?: (id: string) => void;
   onNewCard: (status: CardStatus) => void;
+  /** Per-status WIP limits + setter. Shown/edited in status-grouping mode,
+      where a column's count is the unambiguous total for that status. */
+  wipLimits?: WipLimits;
+  onSetWipLimit?: (status: CardStatus, limit: number | null) => void;
   /** Inline quick-add: create a card from just a title in the given column
       (status), scoped to the swimlane it was added under (familiar/project). */
   onQuickAdd?: (
@@ -86,7 +92,76 @@ function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[], projects: 
   return entries;
 }
 
-export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, selectMode = false, isSelected, onToggleSelect, onNewCard, onQuickAdd, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
+// The column-count badge. In status mode it doubles as a WIP-limit control:
+// click to set/clear a limit; the badge shows "count/limit" and turns danger
+// when the column is over its limit.
+function WipBadge({
+  status,
+  count,
+  limit,
+  onSet,
+}: {
+  status: CardStatus;
+  count: number;
+  limit: number | undefined;
+  onSet: (status: CardStatus, limit: number | null) => void;
+}) {
+  const anchorRef = useRef<HTMLButtonElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(limit != null ? String(limit) : "");
+  useEffect(() => { setDraft(limit != null ? String(limit) : ""); }, [limit, open]);
+  const state = wipState(count, limit);
+  const commit = () => {
+    const n = parseInt(draft, 10);
+    onSet(status, Number.isFinite(n) && n > 0 ? n : null);
+    setOpen(false);
+  };
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`board-kanban-column-count board-kanban-column-count--btn${
+          state === "over" ? " board-kanban-column-count--over" : state === "ok" ? " board-kanban-column-count--wip" : ""
+        }`}
+        title={limit != null ? `${count} of ${limit} — WIP limit (click to change)` : `${count} — set a WIP limit`}
+        aria-label={limit != null ? `${count} of ${limit}, WIP limit. Edit limit.` : `${count} cards. Set a WIP limit.`}
+      >
+        {limit != null ? `${count}/${limit}` : count}
+      </button>
+      <Popover open={open} onOpenChange={setOpen} anchorRef={anchorRef} placement="bottom-end" minWidth={150} ariaLabel={`WIP limit for ${status}`}>
+        <form
+          className="board-wip-form"
+          onSubmit={(e) => { e.preventDefault(); commit(); }}
+        >
+          <label className="board-wip-label">WIP limit</label>
+          <input
+            type="number"
+            min={1}
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setOpen(false); } }}
+            placeholder="None"
+            className="board-wip-input"
+            aria-label="Maximum cards"
+          />
+          <div className="board-wip-actions">
+            <button type="submit" className="board-wip-set">Set</button>
+            {limit != null && (
+              <button type="button" className="board-wip-clear" onClick={() => { onSet(status, null); setOpen(false); }}>
+                Clear
+              </button>
+            )}
+          </div>
+        </form>
+      </Popover>
+    </>
+  );
+}
+
+export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, selectMode = false, isSelected, onToggleSelect, onNewCard, wipLimits, onSetWipLimit, onQuickAdd, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -436,6 +511,11 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                   {COLUMNS.map((col) => {
                     const rows = grpGrouped.get(col.id) ?? [];
                     const isDrop = dropTarget === col.id;
+                    // WIP limits only apply in status mode, where rows.length is
+                    // the total for that status (not a per-swimlane slice).
+                    const wipEnabled = groupBy === "status" && !!onSetWipLimit;
+                    const wipLimit = wipEnabled ? wipLimits?.[col.id] : undefined;
+                    const wipOver = wipLimit != null && rows.length > wipLimit;
                     return (
                       <div key={col.id}
                         data-kanban-column={col.id}
@@ -444,11 +524,15 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                         onDragOver={(e) => handleDragOver(e, col.id)}
                         onDragLeave={(e) => handleDragLeave(e, col.id)}
                         onDrop={(e) => handleDrop(e, col.id)}
-                        className={`board-kanban-column${isDrop ? " board-kanban-column--drop" : ""}`}>
+                        className={`board-kanban-column${isDrop ? " board-kanban-column--drop" : ""}${wipOver ? " board-kanban-column--wip-over" : ""}`}>
                         <div className="board-kanban-column-header">
                           <span className={`board-kanban-column-dot board-kanban-column-dot--${col.id}`} aria-hidden />
                           <span className="board-kanban-column-label" title={col.hint}>{col.label}</span>
-                          <span className="board-kanban-column-count">{rows.length}</span>
+                          {wipEnabled ? (
+                            <WipBadge status={col.id} count={rows.length} limit={wipLimit} onSet={onSetWipLimit!} />
+                          ) : (
+                            <span className="board-kanban-column-count">{rows.length}</span>
+                          )}
                           <button
                             type="button"
                             onClick={() => onNewCard(col.id)}

@@ -6,6 +6,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { DEMO_BOARD_CARDS } from "@/lib/demo-seed";
 import { DEMO_MODE_EVENT, isDemoModeEnabled } from "@/lib/demo-mode";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
+import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, STATUSES } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
@@ -85,6 +86,16 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const [actionError, setActionError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(() => loadPref("cave:board:viewMode", "kanban", ["kanban", "table", "gantt"]));
   const [groupBy, setGroupBy] = useState<GroupBy>(() => loadPref("cave:board:groupBy", "status", ["status", "familiar", "project"]));
+  // Per-status WIP limits (loaded after mount to avoid SSR localStorage access).
+  const [wipLimits, setWipLimits] = useState<WipLimits>({});
+  useEffect(() => { setWipLimits(readWipLimits()); }, []);
+  const setWipLimitFor = useCallback((status: CardStatus, limit: number | null) => {
+    setWipLimits((prev) => {
+      const next = setWipLimit(prev, status, limit);
+      writeWipLimits(next);
+      return next;
+    });
+  }, []);
   // Gantt has its own grouping: by project (one bar per task) or by task (one
   // bar per checklist step). Separate from the kanban/table groupBy above.
   const [ganttGroup, setGanttGroup] = useState<"project" | "task" | "familiar">(() => loadPref("cave:board:ganttGroup", "project", ["project", "task", "familiar"]) as "project" | "task" | "familiar");
@@ -910,6 +921,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
             selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
+            wipLimits={wipLimits} onSetWipLimit={setWipLimitFor}
             onQuickAdd={quickAdd}
             onJumpToSession={onJumpToSession}
             onOpenTaskChat={onOpenTaskChat}
