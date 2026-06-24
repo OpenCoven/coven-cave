@@ -5,6 +5,7 @@ import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MarketplaceCard } from "@/components/marketplace/marketplace-card";
 import { MarketplaceDetail } from "@/components/marketplace/marketplace-detail";
+import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import {
   categoriesFrom,
   filterPlugins,
@@ -19,6 +20,7 @@ export function MarketplaceViewSurface() {
   const [category, setCategory] = useState("All");
   const [selected, setSelected] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [configuringId, setConfiguringId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoaded(false);
@@ -43,6 +45,7 @@ export function MarketplaceViewSurface() {
   const categories = useMemo(() => categoriesFrom(plugins), [plugins]);
   const filtered = useMemo(() => filterPlugins(plugins, { query, category }), [plugins, query, category]);
   const selectedPlugin = useMemo(() => plugins.find((p) => p.id === selected) ?? null, [plugins, selected]);
+  const configuringPlugin = useMemo(() => plugins.find((p) => p.id === configuringId) ?? null, [plugins, configuringId]);
 
   const setInstalled = useCallback((id: string, installed: boolean) => {
     setPlugins((prev) => prev.map((p) => (p.id === id ? { ...p, installed } : p)));
@@ -146,6 +149,7 @@ export function MarketplaceViewSurface() {
                 onOpen={() => setSelected(plugin.id)}
                 onAdd={() => void add(plugin.id)}
                 onRemove={() => void remove(plugin.id)}
+                onConfigure={() => setConfiguringId(plugin.id)}
               />
             ))}
           </div>
@@ -159,6 +163,16 @@ export function MarketplaceViewSurface() {
           onClose={() => setSelected(null)}
           onAdd={() => void add(selectedPlugin.id)}
           onRemove={() => void remove(selectedPlugin.id)}
+        />
+      ) : null}
+
+      {configuringPlugin ? (
+        <MarketplaceConfigure
+          pluginId={configuringPlugin.id}
+          displayName={configuringPlugin.displayName}
+          open={true}
+          onClose={() => setConfiguringId(null)}
+          onChanged={() => void load()}
         />
       ) : null}
     </section>

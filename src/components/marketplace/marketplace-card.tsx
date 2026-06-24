@@ -17,9 +17,10 @@ type Props = {
   onOpen: () => void;
   onAdd: () => void;
   onRemove: () => void;
+  onConfigure: () => void;
 };
 
-export function MarketplaceCard({ plugin, busy, onOpen, onAdd, onRemove }: Props) {
+export function MarketplaceCard({ plugin, busy, onOpen, onAdd, onRemove, onConfigure }: Props) {
   const state = pluginBadgeState(plugin);
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-4">
@@ -39,7 +40,11 @@ export function MarketplaceCard({ plugin, busy, onOpen, onAdd, onRemove }: Props
             <span className="block truncate text-[12px] text-[var(--text-muted)]">By {plugin.author}</span>
           </span>
         </button>
-        {state === "added" ? (
+        {state === "needs-setup" ? (
+          <Button variant="primary" size="sm" leadingIcon="ph:warning" onClick={onConfigure}>
+            Set up
+          </Button>
+        ) : state === "added" ? (
           <Button variant="secondary" size="sm" leadingIcon="ph:check" loading={busy} onClick={onRemove}>
             Added
           </Button>
@@ -59,6 +64,15 @@ export function MarketplaceCard({ plugin, busy, onOpen, onAdd, onRemove }: Props
           <Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}
         </span>
         <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5">{plugin.category}</span>
+        {plugin.requiresSetup && plugin.configured ? (
+          <button
+            type="button"
+            onClick={onConfigure}
+            className="focus-ring inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:check-circle" width={11} aria-hidden /> Configured
+          </button>
+        ) : null}
         {state === "needs-setup" ? (
           <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[var(--text-primary)]">
             <Icon name="ph:warning" width={11} aria-hidden /> Needs setup
