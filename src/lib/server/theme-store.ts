@@ -1,12 +1,18 @@
 // Persists the desktop's active theme + resolved color tokens to
-// ~/.coven/cave-theme.json so other clients (the iOS app over Tailscale)
-// can read it from GET /api/theme. Fixed filename — no user-controlled path.
+// ~/.coven/cave-theme.json so other clients (the iOS app over Tailscale) can
+// read it from GET /api/theme. The location is fixed in normal use, but
+// COVEN_THEME_PATH overrides it so tests / E2E runs / any throwaway server never
+// clobber a real user's theme (mirrors COVEN_AUTOMATION_RUNS_PATH). Not
+// user-request-controlled — only the process environment can set it.
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import { homedir } from "node:os";
 
-const THEME_PATH = path.join(homedir(), ".coven", "cave-theme.json");
+// Resolved at call-time so the env can be set before the first read/write.
+function themePath(): string {
+  return process.env.COVEN_THEME_PATH ?? path.join(homedir(), ".coven", "cave-theme.json");
+}
 
 export type ThemeSnapshot = {
   themeId: string;
@@ -29,6 +35,7 @@ function sanitizeTokens(input: unknown): Record<string, string> {
 }
 
 export async function loadTheme(): Promise<ThemeSnapshot> {
+  const THEME_PATH = themePath();
   try {
     const parsed = JSON.parse(await readFile(THEME_PATH, "utf8")) as Partial<ThemeSnapshot>;
     return {
@@ -49,6 +56,7 @@ export async function saveTheme(input: { themeId?: unknown; mode?: unknown; toke
     tokens: sanitizeTokens(input.tokens),
     updatedAt: new Date().toISOString(),
   };
+  const THEME_PATH = themePath();
   await mkdir(path.dirname(THEME_PATH), { recursive: true });
   // Unique temp name per write: a fixed `.tmp` made concurrent PUTs race —
   // both wrote the same file, the first rename consumed it, and the second

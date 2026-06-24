@@ -1,4 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 // Playwright config — three viewport projects so the same specs in
 // tests/mobile/ run against desktop AND two real mobile presets.
@@ -60,6 +62,9 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     env: {
       COVEN_CAVE_E2E: "1",
+      // Redirect theme writes to a throwaway file so an E2E run never clobbers
+      // a real user's ~/.coven/cave-theme.json (which the iOS app polls).
+      COVEN_THEME_PATH: join(tmpdir(), "cave-e2e-theme.json"),
     },
   },
 });
