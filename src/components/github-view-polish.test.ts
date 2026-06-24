@@ -220,6 +220,26 @@ assert.match(
   /variant="segment"/,
   "the filter row uses the segment tab variant",
 );
+assert.match(
+  source,
+  /<header className="github-surface-header gh-compact-header">[\s\S]*?<Tabs[\s\S]*?className="gh-compact-tabs"[\s\S]*?<\/header>/,
+  "GitHub header should be one compact band containing identity, tabs, filters, grouping, and actions",
+);
+assert.doesNotMatch(
+  source,
+  /github-surface-controls/,
+  "GitHub header should not use a second stacked controls strip",
+);
+assert.match(
+  boardCss,
+  /\.gh-compact-header \{[\s\S]*?min-height:40px;[\s\S]*?flex-wrap:wrap;/,
+  "compact GitHub header should stay shallow and wrap instead of adding a second bar",
+);
+assert.doesNotMatch(
+  boardCss,
+  /\.github-surface::before/,
+  "GitHub surface should not paint an extra decorative overlay behind the header",
+);
 
 // Sortable table headers are keyboard-operable (a real <button>) and expose
 // sort state to assistive tech via aria-sort.

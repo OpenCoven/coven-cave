@@ -509,34 +509,116 @@
 .github-surface {
   position:relative;
   overflow:hidden;
-  background:
-    linear-gradient(145deg,
-      color-mix(in oklab,var(--bg-base) 88%,#101824) 0%,
-      var(--bg-base) 38%,
-      color-mix(in oklab,var(--bg-base) 86%,#16241e) 100%);
-}
-.github-surface::before {
-  content:"";
-  position:absolute;
-  inset:0;
-  pointer-events:none;
-  background:
-    linear-gradient(105deg,transparent 0 52%,color-mix(in oklab,var(--accent-presence) 8%,transparent) 52% 53%,transparent 53%),
-    radial-gradient(900px 260px at 82% 0%,color-mix(in oklab,var(--accent-presence) 12%,transparent),transparent 68%);
-  opacity:.72;
+  background:var(--bg-base);
 }
 .github-surface-header,
-.github-surface-controls,
 .github-surface-footer {
   position:relative;
   z-index:1;
   border-color:color-mix(in oklab,var(--border-hairline) 72%,transparent);
-  background:color-mix(in oklab,var(--bg-base) 78%,transparent);
-  backdrop-filter:blur(18px) saturate(1.25);
+  background:color-mix(in oklab,var(--bg-base) 92%,transparent);
+  backdrop-filter:blur(14px) saturate(1.08);
 }
-.github-surface-header,
-.github-surface-controls { border-bottom:1px solid color-mix(in oklab,var(--border-hairline) 72%,transparent); }
+.github-surface-header { border-bottom:1px solid color-mix(in oklab,var(--border-hairline) 72%,transparent); }
 .github-surface-footer { border-top:1px solid color-mix(in oklab,var(--border-hairline) 72%,transparent); }
+.gh-compact-header {
+  min-height:40px;
+  flex-wrap:wrap;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 12px;
+}
+.gh-compact-meta {
+  display:flex;
+  min-width:0;
+  align-items:center;
+  gap:6px;
+  flex:0 1 auto;
+}
+.gh-compact-login {
+  max-width:150px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--text-secondary);
+  font-size:11px;
+}
+.gh-compact-auth {
+  display:inline-flex;
+  align-items:center;
+  height:20px;
+  border:1px solid var(--border-hairline);
+  border-radius:999px;
+  padding:0 7px;
+  font-size:10px;
+  line-height:1;
+  color:var(--text-muted);
+}
+.gh-compact-auth--authed {
+  border-color:color-mix(in oklab,var(--color-success) 42%,transparent);
+  background:color-mix(in oklab,var(--color-success) 10%,transparent);
+  color:var(--color-success);
+}
+.gh-compact-rate {
+  color:var(--text-muted);
+  font-size:10px;
+  white-space:nowrap;
+}
+.gh-compact-tabs {
+  flex:0 0 auto;
+  background:color-mix(in oklab,var(--bg-raised) 58%,transparent);
+}
+.gh-compact-filters {
+  margin-left:auto;
+  display:flex;
+  min-width:0;
+  align-items:center;
+  gap:6px;
+}
+.gh-compact-group {
+  display:flex;
+  align-items:center;
+  gap:2px;
+}
+.gh-compact-group-button {
+  border-radius:6px;
+  padding:4px 8px;
+  color:var(--text-muted);
+  font-size:11px;
+  line-height:1;
+  transition:background-color .12s,color .12s;
+}
+.gh-compact-group-button:hover { color:var(--text-secondary); background:var(--bg-hover); }
+.gh-compact-group-button.is-active {
+  color:var(--text-primary);
+  background:var(--bg-raised);
+  font-weight:600;
+}
+.gh-compact-actions {
+  display:flex;
+  align-items:center;
+  gap:5px;
+}
+.gh-compact-icon-button {
+  display:inline-flex;
+  min-width:24px;
+  height:24px;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  border:1px solid var(--border-hairline);
+  border-radius:7px;
+  color:var(--text-muted);
+  font-size:11px;
+  transition:background-color .12s,color .12s,border-color .12s;
+}
+.gh-compact-icon-button--labeled { padding:0 8px; }
+.gh-compact-icon-button:hover {
+  border-color:var(--border-strong);
+  background:var(--bg-hover);
+  color:var(--text-secondary);
+}
 
 .gh-workspace {
   position:relative;
@@ -1160,15 +1242,21 @@
 }
 
 @media (max-width: 760px) {
-  .github-surface-controls {
-    flex-wrap:wrap;
+  .gh-compact-header {
     align-items:flex-start;
+    padding:6px 10px;
   }
-  .github-surface-controls > .ml-auto {
+  .gh-compact-filters {
     width:100%;
     margin-left:0;
     overflow-x:auto;
-    padding-top:4px;
+  }
+  .gh-compact-login { max-width:120px; }
+  .gh-compact-actions { margin-left:auto; }
+  .gh-compact-tabs {
+    order:3;
+    max-width:100%;
+    overflow-x:auto;
   }
   .gh-workspace { padding:10px; gap:10px; }
   .gh-glass-panel { padding:12px; }

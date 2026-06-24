@@ -1569,61 +1569,30 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       )}
 
       {/* ── Header ── */}
-      <header className="github-surface-header flex items-center gap-3 pl-5 pr-5 py-2">
-        <div className="flex items-center gap-2">
+      <header className="github-surface-header gh-compact-header">
+        <div className="gh-compact-meta">
           {activity?.login && (
-            <span className="text-[12px] text-[var(--text-secondary)]">@{activity.login}</span>
+            <span className="gh-compact-login">@{activity.login}</span>
+          )}
+
+          {activity?.authed === false && (
+            <span className="gh-compact-auth gh-compact-auth--public">public API</span>
+          )}
+          {activity?.authed === true && (
+            <span className="gh-compact-auth gh-compact-auth--authed">authenticated</span>
+          )}
+
+          {activity?.rateLimit && (
+            <span className="gh-compact-rate">
+              {activity.rateLimit.remaining}/{activity.rateLimit.limit} req left
+            </span>
           )}
         </div>
 
-        {activity?.authed === false && (
-          <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
-            public API
-          </span>
-        )}
-        {activity?.authed === true && (
-          <span className="rounded-full border border-[color-mix(in_oklch,var(--color-success)_55%,transparent)] bg-[color-mix(in_oklch,var(--color-success)_40%,transparent)] px-2 py-0.5 text-[10px] text-[var(--color-success)]">
-            authenticated
-          </span>
-        )}
-
-        {activity?.rateLimit && (
-          <span className="text-[10px] text-[var(--text-muted)]">
-            {activity.rateLimit.remaining}/{activity.rateLimit.limit} req left
-          </span>
-        )}
-
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowPatModal(true)}
-            title={patStatus?.hasPat ? "Manage GitHub PAT" : "Connect GitHub PAT"}
-            aria-label={patStatus?.hasPat ? "GitHub PAT connected — manage" : "Connect GitHub PAT"}
-            className={`flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] py-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors ${patStatus?.hasPat ? "px-1.5" : "px-2"}`}
-          >
-            <Icon name="ph:key" width={11} />
-            {patStatus?.hasPat ? null : "Add PAT"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-              void fetchActivity();
-              reloadCards();
-            }}
-            title="Refresh (⌘R)"
-            aria-label="Refresh GitHub activity"
-            className="focus-ring rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] transition-colors"
-          >
-            <Icon name="ph:arrows-clockwise" width={13} />
-          </button>
-        </div>
-      </header>
-
-      {/* ── Filter tabs ── */}
-      <div className="github-surface-controls flex items-center gap-2 px-4 py-2">
         <Tabs
+          className="gh-compact-tabs"
           variant="segment"
+          size="sm"
           ariaLabel="Filter GitHub activity"
           value={filter}
           onChange={setFilter}
@@ -1633,7 +1602,8 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             count: counts[f] > 0 ? counts[f] : undefined,
           })) satisfies TabItem<Filter>[]}
         />
-        <div className="ml-auto flex items-center gap-2">
+
+        <div className="gh-compact-filters">
           <select
             className="gh-select"
             value={orgFilter}
@@ -1661,7 +1631,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             ))}
           </select>
           <span className="gh-select-sep" aria-hidden />
-          <div className="flex items-center gap-1" role="group" aria-label="Group rows">
+          <div className="gh-compact-group" role="group" aria-label="Group rows">
             {(["none", "org", "repo"] as GroupBy[]).map((g) => {
               const labels: Record<GroupBy, string> = { none: "None", org: "Org", repo: "Repo" };
               const isActive = groupBy === g;
@@ -1673,10 +1643,10 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                   aria-pressed={isActive}
                   title={g === "none" ? "No grouping" : `Group by ${g}`}
                   className={[
-                    "rounded-md px-2.5 py-1 text-[12px] transition-colors",
+                    "gh-compact-group-button",
                     isActive
-                      ? "bg-[var(--bg-raised)] text-[var(--text-primary)] font-medium"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                      ? "is-active"
+                      : "",
                   ].join(" ")}
                 >
                   {labels[g]}
@@ -1685,7 +1655,33 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             })}
           </div>
         </div>
-      </div>
+
+        <div className="gh-compact-actions">
+          <button
+            type="button"
+            onClick={() => setShowPatModal(true)}
+            title={patStatus?.hasPat ? "Manage GitHub PAT" : "Connect GitHub PAT"}
+            aria-label={patStatus?.hasPat ? "GitHub PAT connected — manage" : "Connect GitHub PAT"}
+            className={`gh-compact-icon-button ${patStatus?.hasPat ? "" : "gh-compact-icon-button--labeled"}`}
+          >
+            <Icon name="ph:key" width={11} />
+            {patStatus?.hasPat ? null : "Add PAT"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+              void fetchActivity();
+              reloadCards();
+            }}
+            title="Refresh (⌘R)"
+            aria-label="Refresh GitHub activity"
+            className="gh-compact-icon-button"
+          >
+            <Icon name="ph:arrows-clockwise" width={13} />
+          </button>
+        </div>
+      </header>
 
       {/* ── Body ── */}
       <div className="github-surface-body min-h-0 flex-1 overflow-hidden">
