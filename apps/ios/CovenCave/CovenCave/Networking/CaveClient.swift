@@ -421,6 +421,38 @@ struct CaveClient {
         }
     }
 
+    /// `GET /api/library/reading` — saved reading list, mapped for display.
+    func libraryReading() async throws -> [LibraryItem] {
+        let req = try request("api/library/reading")
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(LibraryReadingResponse.self, from: data).items.map {
+                LibraryItem(id: $0.id, title: $0.title ?? $0.url ?? "Untitled",
+                            url: $0.url ?? "", subtitle: $0.sourceType,
+                            familiar: $0.familiar, savedAt: $0.addedAt)
+            }
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// `GET /api/library/bookmarks` — saved bookmarks, mapped for display.
+    func libraryBookmarks() async throws -> [LibraryItem] {
+        let req = try request("api/library/bookmarks")
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(LibraryBookmarksResponse.self, from: data).items.map {
+                LibraryItem(id: $0.id, title: $0.title ?? $0.domain ?? $0.url ?? "Untitled",
+                            url: $0.url ?? "", subtitle: $0.domain,
+                            familiar: $0.familiar, savedAt: $0.savedAt)
+            }
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
     /// `DELETE /api/inbox/{id}` — remove a reminder.
     func deleteReminder(id: String) async throws {
         let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id

@@ -49,7 +49,10 @@ for (const rel of [
 assert.doesNotMatch(model, /canvasArtifacts|generateArtifact|refineArtifact|loadCanvas/, "AppModel should drop canvas state/actions");
 assert.doesNotMatch(model, /loadReading|setReadingStatus|deleteReading|setReadingProgress|var reading:/, "AppModel should drop reading state/actions");
 assert.doesNotMatch(client, /canvasArtifacts|saveCanvasArtifact|deleteCanvasArtifact|api\/canvas/, "CaveClient should drop the canvas endpoints");
-assert.doesNotMatch(client, /func reading\(\)|updateReading|deleteReading|api\/library\/reading/, "CaveClient should drop the reading endpoints");
+// The old *mutable* Reading surface stays gone. The read-only Library
+// (Developer › Library) legitimately GETs /api/library/reading, so that path is
+// allowed — only the removed reading mutations are forbidden.
+assert.doesNotMatch(client, /func reading\(\)|updateReading|deleteReading|setReadingProgress/, "CaveClient should drop the old mutable reading endpoints");
 assert.doesNotMatch(slash, /\/canvas|buildSketchPrompt|case sketch/, "the /canvas slash command should be removed");
 
 console.log("ios-no-canvas-tab.test.mjs: ok");
