@@ -206,6 +206,7 @@ struct FamiliarThreadsView: View {
             }
         }
         .listStyle(.plain)
+        .themedListBackground()
         .threadRenameAlert($renamingThread) { thread, name in app.renameThread(thread, to: name) }
         .confirmationDialog("Delete this chat?",
                             isPresented: deleteDialogBinding,

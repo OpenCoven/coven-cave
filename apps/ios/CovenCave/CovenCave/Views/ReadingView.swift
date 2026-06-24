@@ -100,6 +100,7 @@ struct ReadingView: View {
                     }
                 }
                 .listStyle(.plain)
+                .themedListBackground()
             }
         }
         // Pin the filter chips above the list (and empty state) with their
