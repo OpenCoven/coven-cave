@@ -36,6 +36,8 @@ import {
   type ComuxProject,
 } from "@/lib/comux-projects";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { ContextMenu, openContextMenuAt, type ContextMenuState } from "@/components/ui/context-menu";
+import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import {
   addTerminalSession,
   closeTerminalSession,
@@ -349,6 +351,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const projectFilterRef = useRef<HTMLInputElement>(null);
   const projectListRef = useRef<HTMLDivElement>(null);
   const activeProjectRowRef = useRef<HTMLButtonElement | null>(null);
+  // Right-click context menu for a project row. `menuTarget` records which
+  // project was right-clicked (one menu serves the whole list).
+  const [projectMenu, setProjectMenu] = useState<ContextMenuState>(null);
+  const [projectMenuTarget, setProjectMenuTarget] = useState<ComuxProject | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -1614,6 +1620,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                                 data-project-row
                                 ref={isActive ? activeProjectRowRef : undefined}
                                 onClick={() => selectProject(project)}
+                                onContextMenu={(e) => {
+                                  setProjectMenuTarget(project);
+                                  openContextMenuAt(setProjectMenu)(e);
+                                }}
                                 title={project.root}
                                 aria-current={isActive ? "true" : undefined}
                                 style={{ ["--tile" as string]: projectTint(project.root) }}
@@ -1648,6 +1658,59 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         </>
                       )}
                     </div>
+                    {/* Right-click a project → act on it without selecting it
+                        first (start a chat/terminal in any project's cwd, copy
+                        or reveal its path). One menu serves the whole list. */}
+                    <ContextMenu
+                      state={projectMenu}
+                      onClose={() => setProjectMenu(null)}
+                      ariaLabel={projectMenuTarget ? `Actions for ${projectMenuTarget.name}` : "Project actions"}
+                    >
+                      {projectMenuTarget && (
+                        <>
+                          <PopoverItem
+                            icon="ph:chat-circle-dots-bold"
+                            onSelect={() => {
+                              setProjectMenu(null);
+                              onNewChat(projectMenuTarget.root);
+                            }}
+                          >
+                            New chat
+                          </PopoverItem>
+                          <PopoverItem
+                            icon="ph:terminal-window-bold"
+                            onSelect={() => {
+                              setProjectMenu(null);
+                              addSession(projectMenuTarget.root);
+                            }}
+                          >
+                            Open terminal
+                          </PopoverItem>
+                          <PopoverSeparator />
+                          <PopoverItem
+                            icon="ph:copy"
+                            onSelect={() => {
+                              setProjectMenu(null);
+                              void copyText(projectMenuTarget.root);
+                            }}
+                          >
+                            Copy path
+                          </PopoverItem>
+                          <PopoverItem
+                            icon="ph:arrow-square-out"
+                            onSelect={() => {
+                              setProjectMenu(null);
+                              const root = projectMenuTarget.root;
+                              if (root.startsWith("/")) {
+                                window.open(`file://${root}`, "_blank", "noopener");
+                              }
+                            }}
+                          >
+                            Reveal in Finder
+                          </PopoverItem>
+                        </>
+                      )}
+                    </ContextMenu>
                     {/* Project-wide code search (CODE-SEARCH-01) */}
                     <div className="mb-3">
                       <div className="relative">
