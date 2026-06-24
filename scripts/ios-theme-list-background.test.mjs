@@ -70,4 +70,16 @@ for (const view of [
   assert.match(src, /\.themedSheetBackground\(\)/, `${view} should theme its sheet presentation background`);
 }
 
+// The chat transcript (a ScrollView, not a List) paints bgBase directly so the
+// bubbles float on the themed floor instead of the system navigation background.
+{
+  const chat = await read("Views/ChatView.swift");
+  assert.match(chat, /@Environment\(\\\.chrome\) private var chrome/, "ChatView should read the chrome palette");
+  assert.match(
+    chat,
+    /\.background\(chrome\.bgBase\.ignoresSafeArea\(\)\)/,
+    "ChatView should paint chrome.bgBase behind the transcript",
+  );
+}
+
 console.log("ios-theme-list-background: ok");

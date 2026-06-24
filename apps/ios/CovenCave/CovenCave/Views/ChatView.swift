@@ -20,6 +20,7 @@ struct ResponseReaderItem: Identifiable {
 struct ChatView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.chrome) private var chrome
     @Bindable var thread: ChatThread
     @AppStorage("cave.dev.section") private var devSectionRaw = DevSection.code.rawValue
     @State private var draft: String = ""
@@ -71,6 +72,10 @@ struct ChatView: View {
             }
             composer
         }
+        // Let the desktop theme's base colour show behind the transcript instead
+        // of the opaque system background the navigation stack paints; the
+        // bubbles and composer float on the themed floor.
+        .background(chrome.bgBase.ignoresSafeArea())
         .navigationTitle(thread.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
