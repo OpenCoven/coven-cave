@@ -101,6 +101,9 @@ export function useRovingTabIndex({
       // and Home/End must jump within the text, not the item set.
       const t = e.target as HTMLElement | null;
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      // Let modified arrows through — they're never roving (e.g. Alt+↑/↓ to
+      // nudge a calendar event's time), so the focused item can handle them.
+      if (e.altKey || e.metaKey || e.ctrlKey) return;
       switch (e.key) {
         case "ArrowDown":
           if (!vert) return;

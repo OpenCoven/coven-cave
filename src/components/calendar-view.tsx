@@ -721,7 +721,24 @@ function TimeGrid({
                       : undefined
                   }
                   onClick={() => onOpenItem?.(ev.item)}
-                  title={onReschedule ? `${ev.item.title} — drag to reschedule` : ev.item.title}
+                  onKeyDown={
+                    onReschedule
+                      ? (e) => {
+                          // Keyboard reschedule (drag is mouse-only): Alt+↑/↓
+                          // nudges the start ±15 min, Alt+Shift+↑/↓ by an hour.
+                          // Plain ↑/↓ stay with the roving focus nav.
+                          if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+                          e.preventDefault();
+                          const step = (e.shiftKey ? 60 : 15) * (e.key === "ArrowDown" ? 1 : -1);
+                          const minutes = Math.max(0, Math.min(24 * 60 - 15, ev.start + step));
+                          if (minutes === ev.start) return;
+                          const slot = new Date(col.date);
+                          slot.setHours(0, minutes, 0, 0);
+                          onReschedule(ev.item.id, slot.toISOString());
+                        }
+                      : undefined
+                  }
+                  title={onReschedule ? `${ev.item.title} — drag, or Alt+↑/↓, to reschedule` : ev.item.title}
                   className={`focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] border transition-colors overflow-hidden ${
                     done
                       ? "border-[var(--border-hairline)] bg-[var(--bg-raised)] opacity-60"
@@ -1647,7 +1664,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       <footer
         className="hidden shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)] sm:px-6 md:block"
       >
-        ← → navigate · T today · D Day · W Week · M Month · A Agenda{onAddEntry ? " · N new" : ""}
+        ← → navigate · T today · D Day · W Week · M Month · A Agenda{onAddEntry ? " · N new" : ""}{onReschedule ? " · Alt+↑↓ reschedule" : ""}
       </footer>
       {selectedItem && (
         <ItemDetailPanel

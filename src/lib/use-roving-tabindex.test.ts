@@ -71,4 +71,12 @@ assert.match(
   "does not rove while typing in an input/textarea/select/contentEditable",
 );
 
+// Modified arrows (Alt/Cmd/Ctrl) are not roving — they pass through so the
+// focused item can own them (e.g. Alt+↑/↓ to nudge a calendar event's time).
+assert.match(
+  source,
+  /if \(e\.altKey \|\| e\.metaKey \|\| e\.ctrlKey\) return;/,
+  "roving ignores modified arrow keys",
+);
+
 console.log("use-roving-tabindex.test.ts OK");

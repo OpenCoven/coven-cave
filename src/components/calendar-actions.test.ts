@@ -77,4 +77,12 @@ assert.match(ws, /onComplete=\{completeInboxItem\}/, "CalendarView must receive 
 assert.match(ws, /onDismiss=\{dismissInboxItem\}/, "CalendarView must receive onDismiss");
 assert.match(ws, /onSnooze=\{snoozeInboxItem\}/, "CalendarView must receive onSnooze");
 
+// ── Keyboard reschedule (drag is mouse-only) ────────────────────────────────
+// Time-grid events nudge their start with Alt+↑/↓ (±15min, +Shift = 1h) via the
+// same onReschedule path as drag; plain ↑/↓ stay with the roving focus nav.
+assert.match(view, /if \(!e\.altKey \|\| \(e\.key !== "ArrowUp" && e\.key !== "ArrowDown"\)\) return;/, "events only reschedule on Alt+↑/↓");
+assert.match(view, /const step = \(e\.shiftKey \? 60 : 15\) \* \(e\.key === "ArrowDown" \? 1 : -1\)/, "Alt+↑/↓ nudges ±15min, Alt+Shift by an hour");
+assert.match(view, /onReschedule\(ev\.item\.id, slot\.toISOString\(\)\)/, "keyboard nudge persists through onReschedule");
+assert.match(view, /Alt\+↑↓ reschedule/, "the footer documents the keyboard reschedule");
+
 console.log("calendar-actions.test.ts: ok");
