@@ -7,7 +7,135 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
-## [0.0.112] - 2026-06-24
+## [0.0.113] - 2026-06-24
+
+Another huge release: **120 PRs** building on the v0.0.112 push. The iOS app gains a real **Calendar tab**, **Library/Bookmarks**, **Journal**, **Live Activities**, **Siri Shortcuts / App Intents**, **iPad split-view** across Chats/Tasks/Developer, a **Board (kanban) view**, and an actionable **home-screen widget**. The desktop gets a new visual **Flow editor** (n8n-style), a **Marketplace** surface with credential & config collection, a redesigned **Code Projects explorer**, broad **undo** support, and a wide **accessibility sweep**. Group Chat (broadcast one prompt to many familiars) ships as the foundation for the v1 group-chat work tracked in opencoven/coven#258.
+
+### Added
+
+#### iOS — new surfaces
+- **Calendar tab** — agenda of reminders + task due dates with per-familiar colour coding and a legend (#1844, #1885), and a calendar event-detail backdrop + outside-click dismiss with friendly errors (#1883).
+- **Library** — saved reading + bookmarks (read-only) (#1863).
+- **Journal** — daily reflections, read-only (#1857).
+- **Board** — kanban view for Tasks with status / priority / familiar filters (#1854).
+- **Live Activity** — running task surfaces on Lock Screen + Dynamic Island (#1877).
+- **Siri Shortcuts / App Intents** — new reminder, "what's running" (#1880).
+- **Home-screen widget** — "Up Next" widget with next reminder + task counts (#1884), then interactive buttons + deep links so widget Complete / Snooze taps roundtrip to the inbox endpoints (#1887).
+
+#### iOS — chat, tasks, navigation
+- **Quick actions on the Chats familiar rows** (#1782).
+- **@-mention familiars in group chats** (#1785).
+- **Group Chat ("coven")** — broadcast one prompt to many familiars (#1860).
+- **Subtle haptic when a familiar's reply finishes** (#1789).
+- **Failed chat replies get a visible Retry button** (#1783).
+- **Rich link previews in chat** (#1798).
+- **Delete confirmation, haptics, and revert feedback** in destructive actions (#1848).
+- **Leading swipe to complete tasks** (#1882).
+- **Accessibility pass** — VoiceOver, Dynamic Type, reduce-motion across the iOS app (#1851).
+- **Removed** the Read tab in favor of the new Library surface (#1797).
+
+#### iOS — connection & developer
+- **Auto-recover the desktop connection** with launch backoff + foreground refresh (#1808).
+- **Surface silent failures in the Developer surface** (#1809).
+- **Paste + cleanup** on the connection setup screen (#1813).
+- **iPad split-view** for Tasks (#1796), Chats (#1802), and Developer → GitHub (#1805).
+
+#### Desktop — Flow (visual workflow editor)
+- **n8n-style visual workflow automation editor** (#018ada5b — direct push, no PR number).
+- **Drag-to-connect a new node + mid-edge "+" insertion** (#1861).
+- **Live per-node execution overlay** (#1850).
+- **Inline-edit and resize sticky notes on the canvas** (#1869).
+- **Input/output data panels in the node detail view** (#1875).
+
+#### Desktop — Code
+- **Fluid-glass Projects explorer** with frosted active pill, identity tiles, sticky-header fix (#1832, #1838).
+- **Projects explorer navigation** — filter, keyboard roving, monogram tiles (#1841); **right-click context menu** (#1847); **drag-to-reorder + pin favorites** (#1852).
+- **Skeleton for the session changes list** instead of bare text (#1812).
+- **Retry on file-preview error state** (#1826).
+
+#### Desktop — Marketplace, Roles, Settings
+- **Marketplace tab in the Roles hub** (#1823).
+- **Credential & config collection** for needs-setup plugins (#1839).
+- **Remote MCP endpoint validation** — Test connection button (#1867).
+- **Live GitHub token validation** (#1849).
+- **Permissions tab** for per-familiar project visibility; hide Submissions (#1828).
+- **Searchable settings** — jump to any control across sections (#1830).
+- **Skip-to-content link in the app shell** (#1780).
+
+#### Desktop — Board & Calls
+- **Per-column WIP limits** (#1864) and **overdue card highlighting + per-column quick-add composer** (#1859).
+- **Extend bulk-edit** with set-priority and add-label (#1879).
+- **Guard board-inspector loaders, step checkbox a11y, reduced motion** (#1876); **re-sync on window focus** so the desktop app isn't stale after external actions (#1873).
+- **Undo for task delete** (deferred, no native confirm) (#1804).
+- **Skeleton for the coven floor** instead of bare "Loading…" text (#1819); then the **Calls surface (floor + delegations) was removed entirely** (#1858).
+
+#### Desktop — Chat, Command Palette, Command Center
+- **Fuzzy search + score ranking** in the command palette (#1833).
+- **Familiar growth & performance page** — derive signals (#99f283de), components (#e3672a3c), route (#f1809c97), styles (#ee844e8c), page composition (#dcc9c0f2), CI wiring (#850f59b1) — merged via PR #1787.
+- **Skeleton-first restores** of chat history with message-shaped placeholders (#1831).
+- **In-app ConfirmDialog primitive** replaces native `window.confirm` (#1810).
+- **Kanban-shaped loading skeleton** instead of a spinner (#1811).
+- **No-matches state** in the familiar switcher (#1837).
+- **Surface usage plan consumption** in chat (#e6fb8b9e).
+- **Coven workspace tabs** — rename DocsPane to CovenPane, add Coven tabs (#51c945c9).
+- **YouTube collapsed-state polish** — mini bar + peek strip (#1821).
+
+#### Calendar (web)
+- **Keyboard reschedule for time-grid events** (Alt+↑/↓) (#1794).
+
+#### Undo
+- **Deferred undo for journal, vault & automations deletes** (#1814).
+- **⌘Z undoes the last delete** across all undo surfaces (#1827).
+
+#### Marketplace catalog
+- **Restore catalog.json source-of-truth** (#1818).
+- **OpenCoven runtime + harness submissions** (#a32fb286).
+
+### Changed
+
+- **Calls surface removed.** The floor + delegations surface was deleted (#1858) after the v0.0.112 introduction; the v1 server-side group-chat primitive replaces the use case it tried to address (see opencoven/coven#258).
+- **Read tab removed on iOS** in favor of the new Library surface (#1797).
+- **Project API** — allow human browse of familiar workspaces with id attached (#1824).
+
+### Fixed
+
+#### Accessibility
+- **WCAG contrast** — accent-filled buttons paired with semantic foregrounds (#1793); priority pill text darkened in light mode (#1799); solid nav count-badge fill (#1791); bulk-select checkmark glyph paired with accent foreground (#1801).
+- **Combobox & tablist ARIA** — /model picker combobox (#1842, #1845); calls view tablist + hidden-pause polling + honest trace counts (#1853); Roles tab bar as accessible tablist + labeled search (#1817); command-palette combobox + guard corpus loader + scroll active row (#1881); inbox feed section headings + selected-row aria-current (#1866); active conversation row aria-current (#1840); board card-stack row actions keyboard-accessible (#1878).
+- **Voice + status** — announce voice-call status with friendly error messages (#1862); announce the /model picker (#1845).
+- **Coven floor** — hidden-pause polling, load guard, reduced motion (#1856).
+- **Reduced motion** honored for JS-driven smooth scrolling (#1784).
+- **Icon-only buttons** — accessible names on close buttons (#1846).
+- **Docs surface** — don't iframe un-embeddable tabs + complete the tablist a11y (#1829).
+- **Title tooltips for truncated text** — calendar chips (#1786), library doc filenames (#1792), dashboard cockpit rows (#1795), workflow & step labels (#1800), code-block filenames (#1803), journal labels (#1806).
+
+#### Stability & races
+- **Stable DndContext ids** to stop dashboard hydration mismatch (#1790).
+- **Day-fetch race guard** + keyboard/chronological day nav in Journal (#1788).
+- **Guard async setState** after Canvas tab unmounts (#1825); workflows runs/layout fetch races + setState-after-unmount (#1820); schedules polling paused while hidden + guard async fetches (#1834); inspector memory loaders guarded against stale/post-unmount responses (#1870).
+- **Daemon offline banner** stays sticky against a flapping daemon (#1874).
+- **Onboarding** — Maintenance prune Check now offers Delete on daemon-native prune (#1865); detect `coven` CLI / `coven-code` install + version status (#1868).
+
+#### Chat & familiars
+- **Chat prefers opened-session familiar** (#661d85ab).
+- **Empty-state hover affordance polish** (#c0fb3a1e).
+
+#### GitHub & misc UI
+- **GitHub compact header controls aligned + standardized heights** (#a2e3e734, #1781).
+- **RelativeTime for PR comment timestamps** (#1807).
+- **Suppress the native search-cancel glyph** on the shared SearchInput (#1835).
+
+### Documentation
+
+- **Project README** added (#1886).
+- **Marketplace docs** — document configuration/validation + deferred work (#1872).
+- **OpenMeow references scrubbed** (#1855) — aligns with opencoven/coven#256.
+
+### Testing
+
+- **Vitest** — ignore generated build artifacts (#358fe2f3); align local test discovery (#94728dd7); drop TSX-only render tests (#f38c5656).
+- **Sessions/prune** — regression guard for dry-run wouldPrune contract (#1871).
+
 
 A huge release across the board: 168 PRs that bring the **iOS app to feature parity** with the desktop on chat, tasks, library, reminders, GitHub, and theming; promote the **Gantt** to a real planning surface; layer **bulk actions + undo toasts** across every list-driven view; and add a **familiar `Calls` surface** that visualizes delegation activity.
 
