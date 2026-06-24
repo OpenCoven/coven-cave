@@ -35,8 +35,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /⌘R refresh · click a row to inspect · open icon launches GitHub/,
-  "footer carries the inspect/open row hint",
+  /↑↓ navigate · Enter opens on GitHub · ⌘R refresh/,
+  "footer carries the keyboard-nav hint",
 );
 
 // ⌘R keydown handler wired.
@@ -253,6 +253,29 @@ assert.match(
   /<button[\s\S]{0,250}?onClick=\{\(\) => handleSortClick\(col\.key!\)\}/,
   "the sort control is a real keyboard-operable button",
 );
+
+// Rows are keyboard-navigable: ↑/↓ + Home/End rove a tab stop tied to the
+// selected row, selection follows focus, and Enter opens the item on GitHub.
+assert.match(source, /case "ArrowDown": e\.preventDefault\(\); focusRow/, "ArrowDown roves to the next row");
+assert.match(source, /case "ArrowUp": e\.preventDefault\(\); focusRow/, "ArrowUp roves to the previous row");
+assert.match(source, /data-gh-row="true"[\s\S]{0,160}?data-item-id=\{item\.id\}/, "item rows carry the roving + id hooks");
+assert.match(source, /tabIndex=\{selectedItem\?\.id === item\.id \? 0 : -1\}/, "the selected row is the roving tab stop");
+assert.match(source, /role="grid" aria-label="GitHub activity/, "the table is a labelled grid");
+assert.match(source, /setSelectedItemId\(row\.dataset\.itemId\)/, "selection follows keyboard focus");
+assert.match(source, /window\.open\(url, "_blank", "noopener,noreferrer"\)/, "Enter opens the focused row on GitHub");
+assert.match(source, /\}, \[sorted\.length\]\);/, "row-nav listeners rebind when the table mounts after the async fetch");
+
+// Polling pauses while the tab is hidden (saves the visible rate limit) and
+// the manual/⌘R refresh keeps the linked-task chips in sync.
+assert.match(source, /function schedulePoll\(ms: number\)[\s\S]{0,160}?document\.hidden\) return/, "polling is skipped while the tab is hidden");
+assert.match(source, /addEventListener\("visibilitychange", onVis\)/, "polling resumes when the tab returns to the foreground");
+assert.match(source, /void fetchActivity\(\);\s*\n\s*reloadCards\(\);/, "⌘R refreshes activity AND reloads the linked-task cards");
+
+// Memoised so a re-render doesn't re-filter the (potentially large) item set.
+assert.match(source, /const filtered = useMemo\(/, "the kind-filtered set is memoised");
+assert.match(source, /const counts: Record<Filter, number> = useMemo\(/, "the per-filter counts are memoised");
+// In-flight fetch can't setState after unmount.
+assert.match(source, /if \(!mountedRef\.current\) return;/, "fetchActivity guards against setState after unmount");
 
 // GitHub timestamps use the app-canonical relativeTime (which formats "2m ago"
 // / "Jun 12" itself), not a local relTime helper with a manually-appended " ago"
