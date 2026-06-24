@@ -30,7 +30,7 @@ assert.match(app, /@AppStorage\(AppearanceMode\.storageKey\)/, "app scene reads 
 assert.match(app, /mode\.resolve\(desktop:\s*app\.chrome\)/, "appearance mode resolves against the desktop chrome");
 assert.match(root, /@Environment\(\\\.chrome\) private var chrome/, "RootView reads the chrome palette");
 assert.match(root, /\.background\(chrome\.bgBase\.ignoresSafeArea\(\)\)[\s\S]*\.foregroundStyle\(chrome\.textPrimary\)/, "RootView applies desktop background and foreground");
-assert.match(root, /\.toolbarBackground\(chrome\.bgRaised,\s*for:\s*\.navigationBar,\s*\.tabBar\)/, "RootView applies desktop chrome to navigation and tab bars");
+assert.match(root, /\.glassBars\(\)/, "RootView applies the frosted, theme-tinted tab + navigation bar chrome");
 assert.match(root, /while !Task\.isCancelled[\s\S]*await app\.loadTheme\(\)[\s\S]*Task\.sleep\(for:\s*\.seconds\(20\)\)/, "MainTabView polls the desktop theme while connected");
 
 console.log("ios-theme-api.test.ts: ok");

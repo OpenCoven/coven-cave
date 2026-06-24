@@ -19,7 +19,9 @@ struct RootView: View {
         }
         .background(chrome.bgBase.ignoresSafeArea())
         .foregroundStyle(chrome.textPrimary)
-        .toolbarBackground(chrome.bgRaised, for: .navigationBar, .tabBar)
+        // Frosted, accent-infused tab + navigation bars that track the desktop
+        // palette and degrade to solid themed surfaces under Reduce Transparency.
+        .glassBars()
     }
 }
 

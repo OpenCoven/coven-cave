@@ -15,6 +15,8 @@ struct ChatsHomeView: View {
     @Environment(AppModel.self) private var app
     @State private var showNewChat = false
     @State private var query = ""
+    /// Drives the accent glow on the search field while it's being edited.
+    @FocusState private var searchFocused: Bool
     @State private var path: [ChatRoute] = []
     @State private var renamingThread: ChatThread?
     /// A group thread awaiting delete confirmation (swipe or context menu).
@@ -109,7 +111,7 @@ struct ChatsHomeView: View {
         .padding(.horizontal, 16)
         .padding(.top, 8)
         .padding(.bottom, 12)
-        .background(.bar)
+        .glassChrome(.top)
     }
 
     /// Reordering is only meaningful with ≥2 familiars and no active search
@@ -306,7 +308,8 @@ struct ChatsHomeView: View {
     }
 
     /// Floating bottom bar: a search field beside a circular compose button,
-    /// styled after iOS Messages.
+    /// styled after iOS Messages — accent-infused frosted glass that tracks the
+    /// desktop theme and degrades to a solid surface under Reduce Transparency.
     private var bottomBar: some View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
@@ -315,6 +318,7 @@ struct ChatsHomeView: View {
                 TextField("Search", text: $query)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .focused($searchFocused)
                 if !query.isEmpty {
                     Button {
                         query = ""
@@ -327,15 +331,17 @@ struct ChatsHomeView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
-            .background(.regularMaterial, in: Capsule())
+            .glass(.control, in: Capsule())
+            .accentGlow(active: searchFocused)
 
             Button {
                 showNewChat = true
             } label: {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 19, weight: .medium))
-                    .frame(width: 50, height: 50)
-                    .background(.regularMaterial, in: Circle())
+                    .font(.system(.title3, weight: .medium))
+                    .scaledControlFrame(50)
+                    .glass(.control, in: Circle())
+                    .accentGlow(active: true)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("New chat")
@@ -387,7 +393,25 @@ struct FamiliarRow: View {
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
+        // Read the whole row as one VoiceOver element instead of four fragments.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
+        .accessibilityHint("Opens chats with this familiar")
     }
+
+    /// One spoken summary of the row: name, role, chat count, last activity.
+    private var accessibilityText: String {
+        var parts: [String] = [familiar.displayName]
+        if let role = familiar.role, !role.isEmpty { parts.append(role) }
+        let count = app.threadCount(for: familiar.id)
+        parts.append(count == 1 ? "1 chat" : "\(count) chats")
+        if let last = app.lastActivity(for: familiar.id) {
+            parts.append("last active " + Self.relativeFormatter.localizedString(for: last, relativeTo: Date()))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private static let relativeFormatter = RelativeDateTimeFormatter()
 }
 
 struct ThreadRow: View {
@@ -436,7 +460,23 @@ struct ThreadRow: View {
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
+        // Collapse title, status glyphs, time, and preview into one spoken element.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText)
     }
+
+    /// One spoken summary of the row: title, status, last activity, preview.
+    private var accessibilityText: String {
+        var parts: [String] = [thread.title]
+        if thread.isGroup { parts.append("group chat") }
+        if thread.pinned { parts.append("pinned") }
+        if thread.muted { parts.append("muted") }
+        parts.append("last active " + Self.relativeFormatter.localizedString(for: thread.updatedAt, relativeTo: Date()))
+        parts.append(previewText)
+        return parts.joined(separator: ", ")
+    }
+
+    private static let relativeFormatter = RelativeDateTimeFormatter()
 
     private var previewText: String {
         guard let last = lastMessage else { return "Tap to start chatting" }
