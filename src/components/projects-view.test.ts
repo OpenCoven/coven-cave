@@ -77,7 +77,7 @@ assert.match(
 );
 assert.match(
   projectsView,
-  /Promise\.all\(sessionIds\.map\(\(id\) => deleteOneSession\(id\)\)\)/,
+  /Promise\.all\(removed\.map\(\(s\) => deleteOneSession\(s\.id\)\)\)/,
   "bulk delete runs the per-chat deletes in parallel",
 );
 assert.match(
@@ -85,6 +85,11 @@ assert.match(
   /results\.some\(Boolean\)\) onSessionsChanged/,
   "bulk delete refetches once if any chat was deleted",
 );
+// Bulk delete is deferred + undoable (shared useUndoDelete + UndoToast).
+assert.match(projectsView, /useUndoDelete<SessionRow\[\]>\(\)/, "bulk delete routes through useUndoDelete");
+assert.match(projectsView, /scheduleSessionDelete\(\s*removed,/, "the batch is scheduled through the undo window");
+assert.match(projectsView, /const hidden = new Set\(\(deletePending\?\.item \?\? \[\]\)\.map\(\(s\) => s\.id\)\)/, "pending-deleted chats are hidden until commit");
+assert.match(projectsView, /onUndo=\{undoSessionDelete\}[\s\S]{0,40}onDismiss=\{commitSessionDelete\}/, "an undo toast restores the batch");
 assert.match(
   projectsView,
   /\{allVisibleSelected \? "Clear" : "Select all"\}/,
@@ -107,7 +112,7 @@ assert.match(
   "selection is keyed to the current chat ids",
 );
 assert.match(projectsView, /useDroppable\(\{\s*id: `pcard:/, "project cards are drop targets");
-assert.match(projectsView, /applyProjectOverrides\(sessions, projectOverrides\)/, "chats are grouped with Cave-local project overrides applied");
+assert.match(projectsView, /applyProjectOverrides\(visible, projectOverrides\)/, "chats are grouped with Cave-local project overrides applied (after hiding pending-deleted)");
 assert.match(projectsView, /setProjectOverride\(sessionId, targetRoot\)/, "cross-project move applies a Cave-local project override");
 assert.match(projectsView, /mergeVisibleOrder[\s\S]{0,120}writeSessionOrder/, "same-project drop reorders via the shared manual order");
 assert.match(projectsView, /cave:agents-open-session/, "clicking a chat opens it via the agents-open-session event");
