@@ -1872,7 +1872,7 @@ export function Workspace() {
       // tab; keying on the mode remounts so the deep link lands on it.
       <PluginsView
         key={mode}
-        tabs={["roles", "workflows", "skills", "capabilities"]}
+        tabs={["roles", "workflows", "skills", "marketplace", "capabilities"]}
         initialTab={mode === "capabilities" ? "capabilities" : "roles"}
         activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}

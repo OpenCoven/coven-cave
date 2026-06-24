@@ -12,8 +12,9 @@ import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { CapabilitiesViewSurface } from "@/components/capabilities-view";
+import { MarketplaceViewSurface } from "@/components/marketplace-view";
 
-type Tab = "roles" | "workflows" | "skills" | "capabilities";
+type Tab = "roles" | "workflows" | "skills" | "capabilities" | "marketplace";
 
 type RoleEntry = {
   id: string;
@@ -75,6 +76,7 @@ const TAB_LABEL: Record<Tab, string> = {
   workflows: "Workflows",
   skills: "Skills",
   capabilities: "Capabilities",
+  marketplace: "Marketplace",
 };
 
 type IconName = Parameters<typeof Icon>[0]["name"];
@@ -86,6 +88,7 @@ const ICONS = {
   tabWorkflows: "ph:graph",
   tabSkills: "ph:sparkle",
   tabCapabilities: "ph:lightning-bold",
+  tabMarketplace: "ph:puzzle-piece-bold",
   workflowChip: "ph:lightning-bold",
   mcpServer: "ph:plug-bold",
   tool: "ph:wrench-bold",
@@ -99,6 +102,7 @@ const TAB_ICON: Record<Tab, IconName> = {
   workflows: ICONS.tabWorkflows,
   skills: ICONS.tabSkills,
   capabilities: ICONS.tabCapabilities,
+  marketplace: ICONS.tabMarketplace,
 };
 
 function includesQuery(values: Array<string | undefined>, query: string): boolean {
@@ -353,7 +357,7 @@ export function PluginsView({
               </p>
             ) : null}
           </div>
-          {tab === "capabilities" ? null : (
+          {tab === "capabilities" || tab === "marketplace" ? null : (
             <label className="flex min-w-0 items-center gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-3 py-2 lg:w-80">
               <Icon name={ICONS.search} width={15} className="shrink-0 text-[var(--text-muted)]" />
               <input
@@ -426,6 +430,15 @@ export function PluginsView({
           className="flex min-h-0 flex-1 flex-col"
         >
           <CapabilitiesViewSurface activeHarness={activeHarness} />
+        </div>
+      ) : tab === "marketplace" ? (
+        <div
+          role="tabpanel"
+          id={`plugins-panel-${tab}`}
+          aria-labelledby={`plugins-tab-${tab}`}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <MarketplaceViewSurface />
         </div>
       ) : (
         <div
