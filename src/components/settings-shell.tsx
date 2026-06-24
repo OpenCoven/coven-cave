@@ -20,6 +20,7 @@ import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
+import { normalizedColorToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
 import {
   CORNER_RADIUS_OPTIONS,
@@ -638,15 +639,37 @@ const THEME_SYNC_KEYS = [
   "--border-hairline", "--accent-presence",
 ] as const;
 
+/**
+ * Resolve any CSS colour string to plain sRGB hex via a `<canvas>` `fillStyle`
+ * round-trip. `getComputedStyle` hands back a custom property's *authored* value
+ * (`lab(...)`, `oklch(...)`, `color-mix(...)`), which a hex-only client (iOS
+ * `Color(hex:)`) can't read; assigning it to a canvas context and reading it
+ * back normalises it to `#rrggbb` / `rgba(...)` in sRGB. Falls back to the raw
+ * value if the context is unavailable or rejects the colour, so a token is
+ * never made worse than it is today.
+ */
+function resolveTokenToHex(ctx: CanvasRenderingContext2D | null, raw: string): string {
+  if (!ctx) return raw;
+  const SENTINEL = "#010203";
+  ctx.fillStyle = SENTINEL;
+  ctx.fillStyle = raw;
+  const got = ctx.fillStyle;
+  // An unparseable colour leaves fillStyle at the sentinel — keep the original.
+  if (typeof got !== "string") return raw;
+  if (got.toLowerCase() === SENTINEL && raw.trim().toLowerCase() !== SENTINEL) return raw;
+  return normalizedColorToHex(got);
+}
+
 function persistThemeTokens() {
   if (typeof window === "undefined") return;
   try {
     const html = document.documentElement;
     const cs = getComputedStyle(html);
+    const ctx = document.createElement("canvas").getContext("2d");
     const tokens: Record<string, string> = {};
     for (const key of THEME_SYNC_KEYS) {
       const value = cs.getPropertyValue(key).trim();
-      if (value) tokens[key] = value;
+      if (value) tokens[key] = resolveTokenToHex(ctx, value);
     }
     void fetch("/api/theme", {
       method: "PUT",
