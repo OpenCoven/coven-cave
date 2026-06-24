@@ -2,7 +2,6 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
-import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -786,9 +785,7 @@ function CommentHeader({ comment }: { comment: GhComment }) {
         <span className="gh-comment-assoc">{comment.authorAssociation.toLowerCase()}</span>
       )}
       {comment.createdAt && (
-        <span className="gh-comment-time" title={comment.createdAt}>
-          {relativeTime(comment.createdAt)}
-        </span>
+        <RelativeTime iso={comment.createdAt} className="gh-comment-time" />
       )}
       {comment.url && (
         <a

@@ -277,10 +277,11 @@ assert.match(source, /const counts: Record<Filter, number> = useMemo\(/, "the pe
 // In-flight fetch can't setState after unmount.
 assert.match(source, /if \(!mountedRef\.current\) return;/, "fetchActivity guards against setState after unmount");
 
-// GitHub timestamps use the app-canonical relativeTime (which formats "2m ago"
-// / "Jun 12" itself), not a local relTime helper with a manually-appended " ago"
-// that disagreed between call sites.
-assert.ok(source.includes('import { relativeTime } from "@/lib/relative-time"'), "imports shared relativeTime");
+// GitHub timestamps use the app-canonical relative time via the shared
+// <RelativeTime> component (semantic <time>, preference-aware exact-time hover,
+// self-updating) — not a local relTime helper with a manually-appended " ago"
+// that disagreed between call sites, and not a raw ISO string in the title.
+assert.ok(source.includes('import { RelativeTime } from "@/components/ui/relative-time"'), "uses the shared RelativeTime component");
 assert.ok(!source.includes("relTime"), "local relTime helper and its call sites are gone");
 
 // PR rows expose a maintainer-safe merge path that prefers an issue/PR worktree
