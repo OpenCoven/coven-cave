@@ -217,9 +217,26 @@ struct ChatView: View {
             // Pull to re-sync a direct chat that may have advanced on another
             // device (no-op for groups / unsent threads, see ChatThread.reload).
             .refreshable {
-                if let client = app.client {
-                    await thread.reload(client: client)
+                guard let client = app.client else { return }
+                do {
+                    try await thread.reload(client: client)
                     app.persistThreads()
+                } catch {
+                    app.showToast("Couldn't refresh this chat",
+                                  systemImage: "exclamationmark.triangle.fill", style: .error)
+                }
+            }
+            // A fresh thread with no messages shouldn't read as a blank void.
+            .overlay {
+                if thread.messages.isEmpty {
+                    ContentUnavailableView {
+                        Label("Start the conversation", systemImage: "bubble.left.and.bubble.right")
+                    } description: {
+                        Text(thread.isGroup
+                             ? "Send a message to all \(thread.familiarIds.count) familiars."
+                             : "Send a message to \(app.familiar(thread.familiarIds.first ?? "")?.displayName ?? "this familiar") to begin.")
+                    }
+                    .allowsHitTesting(false)
                 }
             }
             // Track whether the user is parked at the latest message so a

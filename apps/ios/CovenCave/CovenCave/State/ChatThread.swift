@@ -149,11 +149,14 @@ final class ChatThread: Identifiable, Hashable {
     /// catches up. Direct threads only: a group is N independent sessions with no
     /// shared turn ordering to merge. Skipped while streaming (and when there's no
     /// server session yet) so an in-flight reply is never clobbered.
-    func reload(client: CaveClient) async {
+    /// Re-sync a direct chat from the server. No-ops for groups / streaming /
+    /// unsent threads; THROWS on a real fetch failure so the caller (pull to
+    /// refresh) can surface it instead of failing silently.
+    func reload(client: CaveClient) async throws {
         guard !isGroup, !isStreaming,
               let familiarId = familiarIds.first,
-              let sessionId = sessionIds[familiarId],
-              let convo = try? await client.conversation(sessionId: sessionId) else { return }
+              let sessionId = sessionIds[familiarId] else { return }
+        guard let convo = try await client.conversation(sessionId: sessionId) else { return }
         messages = convo.turns.map { turn in
             let role = DisplayMessage.Role(rawValue: turn.role) ?? .assistant
             return DisplayMessage(role: role,
