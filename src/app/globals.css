@@ -3973,8 +3973,11 @@ button:active > .edge-rail-chip {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  /* Match the collapsed nav-rail button hit target (.shell-nav--rail
+     .sidebar-action-row is a 40px square) so the top toggles line up in
+     width with the sidepanel's icon buttons. */
+  width: 40px;
+  height: 40px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-base);
@@ -7954,9 +7957,9 @@ a.mobile-handoff__link:hover {
   position: absolute;
   inset: 0;
   margin: auto;
-  width: 28px;
-  height: 28px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-control);
   pointer-events: none;
   z-index: 1;
   /* White-hot violet core + a 4-point sparkle star (two crossed bright lines),
