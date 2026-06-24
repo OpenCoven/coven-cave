@@ -117,6 +117,10 @@ struct TasksView: View {
                 .sheet(item: $boardDetail) { card in
                     NavigationStack { TaskDetailView(card: card) }
                 }
+                // A widget deep link (covencave://reminders) lands on this tab;
+                // open the reminders sheet, then clear the pending link.
+                .onChange(of: app.deepLink) { _, link in consumeDeepLink(link) }
+                .onAppear { consumeDeepLink(app.deepLink) }
         } detail: {
             if let selection {
                 NavigationStack { TaskDetailView(card: selection) }
@@ -221,6 +225,12 @@ struct TasksView: View {
         guard let card = app.cardToOpen else { return }
         if selection?.id != card.id { selection = card }
         app.cardToOpen = nil
+    }
+
+    private func consumeDeepLink(_ link: AppModel.DeepLink?) {
+        guard let link else { return }
+        if link == .reminders { showReminders = true }
+        app.deepLink = nil
     }
 
     private var groupBar: some View {

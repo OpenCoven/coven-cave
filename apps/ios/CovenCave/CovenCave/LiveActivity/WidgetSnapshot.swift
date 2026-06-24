@@ -4,10 +4,14 @@ import Foundation
 /// widget can render without its own network access. Written after reminders /
 /// tasks load; read by the widget's timeline provider.
 struct WidgetSnapshot: Codable, Hashable {
+    var nextReminderId: String?
     var nextReminderTitle: String?
     var nextReminderDate: Date?
     var dueTaskCount: Int
     var runningTaskCount: Int
+    /// Resolved API base URL (e.g. `https://host.ts.net:8443`) so the widget's
+    /// Complete / Snooze intents can hit the inbox endpoints directly.
+    var apiBaseURL: String?
     var updatedAt: Date
 }
 

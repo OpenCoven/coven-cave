@@ -33,6 +33,10 @@ struct CovenCaveApp: App {
                           app.connectionState != .checking else { return }
                     Task { await app.connectWithRetry() }
                 }
+                // Deep links from the home-screen widget (covencave://…) route to
+                // the matching tab/sheet. Handled even before connect — the tab is
+                // set so the right surface shows once the desktop is reached.
+                .onOpenURL { app.handleDeepLink($0) }
         }
     }
 }

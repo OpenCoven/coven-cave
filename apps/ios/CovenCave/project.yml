@@ -67,6 +67,7 @@ targets:
       - path: CovenCaveWidgets
       - path: CovenCave/LiveActivity/TaskActivityAttributes.swift
       - path: CovenCave/LiveActivity/WidgetSnapshot.swift
+      - path: CovenCave/Intents/WidgetReminderIntents.swift
     settings:
       base:
         INFOPLIST_FILE: CovenCaveWidgets/Info.plist

@@ -387,13 +387,33 @@ final class AppModel {
         }.count
         let running = tasks.filter { $0.status == .running }.count
         WidgetSnapshotStore.write(WidgetSnapshot(
+            nextReminderId: next?.0.id,
             nextReminderTitle: next?.0.title,
             nextReminderDate: next?.1,
             dueTaskCount: due,
             runningTaskCount: running,
+            apiBaseURL: connection?.baseURL?.absoluteString,
             updatedAt: now
         ))
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    // MARK: - Deep links (home-screen widget)
+
+    /// Surface a widget tap targets. The widget body deep-links to `.reminders`
+    /// (tap the reminder) / `.tasks` (tap the counts) via the `covencave://` URL
+    /// scheme; `TasksView` opens the reminders sheet when it sees `.reminders`.
+    enum DeepLink: String { case tasks, reminders, calendar }
+
+    var deepLink: DeepLink?
+
+    func handleDeepLink(_ url: URL) {
+        guard url.scheme == "covencave", let target = DeepLink(rawValue: url.host ?? "") else { return }
+        switch target {
+        case .tasks, .reminders: selectedTab = .tasks
+        case .calendar: selectedTab = .calendar
+        }
+        deepLink = target
     }
 
     func loadJournal() async {

@@ -1,4 +1,5 @@
 import ActivityKit
+import AppIntents
 import WidgetKit
 import SwiftUI
 
@@ -94,6 +95,8 @@ struct UpNextWidgetView: View {
     var entry: UpNextEntry
     @Environment(\.widgetFamily) private var family
 
+    private var reminderId: String? { entry.snapshot?.nextReminderId }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
@@ -119,20 +122,49 @@ struct UpNextWidgetView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 12) {
-                if let s = entry.snapshot, s.runningTaskCount > 0 {
-                    Label("\(s.runningTaskCount) running", systemImage: "play.fill")
-                        .foregroundStyle(.tint)
-                }
-                if let s = entry.snapshot, s.dueTaskCount > 0 {
-                    Label("\(s.dueTaskCount) due", systemImage: "checklist")
-                        .foregroundStyle(.secondary)
-                }
+            // When there's a reminder, offer one-tap Complete / Snooze (interactive
+            // widget buttons). Otherwise fall back to the running / due counts.
+            if let id = reminderId {
+                actionButtons(id: id)
+            } else {
+                counts
             }
-            .font(.caption2)
-            .lineLimit(1)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        // Tapping anywhere outside the buttons opens the reminders list.
+        .widgetURL(URL(string: "covencave://reminders"))
+    }
+
+    private func actionButtons(id: String) -> some View {
+        HStack(spacing: 8) {
+            Button(intent: CompleteReminderIntent(reminderId: id)) {
+                Label("Done", systemImage: "checkmark")
+            }
+            .tint(.green)
+            Button(intent: SnoozeReminderIntent(reminderId: id)) {
+                Label("15m", systemImage: "clock.arrow.circlepath")
+            }
+            .tint(.orange)
+        }
+        .font(.caption2.weight(.semibold))
+        .buttonStyle(.borderedProminent)
+        .controlSize(.small)
+        .lineLimit(1)
+    }
+
+    private var counts: some View {
+        HStack(spacing: 12) {
+            if let s = entry.snapshot, s.runningTaskCount > 0 {
+                Label("\(s.runningTaskCount) running", systemImage: "play.fill")
+                    .foregroundStyle(.tint)
+            }
+            if let s = entry.snapshot, s.dueTaskCount > 0 {
+                Label("\(s.dueTaskCount) due", systemImage: "checklist")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption2)
+        .lineLimit(1)
     }
 }
 
