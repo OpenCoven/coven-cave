@@ -26,6 +26,9 @@ struct ChatView: View {
     @FocusState private var composerFocused: Bool
     @State private var showCommands = false
     @State private var showFamiliarPicker = false
+    @State private var showModelPicker = false
+    @State private var modelPickerOptions: [ChatModelOption] = []
+    @State private var modelPickerCurrent = ""
     @State private var showTasks = false
     @State private var atBottom = true
     @State private var dictation = SpeechDictation()
@@ -127,6 +130,12 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showCommands) {
             CommandsSheet { command in prefill(command) }
+        }
+        .sheet(isPresented: $showModelPicker) {
+            ModelPickerSheet(options: modelPickerOptions, current: modelPickerCurrent) { id in
+                guard !thread.isGroup, let familiarId = thread.familiarIds.first else { return }
+                Task { await applyModel(id, familiarId: familiarId, sessionId: modelSessionId(familiarId)) }
+            }
         }
         .sheet(isPresented: $showFamiliarPicker) {
             FamiliarPickerSheet { familiar in
@@ -598,6 +607,8 @@ struct ChatView: View {
             Task { await runDaemonStatus() }
         case .doctor:
             Task { await runDoctor() }
+        case .switchModel:
+            Task { await switchModel(args) }
         case .desktopOnly(let surface):
             app.showToast("\(surface) lives on your desktop", systemImage: "desktopcomputer",
                           style: .warning)
@@ -614,6 +625,77 @@ struct ChatView: View {
         }
         app.requestOpen(app.directThread(for: familiar.id))
         app.showToast("Switched to \(familiar.displayName)", systemImage: "arrow.left.arrow.right")
+    }
+
+    /// `/model` — no arg opens the picker; an arg resolves to a model and sets it.
+    /// Direct chats only (a group fan-out has no single model). Options come from
+    /// the server's model-state, so iOS needs no local catalog.
+    private func switchModel(_ args: String) async {
+        guard let client = app.client else { return }
+        guard !thread.isGroup, let familiarId = thread.familiarIds.first else {
+            thread.appendSystem("Switch the model from a direct chat with one familiar.", isError: true)
+            app.touch(thread)
+            return
+        }
+        let sessionId = modelSessionId(familiarId)
+        let resp: ChatModelStateResponse
+        do {
+            resp = try await client.chatModelState(familiarId: familiarId, sessionId: sessionId)
+        } catch {
+            thread.appendSystem("Couldn't load the model list. Is the desktop reachable?", isError: true)
+            app.touch(thread)
+            return
+        }
+        let options = resp.options ?? []
+        let trimmed = args.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.isEmpty {
+            guard !options.isEmpty else {
+                thread.appendSystem("This runtime has no model menu — type /model <id> to set one.")
+                app.touch(thread)
+                return
+            }
+            modelPickerOptions = options
+            modelPickerCurrent = resp.state.effectiveModel
+            showModelPicker = true
+            return
+        }
+
+        // Resolve the argument: exact id/label, then substring, else a custom id.
+        let lower = trimmed.lowercased()
+        let match = options.first { $0.id.lowercased() == lower || $0.label.lowercased() == lower }
+            ?? options.first { $0.id.lowercased().contains(lower) || $0.label.lowercased().contains(lower) }
+        let allowCustom = resp.allowCustom ?? true
+        guard let modelId = match?.id ?? (allowCustom ? trimmed : nil) else {
+            thread.appendSystem("Unknown model “\(trimmed)”. Type /model to pick from the list.", isError: true)
+            app.touch(thread)
+            return
+        }
+        await applyModel(modelId, familiarId: familiarId, sessionId: sessionId)
+    }
+
+    /// PATCH the chosen model (session scope when the chat has a server session,
+    /// else the familiar default) and confirm inline.
+    private func applyModel(_ model: String, familiarId: String, sessionId: String?) async {
+        guard let client = app.client else { return }
+        let scope = sessionId != nil ? "session" : "familiar-default"
+        do {
+            let resp = try await client.setChatModel(
+                familiarId: familiarId, sessionId: sessionId, model: model, scope: scope)
+            let label = (resp.options ?? []).first { $0.id == resp.state.effectiveModel }?.label
+                ?? resp.state.effectiveModel
+            thread.appendSystem("Model set to \(label).")
+            app.touch(thread)
+            Haptics.tap()
+        } catch {
+            thread.appendSystem("Couldn't switch the model.", isError: true)
+            app.touch(thread)
+        }
+    }
+
+    private func modelSessionId(_ familiarId: String) -> String? {
+        let id = thread.sessionIds[familiarId]
+        return (id?.isEmpty == false) ? id : nil
     }
 
     private func sendPrompt(_ args: String, command: SlashCommand) {

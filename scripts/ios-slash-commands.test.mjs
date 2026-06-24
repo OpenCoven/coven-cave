@@ -66,6 +66,23 @@ assert.match(
   "Chat slash dispatch should route Developer commands to the iOS Developer tab",
 );
 
+// /model is native on iOS: it switches the chat model via the model-state API.
+assert.match(
+  iosSlash,
+  /name: "\/model"[\s\S]{0,360}availability: \.native[\s\S]{0,80}action: \.switchModel/,
+  "/model should be a native command wired to .switchModel",
+);
+assert.match(
+  chatView,
+  /case \.switchModel:[\s\S]{0,80}await switchModel\(args\)/,
+  "Chat slash dispatch should handle /model via switchModel",
+);
+assert.match(
+  chatView,
+  /client\.setChatModel\(\s*familiarId:[\s\S]{0,160}scope: scope\)/,
+  "switchModel should PATCH the chosen model through setChatModel",
+);
+
 for (const command of ["/journal", "/inbox", "/remind", "/attach", "/tui", "/toggle-agent"]) {
   const escaped = command.replace("/", "\\/");
   assert.match(

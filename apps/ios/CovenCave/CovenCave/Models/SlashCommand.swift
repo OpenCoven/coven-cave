@@ -43,6 +43,7 @@ struct SlashCommand: Identifiable, Hashable {
         case saveLink              // /save <url> … — route a URL into the library
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline
+        case switchModel           // /model — pick or set the chat model
         case desktopOnly(String)   // recognised, but lives on the desktop
     }
 
@@ -85,9 +86,9 @@ enum SlashCatalog {
                      description: "Show the command reference.",
                      section: .chat, availability: .native, action: .help),
         SlashCommand(name: "/model", aliases: ["/m"], hint: "switch model",
-                     description: "Switch the active model — on the desktop for now.",
+                     description: "Pick or set the model for this chat. Pass an id/name or open the picker.",
                      argPlaceholder: "model", section: .chat,
-                     availability: .desktopOnly, action: .desktopOnly("Model selection")),
+                     availability: .native, action: .switchModel),
 
         // MARK: Familiar
         SlashCommand(name: "/familiar", aliases: ["/agent"], hint: "switch",
