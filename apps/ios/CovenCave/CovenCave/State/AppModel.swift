@@ -396,6 +396,36 @@ final class AppModel {
         }
     }
 
+    func markReminderDone(_ reminder: Reminder) async {
+        await reminderAction(reminder, optimistic: "done") { try await $0.markReminderDone(id: reminder.id) }
+    }
+    func dismissReminder(_ reminder: Reminder) async {
+        await reminderAction(reminder, optimistic: "dismissed") { try await $0.dismissReminder(id: reminder.id) }
+    }
+    func snoozeReminder(_ reminder: Reminder, minutes: Int) async {
+        await reminderAction(reminder, optimistic: "snoozed") { try await $0.snoozeReminder(id: reminder.id, minutes: minutes) }
+    }
+
+    /// Optimistically set a reminder's status, run the server action, reconcile
+    /// with the echoed item, and revert on failure.
+    private func reminderAction(_ reminder: Reminder, optimistic: String,
+                                _ call: (CaveClient) async throws -> Reminder?) async {
+        guard let client else { return }
+        let previous = reminders
+        applyReminder(id: reminder.id) { $0.status = optimistic }
+        do {
+            if let updated = try await call(client) { applyReminder(id: reminder.id) { $0 = updated } }
+        } catch {
+            reminders = previous
+            remindersError = error.localizedDescription
+        }
+    }
+
+    private func applyReminder(id: String, _ mutate: (inout Reminder) -> Void) {
+        guard let idx = reminders.firstIndex(where: { $0.id == id }) else { return }
+        var r = reminders[idx]; mutate(&r); reminders[idx] = r
+    }
+
     /// Set how far through an item the reader is (0–100), keeping its status.
     /// Optimistic, with rollback on failure.
     func setReadingProgress(_ item: ReadingItem, _ progress: Int) async {

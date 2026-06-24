@@ -88,6 +88,28 @@ struct RemindersView: View {
                             Task { await app.deleteReminders([reminder.id]) }
                         } label: { Label("Delete", systemImage: "trash") }
                     }
+                    .swipeActions(edge: .leading) {
+                        Button { Task { await app.markReminderDone(reminder) } } label: {
+                            Label("Done", systemImage: "checkmark.circle")
+                        }
+                        .tint(.green)
+                    }
+                    .contextMenu {
+                        Button { Task { await app.markReminderDone(reminder) } } label: {
+                            Label("Mark done", systemImage: "checkmark.circle")
+                        }
+                        Menu {
+                            Button("15 minutes") { Task { await app.snoozeReminder(reminder, minutes: 15) } }
+                            Button("1 hour") { Task { await app.snoozeReminder(reminder, minutes: 60) } }
+                            Button("1 day") { Task { await app.snoozeReminder(reminder, minutes: 1440) } }
+                        } label: { Label("Snooze", systemImage: "moon.zzz") }
+                        Button { Task { await app.dismissReminder(reminder) } } label: {
+                            Label("Dismiss", systemImage: "xmark.circle")
+                        }
+                        Button(role: .destructive) { Task { await app.deleteReminders([reminder.id]) } } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 }
             }
             .listStyle(.plain)
