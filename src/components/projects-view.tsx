@@ -27,6 +27,7 @@ import { useProjectsUiState } from "@/lib/projects/use-projects-ui-state";
 import type { ProjectsDensity } from "@/lib/projects/projects-ui-state";
 import { sessionGlyph, glyphToneClass, stripTaskPrefix } from "@/lib/projects/session-glyph";
 import { projectStats } from "@/lib/projects/project-stats";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -127,6 +128,7 @@ function ProjectChatRow({
         role={selectMode ? "checkbox" : "button"}
         aria-checked={selectMode ? selected : undefined}
         tabIndex={0}
+        data-proj-nav
         onClick={activate}
         onKeyDown={(e) => {
           // ARIA button/checkbox pattern: Enter and Space both activate.
@@ -158,7 +160,7 @@ function ProjectChatRow({
             onClick={(e) => e.stopPropagation()}
             title="Drag to reorder or move to another project"
             aria-label={`Move ${title}`}
-            className="grid h-4 w-3 shrink-0 cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/pc:opacity-100"
+            className="grid h-4 w-3 shrink-0 cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/pc:opacity-100 [@media(pointer:coarse)]:opacity-100"
           >
             <Icon name="ph:dots-six-vertical" width={10} aria-hidden />
           </button>
@@ -238,7 +240,7 @@ function ProjectChatRow({
             }}
             title="Delete chat"
             aria-label={`Delete ${title}`}
-            className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/pc:opacity-100"
+            className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/pc:opacity-100 [@media(pointer:coarse)]:opacity-100"
           >
             <Icon name="ph:trash-bold" width={11} aria-hidden />
           </button>
@@ -448,7 +450,19 @@ function ProjectRow({
       <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
+          data-proj-nav
           onClick={() => setExpanded((value) => !value)}
+          onKeyDown={(e) => {
+            // Tree-style disclosure: → expands, ← collapses (no-op when already
+            // in that state). Vertical roving (↑/↓) is handled by the container.
+            if (e.key === "ArrowRight" && !expanded) {
+              e.preventDefault();
+              setExpanded(true);
+            } else if (e.key === "ArrowLeft" && expanded) {
+              e.preventDefault();
+              setExpanded(false);
+            }
+          }}
           aria-expanded={expanded}
           aria-label={`${expanded ? "Collapse" : "Expand"} ${project.name}${statusLabel}`}
           className="focus-ring -ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
@@ -768,6 +782,11 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   const [sessionError, setSessionError] = useState<string | null>(null);
   const projectOverrides = useProjectOverrides();
   const { density, setDensity, isExpanded, setExpanded } = useProjectsUiState();
+  // Roving keyboard navigation (WAI-ARIA) over the flattened list of project
+  // headers + their visible session rows: ↑/↓ + Home/End move focus, Enter/Space
+  // open/select (per-row handlers), and →/← expand/collapse a focused header.
+  const listRef = useRef<HTMLElement>(null);
+  useRovingTabIndex({ containerRef: listRef, itemSelector: "[data-proj-nav]", orientation: "vertical" });
   const [order, setOrder] = useState<string[]>([]);
   useEffect(() => {
     setOrder(readSessionOrder());
@@ -1055,7 +1074,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
         </form>
       ) : null}
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+      <main ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
         {error && projects.length === 0 ? (
           <ErrorState
             icon="ph:warning"

@@ -291,4 +291,41 @@ assert.match(
   "the card carries a stable id so it can be scrolled into view",
 );
 
+// Phase 3 — keyboard navigation: a roving tabindex (WAI-ARIA) over the
+// flattened list of project headers + their visible session rows. ↑/↓ + Home/End
+// move focus (shared hook); →/← expand/collapse a focused header.
+assert.match(
+  projectsView,
+  /import \{ useRovingTabIndex \} from "@\/lib\/use-roving-tabindex"/,
+  "reuses the shared roving-tabindex hook",
+);
+assert.match(
+  projectsView,
+  /useRovingTabIndex\(\{ containerRef: listRef, itemSelector: "\[data-proj-nav\]", orientation: "vertical" \}\)/,
+  "rove vertically over [data-proj-nav] items in the list container",
+);
+assert.match(projectsView, /<main ref=\{listRef\}/, "the scroll container hosts the roving keydown handler");
+// Both the project header disclosure and each session row are nav stops.
+assert.ok(
+  (projectsView.match(/data-proj-nav/g) ?? []).length >= 2,
+  "header disclosure + session rows are both tagged as rove stops",
+);
+assert.match(
+  projectsView,
+  /e\.key === "ArrowRight" && !expanded[\s\S]{0,80}?setExpanded\(true\)/,
+  "ArrowRight expands a focused, collapsed project header",
+);
+assert.match(
+  projectsView,
+  /e\.key === "ArrowLeft" && expanded[\s\S]{0,80}?setExpanded\(false\)/,
+  "ArrowLeft collapses a focused, expanded project header",
+);
+// Touch: row actions (drag + delete) stay visible on coarse pointers, where
+// there is no hover to reveal them.
+assert.match(
+  projectsView,
+  /\[@media\(pointer:coarse\)\]:opacity-100/,
+  "row actions stay visible on touch/coarse-pointer devices",
+);
+
 console.log("projects-view.test.ts: ok");

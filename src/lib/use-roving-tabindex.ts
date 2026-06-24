@@ -96,6 +96,11 @@ export function useRovingTabIndex({
     }
 
     function onKey(e: KeyboardEvent) {
+      // Never rove while the user is typing in a field inside the container
+      // (e.g. an inline rename/filter input) — arrow keys must move the caret
+      // and Home/End must jump within the text, not the item set.
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       switch (e.key) {
         case "ArrowDown":
           if (!vert) return;

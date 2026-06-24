@@ -63,4 +63,12 @@ assert.match(
   "clamps activeIndex when the item list shrinks",
 );
 
+// Ignores keystrokes originating in an editable field, so arrow/Home/End move
+// the text caret (e.g. an inline rename input) instead of roving focus.
+assert.match(
+  source,
+  /isContentEditable\s*\|\|\s*\/\^\(INPUT\|TEXTAREA\|SELECT\)\$\/\.test\(\s*t\.tagName\s*\)/,
+  "does not rove while typing in an input/textarea/select/contentEditable",
+);
+
 console.log("use-roving-tabindex.test.ts OK");
