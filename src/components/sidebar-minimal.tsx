@@ -33,6 +33,7 @@ export type FolderMode =
   | "github"
   | "roles"
   | "workflows"
+  | "flow"
   | "submissions"
   | "calls"
   | "library"
@@ -105,6 +106,7 @@ const FOLDER_MODES: Array<{
   { id: "docs", label: "Coven", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven docs, feedback, and social tabs" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, workflows, skills, and the capabilities your familiars can use" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
+  { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
   { id: "calls", label: "Calls", iconName: "ph:graph", group: "tools", kbd: "⌘⇧C", description: "Live familiar activity and delegation traces", badge: (p) => badgeText(p.callsActiveCount) },

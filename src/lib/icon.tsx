@@ -282,6 +282,19 @@ export const ICON_NAMES = [
   "ph:speaker-high-fill",
   "ph:speaker-low-fill",
   "ph:speaker-slash-fill",
+  // Flow editor (n8n-style automation canvas) node + UI icons.
+  "ph:traffic-sign",
+  "ph:git-fork",
+  "ph:signpost",
+  "ph:arrows-merge",
+  "ph:repeat",
+  "ph:hourglass",
+  "ph:flag-checkered",
+  "ph:note",
+  "ph:cube",
+  "ph:flow-arrow",
+  "ph:pause",
+  "ph:clock-counter-clockwise",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];

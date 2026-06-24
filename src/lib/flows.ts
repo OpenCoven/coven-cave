@@ -1,0 +1,101 @@
+// Flow editor — client API + shared types.
+//
+// Mirrors workflows.ts: the data types here are client-safe (no node imports)
+// so both the browser components and the server store/routes can share them.
+// Fetch helpers wrap the /api/flows endpoints.
+
+import type { FlowDoc } from "./flow/flow-doc.ts";
+
+export type { FlowDoc, FlowNode, FlowEdge } from "./flow/flow-doc.ts";
+
+export type FlowRunStatus = "preview" | "running" | "succeeded" | "failed";
+
+export type FlowRunStepStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
+
+export type FlowRunStepRecord = {
+  id: string;
+  type: string;
+  status: FlowRunStepStatus;
+};
+
+export type FlowRunRecord = {
+  id: string;
+  flowId: string;
+  flowName?: string;
+  status: FlowRunStatus;
+  startedAt: string;
+  finishedAt?: string;
+  steps: FlowRunStepRecord[];
+  summary?: string;
+  source: "cave" | "daemon";
+  /** Live agent session id when the session executor ran the flow. */
+  sessionId?: string;
+};
+
+export type FlowListResponse = { ok: boolean; flows?: FlowDoc[]; error?: string };
+export type FlowSaveResponse = { ok: boolean; flow?: FlowDoc; error?: string };
+export type FlowMutationResponse = { ok: boolean; error?: string };
+export type FlowRunsResponse = { ok: boolean; runs: FlowRunRecord[]; error?: string };
+export type FlowRunResponse = {
+  ok: boolean;
+  executor?: "session" | "engine";
+  sessionId?: string;
+  run?: FlowRunRecord;
+  unavailable?: boolean;
+  error?: string;
+};
+
+async function readJson<T>(response: Response): Promise<T> {
+  return (await response.json()) as T;
+}
+
+export async function listFlows(): Promise<FlowListResponse> {
+  const response = await fetch("/api/flows", { cache: "no-store" });
+  return readJson<FlowListResponse>(response);
+}
+
+export async function saveFlow(flow: FlowDoc): Promise<FlowSaveResponse> {
+  const response = await fetch("/api/flows", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ flow }),
+  });
+  return readJson<FlowSaveResponse>(response);
+}
+
+export async function deleteFlow(id: string): Promise<FlowMutationResponse> {
+  const response = await fetch(`/api/flows?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+  return readJson<FlowMutationResponse>(response);
+}
+
+export async function runFlow(id: string): Promise<FlowRunResponse> {
+  const response = await fetch("/api/flows/run", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+  return readJson<FlowRunResponse>(response);
+}
+
+export async function listFlowRuns(flowId: string): Promise<FlowRunsResponse> {
+  const response = await fetch(`/api/flows/runs?flowId=${encodeURIComponent(flowId)}`, {
+    cache: "no-store",
+  });
+  return readJson<FlowRunsResponse>(response);
+}
+
+export async function recordFlowRun(input: Omit<FlowRunRecord, "id">): Promise<{ ok: boolean; run?: FlowRunRecord }> {
+  const response = await fetch("/api/flows/runs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return readJson<{ ok: boolean; run?: FlowRunRecord }>(response);
+}
+
+export async function clearFlowRuns(flowId: string): Promise<{ ok: boolean; cleared?: number }> {
+  const response = await fetch(`/api/flows/runs?flowId=${encodeURIComponent(flowId)}`, {
+    method: "DELETE",
+  });
+  return readJson<{ ok: boolean; cleared?: number }>(response);
+}
