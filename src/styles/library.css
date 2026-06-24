@@ -683,6 +683,34 @@
   outline-offset: 1px;
 }
 
+/* Sort control in the docs search row — parity with the other Library lists. */
+.library-doclist-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.library-doclist-sort select {
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 11px;
+  border-radius: 5px;
+  padding: 2px 4px;
+  cursor: pointer;
+  outline: none;
+  max-width: 130px;
+}
+.library-doclist-sort select:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.library-doclist-sort select:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
 .library-doclist-items {
   flex: 1;
   min-height: 0;

@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import type { LibraryCollection, LibraryDoc } from "@/lib/library-types";
+import { sortLibraryDocs, DOC_SORT_OPTIONS } from "@/lib/library-doc-sort";
 
 type Props = {
   docs: LibraryDoc[];
@@ -60,7 +61,16 @@ export function LibraryDocList({
   onRetry,
 }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  const [sortId, setSortId] = useState<string>(DOC_SORT_OPTIONS[0].id);
+  const sortOption = useMemo(
+    () => DOC_SORT_OPTIONS.find((o) => o.id === sortId) ?? DOC_SORT_OPTIONS[0],
+    [sortId],
+  );
   const filtered = useMemo(() => filterDocs(docs, searchQuery), [docs, searchQuery]);
+  const sorted = useMemo(
+    () => sortLibraryDocs(filtered, sortOption.key, sortOption.dir),
+    [filtered, sortOption],
+  );
   const movableCollections = useMemo(() => collections.filter((collection) => collection.id !== "all"), [collections]);
   const movableCollectionIds = useMemo(() => new Set(movableCollections.map((c) => c.id)), [movableCollections]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -131,6 +141,20 @@ export function LibraryDocList({
             <Icon name="ph:x" width={11} />
           </button>
         )}
+        {/* Sort — parity with the bookmarks / reading / github lists. */}
+        <label className="library-doclist-sort">
+          <Icon name="ph:sort-ascending" width={12} aria-hidden />
+          <select
+            value={sortId}
+            onChange={(e) => setSortId(e.target.value)}
+            aria-label="Sort documents"
+            title="Sort documents"
+          >
+            {DOC_SORT_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {/* List */}
@@ -150,7 +174,7 @@ export function LibraryDocList({
               ) : undefined
             }
           />
-        ) : filtered.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <EmptyState
             icon="ph:books"
             headline={searchQuery ? "No documents match your search." : "No documents yet."}
@@ -161,7 +185,7 @@ export function LibraryDocList({
             }
           />
         ) : (
-          filtered.map((doc) => {
+          sorted.map((doc) => {
             const isEditing = editingId === doc.id;
             const isBusy = busyId === doc.id;
             const moveValue = movableCollectionIds.has(doc.collection)

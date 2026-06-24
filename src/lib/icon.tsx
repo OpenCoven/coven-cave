@@ -43,6 +43,7 @@ export const ICON_NAMES = [
   "ph:caret-down",
   "ph:funnel",
   "ph:funnel-fill",
+  "ph:sort-ascending",
   "ph:rows",
   "ph:columns",
   "ph:caret-up-down",
