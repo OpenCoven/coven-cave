@@ -41,6 +41,8 @@ assert.match(helper, /throw new ProjectAccessDeniedError\("missing familiarId fo
 
 // A familiar's own workspace isn't a *registered* project, but the human may
 // still browse any path the traversal guard allows (resolveAllowedProjectPath).
+// The Code tab attaches the owning familiar's id as context, so the exemption
+// must NOT require its absence — isHumanRead is the gate (read surfaces only).
 assert.match(
   helper,
   /import \{ resolveAllowedProjectPath \} from "@\/lib\/server\/project-paths"/,
@@ -48,8 +50,8 @@ assert.match(
 );
 assert.match(
   helper,
-  /if \(!familiarId && isHumanRead\(args\.request, surface\) && resolveAllowedProjectPath\(requestedPath\)\) \{\s*return;/,
-  "human reads of an unregistered-but-allowed path (e.g. a familiar workspace) are permitted",
+  /if \(isHumanRead\(args\.request, surface\) && resolveAllowedProjectPath\(requestedPath\)\) \{\s*return;/,
+  "human reads of an unregistered-but-allowed path (e.g. a familiar workspace) are permitted, even with a familiar id attached",
 );
 
 // Every read route forwards the request so the loopback check can run.
