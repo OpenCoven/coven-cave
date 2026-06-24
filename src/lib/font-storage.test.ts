@@ -8,6 +8,9 @@ import {
   readFontPref,
   writeFontPref,
   applyFont,
+  readFontPairPref,
+  writeFontPairPref,
+  applyFontPair,
 } from "./font-storage.ts";
 
 function setupDom() {
@@ -71,4 +74,30 @@ test("mono slot uses the mono key and --font-mono var", () => {
   applyFont("mono", "geist-mono");
   assert.equal(readFontPref("mono"), "geist-mono");
   assert.equal(props.get("--font-mono"), fontStack(fontOptionById("geist-mono")));
+});
+
+test("readFontPairPref accepts only curated sans/mono pairs", () => {
+  const { store } = setupDom();
+  store.set(FONT_SANS_KEY, "manrope");
+  store.set(FONT_MONO_KEY, "space-mono");
+  assert.equal(readFontPairPref().id, "manrope-space-mono");
+
+  store.set(FONT_MONO_KEY, "jetbrains-mono");
+  assert.equal(readFontPairPref().id, "geist-jetbrains");
+});
+
+test("writeFontPairPref stores both paired slots together", () => {
+  setupDom();
+  writeFontPairPref("manrope-space-mono");
+  assert.equal(readFontPref("sans"), "manrope");
+  assert.equal(readFontPref("mono"), "space-mono");
+  assert.equal(globalThis.window.localStorage.getItem(FONT_SANS_KEY), "manrope");
+  assert.equal(globalThis.window.localStorage.getItem(FONT_MONO_KEY), "space-mono");
+});
+
+test("applyFontPair applies the curated sans and mono stacks together", () => {
+  const { props } = setupDom();
+  applyFontPair("manrope-space-mono");
+  assert.equal(props.get("--font-sans"), fontStack(fontOptionById("manrope")));
+  assert.equal(props.get("--font-mono"), fontStack(fontOptionById("space-mono")));
 });

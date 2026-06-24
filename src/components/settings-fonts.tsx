@@ -3,14 +3,14 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { SettingsGroup } from "@/components/ui/settings-group";
 import {
-  DEFAULT_FONT_ID,
-  FONT_OPTIONS,
+  DEFAULT_FONT_PAIR_ID,
+  FONT_PAIRS,
+  fontPairById,
   fontOptionById,
   fontStack,
   type FontSlot,
-  type FontOption,
 } from "@/lib/font-catalog";
-import { applyFont, readFontPref, writeFontPref } from "@/lib/font-storage";
+import { applyFontPair, readFontPairPref, writeFontPairPref } from "@/lib/font-storage";
 import {
   DEFAULT_SCREEN_SCALE,
   SCREEN_SCALE_EVENT,
@@ -120,9 +120,6 @@ const ALIGN_LABEL: Record<ReadingAlign, string> = {
   justify: "Justify",
 };
 
-const SANS_OPTIONS = FONT_OPTIONS.filter((o) => o.slot === "sans");
-const MONO_OPTIONS = FONT_OPTIONS.filter((o) => o.slot === "mono");
-
 const PREVIEW: Record<FontSlot, string> = {
   sans: "The quick brown fox jumps over 0123",
   mono: "const x = 42; // 0123",
@@ -162,36 +159,20 @@ function ReadingRow({
   );
 }
 
-function FontField({
+function FontPreview({
   slot,
   label,
-  options,
-  value,
-  onChange,
+  fontId,
 }: {
   slot: FontSlot;
-  label: string;
-  options: FontOption[];
-  value: string;
-  onChange: (id: string) => void;
+  label: ReactNode;
+  fontId: string;
 }) {
-  const opt = fontOptionById(value) ?? fontOptionById(DEFAULT_FONT_ID[slot]);
+  const opt = fontOptionById(fontId);
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-[12px] font-medium text-[var(--text-secondary)]">{label}</label>
-      <select
-        className="gh-select"
-        style={{ maxWidth: "260px" }}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        aria-label={`${label} font`}
-      >
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+      <div className="text-[12px] font-medium text-[var(--text-secondary)]">{label}</div>
+      <div className="truncate text-[11px] text-[var(--text-muted)]">{opt?.label}</div>
       <p
         className="text-[15px] text-[var(--text-primary)] truncate"
         style={{ fontFamily: opt ? fontStack(opt) : undefined }}
@@ -203,8 +184,7 @@ function FontField({
 }
 
 export function FontSettings() {
-  const [sansId, setSansId] = useState<string>(DEFAULT_FONT_ID.sans);
-  const [monoId, setMonoId] = useState<string>(DEFAULT_FONT_ID.mono);
+  const [pairId, setPairId] = useState<string>(DEFAULT_FONT_PAIR_ID);
   const [scale, setScale] = useState<ScreenScale>(DEFAULT_SCREEN_SCALE);
   const [leading, setLeading] = useState<ReadingLeading>(DEFAULT_READING_LEADING);
   const [tracking, setTracking] = useState<ReadingTracking>(DEFAULT_READING_TRACKING);
@@ -218,12 +198,10 @@ export function FontSettings() {
   const dtPrefs = useDateTimePrefs();
 
   useEffect(() => {
-    const sans = readFontPref("sans");
-    const mono = readFontPref("mono");
-    setSansId(sans);
-    setMonoId(mono);
-    applyFont("sans", sans);
-    applyFont("mono", mono);
+    const pair = readFontPairPref();
+    setPairId(pair.id);
+    writeFontPairPref(pair.id);
+    applyFontPair(pair.id);
     // The mounted Screen/Reading controllers already applied these on load;
     // we only mirror them into local UI state.
     setScale(readScreenScale());
@@ -247,11 +225,11 @@ export function FontSettings() {
     return () => window.removeEventListener(SCREEN_SCALE_EVENT, onScaleChange);
   }, []);
 
-  const select = (slot: FontSlot, id: string) => {
-    if (slot === "sans") setSansId(id);
-    else setMonoId(id);
-    writeFontPref(slot, id);
-    applyFont(slot, id);
+  const selectPair = (id: string) => {
+    const pair = fontPairById(id) ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
+    setPairId(pair.id);
+    writeFontPairPref(pair.id);
+    applyFontPair(pair.id);
   };
 
   const setTextSize = (next: ScreenScale) => {
@@ -295,8 +273,7 @@ export function FontSettings() {
   };
 
   const reset = () => {
-    select("sans", DEFAULT_FONT_ID.sans);
-    select("mono", DEFAULT_FONT_ID.mono);
+    selectPair(DEFAULT_FONT_PAIR_ID);
     setTextSize(DEFAULT_SCREEN_SCALE);
     setLineSpacing(DEFAULT_READING_LEADING);
     setLetterSpacing(DEFAULT_READING_TRACKING);
@@ -308,8 +285,7 @@ export function FontSettings() {
   };
 
   const isDefault =
-    sansId === DEFAULT_FONT_ID.sans &&
-    monoId === DEFAULT_FONT_ID.mono &&
+    pairId === DEFAULT_FONT_PAIR_ID &&
     scale === DEFAULT_SCREEN_SCALE &&
     leading === DEFAULT_READING_LEADING &&
     tracking === DEFAULT_READING_TRACKING &&
@@ -318,6 +294,7 @@ export function FontSettings() {
     weight === DEFAULT_READING_WEIGHT &&
     hyphens === DEFAULT_READING_HYPHENS &&
     dropcap === DEFAULT_READING_DROPCAP;
+  const selectedPair = fontPairById(pairId) ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
 
   return (
     <section className="flex flex-col gap-5">
@@ -325,10 +302,29 @@ export function FontSettings() {
         label="Typography"
         description="Choose the interface and code fonts and how text is sized. Changes apply immediately."
       >
-        {/* Fonts — paired side by side, each with a live preview. */}
+        {/* Fonts — one approved pair selector, then read-only previews. */}
         <div className="grid grid-cols-1 gap-4 px-4 py-3 sm:grid-cols-2">
-          <FontField slot="sans" label="Interface" options={SANS_OPTIONS} value={sansId} onChange={(id) => select("sans", id)} />
-          <FontField slot="mono" label="Code &amp; terminal" options={MONO_OPTIONS} value={monoId} onChange={(id) => select("mono", id)} />
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
+            <label className="text-[12px] font-medium text-[var(--text-secondary)]" htmlFor="typography-pair">
+              Typography pair
+            </label>
+            <select
+              id="typography-pair"
+              className="gh-select"
+              style={{ maxWidth: "360px" }}
+              value={pairId}
+              onChange={(e) => selectPair(e.target.value)}
+              aria-label="Typography pair"
+            >
+              {FONT_PAIRS.map((pair) => (
+                <option key={pair.id} value={pair.id}>
+                  {pair.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <FontPreview slot="sans" label="Interface" fontId={selectedPair.sansId} />
+          <FontPreview slot="mono" label={<>Code &amp; terminal</>} fontId={selectedPair.monoId} />
         </div>
 
         {/* Text size — the one control that scales the whole UI, not just prose. */}

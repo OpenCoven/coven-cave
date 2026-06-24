@@ -12,6 +12,9 @@ assert.match(src, /"jetbrains-mono"/, "boot skips the mono default");
 assert.match(src, /setProperty\(\s*["']--font-sans["']/, "boot sets --font-sans");
 assert.match(src, /setProperty\(\s*["']--font-mono["']/, "boot sets --font-mono");
 assert.match(src, /\^\[a-z0-9-\]\+\$/, "boot validates id is kebab-case");
+assert.match(src, /APPROVED_FONT_PAIRS/, "boot gates saved fonts through approved font pairs");
+assert.match(src, /manrope-space-mono/, "boot includes curated pair ids");
+assert.match(src, /fontPairId/, "boot derives a pair id from saved slot ids");
 assert.ok(src.includes(SANS_FALLBACK), "inlined sans fallback matches catalog SANS_FALLBACK");
 assert.ok(src.includes(MONO_FALLBACK), "inlined mono fallback matches catalog MONO_FALLBACK");
 

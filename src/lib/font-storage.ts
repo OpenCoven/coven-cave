@@ -11,9 +11,13 @@
  * the key strings and the stack shape in sync with this file.
  */
 import {
+  DEFAULT_FONT_PAIR_ID,
   DEFAULT_FONT_ID,
+  fontPairById,
+  fontPairForFonts,
   fontOptionById,
   fontStack,
+  type FontPair,
   type FontSlot,
 } from "./font-catalog.ts";
 
@@ -54,6 +58,17 @@ export function writeFontPref(slot: FontSlot, id: string): void {
   }
 }
 
+export function readFontPairPref(): FontPair {
+  const pair = fontPairForFonts(readFontPref("sans"), readFontPref("mono"));
+  return pair ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
+}
+
+export function writeFontPairPref(id: string): void {
+  const pair = fontPairById(id) ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
+  writeFontPref("sans", pair.sansId);
+  writeFontPref("mono", pair.monoId);
+}
+
 /** Point the slot's CSS var at the chosen family's stack. The default id (or an
  *  unknown id) removes the override so the :root Geist alias applies. */
 export function applyFont(slot: FontSlot, id: string): void {
@@ -66,4 +81,10 @@ export function applyFont(slot: FontSlot, id: string): void {
     return;
   }
   root.style.setProperty(cssVar, fontStack(opt));
+}
+
+export function applyFontPair(id: string): void {
+  const pair = fontPairById(id) ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
+  applyFont("sans", pair.sansId);
+  applyFont("mono", pair.monoId);
 }

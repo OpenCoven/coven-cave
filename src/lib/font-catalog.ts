@@ -15,6 +15,13 @@ export type FontOption = {
   cssVar: string;
 };
 
+export type FontPair = {
+  id: string;
+  label: string;
+  sansId: string;
+  monoId: string;
+};
+
 export const SANS_FALLBACK =
   'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 export const MONO_FALLBACK =
@@ -54,8 +61,63 @@ export const DEFAULT_FONT_ID: Record<FontSlot, string> = {
   mono: "jetbrains-mono",
 };
 
+export const FONT_PAIRS: FontPair[] = [
+  {
+    id: "geist-jetbrains",
+    label: "Geist + JetBrains Mono",
+    sansId: "geist",
+    monoId: "jetbrains-mono",
+  },
+  {
+    id: "inter-geist-mono",
+    label: "Inter + Geist Mono",
+    sansId: "inter",
+    monoId: "geist-mono",
+  },
+  {
+    id: "manrope-space-mono",
+    label: "Manrope + Space Mono",
+    sansId: "manrope",
+    monoId: "space-mono",
+  },
+  {
+    id: "public-sans-roboto-mono",
+    label: "Public Sans + Roboto Mono",
+    sansId: "public-sans",
+    monoId: "roboto-mono",
+  },
+  {
+    id: "ibm-plex-pair",
+    label: "IBM Plex Sans + IBM Plex Mono",
+    sansId: "ibm-plex-sans",
+    monoId: "ibm-plex-mono",
+  },
+  {
+    id: "source-pair",
+    label: "Source Sans 3 + Source Code Pro",
+    sansId: "source-sans-3",
+    monoId: "source-code-pro",
+  },
+  {
+    id: "dm-sans-fira-code",
+    label: "DM Sans + Fira Code",
+    sansId: "dm-sans",
+    monoId: "fira-code",
+  },
+];
+
+export const DEFAULT_FONT_PAIR_ID = "geist-jetbrains";
+
 export function fontOptionById(id: string): FontOption | undefined {
   return FONT_OPTIONS.find((o) => o.id === id);
+}
+
+export function fontPairById(id: string): FontPair | undefined {
+  return FONT_PAIRS.find((pair) => pair.id === id);
+}
+
+export function fontPairForFonts(sansId: string, monoId: string): FontPair | undefined {
+  return FONT_PAIRS.find((pair) => pair.sansId === sansId && pair.monoId === monoId);
 }
 
 export function slotFallback(slot: FontSlot): string {

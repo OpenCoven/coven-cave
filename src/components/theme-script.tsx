@@ -11,8 +11,9 @@
  *  4. Always set BOTH `data-theme` and `data-mode` on <html>.
  *  5. If theme === "custom", apply `cssVars.theme` (mode-agnostic) +
  *     `cssVars[mode]` (mode-specific) from localStorage["coven-custom-theme"].
- *  6. Read localStorage["cave:font:sans"] / localStorage["cave:font:mono"] and
- *     apply --font-sans / --font-mono CSS vars for non-default selections.
+ *  6. Read localStorage["cave:font:sans"] / localStorage["cave:font:mono"],
+ *     accept only approved font pairs, and apply --font-sans / --font-mono CSS
+ *     vars for non-default selections.
  *
  * NOTE: The storage key strings ("coven-theme", "coven-mode",
  * "coven-custom-theme") and the legacy rename map are duplicated from
@@ -22,9 +23,10 @@
  * renames.
  *
  * NOTE: The font keys ("cave:font:sans", "cave:font:mono"), default ids
- * ("geist", "jetbrains-mono"), and the SANS_FALLBACK / MONO_FALLBACK strings
- * are duplicated from src/lib/font-catalog.ts and src/lib/font-storage.ts.
- * Keep in sync when adding new fonts or changing fallback chains.
+ * ("geist", "jetbrains-mono"), approved pairs, and the SANS_FALLBACK /
+ * MONO_FALLBACK strings are duplicated from src/lib/font-catalog.ts and
+ * src/lib/font-storage.ts. Keep in sync when adding new fonts, changing
+ * fallback chains, or editing pair choices.
  */
 
 const THEME_SCRIPT = `
@@ -73,15 +75,43 @@ const THEME_SCRIPT = `
     }
     // ── Fonts ── apply saved non-default families before paint (no flash).
     // Inlined from src/lib/font-catalog.ts (SANS_FALLBACK / MONO_FALLBACK) and
-    // src/lib/font-storage.ts (keys + stack shape) — keep in sync.
+    // src/lib/font-storage.ts (keys + approved pairs + stack shape) — keep in sync.
     var SANS_FB = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
     var MONO_FB = 'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace';
-    var fontSansId = localStorage.getItem("cave:font:sans");
-    if (fontSansId && fontSansId !== "geist" && /^[a-z0-9-]+$/.test(fontSansId)) {
+    var fontSansId = localStorage.getItem("cave:font:sans") || "geist";
+    var fontMonoId = localStorage.getItem("cave:font:mono") || "jetbrains-mono";
+    var APPROVED_FONT_PAIRS = {
+      "geist-jetbrains": ["geist", "jetbrains-mono"],
+      "inter-geist-mono": ["inter", "geist-mono"],
+      "manrope-space-mono": ["manrope", "space-mono"],
+      "public-sans-roboto-mono": ["public-sans", "roboto-mono"],
+      "ibm-plex-pair": ["ibm-plex-sans", "ibm-plex-mono"],
+      "source-pair": ["source-sans-3", "source-code-pro"],
+      "dm-sans-fira-code": ["dm-sans", "fira-code"]
+    };
+    var fontPairId = null;
+    if (/^[a-z0-9-]+$/.test(fontSansId) && /^[a-z0-9-]+$/.test(fontMonoId)) {
+      for (var pairId in APPROVED_FONT_PAIRS) {
+        if (!Object.prototype.hasOwnProperty.call(APPROVED_FONT_PAIRS, pairId)) continue;
+        var pair = APPROVED_FONT_PAIRS[pairId];
+        if (pair[0] === fontSansId && pair[1] === fontMonoId) {
+          fontPairId = pairId;
+          break;
+        }
+      }
+    }
+    if (!fontPairId) {
+      fontSansId = "geist";
+      fontMonoId = "jetbrains-mono";
+      try {
+        localStorage.setItem("cave:font:sans", fontSansId);
+        localStorage.setItem("cave:font:mono", fontMonoId);
+      } catch (e) {}
+    }
+    if (fontSansId !== "geist") {
       try { html.style.setProperty("--font-sans", "var(--font-" + fontSansId + "), " + SANS_FB); } catch (e) {}
     }
-    var fontMonoId = localStorage.getItem("cave:font:mono");
-    if (fontMonoId && fontMonoId !== "jetbrains-mono" && /^[a-z0-9-]+$/.test(fontMonoId)) {
+    if (fontMonoId !== "jetbrains-mono") {
       try { html.style.setProperty("--font-mono", "var(--font-" + fontMonoId + "), " + MONO_FB); } catch (e) {}
     }
     // ── UI corner radius ── override the base radius tokens before paint so the
