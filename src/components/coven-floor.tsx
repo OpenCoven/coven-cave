@@ -2,7 +2,7 @@
 
 import "@/styles/board.css";
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { CovenStatusResponse, FamiliarCard, SessionSummary } from "@/lib/coven-status-types";
 import { statusColor, statusLabel } from "@/lib/coven-status-types";
@@ -64,7 +64,7 @@ function StatusDot({ status }: { status: FamiliarCard["status"] }) {
   return (
     <span className="relative inline-flex h-2.5 w-2.5 items-center justify-center" aria-hidden>
       {pulse && (
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60" style={{ backgroundColor: color }} />
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60 motion-reduce:hidden" style={{ backgroundColor: color }} />
       )}
       <span className="relative inline-flex h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
     </span>
@@ -247,10 +247,18 @@ export function CovenFloor() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showAllSessionIds, setShowAllSessionIds] = useState<Set<string>>(() => new Set());
 
+  // Request-id guard: only the latest load's response is applied. On unmount the
+  // ref is parked at -1 so an in-flight response is dropped rather than calling
+  // setState on a gone component.
+  const loadSeqRef = useRef(0);
+  useEffect(() => () => { loadSeqRef.current = -1; }, []);
+
   const load = useCallback(async () => {
+    const seq = (loadSeqRef.current += 1);
     try {
       const res = await fetch("/api/coven-status", { cache: "no-store" });
       const json = (await res.json()) as CovenStatusResponse | { ok: false; error: string };
+      if (seq !== loadSeqRef.current) return; // superseded or unmounted
       if (!json.ok) {
         setError((json as { ok: false; error: string }).error ?? "status load failed");
         return;
@@ -260,16 +268,25 @@ export function CovenFloor() {
       setComputedAt(data.computedAt);
       setError(null);
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       setError(err instanceof Error ? err.message : "fetch failed");
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void load();
-    const t = setInterval(load, 15_000);
-    return () => clearInterval(t);
+    // Poll only while the tab is visible — a backgrounded window shouldn't keep
+    // hitting /api/coven-status every 15s. Refetch on re-show so the floor is
+    // fresh the moment the user returns.
+    const t = setInterval(() => { if (!document.hidden) void load(); }, 15_000);
+    const onVisible = () => { if (!document.hidden) void load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load]);
 
   const sortedFamiliars = useMemo(
@@ -305,7 +322,7 @@ export function CovenFloor() {
         <div className="mb-3 flex items-center justify-end gap-2">
           <span className="flex items-center gap-1.5">
             <span className="relative inline-flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--color-success)] opacity-60" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--color-success)] opacity-60 motion-reduce:hidden" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--color-success)]" />
             </span>
             <span className="text-[10px] text-[var(--text-muted)]">live</span>

@@ -75,3 +75,24 @@ assert.doesNotMatch(
   /FamiliarStatusCard|grid grid-cols-1 gap-3 sm:grid-cols-2/,
   "CovenFloor should not keep the old card-grid Floor layout",
 );
+
+// ── Polling pauses when the tab is hidden + guards stale/unmounted writes ─────
+// Was: setInterval(load, 15_000) that kept fetching /api/coven-status in a
+// backgrounded tab, and load() with no request-id guard (setState-after-unmount).
+assert.match(
+  floor,
+  /setInterval\(\(\) => \{ if \(!document\.hidden\) void load\(\); \}, 15_000\)/,
+  "polling skips the fetch while the tab is hidden",
+);
+assert.match(floor, /addEventListener\("visibilitychange", onVisible\)/, "refetches when the tab becomes visible again");
+assert.match(floor, /removeEventListener\("visibilitychange", onVisible\)/, "the visibility listener is cleaned up");
+assert.match(floor, /const seq = \(loadSeqRef\.current \+= 1\)/, "each load takes a sequence number");
+assert.match(floor, /if \(seq !== loadSeqRef\.current\) return;/, "stale or post-unmount responses are dropped before setState");
+assert.match(floor, /loadSeqRef\.current = -1;/, "unmount parks the seq so in-flight loads are ignored");
+
+// ── Pulse animations respect prefers-reduced-motion ──────────────────────────
+assert.match(
+  floor,
+  /animate-ping[^"]*motion-reduce:hidden/,
+  "the live/active pulse rings are hidden under prefers-reduced-motion",
+);
