@@ -23,7 +23,11 @@ assert.match(appModel, /var chrome:\s*ChromePalette = \.fallback/, "AppModel own
 assert.match(appModel, /func loadTheme\(\) async[\s\S]*client\.fetchTheme\(\)[\s\S]*ChromePalette\(snapshot:\s*snapshot\)/, "AppModel fetches and adopts the desktop palette");
 assert.match(appModel, /connectionState = \.connected[\s\S]*await loadFamiliars\(\)[\s\S]*await loadTheme\(\)/, "AppModel loads the theme after connecting");
 
-assert.match(app, /\.environment\(\\\.chrome,\s*app\.chrome\)[\s\S]*\.tint\(app\.chrome\.accent\)[\s\S]*\.preferredColorScheme\(app\.chrome\.colorScheme\)/, "app scene injects and applies desktop chrome");
+assert.match(app, /\.environment\(\\\.chrome,\s*resolved\.chrome\)[\s\S]*\.tint\(resolved\.chrome\.accent\)[\s\S]*\.preferredColorScheme\(resolved\.scheme\)/, "app scene injects and applies the resolved chrome + scheme");
+// The appearance override (Match desktop / Light / Dark) resolves against the
+// desktop chrome; "Match desktop" passes it through, a fixed mode forces it.
+assert.match(app, /@AppStorage\(AppearanceMode\.storageKey\)/, "app scene reads the persisted appearance override");
+assert.match(app, /mode\.resolve\(desktop:\s*app\.chrome\)/, "appearance mode resolves against the desktop chrome");
 assert.match(root, /@Environment\(\\\.chrome\) private var chrome/, "RootView reads the chrome palette");
 assert.match(root, /\.background\(chrome\.bgBase\.ignoresSafeArea\(\)\)[\s\S]*\.foregroundStyle\(chrome\.textPrimary\)/, "RootView applies desktop background and foreground");
 assert.match(root, /\.toolbarBackground\(chrome\.bgRaised,\s*for:\s*\.navigationBar,\s*\.tabBar\)/, "RootView applies desktop chrome to navigation and tab bars");
