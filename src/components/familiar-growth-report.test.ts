@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import { FamiliarGrowthReport } from "./familiar-growth-report";
 import type { FamiliarGrowthReport as FamiliarGrowthReportModel } from "@/lib/familiar-growth-signals";
 import type { Familiar, SessionRow } from "@/lib/types";
@@ -103,17 +104,17 @@ describe("FamiliarGrowthReport", () => {
       createElement(FamiliarGrowthReport, { familiar, report, sessions }),
     );
 
-    expect(html).toContain("Growth report for Echo");
-    expect(html).toContain("Activity Trends");
-    expect(html).toContain("Eval Performance");
-    expect(html).toContain("Growth Opportunities");
-    expect(html).toContain("Prompt track is reverting often");
-    expect(html).toContain("Session gap");
-    expect(html).toContain("No memory recorded");
-    expect(html).toContain("Memory is stale");
-    expect(html).toContain("Low retro volume");
-    expect(html).toContain("No current growth flags");
-    expect(html).toContain("Prompt rewrite reverted");
+    assert.match(html, /Growth report for Echo/);
+    assert.match(html, /Activity Trends/);
+    assert.match(html, /Eval Performance/);
+    assert.match(html, /Growth Opportunities/);
+    assert.match(html, /Prompt track is reverting often/);
+    assert.match(html, /Session gap/);
+    assert.match(html, /No memory recorded/);
+    assert.match(html, /Memory is stale/);
+    assert.match(html, /Low retro volume/);
+    assert.match(html, /No current growth flags/);
+    assert.match(html, /Prompt rewrite reverted/);
   });
 
   it("renders an empty run feed when there are no retro runs", () => {
@@ -121,6 +122,6 @@ describe("FamiliarGrowthReport", () => {
       createElement(FamiliarGrowthReport, { familiar, report: { ...report, recentRuns: [] }, sessions: [] }),
     );
 
-    expect(html).toContain("No recent retro runs");
+    assert.match(html, /No recent retro runs/);
   });
 });

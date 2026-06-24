@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 import {
   deriveGrowthReport,
   GROWTH_THRESHOLDS,
   type FamiliarGrowthReport,
-} from "./familiar-growth-signals";
+} from "./familiar-growth-signals.ts";
 import type { FamiliarCardStats } from "@/components/familiars-view-stats";
 import type { RetroFamiliarState, RetroRun, RetroTrack } from "@/lib/retro-runs";
 import type { Familiar } from "@/lib/types";
@@ -86,9 +87,9 @@ describe("deriveGrowthReport", () => {
       now: NOW,
     });
 
-    expect(report.healthLabel).toBe("active");
-    expect(report.retroAcceptRate).toBe(1);
-    expect(kinds(report)).toEqual(["healthy"]);
+    assert.equal(report.healthLabel, "active");
+    assert.equal(report.retroAcceptRate, 1);
+    assert.deepEqual(kinds(report), ["healthy"]);
   });
 
   it("flags low accept rate for a track with enough samples", () => {
@@ -105,10 +106,10 @@ describe("deriveGrowthReport", () => {
     });
 
     const signal = report.signals.find((item) => item.kind === "low-accept-rate");
-    expect(report.healthLabel).toBe("steady");
-    expect(signal?.track).toBe("prompt");
-    expect(signal?.label).toContain("Prompt");
-    expect(signal?.detail).toContain("prompt refinement");
+    assert.equal(report.healthLabel, "steady");
+    assert.equal(signal?.track, "prompt");
+    assert.match(signal?.label ?? "", /Prompt/);
+    assert.match(signal?.detail ?? "", /prompt refinement/);
   });
 
   it("escalates a two-week session gap and stale memory", () => {
@@ -124,14 +125,10 @@ describe("deriveGrowthReport", () => {
       now: NOW,
     });
 
-    expect(report.healthLabel).toBe("stalled");
-    expect(report.signals).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: "session-gap", severity: "crit" }),
-        expect.objectContaining({ kind: "stale-memory", severity: "warn" }),
-        expect.objectContaining({ kind: "low-retro-volume", severity: "info" }),
-      ]),
-    );
+    assert.equal(report.healthLabel, "stalled");
+    assert.ok(report.signals.some((signal) => signal.kind === "session-gap" && signal.severity === "crit"));
+    assert.ok(report.signals.some((signal) => signal.kind === "stale-memory" && signal.severity === "warn"));
+    assert.ok(report.signals.some((signal) => signal.kind === "low-retro-volume" && signal.severity === "info"));
   });
 
   it("flags missing memory and keeps the last five retro runs newest-first", () => {
@@ -143,9 +140,9 @@ describe("deriveGrowthReport", () => {
       now: NOW,
     });
 
-    expect(kinds(report)).toContain("no-memory");
-    expect(report.recentRuns).toHaveLength(5);
-    expect(report.recentRuns.map((item) => item.id)).toEqual([
+    assert.ok(kinds(report).includes("no-memory"));
+    assert.equal(report.recentRuns.length, 5);
+    assert.deepEqual(report.recentRuns.map((item) => item.id), [
       "run-memory-1",
       "run-memory-2",
       "run-memory-3",

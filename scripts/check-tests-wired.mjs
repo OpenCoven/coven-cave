@@ -22,6 +22,14 @@ const ALLOWLIST = new Map([
     "scripts/release-notes.test.mjs",
     "needs live git history/tags; absent in CI's shallow checkout (runs in the release workflow)",
   ],
+  [
+    "src/components/familiar-growth-report.test.ts",
+    "TSX render coverage runs under Vitest; node's CI type-stripper cannot import TSX components",
+  ],
+  [
+    "src/components/familiar-growth-view.test.ts",
+    "TSX render coverage runs under Vitest; node's CI type-stripper cannot import TSX components",
+  ],
 ]);
 
 function walk(dir, acc) {
