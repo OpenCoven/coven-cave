@@ -300,6 +300,27 @@
 .board-kanban-card--priority-medium::before { background:var(--accent-presence); }
 .board-kanban-card--priority-low::before { background:color-mix(in oklch,var(--text-muted) 55%,transparent); }
 
+/* Schedule urgency surfaced on the card itself (not just the date chip) so an
+   overdue task is scannable at a glance. The left spine stays priority-coded;
+   urgency is a faint warm tint + border. Selection always wins (:not guard). */
+.board-kanban-card--overdue:not(.board-kanban-card--selected) { background:color-mix(in oklch,var(--color-danger) 7%,var(--bg-base)); border-color:color-mix(in oklch,var(--color-danger) 30%,var(--border-hairline)); }
+.board-kanban-card--overdue:not(.board-kanban-card--selected):hover { background:color-mix(in oklch,var(--color-danger) 10%,var(--bg-base)); border-color:color-mix(in oklch,var(--color-danger) 45%,var(--border-strong)); }
+.board-kanban-card--due-soon:not(.board-kanban-card--selected) { background:color-mix(in oklch,var(--color-warning) 6%,var(--bg-base)); border-color:color-mix(in oklch,var(--color-warning) 26%,var(--border-hairline)); }
+.board-kanban-card--due-soon:not(.board-kanban-card--selected):hover { background:color-mix(in oklch,var(--color-warning) 9%,var(--bg-base)); border-color:color-mix(in oklch,var(--color-warning) 40%,var(--border-strong)); }
+
+/* Inline quick-add composer at the bottom of each column (Trello-style). */
+.board-kanban-quickadd { list-style:none; margin-top:2px; }
+.board-kanban-quickadd-trigger { display:flex; align-items:center; gap:5px; width:100%; padding:6px 9px; border-radius:7px; border:1px dashed var(--border-hairline); background:transparent; color:var(--text-muted); font-size:11.5px; cursor:pointer; transition:background .12s,color .12s,border-color .12s; }
+.board-kanban-quickadd-trigger:hover { background:color-mix(in oklch,var(--bg-hover) 50%,transparent); color:var(--text-secondary); border-color:var(--border-strong); }
+.board-kanban-quickadd-form { display:flex; flex-direction:column; gap:6px; }
+.board-kanban-quickadd-input { width:100%; resize:none; padding:7px 9px; border-radius:7px; border:1px solid color-mix(in oklch,var(--accent-presence) 45%,var(--border-strong)); background:var(--bg-base); color:var(--text-primary); font-size:12px; line-height:1.4; font-family:inherit; outline:none; box-shadow:0 0 0 3px color-mix(in oklch,var(--accent-presence) 16%,transparent); }
+.board-kanban-quickadd-input::placeholder { color:var(--text-muted); }
+.board-kanban-quickadd-actions { display:flex; align-items:center; gap:6px; }
+.board-kanban-quickadd-add { padding:4px 12px; border-radius:6px; border:none; background:var(--accent-presence); color:#fff; font-size:11.5px; font-weight:600; cursor:pointer; }
+.board-kanban-quickadd-add:disabled { opacity:.5; cursor:default; }
+.board-kanban-quickadd-cancel { padding:4px 8px; border-radius:6px; border:none; background:transparent; color:var(--text-muted); font-size:11.5px; cursor:pointer; }
+.board-kanban-quickadd-cancel:hover { color:var(--text-secondary); }
+
 .board-kanban-card-top { display:flex; align-items:center; justify-content:space-between; gap:6px; min-height:18px; }
 .board-kanban-priority-pill { display:inline-flex; align-items:center; padding:1px 7px; border-radius:5px; font-size:9px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; }
 .board-kanban-priority-pill--urgent { background:color-mix(in oklch,var(--color-danger) 18%,transparent); color:color-mix(in oklch,var(--color-danger) 70%,#fff); }

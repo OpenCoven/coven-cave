@@ -98,4 +98,36 @@ assert.match(
   "Mobile inspector lifecycle/chat/delete actions should meet the shared touch target",
 );
 
+// ── Schedule urgency surfaced on the card itself (#1) ──
+assert.match(
+  kanban,
+  /urgency === "overdue" \? " board-kanban-card--overdue" : urgency === "due-soon" \? " board-kanban-card--due-soon"/,
+  "the card container carries an urgency modifier, not just the date chip",
+);
+assert.match(
+  styles,
+  /\.board-kanban-card--overdue:not\(\.board-kanban-card--selected\)\s*\{[^}]*--color-danger/,
+  "overdue cards get a danger tint, guarded so selection still wins",
+);
+assert.match(
+  styles,
+  /\.board-kanban-card--due-soon:not\(\.board-kanban-card--selected\)\s*\{[^}]*--color-warning/,
+  "due-soon cards get a warning tint, guarded so selection still wins",
+);
+
+// ── Inline quick-add composer per column (#2) ──
+assert.match(kanban, /onQuickAdd\?:\s*\(/, "BoardKanban accepts an onQuickAdd handler");
+assert.match(kanban, /board-kanban-quickadd-trigger/, "each column has an inline add-a-card trigger");
+assert.match(
+  kanban,
+  /e\.key === "Enter" && !e\.shiftKey[\s\S]*?requestSubmit\(\)/,
+  "Enter submits the quick-add composer (Shift+Enter for a newline)",
+);
+assert.match(
+  kanban,
+  /groupBy === "familiar"[\s\S]*?familiarId: key === "__unassigned__" \? null : key/,
+  "quick-add inherits the swimlane's familiar so the card lands in the right lane",
+);
+assert.match(view, /onQuickAdd=\{quickAdd\}/, "BoardView wires the quick-add create path");
+
 console.log("board-ux-polish.test.ts: ok");

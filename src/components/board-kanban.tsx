@@ -44,6 +44,13 @@ type Props = {
   isSelected?: (id: string) => boolean;
   onToggleSelect?: (id: string) => void;
   onNewCard: (status: CardStatus) => void;
+  /** Inline quick-add: create a card from just a title in the given column
+      (status), scoped to the swimlane it was added under (familiar/project). */
+  onQuickAdd?: (
+    status: CardStatus,
+    title: string,
+    lane: { familiarId?: string | null; projectId?: string | null },
+  ) => Promise<void> | void;
   onJumpToSession?: (sessionId: string, familiarId: string | null) => void;
   onOpenTaskChat?: (id: string) => Promise<void>;
   chatLinkingId?: string | null;
@@ -79,11 +86,15 @@ function getGroups(cards: Card[], by: GroupBy, familiars: Familiar[], projects: 
   return entries;
 }
 
-export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, selectMode = false, isSelected, onToggleSelect, onNewCard, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
+export function BoardKanban({ cards, familiars, projects, sessions, groupBy, selectedCardId, onSelect, onMoveStatus, selectMode = false, isSelected, onToggleSelect, onNewCard, onQuickAdd, onJumpToSession, onOpenTaskChat, chatLinkingId }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<CardStatus | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [grabbedCardId, setGrabbedCardId] = useState<string | null>(null);
+  // Inline quick-add: which column's composer is open (`${laneKey}:${colId}`)
+  // and its draft text.
+  const [composerKey, setComposerKey] = useState<string | null>(null);
+  const [composerText, setComposerText] = useState("");
   // Resolved after mount so schedule-urgency colors never trip a hydration
   // mismatch (the server has no "now").
   const [todayMs, setTodayMs] = useState<number | null>(null);
@@ -475,6 +486,71 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                               onOpenTaskChat={onOpenTaskChat}
                               chatLinking={chatLinkingId === card.id} />
                           ))}
+                          {onQuickAdd && !selectMode && (
+                            <li className="board-kanban-quickadd">
+                              {composerKey === `${key}:${col.id}` ? (
+                                <form
+                                  className="board-kanban-quickadd-form"
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    const title = composerText.trim();
+                                    if (!title) return;
+                                    const lane =
+                                      groupBy === "familiar"
+                                        ? { familiarId: key === "__unassigned__" ? null : key }
+                                        : groupBy === "project"
+                                        ? { projectId: key === NO_PROJECT_KEY ? null : key }
+                                        : {};
+                                    void onQuickAdd(col.id, title, lane);
+                                    setComposerText("");
+                                  }}
+                                >
+                                  <textarea
+                                    autoFocus
+                                    rows={2}
+                                    value={composerText}
+                                    onChange={(e) => setComposerText(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" && !e.shiftKey) {
+                                        e.preventDefault();
+                                        e.currentTarget.form?.requestSubmit();
+                                      } else if (e.key === "Escape") {
+                                        e.preventDefault();
+                                        setComposerKey(null);
+                                        setComposerText("");
+                                      }
+                                    }}
+                                    onBlur={() => { if (!composerText.trim()) setComposerKey(null); }}
+                                    placeholder={`Add to ${col.label}…`}
+                                    aria-label={`New task in ${col.label}`}
+                                    className="board-kanban-quickadd-input"
+                                  />
+                                  <div className="board-kanban-quickadd-actions">
+                                    <button type="submit" className="board-kanban-quickadd-add" disabled={!composerText.trim()}>
+                                      Add
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="board-kanban-quickadd-cancel"
+                                      onMouseDown={(e) => e.preventDefault()}
+                                      onClick={() => { setComposerKey(null); setComposerText(""); }}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </form>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="board-kanban-quickadd-trigger focus-ring"
+                                  onClick={() => { setComposerKey(`${key}:${col.id}`); setComposerText(""); }}
+                                >
+                                  <Icon name="ph:plus" width={11} />
+                                  Add a card
+                                </button>
+                              )}
+                            </li>
+                          )}
                         </ul>
                       </div>
                     );
@@ -537,6 +613,8 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
       }}
       tabIndex={0}
       className={`board-kanban-card board-kanban-card--priority-${card.priority}${
+        urgency === "overdue" ? " board-kanban-card--overdue" : urgency === "due-soon" ? " board-kanban-card--due-soon" : ""
+      }${
         isSelected ? " board-kanban-card--selected" : ""
       }${isDragging ? " board-kanban-card--dragging" : ""}${
         isGrabbed ? " board-kanban-card--grabbed" : ""

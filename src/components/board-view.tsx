@@ -301,6 +301,31 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     await load();
   };
 
+  // Inline quick-add from a kanban column: title-only card in that column's
+  // status, scoped to the swimlane it was dropped under (familiar/project) or
+  // the active familiar when ungrouped.
+  const quickAdd = async (
+    status: CardStatus,
+    title: string,
+    lane: { familiarId?: string | null; projectId?: string | null },
+  ) => {
+    await create({
+      title: title.trim(),
+      notes: "",
+      status,
+      priority: "medium",
+      familiarId: lane.familiarId !== undefined ? lane.familiarId : (activeFamiliarId ?? null),
+      sessionId: null,
+      projectId: lane.projectId !== undefined ? lane.projectId : null,
+      cwd: null,
+      links: [],
+      labels: [],
+      startDate: null,
+      endDate: null,
+      template: null,
+    });
+  };
+
   // Schedule a deferred, undoable delete of one or more cards. The cards hide at
   // once (via the `filtered` exclusion), and the actual DELETEs fire only when
   // the undo window lapses; Undo just drops the timer and the cards reappear.
@@ -885,6 +910,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             onSelect={setSelectedCardId} onMoveStatus={moveCardToStatus}
             selectMode={cardSelect.selectMode} isSelected={cardSelect.isSelected} onToggleSelect={cardSelect.toggle}
             onNewCard={(status) => { setModalDefaultStatus(status); setModalOpen(true); }}
+            onQuickAdd={quickAdd}
             onJumpToSession={onJumpToSession}
             onOpenTaskChat={onOpenTaskChat}
             chatLinkingId={chatLinkingId} />
