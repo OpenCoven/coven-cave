@@ -4,14 +4,13 @@ import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./board-inspector.tsx", import.meta.url), "utf8");
 
-// ── TimeoutBadge poll pauses when the tab is hidden ──────────────────────────
+// ── TimeoutBadge poll pauses when hidden — via the shared usePausablePoll hook ─
 assert.match(
   src,
-  /setInterval\(\(\) => \{ if \(!document\.hidden\) setTick/,
-  "TimeoutBadge stops ticking while the tab is hidden",
+  /usePausablePoll\(\(\) => setTick\(\(n\) => n \+ 1\), 60_000\)/,
+  "TimeoutBadge re-renders once a minute through the shared pausable-poll hook",
 );
-assert.match(src, /addEventListener\("visibilitychange", onVisible\)/, "TimeoutBadge refreshes on re-show");
-assert.match(src, /removeEventListener\("visibilitychange", onVisible\)/, "TimeoutBadge cleans up its visibility listener");
+assert.match(src, /import \{ usePausablePoll \} from "@\/lib\/use-pausable-poll"/, "TimeoutBadge uses the centralized hidden-pause poll");
 
 // ── GitHub-attach fetch drops stale / post-close responses ───────────────────
 assert.match(
@@ -34,8 +33,9 @@ assert.match(
   "the step toggle exposes checkbox semantics with the step text as its name",
 );
 
-// ── Inline-style motion respects prefers-reduced-motion ──────────────────────
-assert.match(src, /function usePrefersReducedMotion\(\): boolean/, "a reduced-motion subscription exists");
+// ── Inline-style motion respects prefers-reduced-motion (shared hook) ────────
+assert.match(src, /import \{ usePrefersReducedMotion \} from "@\/lib\/use-prefers-reduced-motion"/, "reduced-motion uses the canonical shared hook, not a local copy");
+assert.doesNotMatch(src, /function usePrefersReducedMotion\(\): boolean/, "the local reduced-motion duplicate is removed");
 assert.match(src, /transition: reducedMotion \? "none" : "width 0\.2s/, "the progress bar drops its transition under reduced motion");
 assert.match(src, /transition: reducedMotion \? "none" : "background 0\.15s"/, "the step checkbox drops its transition under reduced motion");
 assert.match(src, /@media \(prefers-reduced-motion: reduce\) \{ \.step-actions \{ transition: none; \} \}/, "the step-actions hover reveal honors reduced motion");
