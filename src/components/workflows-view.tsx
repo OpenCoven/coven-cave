@@ -73,6 +73,15 @@ export function WorkflowsView({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   // Deep-link target is honored at most once per mount (see selection effect).
   const deepLinkConsumedRef = useRef(false);
+  // Guards async setState after unmount, and (for the selection-driven runs +
+  // layout loaders) drops a stale response when a faster, later selection won.
+  const mountedRef = useRef(true);
+  const runsReqRef = useRef(0);
+  const layoutReqRef = useRef(0);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const [draftState, setDraftState] = useState<WorkflowDraftState | null>(null);
   const [runs, setRuns] = useState<WorkflowRunRecord[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
@@ -112,6 +121,7 @@ export function WorkflowsView({
     if (!refresh) setLoaded(false);
     try {
       const result = await listWorkflows();
+      if (!mountedRef.current) return;
       if (!result.ok) {
         setWorkflows([]);
         setError(result.error ?? "workflows unavailable");
@@ -120,18 +130,24 @@ export function WorkflowsView({
         setError(null);
       }
     } catch (err) {
+      if (!mountedRef.current) return;
       setWorkflows([]);
       setError(err instanceof Error ? err.message : "workflow fetch failed");
     } finally {
-      setLoaded(true);
-      setRefreshing(false);
+      if (mountedRef.current) {
+        setLoaded(true);
+        setRefreshing(false);
+      }
     }
   }, []);
 
   const loadLayout = useCallback(async (workflowId: string) => {
+    const reqId = ++layoutReqRef.current;
     setNodePositions(null);
     try {
       const result = await loadWorkflowLayout(workflowId);
+      // Drop a stale layout: a later selection superseded this one.
+      if (reqId !== layoutReqRef.current || !mountedRef.current) return;
       if (result.ok) setNodePositions(result.positions);
     } catch {
       // layout is a display preference; the layered default always works
@@ -139,21 +155,24 @@ export function WorkflowsView({
   }, []);
 
   const loadRuns = useCallback(async (workflowId: string) => {
+    const reqId = ++runsReqRef.current;
     setRunsLoading(true);
     try {
       const result = await listWorkflowRuns(workflowId);
+      // Drop a stale run list: switching workflows fast can resolve out of order.
+      if (reqId !== runsReqRef.current || !mountedRef.current) return;
       setRuns(result.ok ? result.runs : []);
     } catch {
-      setRuns([]);
+      if (reqId === runsReqRef.current && mountedRef.current) setRuns([]);
     } finally {
-      setRunsLoading(false);
+      if (reqId === runsReqRef.current && mountedRef.current) setRunsLoading(false);
     }
   }, []);
 
   const loadRoles = useCallback(async () => {
     try {
       const result = await listWorkflowRoles();
-      if (result.ok) setRoles(result.roles);
+      if (result.ok && mountedRef.current) setRoles(result.roles);
     } catch {
       // roles are an enhancement; the studio works without them
     }
@@ -163,7 +182,7 @@ export function WorkflowsView({
     try {
       const response = await fetch("/api/familiars", { cache: "no-store" });
       const result = await response.json() as { ok: boolean; familiars?: Familiar[] };
-      if (result.ok) setFamiliars(result.familiars ?? []);
+      if (result.ok && mountedRef.current) setFamiliars(result.familiars ?? []);
     } catch {
       // familiar choices are an enhancement; existing manifest bindings remain selectable
     }
@@ -191,7 +210,7 @@ export function WorkflowsView({
         for (const skill of manifest.skills ?? []) options.push({ value: skill.id, group: "Skill" });
         for (const plugin of manifest.plugins ?? []) options.push({ value: plugin.id, group: "Tool" });
       }
-      setCapabilityUses(options);
+      if (mountedRef.current) setCapabilityUses(options);
     } catch {
       // capability discovery is an enhancement; freeform `uses` still works
     }

@@ -91,4 +91,18 @@ assert.match(source, /advancePlayback\(current\)/, "A single timer should advanc
 assert.match(source, /const stopPlayback = useCallback/, "View should expose a stop-playback control");
 assert.match(source, /const replayRun = useCallback/, "View should expose replay-on-canvas");
 
+// ── Fetch guards: stale-response races + setState-after-unmount ─────────────
+// loadRuns/loadLayout fire on workflow selection (from ~10 sites), so a fast
+// A→B switch can resolve out of order; a request id drops the stale winner.
+assert.match(source, /const runsReqRef = useRef\(0\)/, "runs loader tracks a request id");
+assert.match(source, /const layoutReqRef = useRef\(0\)/, "layout loader tracks a request id");
+assert.match(source, /const reqId = \+\+runsReqRef\.current/, "each loadRuns stamps a request id");
+assert.match(source, /if \(reqId !== runsReqRef\.current \|\| !mountedRef\.current\) return/, "a stale/late runs fetch is dropped");
+assert.match(source, /if \(reqId !== layoutReqRef\.current \|\| !mountedRef\.current\) return/, "a stale/late layout fetch is dropped");
+// All loaders guard against setState after unmount.
+assert.match(source, /const mountedRef = useRef\(true\)/, "tracks mounted state for async guards");
+assert.match(source, /return \(\) => \{ mountedRef\.current = false; \}/, "mountedRef clears on unmount");
+assert.match(source, /if \(result\.ok && mountedRef\.current\) setFamiliars/, "familiars loader is unmount-guarded");
+assert.match(source, /if \(mountedRef\.current\) setCapabilityUses\(options\)/, "capabilities loader is unmount-guarded");
+
 console.log("workflows-view.test.ts: ok");
