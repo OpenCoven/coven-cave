@@ -154,6 +154,7 @@ export const SUITES = {
     "src/components/board-grouping.test.ts",
     "src/components/board-project-picker.test.ts",
     "src/components/board-ux-polish.test.ts",
+    "src/components/board-card-stack-a11y.test.ts",
     "src/components/board-bulk-select.test.ts",
     "src/components/delete-undo-surfaces.test.ts",
     "src/components/vault-automations-filter.test.ts",

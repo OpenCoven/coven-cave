@@ -1550,15 +1550,23 @@
   align-items: center;
   gap: 4px;
   font-weight: 500;
+  font-size: inherit;
+  font-family: inherit;
   color: var(--text-secondary);
   white-space: nowrap;
   padding: 4px 8px;
+  border: 0;
+  background: none;
   border-radius: 6px;
   cursor: pointer;
 }
-.board-card-stack__row-action:hover {
+.board-card-stack__row-action:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+.board-card-stack__row-action:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 /* Board Gantt */
