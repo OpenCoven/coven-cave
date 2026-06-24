@@ -63,12 +63,21 @@ assert.match(toolbar, /cave:toggle-right-panel/, "the panel toggle asks the shel
 assert.doesNotMatch(codeView, /toggleProjects|aria-label=\{?"?(Hide|Show) projects/i, "the collapse toggle is not in the Code toolbar anymore");
 assert.match(comux, /onClick=\{\(\) => setProjectListVisible\(projectListCollapsed\)\}/, "the merged Projects section header toggles its own collapse");
 assert.match(comux, /comux-project-row/, "the projects list renders project rows in the explorer column");
-// Right-click a project row → a context menu with cwd-scoped actions.
-assert.match(comux, /onContextMenu=\{\(e\) => \{[\s\S]*?setProjectMenuTarget\(project\);[\s\S]*?openContextMenuAt\(setProjectMenu\)\(e\);/, "project rows open a context menu at the cursor, recording which project");
+// Right-click a project row → a context menu with cwd-scoped actions. The row
+// is an extracted SortableProjectRow; the wiring lives in the onRowContextMenu
+// callback passed to it.
+assert.match(comux, /onRowContextMenu=\{\(p, e\) => \{[\s\S]*?setProjectMenuTarget\(p\);[\s\S]*?openContextMenuAt\(setProjectMenu\)\(e\);/, "project rows open a context menu at the cursor, recording which project");
+assert.match(comux, /onContextMenu=\{\(e\) => onRowContextMenu\(project, e\)\}/, "the sortable row forwards right-clicks to the menu");
 assert.match(comux, /ariaLabel=\{projectMenuTarget \? `Actions for \$\{projectMenuTarget\.name\}`/, "the project context menu is labelled per project");
 assert.match(comux, /onNewChat\(projectMenuTarget\.root\)/, "menu can start a chat in the project cwd");
 assert.match(comux, /addSession\(projectMenuTarget\.root\)/, "menu can open a terminal in the project cwd");
 assert.match(comux, /copyText\(projectMenuTarget\.root\)/, "menu can copy the project path");
+// Pin to top + drag-to-reorder.
+assert.match(comux, /toggleProjectPinned\(root\)/, "menu can pin/unpin a project");
+assert.match(comux, /isProjectPinned\(pinnedProjects, projectMenuTarget\.root\) \? "Unpin" : "Pin to top"/, "the pin item toggles its label");
+assert.match(comux, /onDragEnd=\{handleProjectDragEnd\}/, "the project list is a drag-to-reorder sortable context");
+assert.match(comux, /const next = arrayMove\(ids, from, to\)[\s\S]*?writeProjectOrder\(next\)/, "a drop persists the new project order");
+assert.match(comux, /<SortableProjectRow/, "rows render via the sortable row component");
 assert.match(comux, /Projects — merged into this column/, "the projects list is merged into the file-explorer column");
 assert.match(comux, /\{!projectListCollapsed && \(/, "comux hides the projects list when collapsed");
 assert.match(

@@ -83,6 +83,7 @@ export const ICON_NAMES = [
   "ph:paw-print-fill",
   "ph:push-pin",
   "ph:push-pin-fill",
+  "ph:push-pin-slash",
   "ph:plus",
   "ph:plus-bold",
   "ph:arrows-clockwise",

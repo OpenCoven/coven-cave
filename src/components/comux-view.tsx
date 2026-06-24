@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type DragEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent, type MutableRefObject, type ReactNode } from "react";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { Group, Panel, Separator } from "react-resizable-panels";
@@ -38,6 +38,30 @@ import {
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { ContextMenu, openContextMenuAt, type ContextMenuState } from "@/components/ui/context-menu";
 import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  readProjectOrder,
+  writeProjectOrder,
+  readPinnedProjects,
+  writePinnedProjects,
+  toggleProjectPin,
+  isProjectPinned,
+  orderProjects,
+} from "@/lib/comux-project-order";
 import {
   addTerminalSession,
   closeTerminalSession,
@@ -275,6 +299,97 @@ function shortProjectTime(iso: string | null): string {
   return iso ? relativeTime(iso) : "No sessions yet";
 }
 
+// One row in the Projects explorer. Sortable (drag to reorder, keyed by root)
+// while `dragEnabled`; carries the per-project identity tile, monogram, a pin
+// indicator, and the running dot. A pointer activation distance keeps a quick
+// click an "open" — only a deliberate drag (≥5px) reorders.
+function SortableProjectRow({
+  project,
+  isActive,
+  isPinned,
+  dragEnabled,
+  activeRowRef,
+  onSelect,
+  onRowContextMenu,
+}: {
+  project: ComuxProject;
+  isActive: boolean;
+  isPinned: boolean;
+  dragEnabled: boolean;
+  activeRowRef: MutableRefObject<HTMLButtonElement | null>;
+  onSelect: (project: ComuxProject) => void;
+  onRowContextMenu: (project: ComuxProject, e: MouseEvent) => void;
+}) {
+  const { setNodeRef, listeners, transform, transition, isDragging } = useSortable({
+    id: project.root,
+    disabled: !dragEnabled,
+  });
+  const meta: string[] = [];
+  if (project.sessionCount > 0) {
+    meta.push(`${project.sessionCount} ${project.sessionCount === 1 ? "chat" : "chats"}`);
+  }
+  if (project.updatedAt) meta.push(shortProjectTime(project.updatedAt));
+  const monogram = projectMonogram(project.name);
+  const style: CSSProperties = {
+    ["--tile" as string]: projectTint(project.root),
+    transform: CSS.Translate.toString(transform),
+    transition,
+  };
+  return (
+    <button
+      // Merge the sortable node ref with the active-row ref (used to keep the
+      // selected project scrolled into view) without clobbering either.
+      ref={(el) => {
+        setNodeRef(el);
+        if (isActive) activeRowRef.current = el;
+      }}
+      type="button"
+      data-project-row
+      data-dragging={isDragging ? "true" : undefined}
+      onClick={() => onSelect(project)}
+      onContextMenu={(e) => onRowContextMenu(project, e)}
+      title={project.root}
+      aria-current={isActive ? "true" : undefined}
+      style={style}
+      {...listeners}
+      className={`comux-project-row group flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-left text-[12px] ${
+        dragEnabled ? "cursor-grab active:cursor-grabbing" : ""
+      } ${
+        isActive
+          ? "comux-project-row--active text-[var(--text-primary)]"
+          : "text-[var(--text-primary)]"
+      }`}
+    >
+      <span className="comux-project-tile shrink-0 font-bold leading-none tracking-tight tabular-nums" aria-hidden>
+        {monogram}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate font-medium leading-tight">{project.name}</span>
+        {meta.length > 0 && (
+          <span className="truncate text-[10px] leading-tight tabular-nums text-[var(--text-muted)]">
+            {meta.join(" · ")}
+          </span>
+        )}
+      </span>
+      {isPinned && (
+        <Icon
+          name="ph:push-pin-fill"
+          width={11}
+          className="shrink-0 text-[var(--accent-presence)]"
+          title="Pinned"
+          aria-hidden
+        />
+      )}
+      {project.runningCount > 0 && (
+        <span
+          className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-success)] shadow-[0_0_8px_var(--color-success)]"
+          title={`${project.runningCount} running`}
+        />
+      )}
+    </button>
+  );
+}
+
 export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "" }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const layoutKey = STORAGE_LAYOUT + storageNamespace;
@@ -355,6 +470,17 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // project was right-clicked (one menu serves the whole list).
   const [projectMenu, setProjectMenu] = useState<ContextMenuState>(null);
   const [projectMenuTarget, setProjectMenuTarget] = useState<ComuxProject | null>(null);
+  // Pinned roots float to the top; manual drag order persists below them. Both
+  // load from localStorage after mount so SSR markup and first render agree.
+  const [pinnedProjects, setPinnedProjects] = useState<string[]>([]);
+  const [projectOrder, setProjectOrder] = useState<string[]>([]);
+  useEffect(() => {
+    setPinnedProjects(readPinnedProjects());
+    setProjectOrder(readProjectOrder());
+  }, []);
+  // Pointer only (no KeyboardSensor) — arrow keys belong to the roving tab
+  // index, not to drag. Distance keeps a click an "open", not a drag.
+  const projectSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   useEffect(() => {
     void (async () => {
@@ -385,15 +511,48 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     [daemonSessions, daemonProjectRoot],
   );
 
+  // Display order: pinned-first + manual drag order applied over the recency
+  // sort from deriveComuxProjects.
+  const orderedProjects = useMemo(
+    () => orderProjects(projects, projectOrder, pinnedProjects),
+    [projects, projectOrder, pinnedProjects],
+  );
+
   // Filter the project list by name or path (case-insensitive). The code-search
   // box below is a separate ripgrep search — this only narrows the switcher.
   const visibleProjects = useMemo(() => {
     const q = projectFilter.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter(
+    if (!q) return orderedProjects;
+    return orderedProjects.filter(
       (p) => p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q),
     );
-  }, [projects, projectFilter]);
+  }, [orderedProjects, projectFilter]);
+
+  // Drag reorders only the unfiltered full list (a filtered subset can't define
+  // a total order). Persist the new root sequence as the manual order.
+  const dragEnabled = !projectFilter.trim();
+  const handleProjectDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const ids = orderedProjects.map((p) => p.root);
+      const from = ids.indexOf(String(active.id));
+      const to = ids.indexOf(String(over.id));
+      if (from < 0 || to < 0) return;
+      const next = arrayMove(ids, from, to);
+      setProjectOrder(next);
+      writeProjectOrder(next);
+    },
+    [orderedProjects],
+  );
+
+  const toggleProjectPinned = useCallback((root: string) => {
+    setPinnedProjects((prev) => {
+      const next = toggleProjectPin(prev, root);
+      writePinnedProjects(next);
+      return next;
+    });
+  }, []);
 
   // Arrow-key roving over the project rows (WAI-ARIA): one tab stop, ↑/↓ move,
   // Home/End jump. The hook ignores keystrokes while the filter input is focused.
@@ -1601,59 +1760,35 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                               No projects match “{projectFilter.trim()}”
                             </p>
                           ) : (
-                          <div ref={projectListRef} className="comux-project-list mt-1 space-y-0.5 p-0.5">
-                            {visibleProjects.map((project) => {
-                            const isActive = selectedProject?.root === project.root;
-                            const meta: string[] = [];
-                            if (project.sessionCount > 0) {
-                              meta.push(`${project.sessionCount} ${project.sessionCount === 1 ? "chat" : "chats"}`);
-                            }
-                            if (project.updatedAt) meta.push(shortProjectTime(project.updatedAt));
-                            // Identity monogram (1–2 chars from word segments) —
-                            // pairs with the per-project tint for a glanceable
-                            // chip (the running state is carried by the dot).
-                            const monogram = projectMonogram(project.name);
-                            return (
-                              <button
-                                key={project.root}
-                                type="button"
-                                data-project-row
-                                ref={isActive ? activeProjectRowRef : undefined}
-                                onClick={() => selectProject(project)}
-                                onContextMenu={(e) => {
-                                  setProjectMenuTarget(project);
-                                  openContextMenuAt(setProjectMenu)(e);
-                                }}
-                                title={project.root}
-                                aria-current={isActive ? "true" : undefined}
-                                style={{ ["--tile" as string]: projectTint(project.root) }}
-                                className={`comux-project-row group flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-left text-[12px] ${
-                                  isActive
-                                    ? "comux-project-row--active text-[var(--text-primary)]"
-                                    : "text-[var(--text-primary)]"
-                                }`}
-                              >
-                                <span className="comux-project-tile shrink-0 font-bold leading-none tracking-tight tabular-nums" aria-hidden>
-                                  {monogram}
-                                </span>
-                                <span className="flex min-w-0 flex-1 flex-col">
-                                  <span className="truncate font-medium leading-tight">{project.name}</span>
-                                  {meta.length > 0 && (
-                                    <span className="truncate text-[10px] leading-tight tabular-nums text-[var(--text-muted)]">
-                                      {meta.join(" · ")}
-                                    </span>
-                                  )}
-                                </span>
-                                {project.runningCount > 0 && (
-                                  <span
-                                    className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--color-success)] shadow-[0_0_8px_var(--color-success)]"
-                                    title={`${project.runningCount} running`}
+                          <DndContext
+                            id="comux-projects"
+                            sensors={projectSensors}
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleProjectDragEnd}
+                          >
+                            <SortableContext
+                              items={visibleProjects.map((p) => p.root)}
+                              strategy={verticalListSortingStrategy}
+                            >
+                              <div ref={projectListRef} className="comux-project-list mt-1 space-y-0.5 p-0.5">
+                                {visibleProjects.map((project) => (
+                                  <SortableProjectRow
+                                    key={project.root}
+                                    project={project}
+                                    isActive={selectedProject?.root === project.root}
+                                    isPinned={isProjectPinned(pinnedProjects, project.root)}
+                                    dragEnabled={dragEnabled}
+                                    activeRowRef={activeProjectRowRef}
+                                    onSelect={selectProject}
+                                    onRowContextMenu={(p, e) => {
+                                      setProjectMenuTarget(p);
+                                      openContextMenuAt(setProjectMenu)(e);
+                                    }}
                                   />
-                                )}
-                              </button>
-                            );
-                            })}
-                          </div>
+                                ))}
+                              </div>
+                            </SortableContext>
+                          </DndContext>
                           )}
                         </>
                       )}
@@ -1668,6 +1803,17 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     >
                       {projectMenuTarget && (
                         <>
+                          <PopoverItem
+                            icon={isProjectPinned(pinnedProjects, projectMenuTarget.root) ? "ph:push-pin-slash" : "ph:push-pin"}
+                            onSelect={() => {
+                              const root = projectMenuTarget.root;
+                              setProjectMenu(null);
+                              toggleProjectPinned(root);
+                            }}
+                          >
+                            {isProjectPinned(pinnedProjects, projectMenuTarget.root) ? "Unpin" : "Pin to top"}
+                          </PopoverItem>
+                          <PopoverSeparator />
                           <PopoverItem
                             icon="ph:chat-circle-dots-bold"
                             onSelect={() => {
