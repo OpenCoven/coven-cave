@@ -7,13 +7,43 @@ const source = readFileSync(new URL("./docs-pane.tsx", import.meta.url), "utf8")
 assert.match(
   source,
   /const DOCS_URL = "https:\/\/docs\.opencoven\.ai"/,
-  "DocsPane points at the OpenCoven docs site",
+  "CovenPane points at the OpenCoven docs site",
 );
 
 assert.match(
   source,
-  /<iframe[\s\S]*src=\{DOCS_URL\}/,
-  "DocsPane embeds the docs URL in an iframe",
+  /const FEEDBACK_URL = "https:\/\/github\.com\/OpenCoven\/coven-cave\/issues\/new\/choose"/,
+  "CovenPane points Feedback at the Coven Cave issue chooser",
+);
+
+assert.match(
+  source,
+  /const X_URL = "https:\/\/x\.com\/OpenCvn"/,
+  "CovenPane points X at the OpenCoven profile",
+);
+
+assert.match(
+  source,
+  /export function CovenPane\(\)/,
+  "DocsPane file should export the renamed CovenPane surface",
+);
+
+assert.match(
+  source,
+  /COVEN_TABS[\s\S]*label: "Docs"[\s\S]*label: "Feedback"[\s\S]*label: "X"/,
+  "CovenPane exposes Docs, Feedback, and X as first-class tabs",
+);
+
+assert.match(
+  source,
+  /role="tablist"[\s\S]*aria-label="Coven browser tabs"[\s\S]*role="tab"[\s\S]*aria-selected=\{tab\.id === activeTabId\}/,
+  "CovenPane should render accessible native-feeling tabs",
+);
+
+assert.match(
+  source,
+  /<iframe[\s\S]*src=\{activeTab\.url\}/,
+  "CovenPane embeds the active tab URL in one browser frame",
 );
 
 // The framed docs must never be able to navigate the whole app away from
@@ -28,8 +58,8 @@ assert.doesNotMatch(
 // An external escape hatch is kept in case the docs host ever refuses framing.
 assert.match(
   source,
-  /href=\{DOCS_URL\}[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"/,
-  "DocsPane keeps an open-in-new-tab link to the docs",
+  /href=\{activeTab\.url\}[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"/,
+  "CovenPane keeps an open-in-new-tab link to the active tab",
 );
 
 console.log("docs-pane.test.ts passed");

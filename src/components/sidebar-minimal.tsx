@@ -101,7 +101,7 @@ const FOLDER_MODES: Array<{
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description: "Shell session in your project" },
   { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘8", description: "Chat with a familiar beside your files and terminal" },
   { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description: "Saved docs, links, and reading" },
-  { id: "docs", label: "Docs", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven documentation and guides" },
+  { id: "docs", label: "Coven", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven docs, feedback, and social tabs" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, workflows, skills, and the capabilities your familiars can use" },
   { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
   { id: "calls", label: "Calls", iconName: "ph:graph", group: "tools", kbd: "⌘⇧C", description: "Live familiar activity and delegation traces", badge: (p) => badgeText(p.callsActiveCount) },

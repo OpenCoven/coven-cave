@@ -145,8 +145,8 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "docs", label: "Docs", iconName: "ph:book-bookmark", group: "tools", description:/,
-  "Docs is a Tools surface embedding the OpenCoven docs site",
+  /\{ id: "docs", label: "Coven", iconName: "ph:book-bookmark", group: "tools", description:/,
+  "Coven is a Tools surface embedding OpenCoven docs, feedback, and social tabs",
 );
 
 // Library is a gated add-on (default off): the nav filter hides it until the

@@ -24,6 +24,24 @@ assert.match(
 
 assert.match(
   workspace,
+  /import \{ CovenPane \} from "@\/components\/docs-pane"/,
+  "Workspace should import the Coven pane from the docs-pane module",
+);
+
+assert.match(
+  workspace,
+  /docs: "Coven"/,
+  "Workspace title should label the docs route as Coven",
+);
+
+assert.match(
+  workspace,
+  /mode === "docs" \? \(\s*<CovenPane \/>/,
+  "Workspace should render CovenPane for the docs route",
+);
+
+assert.match(
+  workspace,
   /import \{ FamiliarsView \} from "@\/components\/familiars-view"/,
   "workspace.tsx imports FamiliarsView",
 );
