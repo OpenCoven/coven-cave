@@ -413,6 +413,16 @@ select {
   outline-offset: calc(-1 * var(--ring-width));
 }
 
+/* Settings search: flash a ring on the group a result jumped to. */
+.settings-group--found > div:last-child {
+  outline: 2px solid var(--ring-focus);
+  outline-offset: 2px;
+  transition: outline-color 1.4s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-group--found > div:last-child { transition: none; }
+}
+
 /* Skip-to-content link: off-screen until it receives keyboard focus, then it
    slides into the top-left so the first Tab on any surface reaches it. */
 .skip-link {
