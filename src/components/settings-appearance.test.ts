@@ -421,3 +421,27 @@ assert.match(
   /const sync = \(\) => setDemoMode\(isDemoModeEnabled\(\)\);\s*sync\(\);/,
   "Demo-mode reads its real value after mount via sync() in the effect",
 );
+
+// ── Manual resync button + per-token overrides ───────────────────────────────
+assert.match(
+  settings,
+  /async function persistThemeTokens\(\): Promise<boolean>/,
+  "persistThemeTokens returns a result so the Resync button can report success",
+);
+assert.match(settings, /Resync to phone/, "Appearance exposes a manual Resync to phone button");
+assert.match(
+  settings,
+  /onClick=\{\(\) => void handleResync\(\)\}/,
+  "the Resync button triggers a manual theme push",
+);
+assert.match(settings, /function ThemeTokenOverrides\(/, "a per-token override panel exists");
+assert.match(
+  settings,
+  /THEME_SYNC_KEYS\.map\(\(key\)[\s\S]{0,500}type="color"/,
+  "the override panel renders a colour input for each core token",
+);
+assert.match(
+  settings,
+  /function applyTokenOverride\(key: string, hex: string, mode: Mode\)/,
+  "editing a token forks the active theme to a custom theme and re-syncs",
+);
