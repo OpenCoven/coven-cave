@@ -12,6 +12,8 @@ import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "@/lib/cave-config";
+import { canResolve } from "@/lib/vault";
+import { readEnvLocalValue } from "@/lib/env-file";
 import {
   mergeCatalog,
   type MarketplaceJsonPlugin,
@@ -47,6 +49,14 @@ export async function GET() {
   );
 
   const cfg = await loadConfig();
-  const plugins = mergeCatalog(marketplacePlugins, manifests, cfg.marketplace.installed);
+  const merged = mergeCatalog(marketplacePlugins, manifests, cfg.marketplace.installed);
+  const plugins = merged.map((p) => ({
+    ...p,
+    // configured = every required field's env var resolves (vault op:// or
+    // process.env) or is present in .env.local (written but not yet loaded).
+    configured: p.requiredConfig.every(
+      (f) => readEnvLocalValue(f.env) !== undefined || canResolve(f.env),
+    ),
+  }));
   return NextResponse.json({ ok: true, plugins });
 }
