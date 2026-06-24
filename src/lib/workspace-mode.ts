@@ -15,7 +15,6 @@ export type WorkspaceMode =
   | "workflows"
   | "flow"
   | "submissions"
-  | "calls"
   | "retro"
   | "capabilities"
   | "journal"

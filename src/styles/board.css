@@ -516,38 +516,6 @@
 .board-task-link { display:inline-flex; max-width:100%; min-width:0; align-items:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:2px 8px; border-radius:7px; border:1px solid var(--border-strong); background:var(--bg-base); color:var(--text-secondary); font-size:11px; text-decoration:none; }
 .board-task-link:hover { background:var(--bg-hover); color:var(--text-primary); }
 
-.floor-table-wrap { border:1px solid var(--border-hairline); border-radius:8px; background:var(--bg-raised); }
-.floor-table thead th:last-child { width:104px; }
-.floor-table tbody tr.floor-familiar-row { cursor:pointer; }
-.floor-table tbody tr.floor-familiar-row.selected { background:color-mix(in oklch,var(--accent-presence) 14%,var(--bg-base)); box-shadow:inset 3px 0 0 var(--accent-presence); }
-.floor-familiar-cell { display:flex; min-width:0; align-items:center; gap:8px; }
-.floor-expand-button { display:inline-flex; height:22px; width:22px; shrink:0; align-items:center; justify-content:center; border-radius:6px; color:var(--text-muted); transition:background .12s,color .12s,transform .12s; }
-.floor-familiar-row:hover .floor-expand-button,.floor-expand-button:hover { background:var(--bg-hover); color:var(--text-primary); }
-.floor-familiar-row.selected .floor-expand-button { transform:rotate(90deg); color:var(--text-primary); }
-.floor-familiar-avatar { display:inline-flex; height:28px; width:28px; shrink:0; align-items:center; justify-content:center; border:1px solid; border-radius:999px; font-weight:600; }
-.floor-familiar-name { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary); font-size:12px; font-weight:600; }
-.floor-status-cell { display:inline-flex; align-items:center; gap:7px; color:var(--text-secondary); font-size:11px; white-space:nowrap; }
-.floor-session-counts { display:flex; flex-wrap:wrap; align-items:center; gap:5px; color:var(--text-muted); font-size:11px; }
-.floor-session-counts span { white-space:nowrap; }
-.floor-count-running { color:#4ade80; }
-.floor-count-stuck { color:#fbbf24; }
-.floor-trace-cell { text-align:right; white-space:nowrap; }
-.board-table tbody tr.floor-session-row { cursor:default; background:color-mix(in oklab,var(--bg-raised) 58%,var(--bg-base)); }
-.board-table tbody tr.floor-session-row:hover { background:var(--bg-hover); }
-.floor-session-row td { padding:6px 10px; }
-.floor-session-row td:first-child { padding-left:54px; }
-.floor-session-heading-row td { border-top:1px solid var(--border-hairline); color:var(--text-muted); font-size:10px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
-.floor-session-familiar-cell { min-width:220px; }
-.floor-session-main { display:flex; min-width:0; align-items:center; gap:6px; }
-.floor-session-indent { display:inline-flex; width:16px; shrink:0; }
-.floor-session-branch { color:var(--text-muted); font-size:10px; }
-.floor-session-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
-.floor-session-meta { display:flex; align-items:center; gap:8px; color:var(--text-muted); font-size:10px; white-space:nowrap; }
-.floor-model-pill { max-width:90px; overflow:hidden; text-overflow:ellipsis; border-radius:5px; background:var(--bg-raised); padding:1px 5px; font-family:var(--font-mono),ui-monospace,monospace; }
-.floor-session-more-button { display:inline-flex; align-items:center; border:1px solid var(--border-hairline); border-radius:6px; background:var(--bg-base); padding:3px 8px; color:var(--text-secondary); font-size:11px; transition:background .12s,color .12s,border-color .12s; }
-.floor-session-more-button:hover { border-color:var(--border-strong); background:var(--bg-hover); color:var(--text-primary); }
-.floor-session-empty-row .floor-session-label,.floor-session-more-row .floor-session-label { color:var(--text-muted); }
-
 .board-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:8px; padding:48px 24px; color:var(--text-muted); font-size:13px; }
 
 /* ── GitHub surface table ──────────────────────────────────────────────── */

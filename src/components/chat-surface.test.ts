@@ -56,12 +56,6 @@ assert.doesNotMatch(
   "ChatSurface should not reintroduce the busy GitHub-style hero/composer cards",
 );
 
-assert.doesNotMatch(
-  chatSurface,
-  /import.*CovenFloor/,
-  "ChatSurface should not import CovenFloor — Floor is now an ambient widget in HomeComposer",
-);
-
 assert.match(
   chatSurface,
   /const scopedFamiliars = useMemo\(\(\) => activeFamiliar \? \[activeFamiliar\] : familiars, \[activeFamiliar, familiars\]\)/,
@@ -115,12 +109,6 @@ assert.doesNotMatch(
   chatSurface,
   /Traces/,
   "ChatSurface should not foreground trace terminology in the primary tabs",
-);
-
-assert.doesNotMatch(
-  chatSurface,
-  /fetch\("\/api\/coven-calls"|buildDelegationGraph|loadDelegations/,
-  "ChatSurface should not load trace graph data just to render the primary chat surface",
 );
 
 assert.match(

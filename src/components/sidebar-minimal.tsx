@@ -36,7 +36,6 @@ export type FolderMode =
   | "workflows"
   | "flow"
   | "submissions"
-  | "calls"
   | "library"
   | "capabilities"
   | "journal"
@@ -71,8 +70,6 @@ export type SidebarMinimalProps = {
   boardOpenCount?: number;
   scheduleNeedsCount?: number;
   githubAssignedCount?: number;
-  /** Number of in-flight delegation calls (status "running"). */
-  callsActiveCount?: number;
 };
 
 // Format a count as a compact nav badge; 0/undefined yields no badge.
@@ -111,7 +108,6 @@ const FOLDER_MODES: Array<{
   { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
-  { id: "calls", label: "Calls", iconName: "ph:graph", group: "tools", kbd: "⌘⇧C", description: "Live familiar activity and delegation traces", badge: (p) => badgeText(p.callsActiveCount) },
   // Add-ons (gated)
   { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount) },
 ];

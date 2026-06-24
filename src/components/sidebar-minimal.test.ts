@@ -42,24 +42,6 @@ assert.match(
   "Sidebar nav rows should keep compact side-panel text sizing",
 );
 
-// The calls/delegations surface is wired into top-level nav as the "Calls"
-// Tools entry. (It was previously removed in e8b2f117; deliberately re-added.)
-assert.match(
-  source,
-  /\{ id: "calls", label: "Calls", iconName: "ph:graph", group: "tools"/,
-  "Calls appears as a Tools surface",
-);
-assert.match(
-  workspace,
-  /mode === "calls" \?\s*\(\s*<CallsView/,
-  "workspace renders CallsView for the calls mode",
-);
-assert.match(workspace, /calls: "Calls"/, "calls mode has a Calls title");
-// The Calls surface has a ⌘⇧C shortcut and an active-call badge.
-assert.match(source, /id: "calls"[^}]*kbd: "⌘⇧C"/, "Calls has a ⌘⇧C shortcut");
-assert.match(source, /id: "calls"[^}]*badge: \(p\) => badgeText\(p\.callsActiveCount\)/, "Calls shows the active-call badge");
-assert.match(workspace, /e\.key\.toLowerCase\(\) === "c"[\s\S]*setMode\("calls"\)/, "⌘⇧C routes to the calls surface");
-
 assert.match(
   source,
   /<div className="sidebar-nav-scroll"/,

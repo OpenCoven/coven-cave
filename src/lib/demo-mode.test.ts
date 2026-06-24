@@ -72,19 +72,19 @@ assert.equal(new URL(window.location.href).searchParams.has("demo"), false);
 assert.equal(isDemoModeEnabled(), false);
 
 assert.equal(
-  isDemoModeRequest(new Request("https://cave.local/api/coven-status?demo=1")),
+  isDemoModeRequest(new Request("https://cave.local/api/board?demo=1")),
   true,
   "server routes should support query activation for screenshots",
 );
 assert.equal(
   isDemoModeRequest(
-    new Request("https://cave.local/api/coven-status", {
+    new Request("https://cave.local/api/board", {
       headers: { [DEMO_MODE_HEADER]: "1" },
     }),
   ),
   true,
   "server routes should support explicit demo headers from the client",
 );
-assert.equal(isDemoModeRequest(new Request("https://cave.local/api/coven-status")), false);
+assert.equal(isDemoModeRequest(new Request("https://cave.local/api/board")), false);
 
 console.log("demo-mode.test.ts OK");
