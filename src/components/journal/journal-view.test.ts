@@ -109,4 +109,12 @@ assert.match(entries, /aria-label="Older entry"/, "detail header has an older-en
 assert.match(entries, /const hasOlder = dayIndex >= 0 && dayIndex < filteredDays\.length - 1/, "older-entry availability derives from the visible list");
 assert.match(css, /\.journal-entry__sec--nav \{[\s\S]*?justify-content: space-between/, "the heading row lays out the nav controls");
 
+// ── Canvas tab: async setState guarded against unmount ──────────────────────
+// Generation is a slow LLM call; leaving Canvas mid-generate must not setState
+// on a dead tree. load() and runGeneration() bail on a cleared mountedRef.
+assert.match(list, /const mountedRef = useRef\(true\)/, "canvas tracks mounted state");
+assert.match(list, /return \(\) => \{ mountedRef\.current = false; \}/, "canvas clears mountedRef on unmount");
+assert.match(list, /await generateArtifactCode\([\s\S]{0,80}?if \(!mountedRef\.current\) return;/, "runGeneration bails after the LLM call if unmounted");
+assert.match(list, /const json = await res\.json\(\)[\s\S]{0,80}?if \(!mountedRef\.current\) return;/, "load bails after the fetch if unmounted");
+
 console.log("journal-view.test.ts: ok");

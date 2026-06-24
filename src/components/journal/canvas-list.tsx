@@ -70,6 +70,13 @@ export function CanvasList({
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (copiedTimer.current) clearTimeout(copiedTimer.current); }, []);
+  // Guards async setState after the tab unmounts — generation is a slow LLM
+  // call, so leaving Canvas mid-generate would otherwise setState on a dead tree.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // Seed the generate composer from an example prompt and focus it, so the
   // empty-state starters are one tap from a ready-to-run sketch.
@@ -91,11 +98,12 @@ export function CanvasList({
     try {
       const res = await fetch("/api/canvas", { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
+      if (!mountedRef.current) return;
       const list: CanvasArtifact[] = Array.isArray(json.artifacts) ? json.artifacts : [];
       setArtifacts(list);
       setSelectedId((prev) => prev ?? list[list.length - 1]?.id ?? null);
     } catch {
-      setArtifacts([]);
+      if (mountedRef.current) setArtifacts([]);
     }
   }, []);
 
@@ -124,6 +132,7 @@ export function CanvasList({
         ? buildRefinePrompt(refineOf.code, ask, refineOf.kind ?? "html")
         : buildSketchPrompt(ask);
       const result = await generateArtifactCode({ prompt: sendPrompt, familiarId });
+      if (!mountedRef.current) return;
       setGenerating((prev) => {
         const next = new Set(prev);
         next.delete(id);
