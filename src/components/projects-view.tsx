@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type FormEven
 
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
+import { RelativeTime } from "@/components/ui/relative-time";
+import { modelIcon, modelLabel } from "@/lib/model-label";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { CaveProject } from "@/lib/cave-projects-types";
@@ -23,6 +25,8 @@ import { useProjects } from "@/lib/use-projects";
 import { deriveProjectStatus } from "@/lib/project-status";
 import { useProjectsUiState } from "@/lib/projects/use-projects-ui-state";
 import type { ProjectsDensity } from "@/lib/projects/projects-ui-state";
+import { sessionGlyph, glyphToneClass, stripTaskPrefix } from "@/lib/projects/session-glyph";
+import { projectStats } from "@/lib/projects/project-stats";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -109,7 +113,11 @@ function ProjectChatRow({
     id: session.id,
   });
   const style: CSSProperties = { transform: CSS.Translate.toString(transform), transition };
-  const title = stripLeadingTrailingEmoji(displayTitle ?? (session.title || "(untitled chat)"));
+  const title = stripLeadingTrailingEmoji(stripTaskPrefix(displayTitle ?? (session.title || "(untitled chat)")));
+  const glyph = sessionGlyph(session);
+  const branch = session.git?.branch ?? null;
+  const diff = session.diff ?? null;
+  const hasDiff = !!diff && (diff.additions > 0 || diff.deletions > 0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const activate = () => (selectMode ? onToggleSelect(session.id) : onOpen());
@@ -155,8 +163,45 @@ function ProjectChatRow({
             <Icon name="ph:dots-six-vertical" width={10} aria-hidden />
           </button>
         )}
-        <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${chatDotClass(session.status)}`} />
+        <span
+          className={`grid h-3.5 w-3.5 shrink-0 place-items-center ${glyphToneClass(glyph.tone)}`}
+          title={glyph.label}
+          aria-label={glyph.label}
+          role="img"
+        >
+          {glyph.icon ? (
+            <Icon name={glyph.icon} width={13} className={glyph.spin ? "animate-spin" : undefined} aria-hidden />
+          ) : (
+            <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${chatDotClass(session.status)}`} />
+          )}
+        </span>
         <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
+        {selectMode ? null : (
+          <span className="flex shrink-0 items-center gap-2 text-[10px] text-[var(--text-muted)]">
+            {density === "comfortable" && session.model ? (
+              <span
+                className="hidden items-center gap-0.5 rounded-[4px] bg-[var(--bg-raised)]/70 px-1 py-px font-medium sm:inline-flex"
+                title={`Model: ${session.model}`}
+              >
+                <Icon name={modelIcon(session.model)} width={10} aria-hidden />
+                <span className="truncate">{modelLabel(session.model)}</span>
+              </span>
+            ) : null}
+            {density === "comfortable" && branch ? (
+              <span className="hidden max-w-[10rem] items-center gap-0.5 truncate font-mono sm:inline-flex" title={`Branch: ${branch}`}>
+                <Icon name="ph:git-branch-bold" width={10} aria-hidden />
+                <span className="truncate">{branch}</span>
+              </span>
+            ) : null}
+            {density === "comfortable" && hasDiff ? (
+              <span className="hidden items-center gap-1 font-mono sm:inline-flex" title={`+${diff!.additions} −${diff!.deletions}`}>
+                <span className="text-[var(--color-success)]">+{diff!.additions}</span>
+                <span className="text-[var(--color-danger)]">−{diff!.deletions}</span>
+              </span>
+            ) : null}
+            <RelativeTime iso={session.updated_at} className="tabular-nums" />
+          </span>
+        )}
         {selectMode ? null : confirmDelete ? (
           <span className="flex shrink-0 items-center gap-1">
             <button
@@ -246,6 +291,7 @@ function ProjectRow({
   onSetExpanded,
 }: ProjectRowProps) {
   const chatCount = chats.length;
+  const stats = projectStats(chats);
   // Expanded/collapsed state is lifted to the container and persisted, so a
   // project the user opened stays open across reloads (native-app memory)
   // instead of resetting to a flat collapsed list every visit.
@@ -409,11 +455,13 @@ function ProjectRow({
         >
           <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={12} aria-hidden />
         </button>
-        <span className="relative shrink-0">
+        <span
+          className="relative shrink-0"
+          style={{ color: project.color || "var(--accent-presence)" }}
+        >
           <Icon
             name="ph:folder-open-bold"
             width={15}
-            className="text-[var(--accent-presence)]"
             aria-hidden
           />
           {projectStatus ? (
@@ -460,8 +508,28 @@ function ProjectRow({
           </button>
         )}
 
-        <span className="shrink-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
-          {chatCount} {chatCount === 1 ? "session" : "sessions"}
+        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+          {stats.running > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 font-medium text-[var(--accent-presence)]"
+              title={`${stats.running} running`}
+            >
+              <Icon name="ph:circle-notch-bold" width={9} className="animate-spin" aria-hidden />
+              {stats.running}
+            </span>
+          ) : null}
+          {stats.tasks > 0 ? (
+            <span
+              className="inline-flex items-center gap-1"
+              title={`${stats.tasks} ${stats.tasks === 1 ? "task" : "tasks"}`}
+            >
+              <Icon name="ph:check-square" width={10} aria-hidden />
+              {stats.tasks}
+            </span>
+          ) : null}
+          <span className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-0.5">
+            {chatCount} {chatCount === 1 ? "session" : "sessions"}
+          </span>
         </span>
 
         {lastActiveLabel ? (
