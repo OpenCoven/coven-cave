@@ -138,6 +138,7 @@ struct FamiliarThreadsView: View {
                     }
                 }
                     .buttonStyle(.plain)
+                    .accessibilityAddTraits(selectMode && isSelected(entry) ? .isSelected : [])
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     // Only on-device threads can be renamed/deleted from here; a
                     // server-only session lives on the desktop, so its rows offer
@@ -255,13 +256,22 @@ struct FamiliarThreadsView: View {
     }
 
     @ViewBuilder private func selectionMark(for entry: Entry) -> some View {
+        // Decorative — selection state is announced via the row's .isSelected trait.
         if case .local(let thread) = entry {
             Image(systemName: selectedIds.contains(thread.id) ? "checkmark.circle.fill" : "circle")
                 .font(.title3)
                 .foregroundStyle(selectedIds.contains(thread.id) ? Color.accentColor : Color.secondary)
+                .accessibilityHidden(true)
         } else {
             Image(systemName: "circle").font(.title3).foregroundStyle(.quaternary)
+                .accessibilityHidden(true)
         }
+    }
+
+    /// Whether a (local) thread row is selected in select mode.
+    private func isSelected(_ entry: Entry) -> Bool {
+        if case .local(let thread) = entry { return selectedIds.contains(thread.id) }
+        return false
     }
 
     @ViewBuilder

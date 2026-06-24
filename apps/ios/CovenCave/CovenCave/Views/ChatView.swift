@@ -122,7 +122,10 @@ struct ChatView: View {
                             }
                         }
                 }
-                .accessibilityLabel("Linked tasks")
+                .accessibilityLabel({
+                    let n = app.linkedTasks(for: thread).count
+                    return n > 0 ? "Linked tasks, \(n)" : "Linked tasks"
+                }())
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showCommands = true } label: {

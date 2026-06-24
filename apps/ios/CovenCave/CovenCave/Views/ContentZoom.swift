@@ -71,7 +71,7 @@ struct ZoomableContentView: View {
                     Button { copy(text) } label: {
                         Label(copied ? "Copied" : "Copy",
                               systemImage: copied ? "checkmark" : "doc.on.doc")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.callout.weight(.semibold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 12).padding(.vertical, 7)
                             .background(copied ? Color.green.opacity(0.85)
