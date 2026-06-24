@@ -1893,6 +1893,13 @@ tr[role="checkbox"]:focus-visible {
 .ui-search-input-field::placeholder {
   color: var(--text-muted);
 }
+/* type="search" draws a native clear glyph that doubles up with our own
+   .ui-search-input-clear button — suppress it so there's a single clear. */
+.ui-search-input-field::-webkit-search-cancel-button,
+.ui-search-input-field::-webkit-search-decoration {
+  appearance: none;
+  -webkit-appearance: none;
+}
 
 @media (max-width: 767px) {
   .ui-search-input-field {
