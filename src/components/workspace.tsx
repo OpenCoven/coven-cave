@@ -1287,6 +1287,17 @@ export function Workspace() {
       setMode("board");
       return;
     }
+    if (intent.kind === "set-board-view") {
+      // Persist for a fresh mount, navigate to the board, then signal a live
+      // switch in case the board is already mounted.
+      try { localStorage.setItem("cave:board:viewMode", intent.view); } catch { /* ignore */ }
+      setMode("board");
+      window.setTimeout(
+        () => window.dispatchEvent(new CustomEvent("cave:board:set-view", { detail: { view: intent.view } })),
+        0,
+      );
+      return;
+    }
     if (intent.kind === "go-to-surface") {
       setMode(intent.mode as WorkspaceMode);
       shellRef.current?.dismissNavMobile();

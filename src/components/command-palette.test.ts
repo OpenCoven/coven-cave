@@ -14,6 +14,10 @@ const workspace = readFileSync(
   new URL("./workspace.tsx", import.meta.url),
   "utf8",
 );
+const boardView = readFileSync(
+  new URL("./board-view.tsx", import.meta.url),
+  "utf8",
+);
 
 // Input is labelled.
 assert.match(
@@ -175,6 +179,26 @@ assert.match(
   workspace,
   /intent\.kind === "open-project"[\s\S]{0,320}?CHAT_OPEN_PROJECTS_EVENT[\s\S]{0,200}?CHAT_FOCUS_PROJECT_EVENT, \{ detail: \{ root \} \}/,
   "workspace opens the Projects tab then focuses the chosen project",
+);
+
+// Board view-switch: the palette offers "Board: Kanban/Table/Gantt" rows that
+// jump to the board and set its view; the board honors the live switch.
+assert.match(source, /kind: "set-board-view"; view: "kanban" \| "table" \| "gantt"/, "a set-board-view intent exists");
+assert.match(source, /label: "Board: Gantt timeline"/, "a Gantt board-view row is offered");
+assert.match(source, /intent: \{ kind: "set-board-view", view: v\.view \}/, "board-view rows carry the set-board-view intent");
+assert.match(source, /\.\.\.boardViewRows/, "board-view rows are included in the result list");
+assert.match(
+  workspace,
+  /intent\.kind === "set-board-view"[\s\S]{0,500}cave:board:set-view/,
+  "workspace handles set-board-view by dispatching the live switch event",
+);
+assert.match(boardView, /addEventListener\("cave:board:set-view"/, "board-view listens for the set-view event");
+assert.match(boardView, /=== "gantt"\) setViewMode\(v\)/, "the set-view handler applies the requested view");
+// Recent tasks: empty-query task rows lead with the most-recently-updated.
+assert.match(
+  source,
+  /q \? 0 : new Date\(b\.updatedAt \?\? 0\)\.getTime\(\) - new Date\(a\.updatedAt \?\? 0\)\.getTime\(\)/,
+  "task rows sort by recency when the query is empty",
 );
 
 console.log("command-palette.test.ts OK");

@@ -70,6 +70,7 @@ type PaletteIntent =
   | { kind: "back-to-list" }
   | { kind: "open-tui-session"; sessionId: string }
   | { kind: "open-board" }
+  | { kind: "set-board-view"; view: "kanban" | "table" | "gantt" }
   | { kind: "go-to-surface"; mode: FolderMode }
   | { kind: "open-project"; root: string }
   | { kind: "focus-card"; cardId: string }
@@ -83,6 +84,7 @@ type Card = {
   priority: string;
   familiarId: string | null;
   labels: string[];
+  updatedAt?: string;
 };
 
 type CovenMemoryEntry = {
@@ -404,6 +406,9 @@ export function CommandPalette({
           c.priority.toLowerCase().includes(q)
         );
       })
+      // Empty query → lead with the most-recently-updated tasks ("recent tasks"
+      // jump-list); while searching keep the match order.
+      .sort((a, b) => (q ? 0 : new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime()))
       .slice(0, RESULT_LIMITS.card)
       .map((c) => ({
         id: `card:${c.id}`,
@@ -588,6 +593,25 @@ export function CommandPalette({
             intent: { kind: "open-project", root: p.root },
           }));
 
+    // "Board: …" rows jump to the board and switch its view directly. Hidden
+    // while scoped or typing a slash command.
+    const BOARD_VIEWS: Array<{ view: "kanban" | "table" | "gantt"; label: string; hint: string; terms: string }> = [
+      { view: "kanban", label: "Board: Kanban", hint: "Columns by status", terms: "board kanban columns" },
+      { view: "table", label: "Board: Table", hint: "Sortable task table", terms: "board table list" },
+      { view: "gantt", label: "Board: Gantt timeline", hint: "Schedule timeline", terms: "board gantt timeline schedule" },
+    ];
+    const boardViewRows: Row[] = (scoped || slashToken)
+      ? []
+      : BOARD_VIEWS
+          .filter((v) => !q || v.label.toLowerCase().includes(q) || v.terms.includes(q))
+          .map((v) => ({
+            id: `board-view:${v.view}`,
+            kind: "command" as const,
+            name: v.label,
+            hint: v.hint,
+            intent: { kind: "set-board-view", view: v.view },
+          }));
+
     // Empty, unscoped query → "browse" mode: lead with the recency jump-list,
     // then the launcher surfaces, and group the rest under section headers
     // (see browseGroup + the render). While the user is typing it falls back to
@@ -614,6 +638,7 @@ export function CommandPalette({
           ...familiarRows,
           ...cardRows,
           ...projectRows,
+          ...boardViewRows,
           ...covenMemoryRows,
           ...fsMemoryRows,
           ...cmdRows,
@@ -628,6 +653,7 @@ export function CommandPalette({
           ...saveRows,
           ...cmdRows,
           ...surfaceRows,
+          ...boardViewRows,
           ...projectRows,
           ...shortcutRows,
           ...createRows,
