@@ -30,6 +30,45 @@ export type LibraryChatDocResolution =
   | { ok: true; path: string }
   | { ok: false; reason: "forbidden" | "not_found" | "too_large" | "not_file" };
 
+export type LibraryChatDocumentRead =
+  | { ok: true; path: string; content: string }
+  | { ok: false; reason: "forbidden" | "not_found" | "too_large" | "not_file" };
+
+type LibraryChatDocPathOptions = {
+  researchRoot?: string;
+};
+
+function isWithinRoot(value: string, root: string): boolean {
+  const relative = path.relative(root, value);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function listResearchEntries(root: string): Array<{ path: string; isFile: boolean }> {
+  const entries: Array<{ path: string; isFile: boolean }> = [];
+
+  function walk(dir: string) {
+    let dirents: fs.Dirent[];
+    try {
+      dirents = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const dirent of dirents) {
+      const fullPath = path.join(dir, dirent.name);
+      if (dirent.isDirectory()) {
+        entries.push({ path: fullPath, isFile: false });
+        walk(fullPath);
+      } else if (dirent.isFile()) {
+        entries.push({ path: fullPath, isFile: true });
+      }
+    }
+  }
+
+  walk(root);
+  return entries;
+}
+
 /**
  * Resolve and validate a raw (absolute) path for library chat access.
  *
@@ -37,7 +76,10 @@ export type LibraryChatDocResolution =
  * file, and is within the sage research root. Otherwise returns a typed
  * failure reason for the caller to translate to an HTTP status.
  */
-export function resolveLibraryChatDocPath(rawPath: string): LibraryChatDocResolution {
+export function resolveLibraryChatDocPath(
+  rawPath: string,
+  options: LibraryChatDocPathOptions = {},
+): LibraryChatDocResolution {
   // Basic sanity: must be non-empty, no null bytes, must be absolute.
   if (!rawPath || rawPath.includes("\0") || !path.isAbsolute(rawPath)) {
     return { ok: false, reason: "forbidden" };
@@ -49,7 +91,7 @@ export function resolveLibraryChatDocPath(rawPath: string): LibraryChatDocResolu
   // Resolve the real research root (handles symlinks in the home path itself).
   let resolvedRoot: string;
   try {
-    resolvedRoot = fs.realpathSync(SAGE_RESEARCH_ROOT);
+    resolvedRoot = fs.realpathSync(options.researchRoot ?? SAGE_RESEARCH_ROOT);
   } catch {
     // Research root doesn't exist yet — nothing can be found within it.
     return { ok: false, reason: "not_found" };
@@ -65,29 +107,43 @@ export function resolveLibraryChatDocPath(rawPath: string): LibraryChatDocResolu
   }
 
   // Security check: resolved path must be inside the research root.
-  const isWithin =
-    resolvedPath === resolvedRoot ||
-    resolvedPath.startsWith(resolvedRoot + path.sep);
-
-  if (!isWithin) {
+  if (!isWithinRoot(resolvedPath, resolvedRoot)) {
     return { ok: false, reason: "forbidden" };
   }
 
-  // Stat the file.
-  let stat: fs.Stats;
-  try {
-    stat = fs.statSync(resolvedPath);
-  } catch {
+  const matchedEntry = listResearchEntries(resolvedRoot).find((entry) => entry.path === resolvedPath);
+  if (!matchedEntry) {
     return { ok: false, reason: "not_found" };
   }
 
-  if (!stat.isFile()) {
+  if (!matchedEntry.isFile) {
     return { ok: false, reason: "not_file" };
   }
+
+  const stat = fs.statSync(matchedEntry.path);
 
   if (stat.size > MAX_DOC_BYTES) {
     return { ok: false, reason: "too_large" };
   }
 
-  return { ok: true, path: resolvedPath };
+  return { ok: true, path: matchedEntry.path };
+}
+
+export function readLibraryChatDocument(
+  rawPath: string,
+  options: LibraryChatDocPathOptions = {},
+): LibraryChatDocumentRead {
+  const resolution = resolveLibraryChatDocPath(rawPath, options);
+  if (!resolution.ok) return resolution;
+
+  try {
+    return {
+      ok: true,
+      path: resolution.path,
+      // turbopackIgnore: true — path is runtime-validated, not a build-time import.
+      content: fs.readFileSync(/* turbopackIgnore: true */ resolution.path, "utf-8"),
+    };
+  } catch {
+    return { ok: false, reason: "not_found" };
+  }
 }

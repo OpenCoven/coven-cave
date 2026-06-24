@@ -20,7 +20,6 @@
  */
 
 import { spawn } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
 import { stripAnsi } from "@/lib/ansi";
 import {
@@ -35,7 +34,7 @@ import {
   resolveOpenClawAgentId,
   type OpenClawAgentJson,
 } from "@/lib/openclaw-bridge";
-import { resolveLibraryChatDocPath } from "./chat-doc-path";
+import { readLibraryChatDocument } from "./chat-doc-path";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -220,10 +219,10 @@ export async function POST(req: Request): Promise<Response> {
     return errorStream("docPath is required.");
   }
 
-  const resolution = resolveLibraryChatDocPath(body.docPath);
+  const documentRead = readLibraryChatDocument(body.docPath);
 
-  if (!resolution.ok) {
-    switch (resolution.reason) {
+  if (!documentRead.ok) {
+    switch (documentRead.reason) {
       case "forbidden":
         return new Response(
           JSON.stringify({ ok: false, error: "Document path is not allowed." }),
@@ -240,7 +239,7 @@ export async function POST(req: Request): Promise<Response> {
           { status: 400, headers: { "content-type": "application/json" } },
         );
       case "too_large":
-        // too_large from resolveLibraryChatDocPath means the file exceeds our
+        // too_large from readLibraryChatDocument means the file exceeds our
         // 200KB limit even before truncation. We handle truncation ourselves
         // in this route, so this branch is a belt-and-suspenders guard — the
         // resolver uses the same MAX_DOC_BYTES constant. Surface as an error.
@@ -250,17 +249,8 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  const resolvedDocPath = resolution.path;
-
-  // 3. Read the document
-  let rawContent: string;
-  try {
-    // turbopackIgnore: true — path is runtime-validated, not a build-time import.
-    rawContent = fs.readFileSync(/* turbopackIgnore: true */ resolvedDocPath, "utf-8");
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return errorStream(`Failed to read document: ${msg}`);
-  }
+  const resolvedDocPath = documentRead.path;
+  const rawContent = documentRead.content;
 
   // 4. Truncate if needed
   const { text: docContent, truncated } = truncateAtParagraph(rawContent, MAX_DOC_BYTES);

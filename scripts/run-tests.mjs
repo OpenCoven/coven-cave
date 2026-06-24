@@ -481,6 +481,7 @@ export const SUITES = {
     "src/app/api/project-local-human-read.test.ts",
     "src/app/api/project-file/route.test.ts",
     "src/app/api/library/doc/route.test.ts",
+    "src/app/api/library/chat/chat-doc-path.test.ts",
     "src/app/api/salem/pathfinder/feedback/route.test.ts",
     "src/app/api/launch/route.test.ts",
     "scripts/sidecar-bundle.test.mjs",
