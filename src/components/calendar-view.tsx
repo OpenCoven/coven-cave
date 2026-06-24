@@ -1,8 +1,10 @@
 "use client";
 
-import { useId, useMemo, useState, useRef, useEffect } from "react";
+import { createContext, useCallback, useContext, useId, useMemo, useState, useRef, useEffect } from "react";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar } from "@/lib/types";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { familiarAccent } from "@/lib/familiar-color";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import { formatClock, formatDate, readDateTimePrefs } from "@/lib/datetime-format";
@@ -12,6 +14,14 @@ import { SnoozeMenu } from "@/components/snooze-menu";
 import { itemDate, packEventColumns } from "@/lib/calendar-layout";
 import { familiarInScope } from "@/lib/familiar-multiselect";
 import { useIsMobile } from "@/lib/use-viewport";
+
+// Per-familiar accent colour, provided once by CalendarView and read by every
+// leaf chip (avoids threading a colour prop through all four view components).
+// Returns null for unassigned items (no accent).
+const FamiliarColorContext = createContext<(familiarId: string | null | undefined) => string | null>(() => null);
+function useFamiliarAccent(familiarId: string | null | undefined): string | null {
+  return useContext(FamiliarColorContext)(familiarId);
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -209,10 +219,12 @@ function ItemChip({
   onClick?: () => void;
 }) {
   const done = item.status === "done";
+  const accent = useFamiliarAccent(item.familiarId);
   return (
     <button
       onClick={onClick}
       title={item.title}
+      style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
       className={`focus-ring group flex w-full items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-2.5 text-left text-[13px] transition-colors md:py-1 md:text-[11px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
     >
       {done
@@ -482,6 +494,7 @@ function DeadlineChip({
   size?: "sm" | "xs";
 }) {
   const done = deadline.status === "done";
+  const accent = useFamiliarAccent(deadline.familiarId);
   return (
     <button
       type="button"
@@ -491,6 +504,7 @@ function DeadlineChip({
         onOpen?.(deadline.id);
       }}
       title={`${deadline.title} — task deadline`}
+      style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
       className={`focus-ring-inset flex w-full items-center gap-1 truncate rounded border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/12 px-1.5 py-0.5 text-left transition-colors hover:bg-[var(--color-warning)]/20 ${size === "xs" ? "text-[9px]" : "text-[10px]"}`}
     >
       <Icon name="ph:clock-countdown" width={size === "xs" ? 9 : 11} className="shrink-0 text-[var(--color-warning)]" aria-hidden />
@@ -571,6 +585,9 @@ function TimeGrid({
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
 }) {
+  // Read the per-familiar accent fn once (events render in a loop, so we can't
+  // call the hook per item).
+  const accentFor = useContext(FamiliarColorContext);
   // Tracks the in-flight drag: the item id + where in the block it was grabbed,
   // so the drop snaps the block's start (not the cursor) to the new time.
   const dragRef = useRef<{ id: string; grabY: number } | null>(null);
@@ -749,6 +766,9 @@ function TimeGrid({
                     height,
                     left: `calc(${leftPct}% + 1px)`,
                     width: `calc(${widthPct}% - 2px)`,
+                    ...(accentFor(ev.item.familiarId) && !done
+                      ? { borderLeftColor: accentFor(ev.item.familiarId) as string, borderLeftWidth: 3 }
+                      : null),
                   }}
                 >
                   {done
@@ -991,6 +1011,7 @@ function MonthView({
   onAddEntry?: (opts: { fireAt: string }) => void;
   onOpenDeadline?: (id: string) => void;
 }) {
+  const accentFor = useContext(FamiliarColorContext);
   const now = useNow();
   const monthStart = startOfMonth(anchor);
   const gridStart = startOfWeek(monthStart);
@@ -1111,6 +1132,7 @@ function MonthView({
                     )}
                     {dayItems.slice(0, 3).map((item) => {
                       const done = item.status === "done";
+                      const accent = accentFor(item.familiarId);
                       return (
                       <button
                         key={item.id}
@@ -1119,6 +1141,7 @@ function MonthView({
                           onOpenItem?.(item);
                         }}
                         title={item.title}
+                        style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
                         className={`focus-ring flex w-full items-center gap-1 rounded border border-[var(--border-hairline)] px-1 py-0.5 text-left text-[9px] ${done ? "bg-[var(--bg-base)] opacity-60 hover:bg-[var(--bg-raised)]" : "bg-[var(--bg-raised)] hover:bg-[var(--bg-elevated)]"}`}
                       >
                         {done
@@ -1456,6 +1479,34 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     [deadlines, inScope],
   );
 
+  // Per-familiar accent colour (explicit colour, else a stable derived hue).
+  const resolvedFamiliars = useResolvedFamiliars(familiars);
+  const familiarColorById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of resolvedFamiliars) m.set(f.id, familiarAccent(f.color, f.id));
+    return m;
+  }, [resolvedFamiliars]);
+  const familiarNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const f of resolvedFamiliars) m.set(f.id, f.display_name);
+    return m;
+  }, [resolvedFamiliars]);
+  const accentFor = useCallback(
+    (familiarId: string | null | undefined) => (familiarId ? familiarColorById.get(familiarId) ?? null : null),
+    [familiarColorById],
+  );
+
+  // Legend: the distinct familiars that own something currently in view. Only
+  // worth showing when ≥2 — with one (or none) there's nothing to disambiguate.
+  const legendFamiliars = useMemo(() => {
+    const ids = new Set<string>();
+    for (const it of scopedItems) if (it.familiarId) ids.add(it.familiarId);
+    for (const d of scopedDeadlines) if (d.familiarId) ids.add(d.familiarId);
+    return [...ids]
+      .map((id) => ({ id, name: familiarNameById.get(id) ?? id, color: familiarColorById.get(id) ?? "var(--accent-presence)" }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [scopedItems, scopedDeadlines, familiarNameById, familiarColorById]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") setSelectedItem(null);
@@ -1527,6 +1578,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
   ];
 
   return (
+    <FamiliarColorContext.Provider value={accentFor}>
     <div ref={containerRef} className="relative flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
       {/* Header */}
       <div className="calendar-toolbar flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-3 sm:gap-3 sm:px-6">
@@ -1611,6 +1663,22 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         ) : null}
       </div>
 
+      {/* Per-familiar colour legend — only when ≥2 familiars own items in view,
+          so a single-familiar scope shows no noise. */}
+      {legendFamiliars.length >= 2 && (
+        <div
+          className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)] sm:px-6"
+          aria-label="Familiar colour legend"
+        >
+          {legendFamiliars.map((f) => (
+            <span key={f.id} className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="h-2 w-2 shrink-0 rounded-[3px]" style={{ background: f.color }} />
+              <span className="text-[var(--text-secondary)]">{f.name}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* View body */}
       <div className="flex-1 overflow-hidden flex flex-col">
         {viewMode === "agenda" && (
@@ -1677,5 +1745,6 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
         />
       )}
     </div>
+    </FamiliarColorContext.Provider>
   );
 }

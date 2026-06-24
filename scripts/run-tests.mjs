@@ -181,6 +181,7 @@ export const SUITES = {
     "src/components/task-chat-cwd.test.ts",
     "src/lib/board-search.test.ts",
     "src/lib/board-wip.test.ts",
+    "src/lib/familiar-color.test.ts",
     "src/lib/use-refresh-on-focus.test.ts",
     "src/lib/comux-projects.test.ts",
     "src/lib/comux-project-order.test.ts",

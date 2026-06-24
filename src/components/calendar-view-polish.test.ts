@@ -184,4 +184,14 @@ assert.match(source, /onClick=\{onCell\}/, "the day cell click runs the add/navi
 assert.match(source, /aria-label=\{`Open \$\{fmtDateHeading\(day\)\}`\}/, "the date number is a button labelled to open the day");
 assert.match(source, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onDayClick\?\.\(day\); \}\}/, "the date number navigates into the day (stops the cell add)");
 
-console.log("calendar-view-polish.test.ts: month click-to-add ok");
+// ── Per-familiar colour coding + legend ──
+assert.match(source, /import \{ familiarAccent \} from "@\/lib\/familiar-color"/, "uses the familiar-accent helper");
+assert.match(source, /const FamiliarColorContext = createContext/, "provides per-familiar colour via context (no prop threading)");
+assert.match(source, /<FamiliarColorContext\.Provider value=\{accentFor\}>/, "CalendarView provides the accent fn");
+assert.match(source, /familiarAccent\(f\.color, f\.id\)/, "maps each familiar to its accent (explicit colour or derived)");
+assert.match(source, /const accent = useFamiliarAccent\(item\.familiarId\)/, "item chips read their familiar's accent");
+assert.match(source, /borderLeftColor: accent, borderLeftWidth: 3/, "the accent renders as a left spine on chips");
+assert.match(source, /legendFamiliars\.length >= 2/, "the colour legend only shows when ≥2 familiars are in view");
+assert.match(source, /aria-label="Familiar colour legend"/, "the legend is labelled");
+
+console.log("calendar-view-polish.test.ts: month click-to-add + familiar colours ok");
