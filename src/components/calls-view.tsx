@@ -1,9 +1,12 @@
 "use client";
 
 import {
+  type KeyboardEvent as ReactKeyboardEvent,
   useCallback,
   useEffect,
+  useId,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { Card } from "@/lib/cave-board-types";
@@ -53,6 +56,10 @@ type CallsAttention = {
   runningTrace: DelegationTrace | null;
   failedTrace: DelegationTrace | null;
 };
+
+// The trace timeline renders at most this many rows; the count badge says so
+// honestly ("30 of 47") instead of claiming all are visible.
+const TRACE_TIMELINE_LIMIT = 30;
 
 const TIME_WINDOWS: Array<{ id: TimeWindow; label: string }> = [
   { id: "24h", label: "24h" },
@@ -125,7 +132,14 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
   const [selection, setSelection] = useState<Selection>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
 
+  // Request-id guard: only the latest load's response is applied. On unmount
+  // the ref is parked at -1 so any in-flight response is dropped instead of
+  // calling setState on a gone component.
+  const loadSeqRef = useRef(0);
+  useEffect(() => () => { loadSeqRef.current = -1; }, []);
+
   const load = useCallback(async () => {
+    const seq = (loadSeqRef.current += 1);
     try {
       const [callsRes, boardRes] = await Promise.all([
         fetch("/api/coven-calls", { cache: "no-store" }),
@@ -133,6 +147,7 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
       ]);
       const callsJson = (await callsRes.json()) as CallsResponse;
       const boardJson = (await boardRes.json()) as BoardResponse;
+      if (seq !== loadSeqRef.current) return; // superseded or unmounted
 
       if (!callsJson.ok) {
         setError(callsJson.error ?? "calls load failed");
@@ -143,6 +158,7 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
       setError(boardJson.ok ? null : boardJson.error ?? "task context load failed");
       setLastLoadedAt(new Date().toISOString());
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       setError(err instanceof Error ? err.message : "fetch failed");
     }
   }, []);
@@ -150,8 +166,16 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
   useEffect(() => {
     if (tab !== "delegations") return;
     void load();
-    const t = setInterval(load, 10_000);
-    return () => clearInterval(t);
+    // Poll only while the tab is visible — a backgrounded window shouldn't keep
+    // hitting /api/coven-calls + /api/board every 10s. Refetch on re-show so the
+    // graph is fresh the moment the user comes back.
+    const t = setInterval(() => { if (!document.hidden) void load(); }, 10_000);
+    const onVisible = () => { if (!document.hidden) void load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [load, tab]);
 
   const famById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
@@ -199,6 +223,25 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
     failedTrace: graph.traces.find((trace) => trace.status === "failed") ?? null,
   }), [graph]);
 
+  // ── Tablist (The Floor / Delegations) ──
+  const tabsBaseId = useId();
+  const tabBtnId = (id: CallsViewTab) => `${tabsBaseId}-tab-${id}`;
+  const tabPanelId = (id: CallsViewTab) => `${tabsBaseId}-panel-${id}`;
+  const tablistRef = useRef<HTMLDivElement>(null);
+  const onTablistKeyDown = useCallback((e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const order: CallsViewTab[] = ["floor", "delegations"];
+    const cur = Math.max(0, order.indexOf(tab));
+    let next = cur;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = (cur + 1) % order.length;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = (cur - 1 + order.length) % order.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = order.length - 1;
+    else return;
+    e.preventDefault();
+    setTab(order[next]!);
+    tablistRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
+  }, [tab]);
+
   return (
     <section className="flex h-full flex-col bg-[var(--bg-base)]">
       {!embedded && (
@@ -207,7 +250,13 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
           <h1 className="text-sm font-semibold text-[var(--text-primary)]">Coven Calls</h1>
           <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">Live familiar activity and delegation traces.</p>
         </div>
-        <div className="ml-auto flex items-center overflow-hidden rounded-lg border border-[var(--border-hairline)]">
+        <div
+          ref={tablistRef}
+          role="tablist"
+          aria-label="Calls view"
+          onKeyDown={onTablistKeyDown}
+          className="ml-auto flex items-center overflow-hidden rounded-lg border border-[var(--border-hairline)]"
+        >
           {([
             ["floor", "The Floor"] as const,
             ["delegations", "Delegations"] as const,
@@ -215,6 +264,11 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
             <button
               key={id}
               type="button"
+              role="tab"
+              id={tabBtnId(id)}
+              aria-selected={tab === id}
+              aria-controls={tabPanelId(id)}
+              tabIndex={tab === id ? 0 : -1}
               onClick={() => setTab(id)}
               className={[
                 "px-3 py-1.5 text-[11px] font-medium transition-colors",
@@ -231,11 +285,22 @@ export function CallsView({ familiars, sessions, onOpenSession, initialTab = "fl
       )}
 
       {tab === "floor" ? (
-        <div className="min-h-0 flex-1 overflow-hidden">
+        <div
+          role="tabpanel"
+          id={tabPanelId("floor")}
+          aria-labelledby={tabBtnId("floor")}
+          tabIndex={0}
+          className="min-h-0 flex-1 overflow-hidden outline-none"
+        >
           <CovenFloor />
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div
+          role="tabpanel"
+          id={tabPanelId("delegations")}
+          aria-labelledby={tabBtnId("delegations")}
+          className="flex min-h-0 flex-1 flex-col"
+        >
           {error ? (
             <div className="border-b border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-5 py-1.5 text-[11px] text-[var(--color-warning)]">{error}</div>
           ) : null}
@@ -486,7 +551,9 @@ function TraceTimeline({
           <h2 className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-secondary)]">Trace timeline</h2>
           <p className="mt-0.5 truncate text-[10px] text-[var(--text-muted)]">Newest delegation events first</p>
         </div>
-        <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">{traces.length} visible</span>
+        <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]">
+          {traces.length > TRACE_TIMELINE_LIMIT ? `${TRACE_TIMELINE_LIMIT} of ${traces.length}` : `${traces.length} visible`}
+        </span>
       </div>
       {traces.length === 0 ? (
         <div className="grid min-h-[130px] place-items-center px-4 text-center text-sm text-[var(--text-muted)]">
@@ -494,11 +561,12 @@ function TraceTimeline({
         </div>
       ) : (
         <div className="max-h-[240px] overflow-y-auto">
-          {traces.slice(0, 30).map((trace) => (
+          {traces.slice(0, TRACE_TIMELINE_LIMIT).map((trace) => (
             <button
               key={trace.id}
               type="button"
               onClick={() => onSelect(trace)}
+              aria-current={selectedTraceId === trace.id ? "true" : undefined}
               className={[
                 "grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-[var(--border-hairline)] px-3 py-2.5 text-left text-[12px] transition-colors last:border-b-0 md:grid-cols-[108px_minmax(0,1fr)_auto]",
                 selectedTraceId === trace.id
