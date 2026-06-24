@@ -51,6 +51,82 @@ async function loadTauri(): Promise<TauriBridge | null> {
   return { invoke, listen };
 }
 
+// Search match colors (highlights + active match + overview ruler), echoing the
+// terminal theme. Module-level so it isn't rebuilt on every render.
+const SEARCH_DECORATIONS = {
+  matchBackground: "#5b4b8a",
+  activeMatchBackground: "#9a8ecd",
+  matchOverviewRuler: "#5b4b8a",
+  activeMatchColorOverviewRuler: "#cdbff5",
+} as const;
+
+type XtermBundle = {
+  term: import("@xterm/xterm").Terminal;
+  fit: import("@xterm/addon-fit").FitAddon;
+  search: import("@xterm/addon-search").SearchAddon;
+};
+
+// Build the xterm instance + addons shared by both transports (Tauri IPC and the
+// WebSocket bridge). The two effects differ only in how bytes flow to/from the
+// PTY; the terminal, fit/links/search addons, result reporting, and the ⌘F
+// find-bar key handler are identical, so they live here once. JSX-free.
+async function createXterm(
+  wrap: HTMLDivElement,
+  handlers: {
+    /** SearchAddon result count changed — drives the n/N counter. */
+    onResults: (index: number, count: number) => void;
+    /** ⌘F / Ctrl+F pressed inside the terminal — open the find bar. */
+    onRequestFind: () => void;
+  },
+): Promise<XtermBundle> {
+  const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
+    import("@xterm/xterm"),
+    import("@xterm/addon-fit"),
+    import("@xterm/addon-web-links"),
+    import("@xterm/addon-search"),
+  ]);
+
+  const term = new Terminal({
+    fontFamily:
+      'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+    fontSize: 12,
+    lineHeight: 1.2,
+    cursorBlink: true,
+    // Required for the search addon's match decorations (highlights + count).
+    allowProposedApi: true,
+    theme: {
+      background: "oklch(0.11 0.022 293)",
+      foreground: "#e6e6f0",
+      cursor: "#9a8ecd",
+      selectionBackground: "rgba(154,142,205,0.35)",
+    },
+  });
+  const fit = new FitAddon();
+  term.loadAddon(fit);
+  term.loadAddon(new WebLinksAddon());
+  const search = new SearchAddon();
+  term.loadAddon(search);
+  search.onDidChangeResults((e) => {
+    handlers.onResults(e.resultIndex >= 0 ? e.resultIndex + 1 : 0, e.resultCount);
+  });
+  // ⌘F / Ctrl+F opens the in-buffer find bar instead of the browser's.
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      handlers.onRequestFind();
+      return false;
+    }
+    return true;
+  });
+  term.open(wrap);
+  try {
+    fit.fit();
+  } catch {
+    /* DOM not ready yet — first resize event will recover */
+  }
+  return { term, fit, search };
+}
+
 export function BottomTerminal({
   threadId,
   active = true,
@@ -118,13 +194,6 @@ export function BottomTerminal({
     });
     termRef.current?.focus();
   }, []);
-  // Highlight every match plus the active one; colors echo the terminal theme.
-  const SEARCH_DECORATIONS = {
-    matchBackground: "#5b4b8a",
-    activeMatchBackground: "#9a8ecd",
-    matchOverviewRuler: "#5b4b8a",
-    activeMatchColorOverviewRuler: "#cdbff5",
-  } as const;
   const runFind = useCallback((direction: 1 | -1, term?: string) => {
     const q = term ?? findInputRef.current?.value ?? "";
     if (!q) {
@@ -135,6 +204,12 @@ export function BottomTerminal({
     const opts = { decorations: SEARCH_DECORATIONS };
     if (direction === 1) searchRef.current?.findNext(q, opts);
     else searchRef.current?.findPrevious(q, opts);
+  }, []);
+  // Open the find bar and select its input. Shared by the ⌘F key handler and
+  // the touch Find button (soft keyboards can't produce the ⌘F chord).
+  const openFind = useCallback(() => {
+    setFindOpen(true);
+    requestAnimationFrame(() => findInputRef.current?.select());
   }, []);
   const closeFind = useCallback(() => {
     setFindOpen(false);
@@ -248,56 +323,14 @@ export function BottomTerminal({
       }
       log("mount: tauri bridge ready");
 
-      // Lazy-load xterm only on the client + only inside Tauri so SSR and
-      // the in-browser dev path don't try to pull it in.
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
-        import("@xterm/xterm"),
-        import("@xterm/addon-fit"),
-        import("@xterm/addon-web-links"),
-        import("@xterm/addon-search"),
-      ]);
-
-      const term = new Terminal({
-        fontFamily:
-          'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-        fontSize: 12,
-        lineHeight: 1.2,
-        cursorBlink: true,
-        // Required for the search addon's match decorations (highlights + count).
-        allowProposedApi: true,
-        theme: {
-          background: "oklch(0.11 0.022 293)",
-          foreground: "#e6e6f0",
-          cursor: "#9a8ecd",
-          selectionBackground: "rgba(154,142,205,0.35)",
-        },
+      // Lazy-load + build xterm (only on the client + inside Tauri so SSR and
+      // the in-browser dev path don't pull it in). Shared with the WS path.
+      const { term, fit, search } = await createXterm(wrap, {
+        onResults: (index, count) => setFindInfo({ index, count }),
+        onRequestFind: openFind,
       });
       termRef.current = term;
-      const fit = new FitAddon();
-      term.loadAddon(fit);
-      term.loadAddon(new WebLinksAddon());
-      const search = new SearchAddon();
-      term.loadAddon(search);
       searchRef.current = search;
-      search.onDidChangeResults((e) => {
-        setFindInfo({ index: e.resultIndex >= 0 ? e.resultIndex + 1 : 0, count: e.resultCount });
-      });
-      // ⌘F / Ctrl+F opens the in-buffer find bar instead of the browser's.
-      term.attachCustomKeyEventHandler((e) => {
-        if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "f") {
-          e.preventDefault();
-          setFindOpen(true);
-          requestAnimationFrame(() => findInputRef.current?.select());
-          return false;
-        }
-        return true;
-      });
-      term.open(wrap);
-      try {
-        fit.fit();
-      } catch {
-        /* DOM not ready yet — first resize event will recover */
-      }
       log("xterm opened", { cols: term.cols, rows: term.rows });
 
       let stopped = false;
@@ -449,7 +482,7 @@ export function BottomTerminal({
       disposed = true;
       cleanup?.();
     };
-  }, [threadId, platform]);
+  }, [threadId, platform, openFind]);
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -463,54 +496,12 @@ export function BottomTerminal({
     let cleanup: (() => void) | null = null;
 
     void (async () => {
-      const [{ Terminal }, { FitAddon }, { WebLinksAddon }, { SearchAddon }] = await Promise.all([
-        import("@xterm/xterm"),
-        import("@xterm/addon-fit"),
-        import("@xterm/addon-web-links"),
-        import("@xterm/addon-search"),
-      ]);
-
-      const term = new Terminal({
-        fontFamily:
-          'ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-        fontSize: 12,
-        lineHeight: 1.2,
-        cursorBlink: true,
-        // Required for the search addon's match decorations (highlights + count).
-        allowProposedApi: true,
-        theme: {
-          background: "oklch(0.11 0.022 293)",
-          foreground: "#e6e6f0",
-          cursor: "#9a8ecd",
-          selectionBackground: "rgba(154,142,205,0.35)",
-        },
+      const { term, fit, search } = await createXterm(wrap, {
+        onResults: (index, count) => setFindInfo({ index, count }),
+        onRequestFind: openFind,
       });
       termRef.current = term;
-      const fit = new FitAddon();
-      term.loadAddon(fit);
-      term.loadAddon(new WebLinksAddon());
-      const search = new SearchAddon();
-      term.loadAddon(search);
       searchRef.current = search;
-      search.onDidChangeResults((e) => {
-        setFindInfo({ index: e.resultIndex >= 0 ? e.resultIndex + 1 : 0, count: e.resultCount });
-      });
-      // ⌘F / Ctrl+F opens the in-buffer find bar instead of the browser's.
-      term.attachCustomKeyEventHandler((e) => {
-        if (e.type === "keydown" && (e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "f") {
-          e.preventDefault();
-          setFindOpen(true);
-          requestAnimationFrame(() => findInputRef.current?.select());
-          return false;
-        }
-        return true;
-      });
-      term.open(wrap);
-      try {
-        fit.fit();
-      } catch {
-        /* DOM not ready yet — first resize event will recover */
-      }
 
       const bridge = new PtyWsBridge();
       wsBridgeRef.current = bridge;
@@ -681,7 +672,7 @@ export function BottomTerminal({
       disposed = true;
       cleanup?.();
     };
-  }, [threadId, platform, pushToMirror]);
+  }, [threadId, platform, pushToMirror, openFind]);
 
   if (unavailable) {
     return (
@@ -697,6 +688,10 @@ export function BottomTerminal({
         ref={wrapRef}
         className="min-h-0 w-full flex-1 overflow-hidden"
         style={{ background: "oklch(0.11 0.022 293)", padding: "6px 8px" }}
+        // xterm renders into an opaque <canvas>; label the region so AT can name
+        // it (live output is exposed via the screen-reader mirror below).
+        role="group"
+        aria-label="Terminal"
         // Clicking anywhere in the terminal area refocuses xterm so keyboard
         // input is routed correctly without the user having to click exactly
         // on the cursor.
@@ -760,7 +755,7 @@ export function BottomTerminal({
       {/* Touch accessory bar — only on coarse pointers (phones/tablets), where
           the soft keyboard can't produce Esc/Tab/Ctrl/arrows. */}
       {isCoarse ? (
-        <TerminalKeyBar onKey={sendKey} ctrlActive={ctrlActive} onToggleCtrl={toggleCtrl} />
+        <TerminalKeyBar onKey={sendKey} ctrlActive={ctrlActive} onToggleCtrl={toggleCtrl} onFind={openFind} />
       ) : null}
       {/* Offscreen text mirror of PTY output for screen readers. */}
       <div

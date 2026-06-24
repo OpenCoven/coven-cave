@@ -25,6 +25,9 @@ type Props = {
    *  itself lives in the terminal's onData handler. */
   ctrlActive: boolean;
   onToggleCtrl: () => void;
+  /** Open the in-buffer find bar. Touch keyboards can't produce the ⌘F chord
+   *  that opens it on desktop, so this is the only way in on a phone/tablet. */
+  onFind?: () => void;
 };
 
 const KEY_CLASS =
@@ -35,7 +38,7 @@ const KEY_CLASS =
  * omit Esc, Tab, Ctrl, and arrow keys — which makes a shell (let alone vim or a
  * TUI) unusable. This bar surfaces them as 44px targets just above the keyboard.
  */
-export function TerminalKeyBar({ onKey, ctrlActive, onToggleCtrl }: Props) {
+export function TerminalKeyBar({ onKey, ctrlActive, onToggleCtrl, onFind }: Props) {
   return (
     <div
       className="terminal-key-bar flex items-center gap-1.5 overflow-x-auto border-t border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1.5 [padding-bottom:calc(6px+var(--sai-bottom))]"
@@ -60,6 +63,11 @@ export function TerminalKeyBar({ onKey, ctrlActive, onToggleCtrl }: Props) {
       <button type="button" className={KEY_CLASS} onClick={() => onKey(KEYS.tilde)} aria-label="Tilde">~</button>
       <button type="button" className={KEY_CLASS} onClick={() => onKey(KEYS.slash)} aria-label="Slash">/</button>
       <button type="button" className={KEY_CLASS} onClick={() => onKey(KEYS.dash)} aria-label="Dash">-</button>
+      {onFind ? (
+        <button type="button" className={KEY_CLASS} onClick={onFind} aria-label="Find in terminal">
+          <Icon name="ph:magnifying-glass" width={14} aria-hidden />
+        </button>
+      ) : null}
       <span className="flex-1" aria-hidden />
       <ArrowKey label="Left" icon="ph:arrow-left-bold" onClick={() => onKey(KEYS.left)} />
       <ArrowKey label="Up" icon="ph:arrow-up-bold" onClick={() => onKey(KEYS.up)} />

@@ -54,4 +54,13 @@ assert.match(
   "clears pending timer to avoid setState on unmounted component",
 );
 
+// The xterm + addon setup is shared by both transports via one helper (it used
+// to be duplicated verbatim across the Tauri-IPC and WebSocket effects).
+assert.match(source, /async function createXterm\(/, "shared xterm builder helper exists");
+assert.equal((source.match(/new Terminal\(\{/g) ?? []).length, 1, "Terminal is constructed in exactly one place");
+assert.equal((source.match(/attachCustomKeyEventHandler/g) ?? []).length, 1, "the ⌘F handler is wired once, in the helper");
+assert.match(source, /const \{ term, fit, search \} = await createXterm\(wrap, \{/, "both transports build the terminal via createXterm");
+// Search decoration colors are a module constant, not rebuilt each render.
+assert.match(source, /^const SEARCH_DECORATIONS = \{/m, "SEARCH_DECORATIONS is hoisted to module scope");
+
 console.log("bottom-terminal-sr-mirror.test.ts OK");
