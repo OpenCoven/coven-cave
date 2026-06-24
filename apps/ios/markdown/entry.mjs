@@ -142,10 +142,10 @@ async function renderMarkdown(md, { streaming = false } = {}) {
 // a dark code card on a light page is intentional and dodges contrast problems.
 const THEME_VARS = {
   dark: null,
-  light: { "--txt": "#1c1c22", "--txt-muted": "#5b5b66", "--accent": "#5a51d6", "--hairline": "rgba(0,0,0,0.14)", bg: "#ffffff" },
-  sepia: { "--txt": "#43382a", "--txt-muted": "#7a6a55", "--accent": "#9a5a2a", "--hairline": "rgba(0,0,0,0.16)", bg: "#f4ecd8" },
+  light: { "--txt": "#1c1c22", "--txt-muted": "#5b5b66", "--accent": "#5a51d6", "--hairline": "rgba(0,0,0,0.14)", "--code-inline-bg": "rgba(90,81,214,0.12)", "--code-inline-fg": "#4b43c4", "--th-bg": "rgba(0,0,0,0.04)", bg: "#ffffff" },
+  sepia: { "--txt": "#43382a", "--txt-muted": "#7a6a55", "--accent": "#9a5a2a", "--hairline": "rgba(0,0,0,0.16)", "--code-inline-bg": "rgba(154,90,42,0.14)", "--code-inline-fg": "#8a4a1a", "--th-bg": "rgba(0,0,0,0.05)", bg: "#f4ecd8" },
 };
-const THEME_KEYS = ["--txt", "--txt-muted", "--accent", "--hairline"];
+const THEME_KEYS = ["--txt", "--txt-muted", "--accent", "--hairline", "--code-inline-bg", "--code-inline-fg", "--th-bg"];
 function applyTheme(name) {
   const de = document.documentElement;
   const t = THEME_VARS[name] || null;

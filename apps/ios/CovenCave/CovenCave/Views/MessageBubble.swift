@@ -12,6 +12,11 @@ struct MessageBubble: View {
     /// Regenerate this reply (assistant messages only); nil hides the action.
     var onRetry: (() -> Void)? = nil
 
+    // The bubble's WebView is transparent over a system-coloured bubble, so its
+    // prose must follow the app's light/dark appearance (the WebView doesn't
+    // pick up `prefers-color-scheme` on its own).
+    @Environment(\.colorScheme) private var colorScheme
+
     @State private var mdHeight: CGFloat = 0
     /// Set when the markdown WebView can't render (missing/stale bundle, JS
     /// error) — flips this bubble back to plain `Text` so the reply is never
@@ -179,6 +184,7 @@ struct MessageBubble: View {
         } else if rendersMarkdown {
             MarkdownWebView(markdown: parsed.visible, height: $mdHeight,
                             streaming: message.streaming && !isUser,
+                            theme: colorScheme == .light ? .light : .dark,
                             onFailure: { markdownFailed = true })
                 .frame(height: max(mdHeight, 1))
                 .padding(.horizontal, 14).padding(.vertical, 10)
