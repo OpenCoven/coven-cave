@@ -43,6 +43,24 @@
 }
 
 .dash-inbox__row { align-items: center; }
+.dash-inbox__row--selected { background: color-mix(in oklch, var(--accent-presence) 10%, transparent); }
+.dash-inbox__row[role="checkbox"] { cursor: pointer; }
+
+/* bulk triage: select toggle + bar + row checkbox */
+.dash-inbox__select-toggle { margin-left: auto; }
+.dash-inbox__bulkbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 4px 0 8px; padding: 6px 8px; border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
+}
+.dash-inbox__bulkbar-left, .dash-inbox__bulkbar-right { display: flex; align-items: center; gap: 6px; }
+.dash-inbox__bulkbar-count { font-size: 12px; color: var(--text-muted); }
+.dash-inbox__check {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; flex: 0 0 auto;
+  border: 1px solid var(--border-strong); border-radius: 5px; color: transparent;
+}
+.dash-inbox__check[data-checked="true"] { border-color: var(--accent-presence); background: var(--accent-presence); color: #fff; }
+.dash-inbox__check svg { width: 11px; height: 11px; }
 
 .dash-inbox__actions {
   display: flex;
