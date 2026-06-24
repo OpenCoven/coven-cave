@@ -536,6 +536,17 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
       return pruned;
     });
   }
+  // ── Row actions ──────────────────────────────────────────────────────────
+
+  const debugSession = (e: React.MouseEvent, session: SessionRow) => {
+    e.stopPropagation();
+    setActiveId(session.id);
+    onOpen(session.id, session.familiarId);
+    window.requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("cave:debug-open"));
+    });
+  };
+
   // ── Delete (two-step confirm) ────────────────────────────────────────────
 
   const deleteSession = async (e: React.MouseEvent, sessionId: string) => {
@@ -1233,7 +1244,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                               </button>
                             </span>
                           ) : (
-                            /* Row actions — pin (Cave-local), archive (PATCH), delete.
+                            /* Row actions — pin (Cave-local), archive (PATCH), debug, delete.
                                Keyboard Enter on a button must not bubble into the
                                row's open handler. */
                             <span
@@ -1264,6 +1275,15 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                 className="touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
                               >
                                 <Icon name={s.archived_at ? "ph:arrow-counter-clockwise" : "ph:archive"} width={12} aria-hidden />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => debugSession(e, s)}
+                                title="Debug chat"
+                                aria-label={`Debug chat ${rowName}`}
+                                className="touch-always-visible inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] opacity-0 transition-all hover:border-[var(--border-strong)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
+                              >
+                                <Icon name="ph:bug-bold" width={12} aria-hidden />
                               </button>
                               <button
                                 type="button"

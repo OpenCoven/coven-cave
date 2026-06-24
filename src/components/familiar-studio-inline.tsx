@@ -11,6 +11,7 @@ import { FamiliarStudioLookTab } from "./familiar-studio-look-tab";
 import { FamiliarStudioBrainTab } from "./familiar-studio-brain-tab";
 import { FamiliarStudioLifecycleTab } from "./familiar-studio-lifecycle-tab";
 import { FamiliarStudioMemoryTab } from "./familiar-studio-memory-tab";
+import { VaultPanel } from "./vault-panel";
 import type { Familiar } from "@/lib/types";
 
 type Props = {
@@ -26,13 +27,14 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
   { id: "brain", label: "Brain", icon: "ph:brain" },
   { id: "lifecycle", label: "Lifecycle", icon: "ph:arrows-clockwise" },
   { id: "memory", label: "Memory", icon: "ph:archive" },
+  { id: "vault", label: "Vault", icon: "ph:vault" },
 ];
 
 /**
  * Inline, non-modal Familiar Studio for the Settings → Familiars section.
  *
  * Unlike the global `<FamiliarStudio>` drawer (mounted in the Workspace), this
- * is a master-detail panel: a familiar dropdown above the full five-tab studio
+ * is a master-detail panel: a familiar dropdown above the studio settings tabs
  * for the selected familiar. The Settings route mounts the
  * `FamiliarStudioProvider` but never the drawer, so the per-card "Edit" buttons
  * used to set context state that nothing rendered — this surface is what makes
@@ -138,6 +140,7 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
               {activeTab === "memory" ? (
                 <FamiliarStudioMemoryTab familiar={familiar} allFamiliars={familiars} />
               ) : null}
+              {activeTab === "vault" ? <VaultPanel /> : null}
             </div>
 
             <footer className="familiar-studio__footer">
