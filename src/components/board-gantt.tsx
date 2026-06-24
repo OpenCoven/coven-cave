@@ -140,6 +140,9 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
       else next.add(cat);
       return next;
     });
+  // Drag an undated task from the tray onto the timeline to schedule it. dropDay
+  // is the day-offset under the cursor while dragging (drives a drop-hint line).
+  const [dropDay, setDropDay] = useState<number | null>(null);
   // "Today" depends on the clock, so resolve it after mount to avoid an SSR
   // hydration mismatch — the line just isn't drawn on the first client render.
   const [todayMs, setTodayMs] = useState<number | null>(null);
@@ -371,7 +374,15 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
           <ul style={{ listStyle: "none", margin: "6px 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
             {unscheduledCards.map((c) => (
               <li key={c.id} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-                <button type="button" onClick={() => onSelect(c.id)} title="Open task" style={{ flex: 1, minWidth: 120, textAlign: "left", background: "none", border: "none", color: "var(--text-secondary)", cursor: "pointer", font: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.title}</button>
+                <button
+                  type="button"
+                  draggable={!!onPatch}
+                  onDragStart={(e) => { e.dataTransfer.setData("text/cave-gantt-card", c.id); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragEnd={() => setDropDay(null)}
+                  onClick={() => onSelect(c.id)}
+                  title={onPatch ? "Open task · drag onto the timeline to schedule" : "Open task"}
+                  style={{ flex: 1, minWidth: 120, textAlign: "left", background: "none", border: "none", color: "var(--text-secondary)", cursor: onPatch ? "grab" : "pointer", font: "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >{c.title}</button>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{ownerName(c.familiarId)}</span>
                 {onPatch ? (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -440,10 +451,13 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
   }
 
   let todayX: number | null = null;
-  if (todayMs !== null) {
-    const now = new Date(todayMs);
-    const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const offset = daysBetween(rangeStart, todayUtc);
+  // UTC midnight of "today" — also used to flag overdue bars (end before today).
+  const todayStartMs =
+    todayMs === null
+      ? null
+      : Date.UTC(new Date(todayMs).getUTCFullYear(), new Date(todayMs).getUTCMonth(), new Date(todayMs).getUTCDate());
+  if (todayStartMs !== null) {
+    const offset = daysBetween(rangeStart, new Date(todayStartMs));
     if (offset >= 0 && offset <= totalDays) todayX = offset * DAY_W + DAY_W / 2;
   }
 
@@ -463,6 +477,31 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     return true;
   };
   centerOnTodayRef.current = scrollToToday;
+
+  // Drag-from-tray: map the cursor's x (within the scrolled timeline, minus the
+  // sticky left table) to a day-offset in range.
+  const dayFromClientX = (clientX: number): number | null => {
+    const el = scrollRef.current;
+    if (!el) return null;
+    const xInTimeline = clientX - el.getBoundingClientRect().left + el.scrollLeft - LEFT_W;
+    if (xInTimeline < 0) return null;
+    return Math.max(0, Math.min(totalDays - 1, Math.floor(xInTimeline / DAY_W)));
+  };
+  const onTimelineDragOver = (e: React.DragEvent) => {
+    if (!onPatch || !e.dataTransfer.types.includes("text/cave-gantt-card")) return;
+    e.preventDefault(); // allow the drop
+    setDropDay(dayFromClientX(e.clientX));
+  };
+  const onTimelineDrop = (e: React.DragEvent) => {
+    const cardId = e.dataTransfer.getData("text/cave-gantt-card");
+    setDropDay(null);
+    if (!onPatch || !cardId) return;
+    e.preventDefault();
+    const day = dayFromClientX(e.clientX);
+    if (day === null) return;
+    const date = fmtISO(addDays(rangeStart, day));
+    onPatch(cardId, { startDate: date, endDate: date });
+  };
 
   return (
     <div className="board-gantt">
@@ -538,12 +577,21 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
             </div>
           </div>
 
-          {/* Body: today line + grouped rows */}
-          <div className="cg-body">
+          {/* Body: today line + grouped rows. Also the drop zone for scheduling
+              an undated task dragged out of the tray. */}
+          <div
+            className="cg-body"
+            onDragOver={onTimelineDragOver}
+            onDrop={onTimelineDrop}
+            onDragLeave={() => setDropDay(null)}
+          >
             {todayX !== null ? (
               <span className="cg-today" style={{ left: `calc(${LEFT_W}px + ${todayX}px)` }} aria-hidden>
                 <span className="cg-today__flag">TODAY</span>
               </span>
+            ) : null}
+            {dropDay !== null ? (
+              <span className="cg-drop-hint" style={{ left: `calc(${LEFT_W}px + ${dropDay * DAY_W}px)`, width: `${DAY_W}px` }} aria-hidden />
             ) : null}
 
             {visibleGroups.map((g) => (
@@ -584,8 +632,12 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                   const left = previewOffset * DAY_W;
                   const previewStart = addDays(start, mode === "resize-end" ? 0 : dragDelta);
                   const previewEnd = addDays(end, mode === "resize-start" ? 0 : dragDelta);
+                  // Overdue: bar ends before today and isn't done — mirrors the
+                  // Kanban urgency cue so the timeline shows slipping work.
+                  const overdue =
+                    todayStartMs !== null && cat !== "done" && previewEnd.getTime() < todayStartMs;
                   const barClass = (base: string) =>
-                    `${base}${draggable ? " cg-bar--grab" : ""}${dragging ? " cg-bar--dragging" : ""}`;
+                    `${base}${draggable ? " cg-bar--grab" : ""}${dragging ? " cg-bar--dragging" : ""}${overdue ? " cg-bar--overdue" : ""}`;
                   const handlers = draggable
                     ? {
                         onPointerDown: (e: React.PointerEvent) => beginDrag(e, row.rowId, "move"),

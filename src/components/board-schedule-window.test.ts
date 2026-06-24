@@ -156,4 +156,19 @@ assert.match(styles, /\.cg-month \{/, "month segments are styled");
 assert.match(styles, /var\(--cg-weekend-shift, 0px\) 0/, "weekend shading is offset by the CSS var");
 assert.match(styles, /var\(--cg-today-x, -9999px\)/, "the today column tint reads the CSS var");
 
+// Overdue marker: a bar that ends before today and isn't done gets flagged
+// (mirrors the Kanban urgency cue).
+assert.match(gantt, /const overdue =\s*todayStartMs !== null && cat !== "done" && previewEnd\.getTime\(\) < todayStartMs/, "overdue is derived from end-before-today + not done");
+assert.match(gantt, /overdue \? " cg-bar--overdue" : ""/, "overdue bars get a marker class");
+assert.match(styles, /\.cg-bar--overdue/, "overdue bars are styled");
+
+// Drag an undated task from the tray onto the timeline to schedule it.
+assert.match(gantt, /draggable=\{!!onPatch\}/, "tray tasks are draggable when editable");
+assert.match(gantt, /e\.dataTransfer\.setData\("text\/cave-gantt-card", c\.id\)/, "the drag carries the card id");
+assert.match(gantt, /const onTimelineDrop = \(e: React\.DragEvent\)/, "the timeline accepts drops");
+assert.match(gantt, /onPatch\(cardId, \{ startDate: date, endDate: date \}\)/, "dropping schedules the task at the drop day");
+assert.match(gantt, /onDragOver=\{onTimelineDragOver\}[\s\S]{0,80}onDrop=\{onTimelineDrop\}/, "the body is wired as the drop zone");
+assert.match(gantt, /className="cg-drop-hint"/, "a drop-hint marks the landing day");
+assert.match(styles, /\.cg-drop-hint/, "the drop hint is styled");
+
 console.log("board-schedule-window.test.ts: ok");

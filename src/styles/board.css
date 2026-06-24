@@ -1847,6 +1847,11 @@
 .cg-bar--dragging { z-index: 4; filter: brightness(1.12); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); }
 .cg-diamond.cg-bar--dragging { transform: translate(-50%, -50%) rotate(45deg) scale(1.15); }
 .cg-row:has(.cg-bar--dragging) { user-select: none; }
+/* overdue bar: ended before today and not done — outline + danger ring */
+.cg-bar--overdue { outline: 1.5px solid var(--color-danger); outline-offset: 1px; }
+.cg-diamond.cg-bar--overdue { outline: none; box-shadow: 0 0 0 1.5px var(--color-danger); }
+/* drop hint while dragging an undated task onto the timeline */
+.cg-drop-hint { position: absolute; top: 0; bottom: 0; z-index: 3; background: color-mix(in oklch, var(--accent-presence) 22%, transparent); border-left: 2px solid var(--accent-presence); border-right: 2px solid var(--accent-presence); pointer-events: none; }
 .cg-drag-label {
   position: absolute; top: -2px; transform: translateY(-100%);
   font-size: 10px; font-weight: 600; color: var(--text-primary);
