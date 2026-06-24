@@ -2,7 +2,16 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const projectsView = readFileSync(new URL("./projects-view.tsx", import.meta.url), "utf8");
+// The Projects surface is split into a small component tree (container +
+// project-row + session-row + shared helpers). These source-text assertions run
+// against the COMBINED source, so each keeps verifying behavior regardless of
+// which file a given piece now lives in.
+const projectsView = [
+  readFileSync(new URL("./projects-view.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./projects/project-row.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./projects/session-row.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./projects/projects-shared.ts", import.meta.url), "utf8"),
+].join("\n\n");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspaceMode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
