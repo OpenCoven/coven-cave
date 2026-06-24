@@ -1,0 +1,75 @@
+{
+  "name": "brightdata",
+  "version": "0.1.0",
+  "description": "Search, extract, and navigate the public web at scale through Bright Data's Web MCP.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "scraping",
+    "web-data",
+    "proxy",
+    "extract",
+    "search"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/brightdata",
+  "x-coven": {
+    "displayName": "Bright Data",
+    "category": "Browser & Web",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/brightdata/brightdata-mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "brightdata": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@brightdata/mcp"
+      ],
+      "type": "stdio",
+      "env": {
+        "API_TOKEN": "${BRIGHTDATA_API_TOKEN}"
+      }
+    }
+  },
+  "userConfig": {
+    "brightdata_api_token": {
+      "type": "string",
+      "title": "Bright Data API Token",
+      "description": "API token for the Bright Data Web MCP.",
+      "required": true,
+      "sensitive": true,
+      "env": "BRIGHTDATA_API_TOKEN"
+    }
+  }
+}

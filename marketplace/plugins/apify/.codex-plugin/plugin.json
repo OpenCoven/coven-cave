@@ -1,0 +1,24 @@
+{
+  "name": "apify",
+  "version": "0.1.0",
+  "description": "Run thousands of scrapers, crawlers, and automations from the Apify Store over MCP.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Apify",
+    "shortDescription": "Run thousands of scrapers, crawlers, and automations from the Apify Store over MCP.",
+    "longDescription": "Use Apify Actors for prebuilt scraping and automation tasks instead of hand-rolling crawlers.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "actors",
+      "scraping",
+      "automation",
+      "apify",
+      "store"
+    ],
+    "defaultPrompt": "Help me use Apify safely."
+  }
+}

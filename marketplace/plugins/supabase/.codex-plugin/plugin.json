@@ -1,0 +1,24 @@
+{
+  "name": "supabase",
+  "version": "0.1.0",
+  "description": "Manage and query Supabase projects \u2014 database, auth, storage, and edge functions.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Supabase",
+    "shortDescription": "Manage and query Supabase projects \u2014 database, auth, storage, and edge functions.",
+    "longDescription": "Use Supabase MCP for project inspection and approved changes, preferring read-only first.",
+    "developerName": "OpenCoven",
+    "category": "Databases",
+    "capabilities": [
+      "supabase",
+      "postgres",
+      "backend",
+      "auth",
+      "storage"
+    ],
+    "defaultPrompt": "Help me use Supabase safely."
+  }
+}

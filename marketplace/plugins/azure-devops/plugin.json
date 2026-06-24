@@ -1,0 +1,74 @@
+{
+  "name": "azure-devops",
+  "version": "0.1.0",
+  "description": "Work with Azure DevOps repos, work items, builds, releases, test plans, and code search.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "azure-devops",
+    "work-items",
+    "pipelines",
+    "repos",
+    "boards"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/azure-devops",
+  "x-coven": {
+    "displayName": "Azure DevOps",
+    "category": "Cloud & Infrastructure",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/microsoft/azure-devops-mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "coordination-layer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "azure-devops": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@azure-devops/mcp",
+        "${AZURE_DEVOPS_ORG}"
+      ],
+      "type": "stdio"
+    }
+  },
+  "userConfig": {
+    "azure_devops_org": {
+      "type": "string",
+      "title": "Azure DevOps Organization",
+      "description": "Azure DevOps organization name the MCP server should target.",
+      "required": true,
+      "sensitive": false,
+      "env": "AZURE_DEVOPS_ORG"
+    }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "name": "microsoft-learn",
+  "version": "0.1.0",
+  "description": "Pull trusted Microsoft Learn documentation directly into agent workflows.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "docs",
+    "microsoft",
+    "learn",
+    "reference",
+    "azure"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/microsoft-learn",
+  "x-coven": {
+    "displayName": "Microsoft Learn",
+    "category": "Knowledge & Docs",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://learn.microsoft.com/en-us/training/support/mcp",
+      "https://github.com/MicrosoftDocs/mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      },
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "microsoft-learn": {
+      "url": "https://learn.microsoft.com/api/mcp",
+      "type": "http"
+    }
+  }
+}

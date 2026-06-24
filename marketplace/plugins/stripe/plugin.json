@@ -1,0 +1,60 @@
+{
+  "name": "stripe",
+  "version": "0.1.0",
+  "description": "Work with Stripe customers, products, payments, and billing through the official MCP server.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "stripe",
+    "payments",
+    "billing",
+    "customers",
+    "subscriptions"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/stripe",
+  "x-coven": {
+    "displayName": "Stripe",
+    "category": "Commerce",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://github.com/stripe/agent-toolkit",
+      "https://docs.stripe.com/mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "stripe": {
+      "url": "https://mcp.stripe.com",
+      "type": "http"
+    }
+  }
+}

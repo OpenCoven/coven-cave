@@ -1,0 +1,66 @@
+{
+  "name": "atlassian",
+  "version": "0.1.0",
+  "description": "Search, create, and manage Jira, Confluence, and Compass work via Atlassian's official MCP.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "jira",
+    "confluence",
+    "atlassian",
+    "issues",
+    "wiki"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/atlassian",
+  "x-coven": {
+    "displayName": "Atlassian Rovo",
+    "category": "Project Management",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://github.com/atlassian/atlassian-mcp-server",
+      "https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator",
+          "coordination-layer"
+        ]
+      },
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer"
+        ]
+      },
+      {
+        "familiar": "echo",
+        "roles": [
+          "archivist"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "atlassian": {
+      "url": "https://mcp.atlassian.com/v1/mcp",
+      "type": "http"
+    }
+  }
+}

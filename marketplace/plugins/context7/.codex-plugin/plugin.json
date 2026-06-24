@@ -1,0 +1,24 @@
+{
+  "name": "context7",
+  "version": "0.1.0",
+  "description": "Up-to-date, version-accurate library documentation injected into agent prompts on demand.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Context7",
+    "shortDescription": "Up-to-date, version-accurate library documentation injected into agent prompts on demand.",
+    "longDescription": "Use Context7 to fetch current, version-specific docs before writing code against a library.",
+    "developerName": "OpenCoven",
+    "category": "Agents & Harnesses",
+    "capabilities": [
+      "docs",
+      "libraries",
+      "context",
+      "coding-agent",
+      "reference"
+    ],
+    "defaultPrompt": "Help me use Context7 safely."
+  }
+}

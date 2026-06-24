@@ -1,0 +1,67 @@
+{
+  "name": "azure",
+  "version": "0.1.0",
+  "description": "Connect agents to Azure services across storage, databases, monitoring, and more.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "azure",
+    "cloud",
+    "infrastructure",
+    "microsoft",
+    "devops"
+  ],
+  "capabilities": [
+    "network",
+    "shell",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/azure",
+  "x-coven": {
+    "displayName": "Azure MCP Server",
+    "category": "Cloud & Infrastructure",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/Azure/azure-mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator",
+          "coordination-layer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "azure": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@azure/mcp@latest",
+        "server",
+        "start"
+      ],
+      "type": "stdio"
+    }
+  }
+}

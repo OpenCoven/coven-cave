@@ -1,0 +1,24 @@
+{
+  "name": "figma",
+  "version": "0.1.0",
+  "description": "Bring Figma design context \u2014 frames, components, and variables \u2014 into agent workflows.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Figma",
+    "shortDescription": "Bring Figma design context \u2014 frames, components, and variables \u2014 into agent workflows.",
+    "longDescription": "Use Figma MCP to pull design context and specs into implementation without guessing values.",
+    "developerName": "OpenCoven",
+    "category": "Design",
+    "capabilities": [
+      "figma",
+      "design",
+      "components",
+      "dev-mode",
+      "ui"
+    ],
+    "defaultPrompt": "Help me use Figma safely."
+  }
+}

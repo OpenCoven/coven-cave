@@ -1,0 +1,61 @@
+{
+  "name": "unity",
+  "version": "0.1.0",
+  "description": "Bridge AI assistants to the Unity Editor \u2014 assets, scenes, scripts, and task automation.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "unity",
+    "game-dev",
+    "editor",
+    "assets",
+    "scenes"
+  ],
+  "capabilities": [
+    "network",
+    "shell",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/unity",
+  "x-coven": {
+    "displayName": "Unity",
+    "category": "Developer Tools",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/CoplayDev/unity-mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "unity": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "mcpforunityserver",
+        "mcp-for-unity",
+        "--transport",
+        "stdio"
+      ],
+      "type": "stdio"
+    }
+  }
+}

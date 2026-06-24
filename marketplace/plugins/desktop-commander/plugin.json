@@ -1,0 +1,59 @@
+{
+  "name": "desktop-commander",
+  "version": "0.1.0",
+  "description": "Terminal commands, file operations, and process management on the local machine over MCP.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "terminal",
+    "shell",
+    "files",
+    "process",
+    "local"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/desktop-commander",
+  "x-coven": {
+    "displayName": "Desktop Commander",
+    "category": "Developer Tools",
+    "trust": "local-tool",
+    "sourceRefs": [
+      "https://github.com/wonderwhy-er/DesktopCommanderMCP"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "desktop-commander": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@wonderwhy-er/desktop-commander@latest"
+      ],
+      "type": "stdio"
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "name": "apify",
+  "version": "0.1.0",
+  "description": "Run thousands of scrapers, crawlers, and automations from the Apify Store over MCP.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "actors",
+    "scraping",
+    "automation",
+    "apify",
+    "store"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/apify",
+  "x-coven": {
+    "displayName": "Apify",
+    "category": "Browser & Web",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://github.com/apify/actors-mcp-server"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "apify": {
+      "url": "https://mcp.apify.com",
+      "type": "http"
+    }
+  }
+}

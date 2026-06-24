@@ -1,0 +1,24 @@
+{
+  "name": "searxng",
+  "version": "0.1.0",
+  "description": "Privacy-respecting metasearch with pagination and URL reading through a SearXNG instance.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "SearXNG Search",
+    "shortDescription": "Privacy-respecting metasearch with pagination and URL reading through a SearXNG instance.",
+    "longDescription": "Use SearXNG for privacy-respecting web search against a self-chosen instance.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "search",
+      "privacy",
+      "metasearch",
+      "searxng",
+      "web"
+    ],
+    "defaultPrompt": "Help me use SearXNG Search safely."
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "name": "mongodb",
+  "version": "0.1.0",
+  "description": "Inspect and query MongoDB databases and collections through the official MCP server.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "mongodb",
+    "database",
+    "nosql",
+    "collections",
+    "query"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/mongodb",
+  "x-coven": {
+    "displayName": "MongoDB",
+    "category": "Databases",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/mongodb-js/mongodb-mcp-server"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "mongodb": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mongodb-mcp-server"
+      ],
+      "type": "stdio",
+      "env": {
+        "MDB_MCP_CONNECTION_STRING": "${MDB_MCP_CONNECTION_STRING}"
+      }
+    }
+  },
+  "userConfig": {
+    "mongodb_connection_string": {
+      "type": "string",
+      "title": "MongoDB Connection String",
+      "description": "Connection string for the target MongoDB deployment.",
+      "required": true,
+      "sensitive": true,
+      "env": "MDB_MCP_CONNECTION_STRING"
+    }
+  }
+}

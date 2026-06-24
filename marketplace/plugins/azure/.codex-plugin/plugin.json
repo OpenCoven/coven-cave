@@ -1,0 +1,24 @@
+{
+  "name": "azure",
+  "version": "0.1.0",
+  "description": "Connect agents to Azure services across storage, databases, monitoring, and more.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Azure MCP Server",
+    "shortDescription": "Connect agents to Azure services across storage, databases, monitoring, and more.",
+    "longDescription": "Use Azure MCP for cloud resource inspection and approved operations via your signed-in Azure context.",
+    "developerName": "OpenCoven",
+    "category": "Cloud & Infrastructure",
+    "capabilities": [
+      "azure",
+      "cloud",
+      "infrastructure",
+      "microsoft",
+      "devops"
+    ],
+    "defaultPrompt": "Help me use Azure MCP Server safely."
+  }
+}

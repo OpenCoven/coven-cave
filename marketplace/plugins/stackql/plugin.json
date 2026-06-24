@@ -1,0 +1,65 @@
+{
+  "name": "stackql",
+  "version": "0.1.0",
+  "description": "Query, provision, and operate cloud, SaaS, and API resources using SQL, over MCP.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "stackql",
+    "sql",
+    "cloud",
+    "provisioning",
+    "infrastructure"
+  ],
+  "capabilities": [
+    "network",
+    "shell",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/stackql",
+  "x-coven": {
+    "displayName": "StackQL",
+    "category": "Cloud & Infrastructure",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://stackql.io/",
+      "https://github.com/stackql/stackql"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator"
+        ]
+      },
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "stackql": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@stackql/mcp-server"
+      ],
+      "type": "stdio"
+    }
+  }
+}

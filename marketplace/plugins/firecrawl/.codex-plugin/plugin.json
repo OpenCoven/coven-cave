@@ -1,0 +1,24 @@
+{
+  "name": "firecrawl",
+  "version": "0.1.0",
+  "description": "Crawl, scrape, and extract structured web data through the Firecrawl platform.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Firecrawl",
+    "shortDescription": "Crawl, scrape, and extract structured web data through the Firecrawl platform.",
+    "longDescription": "Use Firecrawl for bounded, structured web extraction with primary-source preference.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "scraping",
+      "crawl",
+      "web",
+      "extract",
+      "research"
+    ],
+    "defaultPrompt": "Help me use Firecrawl safely."
+  }
+}

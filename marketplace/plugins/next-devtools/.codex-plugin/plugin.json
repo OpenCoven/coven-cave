@@ -1,0 +1,24 @@
+{
+  "name": "next-devtools",
+  "version": "0.1.0",
+  "description": "Bridge agents to a running Next.js 16+ dev server \u2014 errors, logs, routes, and server actions.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Next.js DevTools",
+    "shortDescription": "Bridge agents to a running Next.js 16+ dev server \u2014 errors, logs, routes, and server actions.",
+    "longDescription": "Use Next.js DevTools MCP to debug a running Next.js app against its real runtime state.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "nextjs",
+      "vercel",
+      "frontend",
+      "dev-server",
+      "react"
+    ],
+    "defaultPrompt": "Help me use Next.js DevTools safely."
+  }
+}

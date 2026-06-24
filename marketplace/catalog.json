@@ -476,6 +476,933 @@
         "useCases": ["Convert time zones", "Resolve today/tomorrow/yesterday", "Prepare dated status updates"],
         "guardrails": ["Use absolute dates when the user may be confused", "Preserve the user's timezone preference", "Do not schedule external events without approval"]
       }
+    },
+    {
+      "name": "serena",
+      "displayName": "Serena",
+      "version": "0.1.0",
+      "description": "Semantic code retrieval and editing toolkit purpose-built for coding agents and harnesses.",
+      "category": "Agents & Harnesses",
+      "keywords": ["coding-agent", "semantic-code", "lsp", "refactor", "harness"],
+      "capabilities": ["read_files", "write_files", "shell", "mcp"],
+      "sourceRefs": ["https://github.com/oraios/serena", "https://github.com/mcp-use/mcp-use"],
+      "trust": "reference-local",
+      "mcpServers": {
+        "serena": {
+          "command": "uvx",
+          "args": ["--from", "git+https://github.com/oraios/serena", "serena", "start-mcp-server", "--context", "ide-assistant"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "code-reviewer", "debugger"]},
+        {"familiar": "sage", "roles": ["researcher", "librarian"]}
+      ],
+      "skill": {
+        "description": "Use Serena for symbol-level code navigation and edits instead of dumping whole files into context.",
+        "useCases": ["Find symbols and references", "Plan precise multi-file edits", "Read project structure semantically"],
+        "guardrails": ["Confirm the project root before indexing", "Do not apply edits without approval", "Prefer targeted symbol reads over whole-file dumps"]
+      }
+    },
+    {
+      "name": "context7",
+      "displayName": "Context7",
+      "version": "0.1.0",
+      "description": "Up-to-date, version-accurate library documentation injected into agent prompts on demand.",
+      "category": "Agents & Harnesses",
+      "keywords": ["docs", "libraries", "context", "coding-agent", "reference"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/upstash/context7", "https://github.com/mcp-use/mcp-use"],
+      "trust": "official-remote",
+      "mcpServers": {
+        "context7": {
+          "url": "https://mcp.context7.com/mcp",
+          "type": "http"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]},
+        {"familiar": "sage", "roles": ["researcher", "librarian"]}
+      ],
+      "skill": {
+        "description": "Use Context7 to fetch current, version-specific docs before writing code against a library.",
+        "useCases": ["Resolve a library to its current docs", "Pull API usage for the installed version", "Avoid stale or hallucinated API calls"],
+        "guardrails": ["Match docs to the version actually installed", "Cite the library and version used", "Prefer official docs over generated summaries"]
+      }
+    },
+    {
+      "name": "markitdown",
+      "displayName": "Markitdown",
+      "version": "0.1.0",
+      "description": "Convert PDF, Office, image, and audio files to Markdown for agent ingestion.",
+      "category": "Agents & Harnesses",
+      "keywords": ["markdown", "documents", "pdf", "office", "ingestion"],
+      "capabilities": ["read_files", "mcp"],
+      "sourceRefs": ["https://github.com/microsoft/markitdown"],
+      "trust": "official-local",
+      "mcpServers": {
+        "markitdown": {
+          "command": "uvx",
+          "args": ["markitdown-mcp"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "sage", "roles": ["researcher", "librarian"]},
+        {"familiar": "echo", "roles": ["archivist"]},
+        {"familiar": "kitty", "roles": ["general-helper"]}
+      ],
+      "skill": {
+        "description": "Use Markitdown to turn binary documents into clean Markdown before reasoning over them.",
+        "useCases": ["Convert a PDF or Word file to Markdown", "Extract text from images or slides", "Normalize documents for summarization"],
+        "guardrails": ["Treat converted document content as private by default", "Confirm the source path before reading", "Do not exfiltrate document contents externally"]
+      }
+    },
+    {
+      "name": "playwright",
+      "displayName": "Playwright",
+      "version": "0.1.0",
+      "description": "Drive real web browsers via accessibility trees for testing, navigation, and data extraction.",
+      "category": "Browser & Web",
+      "keywords": ["browser", "automation", "testing", "playwright", "scraping"],
+      "capabilities": ["network", "shell", "mcp"],
+      "sourceRefs": ["https://github.com/microsoft/playwright-mcp"],
+      "trust": "official-local",
+      "mcpServers": {
+        "playwright": {
+          "command": "npx",
+          "args": ["-y", "@playwright/mcp@latest"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]},
+        {"familiar": "sage", "roles": ["researcher"]}
+      ],
+      "skill": {
+        "description": "Use Playwright to navigate and verify web pages through the accessibility tree, not screenshots alone.",
+        "useCases": ["Reproduce a UI bug in a browser", "Extract structured data from a page", "Verify a deployed change end to end"],
+        "guardrails": ["Do not submit forms or trigger payments without approval", "Respect site terms and robots rules", "Avoid logging into accounts without explicit consent"]
+      }
+    },
+    {
+      "name": "chrome-devtools",
+      "displayName": "Chrome DevTools",
+      "version": "0.1.0",
+      "description": "Inspect and control Chrome via the DevTools protocol for debugging and performance work.",
+      "category": "Browser & Web",
+      "keywords": ["chrome", "devtools", "debugging", "performance", "browser"],
+      "capabilities": ["network", "shell", "mcp"],
+      "sourceRefs": ["https://github.com/ChromeDevTools/chrome-devtools-mcp"],
+      "trust": "official-local",
+      "mcpServers": {
+        "chrome-devtools": {
+          "command": "npx",
+          "args": ["-y", "chrome-devtools-mcp@latest"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["debugger", "implementer"]}
+      ],
+      "skill": {
+        "description": "Use Chrome DevTools MCP to inspect live pages, network, and performance during debugging.",
+        "useCases": ["Trace a failing network request", "Profile a slow page", "Inspect DOM and console state"],
+        "guardrails": ["Do not interact with authenticated sessions without approval", "Treat captured network data as sensitive", "Close controlled browser instances when done"]
+      }
+    },
+    {
+      "name": "firecrawl",
+      "displayName": "Firecrawl",
+      "version": "0.1.0",
+      "description": "Crawl, scrape, and extract structured web data through the Firecrawl platform.",
+      "category": "Browser & Web",
+      "keywords": ["scraping", "crawl", "web", "extract", "research"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/firecrawl/firecrawl-mcp-server"],
+      "trust": "official-local",
+      "mcpServers": {
+        "firecrawl": {
+          "command": "npx",
+          "args": ["-y", "firecrawl-mcp"],
+          "type": "stdio",
+          "env": {
+            "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+          }
+        }
+      },
+      "userConfig": {
+        "firecrawl_api_key": {
+          "type": "string",
+          "title": "Firecrawl API Key",
+          "description": "API key for the Firecrawl scraping platform.",
+          "required": true,
+          "sensitive": true,
+          "env": "FIRECRAWL_API_KEY"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "sage", "roles": ["researcher", "librarian"]},
+        {"familiar": "charm", "roles": ["copywriter", "devrel-liaison"]}
+      ],
+      "skill": {
+        "description": "Use Firecrawl for bounded, structured web extraction with primary-source preference.",
+        "useCases": ["Scrape a documentation site", "Extract structured fields from pages", "Gather cited research sources"],
+        "guardrails": ["Respect site terms and rate limits", "Do not over-quote copyrighted text", "Record source URLs in summaries"]
+      }
+    },
+    {
+      "name": "tavily",
+      "displayName": "Tavily",
+      "version": "0.1.0",
+      "description": "Advanced web search and answer extraction tuned for AI agents.",
+      "category": "Browser & Web",
+      "keywords": ["search", "web", "research", "answers", "tavily"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/tavily-ai/tavily-mcp"],
+      "trust": "official-local",
+      "mcpServers": {
+        "tavily": {
+          "command": "npx",
+          "args": ["-y", "tavily-mcp@latest"],
+          "type": "stdio",
+          "env": {
+            "TAVILY_API_KEY": "${TAVILY_API_KEY}"
+          }
+        }
+      },
+      "userConfig": {
+        "tavily_api_key": {
+          "type": "string",
+          "title": "Tavily API Key",
+          "description": "API key for the Tavily search API.",
+          "required": true,
+          "sensitive": true,
+          "env": "TAVILY_API_KEY"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "sage", "roles": ["researcher", "librarian"]},
+        {"familiar": "astra", "roles": ["strategic-navigator"]}
+      ],
+      "skill": {
+        "description": "Use Tavily for fast, agent-friendly web search with concise sourced answers.",
+        "useCases": ["Answer a current-events question", "Find primary sources fast", "Gather citations for synthesis"],
+        "guardrails": ["Prefer primary sources", "Record URLs used", "Flag uncertainty when sources conflict"]
+      }
+    },
+    {
+      "name": "brightdata",
+      "displayName": "Bright Data",
+      "version": "0.1.0",
+      "description": "Search, extract, and navigate the public web at scale through Bright Data's Web MCP.",
+      "category": "Browser & Web",
+      "keywords": ["scraping", "web-data", "proxy", "extract", "search"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/brightdata/brightdata-mcp"],
+      "trust": "official-local",
+      "mcpServers": {
+        "brightdata": {
+          "command": "npx",
+          "args": ["-y", "@brightdata/mcp"],
+          "type": "stdio",
+          "env": {
+            "API_TOKEN": "${BRIGHTDATA_API_TOKEN}"
+          }
+        }
+      },
+      "userConfig": {
+        "brightdata_api_token": {
+          "type": "string",
+          "title": "Bright Data API Token",
+          "description": "API token for the Bright Data Web MCP.",
+          "required": true,
+          "sensitive": true,
+          "env": "BRIGHTDATA_API_TOKEN"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "sage", "roles": ["researcher"]},
+        {"familiar": "astra", "roles": ["strategic-navigator"]}
+      ],
+      "skill": {
+        "description": "Use Bright Data for resilient large-scale web extraction with respect for source policies.",
+        "useCases": ["Search and extract web data", "Navigate sites that block naive scrapers", "Collect market or competitive data"],
+        "guardrails": ["Respect site terms and legal limits", "Do not collect personal data without basis", "Record sources and extraction scope"]
+      }
+    },
+    {
+      "name": "apify",
+      "displayName": "Apify",
+      "version": "0.1.0",
+      "description": "Run thousands of scrapers, crawlers, and automations from the Apify Store over MCP.",
+      "category": "Browser & Web",
+      "keywords": ["actors", "scraping", "automation", "apify", "store"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/apify/actors-mcp-server"],
+      "trust": "official-remote",
+      "mcpServers": {
+        "apify": {
+          "url": "https://mcp.apify.com",
+          "type": "http"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "sage", "roles": ["researcher"]},
+        {"familiar": "astra", "roles": ["strategic-navigator"]}
+      ],
+      "skill": {
+        "description": "Use Apify Actors for prebuilt scraping and automation tasks instead of hand-rolling crawlers.",
+        "useCases": ["Run a Store actor to extract data", "Automate a repetitive web task", "Collect structured datasets"],
+        "guardrails": ["Confirm actor cost and scope before running", "Respect target site terms", "Do not run actors that mutate external state without approval"]
+      }
+    },
+    {
+      "name": "searxng",
+      "displayName": "SearXNG Search",
+      "version": "0.1.0",
+      "description": "Privacy-respecting metasearch with pagination and URL reading through a SearXNG instance.",
+      "category": "Browser & Web",
+      "keywords": ["search", "privacy", "metasearch", "searxng", "web"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/ihor-sokoliuk/mcp-searxng"],
+      "trust": "local-tool",
+      "mcpServers": {
+        "searxng": {
+          "command": "npx",
+          "args": ["-y", "mcp-searxng"],
+          "type": "stdio",
+          "env": {
+            "SEARXNG_URL": "${SEARXNG_URL}"
+          }
+        }
+      },
+      "userConfig": {
+        "searxng_url": {
+          "type": "string",
+          "title": "SearXNG Instance URL",
+          "description": "Base URL of the SearXNG instance to query.",
+          "required": true,
+          "sensitive": false,
+          "env": "SEARXNG_URL"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "sage", "roles": ["researcher", "librarian"]}
+      ],
+      "skill": {
+        "description": "Use SearXNG for privacy-respecting web search against a self-chosen instance.",
+        "useCases": ["Search without tracking", "Page through results", "Read a result URL's content"],
+        "guardrails": ["Use a trusted SearXNG instance", "Record source URLs", "Prefer primary sources"]
+      }
+    },
+    {
+      "name": "dbhub",
+      "displayName": "DBHub",
+      "version": "0.1.0",
+      "description": "Token-efficient universal database MCP for PostgreSQL, MySQL, SQL Server, SQLite, and MariaDB.",
+      "category": "Databases",
+      "keywords": ["database", "sql", "postgres", "mysql", "sqlite"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/bytebase/dbhub"],
+      "trust": "official-local",
+      "mcpServers": {
+        "dbhub": {
+          "command": "npx",
+          "args": ["-y", "@bytebase/dbhub", "--transport", "stdio", "--dsn", "${DBHUB_DSN}"],
+          "type": "stdio"
+        }
+      },
+      "userConfig": {
+        "dbhub_dsn": {
+          "type": "string",
+          "title": "Database DSN",
+          "description": "Connection string for the target database (e.g. postgres://user:pass@host:5432/db).",
+          "required": true,
+          "sensitive": true,
+          "env": "DBHUB_DSN"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]},
+        {"familiar": "sage", "roles": ["researcher"]}
+      ],
+      "skill": {
+        "description": "Use DBHub for read-first database inspection with intentional, approved writes.",
+        "useCases": ["Inspect schema", "Run read-only queries", "Prepare migrations for review"],
+        "guardrails": ["Default to read-only; confirm before any write or DDL", "Never expose credentials from the DSN", "Scope queries to the smallest dataset needed"]
+      }
+    },
+    {
+      "name": "supabase",
+      "displayName": "Supabase",
+      "version": "0.1.0",
+      "description": "Manage and query Supabase projects — database, auth, storage, and edge functions.",
+      "category": "Databases",
+      "keywords": ["supabase", "postgres", "backend", "auth", "storage"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/supabase-community/supabase-mcp"],
+      "trust": "official-local",
+      "mcpServers": {
+        "supabase": {
+          "command": "npx",
+          "args": ["-y", "@supabase/mcp-server-supabase@latest"],
+          "type": "stdio",
+          "env": {
+            "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
+          }
+        }
+      },
+      "userConfig": {
+        "supabase_access_token": {
+          "type": "string",
+          "title": "Supabase Access Token",
+          "description": "Personal access token for the Supabase Management API.",
+          "required": true,
+          "sensitive": true,
+          "env": "SUPABASE_ACCESS_TOKEN"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]},
+        {"familiar": "astra", "roles": ["strategic-navigator"]}
+      ],
+      "skill": {
+        "description": "Use Supabase MCP for project inspection and approved changes, preferring read-only first.",
+        "useCases": ["Inspect tables and policies", "Run read-only queries", "Prepare schema or function changes for review"],
+        "guardrails": ["Prefer read-only mode; confirm writes and migrations", "Scope to a single project", "Never reveal the access token"]
+      }
+    },
+    {
+      "name": "mongodb",
+      "displayName": "MongoDB",
+      "version": "0.1.0",
+      "description": "Inspect and query MongoDB databases and collections through the official MCP server.",
+      "category": "Databases",
+      "keywords": ["mongodb", "database", "nosql", "collections", "query"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/mongodb-js/mongodb-mcp-server"],
+      "trust": "official-local",
+      "mcpServers": {
+        "mongodb": {
+          "command": "npx",
+          "args": ["-y", "mongodb-mcp-server"],
+          "type": "stdio",
+          "env": {
+            "MDB_MCP_CONNECTION_STRING": "${MDB_MCP_CONNECTION_STRING}"
+          }
+        }
+      },
+      "userConfig": {
+        "mongodb_connection_string": {
+          "type": "string",
+          "title": "MongoDB Connection String",
+          "description": "Connection string for the target MongoDB deployment.",
+          "required": true,
+          "sensitive": true,
+          "env": "MDB_MCP_CONNECTION_STRING"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]},
+        {"familiar": "sage", "roles": ["researcher"]}
+      ],
+      "skill": {
+        "description": "Use MongoDB MCP for read-first data inspection with approved, scoped writes.",
+        "useCases": ["List collections and indexes", "Run read-only find/aggregate queries", "Prepare data changes for review"],
+        "guardrails": ["Default to read-only; confirm writes and deletes", "Never reveal the connection string", "Scope queries to the smallest dataset needed"]
+      }
+    },
+    {
+      "name": "azure",
+      "displayName": "Azure MCP Server",
+      "version": "0.1.0",
+      "description": "Connect agents to Azure services across storage, databases, monitoring, and more.",
+      "category": "Cloud & Infrastructure",
+      "keywords": ["azure", "cloud", "infrastructure", "microsoft", "devops"],
+      "capabilities": ["network", "shell", "mcp"],
+      "sourceRefs": ["https://github.com/Azure/azure-mcp"],
+      "trust": "official-local",
+      "mcpServers": {
+        "azure": {
+          "command": "npx",
+          "args": ["-y", "@azure/mcp@latest", "server", "start"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]},
+        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]}
+      ],
+      "skill": {
+        "description": "Use Azure MCP for cloud resource inspection and approved operations via your signed-in Azure context.",
+        "useCases": ["List resources and configs", "Read logs and metrics", "Prepare infrastructure changes for review"],
+        "guardrails": ["Do not provision, delete, or change resources without approval", "Treat resource configs as sensitive", "Prefer scoped, subscription-aware queries"]
+      }
+    },
+    {
+      "name": "azure-devops",
+      "displayName": "Azure DevOps",
+      "version": "0.1.0",
+      "description": "Work with Azure DevOps repos, work items, builds, releases, test plans, and code search.",
+      "category": "Cloud & Infrastructure",
+      "keywords": ["azure-devops", "work-items", "pipelines", "repos", "boards"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/microsoft/azure-devops-mcp"],
+      "trust": "official-local",
+      "mcpServers": {
+        "azure-devops": {
+          "command": "npx",
+          "args": ["-y", "@azure-devops/mcp", "${AZURE_DEVOPS_ORG}"],
+          "type": "stdio"
+        }
+      },
+      "userConfig": {
+        "azure_devops_org": {
+          "type": "string",
+          "title": "Azure DevOps Organization",
+          "description": "Azure DevOps organization name the MCP server should target.",
+          "required": true,
+          "sensitive": false,
+          "env": "AZURE_DEVOPS_ORG"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "code-reviewer"]},
+        {"familiar": "astra", "roles": ["coordination-layer"]}
+      ],
+      "skill": {
+        "description": "Use Azure DevOps MCP for planning and review context without silently changing work state.",
+        "useCases": ["Read work items and pipelines", "Summarize build or release status", "Draft work-item updates"],
+        "guardrails": ["Do not create, complete, or reassign work without approval", "Keep status reports dated and concrete", "Respect project-level access boundaries"]
+      }
+    },
+    {
+      "name": "terraform",
+      "displayName": "Terraform",
+      "version": "0.1.0",
+      "description": "Generate accurate Terraform and automate HCP Terraform and Terraform Enterprise workflows.",
+      "category": "Cloud & Infrastructure",
+      "keywords": ["terraform", "iac", "hashicorp", "infrastructure", "providers"],
+      "capabilities": ["network", "shell", "mcp"],
+      "sourceRefs": ["https://github.com/hashicorp/terraform-mcp-server"],
+      "trust": "official-local",
+      "mcpServers": {
+        "terraform": {
+          "command": "docker",
+          "args": ["run", "-i", "--rm", "hashicorp/terraform-mcp-server"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]},
+        {"familiar": "astra", "roles": ["strategic-navigator"]}
+      ],
+      "skill": {
+        "description": "Use Terraform MCP for provider-accurate IaC authoring and read-first workspace inspection.",
+        "useCases": ["Look up provider/resource schemas", "Draft accurate Terraform config", "Inspect workspace and run status"],
+        "guardrails": ["Do not apply, destroy, or change state without approval", "Treat state and variables as sensitive", "Show plans before any apply"]
+      }
+    },
+    {
+      "name": "notion",
+      "displayName": "Notion",
+      "version": "0.1.0",
+      "description": "Read, search, and draft Notion pages and databases through Notion's official MCP server.",
+      "category": "Productivity",
+      "keywords": ["notion", "docs", "wiki", "knowledge-base", "notes"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/makenotion/notion-mcp-server", "https://developers.notion.com/docs/mcp"],
+      "trust": "official-remote",
+      "mcpServers": {
+        "notion": {
+          "url": "https://mcp.notion.com/mcp",
+          "type": "http"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "sage", "roles": ["researcher", "librarian"]},
+        {"familiar": "echo", "roles": ["archivist"]},
+        {"familiar": "charm", "roles": ["copywriter"]},
+        {"familiar": "astra", "roles": ["coordination-layer"]}
+      ],
+      "skill": {
+        "description": "Use Notion for knowledge lookup and drafting while keeping page edits behind approval.",
+        "useCases": ["Search the workspace", "Summarize pages and databases", "Draft new content for review"],
+        "guardrails": ["Do not create, edit, or move pages without approval", "Respect workspace permissions", "Keep private content private by default"]
+      }
+    },
+    {
+      "name": "atlassian",
+      "displayName": "Atlassian Rovo",
+      "version": "0.1.0",
+      "description": "Search, create, and manage Jira, Confluence, and Compass work via Atlassian's official MCP.",
+      "category": "Project Management",
+      "keywords": ["jira", "confluence", "atlassian", "issues", "wiki"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/atlassian/atlassian-mcp-server", "https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/"],
+      "trust": "official-remote",
+      "mcpServers": {
+        "atlassian": {
+          "url": "https://mcp.atlassian.com/v1/mcp",
+          "type": "http"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]},
+        {"familiar": "cody", "roles": ["implementer"]},
+        {"familiar": "echo", "roles": ["archivist"]}
+      ],
+      "skill": {
+        "description": "Use Atlassian Rovo for Jira/Confluence context while keeping writes intentional and approved.",
+        "useCases": ["Read issues and pages", "Summarize project status", "Draft issue or page updates"],
+        "guardrails": ["Do not create, transition, or comment without approval", "Keep status reports dated and concrete", "Respect space and project permissions"]
+      }
+    },
+    {
+      "name": "figma",
+      "displayName": "Figma",
+      "version": "0.1.0",
+      "description": "Bring Figma design context — frames, components, and variables — into agent workflows.",
+      "category": "Design",
+      "keywords": ["figma", "design", "components", "dev-mode", "ui"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Figma-MCP-server"],
+      "trust": "official-remote",
+      "mcpServers": {
+        "figma": {
+          "url": "https://mcp.figma.com/mcp",
+          "type": "http"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer"]},
+        {"familiar": "charm", "roles": ["copywriter", "social-voice"]},
+        {"familiar": "astra", "roles": ["strategic-navigator"]}
+      ],
+      "skill": {
+        "description": "Use Figma MCP to pull design context and specs into implementation without guessing values.",
+        "useCases": ["Read frame and component structure", "Pull spacing, color, and type tokens", "Translate a design into code"],
+        "guardrails": ["Do not edit or publish designs without approval", "Respect file and team permissions", "Confirm the target node before extracting"]
+      }
+    },
+    {
+      "name": "stripe",
+      "displayName": "Stripe",
+      "version": "0.1.0",
+      "description": "Work with Stripe customers, products, payments, and billing through the official MCP server.",
+      "category": "Commerce",
+      "keywords": ["stripe", "payments", "billing", "customers", "subscriptions"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/stripe/agent-toolkit", "https://docs.stripe.com/mcp"],
+      "trust": "official-remote",
+      "mcpServers": {
+        "stripe": {
+          "url": "https://mcp.stripe.com",
+          "type": "http"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]},
+        {"familiar": "astra", "roles": ["strategic-navigator"]}
+      ],
+      "skill": {
+        "description": "Use Stripe MCP for read-first billing inspection; treat money-moving actions as approval-gated.",
+        "useCases": ["Look up customers and subscriptions", "Inspect payments and invoices", "Draft product or price changes for review"],
+        "guardrails": ["Never create charges, refunds, or payouts without explicit approval", "Treat financial and PII data as highly sensitive", "Prefer test mode until production is approved"]
+      }
+    },
+    {
+      "name": "microsoft-learn",
+      "displayName": "Microsoft Learn",
+      "version": "0.1.0",
+      "description": "Pull trusted Microsoft Learn documentation directly into agent workflows.",
+      "category": "Knowledge & Docs",
+      "keywords": ["docs", "microsoft", "learn", "reference", "azure"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://learn.microsoft.com/en-us/training/support/mcp", "https://github.com/MicrosoftDocs/mcp"],
+      "trust": "official-remote",
+      "mcpServers": {
+        "microsoft-learn": {
+          "url": "https://learn.microsoft.com/api/mcp",
+          "type": "http"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "sage", "roles": ["researcher", "librarian"]},
+        {"familiar": "cody", "roles": ["implementer"]}
+      ],
+      "skill": {
+        "description": "Use Microsoft Learn MCP for authoritative, current Microsoft/Azure documentation.",
+        "useCases": ["Look up Azure or .NET docs", "Confirm current API guidance", "Cite official Microsoft sources"],
+        "guardrails": ["Prefer official docs over generated summaries", "Cite the page used", "Match guidance to the relevant product version"]
+      }
+    },
+    {
+      "name": "activepieces",
+      "displayName": "Activepieces",
+      "version": "0.1.0",
+      "description": "Reach 280+ open-source integrations (\"pieces\") as tools through a self-hosted Activepieces MCP server.",
+      "category": "Automation",
+      "keywords": ["automation", "workflows", "integrations", "zapier-alternative", "no-code"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/activepieces/activepieces", "https://www.activepieces.com/docs/mcp/overview"],
+      "trust": "official-remote",
+      "mcpServers": {
+        "activepieces": {
+          "url": "${ACTIVEPIECES_MCP_URL}",
+          "type": "sse"
+        }
+      },
+      "userConfig": {
+        "activepieces_mcp_url": {
+          "type": "string",
+          "title": "Activepieces MCP URL",
+          "description": "Per-project MCP server URL (with token) from your Activepieces instance.",
+          "required": true,
+          "sensitive": true,
+          "env": "ACTIVEPIECES_MCP_URL"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]},
+        {"familiar": "charm", "roles": ["devrel-liaison"]},
+        {"familiar": "kitty", "roles": ["general-helper"]}
+      ],
+      "skill": {
+        "description": "Use Activepieces to invoke prebuilt integrations and flows instead of wiring each API by hand.",
+        "useCases": ["Trigger an automation flow", "Use a Store piece as a tool", "Connect SaaS apps through one MCP endpoint"],
+        "guardrails": ["Confirm scope and side effects before running a flow", "Do not move data between systems without approval", "Keep the tokenized MCP URL secret"]
+      }
+    },
+    {
+      "name": "desktop-commander",
+      "displayName": "Desktop Commander",
+      "version": "0.1.0",
+      "description": "Terminal commands, file operations, and process management on the local machine over MCP.",
+      "category": "Developer Tools",
+      "keywords": ["terminal", "shell", "files", "process", "local"],
+      "capabilities": ["read_files", "write_files", "shell", "mcp"],
+      "sourceRefs": ["https://github.com/wonderwhy-er/DesktopCommanderMCP"],
+      "trust": "local-tool",
+      "mcpServers": {
+        "desktop-commander": {
+          "command": "npx",
+          "args": ["-y", "@wonderwhy-er/desktop-commander@latest"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]}
+      ],
+      "skill": {
+        "description": "Use Desktop Commander for local shell and file work with explicit, narrow intent.",
+        "useCases": ["Run scoped local commands", "Edit or move local files", "Inspect running processes"],
+        "guardrails": ["Confirm before destructive commands or deletes", "Use the narrowest path scope", "Never run commands that exfiltrate secrets"]
+      }
+    },
+    {
+      "name": "netdata",
+      "displayName": "Netdata",
+      "version": "0.1.0",
+      "description": "Real-time infrastructure metrics, logs, alerts, and anomaly detection for AI troubleshooting.",
+      "category": "Cloud & Infrastructure",
+      "keywords": ["monitoring", "metrics", "observability", "logs", "alerts"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://learn.netdata.cloud/docs/netdata-ai/mcp"],
+      "trust": "official-remote",
+      "mcpServers": {
+        "netdata": {
+          "url": "${NETDATA_MCP_URL}",
+          "type": "http"
+        }
+      },
+      "userConfig": {
+        "netdata_mcp_url": {
+          "type": "string",
+          "title": "Netdata MCP URL",
+          "description": "MCP endpoint of your Netdata agent (e.g. http://localhost:19999/mcp). Requires Netdata v2.6.0+.",
+          "required": true,
+          "sensitive": false,
+          "env": "NETDATA_MCP_URL"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["debugger"]},
+        {"familiar": "astra", "roles": ["coordination-layer"]}
+      ],
+      "skill": {
+        "description": "Use Netdata to investigate live infrastructure health before drawing conclusions about incidents.",
+        "useCases": ["Inspect real-time metrics", "Correlate alerts with logs", "Spot anomalies during an incident"],
+        "guardrails": ["Treat telemetry as sensitive", "Do not change agent config without approval", "Cite the time window and node inspected"]
+      }
+    },
+    {
+      "name": "fabric",
+      "displayName": "Microsoft Fabric",
+      "version": "0.1.0",
+      "description": "Microsoft Fabric REST/OpenAPI context for AI-assisted Fabric development, served locally.",
+      "category": "Cloud & Infrastructure",
+      "keywords": ["fabric", "microsoft", "data", "analytics", "openapi"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/microsoft/mcp/tree/main/servers/Fabric.Mcp.Server"],
+      "trust": "official-local",
+      "mcpServers": {
+        "fabric": {
+          "command": "npx",
+          "args": ["-y", "@microsoft/fabric-mcp@latest", "server", "start", "--mode", "all"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer"]},
+        {"familiar": "sage", "roles": ["researcher"]}
+      ],
+      "skill": {
+        "description": "Use Microsoft Fabric MCP for accurate Fabric API context when building against the platform.",
+        "useCases": ["Look up Fabric REST API shapes", "Draft Fabric automation accurately", "Confirm current Fabric capabilities"],
+        "guardrails": ["Do not change Fabric workspaces without approval", "Treat workspace data as sensitive", "Prefer official API context over guesses"]
+      }
+    },
+    {
+      "name": "unity",
+      "displayName": "Unity",
+      "version": "0.1.0",
+      "description": "Bridge AI assistants to the Unity Editor — assets, scenes, scripts, and task automation.",
+      "category": "Developer Tools",
+      "keywords": ["unity", "game-dev", "editor", "assets", "scenes"],
+      "capabilities": ["network", "shell", "mcp"],
+      "sourceRefs": ["https://github.com/CoplayDev/unity-mcp"],
+      "trust": "reference-local",
+      "mcpServers": {
+        "unity": {
+          "command": "uvx",
+          "args": ["--from", "mcpforunityserver", "mcp-for-unity", "--transport", "stdio"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]}
+      ],
+      "skill": {
+        "description": "Use the Unity MCP bridge to inspect and modify a running Unity project with explicit intent.",
+        "useCases": ["Inspect scene and asset structure", "Apply approved editor changes", "Automate repetitive editor tasks"],
+        "guardrails": ["Confirm a running Editor and correct project before acting", "Do not delete assets without approval", "Keep edits scoped to the current task"]
+      }
+    },
+    {
+      "name": "nuget",
+      "displayName": "NuGet",
+      "version": "0.1.0",
+      "description": "Real-time NuGet package info, vulnerability remediation, and upgrade planning for .NET.",
+      "category": "Developer Tools",
+      "keywords": ["nuget", "dotnet", "packages", "dependencies", "security"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://learn.microsoft.com/en-us/nuget/concepts/nuget-mcp-server"],
+      "trust": "official-local",
+      "mcpServers": {
+        "nuget": {
+          "command": "dnx",
+          "args": ["NuGet.Mcp.Server", "--source", "https://api.nuget.org/v3/index.json", "--yes"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "code-reviewer"]}
+      ],
+      "skill": {
+        "description": "Use NuGet MCP for current package versions and vulnerability-aware dependency choices.",
+        "useCases": ["Check latest package versions", "Plan dependency upgrades", "Review packages for known vulnerabilities"],
+        "guardrails": ["Confirm before changing project dependencies", "Prefer fixed, current versions", "Flag supply-chain risks explicitly"]
+      }
+    },
+    {
+      "name": "nuxt-dev",
+      "displayName": "Nuxt Dev",
+      "version": "0.1.0",
+      "description": "Lets models understand your running Vite/Nuxt app via an MCP endpoint on the dev server.",
+      "category": "Developer Tools",
+      "keywords": ["nuxt", "vite", "frontend", "dev-server", "vue"],
+      "capabilities": ["network", "mcp"],
+      "sourceRefs": ["https://github.com/antfu/nuxt-mcp-dev"],
+      "trust": "reference-local",
+      "mcpServers": {
+        "nuxt-dev": {
+          "url": "${NUXT_MCP_URL}",
+          "type": "sse"
+        }
+      },
+      "userConfig": {
+        "nuxt_mcp_url": {
+          "type": "string",
+          "title": "Nuxt Dev MCP URL",
+          "description": "SSE endpoint exposed by the nuxt-mcp-dev module or vite-plugin-mcp (e.g. http://localhost:3000/__mcp/sse).",
+          "required": true,
+          "sensitive": false,
+          "env": "NUXT_MCP_URL"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]}
+      ],
+      "skill": {
+        "description": "Use Nuxt Dev MCP to ground frontend work in your actual running app structure.",
+        "useCases": ["Inspect app routes and components", "Understand local project structure", "Debug a running Nuxt/Vite app"],
+        "guardrails": ["Requires the dev-server MCP plugin to be enabled", "Treat the endpoint as local-only", "Confirm the running app before relying on its state"]
+      }
+    },
+    {
+      "name": "stackql",
+      "displayName": "StackQL",
+      "version": "0.1.0",
+      "description": "Query, provision, and operate cloud, SaaS, and API resources using SQL, over MCP.",
+      "category": "Cloud & Infrastructure",
+      "keywords": ["stackql", "sql", "cloud", "provisioning", "infrastructure"],
+      "capabilities": ["network", "shell", "mcp"],
+      "sourceRefs": ["https://stackql.io/", "https://github.com/stackql/stackql"],
+      "trust": "reference-local",
+      "mcpServers": {
+        "stackql": {
+          "command": "npx",
+          "args": ["-y", "@stackql/mcp-server"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "astra", "roles": ["strategic-navigator"]},
+        {"familiar": "cody", "roles": ["implementer", "debugger"]}
+      ],
+      "skill": {
+        "description": "Use StackQL for SQL-native cloud inspection, preferring read-only queries before provisioning.",
+        "useCases": ["Query cloud resources with SQL", "Audit configuration across providers", "Prepare provisioning for review"],
+        "guardrails": ["Default to read-only SELECTs; confirm any provisioning or mutation", "Never expose provider credentials", "Scope queries to the smallest provider/account needed"]
+      }
+    },
+    {
+      "name": "next-devtools",
+      "displayName": "Next.js DevTools",
+      "version": "0.1.0",
+      "description": "Bridge agents to a running Next.js 16+ dev server — errors, logs, routes, and server actions.",
+      "category": "Developer Tools",
+      "keywords": ["nextjs", "vercel", "frontend", "dev-server", "react"],
+      "capabilities": ["network", "shell", "mcp"],
+      "sourceRefs": ["https://github.com/vercel/next-devtools-mcp"],
+      "trust": "official-local",
+      "mcpServers": {
+        "next-devtools": {
+          "command": "npx",
+          "args": ["-y", "next-devtools-mcp@latest"],
+          "type": "stdio"
+        }
+      },
+      "roleAffinity": [
+        {"familiar": "cody", "roles": ["implementer", "debugger"]}
+      ],
+      "skill": {
+        "description": "Use Next.js DevTools MCP to debug a running Next.js app against its real runtime state.",
+        "useCases": ["Read build and runtime errors", "Inspect routes and server actions", "Trace logs from the dev server"],
+        "guardrails": ["Requires a running Next.js 16+ dev server", "Treat the endpoint as local-only", "Confirm the target project before acting"]
+      }
     }
   ]
 }

@@ -1,0 +1,24 @@
+{
+  "name": "mongodb",
+  "version": "0.1.0",
+  "description": "Inspect and query MongoDB databases and collections through the official MCP server.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "MongoDB",
+    "shortDescription": "Inspect and query MongoDB databases and collections through the official MCP server.",
+    "longDescription": "Use MongoDB MCP for read-first data inspection with approved, scoped writes.",
+    "developerName": "OpenCoven",
+    "category": "Databases",
+    "capabilities": [
+      "mongodb",
+      "database",
+      "nosql",
+      "collections",
+      "query"
+    ],
+    "defaultPrompt": "Help me use MongoDB safely."
+  }
+}

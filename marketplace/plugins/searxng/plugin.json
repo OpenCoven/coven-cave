@@ -1,0 +1,70 @@
+{
+  "name": "searxng",
+  "version": "0.1.0",
+  "description": "Privacy-respecting metasearch with pagination and URL reading through a SearXNG instance.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "search",
+    "privacy",
+    "metasearch",
+    "searxng",
+    "web"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/searxng",
+  "x-coven": {
+    "displayName": "SearXNG Search",
+    "category": "Browser & Web",
+    "trust": "local-tool",
+    "sourceRefs": [
+      "https://github.com/ihor-sokoliuk/mcp-searxng"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "searxng": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-searxng"
+      ],
+      "type": "stdio",
+      "env": {
+        "SEARXNG_URL": "${SEARXNG_URL}"
+      }
+    }
+  },
+  "userConfig": {
+    "searxng_url": {
+      "type": "string",
+      "title": "SearXNG Instance URL",
+      "description": "Base URL of the SearXNG instance to query.",
+      "required": true,
+      "sensitive": false,
+      "env": "SEARXNG_URL"
+    }
+  }
+}

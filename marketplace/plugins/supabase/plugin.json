@@ -1,0 +1,76 @@
+{
+  "name": "supabase",
+  "version": "0.1.0",
+  "description": "Manage and query Supabase projects \u2014 database, auth, storage, and edge functions.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "supabase",
+    "postgres",
+    "backend",
+    "auth",
+    "storage"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/supabase",
+  "x-coven": {
+    "displayName": "Supabase",
+    "category": "Databases",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/supabase-community/supabase-mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest"
+      ],
+      "type": "stdio",
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
+      }
+    }
+  },
+  "userConfig": {
+    "supabase_access_token": {
+      "type": "string",
+      "title": "Supabase Access Token",
+      "description": "Personal access token for the Supabase Management API.",
+      "required": true,
+      "sensitive": true,
+      "env": "SUPABASE_ACCESS_TOKEN"
+    }
+  }
+}

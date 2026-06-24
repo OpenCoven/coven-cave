@@ -6,6 +6,7 @@ import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-cata
 
 const TRUST_LABEL: Record<string, string> = {
   "official-remote": "Official",
+  "official-local": "Official",
   "reference-local": "Reference",
   "preview-local": "Preview",
   "local-tool": "Local tool",

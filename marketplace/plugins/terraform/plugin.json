@@ -1,0 +1,66 @@
+{
+  "name": "terraform",
+  "version": "0.1.0",
+  "description": "Generate accurate Terraform and automate HCP Terraform and Terraform Enterprise workflows.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "terraform",
+    "iac",
+    "hashicorp",
+    "infrastructure",
+    "providers"
+  ],
+  "capabilities": [
+    "network",
+    "shell",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/terraform",
+  "x-coven": {
+    "displayName": "Terraform",
+    "category": "Cloud & Infrastructure",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/hashicorp/terraform-mcp-server"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "terraform": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "hashicorp/terraform-mcp-server"
+      ],
+      "type": "stdio"
+    }
+  }
+}
