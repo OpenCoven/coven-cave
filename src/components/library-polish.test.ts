@@ -703,3 +703,14 @@ assert.match(reading, /Promise\.all\(\s*ids\.map\(\(id\) =>\s*fetch\(`\/api\/lib
 assert.match(reading, /\{allSelected \? "Clear" : "Select all"\}/, "the bulk bar offers select-all / clear");
 assert.match(libraryCss, /\.library-bulk-bar \{/, "the bulk toolbar is styled");
 assert.match(libraryCss, /\.library-bulk-check\[data-checked="true"\]/, "the row checkbox has a checked state");
+
+// Bulk-select extends to the bookmarks + GitHub lists (same pattern, same CSS).
+for (const [name, src, api] of [["bookmarks", bookmarks, "bookmarks"], ["github", github, "github"]]) {
+  assert.match(src, /const \[selectMode, setSelectMode\] = useState\(false\)/, `${name} list has a select mode`);
+  assert.match(src, /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/, `${name} selected ids live in a Set`);
+  assert.match(src, /if \(selectMode\) \{ toggleSelect\(item\.id\); return; \}/, `${name} row selects in select mode, otherwise opens`);
+  assert.match(src, /function bulkDelete\(\)/, `${name} has a bulk remove handler`);
+  assert.match(src, new RegExp(`fetch\\(\`/api/library/${api}\\?id=`), `${name} bulk remove hits its delete endpoint`);
+  assert.match(src, /\{allSelected \? "Clear" : "Select all"\}/, `${name} bulk bar offers select-all / clear`);
+  assert.match(src, /className="library-bulk-check"/, `${name} rows show a checkbox in select mode`);
+}

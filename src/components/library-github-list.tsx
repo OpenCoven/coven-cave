@@ -592,6 +592,8 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [attachItem, setAttachItem] = useState<LibraryGitHubItem | null>(null);
   const [handoffItem, setHandoffItem] = useState<LibraryGitHubItem | null>(null);
   const [query, setQuery] = useState("");
@@ -656,6 +658,36 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
     undoDelete();
   }
 
+  // Bulk-select: pick several GitHub items and remove them at once.
+  const allSelected = items.length > 0 && items.every((i) => selectedIds.has(i.id));
+  const selectedCount = items.filter((i) => selectedIds.has(i.id)).length;
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const exitSelect = () => { setSelectMode(false); setSelectedIds(new Set()); };
+  const toggleSelectAll = () =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) items.forEach((i) => next.delete(i.id));
+      else items.forEach((i) => next.add(i.id));
+      return next;
+    });
+  function bulkDelete() {
+    const ids = items.filter((i) => selectedIds.has(i.id)).map((i) => i.id);
+    if (ids.length === 0) return;
+    setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
+    void Promise.all(
+      ids.map((id) =>
+        fetch(`/api/library/github?id=${encodeURIComponent(id)}`, { method: "DELETE" }).then(() => {}).catch(() => {}),
+      ),
+    );
+    exitSelect();
+  }
+
   return (
     <div className="library-list-shell">
       {/* Header */}
@@ -666,6 +698,18 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
           <span className="board-table-group-badge">{items.length}</span>
         </span>
         <div className="library-list-header-controls">
+          {items.length > 0 ? (
+            <button
+              type="button"
+              className="board-toolbar-btn"
+              onClick={() => { setSelectMode((v) => !v); setSelectedIds(new Set()); }}
+              aria-pressed={selectMode}
+              aria-label={selectMode ? "Exit select mode" : "Select multiple GitHub items"}
+              title={selectMode ? "Exit select" : "Select multiple"}
+            >
+              <Icon name="ph:list-checks-bold" width={12} />
+            </button>
+          ) : null}
           <select
             className="board-toolbar-select"
             value={groupBy}
@@ -687,6 +731,24 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
           </button>
         </div>
       </div>
+
+      {selectMode ? (
+        <div className="library-bulk-bar">
+          <div className="library-bulk-bar__left">
+            <button type="button" className="library-bulk-bar__link" onClick={toggleSelectAll}>
+              {allSelected ? "Clear" : "Select all"}
+            </button>
+            <span className="library-bulk-bar__count">{selectedCount} selected</span>
+          </div>
+          <div className="library-bulk-bar__right">
+            <button type="button" className="library-bulk-bar__link" onClick={exitSelect}>Cancel</button>
+            <button type="button" className="library-bulk-bar__delete" disabled={selectedCount === 0} onClick={bulkDelete}>
+              <Icon name="ph:trash" width={11} aria-hidden />
+              Remove{selectedCount ? ` ${selectedCount}` : ""}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="library-doclist-search">
         <Icon name="ph:magnifying-glass" width={13} className="library-doclist-search-icon" />
@@ -778,11 +840,17 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                     return (
                       <React.Fragment key={item.id}>
                         <tr
-                          className={`gh-row-main${item.id === selectedId ? " selected" : ""}`}
-                          onClick={() => onSelect(item)}
+                          className={`gh-row-main${item.id === selectedId ? " selected" : ""}${selectMode && selectedIds.has(item.id) ? " is-selected" : ""}`}
+                          aria-selected={selectMode ? selectedIds.has(item.id) : undefined}
+                          onClick={() => { if (selectMode) { toggleSelect(item.id); return; } onSelect(item); }}
                         >
                           <td className="gh-col-title">
                             <div className="gh-title-cell">
+                              {selectMode ? (
+                                <span aria-hidden className="library-bulk-check" data-checked={selectedIds.has(item.id) ? "true" : undefined}>
+                                  <Icon name="ph:check-bold" width={10} aria-hidden />
+                                </span>
+                              ) : null}
                               <span className="board-table-title gh-title-text">{item.title}</span>
                               <a
                                 href={item.url}

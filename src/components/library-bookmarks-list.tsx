@@ -179,6 +179,8 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [addedToBoardId, setAddedToBoardId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -264,6 +266,36 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
     undoDelete();
   }
 
+  // Bulk-select: pick several bookmarks and remove them at once.
+  const allSelected = items.length > 0 && items.every((i) => selectedIds.has(i.id));
+  const selectedCount = items.filter((i) => selectedIds.has(i.id)).length;
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const exitSelect = () => { setSelectMode(false); setSelectedIds(new Set()); };
+  const toggleSelectAll = () =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) items.forEach((i) => next.delete(i.id));
+      else items.forEach((i) => next.add(i.id));
+      return next;
+    });
+  function bulkDelete() {
+    const ids = items.filter((i) => selectedIds.has(i.id)).map((i) => i.id);
+    if (ids.length === 0) return;
+    setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
+    void Promise.all(
+      ids.map((id) =>
+        fetch(`/api/library/bookmarks?id=${encodeURIComponent(id)}`, { method: "DELETE" }).then(() => {}).catch(() => {}),
+      ),
+    );
+    exitSelect();
+  }
+
   return (
     <div className="library-list-shell">
       {/* Header */}
@@ -274,6 +306,18 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
           <span className="board-table-group-badge">{items.length}</span>
         </span>
         <div className="library-list-header-controls">
+          {items.length > 0 ? (
+            <button
+              type="button"
+              className="board-toolbar-btn"
+              onClick={() => { setSelectMode((v) => !v); setSelectedIds(new Set()); }}
+              aria-pressed={selectMode}
+              aria-label={selectMode ? "Exit select mode" : "Select multiple bookmarks"}
+              title={selectMode ? "Exit select" : "Select multiple"}
+            >
+              <Icon name="ph:list-checks-bold" width={12} />
+            </button>
+          ) : null}
           <div className="library-bookmark-selector">
             <button
               ref={groupSelectorRef}
@@ -332,6 +376,24 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
           </button>
         </div>
       </div>
+
+      {selectMode ? (
+        <div className="library-bulk-bar">
+          <div className="library-bulk-bar__left">
+            <button type="button" className="library-bulk-bar__link" onClick={toggleSelectAll}>
+              {allSelected ? "Clear" : "Select all"}
+            </button>
+            <span className="library-bulk-bar__count">{selectedCount} selected</span>
+          </div>
+          <div className="library-bulk-bar__right">
+            <button type="button" className="library-bulk-bar__link" onClick={exitSelect}>Cancel</button>
+            <button type="button" className="library-bulk-bar__delete" disabled={selectedCount === 0} onClick={bulkDelete}>
+              <Icon name="ph:trash" width={11} aria-hidden />
+              Remove{selectedCount ? ` ${selectedCount}` : ""}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="library-doclist-search">
         <Icon name="ph:magnifying-glass" width={13} className="library-doclist-search-icon" />
@@ -438,10 +500,16 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                   )}
                   {!collapsed.has(key) && gi.map((item) => (
                     <tr key={`${key}:${item.id || item.url}`}
-                      className={item.id === selectedId ? "selected" : ""}
-                      onClick={() => onSelect(item)}>
+                      className={`${item.id === selectedId ? "selected" : ""}${selectMode && selectedIds.has(item.id) ? " is-selected" : ""}`}
+                      aria-selected={selectMode ? selectedIds.has(item.id) : undefined}
+                      onClick={() => { if (selectMode) { toggleSelect(item.id); return; } onSelect(item); }}>
                       <td>
                         <span className="board-table-title library-title-cell">
+                          {selectMode ? (
+                            <span aria-hidden className="library-bulk-check" data-checked={selectedIds.has(item.id) ? "true" : undefined}>
+                              <Icon name="ph:check-bold" width={10} aria-hidden />
+                            </span>
+                          ) : null}
                           <ItemFavicon url={item.url} title={item.title} />
                           <a
                             href={item.url}
@@ -463,6 +531,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                         <RelativeTime iso={item.savedAt} className="board-table-muted" />
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
+                        {selectMode ? null : (
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           {onAddToBoard && (
                             addedToBoardId === item.id ? (
@@ -499,6 +568,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                             <Icon name="ph:x" width={11} />
                           </button>
                         </span>
+                        )}
                       </td>
                     </tr>
                   ))}
