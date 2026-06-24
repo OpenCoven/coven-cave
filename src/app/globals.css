@@ -2559,15 +2559,18 @@ tr[role="checkbox"]:focus-visible {
     0 10px 28px color-mix(in oklch, var(--accent-presence) 22%, transparent);
   transform: none;
 }
-/* Per-project identity chip — a colour-tinted glass tile behind the folder
-   glyph. Hue comes from projectTint() via the --tile custom property. */
+/* Per-project identity chip — a colour-tinted glass tile holding a 1–2 char
+   monogram. Hue comes from projectTint() via the --tile custom property. */
 .comux-project-tile {
   width: 28px;
   height: 28px;
   border-radius: 8px;
   display: grid;
   place-items: center;
-  color: var(--tile, var(--accent-presence));
+  /* Sized to seat a 1–2 char monogram; text brightened toward the foreground so
+     it stays legible over the translucent tint fill. */
+  font-size: 10.5px;
+  color: color-mix(in oklch, var(--tile, var(--accent-presence)) 65%, var(--text-primary));
   background: color-mix(in oklch, var(--tile, var(--accent-presence)) 14%, transparent);
   border: 1px solid color-mix(in oklch, var(--tile, var(--accent-presence)) 24%, transparent);
 }

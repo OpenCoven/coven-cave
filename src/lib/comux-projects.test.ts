@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { deriveComuxProjects, projectTint } from "./comux-projects.ts";
+import { deriveComuxProjects, projectTint, projectMonogram } from "./comux-projects.ts";
 import type { SessionRow } from "./types.ts";
 
 function session(
@@ -124,4 +124,27 @@ assert.deepEqual(deriveComuxProjects([], "/workspace/fallback"), [
   assert.ok(hue >= 0 && hue < 360, "hue stays within [0, 360)");
 }
 
-console.log("comux-projects.test.ts: dedup + disambiguation + tint ok");
+// ── projectMonogram: disambiguates a prefix-heavy family ──
+{
+  // Multi-segment names take first + last segment initials, so coven-* differ.
+  assert.equal(projectMonogram("coven-cave"), "CC");
+  assert.equal(projectMonogram("coven-github"), "CG");
+  assert.equal(projectMonogram("coven-grimoire"), "CG"); // collisions still possible, that's ok
+  assert.equal(projectMonogram("familiars/nova"), "FN");
+  // Single-word names fall back to first two letters.
+  assert.equal(projectMonogram("charm"), "CH");
+  assert.equal(projectMonogram("nova"), "NO");
+  // camelCase splits into segments.
+  assert.equal(projectMonogram("myCoolApp"), "MA");
+  // Symbols stripped; never blank.
+  assert.equal(projectMonogram(".config"), "CO");
+  assert.equal(projectMonogram("!!!"), "•");
+  // Always uppercase, never longer than 2.
+  for (const n of ["coven-cave", "charm", "a-b-c-d", "x"]) {
+    const m = projectMonogram(n);
+    assert.ok(m.length >= 1 && m.length <= 2, `monogram length 1–2 for ${n}`);
+    assert.equal(m, m.toUpperCase(), `monogram uppercase for ${n}`);
+  }
+}
+
+console.log("comux-projects.test.ts: dedup + disambiguation + tint + monogram ok");

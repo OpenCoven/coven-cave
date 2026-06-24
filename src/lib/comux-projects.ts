@@ -35,6 +35,28 @@ export function projectTint(root: string): string {
   return `oklch(0.74 0.12 ${hue})`;
 }
 
+/**
+ * 1–2 char identity monogram for a project's tile. Splits the name on word
+ * boundaries (`-`, `_`, `/`, space, camelCase) and takes the initial of the
+ * first and last segments — so a prefix-heavy family like `coven-cave` /
+ * `coven-github` reads as `CC` / `CG` (recognisably "coven", distinct second
+ * letter) instead of a wall of identical single initials. Single-word names
+ * fall back to their first two letters. Always uppercase; non-alphanumerics are
+ * stripped so a leading "." or symbol never produces a blank tile.
+ */
+export function projectMonogram(name: string): string {
+  const segments = name
+    .replace(/([a-z])([A-Z])/g, "$1 $2") // split camelCase
+    .split(/[\s/_-]+/)
+    .map((s) => s.replace(/[^a-z0-9]/gi, ""))
+    .filter(Boolean);
+  if (segments.length === 0) return "•";
+  if (segments.length === 1) return segments[0].slice(0, 2).toUpperCase();
+  const first = segments[0][0];
+  const last = segments[segments.length - 1][0];
+  return (first + last).toUpperCase();
+}
+
 /** Strip trailing slashes so `/x/app` and `/x/app/` bucket as one project. */
 function normalizeRoot(root: string): string {
   const stripped = root.replace(/\\/g, "/").replace(/\/+$/, "");

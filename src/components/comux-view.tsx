@@ -32,8 +32,10 @@ import {
   deriveComuxProjects,
   projectName,
   projectTint,
+  projectMonogram,
   type ComuxProject,
 } from "@/lib/comux-projects";
+import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import {
   addTerminalSession,
   closeTerminalSession,
@@ -341,6 +343,13 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [daemonProjectRoot, setDaemonProjectRoot] = useState<string | undefined>(undefined);
   const [selectedProjectRoot, setSelectedProjectRoot] = useState<string | undefined>(undefined);
 
+  // Projects-list ergonomics: type-to-filter (mirrors the Chat-tab projects
+  // list), arrow-key roving over the rows, and keeping the active row in view.
+  const [projectFilter, setProjectFilter] = useState("");
+  const projectFilterRef = useRef<HTMLInputElement>(null);
+  const projectListRef = useRef<HTMLDivElement>(null);
+  const activeProjectRowRef = useRef<HTMLButtonElement | null>(null);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -369,6 +378,48 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     () => deriveComuxProjects(daemonSessions, daemonProjectRoot),
     [daemonSessions, daemonProjectRoot],
   );
+
+  // Filter the project list by name or path (case-insensitive). The code-search
+  // box below is a separate ripgrep search — this only narrows the switcher.
+  const visibleProjects = useMemo(() => {
+    const q = projectFilter.trim().toLowerCase();
+    if (!q) return projects;
+    return projects.filter(
+      (p) => p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q),
+    );
+  }, [projects, projectFilter]);
+
+  // Arrow-key roving over the project rows (WAI-ARIA): one tab stop, ↑/↓ move,
+  // Home/End jump. The hook ignores keystrokes while the filter input is focused.
+  useRovingTabIndex({
+    containerRef: projectListRef,
+    itemSelector: "[data-project-row]",
+    orientation: "vertical",
+  });
+
+  // GitHub-style "/" focuses the project filter while the Code surface is shown,
+  // unless the user is already typing or holding a modifier.
+  useEffect(() => {
+    if (!active) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const el = projectFilterRef.current;
+      if (!el) return;
+      e.preventDefault();
+      el.focus();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [active]);
+
+  // Keep the selected project on screen — when the list is long, or after a
+  // filter changes which rows are rendered. block:"nearest" is a no-op if it's
+  // already visible, so clicking a visible row never jolts the scroll.
+  useEffect(() => {
+    activeProjectRowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [selectedProjectRoot, visibleProjects]);
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.root === selectedProjectRoot) ?? projects[0] ?? null,
@@ -1501,24 +1552,70 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         <Icon name="ph:folder" width={11} className="shrink-0 text-[var(--text-muted)]" />
                         <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">Projects</span>
                         <span className="ml-auto rounded-full bg-[var(--bg-raised)] px-1.5 py-px text-[9px] text-[var(--text-muted)]">
-                          {projects.length}
+                          {projectFilter.trim() ? `${visibleProjects.length}/${projects.length}` : projects.length}
                         </span>
                       </button>
                       {!projectListCollapsed && (
-                        <div className="comux-project-list mt-1 space-y-0.5 p-0.5">
-                          {projects.map((project) => {
+                        <>
+                          {projects.length > 1 && (
+                            <div className="relative mt-1.5">
+                              <Icon
+                                name="ph:magnifying-glass"
+                                width={12}
+                                className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                                aria-hidden
+                              />
+                              <input
+                                ref={projectFilterRef}
+                                type="search"
+                                value={projectFilter}
+                                onChange={(e) => setProjectFilter(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape" && projectFilter) {
+                                    e.preventDefault();
+                                    setProjectFilter("");
+                                  }
+                                }}
+                                placeholder="Filter projects…"
+                                aria-label="Filter projects by name or path"
+                                className="focus-ring h-7 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/60 pl-7 pr-7 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--border-strong)]"
+                              />
+                              {!projectFilter && (
+                                <kbd
+                                  aria-hidden
+                                  className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[9px] leading-tight text-[var(--text-muted)]"
+                                >
+                                  /
+                                </kbd>
+                              )}
+                            </div>
+                          )}
+                          {visibleProjects.length === 0 ? (
+                            <p className="px-2 py-4 text-center text-[11px] text-[var(--text-muted)]">
+                              No projects match “{projectFilter.trim()}”
+                            </p>
+                          ) : (
+                          <div ref={projectListRef} className="comux-project-list mt-1 space-y-0.5 p-0.5">
+                            {visibleProjects.map((project) => {
                             const isActive = selectedProject?.root === project.root;
                             const meta: string[] = [];
                             if (project.sessionCount > 0) {
                               meta.push(`${project.sessionCount} ${project.sessionCount === 1 ? "chat" : "chats"}`);
                             }
                             if (project.updatedAt) meta.push(shortProjectTime(project.updatedAt));
+                            // Identity monogram (1–2 chars from word segments) —
+                            // pairs with the per-project tint for a glanceable
+                            // chip (the running state is carried by the dot).
+                            const monogram = projectMonogram(project.name);
                             return (
                               <button
                                 key={project.root}
                                 type="button"
+                                data-project-row
+                                ref={isActive ? activeProjectRowRef : undefined}
                                 onClick={() => selectProject(project)}
                                 title={project.root}
+                                aria-current={isActive ? "true" : undefined}
                                 style={{ ["--tile" as string]: projectTint(project.root) }}
                                 className={`comux-project-row group flex w-full items-center gap-2.5 rounded-lg px-2 py-[7px] text-left text-[12px] ${
                                   isActive
@@ -1526,12 +1623,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                                     : "text-[var(--text-primary)]"
                                 }`}
                               >
-                                <span className="comux-project-tile relative shrink-0">
-                                  <Icon
-                                    name={project.runningCount > 0 ? "ph:folder-open-bold" : "ph:folder-bold"}
-                                    width={15}
-                                    aria-hidden
-                                  />
+                                <span className="comux-project-tile shrink-0 font-bold leading-none tracking-tight tabular-nums" aria-hidden>
+                                  {monogram}
                                 </span>
                                 <span className="flex min-w-0 flex-1 flex-col">
                                   <span className="truncate font-medium leading-tight">{project.name}</span>
@@ -1549,8 +1642,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                                 )}
                               </button>
                             );
-                          })}
-                        </div>
+                            })}
+                          </div>
+                          )}
+                        </>
                       )}
                     </div>
                     {/* Project-wide code search (CODE-SEARCH-01) */}
