@@ -664,30 +664,40 @@ function resolveTokenToHex(ctx: CanvasRenderingContext2D | null, raw: string): s
   }
 }
 
-function persistThemeTokens() {
-  if (typeof window === "undefined") return;
+/** Read the active theme's 8 synced tokens, resolved to hex. */
+function resolveSyncTokens(): Record<string, string> {
+  const html = document.documentElement;
+  const cs = getComputedStyle(html);
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const tokens: Record<string, string> = {};
+  for (const key of THEME_SYNC_KEYS) {
+    const value = cs.getPropertyValue(key).trim();
+    if (value) tokens[key] = resolveTokenToHex(ctx, value);
+  }
+  return tokens;
+}
+
+/** Push the active theme + resolved tokens to the daemon for cross-device sync.
+ *  Returns whether the write reached the daemon (the manual Resync button shows
+ *  the result; the automatic on-change call ignores it). */
+async function persistThemeTokens(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
   try {
     const html = document.documentElement;
-    const cs = getComputedStyle(html);
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 1;
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    const tokens: Record<string, string> = {};
-    for (const key of THEME_SYNC_KEYS) {
-      const value = cs.getPropertyValue(key).trim();
-      if (value) tokens[key] = resolveTokenToHex(ctx, value);
-    }
-    void fetch("/api/theme", {
+    const res = await fetch("/api/theme", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         themeId: html.getAttribute("data-theme") ?? "coven",
         mode: html.getAttribute("data-mode") ?? "dark",
-        tokens,
+        tokens: resolveSyncTokens(),
       }),
-    }).catch(() => {});
+    });
+    return res.ok;
   } catch {
-    /* best-effort sync; never block the UI */
+    return false; // best-effort sync; never block the UI
   }
 }
 
@@ -885,6 +895,93 @@ function ThemePresetCard({
   );
 }
 
+// Friendly labels for the 8 overridable core tokens.
+const TOKEN_LABELS: Record<(typeof THEME_SYNC_KEYS)[number], string> = {
+  "--bg-base": "Background",
+  "--bg-raised": "Raised surface",
+  "--bg-elevated": "Elevated surface",
+  "--text-primary": "Primary text",
+  "--text-secondary": "Secondary text",
+  "--text-muted": "Muted text",
+  "--border-hairline": "Border",
+  "--accent-presence": "Accent",
+};
+
+/** Override a single core token. Forks the active theme to a custom theme so the
+ *  edit sticks (and re-syncs); when leaving a preset, the whole 8-token group is
+ *  seeded from the current look so only the edited token changes. */
+function applyTokenOverride(key: string, hex: string, mode: Mode) {
+  const html = document.documentElement;
+  html.style.setProperty(key, hex); // live preview
+  let existing: CustomThemeData | null = null;
+  try {
+    const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
+    if (raw) existing = JSON.parse(raw) as CustomThemeData;
+  } catch {
+    /* malformed — treat as none */
+  }
+  const groupKey: "light" | "dark" = mode === "light" ? "light" : "dark";
+  const group: Record<string, string> = { ...(existing?.cssVars?.[groupKey] ?? {}) };
+  if (!existing) Object.assign(group, resolveSyncTokens()); // seed from current look
+  group[key] = hex;
+  const data: CustomThemeData = {
+    name: existing?.name ?? "Custom",
+    cssVars: { ...(existing?.cssVars ?? {}), [groupKey]: group },
+  };
+  localStorage.setItem(COVEN_CUSTOM_THEME_KEY, JSON.stringify(data));
+  localStorage.setItem(COVEN_THEME_KEY, "custom");
+  html.setAttribute("data-theme", "custom");
+}
+
+/** Per-token override list — every core theme token with a colour swatch you can
+ *  edit. Editing applies live, forks to a custom theme, and re-syncs. */
+function ThemeTokenOverrides({
+  mode,
+  reloadKey,
+  onChange,
+}: {
+  mode: Mode;
+  reloadKey: string;
+  onChange: () => void;
+}) {
+  const [values, setValues] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setValues(resolveSyncTokens());
+  }, [reloadKey]);
+
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3">
+      <p className="text-[11px] text-[var(--text-muted)]">
+        Override any of the theme&apos;s core tokens. Editing one forks the active
+        theme to a custom theme and applies + syncs immediately.
+      </p>
+      <div className="flex flex-col divide-y divide-[var(--border-hairline)] overflow-hidden rounded-lg border border-[var(--border-hairline)]">
+        {THEME_SYNC_KEYS.map((key) => {
+          const hex = (values[key] ?? "#000000").slice(0, 7);
+          return (
+            <label key={key} className="flex items-center gap-3 px-3 py-2">
+              <input
+                type="color"
+                value={hex}
+                onChange={(e) => {
+                  applyTokenOverride(key, e.target.value, mode);
+                  setValues((v) => ({ ...v, [key]: e.target.value }));
+                  onChange();
+                }}
+                className="h-6 w-6 shrink-0 cursor-pointer rounded border border-[var(--border-hairline)] bg-transparent p-0"
+                aria-label={TOKEN_LABELS[key]}
+              />
+              <span className="flex-1 text-[12px] text-[var(--text-primary)]">{TOKEN_LABELS[key]}</span>
+              <code className="font-mono text-[11px] text-[var(--text-muted)]">{key}</code>
+              <span className="font-mono text-[11px] text-[var(--text-secondary)]">{hex}</span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Section: Appearance ───────────────────────────────────────────────────────────────────────
 
 function AppearanceSection() {
@@ -895,13 +992,32 @@ function AppearanceSection() {
   // Mirror the active theme + resolved tokens to the daemon on change (and mount)
   // so cross-device clients can read it. Best-effort; failures are swallowed.
   useEffect(() => {
-    persistThemeTokens();
+    void persistThemeTokens();
   }, [activeTheme, mode, customData]);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   // colorEditorBase: the preset that seeds the color editor; null = editor hidden.
   const [colorEditorBase, setColorEditorBase] = useState<PresetTheme | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; at: string } | null>(null);
+
+  const handleResync = async () => {
+    setSyncing(true);
+    const ok = await persistThemeTokens();
+    setSyncing(false);
+    setSyncResult({ ok, at: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
+  };
+
+  const reloadCustomData = () => {
+    setActiveTheme("custom");
+    try {
+      const raw = localStorage.getItem(COVEN_CUSTOM_THEME_KEY);
+      if (raw) setCustomData(JSON.parse(raw) as CustomThemeData);
+    } catch {
+      /* ignore */
+    }
+  };
   const [cornerRadius, setCornerRadius] = useState<CornerRadius>("default");
   const familiarSwitcherStyle = useFamiliarSwitcherStyle();
   const familiarStripScope = useFamiliarStripScope();
@@ -1121,6 +1237,33 @@ function AppearanceSection() {
             />
           </div>
         )}
+      </SettingsGroup>
+
+      {/* ── Per-token overrides + manual resync ── */}
+      <SettingsGroup label="Theme tokens">
+        <ThemeTokenOverrides
+          mode={resolveMode(mode)}
+          reloadKey={`${activeTheme}:${mode}:${customData ? "c" : "p"}`}
+          onChange={reloadCustomData}
+        />
+        <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border-hairline)] px-4 py-3">
+          <button
+            type="button"
+            onClick={() => void handleResync()}
+            disabled={syncing}
+            className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-50"
+          >
+            <Icon name="ph:arrows-clockwise" width={13} className={syncing ? "animate-spin" : undefined} />
+            {syncing ? "Syncing…" : "Resync to phone"}
+          </button>
+          <span className="text-[11px] text-[var(--text-muted)]">
+            {syncResult
+              ? syncResult.ok
+                ? `Synced at ${syncResult.at}.`
+                : "Couldn’t reach the daemon — is it running?"
+              : "Your theme syncs to the phone automatically; resync to push it now."}
+          </span>
+        </div>
       </SettingsGroup>
 
       {/* ── tweakcn import ── */}
