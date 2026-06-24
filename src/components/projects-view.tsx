@@ -21,6 +21,8 @@ import { applyProjectOverrides, setProjectOverride } from "@/lib/chat-project-ov
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
 import { deriveProjectStatus } from "@/lib/project-status";
+import { useProjectsUiState } from "@/lib/projects/use-projects-ui-state";
+import type { ProjectsDensity } from "@/lib/projects/projects-ui-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -92,6 +94,7 @@ function ProjectChatRow({
   selectMode,
   selected,
   onToggleSelect,
+  density,
 }: {
   session: SessionRow;
   displayTitle?: string;
@@ -100,6 +103,7 @@ function ProjectChatRow({
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: (id: string) => void;
+  density: ProjectsDensity;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: session.id,
@@ -125,7 +129,7 @@ function ProjectChatRow({
           }
         }}
         data-selected={selectMode && selected ? "true" : undefined}
-        className="focus-ring flex w-full items-center gap-2 px-4 py-1 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] data-[selected=true]:bg-[var(--accent-presence)]/10 data-[selected=true]:text-[var(--text-primary)]"
+        className={`focus-ring flex w-full items-center gap-2 px-4 text-left text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] data-[selected=true]:bg-[var(--accent-presence)]/10 data-[selected=true]:text-[var(--text-primary)] ${density === "compact" ? "py-0.5" : "py-1"}`}
       >
         {selectMode ? (
           <span
@@ -222,6 +226,9 @@ type ProjectRowProps = {
   onOpenSession?: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => Promise<void>;
   onDeleteSessions: (sessionIds: string[]) => Promise<void>;
+  density: ProjectsDensity;
+  expanded: boolean;
+  onSetExpanded: (next: boolean) => void;
 };
 
 function ProjectRow({
@@ -234,11 +241,16 @@ function ProjectRow({
   onOpenSession,
   onDeleteSession,
   onDeleteSessions,
+  density,
+  expanded,
+  onSetExpanded,
 }: ProjectRowProps) {
   const chatCount = chats.length;
-  // Every project starts collapsed to a single scannable row; expanding reveals
-  // the path + its sessions.
-  const [expanded, setExpanded] = useState(false);
+  // Expanded/collapsed state is lifted to the container and persisted, so a
+  // project the user opened stays open across reloads (native-app memory)
+  // instead of resetting to a flat collapsed list every visit.
+  const setExpanded = (next: boolean | ((value: boolean) => boolean)) =>
+    onSetExpanded(typeof next === "function" ? next(expanded) : next);
   const cardKey = normalizeProjectRoot(project.root);
 
   // The command palette's "Open project" rows expand + scroll a project into
@@ -380,7 +392,8 @@ function ProjectRow({
       id={`pcard-el:${cardKey}`}
       data-drop-over={isOver ? "true" : undefined}
       className={[
-        "group border-b border-[var(--border-hairline)] px-2 py-3 transition-colors",
+        "group border-b border-[var(--border-hairline)] px-2 transition-colors",
+        density === "compact" ? "py-1.5" : "py-3",
         isOver
           ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]"
           : "hover:bg-[var(--bg-raised)]/40",
@@ -638,6 +651,7 @@ function ProjectRow({
                   selectMode={selectMode}
                   selected={selectedIds.has(session.id)}
                   onToggleSelect={toggleSelect}
+                  density={density}
                 />
               ))}
             </ul>
@@ -685,6 +699,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   const [creating, setCreating] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const projectOverrides = useProjectOverrides();
+  const { density, setDensity, isExpanded, setExpanded } = useProjectsUiState();
   const [order, setOrder] = useState<string[]>([]);
   useEffect(() => {
     setOrder(readSessionOrder());
@@ -849,6 +864,32 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
               : `${projects.length} ${projects.length === 1 ? "project" : "projects"}`}
           </span>
           <div className="flex items-center gap-2">
+            <div
+              role="group"
+              aria-label="List density"
+              className="flex items-center rounded-md border border-[var(--border-hairline)] p-0.5"
+            >
+              {([
+                { value: "comfortable", icon: "ph:rows", label: "Comfortable density" },
+                { value: "compact", icon: "ph:list-bullets-bold", label: "Compact density" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setDensity(opt.value)}
+                  aria-pressed={density === opt.value}
+                  aria-label={opt.label}
+                  title={opt.label}
+                  className={`focus-ring flex h-7 w-7 items-center justify-center rounded ${
+                    density === opt.value
+                      ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                  }`}
+                >
+                  <Icon name={opt.icon} width={14} aria-hidden />
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               onClick={() => void reload()}
@@ -1045,6 +1086,9 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
                     onOpenSession={openSessionById}
                     onDeleteSession={handleDeleteSession}
                     onDeleteSessions={handleDeleteSessions}
+                    density={density}
+                    expanded={isExpanded(project.id)}
+                    onSetExpanded={(next) => setExpanded(project.id, next)}
                   />
                 ))}
               </DndContext>

@@ -39,7 +39,7 @@ assert.match(
 );
 assert.match(
   projectsView,
-  /role=\{selectMode \? "checkbox" : "button"\}[\s\S]{0,900}?className="focus-ring /,
+  /role=\{selectMode \? "checkbox" : "button"\}[\s\S]{0,900}?className=\{?["`]focus-ring /,
   "the chat row has a visible keyboard focus ring",
 );
 
@@ -167,7 +167,8 @@ assert.match(
 );
 
 // Project rows render flat — a bottom hairline divider instead of a bordered
-// rounded card box, so the Projects tab reads as a flat list.
+// rounded card box, so the Projects tab reads as a flat list. Vertical padding
+// is density-driven (comfortable vs compact) rather than a fixed py-3.
 assert.doesNotMatch(
   projectsView,
   /group rounded-lg border bg-\[var\(--bg-raised\)\]/,
@@ -175,16 +176,44 @@ assert.doesNotMatch(
 );
 assert.match(
   projectsView,
-  /group border-b border-\[var\(--border-hairline\)\] px-2 py-3/,
+  /group border-b border-\[var\(--border-hairline\)\] px-2 transition-colors/,
   "Project rows should be flat rows separated by a hairline divider",
 );
+assert.match(
+  projectsView,
+  /density === "compact" \? "py-1\.5" : "py-3"/,
+  "project row vertical padding follows the density preference",
+);
 
-// Projects collapse to one scannable row and expand to reveal the path +
-// sessions; every project starts collapsed.
-assert.match(projectsView, /const \[expanded, setExpanded\] = useState\(false\)/, "each project row starts collapsed");
+// Expand/collapse + density are persisted UI state (the surface remembers how
+// you left it) via the shared hook; expansion is keyed per project id.
+assert.match(
+  projectsView,
+  /import \{ useProjectsUiState \} from "@\/lib\/projects\/use-projects-ui-state"/,
+  "uses the persisted Projects UI-state hook",
+);
+assert.match(
+  projectsView,
+  /const \{ density, setDensity, isExpanded, setExpanded \} = useProjectsUiState\(\)/,
+  "ProjectsView reads density + expand state from the hook",
+);
+assert.match(
+  projectsView,
+  /expanded=\{isExpanded\(project\.id\)\}/,
+  "each project card's expanded state comes from persisted UI state",
+);
+assert.match(
+  projectsView,
+  /onSetExpanded=\{\(next\) => setExpanded\(project\.id, next\)\}/,
+  "toggling a card persists its expanded state by project id",
+);
 assert.match(projectsView, /aria-expanded=\{expanded\}/, "the disclosure control reports expanded state");
 assert.match(projectsView, /\{expanded \? \(/, "path + sessions render only when the row is expanded");
-assert.doesNotMatch(projectsView, /defaultExpanded/, "no project auto-expands — the list stays a flat, scannable set of rows");
+assert.doesNotMatch(projectsView, /defaultExpanded/, "expansion is controlled by persisted state, not a defaultExpanded flag");
+
+// A density toggle lets the user choose comfortable vs compact list spacing.
+assert.match(projectsView, /aria-label="List density"/, "there is a labeled density toggle");
+assert.match(projectsView, /aria-pressed=\{density === opt\.value\}/, "the density toggle reflects the active option");
 
 // Projects are ordered by most-recent session activity, not API order.
 assert.match(projectsView, /const sortedProjects = useMemo/, "projects are sorted before rendering");
