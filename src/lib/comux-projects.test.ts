@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { deriveComuxProjects } from "./comux-projects.ts";
+import { deriveComuxProjects, projectTint } from "./comux-projects.ts";
 import type { SessionRow } from "./types.ts";
 
 function session(
@@ -106,4 +106,22 @@ assert.deepEqual(deriveComuxProjects([], "/workspace/fallback"), [
   assert.equal(plain[0].name, "alpha", "non-colliding projects keep the bare basename");
 }
 
-console.log("comux-projects.test.ts: dedup + disambiguation ok");
+// ── projectTint: deterministic, stable, in-gamut ──
+{
+  assert.equal(
+    projectTint("/Users/buns/.coven/workspaces/familiars/nova"),
+    projectTint("/Users/buns/.coven/workspaces/familiars/nova"),
+    "same root yields the same tint across calls",
+  );
+  assert.notEqual(
+    projectTint("/work/alpha"),
+    projectTint("/work/beta"),
+    "distinct roots get distinct hues",
+  );
+  const tint = projectTint("/work/alpha");
+  assert.match(tint, /^oklch\(0\.74 0\.12 \d{1,3}\)$/, "tint is a well-formed oklch colour");
+  const hue = Number(tint.match(/ (\d{1,3})\)$/)[1]);
+  assert.ok(hue >= 0 && hue < 360, "hue stays within [0, 360)");
+}
+
+console.log("comux-projects.test.ts: dedup + disambiguation + tint ok");

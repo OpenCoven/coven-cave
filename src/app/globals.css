@@ -2495,10 +2495,80 @@ tr[role="checkbox"]:focus-visible {
   line-height: 1.65;
 }
 
-/* Project list rows — softer selected state than a full accent fill. */
-.comux-project-row--active {
-  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent-presence);
+/* ── Projects explorer — fluid-glass rows ──────────────────────────────────
+   Discrete rounded rows that float on a faint depth gradient instead of a
+   ruled list, adopting the app's existing glass vocabulary (translucent fill +
+   backdrop blur/saturate, see .shell-familiar-panel). Hover lifts the row a
+   hair; the active row becomes a frosted accent pill with a soft outer glow. */
+.comux-project-list {
+  /* A whisper of accent light pooled at the top so rows read as lifted cards. */
+  background: radial-gradient(
+    120% 60% at 50% -10%,
+    color-mix(in oklch, var(--accent-presence) 7%, transparent),
+    transparent 70%
+  );
+  border-radius: 10px;
+}
+.comux-project-row {
+  border: 1px solid transparent;
+  transition:
+    transform var(--duration-fast, 120ms) var(--ease-decelerate, ease-out),
+    background var(--duration-fast, 120ms),
+    border-color var(--duration-fast, 120ms),
+    box-shadow var(--duration-fast, 120ms);
+}
+.comux-project-row:hover {
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  backdrop-filter: blur(8px) saturate(130%);
+  -webkit-backdrop-filter: blur(8px) saturate(130%);
+  border-color: color-mix(in oklch, var(--foreground) 8%, transparent);
+  transform: translateY(-1px);
+}
+.comux-project-row--active,
+.comux-project-row--active:hover {
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklch, var(--accent-presence) 16%, transparent),
+    color-mix(in oklch, var(--accent-presence) 9%, transparent)
+  );
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  box-shadow:
+    inset 2px 0 0 var(--accent-presence),
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 18%, transparent),
+    0 10px 28px color-mix(in oklch, var(--accent-presence) 22%, transparent);
+  transform: none;
+}
+/* Per-project identity chip — a colour-tinted glass tile behind the folder
+   glyph. Hue comes from projectTint() via the --tile custom property. */
+.comux-project-tile {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: var(--tile, var(--accent-presence));
+  background: color-mix(in oklch, var(--tile, var(--accent-presence)) 14%, transparent);
+  border: 1px solid color-mix(in oklch, var(--tile, var(--accent-presence)) 24%, transparent);
+}
+.comux-project-row--active .comux-project-tile {
+  background: color-mix(in oklch, var(--tile, var(--accent-presence)) 22%, transparent);
+  border-color: color-mix(in oklch, var(--tile, var(--accent-presence)) 40%, transparent);
+}
+/* Frosted, in-flow section header for the merged explorer (projects + search +
+   file tree share one scroll, so a true sticky header would collide with the
+   sections below — we frost it in place instead). */
+.comux-project-header {
+  background: color-mix(in oklch, var(--bg-base) 70%, transparent);
+  backdrop-filter: blur(12px) saturate(135%);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .comux-project-row,
+  .comux-project-row:hover {
+    transform: none;
+  }
 }
 .comux-detail-rail-label {
   writing-mode: horizontal-tb;
