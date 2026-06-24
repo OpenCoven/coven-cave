@@ -313,4 +313,17 @@ assert.match(
   "the All view sorts by recency by default, defers to manual order when the user has dragged, and keeps pinned-first",
 );
 
+// ── Bulk-select: pick several chats and delete/archive them at once ─────────
+assert.match(source, /const \[selectMode, setSelectMode\] = useState\(false\)/, "a select mode toggles bulk-select");
+assert.match(source, /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/, "selected chat ids live in a Set");
+assert.match(source, /setSelectMode\(\(v\) => !v\); setSelectedIds\(new Set\(\)\)/, "the header Select toggle clears any selection");
+assert.match(source, /useEffect\(\(\) => \{ setSelectMode\(false\); setSelectedIds\(new Set\(\)\); \}, \[familiar\?\.id\]\)/, "selection resets when the active familiar changes");
+assert.match(source, /role=\{selectMode \? "checkbox" : "button"\}/, "rows are checkboxes in select mode");
+assert.match(source, /if \(selectMode\) \{ toggleSelect\(s\.id\); return; \} setActiveId\(s\.id\); onOpen/, "a row click selects in select mode, otherwise opens");
+assert.match(source, /const bulkDelete = async \(\)/, "bulk delete handler exists");
+assert.match(source, /const bulkArchive = async \(archived: boolean\)/, "bulk archive/unarchive handler exists");
+assert.match(source, /Promise\.all\([\s\S]{0,60}fetch\(`\/api\/chat\/conversation\//, "bulk delete runs the per-chat deletes in parallel");
+assert.match(source, /const allVisibleSelected = displayIds\.length > 0 && displayIds\.every\(\(id\) => selectedIds\.has\(id\)\)/, "select-all is visible-aware");
+assert.match(source, /\{allVisibleSelected \? "Clear" : "Select all"\}/, "toolbar offers select-all / clear");
+
 console.log("chat-list-delete.test.ts: ok");

@@ -263,6 +263,12 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
   const [archivedRows, setArchivedRows] = useState<SessionRow[]>([]);
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [archiveNonce, setArchiveNonce] = useState(0);
+  // Bulk-select: pick several chats and delete/archive them in one pass. Resets
+  // when the active familiar changes so stale ids never linger.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  useEffect(() => { setSelectMode(false); setSelectedIds(new Set()); }, [familiar?.id]);
   // Content search (CHAT-D9-02) — hits from /api/chat/search for the current
   // query; cleared the moment the query drops below the 2-char threshold.
   const [contentHits, setContentHits] = useState<ContentSearchHit[]>([]);
@@ -584,6 +590,74 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
     }
   };
 
+  // ── Bulk-select actions (reuse the per-row delete/archive endpoints) ───────
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const exitSelect = () => { setSelectMode(false); setSelectedIds(new Set()); };
+  // Visible-aware select-all: acts on the rows currently shown (displayIds).
+  const allVisibleSelected = displayIds.length > 0 && displayIds.every((id) => selectedIds.has(id));
+  const toggleSelectAllVisible = () =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) displayIds.forEach((id) => next.delete(id));
+      else displayIds.forEach((id) => next.add(id));
+      return next;
+    });
+  const selectedVisibleCount = displayIds.filter((id) => selectedIds.has(id)).length;
+
+  const bulkDelete = async () => {
+    const ids = displayIds.filter((id) => selectedIds.has(id));
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    setError(null);
+    const results = await Promise.all(
+      ids.map((id) =>
+        fetch(`/api/chat/conversation/${encodeURIComponent(id)}`, { method: "DELETE" })
+          .then((r) => r.json().catch(() => ({ ok: false })))
+          .then((j) => !!j.ok)
+          .catch(() => false),
+      ),
+    );
+    setBulkBusy(false);
+    if (results.some(Boolean)) {
+      setActiveId((cur) => (cur && ids.includes(cur) ? null : cur));
+      onSessionsChanged?.();
+    }
+    if (results.some((ok) => !ok)) setError("Some chats couldn't be deleted.");
+    exitSelect();
+  };
+
+  const bulkArchive = async (archived: boolean) => {
+    const ids = displayIds.filter((id) => selectedIds.has(id));
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    setError(null);
+    const results = await Promise.all(
+      ids.map((id) =>
+        fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archived }),
+        })
+          .then((r) => r.json().catch(() => ({ ok: false })))
+          .then((j) => !!j.ok)
+          .catch(() => false),
+      ),
+    );
+    setBulkBusy(false);
+    if (results.some(Boolean)) {
+      setArchiveNonce((n) => n + 1);
+      onSessionsChanged?.();
+    }
+    if (results.some((ok) => !ok)) setError(`Some chats couldn't be ${archived ? "archived" : "unarchived"}.`);
+    exitSelect();
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -760,6 +834,22 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
             <Icon name="ph:archive" width={12} aria-hidden />
           </button>
 
+          <button
+            type="button"
+            onClick={() => { setSelectMode((v) => !v); setSelectedIds(new Set()); }}
+            aria-pressed={selectMode}
+            aria-label={selectMode ? "Exit select mode" : "Select multiple chats"}
+            title={selectMode ? "Exit select" : "Select multiple"}
+            className={[
+              "chat-list-filter-button focus-ring grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-colors",
+              selectMode
+                ? "border-[color-mix(in_oklch,var(--accent-presence)_40%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_15%,transparent)] text-[var(--accent-presence)]"
+                : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-secondary)]",
+            ].join(" ")}
+          >
+            <Icon name="ph:list-checks-bold" width={12} aria-hidden />
+          </button>
+
           {/* With the identity row hidden, the + Session CTA lives here */}
           {familiar && (
             <button
@@ -867,6 +957,47 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
           </div>
         ) : (
           <>
+          {selectMode && (
+            <div className="flex items-center justify-between gap-2 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-4 py-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleSelectAllVisible}
+                  className="focus-ring rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+                >
+                  {allVisibleSelected ? "Clear" : "Select all"}
+                </button>
+                <span className="text-[11px] text-[var(--text-muted)]">{selectedVisibleCount} selected</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={bulkBusy || selectedVisibleCount === 0}
+                  onClick={() => void bulkArchive(!showArchived)}
+                  className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                >
+                  <Icon name={showArchived ? "ph:tray" : "ph:archive"} width={11} aria-hidden />
+                  {showArchived ? "Unarchive" : "Archive"}
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkBusy || selectedVisibleCount === 0}
+                  onClick={() => void bulkDelete()}
+                  className="focus-ring inline-flex items-center gap-1 rounded border border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-2 py-0.5 text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] disabled:opacity-50"
+                >
+                  <Icon name="ph:trash" width={11} aria-hidden />
+                  {bulkBusy ? "…" : `Delete${selectedVisibleCount ? ` ${selectedVisibleCount}` : ""}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={exitSelect}
+                  className="focus-ring rounded px-1.5 py-0.5 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
           {visibleRows > 0 && (
           <DndContext
             sensors={sensors}
@@ -945,17 +1076,24 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                       <SortableChatListItem id={s.id}>
                         {({ attributes, listeners }) => (
                         <div
-                          role="button"
+                          role={selectMode ? "checkbox" : "button"}
+                          aria-checked={selectMode ? selectedIds.has(s.id) : undefined}
                           tabIndex={0}
-                          onClick={() => { setActiveId(s.id); onOpen(s.id, s.familiarId); }}
+                          onClick={() => { if (selectMode) { toggleSelect(s.id); return; } setActiveId(s.id); onOpen(s.id, s.familiarId); }}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") { setActiveId(s.id); onOpen(s.id, s.familiarId); }
+                            if (e.key === "Enter" || (selectMode && e.key === " ")) {
+                              e.preventDefault();
+                              if (selectMode) { toggleSelect(s.id); return; }
+                              setActiveId(s.id); onOpen(s.id, s.familiarId);
+                            }
                           }}
+                          data-selected={selectMode && selectedIds.has(s.id) ? "true" : undefined}
                           className={[
                             "chat-list-row focus-ring-inset group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
                             isActive
                               ? "bg-[var(--bg-raised)]"
                               : "hover:bg-[var(--bg-raised)]/50",
+                            selectMode && selectedIds.has(s.id) ? "bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)]" : "",
                           ].join(" ")}
                         >
                           {/* Active indicator */}
@@ -963,17 +1101,30 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2px] h-8 rounded-r-full bg-[var(--accent-presence)]" />
                           )}
 
-                          <button
-                            type="button"
-                            {...attributes}
-                            {...listeners}
-                            onClick={(e) => e.stopPropagation()}
-                            title="Drag to reorder"
-                            aria-label={`Reorder chat ${rowName}`}
-                            className="chat-list-drag-handle touch-always-visible absolute left-0 top-1/2 grid h-6 w-4 -translate-y-1/2 cursor-grab touch-none place-items-center rounded text-[var(--text-muted)] opacity-0 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
-                          >
-                            <Icon name="ph:dots-six-vertical" width={12} aria-hidden />
-                          </button>
+                          {selectMode ? (
+                            <span
+                              aria-hidden
+                              className={`mt-[3px] grid h-4 w-4 shrink-0 place-items-center rounded border ${
+                                selectedIds.has(s.id)
+                                  ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-white"
+                                  : "border-[var(--border-strong)] text-transparent"
+                              }`}
+                            >
+                              <Icon name="ph:check-bold" width={10} aria-hidden />
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              {...attributes}
+                              {...listeners}
+                              onClick={(e) => e.stopPropagation()}
+                              title="Drag to reorder"
+                              aria-label={`Reorder chat ${rowName}`}
+                              className="chat-list-drag-handle touch-always-visible absolute left-0 top-1/2 grid h-6 w-4 -translate-y-1/2 cursor-grab touch-none place-items-center rounded text-[var(--text-muted)] opacity-0 transition-all hover:bg-[var(--bg-raised)] hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover:opacity-100"
+                            >
+                              <Icon name="ph:dots-six-vertical" width={12} aria-hidden />
+                            </button>
+                          )}
 
                           {/* Status dot (top-aligned) */}
                           <span className="chat-list-status-dot mt-[5px] shrink-0">
@@ -1053,7 +1204,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             </span>
                           </span>
 
-                          {confirmDeleteId === s.id ? (
+                          {!selectMode && (confirmDeleteId === s.id ? (
                             /* Inline delete confirmation — replaces row actions until resolved */
                             <span
                               className="chat-list-row-confirm flex shrink-0 items-center gap-1.5 self-center"
@@ -1124,7 +1275,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                                 <Icon name="ph:trash" width={12} aria-hidden />
                               </button>
                             </span>
-                          )}
+                          ))}
                         </div>
                         )}
                       </SortableChatListItem>
