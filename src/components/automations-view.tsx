@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
@@ -13,6 +13,7 @@ import type {
 } from "@/lib/codex-automations-types";
 import type { AutomationRunRecord } from "@/lib/automation-runs";
 import { Icon } from "@/lib/icon";
+import type { IconName } from "@/lib/icon";
 import { formatTimestamp, formatClock, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { relativeTimeSigned } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -361,6 +362,46 @@ function DetailPanel({
   );
 }
 
+// Row quick-actions (run-now, pause/resume) are wired once at the top of the
+// view and read by each leaf row — so the most-used actions are one hover away
+// instead of buried in the detail panel. Avoids threading callbacks through the
+// list/section components.
+type ScheduleActions = {
+  runReminder: (id: string) => void;
+  togglePauseReminder: (item: InboxItem) => void;
+  runAutomation: (auto: CodexAutomation) => void;
+  togglePauseAutomation: (auto: CodexAutomation) => void;
+};
+const ScheduleActionsContext = createContext<ScheduleActions | null>(null);
+
+function RowActionButton({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="focus-ring grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-white/10 hover:text-[var(--text-primary)]"
+    >
+      <Icon name={icon} width={12} />
+    </button>
+  );
+}
+
+// Hover/focus-revealed action cluster pinned to the right of a schedule row.
+// Hidden rows keep `pointer-events:none` so a non-hover click still opens the
+// row's detail panel rather than landing on an invisible action.
+function RowActions({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="pointer-events-none absolute right-1.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-[var(--border-hairline)] px-0.5 py-0.5 opacity-0 transition-opacity group-hover/srow:pointer-events-auto group-hover/srow:opacity-100 group-focus-within/srow:pointer-events-auto group-focus-within/srow:opacity-100 motion-reduce:transition-none"
+      style={{ background: "var(--bg-elevated)" }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function ReminderTaskRow({
   item,
   selected,
@@ -395,9 +436,14 @@ function ReminderTaskRow({
   // selecting, and the detail-panel `selected` highlight otherwise.
   const active = selectMode ? checked : selected;
   const activate = () => (selectMode ? onToggle(item.id) : onSelect(item));
+  const actions = useContext(ScheduleActionsContext);
+  const paused = item.status === "dismissed";
+  // Run-now / pause make sense for actual reminders, not daily summaries, and
+  // never while picking rows in select mode.
+  const showActions = !selectMode && item.kind !== "daily-summary" && !!actions;
 
   return (
-    <li>
+    <li className="group/srow relative">
       <button
         type="button"
         role={selectMode ? "checkbox" : undefined}
@@ -442,6 +488,18 @@ function ReminderTaskRow({
           {schedule}
         </span>
       </button>
+      {showActions && actions && (
+        <RowActions>
+          {!paused && (
+            <RowActionButton icon="ph:lightning-bold" label={`Run ${item.title} now`} onClick={() => actions.runReminder(item.id)} />
+          )}
+          <RowActionButton
+            icon={paused ? "ph:play-fill" : "ph:pause-fill"}
+            label={`${paused ? "Resume" : "Pause"} ${item.title}`}
+            onClick={() => actions.togglePauseReminder(item)}
+          />
+        </RowActions>
+      )}
     </li>
   );
 }
@@ -1050,8 +1108,9 @@ function AutomationScheduleRow({
   onSelect: (auto: CodexAutomation) => void;
 }) {
   const isActive = auto.status === "ACTIVE";
+  const actions = useContext(ScheduleActionsContext);
   return (
-    <li>
+    <li className="group/srow relative">
       <button
         type="button"
         onClick={() => onSelect(auto)}
@@ -1105,6 +1164,16 @@ function AutomationScheduleRow({
           {auto.scheduleHuman}
         </span>
       </button>
+      {actions && (
+        <RowActions>
+          <RowActionButton icon="ph:lightning-bold" label={`Run ${auto.name} now`} onClick={() => actions.runAutomation(auto)} />
+          <RowActionButton
+            icon={isActive ? "ph:pause-fill" : "ph:play-fill"}
+            label={`${isActive ? "Pause" : "Activate"} ${auto.name}`}
+            onClick={() => actions.togglePauseAutomation(auto)}
+          />
+        </RowActions>
+      )}
     </li>
   );
 }
@@ -1750,6 +1819,14 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   };
 
   return (
+    <ScheduleActionsContext.Provider
+      value={{
+        runReminder: runNow,
+        togglePauseReminder: togglePaused,
+        runAutomation: runCodexNow,
+        togglePauseAutomation: toggleCodex,
+      }}
+    >
     <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
       {/* ── Main list ──────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-w-0 flex-col">
@@ -2032,5 +2109,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         />
       ) : null}
     </section>
+    </ScheduleActionsContext.Provider>
   );
 }

@@ -71,4 +71,18 @@ assert.match(source, /const mountedRef = useRef\(true\)/, "tracks mounted state 
 assert.match(source, /const runsReqRef = useRef\(0\)/, "refreshRuns tracks a request id");
 assert.match(source, /if \(reqId !== runsReqRef\.current \|\| !mountedRef\.current\) return/, "a stale/late runs fetch is dropped");
 
+// ── Per-row quick actions (run-now + pause/resume), revealed on hover ──
+assert.match(source, /const ScheduleActionsContext = createContext/, "row actions are provided via context (no prop threading)");
+assert.match(source, /<ScheduleActionsContext\.Provider/, "AutomationsView provides the row actions");
+assert.match(source, /runReminder: runNow/, "reminder run-now is wired");
+assert.match(source, /togglePauseReminder: togglePaused/, "reminder pause/resume is wired");
+assert.match(source, /runAutomation: runCodexNow/, "automation run-now is wired");
+assert.match(source, /togglePauseAutomation: toggleCodex/, "automation pause/resume is wired");
+// Hidden actions must not steal clicks meant for the row's detail panel.
+assert.match(source, /pointer-events-none[\s\S]*?group-hover\/srow:pointer-events-auto/, "hidden row actions keep pointer-events:none until hover/focus");
+assert.match(source, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onClick\(\); \}\}/, "a row action stops the click from opening the detail panel");
+assert.match(source, /actions\.runAutomation\(auto\)/, "the automation row exposes run-now");
+assert.match(source, /actions\.togglePauseReminder\(item\)/, "the reminder row exposes pause/resume");
+assert.match(source, /item\.kind !== "daily-summary"/, "daily-summary rows get no run/pause actions");
+
 console.log("automations-view.test.ts: ok");
