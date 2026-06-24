@@ -25,34 +25,26 @@ struct TerminalView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                XtermWebView(
-                    terminal: terminal,
-                    onInput: { terminal.sendInput($0) },
-                    onResize: { c, r in
-                        cols = c
-                        rows = r
-                        terminal.sendResize(cols: c, rows: r)
-                    }
-                )
-                .ignoresSafeArea(.container, edges: .bottom)
-                Divider()
-                keyRow
-            }
-            .navigationTitle("Terminal")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { cwdMenu }
-                ToolbarItem(placement: .topBarTrailing) { statusButton }
-            }
-            .task { if !app.projectsLoaded { await app.loadProjects() } }
-            .onAppear {
-                if !terminal.connected && !terminal.exited { connect() }
-            }
-            .onChange(of: scenePhase) { _, phase in
-                if phase == .active, !terminal.connected, !terminal.exited { connect() }
-            }
+        VStack(spacing: 0) {
+            XtermWebView(
+                terminal: terminal,
+                onInput: { terminal.sendInput($0) },
+                onResize: { c, r in
+                    cols = c
+                    rows = r
+                    terminal.sendResize(cols: c, rows: r)
+                }
+            )
+            .ignoresSafeArea(.container, edges: .bottom)
+            Divider()
+            keyRow
+        }
+        .task { if !app.projectsLoaded { await app.loadProjects() } }
+        .onAppear {
+            if !terminal.connected && !terminal.exited { connect() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, !terminal.connected, !terminal.exited { connect() }
         }
     }
 
@@ -61,6 +53,7 @@ struct TerminalView: View {
     private var keyRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                cwdMenu
                 keyButton("esc", "Escape") { terminal.sendInput("\u{1B}") }
                 keyButton("tab", "Tab") { terminal.sendInput("\t") }
                 keyButton("⌃C", "Control C") { terminal.sendInput("\u{03}") }
@@ -93,7 +86,7 @@ struct TerminalView: View {
         .accessibilityLabel(accessibility)
     }
 
-    // MARK: - Toolbar
+    // MARK: - Working directory
 
     private var cwdMenu: some View {
         Menu {
@@ -110,18 +103,12 @@ struct TerminalView: View {
             }
         } label: {
             Label(cwdLabel, systemImage: "folder")
-                .font(.subheadline)
+                .font(.system(.footnote, design: .monospaced))
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
         }
-    }
-
-    @ViewBuilder private var statusButton: some View {
-        if terminal.exited || terminal.error != nil {
-            Button { connect() } label: { Label("Reconnect", systemImage: "arrow.clockwise") }
-        } else {
-            Circle()
-                .fill(terminal.connected ? Color.green : Color.orange)
-                .frame(width: 9, height: 9)
-        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Working directory")
     }
 
     // MARK: - Lifecycle

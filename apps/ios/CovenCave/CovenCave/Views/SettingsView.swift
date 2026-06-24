@@ -68,7 +68,7 @@ struct SettingsView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
-                    Button("Save & reconnect") {
+                    Button("Save and Reconnect") {
                         Task { await app.configure(host: editingHost) }
                     }
                     .disabled(editingHost.trimmingCharacters(in: .whitespaces).isEmpty)

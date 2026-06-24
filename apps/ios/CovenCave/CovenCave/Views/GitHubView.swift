@@ -17,7 +17,6 @@ struct GitHubView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("GitHub")
                 .searchable(text: $query, prompt: "Search issues & PRs")
                 .navigationDestination(for: GitHubItem.self) { item in
                     GitHubItemDetailView(item: item)

@@ -15,10 +15,10 @@ const tasks = await readFile(
 );
 const runner = await readFile(new URL("./run-tests.mjs", import.meta.url), "utf8");
 
-assert.match(
+assert.doesNotMatch(
   browser,
   /\.navigationBarTitleDisplayMode\(\.inline\)/,
-  "iOS Code view should use the compact navigation title",
+  "iOS Code view should not render its own navigation title inside Development",
 );
 assert.match(
   reading,

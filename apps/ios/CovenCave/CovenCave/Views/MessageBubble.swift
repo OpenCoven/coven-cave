@@ -9,6 +9,7 @@ struct MessageBubble: View {
     var onDelete: () -> Void
     var onSuggestion: (String) -> Void = { _ in }
     var onOpenReader: ((String) -> Void)? = nil
+    var onForward: ((DisplayMessage) -> Void)? = nil
     /// Regenerate this reply (assistant messages only); nil hides the action.
     var onRetry: (() -> Void)? = nil
 
@@ -53,6 +54,16 @@ struct MessageBubble: View {
                 Label("Open in Reader", systemImage: "text.page")
             }
         }
+        if canForward {
+            Button {
+                var forwarded = message
+                forwarded.text = parsed.visible
+                onForward?(forwarded)
+                Haptics.tap()
+            } label: {
+                Label("Forward to Familiar", systemImage: "arrowshape.turn.up.right")
+            }
+        }
         if let onRetry {
             Button(action: onRetry) {
                 Label("Retry", systemImage: "arrow.clockwise")
@@ -80,6 +91,10 @@ struct MessageBubble: View {
 
     private var canOpenReader: Bool {
         !isUser && !message.streaming && !message.isError && !parsed.visible.isEmpty && onOpenReader != nil
+    }
+
+    private var canForward: Bool {
+        !message.streaming && !parsed.visible.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && onForward != nil
     }
 
     var body: some View {

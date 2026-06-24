@@ -26,6 +26,7 @@ struct ChatView: View {
     @FocusState private var composerFocused: Bool
     @State private var showCommands = false
     @State private var showFamiliarPicker = false
+    @State private var forwardingMessage: DisplayMessage?
     @State private var showModelPicker = false
     @State private var modelPickerOptions: [ChatModelOption] = []
     @State private var modelPickerCurrent = ""
@@ -40,11 +41,6 @@ struct ChatView: View {
     // Tap-to-enlarge target (image attachment, or a table/diagram/image lifted
     // from the markdown WebView). Driven by the `.caveZoomContent` notification.
     @State private var zoomTarget: ZoomTarget?
-    // In-thread message search: the sheet, the message to scroll to after a hit
-    // is picked, and the message briefly highlighted once it scrolls into view.
-    @State private var showSearch = false
-    @State private var searchScrollTarget: String?
-    @State private var highlightedMessageId: String?
 
     /// Per-thread key for the persisted unsent draft.
     private var draftKey: String { "cave.chat.draft.\(thread.id)" }
@@ -107,13 +103,6 @@ struct ChatView: View {
                 .accessibilityLabel("Linked tasks")
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { showSearch = true } label: {
-                    Image(systemName: "magnifyingglass")
-                }
-                .accessibilityLabel("Search this chat")
-                .disabled(thread.messages.isEmpty)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
                 Button { showCommands = true } label: {
                     Image(systemName: "command")
                 }
@@ -143,19 +132,14 @@ struct ChatView: View {
                 switchTo(familiar)
             }
         }
+        .sheet(item: $forwardingMessage) { message in
+            FamiliarPickerSheet(title: "Forward to Familiar") { familiar in
+                forwardingMessage = nil
+                forward(message, to: familiar)
+            }
+        }
         .sheet(isPresented: $showTasks) {
             LinkedTasksSheet(thread: thread)
-        }
-        .sheet(isPresented: $showSearch) {
-            ThreadSearchView(
-                messages: thread.messages,
-                resolveSender: { message in
-                    message.role == .user
-                        ? "You"
-                        : (message.familiarId.flatMap(app.familiar)?.displayName ?? "Assistant")
-                },
-                onSelect: { id in searchScrollTarget = id }
-            )
         }
         .sheet(item: $responseReader) { item in
             ResponseReaderView(item: item)
@@ -207,15 +191,9 @@ struct ChatView: View {
                                       onDelete: { deleteMessage(message) },
                                       onSuggestion: { sendSuggestion($0) },
                                       onOpenReader: { openReader(text: $0, familiar: message.familiarId.flatMap(app.familiar)) },
+                                      onForward: { beginForward($0) },
                                       onRetry: canRetry(message) ? { retryAssistant(message) } : nil)
                         .id(message.id)
-                        .background(
-                            message.id == highlightedMessageId
-                                ? Color.accentColor.opacity(0.12)
-                                : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 12)
-                        )
-                        .animation(.easeInOut(duration: 0.3), value: highlightedMessageId)
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -280,25 +258,6 @@ struct ChatView: View {
             }
             .onChange(of: thread.messages.count) { _, _ in
                 withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
-            // A search hit was picked: let the sheet dismiss, scroll the message
-            // to centre, flash a highlight, then fade it.
-            .onChange(of: searchScrollTarget) { _, target in
-                guard let target else { return }
-                Task {
-                    try? await Task.sleep(for: .milliseconds(350))
-                    await MainActor.run {
-                        withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(target, anchor: .center) }
-                        highlightedMessageId = target
-                        searchScrollTarget = nil
-                    }
-                    try? await Task.sleep(for: .milliseconds(1600))
-                    await MainActor.run {
-                        if highlightedMessageId == target {
-                            withAnimation(.easeOut(duration: 0.4)) { highlightedMessageId = nil }
-                        }
-                    }
-                }
             }
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
         }
@@ -798,6 +757,58 @@ struct ChatView: View {
     private func openReader(text: String, familiar: Familiar?) {
         responseReader = ResponseReaderItem(title: familiar?.displayName ?? "Response", markdown: text)
     }
+
+    private func beginForward(_ message: DisplayMessage) {
+        guard !message.streaming else { return }
+        forwardingMessage = message
+    }
+
+    private func forward(_ message: DisplayMessage, to familiar: Familiar) {
+        guard let client = app.client else { return }
+        let destination = app.directThread(for: familiar.id)
+        let prompt = forwardPrompt(for: message, to: familiar)
+        let displayText = forwardDisplayText(for: message)
+        destination.send(prompt, displayText: displayText, client: client) { app.touch(destination) }
+        app.requestOpen(destination)
+        app.showToast("Forwarded to \(familiar.displayName)", systemImage: "arrowshape.turn.up.right")
+    }
+
+    private func forwardSenderName(for message: DisplayMessage) -> String {
+        switch message.role {
+        case .user:
+            return "You"
+        case .assistant:
+            return app.familiar(message.familiarId ?? "")?.displayName ?? "Assistant"
+        case .system:
+            return "System"
+        }
+    }
+
+    private func forwardDisplayText(for message: DisplayMessage) -> String {
+        let sender = forwardSenderName(for: message)
+        let excerpt = message.text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let clipped = excerpt.count > 140 ? "\(excerpt.prefix(137))..." : excerpt
+        return "Forwarded from \(sender): \(clipped)"
+    }
+
+    private func forwardPrompt(for message: DisplayMessage, to familiar: Familiar) -> String {
+        let sender = forwardSenderName(for: message)
+        let sentAt = message.createdAt.formatted(date: .abbreviated, time: .shortened)
+        let sourceFamiliar = message.familiarId.map { "\nOriginal familiar id: \($0)" } ?? ""
+        return """
+        You are \(familiar.displayName). A message was forwarded to you from another Coven Cave chat. Use the sender and source context when responding.
+
+        Original sender: \(sender)
+        Source thread: \(thread.title)
+        Original role: \(message.role.rawValue)\(sourceFamiliar)
+        Sent at: \(sentAt)
+
+        Forwarded message:
+        \(message.text)
+        """
+    }
 }
 
 /// A centered date divider between messages from different days — "Today",
@@ -917,6 +928,7 @@ struct ResponseReaderView: View {
 struct FamiliarPickerSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
+    var title: String = "Switch familiar"
     let onPick: (Familiar) -> Void
 
     var body: some View {
@@ -946,7 +958,7 @@ struct FamiliarPickerSheet: View {
                     .buttonStyle(.plain)
                 }
             }
-            .navigationTitle("Switch familiar")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

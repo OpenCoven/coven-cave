@@ -26,8 +26,6 @@ struct CodeBrowserView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("Code")
-                .navigationBarTitleDisplayMode(.inline)
                 .navigationDestination(for: FileRef.self) { file in
                     CodeEditorView(path: file.path, name: file.name)
                 }
