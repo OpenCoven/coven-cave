@@ -25,6 +25,8 @@ struct ChatView: View {
     @Bindable var thread: ChatThread
     @AppStorage("cave.dev.section") private var devSectionRaw = DevSection.code.rawValue
     @State private var draft: String = ""
+    /// The message being quoted in the next send, if any (swipe-to-reply).
+    @State private var replyingTo: DisplayMessage?
     @FocusState private var composerFocused: Bool
     @State private var showCommands = false
     @State private var showFamiliarPicker = false
@@ -201,7 +203,8 @@ struct ChatView: View {
                                       onSuggestion: { sendSuggestion($0) },
                                       onOpenReader: { openReader(text: $0, familiar: message.familiarId.flatMap(app.familiar)) },
                                       onForward: { beginForward($0) },
-                                      onRetry: canRetry(message) ? { retryAssistant(message) } : nil)
+                                      onRetry: canRetry(message) ? { retryAssistant(message) } : nil,
+                                      onReply: { beginReply($0) })
                         .id(message.id)
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -284,10 +287,14 @@ struct ChatView: View {
             if !pendingImages.isEmpty {
                 attachmentPreviews
             }
+            if let replyingTo {
+                replyBanner(replyingTo)
+            }
             composerBar
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: showingSlashMenu)
         .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: pendingImages.count)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.18), value: replyingTo?.id)
         .glassBar()
         // Live dictation streams its running transcript into the draft.
         .onAppear { dictation.onUpdate = { draft = $0 } }
@@ -473,10 +480,14 @@ struct ChatView: View {
                 CaveClient.ChatAttachment(name: $0.name, mimeType: $0.mimeType, dataUrl: $0.dataUrl)
             }
             guard !text.isEmpty || !attachments.isEmpty else { return }
+            // Prepend the quoted message when replying, so the familiar sees
+            // exactly what's being answered.
+            let outgoing = replyingTo.map { replyQuote($0) + text } ?? text
             draft = ""
             pendingImages = []
+            replyingTo = nil
             Haptics.tap()
-            thread.send(text, attachments: attachments, client: client) { app.touch(thread) }
+            thread.send(outgoing, attachments: attachments, client: client) { app.touch(thread) }
         }
     }
 
@@ -770,6 +781,57 @@ struct ChatView: View {
     private func beginForward(_ message: DisplayMessage) {
         guard !message.streaming else { return }
         forwardingMessage = message
+    }
+
+    // MARK: - Reply (quote a message into the next send)
+
+    private func beginReply(_ message: DisplayMessage) {
+        replyingTo = message
+        composerFocused = true
+    }
+
+    /// Display name for a message's author, used in the reply banner/quote.
+    private func replyAuthor(_ message: DisplayMessage) -> String {
+        switch message.role {
+        case .user: return "You"
+        case .system: return "System"
+        case .assistant: return message.familiarId.flatMap(app.familiar)?.displayName ?? "Familiar"
+        }
+    }
+
+    /// A Markdown quote of the replied-to message, prepended to the outgoing
+    /// prompt so the familiar sees what's being answered.
+    private func replyQuote(_ message: DisplayMessage) -> String {
+        let snippet = String(message.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(400))
+        let quoted = snippet
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { "> \($0)" }
+            .joined(separator: "\n")
+        return "Replying to \(replyAuthor(message)):\n\(quoted)\n\n"
+    }
+
+    @ViewBuilder private func replyBanner(_ message: DisplayMessage) -> some View {
+        HStack(spacing: 10) {
+            Rectangle().fill(chrome.accent).frame(width: 3).cornerRadius(1.5)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Replying to \(replyAuthor(message))")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(chrome.accent)
+                Text(message.text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Button {
+                withAnimation(.snappy(duration: 0.18)) { replyingTo = nil }
+            } label: {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+            }
+            .accessibilityLabel("Cancel reply")
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func forward(_ message: DisplayMessage, to familiar: Familiar) {
