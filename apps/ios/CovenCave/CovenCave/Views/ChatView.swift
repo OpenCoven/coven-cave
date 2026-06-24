@@ -951,7 +951,7 @@ struct FamiliarPickerSheet: View {
                         HStack(spacing: 12) {
                             AvatarView(familiar: familiar,
                                        url: app.client?.avatarURL(for: familiar),
-                                       size: 40)
+                                       size: 40, showStatus: true)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(familiar.displayName).font(.body).foregroundStyle(.primary)
                                 if let role = familiar.role, !role.isEmpty {

@@ -99,6 +99,32 @@ extension View {
     func themedSheetBackground() -> some View { modifier(ThemedSheetBackground()) }
 }
 
+/// A familiar's live presence, mirroring the desktop `statusMeta()` mapping so
+/// the iOS dots match the colours the daemon publishes.
+enum Presence {
+    /// Dot colour for a daemon status string, or nil when there's nothing
+    /// meaningful to show (no status reported).
+    static func color(for status: String?) -> Color? {
+        switch status?.lowercased() {
+        case "active", "online": return Color(hex: "#4ade80")   // green
+        case "idle": return Color(hex: "#60a5fa")               // blue
+        case "busy", "running": return Color(hex: "#fbbf24")    // amber
+        case "offline": return Color(hex: "#8a8a8e")            // gray
+        case .some(let s) where !s.isEmpty: return Color(hex: "#8a8a8e")
+        default: return nil
+        }
+    }
+
+    /// Whether the status reads as "actively doing something" (drives a subtle
+    /// pulse), matching the desktop's `pulse` flag.
+    static func isActive(_ status: String?) -> Bool {
+        switch status?.lowercased() {
+        case "active", "online", "busy", "running": return true
+        default: return false
+        }
+    }
+}
+
 extension Color {
     /// Parse a `#RRGGBB` / `#RRGGBBAA` hex string. Returns nil if unparseable.
     init?(hex: String?) {
