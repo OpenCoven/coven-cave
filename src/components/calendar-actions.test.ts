@@ -21,6 +21,13 @@ assert.match(view, /role="dialog"/, "Detail panel must be a dialog");
 assert.match(view, /aria-modal="true"/, "Detail panel must be aria-modal");
 assert.match(view, /aria-labelledby=\{titleId\}/, "Detail panel must be labelled by its title");
 assert.match(view, /useFocusTrap\(true, panelRef, \{ onEscape: onClose \}\)/, "Detail panel must trap focus + Escape");
+// A backdrop makes aria-modal honest (calendar behind is inert) and gives the
+// drawer the outside-click dismiss it was missing (was: close button/Escape only).
+assert.match(
+  view,
+  /<div className="cave-cal-detail-backdrop" role="presentation" onClick=\{onClose\} \/>/,
+  "Detail panel has a click-to-dismiss backdrop behind it",
+);
 
 // ───────── Dismissed items leave the calendar ─────────
 assert.match(view, /\.filter\(\(it\) => it\.status !== "dismissed"\)/, "Dismissed items must be filtered out of the calendar");

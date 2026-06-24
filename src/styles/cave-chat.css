@@ -3424,6 +3424,14 @@ details[open] > .cave-tool-summary::before {
    CALENDAR DETAIL PANEL
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
+.cave-cal-detail-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  background: var(--backdrop-scrim, oklch(0 0 0 / 28%));
+  animation: ui-modal-fade-in var(--duration-fast) var(--ease-decelerate);
+}
+
 .cave-cal-detail-panel {
   position: absolute;
   top: 0;

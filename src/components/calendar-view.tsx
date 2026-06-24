@@ -1321,100 +1321,105 @@ function ItemDetailPanel({
   const isDone = item.status === "done";
 
   return (
-    <div
-      ref={panelRef}
-      className="cave-cal-detail-panel"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={titleId}
-      tabIndex={-1}
-    >
-      <div className="cave-cal-detail-header">
-        <div className="flex items-center gap-2 min-w-0">
-          <Icon name={platformIcon(item)} className="shrink-0 text-[var(--text-muted)] text-[14px]" />
-          <span id={titleId} className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
-            {item.title}
-          </span>
-        </div>
-        <button
-          onClick={onClose}
-          aria-label="Close"
-          className="focus-ring shrink-0 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-        >
-          <Icon name="ph:x" width={14} />
-        </button>
-      </div>
-
-      <div className="flex flex-col gap-3 px-4 py-3 text-[12px] text-[var(--text-secondary)] overflow-y-auto flex-1">
-        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
-          <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{KIND_LABEL[item.kind]}</span>
-          {isDone ? <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--color-success,#34d399)]"><Icon name="ph:check" width={9} />Done</span> : null}
-        </div>
-        {meta?.urgency && meta.urgency !== "normal" && (
-          <div className="flex items-center gap-1.5">
-            <span className={`h-2 w-2 rounded-full ${urgencyColor(item)}`} />
-            <span className="capitalize">{meta.urgency.replace("-", " ")}</span>
-          </div>
-        )}
-        {(item.fireAt ?? item.firedAt) && (
-          <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
-            <Icon name="ph:clock" width={12} />
-            <span>
-              {(() => {
-                const at = (item.fireAt ?? item.firedAt)!;
-                // Short weekday isn't a preference; the date order + clock are.
-                const weekday = new Date(at).toLocaleDateString([], { weekday: "short" });
-                return `${weekday}, ${formatDate(at, undefined, { month: "short" })} ${formatClock(at)}`;
-              })()}
+    <>
+      {/* Backdrop makes aria-modal honest (the calendar behind is inert) and
+          adds the outside-click dismiss the drawer was missing. */}
+      <div className="cave-cal-detail-backdrop" role="presentation" onClick={onClose} />
+      <div
+        ref={panelRef}
+        className="cave-cal-detail-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+      >
+        <div className="cave-cal-detail-header">
+          <div className="flex items-center gap-2 min-w-0">
+            <Icon name={platformIcon(item)} className="shrink-0 text-[var(--text-muted)] text-[14px]" />
+            <span id={titleId} className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
+              {item.title}
             </span>
           </div>
-        )}
-        {body && (
-          <p className="text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
-            {body}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
-        {openLabel && onOpen ? (
           <button
-            onClick={() => { onOpen(item); onClose(); }}
-            className="focus-ring inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
+            onClick={onClose}
+            aria-label="Close"
+            className="focus-ring shrink-0 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
           >
-            <Icon name="ph:arrow-square-out" width={12} />
-            {openLabel}
+            <Icon name="ph:x" width={14} />
           </button>
-        ) : null}
-        <div className="flex items-center gap-2">
-          {!isDone && onComplete ? (
+        </div>
+
+        <div className="flex flex-col gap-3 px-4 py-3 text-[12px] text-[var(--text-secondary)] overflow-y-auto flex-1">
+          <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+            <span className="rounded bg-[var(--bg-elevated)] px-1.5 py-0.5">{KIND_LABEL[item.kind]}</span>
+            {isDone ? <span className="inline-flex items-center gap-1 rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--color-success,#34d399)]"><Icon name="ph:check" width={9} />Done</span> : null}
+          </div>
+          {meta?.urgency && meta.urgency !== "normal" && (
+            <div className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${urgencyColor(item)}`} />
+              <span className="capitalize">{meta.urgency.replace("-", " ")}</span>
+            </div>
+          )}
+          {(item.fireAt ?? item.firedAt) && (
+            <div className="flex items-center gap-1.5 text-[var(--text-muted)]">
+              <Icon name="ph:clock" width={12} />
+              <span>
+                {(() => {
+                  const at = (item.fireAt ?? item.firedAt)!;
+                  // Short weekday isn't a preference; the date order + clock are.
+                  const weekday = new Date(at).toLocaleDateString([], { weekday: "short" });
+                  return `${weekday}, ${formatDate(at, undefined, { month: "short" })} ${formatClock(at)}`;
+                })()}
+              </span>
+            </div>
+          )}
+          {body && (
+            <p className="text-[var(--text-secondary)] leading-relaxed whitespace-pre-wrap">
+              {body}
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-[var(--border-hairline)] px-4 py-3">
+          {openLabel && onOpen ? (
             <button
-              onClick={() => { onComplete(item.id); onClose(); }}
-              className="focus-ring inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+              onClick={() => { onOpen(item); onClose(); }}
+              className="focus-ring inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
             >
-              <Icon name="ph:check" width={12} />
-              Done
+              <Icon name="ph:arrow-square-out" width={12} />
+              {openLabel}
             </button>
           ) : null}
-          {onSnooze ? (
-            <SnoozeMenu
-              className="shrink-0"
-              onSnooze={(untilIso) => { onSnooze(item.id, untilIso); onClose(); }}
-            />
-          ) : null}
-          {onDismiss ? (
-            <button
-              onClick={() => { onDismiss(item.id); onClose(); }}
-              aria-label="Dismiss"
-              className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-              title="Dismiss"
-            >
-              <Icon name="ph:trash" width={12} />
-            </button>
-          ) : null}
+          <div className="flex items-center gap-2">
+            {!isDone && onComplete ? (
+              <button
+                onClick={() => { onComplete(item.id); onClose(); }}
+                className="focus-ring inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:check" width={12} />
+                Done
+              </button>
+            ) : null}
+            {onSnooze ? (
+              <SnoozeMenu
+                className="shrink-0"
+                onSnooze={(untilIso) => { onSnooze(item.id, untilIso); onClose(); }}
+              />
+            ) : null}
+            {onDismiss ? (
+              <button
+                onClick={() => { onDismiss(item.id); onClose(); }}
+                aria-label="Dismiss"
+                className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                title="Dismiss"
+              >
+                <Icon name="ph:trash" width={12} />
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
