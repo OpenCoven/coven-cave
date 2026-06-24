@@ -389,8 +389,8 @@ assert.match(
 );
 assert.match(
   reading,
-  /className=\{`library-reading-row\$\{item\.id === selectedId \? " selected" : ""\}`\}/,
-  "Reading rows should expose a stable class for responsive side-panel layout",
+  /className=\{`library-reading-row\$\{item\.id === selectedId \? " selected" : ""\}\$\{selectMode && selectedIds\.has\(item\.id\) \? " is-selected" : ""\}`\}/,
+  "Reading rows should expose a stable class for responsive side-panel layout (+ bulk-select state)",
 );
 assert.match(
   reading,
@@ -692,3 +692,14 @@ assert.match(
   /\.library-doclist-item \{[\s\S]*?content-visibility:\s*auto;[\s\S]*?contain-intrinsic-size:/,
   "library doc rows skip off-screen rendering via content-visibility",
 );
+
+// Bulk-select: remove several reading items at once.
+assert.match(reading, /const \[selectMode, setSelectMode\] = useState\(false\)/, "reading list has a select mode");
+assert.match(reading, /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/, "selected reading ids live in a Set");
+assert.match(reading, /aria-label=\{selectMode \? "Exit select mode" : "Select multiple reading items"\}/, "a header Select toggle exists");
+assert.match(reading, /onClick=\{\(\) => \{ if \(selectMode\) \{ toggleSelect\(item\.id\); return; \} onSelect\(item\); \}\}/, "a row selects in select mode, otherwise opens");
+assert.match(reading, /function bulkDelete\(\)/, "bulk remove handler exists");
+assert.match(reading, /Promise\.all\(\s*ids\.map\(\(id\) =>\s*fetch\(`\/api\/library\/reading\?id=/, "bulk remove fires the per-item deletes in parallel");
+assert.match(reading, /\{allSelected \? "Clear" : "Select all"\}/, "the bulk bar offers select-all / clear");
+assert.match(libraryCss, /\.library-bulk-bar \{/, "the bulk toolbar is styled");
+assert.match(libraryCss, /\.library-bulk-check\[data-checked="true"\]/, "the row checkbox has a checked state");

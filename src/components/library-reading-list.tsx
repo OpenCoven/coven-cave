@@ -214,6 +214,17 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  // Bulk-select: pick several reading items and remove them at once.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const exitSelect = () => { setSelectMode(false); setSelectedIds(new Set()); };
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -301,6 +312,28 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
     undoDelete();
   }
 
+  const allSelected = items.length > 0 && items.every((i) => selectedIds.has(i.id));
+  const selectedCount = items.filter((i) => selectedIds.has(i.id)).length;
+  const toggleSelectAll = () =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) items.forEach((i) => next.delete(i.id));
+      else items.forEach((i) => next.add(i.id));
+      return next;
+    });
+  // Bulk remove: optimistic drop + fire the per-item deletes in parallel.
+  function bulkDelete() {
+    const ids = items.filter((i) => selectedIds.has(i.id)).map((i) => i.id);
+    if (ids.length === 0) return;
+    setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
+    void Promise.all(
+      ids.map((id) =>
+        fetch(`/api/library/reading?id=${encodeURIComponent(id)}`, { method: "DELETE" }).then(() => {}).catch(() => {}),
+      ),
+    );
+    exitSelect();
+  }
+
   return (
     <div className="library-list-shell">
       {/* Header */}
@@ -311,6 +344,18 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
           <span className="board-table-group-badge">{items.length}</span>
         </span>
         <div className="library-list-header-controls">
+          {items.length > 0 ? (
+            <button
+              type="button"
+              className="board-toolbar-btn"
+              onClick={() => { setSelectMode((v) => !v); setSelectedIds(new Set()); }}
+              aria-pressed={selectMode}
+              aria-label={selectMode ? "Exit select mode" : "Select multiple reading items"}
+              title={selectMode ? "Exit select" : "Select multiple"}
+            >
+              <Icon name="ph:list-checks-bold" width={12} />
+            </button>
+          ) : null}
           <button
             type="button"
             className="board-toolbar-btn library-list-add-btn"
@@ -323,6 +368,29 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
           </button>
         </div>
       </div>
+
+      {selectMode ? (
+        <div className="library-bulk-bar">
+          <div className="library-bulk-bar__left">
+            <button type="button" className="library-bulk-bar__link" onClick={toggleSelectAll}>
+              {allSelected ? "Clear" : "Select all"}
+            </button>
+            <span className="library-bulk-bar__count">{selectedCount} selected</span>
+          </div>
+          <div className="library-bulk-bar__right">
+            <button type="button" className="library-bulk-bar__link" onClick={exitSelect}>Cancel</button>
+            <button
+              type="button"
+              className="library-bulk-bar__delete"
+              disabled={selectedCount === 0}
+              onClick={bulkDelete}
+            >
+              <Icon name="ph:trash" width={11} aria-hidden />
+              Remove{selectedCount ? ` ${selectedCount}` : ""}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="library-doclist-search">
         <Icon name="ph:magnifying-glass" width={13} className="library-doclist-search-icon" />
@@ -431,10 +499,22 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                   )}
                   {!collapsed.has(key) && gi.map((item) => (
                     <tr key={item.id}
-                      className={`library-reading-row${item.id === selectedId ? " selected" : ""}`}
-                      onClick={() => onSelect(item)}>
+                      className={`library-reading-row${item.id === selectedId ? " selected" : ""}${selectMode && selectedIds.has(item.id) ? " is-selected" : ""}`}
+                      aria-selected={selectMode ? selectedIds.has(item.id) : undefined}
+                      onClick={() => { if (selectMode) { toggleSelect(item.id); return; } onSelect(item); }}>
                       <td className="library-reading-col-title">
-                        <span className="board-table-title library-reading-title">{item.title}</span>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          {selectMode ? (
+                            <span
+                              aria-hidden
+                              className="library-bulk-check"
+                              data-checked={selectedIds.has(item.id) ? "true" : undefined}
+                            >
+                              <Icon name="ph:check-bold" width={10} aria-hidden />
+                            </span>
+                          ) : null}
+                          <span className="board-table-title library-reading-title">{item.title}</span>
+                        </span>
                         {item.author && (
                           <div className="board-table-muted library-reading-author">{item.author}</div>
                         )}
@@ -493,15 +573,17 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                         )}
                       </td>
                       <td className="library-reading-col-actions">
-                        <button
-                          type="button"
-                          className="library-row-delete"
-                          title="Remove"
-                          aria-label={`Remove "${item.title}"`}
-                          onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
-                        >
-                          <Icon name="ph:x" width={11} />
-                        </button>
+                        {selectMode ? null : (
+                          <button
+                            type="button"
+                            className="library-row-delete"
+                            title="Remove"
+                            aria-label={`Remove "${item.title}"`}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
+                          >
+                            <Icon name="ph:x" width={11} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
