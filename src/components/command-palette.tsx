@@ -307,6 +307,7 @@ export function CommandPalette({
     setSalemError(null);
     const t = setTimeout(() => inputRef.current?.focus(), 10);
 
+    let cancelled = false;
     void (async () => {
       try {
         const [boardRes, covenRes, fsRes] = await Promise.all([
@@ -317,6 +318,8 @@ export function CommandPalette({
         const board = await boardRes.json();
         const coven = await covenRes.json();
         const fs = await fsRes.json();
+        // Don't apply a corpus refresh after the palette closed/unmounted.
+        if (cancelled) return;
         if (board.ok) setCards(board.cards ?? []);
         if (coven.ok) setCovenMemory(coven.entries ?? []);
         if (fs.ok) setFsMemory(fs.entries ?? []);
@@ -325,8 +328,17 @@ export function CommandPalette({
       }
     })();
 
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [open]);
+
+  // Keep the keyboard-highlighted option visible: arrowing past the bottom of
+  // the max-h-[60vh] list must scroll it into view, not just advance the index.
+  useEffect(() => {
+    if (!open) return;
+    document
+      .getElementById(`command-palette-option-${activeIdx}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [activeIdx, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -799,7 +811,10 @@ export function CommandPalette({
           }}
           onKeyDown={onComposerKey}
           placeholder="Search familiars · chats · cards · memory · commands… (try @familiar to scope)"
+          role="combobox"
           aria-label="Search and jump to anything"
+          aria-expanded={rows.length > 0}
+          aria-autocomplete="list"
           aria-controls="command-palette-listbox"
           aria-activedescendant={
             rows.length > 0 ? `command-palette-option-${activeIdx}` : undefined
