@@ -97,8 +97,8 @@ for (const [name, src] of [
   assert.match(src, /aria-haspopup="listbox"/, `${name} composer textarea should advertise the listbox popup`);
   assert.match(
     src,
-    /aria-expanded=\{slashSuggestions\.length > 0\}/,
-    `${name} composer textarea should track whether the slash menu is open`,
+    /aria-expanded=\{(?:menuOpen|slashSuggestions\.length > 0)\}/,
+    `${name} composer textarea should track whether the inline menu is open`,
   );
   assert.doesNotMatch(
     src,
@@ -107,15 +107,41 @@ for (const [name, src] of [
   );
   assert.match(
     src,
-    /aria-controls=\{slashSuggestions\.length > 0 \? slashListboxId : undefined\}/,
+    /aria-controls=\{(?:menuOpen|slashSuggestions\.length > 0) \? slashListboxId : undefined\}/,
     `${name} aria-controls should reference the listbox only while the menu is open`,
   );
   assert.match(
     src,
-    /aria-activedescendant=\{\s*slashSuggestions\.length > 0 \? `\$\{slashListboxId\}-opt-\$\{slashIdx\}` : undefined\s*\}/,
+    /aria-activedescendant=\{\s*(?:menuOpen|slashSuggestions\.length > 0) \? `\$\{slashListboxId\}-opt-\$\{slashIdx\}` : undefined\s*\}/,
     `${name} aria-activedescendant should track the highlighted index and be absent when the menu is closed`,
   );
 }
+
+// ── HomeComposer combobox ARIA covers the /model picker, not just slash ──────
+// Both inline listboxes share the listbox id; menuOpen unifies them so the
+// textarea announces the /model picker too (was: slash-only).
+assert.match(
+  source,
+  /const menuOpen = modelMenuActive \|\| slashSuggestions\.length > 0;/,
+  "HomeComposer combobox ARIA reflects either inline menu (slash or /model)",
+);
+
+// ── Destination pills are an accessible single-select radiogroup ─────────────
+assert.match(
+  source,
+  /className="hc-dest-pills"\s+role="radiogroup"\s+aria-label="Send to"\s+ref=\{destGroupRef\}\s+onKeyDown=\{handleDestKeyDown\}/,
+  "Destination pills form a labelled radiogroup with keyboard navigation",
+);
+assert.match(
+  source,
+  /role="radio"\s+aria-checked=\{destination === d\.id\}\s+tabIndex=\{destination === d\.id \? 0 : -1\}/,
+  "Each destination pill is a radio that announces its checked state and roves the tab stop",
+);
+assert.match(
+  source,
+  /const nav = \["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"\];/,
+  "The radiogroup supports arrow/Home/End keyboard selection per the ARIA radio pattern",
+);
 
 // ── Model selection moved to the /model slash command ────────────────────────
 assert.doesNotMatch(

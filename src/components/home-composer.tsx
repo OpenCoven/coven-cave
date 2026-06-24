@@ -183,6 +183,9 @@ export function HomeComposer({
     modelState?.harness ?? familiars.find((f) => f.id === selectedFamiliarId)?.harness ?? "claude";
   const modelOptions = useMemo(() => modelSlashOptions(text, modelHarness), [text, modelHarness]);
   const modelMenuActive = (modelOptions?.length ?? 0) > 0;
+  // Either inline listbox (slash commands or the /model picker) shares the same
+  // listbox id, so the textarea's combobox ARIA tracks whichever is open.
+  const menuOpen = modelMenuActive || slashSuggestions.length > 0;
 
   useEffect(() => {
     setSlashIdx(0);
@@ -242,6 +245,31 @@ export function HomeComposer({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
+
+  // Destination pills behave as a single-select radiogroup: arrow/Home/End
+  // move the selection and the roving focus, matching the ARIA radio pattern.
+  const destGroupRef = useRef<HTMLDivElement>(null);
+  const handleDestKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      const nav = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"];
+      if (!nav.includes(e.key)) return;
+      e.preventDefault();
+      const last = DESTINATIONS.length - 1;
+      const cur = DESTINATIONS.findIndex((d) => d.id === destination);
+      let next = cur < 0 ? 0 : cur;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") next = cur >= last ? 0 : cur + 1;
+      else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = cur <= 0 ? last : cur - 1;
+      else if (e.key === "Home") next = 0;
+      else if (e.key === "End") next = last;
+      const target = DESTINATIONS[next];
+      if (!target) return;
+      setDestination(target.id);
+      destGroupRef.current
+        ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+        [next]?.focus();
+    },
+    [destination],
+  );
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -512,10 +540,10 @@ export function HomeComposer({
           aria-label="Ask anything"
           aria-autocomplete="list"
           aria-haspopup="listbox"
-          aria-expanded={slashSuggestions.length > 0}
-          aria-controls={slashSuggestions.length > 0 ? slashListboxId : undefined}
+          aria-expanded={menuOpen}
+          aria-controls={menuOpen ? slashListboxId : undefined}
           aria-activedescendant={
-            slashSuggestions.length > 0 ? `${slashListboxId}-opt-${slashIdx}` : undefined
+            menuOpen ? `${slashListboxId}-opt-${slashIdx}` : undefined
           }
           inputMode="text"
           enterKeyHint="send"
@@ -548,11 +576,20 @@ export function HomeComposer({
           </label>
 
           {/* Destination pills */}
-          <div className="hc-dest-pills">
+          <div
+            className="hc-dest-pills"
+            role="radiogroup"
+            aria-label="Send to"
+            ref={destGroupRef}
+            onKeyDown={handleDestKeyDown}
+          >
             {DESTINATIONS.map((d) => (
               <button
                 key={d.id}
                 type="button"
+                role="radio"
+                aria-checked={destination === d.id}
+                tabIndex={destination === d.id ? 0 : -1}
                 className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
                 onClick={() => setDestination(d.id)}
                 title={d.label}
