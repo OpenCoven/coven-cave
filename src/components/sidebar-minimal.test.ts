@@ -133,7 +133,7 @@ assert.match(
 
 // Library is a gated add-on (default off): the nav filter hides it until the
 // add-on is enabled, mirroring GitHub. Tools always has non-gated surfaces
-// (Browser/Terminal/Code/Roles/Workflows), so it never renders an empty header.
+// (Browser/Terminal/Code/Roles/Flow), so it never renders an empty header.
 assert.match(
   source,
   /if \(fm\.id === "library"\) return addons\?\.library === true;/,
@@ -158,10 +158,16 @@ assert.match(
   "Roles should appear as a Tools surface",
 );
 
+assert.doesNotMatch(
+  source,
+  /\{ id: "workflows", label: "Workflows"/,
+  "Workflows should not appear as a top-level Tools surface",
+);
+
 assert.match(
   source,
-  /\{ id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description:/,
-  "Workflows should appear as a Tools surface",
+  /\{ id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description:/,
+  "Flow should replace the old Workflows page as the top-level automation surface",
 );
 
 assert.doesNotMatch(
@@ -234,7 +240,7 @@ assert.match(
   "the unread count badge uses the danger treatment",
 );
 
-// Tools-group entries include browser, terminal, roles, and workflows.
+// Tools-group entries include browser, terminal, roles, and flow.
 // (Capabilities moved to a tab on the Roles page — no standalone entry.)
 assert.match(
   source,
@@ -253,8 +259,8 @@ assert.match(
 );
 assert.match(
   source,
-  /id:\s*"workflows"[^}]*group:\s*"tools"/,
-  "workflows stays in Tools",
+  /id:\s*"flow"[^}]*group:\s*"tools"/,
+  "flow stays in Tools",
 );
 
 // Recent Activity items must navigate: RecentActivityRollup's onClick calls
@@ -322,16 +328,16 @@ assert.match(
 
 // Every surface carries a one-line description, and FolderRow surfaces it as a
 // title (hover tooltip / touch long-press hint / AT description) — so the
-// look-alike surfaces (Roles vs Workflows) are differentiated.
+// look-alike surfaces (Roles vs Flow) are differentiated.
 assert.match(
   source,
   /id: "roles"[\s\S]*?description: "Agent personas/,
-  "Roles is described as personas, distinct from Workflows",
+  "Roles is described as personas, distinct from Flow",
 );
 assert.match(
   source,
-  /id: "workflows"[\s\S]*?description: "Multi-step pipelines/,
-  "Workflows is described as pipelines, distinct from Roles",
+  /id: "flow"[\s\S]*?description: "Freeform/,
+  "Flow is described as the automation editor, distinct from Roles",
 );
 assert.match(
   source,

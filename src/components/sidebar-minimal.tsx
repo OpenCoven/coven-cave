@@ -7,7 +7,7 @@
  *   1. Familiar scope selector + New chat CTA
  *   2. App destinations grouped by purpose:
  *      Work  (Home / Familiars / Board / Calendar / Schedules)
- *      Tools (Browser / Terminal / Code / Library / Roles / Workflows / GitHub)
+ *      Tools (Browser / Terminal / Code / Library / Roles / Flow / GitHub)
  *   3. Footer: Notifications, Settings
  */
 
@@ -33,7 +33,6 @@ export type FolderMode =
   | "browser"
   | "github"
   | "roles"
-  | "workflows"
   | "flow"
   | "submissions"
   | "library"
@@ -86,7 +85,7 @@ const FOLDER_MODES: Array<{
   group: "work" | "tools" | "addons";
   kbd?: string;
   // One-line hover/long-press help. Differentiates the surfaces that read
-  // alike at a glance — especially Roles (who) vs Workflows (steps).
+  // alike at a glance — especially Roles (who) vs Flow (automation).
   description: string;
 }> = [
   // Work
@@ -104,7 +103,6 @@ const FOLDER_MODES: Array<{
   { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description: "Saved docs, links, and reading" },
   { id: "docs", label: "Coven", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven docs, feedback, and social tabs" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, workflows, skills, and the capabilities your familiars can use" },
-  { id: "workflows", label: "Workflows", iconName: "ph:git-branch-bold", group: "tools", description: "Multi-step pipelines that orchestrate familiars" },
   { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.

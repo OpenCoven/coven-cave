@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import path from "node:path";
-import { covenHome, familiarIds, familiarWorkspace } from "@/lib/coven-paths";
+import { covenHome } from "@/lib/coven-paths";
 import { scanSkillsDir, scanClaudeUserSkills, type LocalSkillEntry } from "@/lib/server/skill-scan";
 
 export const dynamic = "force-dynamic";
@@ -14,12 +14,7 @@ export async function GET() {
   // 1. Global shared Coven skills.
   await scanSkillsDir(path.join(covenHome(), "skills"), "global", skills);
 
-  // 2. Per-familiar skills resolved the same way the daemon resolves familiar workspaces.
-  for (const familiar of await familiarIds()) {
-    await scanSkillsDir(path.join(await familiarWorkspace(familiar), "skills"), familiar, skills);
-  }
-
-  // 3. The user's own Claude Code skills (~/.claude/skills) — these are
+  // 2. The user's own Claude Code skills (~/.claude/skills) — these are
   // available to every claude-harness familiar, so the Skills tab should
   // list them alongside the Coven-managed ones.
   skills.push(...await scanClaudeUserSkills());

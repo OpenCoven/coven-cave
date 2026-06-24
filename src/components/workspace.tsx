@@ -46,7 +46,6 @@ import { LibraryView } from "@/components/library-view";
 import { CovenPane } from "@/components/docs-pane";
 import { PluginsView } from "@/components/plugins-view";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
-import { WorkflowsView } from "@/components/workflows-view";
 import { FlowView } from "@/components/flow/flow-view";
 import { RetroRunsView } from "@/components/retro-runs-view";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
@@ -97,7 +96,6 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   code: "Code",
   github: "GitHub",
   roles: "Roles",
-  workflows: "Workflows",
   flow: "Flow",
   submissions: "Submissions",
   retro: "Retro Runs",
@@ -201,8 +199,6 @@ export function Workspace() {
   // only clears after the daemon is *consistently* healthy (see the streak ref).
   const [daemonOffline, setDaemonOffline] = useState(false);
   const daemonHealthyStreakRef = useRef(0);
-  // Pending Workflow Studio deep link (set when opening a workflow from Roles).
-  const [workflowDeepLink, setWorkflowDeepLink] = useState<string | null>(null);
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const companionBrowserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -1880,21 +1876,15 @@ export function Workspace() {
       // tab; keying on the mode remounts so the deep link lands on it.
       <PluginsView
         key={mode}
-        tabs={["roles", "workflows", "skills", "marketplace", "capabilities"]}
+        tabs={["roles", "skills", "marketplace", "capabilities"]}
         initialTab={mode === "capabilities" ? "capabilities" : "roles"}
         activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
-        onOpenWorkflow={(id) => { setWorkflowDeepLink(id); setMode("workflows"); }}
         onCreateSkill={() => setMode("capabilities")}
       />
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
-    ) : mode === "workflows" ? (
-      <WorkflowsView
-        initialWorkflowId={workflowDeepLink}
-        onDeepLinkConsumed={() => setWorkflowDeepLink(null)}
-      />
     ) : mode === "flow" ? (
       <FlowView />
     ) : mode === "retro" ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { FlowDoc } from "@/lib/flows";
@@ -11,17 +11,27 @@ export type FlowLibraryProps = {
   loading: boolean;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onCreateFromPrompt: (prompt: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
 };
 
 export function FlowLibrary(props: FlowLibraryProps) {
   const [query, setQuery] = useState("");
+  const [promptDraft, setPromptDraft] = useState("");
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return props.flows;
     return props.flows.filter((flow) => `${flow.name} ${flow.id}`.toLowerCase().includes(q));
   }, [props.flows, query]);
+
+  function submitPrompt(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const prompt = promptDraft.trim();
+    if (!prompt) return;
+    props.onCreateFromPrompt(prompt);
+    setPromptDraft("");
+  }
 
   return (
     <aside className="flow-library" aria-label="Flows">
@@ -40,6 +50,17 @@ export function FlowLibrary(props: FlowLibraryProps) {
           onChange={(event) => setQuery(event.target.value)}
         />
       </div>
+      <form className="flow-library-prompt" aria-label="Create flow from prompt" onSubmit={submitPrompt}>
+        <textarea
+          value={promptDraft}
+          onChange={(event) => setPromptDraft(event.target.value)}
+          placeholder="Describe a flow to create"
+          rows={3}
+        />
+        <button type="submit" className="flow-library-prompt-submit" disabled={promptDraft.trim().length === 0}>
+          <Icon name="ph:sparkle" width={13} /> Create
+        </button>
+      </form>
 
       {props.loading && props.flows.length === 0 ? (
         <ul className="flow-library-list">

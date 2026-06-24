@@ -6,15 +6,15 @@ import { Icon } from "@/lib/icon";
 
 /** First-party Coven destinations, embedded in-app. */
 export const DOCS_URL = "https://docs.opencoven.ai";
-export const FEEDBACK_URL = "https://github.com/OpenCoven/coven-cave/issues/new/choose";
+export const FEEDBACK_URL = "https://feedback.opencoven.ai";
 export const X_URL = "https://x.com/OpenCvn";
 
-// `embeddable: false` for hosts that refuse framing (github.com sends
-// X-Frame-Options: deny + frame-ancestors 'none'; x.com sets frame-ancestors).
-// Iframing them just yields a blank pane, so those tabs open in a new tab.
+// `embeddable: false` for hosts that refuse framing (x.com sets
+// frame-ancestors). Iframing them just yields a blank pane, so those tabs open
+// in a new tab.
 const COVEN_TABS = [
   { id: "docs", label: "Docs", url: DOCS_URL, host: "docs.opencoven.ai", icon: "ph:book-bookmark", embeddable: true },
-  { id: "feedback", label: "Feedback", url: FEEDBACK_URL, host: "github.com/OpenCoven", icon: "ph:chat-circle-dots", embeddable: false },
+  { id: "feedback", label: "Feedback", url: FEEDBACK_URL, host: "feedback.opencoven.ai", icon: "ph:chat-circle-dots", embeddable: true },
   { id: "x", label: "X", url: X_URL, host: "x.com/OpenCvn", icon: "ph:x-logo-bold", embeddable: false },
 ] as const;
 
@@ -140,8 +140,8 @@ export function CovenPane() {
             />
           </>
         ) : (
-          // github.com / x.com refuse framing, so embedding would only show a
-          // blank pane — present the new-tab escape hatch as the primary action.
+          // x.com refuses framing, so embedding would only show a blank pane —
+          // present the new-tab escape hatch as the primary action.
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center">
             <Icon name={activeTab.icon} width={30} height={30} className="text-[var(--text-muted)]" aria-hidden />
             <p className="text-[13px] text-[var(--text-primary)]">{activeTab.label} opens in a new tab</p>

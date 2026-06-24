@@ -32,8 +32,14 @@ assert.match(
 
 assert.match(
   workspace,
-  /mode === "roles"[\s\S]*<PluginsView[\s\S]*tabs=\{\["roles", "workflows", "skills", "marketplace", "capabilities"\]\}/,
-  "The Roles surface should expose roles, workflows, skills, marketplace, and capabilities (capabilities is the rightmost tab)",
+  /mode === "roles"[\s\S]*<PluginsView[\s\S]*tabs=\{\["roles", "skills", "marketplace", "capabilities"\]\}/,
+  "The Roles surface should expose roles, skills, marketplace, and capabilities without reopening the old Workflows page",
+);
+
+assert.doesNotMatch(
+  workspace,
+  /setMode\("workflows"\)|mode === "workflows"|<WorkflowsView\b/,
+  "Workspace should not expose a top-level Workflows page",
 );
 
 assert.doesNotMatch(

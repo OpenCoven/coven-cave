@@ -50,6 +50,24 @@
   background: var(--bg-base); color: var(--text-muted);
 }
 .flow-library-search input { flex: 1; border: 0; background: transparent; color: var(--text-primary); font-size: var(--text-sm); outline: none; }
+.flow-library-prompt { display: flex; flex-direction: column; gap: 6px; margin: 0 var(--space-3) var(--space-3); }
+.flow-library-prompt textarea,
+.flow-onboarding-prompt textarea {
+  width: 100%; resize: vertical; min-height: 64px;
+  border: 1px solid var(--border); border-radius: var(--radius-control);
+  background: var(--bg-base); color: var(--text-primary);
+  padding: 7px 8px; font: inherit; font-size: var(--text-sm); outline: none;
+}
+.flow-library-prompt textarea:focus,
+.flow-onboarding-prompt textarea:focus { border-color: var(--accent-presence); box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent-presence) 20%, transparent); }
+.flow-library-prompt-submit {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  min-height: 30px; padding: 5px 10px; border: 1px solid color-mix(in oklch, var(--accent-presence) 52%, var(--border));
+  border-radius: var(--radius-control); background: color-mix(in oklch, var(--accent-presence) 20%, var(--bg-elevated));
+  color: var(--text-primary); font-size: var(--text-sm); font-weight: 600; cursor: pointer;
+}
+.flow-library-prompt-submit:disabled { opacity: 0.55; cursor: default; }
+.flow-library-prompt-submit:not(:disabled):hover { background: color-mix(in oklch, var(--accent-presence) 30%, var(--bg-elevated)); }
 .flow-library-list { flex: 1; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 0 var(--space-2) var(--space-2); display: flex; flex-direction: column; gap: 2px; }
 .flow-library-row { position: relative; display: flex; align-items: center; border-radius: var(--radius-control); }
 .flow-library-row:hover { background: var(--bg-hover); }
@@ -110,6 +128,10 @@
 .flow-toolbar-stop-spinner { width: 11px; height: 11px; border-radius: 50%; border: 2px solid color-mix(in oklch, var(--color-danger) 35%, transparent); border-top-color: var(--color-danger); animation: flow-spin 0.7s linear infinite; }
 
 .flow-notice { padding: 7px var(--space-3); font-size: var(--text-sm); color: var(--text-primary); background: color-mix(in oklch, var(--accent-presence) 16%, var(--bg-raised)); border-bottom: 1px solid var(--border-hairline); }
+.flow-onboarding-actions { display: flex; align-items: stretch; gap: var(--space-2); width: min(520px, 100%); }
+.flow-onboarding-prompt { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); flex: 1; }
+.flow-onboarding-prompt textarea { min-height: 68px; }
+.flow-onboarding-actions .flow-toolbar-save { display: inline-flex; align-items: center; gap: 5px; justify-content: center; align-self: end; min-height: 33px; }
 
 /* ---- Editor (canvas + NDV) --------------------------------------------- */
 .flow-editor { position: relative; flex: 1; min-height: 0; display: flex; }
@@ -318,4 +340,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .flow-library-skeleton, .flow-exec-skeleton, .flow-node-spinner, .flow-catalog { animation: none; }
+}
+
+@media (max-width: 640px) {
+  .flow-onboarding-actions,
+  .flow-onboarding-prompt { display: flex; flex-direction: column; }
 }

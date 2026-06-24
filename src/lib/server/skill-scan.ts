@@ -3,9 +3,9 @@ import path from "node:path";
 import { homedir } from "node:os";
 
 /**
- * Shared SKILL.md directory scanner. Used by /api/skills/local (coven-global,
- * per-familiar, and user skills) and /api/capabilities (supplementing harness
- * manifests when the daemon's own scan misses locally-installed skills).
+ * Shared SKILL.md directory scanner. Used by /api/skills/local (shared Coven
+ * and user skills) and /api/capabilities (supplementing harness manifests when
+ * the daemon's own scan misses locally-installed skills).
  */
 
 export type LocalSkillEntry = {

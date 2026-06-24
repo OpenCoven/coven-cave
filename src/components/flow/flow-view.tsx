@@ -32,6 +32,7 @@ import {
   type FlowPosition,
   type FlowStickyData,
 } from "@/lib/flow/flow-doc";
+import { buildPromptFlow, flowNameFromPrompt } from "@/lib/flow/flow-prompt";
 import { flowRunBlockReason } from "@/lib/flow/flow-compile";
 import { finalizeFlowSteps, selectNodeRunData } from "@/lib/flow/flow-progress";
 import {
@@ -82,6 +83,7 @@ export function FlowView() {
   const [saving, setSaving] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [onboardingPrompt, setOnboardingPrompt] = useState("");
   const [runs, setRuns] = useState<FlowRunRecord[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
@@ -293,6 +295,27 @@ export function FlowView() {
     setTab("editor");
     dispatchDraft({ type: "reset", doc: result.flow });
     showNotice("New flow created.");
+  }, [confirmDiscard, dispatchDraft, loadFlows, saveFlow, showNotice, uniqueId]);
+
+  const createFlowFromPrompt = useCallback(async (prompt: string) => {
+    const trimmed = prompt.trim();
+    if (!trimmed) return;
+    if (!(await confirmDiscard())) return;
+    const now = new Date().toISOString();
+    const id = uniqueId(slugifyFlowId(flowNameFromPrompt(trimmed)));
+    const flow = buildPromptFlow(id, trimmed, now);
+    const result = await saveFlow(flow);
+    if (!result.ok || !result.flow) {
+      showNotice(result.error ?? "couldn't create the flow");
+      return;
+    }
+    await loadFlows();
+    setSelectedId(result.flow.id);
+    setSelectedNodeId(null);
+    setActiveRun(null);
+    setTab("editor");
+    dispatchDraft({ type: "reset", doc: result.flow });
+    showNotice("Flow created from prompt.");
   }, [confirmDiscard, dispatchDraft, loadFlows, saveFlow, showNotice, uniqueId]);
 
   const duplicateFlow = useCallback(
@@ -539,9 +562,34 @@ export function FlowView() {
           headline="Build a flow"
           subtitle="Wire triggers, familiars, skills, and logic on a freeform canvas — an n8n-style automation editor for your coven."
           actions={
-            <button type="button" className="flow-toolbar-execute" onClick={createFlow}>
-              <Icon name="ph:plus" width={14} /> New flow
-            </button>
+            <div className="flow-onboarding-actions">
+              <form
+                className="flow-onboarding-prompt"
+                aria-label="Create flow from prompt"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void createFlowFromPrompt(onboardingPrompt);
+                  setOnboardingPrompt("");
+                }}
+              >
+                <textarea
+                  value={onboardingPrompt}
+                  onChange={(event) => setOnboardingPrompt(event.target.value)}
+                  placeholder="Describe a flow to create"
+                  rows={3}
+                />
+                <button
+                  type="submit"
+                  className="flow-toolbar-execute"
+                  disabled={onboardingPrompt.trim().length === 0}
+                >
+                  <Icon name="ph:sparkle" width={14} /> Create
+                </button>
+              </form>
+              <button type="button" className="flow-toolbar-save" onClick={createFlow}>
+                <Icon name="ph:plus" width={14} /> Blank
+              </button>
+            </div>
           }
         />
       </div>
@@ -556,6 +604,7 @@ export function FlowView() {
         loading={!loaded}
         onSelect={(id) => void selectFlow(id)}
         onCreate={() => void createFlow()}
+        onCreateFromPrompt={(prompt) => void createFlowFromPrompt(prompt)}
         onDuplicate={(id) => void duplicateFlow(id)}
         onDelete={(id) => void removeFlow(id)}
       />

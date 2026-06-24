@@ -12,7 +12,6 @@ export type WorkspaceMode =
   | "code"
   | "github"
   | "roles"
-  | "workflows"
   | "flow"
   | "submissions"
   | "retro"

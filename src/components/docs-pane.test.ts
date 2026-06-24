@@ -12,8 +12,8 @@ assert.match(
 
 assert.match(
   source,
-  /const FEEDBACK_URL = "https:\/\/github\.com\/OpenCoven\/coven-cave\/issues\/new\/choose"/,
-  "CovenPane points Feedback at the Coven Cave issue chooser",
+  /const FEEDBACK_URL = "https:\/\/feedback\.opencoven\.ai"/,
+  "CovenPane points Feedback at the OpenCoven feedback site",
 );
 
 assert.match(
@@ -62,10 +62,10 @@ assert.match(
   "CovenPane keeps an open-in-new-tab link to the active tab",
 );
 
-// Non-embeddable hosts (github.com, x.com refuse framing) don't get a dead
-// iframe — only the embeddable Docs tab is framed; the rest open in a new tab.
+// Non-embeddable hosts (x.com refuses framing) don't get a dead iframe. First-
+// party Coven hosts are framed in the page.
 assert.match(source, /label: "Docs"[\s\S]{0,120}?embeddable: true/, "Docs is embeddable");
-assert.match(source, /label: "Feedback"[\s\S]{0,120}?embeddable: false/, "Feedback (github) is not embeddable");
+assert.match(source, /label: "Feedback"[\s\S]{0,120}?embeddable: true/, "Feedback is embeddable");
 assert.match(source, /label: "X"[\s\S]{0,120}?embeddable: false/, "X is not embeddable");
 assert.match(source, /\{activeTab\.embeddable \? \([\s\S]*?<iframe/, "the iframe only renders for an embeddable tab");
 assert.match(source, /opens in a new tab/, "non-embeddable tabs show an open-in-new-tab panel");

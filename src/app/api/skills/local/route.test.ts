@@ -1,7 +1,7 @@
 // @ts-nocheck
-// The Skills tab must list every locally installed skill: coven-global,
-// per-familiar, AND the user's own Claude Code skills — including skill
-// folders that are symlinks (dotfiles repos, plugin managers).
+// The Skills tab lists shared/local tool skills only: Coven-global skills and
+// the user's own Claude Code skills. Per-familiar skills are private familiar
+// workspace data and must not appear in the catalogue.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -12,6 +12,12 @@ assert.match(
   route,
   /scanClaudeUserSkills\(\)/,
   "User-level Claude skills (~/.claude/skills) are included in the local skills listing",
+);
+
+assert.doesNotMatch(
+  route,
+  /familiarIds|familiarWorkspace/,
+  "Per-familiar workspace skills must not be scanned into the shared Skills catalogue",
 );
 
 assert.match(
