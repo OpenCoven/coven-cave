@@ -10,14 +10,15 @@ assert.match(src, /export function UndoToast/, "exports UndoToast");
 assert.match(src, /message,[\s\S]{0,200}?icon = "ph:trash"/, "message is a prop; icon defaults to trash");
 assert.match(src, /undoAriaLabel = "Undo"/, "the Undo button has a configurable accessible label");
 
-// Countdown progress bar (rAF), like the original.
-assert.match(src, /requestAnimationFrame\(tick\)/, "animates a countdown via requestAnimationFrame");
+// Countdown bar is a single CSS width transition (not a per-frame rAF loop).
+assert.doesNotMatch(src, /requestAnimationFrame\(tick\)/, "no per-frame rAF render loop");
 assert.match(src, /className="library-undo-toast-progress"/, "renders the countdown progress bar");
+assert.match(src, /width: collapsed \? "0%" : "100%", transitionDuration: `\$\{durationMs\}ms`/, "the bar animates 100%→0% over durationMs via CSS");
 
 // autoDismiss is opt-in (off by default) so controller-owned toasts (library)
 // keep their behavior while self-dismissing toasts (projects move) opt in.
 assert.match(src, /autoDismiss = false/, "autoDismiss defaults to off");
-assert.match(src, /remaining > 0[\s\S]{0,80}?else if \(autoDismiss\)[\s\S]{0,40}?dismissRef\.current\(\)/, "autoDismiss fires onDismiss when the bar empties");
+assert.match(src, /autoDismiss\s*\?\s*window\.setTimeout\(\(\) => dismissRef\.current\(\), durationMs\)/, "autoDismiss fires onDismiss via setTimeout (fires even in a backgrounded tab)");
 
 // role=status / aria-live keep it announced.
 assert.match(src, /role="status"[\s\S]{0,40}?aria-live="polite"/, "announced politely to assistive tech");

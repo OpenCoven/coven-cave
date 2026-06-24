@@ -11,13 +11,16 @@ assert.match(src, /export function openContextMenuAt/, "exports the onContextMen
 
 // State is the cursor position or null when closed; open = state !== null.
 assert.match(src, /export type ContextMenuState = \{ x: number; y: number \} \| null/, "state is cursor xy or null");
-assert.match(src, /open=\{state !== null\}/, "menu is open when state is set");
+assert.match(src, /const open = state !== null/, "open derives from a non-null cursor state");
 
 // Anchors to a 0-size element pinned at the cursor so it opens where clicked.
 assert.match(src, /position: "fixed", left: state\?\.x[\s\S]{0,60}width: 0, height: 0/, "anchors a 0-size element at the cursor");
-// The anchor is programmatically focusable (tabIndex=-1) so the Popover's
-// close-time focus-return works instead of stranding focus on <body>.
-assert.match(src, /tabIndex=\{-1\}/, "the cursor anchor is focusable for focus-return on close");
+// On close, focus returns to the element that had it when the menu opened (the
+// right-clicked row) — not the hidden anchor or <body>. The anchor stays
+// non-focusable aria-hidden (no focusable + aria-hidden conflict).
+assert.doesNotMatch(src, /tabIndex/, "the cursor anchor is not made focusable (avoids the aria-hidden focus conflict)");
+assert.match(src, /returnFocusRef\.current = document\.activeElement/, "captures the focused element when the menu opens");
+assert.match(src, /document\.contains\(el\)[\s\S]{0,40}?el\.focus\(\)/, "restores focus to that element on close if it's still in the DOM");
 
 // The helper preventDefaults the native menu and records the click position.
 assert.match(src, /e\.preventDefault\(\)/, "suppresses the browser's native context menu");

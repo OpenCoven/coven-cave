@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { Popover } from "@/components/ui/popover";
 
@@ -29,21 +29,28 @@ export function ContextMenu({
   children: ReactNode;
 }) {
   const anchorRef = useRef<HTMLSpanElement>(null);
+  // Remember the element that had focus when the menu opened (typically the
+  // right-clicked row) so focus can be returned there on close — rather than
+  // stranding it on <body> or on the hidden cursor anchor.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const open = state !== null;
+  useEffect(() => {
+    if (open) returnFocusRef.current = document.activeElement as HTMLElement | null;
+  }, [open]);
   return (
     <>
       <span
         ref={anchorRef}
         aria-hidden
-        tabIndex={-1}
-        // tabIndex makes the anchor programmatically focusable so the Popover's
-        // close-time focus-return (which focuses the anchor when focus would
-        // otherwise be lost to <body>) actually works for keyboard users.
         style={{ position: "fixed", left: state?.x ?? 0, top: state?.y ?? 0, width: 0, height: 0 }}
       />
       <Popover
-        open={state !== null}
+        open={open}
         onOpenChange={(next) => {
-          if (!next) onClose();
+          if (next) return;
+          onClose();
+          const el = returnFocusRef.current;
+          if (el && document.contains(el) && typeof el.focus === "function") el.focus();
         }}
         anchorRef={anchorRef}
         placement="bottom-start"

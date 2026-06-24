@@ -35,26 +35,24 @@ export function UndoToast({
   undoAriaLabel = "Undo",
   autoDismiss = false,
 }: Props) {
-  const [progress, setProgress] = useState(100);
-  const startRef = useRef(Date.now());
-  const rafRef = useRef<number>(0);
+  // The countdown bar is a single CSS width transition (100% → 0% over
+  // durationMs) rather than a per-frame requestAnimationFrame loop, so the toast
+  // doesn't re-render every frame for a decorative bar. autoDismiss is a single
+  // setTimeout — which, unlike rAF, still fires in a backgrounded tab.
+  const [collapsed, setCollapsed] = useState(false);
   const dismissRef = useRef(onDismiss);
   dismissRef.current = onDismiss;
 
   useEffect(() => {
-    startRef.current = Date.now();
-    const tick = () => {
-      const elapsed = Date.now() - startRef.current;
-      const remaining = Math.max(0, 100 - (elapsed / durationMs) * 100);
-      setProgress(remaining);
-      if (remaining > 0) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else if (autoDismiss) {
-        dismissRef.current();
-      }
+    // Flip to 0% on the next frame so the mounted-at-100% bar animates down.
+    const raf = requestAnimationFrame(() => setCollapsed(true));
+    const timer = autoDismiss
+      ? window.setTimeout(() => dismissRef.current(), durationMs)
+      : undefined;
+    return () => {
+      cancelAnimationFrame(raf);
+      if (timer !== undefined) window.clearTimeout(timer);
     };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
   }, [durationMs, autoDismiss]);
 
   return (
@@ -69,7 +67,11 @@ export function UndoToast({
           <Icon name="ph:x-bold" aria-hidden />
         </button>
       </div>
-      <div className="library-undo-toast-progress" style={{ width: `${progress}%` }} aria-hidden />
+      <div
+        className="library-undo-toast-progress"
+        style={{ width: collapsed ? "0%" : "100%", transitionDuration: `${durationMs}ms` }}
+        aria-hidden
+      />
     </div>
   );
 }
