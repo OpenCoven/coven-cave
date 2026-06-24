@@ -28,6 +28,8 @@ import type { ProjectsDensity } from "@/lib/projects/projects-ui-state";
 import { sessionGlyph, glyphToneClass, stripTaskPrefix } from "@/lib/projects/session-glyph";
 import { projectStats } from "@/lib/projects/project-stats";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
+import { ContextMenu, openContextMenuAt, type ContextMenuState } from "@/components/ui/context-menu";
+import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -121,6 +123,7 @@ function ProjectChatRow({
   const hasDiff = !!diff && (diff.additions > 0 || diff.deletions > 0);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [menu, setMenu] = useState<ContextMenuState>(null);
   const activate = () => (selectMode ? onToggleSelect(session.id) : onOpen());
   return (
     <li ref={setNodeRef} style={style} data-dragging={isDragging ? "true" : undefined} className="group/pc relative">
@@ -129,6 +132,7 @@ function ProjectChatRow({
         aria-checked={selectMode ? selected : undefined}
         tabIndex={0}
         data-proj-nav
+        onContextMenu={openContextMenuAt(setMenu)}
         onClick={activate}
         onKeyDown={(e) => {
           // ARIA button/checkbox pattern: Enter and Space both activate.
@@ -246,6 +250,15 @@ function ProjectChatRow({
           </button>
         )}
       </div>
+      <ContextMenu state={menu} onClose={() => setMenu(null)} ariaLabel={`Actions for ${title}`}>
+        <PopoverItem icon="ph:chat-circle-dots-bold" onSelect={() => { setMenu(null); onOpen(); }}>
+          Open chat
+        </PopoverItem>
+        <PopoverSeparator />
+        <PopoverItem icon="ph:trash-bold" danger onSelect={() => { setMenu(null); setConfirmDelete(true); }}>
+          Delete chat…
+        </PopoverItem>
+      </ContextMenu>
     </li>
   );
 }
@@ -387,6 +400,12 @@ function ProjectRow({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState<"name" | "root" | "delete" | null>(null);
   const [copiedRoot, setCopiedRoot] = useState(false);
+  const [menu, setMenu] = useState<ContextMenuState>(null);
+
+  const openTerminalHere = () => {
+    window.dispatchEvent(new CustomEvent("cave:terminal-open", { detail: { projectRoot: project.root } }));
+    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "terminal" } }));
+  };
 
   const copyRoot = async () => {
     try {
@@ -447,7 +466,7 @@ function ProjectRow({
           : "hover:bg-[var(--bg-raised)]/40",
       ].join(" ")}
     >
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2" onContextMenu={openContextMenuAt(setMenu)}>
         <button
           type="button"
           data-proj-nav
@@ -552,7 +571,13 @@ function ProjectRow({
           </span>
         ) : null}
 
-        <div className="flex shrink-0 items-center gap-1 opacity-100 transition-opacity motion-reduce:transition-none sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+        <div
+          className={`flex shrink-0 items-center gap-1 transition-opacity motion-reduce:transition-none ${
+            confirmDelete
+              ? "opacity-100"
+              : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+          }`}
+        >
           <button
             type="button"
             onClick={() => onNewChat?.(project.root)}
@@ -564,18 +589,10 @@ function ProjectRow({
           </button>
           <button
             type="button"
-            onClick={() => {
-              // Launch a terminal in this project's cwd, then jump to the
-              // Terminal surface. The always-mounted terminal instance creates
-              // the session (spawning the shell in project.root); cave:navigate-mode
-              // brings the Terminal surface to the foreground.
-              window.dispatchEvent(
-                new CustomEvent("cave:terminal-open", { detail: { projectRoot: project.root } }),
-              );
-              window.dispatchEvent(
-                new CustomEvent("cave:navigate-mode", { detail: { mode: "terminal" } }),
-              );
-            }}
+            // Launch a terminal in this project's cwd, then jump to the Terminal
+            // surface (the always-mounted terminal instance spawns the shell in
+            // project.root; cave:navigate-mode brings the surface to the foreground).
+            onClick={openTerminalHere}
             className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
             title="Open terminal"
             aria-label={`Open terminal in ${project.name}`}
@@ -756,6 +773,24 @@ function ProjectRow({
       )}
         </>
       ) : null}
+      <ContextMenu state={menu} onClose={() => setMenu(null)} ariaLabel={`Actions for ${project.name}`}>
+        <PopoverItem icon="ph:chat-circle-dots-bold" onSelect={() => { setMenu(null); onNewChat?.(project.root); }}>
+          New session
+        </PopoverItem>
+        <PopoverItem icon="ph:terminal-window-bold" onSelect={() => { setMenu(null); openTerminalHere(); }}>
+          Open terminal
+        </PopoverItem>
+        <PopoverItem icon="ph:pencil-simple-bold" onSelect={() => { setMenu(null); setNameDraft(project.name); setEditingName(true); }}>
+          Rename
+        </PopoverItem>
+        <PopoverItem icon={copiedRoot ? "ph:check" : "ph:copy"} onSelect={() => { setMenu(null); void copyRoot(); }}>
+          Copy path
+        </PopoverItem>
+        <PopoverSeparator />
+        <PopoverItem icon="ph:trash-bold" danger onSelect={() => { setMenu(null); setExpanded(true); setConfirmDelete(true); }}>
+          Delete project…
+        </PopoverItem>
+      </ContextMenu>
     </article>
   );
 }

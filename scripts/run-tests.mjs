@@ -354,6 +354,7 @@ export const SUITES = {
     "src/lib/recent-colors.test.ts",
     "src/components/ui/color-picker.test.ts",
     "src/components/ui/popover.test.ts",
+    "src/components/ui/context-menu.test.ts",
     "src/components/ui/modal.test.ts",
     "src/components/ui/relative-time.test.ts",
     "src/lib/workflow-source-bundle.test.ts",

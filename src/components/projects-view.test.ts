@@ -328,4 +328,31 @@ assert.match(
   "row actions stay visible on touch/coarse-pointer devices",
 );
 
+// Phase 3b — right-click context menus on project headers and session rows,
+// built on the shared ContextMenu/Popover primitives.
+assert.match(
+  projectsView,
+  /import \{ ContextMenu, openContextMenuAt, type ContextMenuState \} from "@\/components\/ui\/context-menu"/,
+  "uses the shared ContextMenu primitive",
+);
+assert.match(
+  projectsView,
+  /import \{ PopoverItem, PopoverSeparator \} from "@\/components\/ui\/popover"/,
+  "menu items use the shared Popover item/separator",
+);
+// Two onContextMenu triggers: the project header and each session row.
+assert.ok(
+  (projectsView.match(/onContextMenu=\{openContextMenuAt\(setMenu\)\}/g) ?? []).length >= 2,
+  "both the project header and session rows open a context menu at the cursor",
+);
+assert.match(projectsView, /Actions for \$\{project\.name\}/, "the project header has a context menu");
+assert.match(projectsView, /onSelect=\{\(\) => \{ setMenu\(null\); openTerminalHere\(\); \}\}/, "the menu opens a terminal in the project cwd");
+assert.match(projectsView, /Delete project…/, "project menu offers delete (routes through the inline confirm)");
+assert.match(projectsView, /setExpanded\(true\); setConfirmDelete\(true\)/, "menu delete expands the card and shows the two-step confirm");
+assert.match(projectsView, /Actions for \$\{title\}/, "each session row has a context menu");
+assert.match(projectsView, /Delete chat…/, "session menu offers delete (routes through the inline confirm)");
+// The header actions stay visible while a delete confirm is pending, so a
+// menu-triggered delete's Cancel/Delete buttons aren't hidden behind hover.
+assert.match(projectsView, /confirmDelete\s*\?\s*"opacity-100"/, "the action cluster stays visible while confirming a delete");
+
 console.log("projects-view.test.ts: ok");
