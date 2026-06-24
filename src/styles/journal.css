@@ -386,6 +386,14 @@
   color: var(--text-muted);
   margin: 0 0 8px;
 }
+/* Heading row with chronological prev/next entry controls on the right. */
+.journal-entry__sec--nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.journal-entry__daynav { display: inline-flex; gap: 4px; }
 .journal-entry__stats { display: flex; gap: 8px; margin-bottom: 18px; }
 .journal-entry__stat {
   flex: 1;

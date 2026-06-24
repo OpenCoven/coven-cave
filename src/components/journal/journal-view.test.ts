@@ -87,4 +87,23 @@ assert.match(entries, /day\.stats\.covenOrigin[\s\S]*?coven files/, "Journal sta
 assert.match(entries, /day\.stats\.externalRuntimes[\s\S]*?external runtime files/, "Journal stats include external runtime memory files");
 assert.match(entries, /day\.stats\.runtimeMemory[\s\S]*?runtime files/, "Journal stats include runtime memory files");
 
+// ── Day-fetch race + unmount guards ─────────────────────────────────────────
+// Rapid day switching must not let a slow earlier fetch overwrite the current
+// selection, and no async setState may land after unmount.
+assert.match(entries, /const loadDayReqRef = useRef\(0\)/, "loadDay tracks a request id");
+assert.match(entries, /const reqId = \+\+loadDayReqRef\.current/, "each loadDay stamps a request id");
+assert.match(entries, /if \(reqId !== loadDayReqRef\.current \|\| !mountedRef\.current\) return/, "a stale/late day fetch is dropped");
+assert.match(entries, /const mountedRef = useRef\(true\)/, "tracks mounted state for async guards");
+assert.match(entries, /return \(\) => \{ mountedRef\.current = false; \}/, "mountedRef is cleared on unmount");
+
+// ── Selected day is announced + keyboard-navigable ──────────────────────────
+assert.match(entries, /aria-current=\{d\.date === selected \? "true" : undefined\}/, "the open day row is aria-current");
+assert.match(entries, /onKeyDown=\{onRailKeyDown\}/, "the day rail handles arrow-key navigation");
+assert.match(entries, /e\.key === "ArrowDown" \? Math\.min\(btns\.length - 1, i \+ 1\)/, "ArrowDown moves to the next day");
+// Chronological prev/next entry controls in the detail header.
+assert.match(entries, /aria-label="Newer entry"/, "detail header has a newer-entry control");
+assert.match(entries, /aria-label="Older entry"/, "detail header has an older-entry control");
+assert.match(entries, /const hasOlder = dayIndex >= 0 && dayIndex < filteredDays\.length - 1/, "older-entry availability derives from the visible list");
+assert.match(css, /\.journal-entry__sec--nav \{[\s\S]*?justify-content: space-between/, "the heading row lays out the nav controls");
+
 console.log("journal-view.test.ts: ok");

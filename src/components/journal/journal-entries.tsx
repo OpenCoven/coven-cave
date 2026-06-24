@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -63,7 +63,10 @@ export function JournalEntries({
   scopeFamiliarIds?: ReadonlySet<string>;
 }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  const today = dateSlug(new Date());
+  // One clock read per render — reused for `today`, list labels, and the detail
+  // heading (was a fresh `new Date()` per row).
+  const now = new Date();
+  const today = dateSlug(now);
   const [days, setDays] = useState<JournalSummary[]>([]);
   const [daysLoaded, setDaysLoaded] = useState(false);
   const [selected, setSelected] = useState<string>(today);
@@ -76,6 +79,14 @@ export function JournalEntries({
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const selectedFamiliarId = activeFamiliarId ?? familiars[0]?.id ?? null;
+  // Guard async setState after unmount, and ignore a stale day fetch when the
+  // selection changed before its response arrived (rapid day switching).
+  const mountedRef = useRef(true);
+  const loadDayReqRef = useRef(0);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const familiarName = useCallback(
     (id: string | null) => (id ? familiars.find((f) => f.id === id)?.display_name ?? id : null),
@@ -111,15 +122,17 @@ export function JournalEntries({
     try {
       const res = await fetch(`/api/journal`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
+      if (!mountedRef.current) return;
       if (json.ok) setDays(Array.isArray(json.days) ? json.days : []);
     } catch {
       /* keep prior */
     } finally {
-      setDaysLoaded(true);
+      if (mountedRef.current) setDaysLoaded(true);
     }
   }, []);
 
   const loadDay = useCallback(async (slug: string) => {
+    const reqId = ++loadDayReqRef.current;
     try {
       // Scope the day's memory stats to the single active familiar; with 0 or
       // ≥ 2 selected (activeFamiliarId null) the record + stats are unscoped.
@@ -128,9 +141,11 @@ export function JournalEntries({
         : `date=${encodeURIComponent(slug)}`;
       const res = await fetch(`/api/journal?${detailQuery}`, { cache: "no-store" });
       const json = await res.json().catch(() => ({}));
+      // Drop a stale response: a newer loadDay (different day) superseded it.
+      if (reqId !== loadDayReqRef.current || !mountedRef.current) return;
       if (json.ok) setDay(json as JournalDay);
     } catch {
-      setDay(null);
+      if (reqId === loadDayReqRef.current && mountedRef.current) setDay(null);
     }
   }, [activeFamiliarId]);
 
@@ -156,6 +171,7 @@ export function JournalEntries({
     setError(null);
     setGenerating(true);
     const result = await generateReflection({ familiarId, context: day.context });
+    if (!mountedRef.current) return;
     if (result.error || !result.text) {
       setGenerating(false);
       setError(result.error ?? "No reflection was returned.");
@@ -166,6 +182,7 @@ export function JournalEntries({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ date: day.date, reflection: result.text, reflectedBy: familiarId }),
     }).catch(() => undefined);
+    if (!mountedRef.current) return;
     setGenerating(false);
     await loadDay(day.date);
     await loadDays();
@@ -201,13 +218,14 @@ export function JournalEntries({
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) throw new Error(json.error ?? "Could not save journal entry.");
+      if (!mountedRef.current) return;
       cancelEdit();
       await loadDay(day.date);
       await loadDays();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save journal entry.");
+      if (mountedRef.current) setError(err instanceof Error ? err.message : "Could not save journal entry.");
     } finally {
-      setSaving(false);
+      if (mountedRef.current) setSaving(false);
     }
   }
 
@@ -219,18 +237,45 @@ export function JournalEntries({
       const res = await fetch(`/api/journal?date=${encodeURIComponent(day.date)}`, { method: "DELETE" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) throw new Error(json.error ?? "Could not delete journal entry.");
+      if (!mountedRef.current) return;
       cancelEdit();
       await loadDay(day.date);
       await loadDays();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete journal entry.");
+      if (mountedRef.current) setError(err instanceof Error ? err.message : "Could not delete journal entry.");
     } finally {
-      setDeleting(false);
+      if (mountedRef.current) setDeleting(false);
     }
   }
 
   const canGenerate = Boolean(selectedFamiliarId);
   const hasEntry = Boolean(day?.exists && day.entry.reflection.trim());
+
+  // Chronological navigation across the *visible* (scoped + filtered) days.
+  // The list is newest-first, so "newer" = lower index, "older" = higher.
+  const dayIndex = filteredDays.findIndex((d) => d.date === selected);
+  const hasNewer = dayIndex > 0;
+  const hasOlder = dayIndex >= 0 && dayIndex < filteredDays.length - 1;
+  const goToDay = useCallback((index: number) => {
+    const target = filteredDays[index];
+    if (target) setSelected(target.date);
+  }, [filteredDays]);
+  // ↑/↓ + Home/End move selection through the day rail (selection follows focus).
+  const onRailKeyDown = (e: React.KeyboardEvent<HTMLUListElement>) => {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+    const btns = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>("button.journal-day"));
+    const i = btns.findIndex((b) => b === document.activeElement);
+    if (i < 0) return;
+    e.preventDefault();
+    const ni =
+      e.key === "ArrowDown" ? Math.min(btns.length - 1, i + 1)
+      : e.key === "ArrowUp" ? Math.max(0, i - 1)
+      : e.key === "Home" ? 0
+      : btns.length - 1;
+    btns[ni]?.focus();
+    const date = filteredDays[ni]?.date;
+    if (date) setSelected(date);
+  };
 
   return (
     <div className="journal-list">
@@ -268,17 +313,18 @@ export function JournalEntries({
         ) : filteredDays.length === 0 ? (
           <div className="journal-empty">No entries match “{filter.trim()}”.</div>
         ) : (
-          <ul className="journal-list__items">
+          <ul className="journal-list__items" onKeyDown={onRailKeyDown}>
             {filteredDays.map((d) => (
               <li key={d.date}>
                 <button
                   type="button"
                   className={`journal-day${d.date === selected ? " is-selected" : ""}`}
+                  aria-current={d.date === selected ? "true" : undefined}
                   onClick={() => setSelected(d.date)}
                 >
                   <span className="journal-day__top">
                     <span className="journal-day__date">
-                      {relativeDayLabel(parseDateSlug(d.date) ?? new Date(), new Date())}
+                      {relativeDayLabel(parseDateSlug(d.date) ?? now, now)}
                     </span>
                     {d.reflectedBy ? <span className="journal-day__by">{familiarName(d.reflectedBy)}</span> : null}
                   </span>
@@ -292,7 +338,33 @@ export function JournalEntries({
       <section className="journal-detail" aria-label="Journal entry">
         {day ? (
           <>
-            <div className="journal-entry__sec">What happened · {longDateLabel(parseDateSlug(day.date) ?? new Date())}</div>
+            <div className="journal-entry__sec journal-entry__sec--nav">
+              <span>What happened · {longDateLabel(parseDateSlug(day.date) ?? now)}</span>
+              {filteredDays.length > 1 ? (
+                <span className="journal-entry__daynav">
+                  <button
+                    type="button"
+                    className="journal-entry__action"
+                    onClick={() => goToDay(dayIndex - 1)}
+                    disabled={!hasNewer}
+                    aria-label="Newer entry"
+                    title="Newer entry"
+                  >
+                    <Icon name="ph:caret-up" width={12} aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className="journal-entry__action"
+                    onClick={() => goToDay(dayIndex + 1)}
+                    disabled={!hasOlder}
+                    aria-label="Older entry"
+                    title="Older entry"
+                  >
+                    <Icon name="ph:caret-down" width={12} aria-hidden />
+                  </button>
+                </span>
+              ) : null}
+            </div>
             <div className="journal-entry__stats">
               <div className="journal-entry__stat"><b>{day.stats.covenOrigin}</b><span>coven files</span></div>
               <div className="journal-entry__stat"><b>{day.stats.externalRuntimes}</b><span>external runtime files</span></div>
