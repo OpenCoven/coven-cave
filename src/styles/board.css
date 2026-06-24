@@ -46,6 +46,7 @@
 .board-group-toggle-btn:hover { background:var(--bg-hover); color:var(--text-secondary); }
 .board-group-toggle-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:-1px; z-index:1; position:relative; }
 .board-group-toggle-btn--active { background:color-mix(in oklch,var(--accent-presence) 16%,var(--bg-raised)); color:var(--text-primary); }
+.board-group-toggle-btn--solo { border:1px solid var(--border-strong); border-radius:7px; }
 .board-view-toggle { display:flex; border:1px solid var(--border-strong); border-radius:7px; overflow:hidden; }
 .board-view-toggle-btn { display:flex; align-items:center; justify-content:center; width:28px; height:28px; background:var(--bg-raised); color:var(--text-muted); border:none; cursor:pointer; transition:background .12s,color .12s; }
 .board-view-toggle-btn+.board-view-toggle-btn { border-left:1px solid var(--border-strong); }
@@ -1871,7 +1872,7 @@
 
 /* status-filter chips (toolbar) — toggle a whole status category off */
 .cg-filter { display:flex; gap:4px; align-items:center; flex-wrap:wrap; }
-.cg-filter-chip { display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 8px; border:1px solid var(--border-strong); border-radius:999px; background:var(--bg-raised); color:var(--text-secondary); font-size:11px; cursor:pointer; transition:opacity .12s, background .12s; white-space:nowrap; }
+.cg-filter-chip { display:inline-flex; align-items:center; gap:5px; height:28px; padding:0 10px; border:1px solid var(--border-strong); border-radius:7px; background:var(--bg-raised); color:var(--text-muted); font-size:12px; font-weight:500; cursor:pointer; transition:opacity .12s, background .12s; white-space:nowrap; }
 .cg-filter-chip:hover { background:var(--bg-hover); }
 .cg-filter-chip:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:1px; }
 .cg-filter-chip--off { opacity:.4; text-decoration:line-through; }
