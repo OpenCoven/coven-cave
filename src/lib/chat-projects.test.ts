@@ -72,7 +72,7 @@ assert.deepEqual(
 
 assert.equal(chatProjectName("/work/alpha", projects), "Alpha");
 assert.equal(chatProjectName("/Users/x/repos/coven-cave", projects), "coven-cave");
-assert.equal(chatProjectName("C:\\repos\\open-meow", projects), "open-meow");
+assert.equal(chatProjectName("C:\\repos\\coven-tools", projects), "coven-tools");
 assert.equal(chatProjectName("/trailing/slash/", projects), "slash");
 assert.equal(chatProjectName(null, projects), "No project");
 assert.equal(chatProjectName("", projects), "No project");

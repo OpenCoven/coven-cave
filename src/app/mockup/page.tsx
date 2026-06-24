@@ -81,7 +81,7 @@ const SETTINGS_NAV: Array<{ group: string; items: Array<{ id: string; label: str
     ],
   },
   {
-    group: "OpenMeow",
+    group: "Coven",
     items: [
       { id: "general", label: "General", icon: "ph:gear-six" },
       { id: "repositories", label: "Repositories", icon: "ph:git-branch", active: true },
