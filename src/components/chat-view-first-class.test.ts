@@ -91,9 +91,13 @@ assert.match(
 
 assert.match(
   source,
-  /<ChatModelControl state=\{modelState\} onSelectModel=\{handleSelectModel\} busy=\{busy\} \/>[\s\S]*label="Thinking"[\s\S]*label="Speed"/,
-  "Composer dropdown row should expose model, thinking, and speed controls",
+  /className="cave-composer-settings-row" aria-label="Chat response controls">[\s\S]{0,200}label="Thinking"[\s\S]*label="Speed"/,
+  "Composer dropdown row should expose thinking + speed controls",
 );
+
+// Model selection moved out of the composer UI into the /model slash command.
+assert.doesNotMatch(source, /ChatModelControl/, "the model picker is gone from the chat composer");
+assert.match(source, /command === "\/model"/, "the chat composer handles the /model command");
 
 assert.match(
   source,

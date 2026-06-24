@@ -117,35 +117,35 @@ for (const [name, src] of [
   );
 }
 
-// ── Model picker (home composer) ──────────────────────────────────────────────
-assert.match(
+// ── Model selection moved to the /model slash command ────────────────────────
+assert.doesNotMatch(
   source,
-  /import \{ ChatModelControl \} from "@\/components\/chat-model-control"/,
-  "HomeComposer should import the shared ChatModelControl",
+  /ChatModelControl/,
+  "HomeComposer no longer renders the model picker (moved into /model)",
 );
 
 assert.match(
   source,
   /\/api\/chat\/model-state\?familiarId=/,
-  "HomeComposer should GET model-state for the selected familiar",
+  "HomeComposer still GETs model-state (for the current model + harness)",
 );
 
 assert.match(
   source,
   /scope: "familiar-default"/,
-  "HomeComposer should persist a model pick as the familiar default",
+  "HomeComposer persists a /model pick as the familiar default",
 );
 
 assert.match(
   source,
-  /destination === "chat" && selectedFamiliarId[\s\S]{0,120}<ChatModelControl/,
-  "HomeComposer should render the model picker only for the chat destination with a familiar selected",
+  /modelSlashOptions\(text, modelHarness\)/,
+  "HomeComposer offers inline /model autocomplete",
 );
 
 assert.match(
   source,
-  /<ChatModelControl[\s\S]{0,120}state=\{modelState\}[\s\S]{0,120}onSelectModel=\{handleSelectModel\}/,
-  "HomeComposer model picker should be wired to modelState + handleSelectModel",
+  /command === "\/model"/,
+  "HomeComposer handles the /model command",
 );
 
 assert.doesNotMatch(

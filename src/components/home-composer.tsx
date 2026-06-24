@@ -19,7 +19,7 @@ import {
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { Icon, type IconName } from "@/lib/icon";
-import { ChatModelControl } from "@/components/chat-model-control";
+import { modelSlashOptions, resolveModelArg } from "@/lib/slash-model";
 import type { ChatModelState } from "@/lib/chat-model-state";
 import { draftReminderFromText } from "@/lib/reminder-draft";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
@@ -178,6 +178,12 @@ export function HomeComposer({
     return matchSlash(firstWord);
   }, [text]);
 
+  // Inline model picker: typing "/model <partial>" shows model options.
+  const modelHarness =
+    modelState?.harness ?? familiars.find((f) => f.id === selectedFamiliarId)?.harness ?? "claude";
+  const modelOptions = useMemo(() => modelSlashOptions(text, modelHarness), [text, modelHarness]);
+  const modelMenuActive = (modelOptions?.length ?? 0) > 0;
+
   useEffect(() => {
     setSlashIdx(0);
   }, [text]);
@@ -239,6 +245,19 @@ export function HomeComposer({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // Inline model picker takes priority when "/model <partial>" is open.
+      if (modelMenuActive && modelOptions) {
+        const opts = modelOptions;
+        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return; }
+        if (e.key === "Tab") { e.preventDefault(); const m = opts[slashIdx]; if (m) setText(`/model ${m.id}`); return; }
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          const m = opts[slashIdx];
+          if (m) { handleSelectModel(m.id); onToast(`Model set to ${m.id}.`); setText(""); }
+          return;
+        }
+      }
       // Slash menu hotkeys take priority over history/submit when it's open
       if (slashSuggestions.length > 0) {
         if (e.key === "ArrowDown") {
@@ -310,6 +329,27 @@ export function HomeComposer({
       const [rawCmd, ...rest] = prompt.split(/\s+/);
       const command = canonicalize(rawCmd) ?? rawCmd;
       const args = rest.join(" ");
+      if (command === "/model") {
+        setHistory((prev) => [...prev, prompt]);
+        setHistoryIdx(-1);
+        setText("");
+        if (!args.trim()) {
+          const current =
+            modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+              ? modelState.effectiveModel
+              : null;
+          onToast(current ? `Model: ${current}` : "Type /model <id> to pick a model.");
+          return;
+        }
+        const id = resolveModelArg(args, modelHarness);
+        if (!id) {
+          onToast(`Unknown model "${args.trim()}".`);
+          return;
+        }
+        handleSelectModel(id);
+        onToast(`Model set to ${id}.`);
+        return;
+      }
       if (onSlash) {
         setHistory((prev) => [...prev, prompt]);
         setHistoryIdx(-1);
@@ -391,7 +431,35 @@ export function HomeComposer({
 
         {/* Slash suggestion popover — anchored above the card so it doesn't
             push the rest of the layout when it opens. */}
-        {slashSuggestions.length > 0 ? (
+        {modelMenuActive && modelOptions ? (
+          <div className="hc-slash-menu">
+            <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Models">
+              {modelOptions.map((m, i) => {
+                const active = i === slashIdx;
+                return (
+                  <li key={m.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onMouseEnter={() => setSlashIdx(i)}
+                      onClick={() => {
+                        handleSelectModel(m.id);
+                        onToast(`Model set to ${m.id}.`);
+                        setText("");
+                        textareaRef.current?.focus();
+                      }}
+                      className={`hc-slash-row${active ? " active" : ""}`}
+                    >
+                      <span className="hc-slash-name">{m.label}</span>
+                      <span className="hc-slash-desc">{m.id}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="hc-slash-footer">↑↓ navigate · Enter switch · Esc cancel</div>
+          </div>
+        ) : slashSuggestions.length > 0 ? (
           <div className="hc-slash-menu">
             <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Slash commands">
               {slashSuggestions.map((cmd, i) => {
@@ -478,15 +546,6 @@ export function HomeComposer({
             </select>
             <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
           </label>
-
-          {destination === "chat" && selectedFamiliarId ? (
-            <ChatModelControl
-              state={modelState}
-              onSelectModel={handleSelectModel}
-              busy={sending}
-              variant="pill"
-            />
-          ) : null}
 
           {/* Destination pills */}
           <div className="hc-dest-pills">
