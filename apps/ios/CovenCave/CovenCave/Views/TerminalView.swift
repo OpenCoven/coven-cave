@@ -79,7 +79,7 @@ struct TerminalView: View {
             Text(label)
                 .font(.system(.footnote, design: .monospaced))
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                .glassFill(.control, in: RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
         .disabled(!terminal.connected)
@@ -105,7 +105,7 @@ struct TerminalView: View {
             Label(cwdLabel, systemImage: "folder")
                 .font(.system(.footnote, design: .monospaced))
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
+                .glassFill(.control, in: RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Working directory")

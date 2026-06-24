@@ -55,6 +55,7 @@ struct AvatarView: View {
 
 /// Overlapping cluster of avatars for group threads.
 struct AvatarClusterView: View {
+    @Environment(\.chrome) private var chrome
     let familiars: [Familiar]
     var size: CGFloat = 44
 
@@ -63,7 +64,7 @@ struct AvatarClusterView: View {
         ZStack {
             ForEach(Array(shown.enumerated()), id: \.element.id) { index, fam in
                 AvatarView(familiar: fam, size: size * 0.62)
-                    .overlay(Circle().strokeBorder(Color(.systemBackground), lineWidth: 1.5))
+                    .overlay(Circle().strokeBorder(chrome.bgBase, lineWidth: 1.5))
                     .offset(offset(index: index, count: shown.count))
             }
         }

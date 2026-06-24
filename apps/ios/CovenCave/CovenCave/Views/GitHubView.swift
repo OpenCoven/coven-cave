@@ -138,7 +138,7 @@ struct GitHubItemRow: View {
                     if item.draft == true {
                         Text("draft").font(.caption2)
                             .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Color(.tertiarySystemFill), in: Capsule())
+                            .glassFill(.control, in: Capsule())
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -383,12 +383,12 @@ private struct GitHubCommentsSection: View {
                                 .font(.caption2.monospaced()).foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(6)
-                                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 6))
+                                .glassFill(.control, in: RoundedRectangle(cornerRadius: 6))
                         }
                         ForEach(thread.comments) { c in commentRow(c, inline: true) }
                     }
                     .padding(10)
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+                    .glass(.raised, in: RoundedRectangle(cornerRadius: 10))
                     .overlay(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(thread.isResolved ? Color.green : Color.orange)
@@ -466,7 +466,7 @@ private struct GitHubCommentsSection: View {
             .foregroundStyle(.secondary)
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+            .glassFill(.control, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -487,7 +487,7 @@ private struct GitHubCommentsSection: View {
                         .accessibilityLabel("Remove \(att.name)")
                     }
                     .padding(.leading, 4).padding(.trailing, 6).padding(.vertical, 4)
-                    .background(Color(.secondarySystemBackground), in: Capsule())
+                    .glassFill(.control, in: Capsule())
                 }
             }
         }
@@ -500,7 +500,7 @@ private struct GitHubCommentsSection: View {
                 if let a = c.authorAssociation, a != "NONE" {
                     Text(a.lowercased()).font(.caption2)
                         .padding(.horizontal, 5).padding(.vertical, 1)
-                        .background(Color(.tertiarySystemFill), in: Capsule())
+                        .glassFill(.control, in: Capsule())
                         .foregroundStyle(.secondary)
                 }
                 Spacer()

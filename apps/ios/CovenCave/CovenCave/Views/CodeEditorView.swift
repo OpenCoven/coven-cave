@@ -4,6 +4,7 @@ import SwiftUI
 /// `POST /api/project-file`, which only overwrites existing text files.
 struct CodeEditorView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
     let path: String
     let name: String
 
@@ -84,7 +85,7 @@ struct CodeEditorView: View {
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)
                     .scrollContentBackground(.hidden)
-                    .background(Color(.systemBackground))
+                    .background(chrome.bgBase)
                     .disabled(!isEditable)
             } else {
                 ScrollView {
@@ -93,7 +94,7 @@ struct CodeEditorView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                 }
-                .background(Color(.systemBackground))
+                .background(chrome.bgBase)
             }
         }
         .overlay(alignment: .bottomTrailing) {

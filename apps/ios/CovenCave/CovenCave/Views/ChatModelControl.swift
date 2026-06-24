@@ -73,7 +73,7 @@ struct ChatModelBar: View {
                 }
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .foregroundStyle(.secondary)
-                .background(Color(.secondarySystemBackground), in: Capsule())
+                .glassFill(.control, in: Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Model: \(label). Tap to change.")

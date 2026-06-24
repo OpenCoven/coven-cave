@@ -148,8 +148,9 @@ struct ReadingView: View {
                 }
             }
             .padding(.horizontal, 13).padding(.vertical, 7)
-            .background(selected ? Color.accentColor.opacity(0.16) : Color(.secondarySystemBackground),
-                        in: Capsule())
+            // Frosted base for every chip; an accent wash marks the selected filter.
+            .background(Color.accentColor.opacity(selected ? 0.16 : 0), in: Capsule())
+            .glassFill(.control, in: Capsule())
             .foregroundStyle(selected ? Color.accentColor : .primary)
             .overlay(Capsule().strokeBorder(selected ? Color.accentColor.opacity(0.4) : .clear, lineWidth: 1))
         }

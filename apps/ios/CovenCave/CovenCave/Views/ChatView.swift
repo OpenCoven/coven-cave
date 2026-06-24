@@ -368,7 +368,7 @@ struct ChatView: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 34, height: 34)
-                    .background(Color(.secondarySystemBackground), in: Circle())
+                    .glassFill(.control, in: Circle())
             }
             .accessibilityLabel("Attach images")
 
@@ -841,7 +841,7 @@ private struct DaySeparator: View {
             .font(.caption2.weight(.semibold))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 12).padding(.vertical, 4)
-            .background(Color(.secondarySystemBackground), in: Capsule())
+            .glass(.control, in: Capsule())
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
     }
