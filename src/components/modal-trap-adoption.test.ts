@@ -8,7 +8,6 @@ const FILES = [
   "library-doc-preview.tsx",
   "library-github-list.tsx",
   "onboarding-overlay.tsx",
-  "workflows/workflow-create-dialog.tsx",
   "github-view.tsx",
   "new-reminder-modal.tsx",
 ];

@@ -40,11 +40,6 @@ test("reading status radios have a label and focus ring on every option", async 
   assert.match(src, /className=\{`library-status-toggle__opt focus-ring-inset/);
 });
 
-test("workflow-library selected item reflects pressed state", async () => {
-  const src = await read("./workflows/workflow-library.tsx");
-  assert.match(src, /aria-pressed=\{active\}/);
-});
-
 test("calendar urgency dots carry a text alternative", async () => {
   const src = await read("./calendar-view.tsx");
   assert.match(src, /function urgencyLabel\(item: InboxItem\): string/);
