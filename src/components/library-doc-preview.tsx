@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
+import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { copyText } from "@/lib/clipboard";
 import { useCopy } from "@/lib/use-copy";
@@ -475,7 +476,7 @@ function TocPanel({ items, activeId, mdRef, readerMode = false }: TocPanelProps)
             ].filter(Boolean).join(" ")}
             onClick={() => {
               const el = mdRef.current?.querySelector(`#${CSS.escape(item.id)}`);
-              el?.scrollIntoView({ behavior: "smooth", block: "start" });
+              el?.scrollIntoView({ behavior: smoothScrollBehavior(), block: "start" });
             }}
             title={item.text}
           >

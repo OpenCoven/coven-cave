@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
+import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { CaveProject } from "@/lib/cave-projects";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
@@ -225,7 +226,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   const scroll = (key: string, dir: -1 | 1) => {
     const rail = railRefs.current.get(key);
     if (!rail) return;
-    rail.scrollBy({ left: Math.max(rail.clientWidth * 0.72, 280) * dir, behavior: "smooth" });
+    rail.scrollBy({ left: Math.max(rail.clientWidth * 0.72, 280) * dir, behavior: smoothScrollBehavior() });
   };
 
   // Click-and-drag horizontal scroll ("grabber") for the rail.

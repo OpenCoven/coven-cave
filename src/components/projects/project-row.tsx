@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { Icon } from "@/lib/icon";
+import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { relativeTime } from "@/lib/relative-time";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
@@ -80,7 +81,7 @@ export function ProjectRow({
       window.requestAnimationFrame(() => {
         document
           .getElementById(`pcard-el:${cardKey}`)
-          ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          ?.scrollIntoView({ block: "nearest", behavior: smoothScrollBehavior() });
       });
     };
     window.addEventListener(CHAT_FOCUS_PROJECT_EVENT, onFocus);

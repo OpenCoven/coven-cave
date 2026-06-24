@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
 import { Icon } from "@/lib/icon";
+import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { SalemPathfinderCard } from "./salem-pathfinder-card";
@@ -94,7 +95,7 @@ export function SalemChatPanel({ familiarId, model }: { familiarId?: string | nu
   };
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({ behavior: smoothScrollBehavior() });
   }, [messages]);
 
   const send = async (e?: FormEvent) => {

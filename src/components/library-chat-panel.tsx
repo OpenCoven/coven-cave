@@ -24,6 +24,7 @@ import {
   useState,
 } from "react";
 import { Icon } from "@/lib/icon";
+import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import type { LibraryDocBody } from "@/lib/library-types";
 
@@ -161,7 +162,9 @@ export function LibraryChatPanel({ doc, familiarId = "sage" }: LibraryChatPanelP
   // ── Auto-scroll ────────────────────────────────────────────────
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
-    messagesEndRef.current?.scrollIntoView({ behavior, block: "end" });
+    // Respect reduced motion: a "smooth" request becomes an instant jump.
+    const effective = behavior === "smooth" && prefersReducedMotion() ? "auto" : behavior;
+    messagesEndRef.current?.scrollIntoView({ behavior: effective, block: "end" });
   }, []);
 
   useLayoutEffect(() => {
