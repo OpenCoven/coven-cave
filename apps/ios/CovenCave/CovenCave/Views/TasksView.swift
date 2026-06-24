@@ -15,7 +15,15 @@ struct TasksView: View {
     @Environment(AppModel.self) private var app
     @AppStorage("cave.tasks.groupBy") private var groupByRaw = GroupBy.status.rawValue
     @AppStorage("cave.tasks.sortBy") private var sortByRaw = SortBy.priority.rawValue
+    @AppStorage("cave.tasks.viewMode") private var viewModeRaw = ViewMode.list.rawValue
     @State private var query = ""
+    /// Filters (session-scoped). Empty set = no filter on that dimension.
+    @State private var statusFilter: Set<CardStatus> = []
+    @State private var priorityFilter: Set<CardPriority> = []
+    @State private var familiarFilter: Set<String> = []
+    /// Board (kanban) card taps open the detail in a sheet — the List path uses
+    /// the split-view selection, which only a `List(selection:)` can drive.
+    @State private var boardDetail: BoardCard?
     /// The task shown in the detail column. On iPad this fills the detail pane
     /// beside the list; on iPhone `NavigationSplitView` collapses and selecting a
     /// row pushes the detail, so the single-column behaviour is unchanged.
@@ -43,8 +51,20 @@ struct TasksView: View {
         }
     }
 
+    /// List (sections) vs Board (horizontal kanban columns). Both honor the
+    /// group-by, sort, search, and filters.
+    enum ViewMode: String, CaseIterable, Identifiable {
+        case list = "List", board = "Board"
+        var id: String { rawValue }
+        var systemImage: String { self == .list ? "list.bullet" : "rectangle.split.3x1" }
+    }
+
     private var groupBy: GroupBy { GroupBy(rawValue: groupByRaw) ?? .status }
     private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .priority }
+    private var viewMode: ViewMode { ViewMode(rawValue: viewModeRaw) ?? .list }
+    private var anyFilterActive: Bool {
+        !statusFilter.isEmpty || !priorityFilter.isEmpty || !familiarFilter.isEmpty
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -59,15 +79,21 @@ struct TasksView: View {
                         }
                         .accessibilityLabel("Reminders")
                     }
+                    ToolbarItem(placement: .topBarTrailing) { filterMenu }
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
+                            Picker("View", selection: $viewModeRaw) {
+                                ForEach(ViewMode.allCases) { m in
+                                    Label(m.rawValue, systemImage: m.systemImage).tag(m.rawValue)
+                                }
+                            }
                             Picker("Sort by", selection: $sortByRaw) {
                                 ForEach(SortBy.allCases) { s in
                                     Label(s.rawValue, systemImage: s.systemImage).tag(s.rawValue)
                                 }
                             }
                         } label: {
-                            Label("Sort", systemImage: "arrow.up.arrow.down")
+                            Label("View options", systemImage: "ellipsis.circle")
                         }
                     }
                 }
@@ -88,6 +114,9 @@ struct TasksView: View {
                     Button("Cancel", role: .cancel) {}
                 } message: { card in Text(card.title) }
                 .sheet(isPresented: $showReminders) { RemindersView() }
+                .sheet(item: $boardDetail) { card in
+                    NavigationStack { TaskDetailView(card: card) }
+                }
         } detail: {
             if let selection {
                 NavigationStack { TaskDetailView(card: selection) }
@@ -137,6 +166,56 @@ struct TasksView: View {
         }
     }
 
+    /// Status / priority / familiar filters, applied to both List and Board.
+    @ViewBuilder private var filterMenu: some View {
+        Menu {
+            if anyFilterActive {
+                Button(role: .destructive) { clearFilters() } label: {
+                    Label("Clear filters", systemImage: "xmark.circle")
+                }
+                Divider()
+            }
+            Menu {
+                ForEach(CardStatus.allCases, id: \.self) { s in
+                    Button { toggleStatus(s) } label: {
+                        Label(s.label, systemImage: statusFilter.contains(s) ? "checkmark" : s.systemImage)
+                    }
+                }
+            } label: { Label(statusFilter.isEmpty ? "Status" : "Status (\(statusFilter.count))", systemImage: "circle.dashed") }
+            Menu {
+                ForEach(CardPriority.allCases, id: \.self) { p in
+                    Button { togglePriority(p) } label: {
+                        Label(p.label, systemImage: priorityFilter.contains(p) ? "checkmark" : "flag")
+                    }
+                }
+            } label: { Label(priorityFilter.isEmpty ? "Priority" : "Priority (\(priorityFilter.count))", systemImage: "flag") }
+            if !app.familiars.isEmpty {
+                Menu {
+                    ForEach(app.familiars) { f in
+                        Button { toggleFamiliar(f.id) } label: {
+                            Label(f.displayName, systemImage: familiarFilter.contains(f.id) ? "checkmark" : "person")
+                        }
+                    }
+                } label: { Label(familiarFilter.isEmpty ? "Familiar" : "Familiar (\(familiarFilter.count))", systemImage: "person.circle") }
+            }
+        } label: {
+            Label("Filter", systemImage: anyFilterActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+        }
+    }
+
+    private func toggleStatus(_ s: CardStatus) {
+        if statusFilter.contains(s) { statusFilter.remove(s) } else { statusFilter.insert(s) }
+    }
+    private func togglePriority(_ p: CardPriority) {
+        if priorityFilter.contains(p) { priorityFilter.remove(p) } else { priorityFilter.insert(p) }
+    }
+    private func toggleFamiliar(_ id: String) {
+        if familiarFilter.contains(id) { familiarFilter.remove(id) } else { familiarFilter.insert(id) }
+    }
+    private func clearFilters() {
+        statusFilter = []; priorityFilter = []; familiarFilter = []
+    }
+
     /// Consume a cross-tab "open this task" intent set by `requestOpenTask`.
     private func openRequestedCard() {
         guard let card = app.cardToOpen else { return }
@@ -166,9 +245,58 @@ struct TasksView: View {
             }
         } else if sections.isEmpty {
             emptyState
+        } else if viewMode == .board {
+            kanbanBoard
         } else {
             taskList
         }
+    }
+
+    // MARK: - Board (kanban)
+
+    /// Horizontally-scrolling columns, one per current group (status by default),
+    /// reusing the same `sections` as the list — so group-by, sort, search, and
+    /// filters all apply. Tap a card for its detail; long-press for the actions.
+    private var kanbanBoard: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(sections) { section in kanbanColumn(section) }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+    }
+
+    @ViewBuilder private func kanbanColumn(_ section: TaskSection) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                if let image = section.systemImage { Image(systemName: image).accessibilityHidden(true) }
+                Text(section.title)
+                Spacer()
+                Text("\(section.cards.count)").monospacedDigit()
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(section.tint ?? .secondary)
+            .padding(.horizontal, 4)
+            .accessibilityElement(children: .combine)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 8) {
+                    ForEach(section.cards) { card in
+                        Button { boardDetail = card } label: {
+                            TaskRow(card: card)
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .glass(.raised, cornerRadius: 12)
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu { taskMenu(card) }
+                    }
+                }
+                .padding(.bottom, 8)
+            }
+        }
+        .frame(width: 280)
     }
 
     private var taskList: some View {
@@ -208,11 +336,15 @@ struct TasksView: View {
     }
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label(query.isEmpty ? "No tasks" : "No matches",
-                  systemImage: "checkmark.circle")
+        let unfiltered = query.isEmpty && !anyFilterActive
+        return ContentUnavailableView {
+            Label(unfiltered ? "No tasks" : "No matches", systemImage: "checkmark.circle")
         } description: {
-            Text(query.isEmpty ? "Tasks from your board appear here." : "Try a different search.")
+            Text(unfiltered ? "Tasks from your board appear here." : "Try different search or filters.")
+        } actions: {
+            if !unfiltered && anyFilterActive {
+                Button("Clear filters") { clearFilters() }
+            }
         }
     }
 
@@ -230,12 +362,18 @@ struct TasksView: View {
     }
 
     private var filtered: [BoardCard] {
+        var cards = app.tasks
+        if !statusFilter.isEmpty { cards = cards.filter { statusFilter.contains($0.status) } }
+        if !priorityFilter.isEmpty { cards = cards.filter { priorityFilter.contains($0.priority) } }
+        if !familiarFilter.isEmpty { cards = cards.filter { familiarFilter.contains($0.familiarId ?? "") } }
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return app.tasks }
-        return app.tasks.filter { card in
-            if card.title.lowercased().contains(q) { return true }
-            return card.labelList.contains { $0.lowercased().contains(q) }
+        if !q.isEmpty {
+            cards = cards.filter { card in
+                card.title.lowercased().contains(q)
+                    || card.labelList.contains { $0.lowercased().contains(q) }
+            }
         }
+        return cards
     }
 
     private var sections: [TaskSection] {
