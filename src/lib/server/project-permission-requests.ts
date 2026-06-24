@@ -79,10 +79,13 @@ export async function assertProjectApiAccess(args: {
     // Not a *registered* project — but the path may still be a legitimate read
     // target the traversal guard already permits: a familiar's own workspace
     // (~/.coven/workspaces/familiars/<id>), an openclaw research dir, or the cwd.
-    // Let the human browse those (the Code tab surfaces familiar workspaces);
-    // familiars still need a real registered-project grant, and writes still need
-    // a familiar.
-    if (!familiarId && isHumanRead(args.request, surface) && resolveAllowedProjectPath(requestedPath)) {
+    // Let the human browse those (the Code tab surfaces familiar workspaces and
+    // attaches the owning familiar's id as context, so we must NOT require its
+    // absence here). isHumanRead is the real gate — only read surfaces
+    // (file-browse/file-read/project-api on loopback, or a mobile GET) qualify;
+    // writes use file-write, which isn't a human-read surface, so they still
+    // fall through to the familiar requirement below.
+    if (isHumanRead(args.request, surface) && resolveAllowedProjectPath(requestedPath)) {
       return;
     }
     throw new ProjectAccessDeniedError("project is not registered for permission checks");
