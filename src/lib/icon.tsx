@@ -127,7 +127,6 @@ export const ICON_NAMES = [
   "ph:sidebar-simple",
   "ph:sidebar-simple-fill",
   "ph:folder",
-  "ph:folder-bold",
   "ph:folder-open",
   "ph:folder-open-bold",
   "ph:folder-simple-dashed",
