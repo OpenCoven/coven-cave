@@ -7451,10 +7451,10 @@ a.mobile-handoff__link:hover {
 }
 .salem-pf__action:hover { color: var(--text-primary); }
 .salem-pf__action--primary {
-  background: var(--accent-presence); border-color: var(--accent-presence); color: #fff;
+  background: var(--accent-presence); border-color: var(--accent-presence); color: var(--accent-presence-foreground);
 }
 .salem-pf__action--save[data-save-state="saved"] {
-  background: var(--accent-presence); border-color: var(--accent-presence); color: #fff;
+  background: var(--accent-presence); border-color: var(--accent-presence); color: var(--accent-presence-foreground);
 }
 .salem-pf__action--save[data-save-state="error"] { border-color: var(--color-danger); color: var(--color-danger); }
 

@@ -75,3 +75,27 @@ test("nav count badge uses a solid accent fill (WCAG contrast)", async () => {
     /\.menu-bar__badge\s*\{[\s\S]*?background:\s*color-mix\(in oklch, var\(--accent-presence\) 60%, transparent\)/,
   );
 });
+
+test("accent-filled buttons pair the accent with its semantic foreground", async () => {
+  // White / --text-primary on --accent-presence failed AA (~2.8:1 dark). The
+  // accent's paired --accent-presence-foreground adapts per mode, so route to it.
+  const board = await readFile(new URL("../styles/board.css", import.meta.url), "utf8");
+  assert.match(
+    board,
+    /\.board-new-card-btn\s*\{[^}]*background:var\(--accent-presence\)[^}]*color:var\(--accent-presence-foreground\)/,
+  );
+  assert.doesNotMatch(
+    board,
+    /\.board-new-card-btn\s*\{[^}]*background:var\(--accent-presence\)[^}]*color:var\(--text-primary\)/,
+  );
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  // Both salem accent action states use the paired foreground, not hardcoded #fff.
+  assert.doesNotMatch(
+    css,
+    /\.salem-pf__action--primary\s*\{[^}]*background:\s*var\(--accent-presence\)[^}]*color:\s*#fff/,
+  );
+  assert.match(
+    css,
+    /\.salem-pf__action--primary\s*\{[^}]*color:\s*var\(--accent-presence-foreground\)/,
+  );
+});

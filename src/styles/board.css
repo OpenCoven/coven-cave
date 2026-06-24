@@ -54,7 +54,7 @@
 .board-view-toggle-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:-1px; z-index:1; position:relative; }
 .board-view-toggle-btn--active { background:color-mix(in oklch,var(--accent-presence) 16%,var(--bg-raised)); color:var(--text-primary); }
 
-.board-new-card-btn { height:30px; padding:0 12px; border-radius:7px; border:1px solid var(--border-strong); background:var(--accent-presence); color:var(--text-primary); font-size:12px; font-weight:500; cursor:pointer; transition:background .12s,transform .1s; white-space:nowrap; }
+.board-new-card-btn { height:30px; padding:0 12px; border-radius:7px; border:1px solid var(--border-strong); background:var(--accent-presence); color:var(--accent-presence-foreground); font-size:12px; font-weight:500; cursor:pointer; transition:background .12s,transform .1s; white-space:nowrap; }
 .board-new-card-btn:hover { background:color-mix(in oklch, var(--accent-presence) 85%, #000); transform:scale(1.02); }
 .board-new-card-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:2px; }
 
