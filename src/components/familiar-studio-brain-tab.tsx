@@ -20,10 +20,16 @@ type CapabilitiesResponse = {
   error?: string;
 };
 
+function runtimeLabel(runtimeId: string | null | undefined, harnesses: HarnessReport[]): string {
+  if (!runtimeId) return "workspace default";
+  const fromHarnesses = harnesses.find((h) => h.id === runtimeId)?.label;
+  if (fromHarnesses) return fromHarnesses;
+  return runtimeId;
+}
 
 export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
-  const [draftHarness, setDraftHarness] = useState(familiar.harness ?? "");
+  const [draftHarness, setDraftHarness] = useState(familiar.harnessOverride ?? "");
   const [draftModel, setDraftModel] = useState(familiar.model ?? "");
   const [draftNote, setDraftNote] = useState(familiar.note ?? "");
   const [draftVoiceProvider, setDraftVoiceProvider] = useState(familiar.voiceProvider ?? "");
@@ -35,14 +41,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [capsOpen, setCapsOpen] = useState(false);
 
   useEffect(() => {
-    setDraftHarness(familiar.harness ?? "");
+    setDraftHarness(familiar.harnessOverride ?? "");
     setDraftModel(familiar.model ?? "");
     setDraftNote(familiar.note ?? "");
     setDraftVoiceProvider(familiar.voiceProvider ?? "");
     setDraftVoiceModel(familiar.voiceModel ?? "");
     setDraftVoiceName(familiar.voiceName ?? "");
     setToast(null);
-  }, [familiar.id, familiar.harness, familiar.model, familiar.note, familiar.voiceProvider, familiar.voiceModel, familiar.voiceName]);
+  }, [familiar.id, familiar.harnessOverride, familiar.model, familiar.note, familiar.voiceProvider, familiar.voiceModel, familiar.voiceName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +62,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  const harnessId = draftHarness || familiar.harness || "";
+  const defaultHarnessId = familiar.defaultHarness ?? familiar.harness ?? "";
+  const defaultHarnessLabel = runtimeLabel(defaultHarnessId, harnesses);
+  const harnessId = draftHarness || defaultHarnessId;
 
   // Model parity: source the per-familiar model menu from the same runtime →
   // provider catalog the chat picker uses. allowCustom keeps the free-text
@@ -120,7 +128,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
         setToast(`Couldn't save: ${json.error ?? res.statusText}`);
         reportDaemonSyncFailure(`cave-config write: ${json.error ?? res.statusText}`);
         // Revert local draft to last-known value on failure.
-        if ("harness" in patch) setDraftHarness(familiar.harness ?? "");
+        if ("harness" in patch) setDraftHarness(familiar.harnessOverride ?? "");
         if ("model" in patch) setDraftModel(familiar.model ?? "");
         if ("note" in patch) setDraftNote(familiar.note ?? "");
         if ("voiceProvider" in patch) setDraftVoiceProvider(familiar.voiceProvider ?? "");
@@ -153,12 +161,14 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                     }}
                     className="familiar-studio-brain__input"
                   >
-                    <option value="">— inherit default —</option>
-                    {harnesses.map((h) => (
-                      <option key={h.id} value={h.id}>
-                        {h.label}{h.installed ? "" : " (not installed)"}
-                      </option>
-                    ))}
+                    <option value="">Inherit workspace default: {defaultHarnessLabel}</option>
+                    <optgroup label="Available runtimes">
+                      {harnesses.map((h) => (
+                        <option key={h.id} value={h.id}>
+                          {h.label}{h.installed ? "" : " (not installed)"}
+                        </option>
+                      ))}
+                    </optgroup>
                   </select>
                 </div>
               </label>

@@ -411,6 +411,7 @@ export const SUITES = {
     "scripts/git-hooks-pre-commit.test.mjs",
     "src/lib/coven-paths.test.ts",
     "src/app/api/api-contracts.test.ts",
+    "src/app/api/familiars/route.test.ts",
     "src/app/api/familiars/avatar-route.test.ts",
     "src/app/api/familiars/[id]/notes/route.test.ts",
     "src/app/api/chat/model-state/route.test.ts",

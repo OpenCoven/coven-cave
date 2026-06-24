@@ -29,6 +29,8 @@ export type Familiar = {
   avatarUrl?: string;
   // CovenCave-side enrichment from cave-config.json
   harness?: string;
+  defaultHarness?: string;
+  harnessOverride?: string | null;
   model?: string;
   note?: string;
   voiceProvider?: string;

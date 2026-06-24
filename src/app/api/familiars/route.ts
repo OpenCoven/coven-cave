@@ -40,6 +40,7 @@ export async function GET() {
   // WebViews. Familiars with no on-disk avatar omit it and render the glyph.
   const familiars = await Promise.all(
     (res.data ?? []).map(async (f) => {
+      const configEntry = config.familiars[f.id] ?? {};
       const binding = bindingFor(config, f.id);
       const avatar = await resolveFamiliarAvatar(f.id);
       return {
@@ -50,6 +51,8 @@ export async function GET() {
         description: binding.description ?? f.description,
         color: binding.color,
         harness: binding.harness,
+        defaultHarness: config.defaults.harness,
+        harnessOverride: configEntry.harness ?? null,
         model: binding.model,
         note: binding.note,
         voiceProvider: binding.voiceProvider,

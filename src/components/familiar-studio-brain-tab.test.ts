@@ -39,6 +39,21 @@ assert.match(source, /\/api\/config/);
 assert.match(source, /method.*PATCH/);
 assert.match(
   source,
+  /defaultHarnessLabel/,
+  "Brain tab should name the inherited workspace default runtime",
+);
+assert.match(
+  source,
+  /Inherit workspace default: \{defaultHarnessLabel\}/,
+  "Default runtime copy should clarify that this familiar inherits the workspace default",
+);
+assert.match(
+  source,
+  /<optgroup label="Available runtimes">[\s\S]{0,240}harnesses\.map/,
+  "Other available runtimes should be grouped below the inherited default option",
+);
+assert.match(
+  source,
   /\/api\/capabilities\?harness=/,
   "Brain tab should fetch the daemon capabilities manifest for the selected harness",
 );
