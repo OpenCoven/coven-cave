@@ -247,6 +247,32 @@ assert.match(projectsView, /\{shortRoot\(project\.root\)\}/, "the displayed path
 assert.match(projectsView, /title=\{project\.root\}/, "the full path remains available via the title");
 assert.match(projectsView, /relativeTime\(/, "each row shows a relative last-active label (shared relative-time helper)");
 
+// Phase 2 — rich rows: each session row leads with a derived status glyph
+// (running spinner / failed / task / chat dot), drops the "Task: " text prefix
+// in favor of that glyph, and carries trailing metadata (model · time · diff).
+assert.match(
+  projectsView,
+  /import \{ sessionGlyph, glyphToneClass, stripTaskPrefix \} from "@\/lib\/projects\/session-glyph"/,
+  "session rows use the pure glyph helper",
+);
+assert.match(projectsView, /const glyph = sessionGlyph\(session\)/, "each chat row derives its leading glyph");
+assert.match(projectsView, /stripTaskPrefix\(/, 'the "Task: " label is stripped (shown as a glyph instead)');
+assert.match(projectsView, /glyph\.spin \? "animate-spin"/, "a running glyph spins");
+assert.match(projectsView, /import \{ RelativeTime \} from "@\/components\/ui\/relative-time"/, "rows use the RelativeTime primitive (exact-time tooltip)");
+assert.match(projectsView, /<RelativeTime iso=\{session\.updated_at\}/, "every session row shows a consistent relative timestamp");
+assert.match(projectsView, /import \{ modelIcon, modelLabel \} from "@\/lib\/model-label"/, "rows render a model chip via the shared model-label helper");
+assert.match(projectsView, /modelLabel\(session\.model\)/, "the model chip shows the shortened model label");
+
+// Project headers carry a glanceable stat line (running · tasks · sessions)
+// derived from the pure projectStats helper.
+assert.match(projectsView, /import \{ projectStats \} from "@\/lib\/projects\/project-stats"/, "headers use the pure stats helper");
+assert.match(projectsView, /const stats = projectStats\(chats\)/, "the header derives running/task counts");
+assert.match(projectsView, /stats\.running > 0 \?/, "the stat line shows a running count when any session is running");
+assert.match(projectsView, /stats\.tasks > 0 \?/, "the stat line shows a task count when the project has tasks");
+
+// The project folder icon is tinted by the project's color (when set).
+assert.match(projectsView, /color: project\.color \|\| "var\(--accent-presence\)"/, "the folder icon takes the project color, falling back to the accent");
+
 // A project card expands + scrolls into view when the command palette's
 // "Open project" navigation fires CHAT_FOCUS_PROJECT_EVENT for its root.
 assert.match(
