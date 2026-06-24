@@ -58,6 +58,9 @@ export type FlowCanvasProps = {
   onConnectToNew: (from: FlowConnectFrom, position: FlowPosition) => void;
   /** Clicked the "+" on an edge — splice a node into that connection. */
   onInsertEdge: (edgeId: string) => void;
+  /** Sticky-note inline edits. */
+  onStickyText: (id: string, text: string) => void;
+  onStickySize: (id: string, width: number, height: number) => void;
 };
 
 function FlowCanvasInner(props: FlowCanvasProps) {
@@ -76,6 +79,8 @@ function FlowCanvasInner(props: FlowCanvasProps) {
     onRequestAdd,
     onConnectToNew,
     onInsertEdge,
+    onStickyText,
+    onStickySize,
   } = props;
   const [showMiniMap, setShowMiniMap] = useState(false);
   const { screenToFlowPosition } = useReactFlow();
@@ -93,17 +98,25 @@ function FlowCanvasInner(props: FlowCanvasProps) {
     () =>
       doc.nodes.map((node) => {
         const def = catalogNode(node.type);
+        const isSticky = def?.sticky === true;
         return {
           id: node.id,
-          type: def?.sticky ? "flowSticky" : "flowNode",
+          type: isSticky ? "flowSticky" : "flowNode",
           position: node.position,
-          data: { node, def },
-          ...(def?.sticky
+          data: isSticky
+            ? {
+                node,
+                def,
+                onStickyText: (text: string) => onStickyText(node.id, text),
+                onStickySize: (width: number, height: number) => onStickySize(node.id, width, height),
+              }
+            : { node, def },
+          ...(isSticky
             ? { width: node.sticky?.width ?? 240, height: node.sticky?.height ?? 160 }
             : { width: FLOW_NODE_WIDTH, height: FLOW_NODE_HEIGHT }),
         } satisfies Node<FlowNodeData>;
       }),
-    [doc.nodes],
+    [doc.nodes, onStickyText, onStickySize],
   );
 
   useEffect(() => {
@@ -172,7 +185,12 @@ function FlowCanvasInner(props: FlowCanvasProps) {
   );
 
   const handleNodeDoubleClick: NodeMouseHandler<Node<FlowNodeData>> = useCallback(
-    (_event, node) => onOpenNode(node.id),
+    (_event, node) => {
+      // Sticky notes edit their text inline on double-click; don't also open
+      // the detail view.
+      if (node.type === "flowSticky") return;
+      onOpenNode(node.id);
+    },
     [onOpenNode],
   );
 

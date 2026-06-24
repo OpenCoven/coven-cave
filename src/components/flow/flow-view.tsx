@@ -595,6 +595,8 @@ export function FlowView() {
                   onRequestAdd={requestAdd}
                   onConnectToNew={requestConnectToNew}
                   onInsertEdge={requestInsertEdge}
+                  onStickyText={(id, text) => onChangeSticky(id, { text })}
+                  onStickySize={(id, width, height) => onChangeSticky(id, { width, height })}
                 />
                 {selectedNode && (
                   <NodeDetailView

@@ -209,6 +209,15 @@
 .flow-sticky-rose { background: #3a1722; }
 .flow-sticky-grip { display: inline-flex; color: color-mix(in oklch, var(--foreground) 55%, transparent); margin-bottom: 6px; }
 .flow-sticky-text { margin: 0; font-size: var(--text-sm); line-height: 1.5; color: color-mix(in oklch, var(--foreground) 88%, transparent); white-space: pre-wrap; word-break: break-word; }
+.flow-sticky-input {
+  width: 100%; height: calc(100% - 22px); box-sizing: border-box;
+  border: 0; outline: none; resize: none; padding: 0;
+  background: transparent; color: color-mix(in oklch, var(--foreground) 92%, transparent);
+  font: inherit; font-size: var(--text-sm); line-height: 1.5;
+}
+/* NodeResizer handles, themed to the cave accent. */
+.react-flow__resize-control.flow-sticky-resize-handle { width: 8px; height: 8px; border-radius: 2px; background: var(--accent-presence); border: 1px solid var(--card); }
+.react-flow__resize-control.flow-sticky-resize-line { border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent); }
 
 /* ---- Node catalog panel ------------------------------------------------- */
 .flow-catalog-scrim { position: absolute; inset: 0; z-index: 20; background: var(--backdrop-scrim); display: flex; justify-content: flex-end; }
