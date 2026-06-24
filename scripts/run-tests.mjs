@@ -505,6 +505,7 @@ export const SUITES = {
     "scripts/ios-import-markdown.test.mjs",
     "scripts/ios-duplicate-thread.test.mjs",
     "scripts/ios-export-all-zip.test.mjs",
+    "scripts/ios-bulk-delete-threads.test.mjs",
     "scripts/ios-reorder-familiars.test.mjs",
     "scripts/ios-github-comment-attach.test.mjs",
     "scripts/mobile-tailscale.test.mjs",

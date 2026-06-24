@@ -14,6 +14,10 @@ struct FamiliarThreadsView: View {
     @State private var pendingDelete: ChatThread?
     /// Reveal archived on-device threads.
     @State private var showArchived = false
+    /// Multi-select bulk-delete mode.
+    @State private var selectMode = false
+    @State private var selectedIds: Set<String> = []
+    @State private var confirmingBulkDelete = false
 
     /// One row in the list: an on-device thread or a server-only session.
     private enum Entry: Identifiable {
@@ -69,20 +73,60 @@ struct FamiliarThreadsView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button(action: startNewChat) {
-                    Image(systemName: "square.and.pencil")
+                if selectMode {
+                    Button("Cancel") { exitSelect() }
+                } else {
+                    Button(action: startNewChat) {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .accessibilityLabel("New chat")
                 }
-                .accessibilityLabel("New chat")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                if !selectMode && hasLocalThreads {
+                    Button("Select") { withAnimation { selectMode = true } }
+                }
             }
         }
         .refreshable { await app.loadSessions() }
         .task { await app.loadSessions() }
+        .safeAreaInset(edge: .bottom) {
+            if selectMode {
+                HStack {
+                    Button(allLocalSelected ? "Deselect All" : "Select All") { toggleSelectAll() }
+                    Spacer()
+                    Button(role: .destructive) { confirmingBulkDelete = true } label: {
+                        Text(selectedIds.isEmpty ? "Delete" : "Delete (\(selectedIds.count))")
+                            .fontWeight(.semibold)
+                    }
+                    .disabled(selectedIds.isEmpty)
+                }
+                .padding(.horizontal, 20).padding(.vertical, 12)
+                .background(.bar)
+            }
+        }
+        .confirmationDialog(bulkDeleteTitle, isPresented: $confirmingBulkDelete, titleVisibility: .visible) {
+            Button("Delete \(selectedIds.count)", role: .destructive) {
+                app.deleteThreads(selectedIds)
+                exitSelect()
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private var bulkDeleteTitle: String {
+        "Delete \(selectedIds.count) chat\(selectedIds.count == 1 ? "" : "s")?"
     }
 
     private var threadList: some View {
         List {
             ForEach(entries) { entry in
-                Button { open(entry) } label: { row(entry) }
+                Button { tapEntry(entry) } label: {
+                    HStack(spacing: 12) {
+                        if selectMode { selectionMark(for: entry) }
+                        row(entry)
+                    }
+                }
                     .buttonStyle(.plain)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     // Only on-device threads can be renamed/deleted from here; a
@@ -165,6 +209,43 @@ struct FamiliarThreadsView: View {
 
     private var deleteDialogBinding: Binding<Bool> {
         Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })
+    }
+
+    // MARK: - Bulk select
+
+    private var localThreads: [ChatThread] {
+        app.directThreads(for: familiar.id).filter { showArchived || !$0.archived }
+    }
+    private var hasLocalThreads: Bool { !app.directThreads(for: familiar.id).isEmpty }
+    private var allLocalSelected: Bool {
+        !localThreads.isEmpty && Set(localThreads.map(\.id)).isSubset(of: selectedIds)
+    }
+
+    private func tapEntry(_ entry: Entry) {
+        if selectMode {
+            if case .local(let thread) = entry { toggleSelection(thread.id) }
+        } else {
+            open(entry)
+        }
+    }
+    private func toggleSelection(_ id: String) {
+        if selectedIds.contains(id) { selectedIds.remove(id) } else { selectedIds.insert(id) }
+    }
+    private func toggleSelectAll() {
+        if allLocalSelected { selectedIds.removeAll() } else { selectedIds = Set(localThreads.map(\.id)) }
+    }
+    private func exitSelect() {
+        withAnimation { selectMode = false; selectedIds.removeAll() }
+    }
+
+    @ViewBuilder private func selectionMark(for entry: Entry) -> some View {
+        if case .local(let thread) = entry {
+            Image(systemName: selectedIds.contains(thread.id) ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(selectedIds.contains(thread.id) ? Color.accentColor : Color.secondary)
+        } else {
+            Image(systemName: "circle").font(.title3).foregroundStyle(.quaternary)
+        }
     }
 
     @ViewBuilder
