@@ -11,17 +11,31 @@ struct GitHubView: View {
     @State private var error: String?
     @State private var hint: String?
     @State private var query = ""
+    /// The PR/issue shown in the detail column. On iPad this fills the pane beside
+    /// the list; on iPhone `NavigationSplitView` collapses and selecting a row
+    /// pushes the detail, so the single-column behaviour is unchanged.
+    @State private var selection: GitHubItem?
 
     var body: some View {
-        NavigationStack {
+        NavigationSplitView {
             content
                 .searchable(text: $query, prompt: "Search issues & PRs")
-                .navigationDestination(for: GitHubItem.self) { item in
-                    GitHubItemDetailView(item: item)
-                }
                 .refreshable { await load() }
                 .task { await load() }
+        } detail: {
+            if let selection {
+                NavigationStack { GitHubItemDetailView(item: selection) }
+            } else {
+                ContentUnavailableView {
+                    Label("Select an item", systemImage: "checklist")
+                } description: {
+                    Text("Pick a pull request or issue to see its details.")
+                }
+            }
         }
+        // Keep the list visible beside the detail on iPad; on iPhone the split
+        // view collapses to a single navigation stack.
+        .navigationSplitViewStyle(.balanced)
     }
 
     @ViewBuilder private var content: some View {
@@ -45,7 +59,7 @@ struct GitHubView: View {
         } else if groups.isEmpty {
             ContentUnavailableView.search(text: query)
         } else {
-            List {
+            List(selection: $selection) {
                 ForEach(groups, id: \.title) { group in
                     Section(group.title) {
                         ForEach(group.items) { item in
@@ -56,13 +70,12 @@ struct GitHubView: View {
             }
             .listStyle(.insetGrouped)
             .themedListBackground()
-            .readableListWidth()
         }
     }
 
     @ViewBuilder private func row(_ item: GitHubItem) -> some View {
         if item.number != nil {
-            NavigationLink(value: item) { GitHubItemRow(item: item) }
+            GitHubItemRow(item: item).tag(item)
         } else if let url = URL(string: item.url) {
             Link(destination: url) { GitHubItemRow(item: item) }
         } else {
