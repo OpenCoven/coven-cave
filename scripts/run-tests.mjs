@@ -77,6 +77,7 @@ export const SUITES = {
     "src/components/pwa-register.test.ts",
     "src/lib/readable-text-color.test.ts",
     "src/components/settings-appearance.test.ts",
+    "src/components/settings-permissions.test.ts",
     "src/components/theme-color-editor.test.ts",
     "src/lib/theme-token-hex.test.ts",
     "src/components/roles-tools-navigation.test.ts",

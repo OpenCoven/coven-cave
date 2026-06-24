@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { SettingsGroup } from "@/components/ui/settings-group";
+import { PermissionsSection } from "@/components/settings-permissions";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
@@ -60,12 +61,13 @@ type DaemonStatus = {
   daemon?: { pid: number; startedAt: string; socket: string };
 };
 
-type Section = "general" | "daemon" | "familiars" | "addons" | "mobile" | "appearance" | "about";
+type Section = "general" | "daemon" | "familiars" | "permissions" | "addons" | "mobile" | "appearance" | "about";
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: "general",    label: "General",    icon: "ph:sliders-horizontal" },
   { id: "daemon",     label: "Daemon",     icon: "ph:terminal-window" },
   { id: "familiars",  label: "Familiars",  icon: "ph:users-three" },
+  { id: "permissions", label: "Permissions", icon: "ph:key" },
   { id: "addons",     label: "Add-ons",    icon: "ph:puzzle-piece" },
   { id: "mobile",     label: "Phone",      icon: "ph:device-mobile" },
   { id: "appearance", label: "Appearance", icon: "ph:paint-brush" },
@@ -216,6 +218,7 @@ export function SettingsShell() {
           {section === "general" && <GeneralSection />}
           {section === "daemon"   && <DaemonSection />}
           {section === "familiars" && <FamiliarsSection />}
+          {section === "permissions" && <PermissionsSection />}
           {section === "addons"   && <AddonsSection />}
           {section === "mobile"   && <MobileSection />}
           {section === "appearance" && <AppearanceSection />}
