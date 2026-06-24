@@ -306,6 +306,12 @@
 .board-kanban-priority-pill--high { background:color-mix(in oklch,var(--color-warning) 18%,transparent); color:color-mix(in oklch,var(--color-warning) 70%,#fff); }
 .board-kanban-priority-pill--medium { background:color-mix(in oklch,var(--accent-presence) 18%,transparent); color:color-mix(in oklch,var(--accent-presence) 80%,#fff); }
 .board-kanban-priority-pill--low { background:var(--bg-elevated); color:var(--text-muted); }
+/* The pill text is lightened toward #fff for legibility on the dark-mode tint.
+   In light mode that lightened text fails WCAG on the faint tint, so darken it
+   toward #000 instead (≈5.8–7:1 vs the prior 2.0–2.6:1). */
+[data-mode="light"] .board-kanban-priority-pill--urgent { color:color-mix(in oklch,var(--color-danger) 76%,#000); }
+[data-mode="light"] .board-kanban-priority-pill--high { color:color-mix(in oklch,var(--color-warning) 76%,#000); }
+[data-mode="light"] .board-kanban-priority-pill--medium { color:color-mix(in oklch,var(--accent-presence) 76%,#000); }
 
 .board-kanban-card-title { font-size:12.5px; font-weight:500; color:var(--text-primary); line-height:1.4; word-break:break-word; }
 .board-kanban-card-notes { font-size:11px; line-height:1.5; color:var(--text-muted); margin:0; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
@@ -1473,6 +1479,10 @@
   background: color-mix(in oklch, var(--color-warning) 18%, transparent);
   color: var(--color-warning);
 }
+/* Raw danger/warning text reads on the dark-mode tint but fails WCAG on the
+   light-mode tint (warning especially); darken it toward #000 in light mode. */
+[data-mode="light"] .board-card-stack__priority-pill--urgent { color: color-mix(in oklch, var(--color-danger) 76%, #000); }
+[data-mode="light"] .board-card-stack__priority-pill--high { color: color-mix(in oklch, var(--color-warning) 76%, #000); }
 .board-card-stack__row-title {
   font-size: 14px;
   font-weight: 500;
