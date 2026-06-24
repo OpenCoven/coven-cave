@@ -500,7 +500,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
             </button>
           ))}
         </div>
-        <button type="button" className="board-group-toggle-btn" onClick={scrollToToday} disabled={todayX === null} title="Scroll the timeline to today">Today</button>
+        <button type="button" className="board-group-toggle-btn board-group-toggle-btn--solo" onClick={scrollToToday} disabled={todayX === null} title="Scroll the timeline to today">Today</button>
       </div>
       <div className="board-gantt__scroll" ref={scrollRef}>
         <div
