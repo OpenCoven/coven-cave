@@ -174,6 +174,15 @@ function urgencyColor(item: InboxItem): string {
   return "bg-[var(--text-muted)]";
 }
 
+/** Text alternative for the color-only urgency dot, so it isn't conveyed by hue alone. */
+function urgencyLabel(item: InboxItem): string {
+  if (isOverdueReminder(item)) return "Overdue";
+  const meta = (item as unknown as { comms?: { urgency?: string } }).comms;
+  if (meta?.urgency === "expiring") return "Expiring";
+  if (meta?.urgency === "time-sensitive") return "Time-sensitive";
+  return "Normal urgency";
+}
+
 function platformIcon(item: InboxItem): IconName {
   if (item.kind === "daily-summary") return "ph:newspaper";
   const meta = (item as unknown as { comms?: { platform?: string } }).comms;
@@ -207,7 +216,7 @@ function ItemChip({
     >
       {done
         ? <Icon name="ph:check-circle" className="shrink-0 text-[var(--text-muted)] text-[12px]" />
-        : <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />}
+        : <span role="img" aria-label={urgencyLabel(item)} title={urgencyLabel(item)} className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />}
       <Icon
         name={platformIcon(item)}
         className="shrink-0 text-[var(--text-muted)] text-[12px]"
@@ -431,7 +440,7 @@ function AllDayStrip({
                 onClick={() => onOpenItem?.(item)}
                 className="focus-ring-inset flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] bg-[var(--accent-presence)]/15 border border-[var(--accent-presence)]/30 hover:bg-[var(--accent-presence)]/25 transition-colors w-full text-left truncate"
               >
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />
+                <span role="img" aria-label={urgencyLabel(item)} title={urgencyLabel(item)} className={`h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(item)}`} />
                 <span className="truncate text-[var(--text-primary)]">{item.title}</span>
               </button>
             ))}
@@ -725,7 +734,7 @@ function TimeGrid({
                 >
                   {done
                     ? <Icon name="ph:check" width={9} className="shrink-0 text-[var(--text-muted)]" />
-                    : <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(ev.item)}`} />}
+                    : <span role="img" aria-label={urgencyLabel(ev.item)} title={urgencyLabel(ev.item)} className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${urgencyColor(ev.item)}`} />}
                   <span className={`truncate ${done ? "line-through" : ""}`}>{ev.item.title}</span>
                 </button>
               );
@@ -1095,7 +1104,7 @@ function MonthView({
                       >
                         {done
                           ? <Icon name="ph:check" width={8} className="shrink-0 text-[var(--text-muted)]" />
-                          : <span className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />}
+                          : <span role="img" aria-label={urgencyLabel(item)} title={urgencyLabel(item)} className={`h-1 w-1 shrink-0 rounded-full ${urgencyColor(item)}`} />}
                         <span className={`truncate text-[var(--text-primary)] ${done ? "line-through" : ""}`}>{item.title}</span>
                       </button>
                       );

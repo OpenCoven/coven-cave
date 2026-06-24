@@ -707,6 +707,8 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               key={tab.id}
               role="button"
               tabIndex={0}
+              aria-label={tabTitles[tab.id] ?? tab.title ?? tab.url}
+              aria-pressed={isActive}
               onClick={() => switchTab(tab.id)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {

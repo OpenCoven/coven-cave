@@ -505,7 +505,11 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                   {!collapsed.has(key) && gi.map((item) => (
                     <tr key={`${key}:${item.id || item.url}`}
                       className={`${item.id === selectedId ? "selected" : ""}${selectMode && selectedIds.has(item.id) ? " is-selected" : ""}`}
-                      aria-selected={selectMode ? selectedIds.has(item.id) : undefined}
+                      role={selectMode ? "checkbox" : undefined}
+                      aria-checked={selectMode ? selectedIds.has(item.id) : undefined}
+                      aria-label={selectMode ? `Select ${item.title}` : undefined}
+                      tabIndex={selectMode ? 0 : undefined}
+                      onKeyDown={selectMode ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSelect(item.id); } } : undefined}
                       onClick={() => { if (selectMode) { toggleSelect(item.id); return; } onSelect(item); }}>
                       <td>
                         <span className="board-table-title library-title-cell">

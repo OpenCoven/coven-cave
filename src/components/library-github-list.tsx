@@ -829,7 +829,17 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
               {groups.map(({ key, label, items: gi }) => (
                 <React.Fragment key={key}>
                   {groupBy !== "none" && (
-                    <tr className="board-table-group-row" onClick={() => toggleGroup(key)}>
+                    <tr
+                      className="board-table-group-row focus-ring-inset"
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={!collapsed.has(key)}
+                      aria-label={`${collapsed.has(key) ? "Expand" : "Collapse"} ${label}`}
+                      onClick={() => toggleGroup(key)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleGroup(key); }
+                      }}
+                    >
                       <td colSpan={GITHUB_TABLE_COLUMN_COUNT}>
                         <span className="board-table-group-caret">
                           <Icon name={collapsed.has(key) ? "ph:caret-right" : "ph:caret-down"} width={10} />
@@ -845,7 +855,11 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                       <React.Fragment key={item.id}>
                         <tr
                           className={`gh-row-main${item.id === selectedId ? " selected" : ""}${selectMode && selectedIds.has(item.id) ? " is-selected" : ""}`}
-                          aria-selected={selectMode ? selectedIds.has(item.id) : undefined}
+                          role={selectMode ? "checkbox" : undefined}
+                          aria-checked={selectMode ? selectedIds.has(item.id) : undefined}
+                          aria-label={selectMode ? `Select ${item.title}` : undefined}
+                          tabIndex={selectMode ? 0 : undefined}
+                          onKeyDown={selectMode ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSelect(item.id); } } : undefined}
                           onClick={() => { if (selectMode) { toggleSelect(item.id); return; } onSelect(item); }}
                         >
                           <td className="gh-col-title">

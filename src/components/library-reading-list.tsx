@@ -506,7 +506,11 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                   {!collapsed.has(key) && gi.map((item) => (
                     <tr key={item.id}
                       className={`library-reading-row${item.id === selectedId ? " selected" : ""}${selectMode && selectedIds.has(item.id) ? " is-selected" : ""}`}
-                      aria-selected={selectMode ? selectedIds.has(item.id) : undefined}
+                      role={selectMode ? "checkbox" : undefined}
+                      aria-checked={selectMode ? selectedIds.has(item.id) : undefined}
+                      aria-label={selectMode ? `Select ${item.title}` : undefined}
+                      tabIndex={selectMode ? 0 : undefined}
+                      onKeyDown={selectMode ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSelect(item.id); } } : undefined}
                       onClick={() => { if (selectMode) { toggleSelect(item.id); return; } onSelect(item); }}>
                       <td className="library-reading-col-title">
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -541,8 +545,9 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                                 type="button"
                                 role="radio"
                                 aria-checked={active}
+                                aria-label={meta.label}
                                 data-status={status}
-                                className={`library-status-toggle__opt${active ? " is-active" : ""}`}
+                                className={`library-status-toggle__opt focus-ring-inset${active ? " is-active" : ""}`}
                                 style={active ? statusBadgeStyle(status) : undefined}
                                 title={meta.label}
                                 onClick={(e) => {

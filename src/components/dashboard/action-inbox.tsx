@@ -151,7 +151,7 @@ export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
           return (
           <div
             key={item.id}
-            className={`dr-row dash-inbox__row${selectMode && selectedIds.has(item.id) ? " dash-inbox__row--selected" : ""}`}
+            className={`dr-row dash-inbox__row${selectMode ? " focus-ring-inset" : ""}${selectMode && selectedIds.has(item.id) ? " dash-inbox__row--selected" : ""}`}
             style={{ ["--row-accent" as string]: "var(--color-warning)" }}
             role={selectMode ? "checkbox" : undefined}
             aria-checked={selectMode ? selectedIds.has(item.id) : undefined}

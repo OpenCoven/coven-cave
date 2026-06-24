@@ -84,6 +84,7 @@ export function WorkflowLibrary({
         key={`${workflow.id}:${workflow.path ?? ""}`}
         type="button"
         className={`workflow-library-item${active ? " is-active" : ""}`}
+        aria-pressed={active}
         onClick={() => onSelectWorkflow(workflow)}
       >
         <span className="workflow-library-item-title">

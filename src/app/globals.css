@@ -413,6 +413,14 @@ select {
   outline-offset: calc(-1 * var(--ring-width));
 }
 
+/* Bulk-select rows expose role="checkbox" in select mode; give the keyboard
+   focus an inset ring without changing their pinned className strings. */
+tr[role="checkbox"]:focus { outline: none; }
+tr[role="checkbox"]:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: calc(-1 * var(--ring-width));
+}
+
 /* ============================================================
    Shell primitives — the three-pane app chrome.
    Composed by <Shell> in src/components/shell.tsx.

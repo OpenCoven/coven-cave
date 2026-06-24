@@ -179,6 +179,7 @@ export const SUITES = {
     "src/components/project-tree-keynav.test.ts",
     "src/components/comux-pane-nav-wiring.test.ts",
     "src/components/library-polish.test.ts",
+    "src/components/a11y-audit-fixes.test.ts",
     "src/components/library-file-actions.test.ts",
     "src/components/eval-loop-panel.test.ts",
     "src/components/retro-runs-view.test.ts",
