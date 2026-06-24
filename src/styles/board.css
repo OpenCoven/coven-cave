@@ -1864,7 +1864,7 @@
 }
 
 /* status dots */
-.cg-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.cg-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .cg-dot--done { background: color-mix(in oklch, var(--text-secondary) 50%, var(--text-muted)); }
 .cg-dot--in-progress { background: var(--color-info); }
 .cg-dot--pending { background: var(--color-warning); }
