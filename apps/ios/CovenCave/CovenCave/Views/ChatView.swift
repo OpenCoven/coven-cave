@@ -169,7 +169,16 @@ struct ChatView: View {
         // A new chat linked to a task acquires its server session only after the
         // first reply; once streaming stops, push that sessionId onto the card.
         .onChange(of: thread.isStreaming) { _, streaming in
-            if !streaming { Task { await app.reconcileCardLinks(for: thread) } }
+            if !streaming {
+                // A reply just finished streaming — a subtle "done" haptic so you
+                // know it landed without watching. Only for a real assistant
+                // message (not a user cancel or an error placeholder).
+                if let last = thread.messages.last, last.role == .assistant, !last.isError,
+                   !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Haptics.success()
+                }
+                Task { await app.reconcileCardLinks(for: thread) }
+            }
         }
         // Restore an unsent draft for this thread (typed earlier, then the view
         // was dismissed or the app backgrounded). Only when the live draft is
