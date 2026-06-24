@@ -189,6 +189,7 @@ struct TasksView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .themedListBackground()
     }
 
     private var emptyState: some View {
