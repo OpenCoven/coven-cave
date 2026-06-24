@@ -7,6 +7,7 @@ import {
   filterPlugins,
   categoriesFrom,
   requiredConfigFromManifest,
+  remoteUrlFromManifest,
 } from "./marketplace-catalog.ts";
 
 const marketplacePlugins = [
@@ -103,5 +104,26 @@ assert.equal(pluginBadgeState({ available: true, installed: true, requiresSetup:
 assert.equal(pluginBadgeState({ available: true, installed: false, requiresSetup: true, configured: true }), "add");
 assert.equal(pluginBadgeState({ available: true, installed: false, requiresSetup: false, configured: false }), "add");
 assert.equal(pluginBadgeState({ available: false, installed: false, requiresSetup: true, configured: false }), "unavailable");
+
+// --- remoteUrl (remote MCP endpoint) ---
+assert.equal(
+  remoteUrlFromManifest({ mcpServers: { linear: { url: "https://mcp.linear.app/mcp", type: "http" } } }),
+  "https://mcp.linear.app/mcp",
+);
+assert.equal(
+  remoteUrlFromManifest({ mcpServers: { github: { command: "npx" } } }),
+  undefined,
+); // command-only (no url) -> undefined
+assert.equal(remoteUrlFromManifest({}), undefined);
+
+const remoteMerged = mergeCatalog(
+  [{ name: "linear", displayName: "Linear", category: "Project Management", trust: "official-remote", policy: { installation: "AVAILABLE", authentication: "NONE" } }],
+  { linear: { mcpServers: { linear: { url: "https://mcp.linear.app/mcp", type: "http" } } } },
+  {},
+);
+assert.equal(remoteMerged[0].remoteUrl, "https://mcp.linear.app/mcp");
+
+const ghRow = merged.find((p) => p.id === "github");
+assert.equal(ghRow.remoteUrl, undefined); // github fixture has no mcpServers -> undefined
 
 console.log("marketplace-catalog.test.ts: ok");

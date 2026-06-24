@@ -33,6 +33,7 @@ export type PluginManifest = {
   keywords?: string[];
   capabilities?: string[];
   userConfig?: Record<string, PluginUserConfigField>;
+  mcpServers?: Record<string, { url?: string; type?: string; command?: string }>;
 };
 
 export type RequiredConfigField = {
@@ -57,6 +58,15 @@ export function requiredConfigFromManifest(manifest: PluginManifest): RequiredCo
     }));
 }
 
+/** The first remote (url-based) MCP server URL declared by the manifest, if any. */
+export function remoteUrlFromManifest(manifest: PluginManifest): string | undefined {
+  const servers = manifest.mcpServers ?? {};
+  for (const s of Object.values(servers)) {
+    if (s && typeof s.url === "string" && s.url.length > 0) return s.url;
+  }
+  return undefined;
+}
+
 export type InstalledMap = Record<string, { version: string; source: string; installedAt: string }>;
 
 export type MarketplacePlugin = {
@@ -79,6 +89,7 @@ export type MarketplacePlugin = {
   available: boolean;
   requiredConfig: RequiredConfigField[];
   configured: boolean;
+  remoteUrl?: string;
 };
 
 export function deriveRequiresSetup(userConfig: PluginManifest["userConfig"]): boolean {
@@ -125,6 +136,7 @@ export function mergeCatalog(
         available: installation === "AVAILABLE",
         requiredConfig,
         configured: false,
+        remoteUrl: remoteUrlFromManifest(manifest),
       };
     })
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
