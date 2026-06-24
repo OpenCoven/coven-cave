@@ -175,3 +175,13 @@ assert.ok(
   source.includes("focus-ring-inset flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px]"),
   "all-day event buttons have a focus ring",
 );
+
+// Month view: clicking an empty current-month day pre-fills the add form for
+// that day; the date number still navigates into the day.
+assert.match(source, /const canAdd = isCurrentMonth && !!onAddEntry;/, "month cells know when they can add");
+assert.match(source, /const onCell = \(\) => \{[\s\S]{0,120}onAddEntry!\(\{ fireAt: defaultEntryFireAt\(day\) \}\)[\s\S]{0,40}onDayClick\?\.\(day\)/, "an empty day click adds (current month) or navigates (otherwise)");
+assert.match(source, /onClick=\{onCell\}/, "the day cell click runs the add/navigate handler");
+assert.match(source, /aria-label=\{`Open \$\{fmtDateHeading\(day\)\}`\}/, "the date number is a button labelled to open the day");
+assert.match(source, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onDayClick\?\.\(day\); \}\}/, "the date number navigates into the day (stops the cell add)");
+
+console.log("calendar-view-polish.test.ts: month click-to-add ok");
