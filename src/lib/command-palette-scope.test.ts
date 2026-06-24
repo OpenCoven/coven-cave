@@ -74,7 +74,7 @@ test("command palette renders a scope chip with an accessible label", () => {
 test("no-match regression: an unmatched @token shows suggestions only", () => {
   assert.match(
     source,
-    /const familiarSuggestionPool = noFamiliarMatch \? familiars : familiars\.filter/,
+    /const familiarSuggestionPool = rank\(noFamiliarMatch \? familiars : familiars\.filter/,
     "unmatched @tokens bypass the empty scope filter so familiar suggestions still render",
   );
   assert.match(

@@ -8,6 +8,7 @@ import { Icon } from "@/lib/icon";
 import { platformizeHint, useKeySymbols } from "@/lib/platform-keys";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { parseFamiliarToken, resolveFamiliarIds } from "@/lib/command-palette-scope";
+import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
@@ -339,6 +340,14 @@ export function CommandPalette({
   const rows: Row[] = useMemo(() => {
     const { token, rest } = parseFamiliarToken(query);
     const q = rest.trim().toLowerCase();
+    // Fuzzy match: power users type subsequences ("brd" → Board). `fz` widens the
+    // per-field predicates; `rank` sorts a matched set by best fuzzy score (over
+    // its label fields) so the closest match floats to the top while searching.
+    const fz = (text: string) => fuzzyMatch(q, text);
+    const rank = <T,>(items: T[], fields: (item: T) => Array<string | null | undefined>): T[] =>
+      q
+        ? [...items].sort((a, b) => (bestFuzzyScore(q, fields(b)) ?? -Infinity) - (bestFuzzyScore(q, fields(a)) ?? -Infinity))
+        : items;
     const scope = resolveFamiliarIds(familiars, token);
     const scoped = scope !== null;
     // When the user has typed `@token` but no familiar matches it yet, we
@@ -346,15 +355,11 @@ export function CommandPalette({
     // and suppress everything else. This is also what we do for a bare `@`.
     const noFamiliarMatch = scoped && scope!.size === 0;
 
-    const familiarSuggestionPool = noFamiliarMatch ? familiars : familiars.filter((f) => {
+    const familiarSuggestionPool = rank(noFamiliarMatch ? familiars : familiars.filter((f) => {
       if (scoped && !scope!.has(f.id)) return false;
       if (!q) return true;
-      return (
-        f.display_name.toLowerCase().includes(q) ||
-        f.role.toLowerCase().includes(q) ||
-        (f.harness ?? "").toLowerCase().includes(q)
-      );
-    });
+      return fz(f.display_name) || fz(f.role) || fz(f.harness ?? "");
+    }), (f) => [f.display_name, f.role, f.harness]);
     const familiarRows: Row[] = familiarSuggestionPool
       .slice(0, RESULT_LIMITS.familiar)
       .map((f) => ({ id: `f:${f.id}`, kind: "familiar", familiar: f }));
@@ -370,21 +375,17 @@ export function CommandPalette({
       if (scoped) {
         if (!scope!.has(s.familiarId)) return false;
         if (!q) return true;
-        return (
-          (s.title ?? "").toLowerCase().includes(q) ||
-          s.harness.toLowerCase().includes(q)
-        );
+        return fz(s.title ?? "") || fz(s.harness);
       }
       // Empty query → the "Recent" jump list: every familiar's sessions, not
       // just the active one. Recency ordering happens below the filter.
       if (!q) return true;
-      return (
-        (s.title ?? "").toLowerCase().includes(q) ||
-        s.harness.toLowerCase().includes(q) ||
-        (s.familiarId ?? "").toLowerCase().includes(q)
-      );
+      return fz(s.title ?? "") || fz(s.harness) || fz(s.familiarId ?? "");
     });
-    const sessionRows: Row[] = (!q ? [...matchedSessions].sort(byRecency) : matchedSessions)
+    // Browse → recency; searching → best fuzzy match first.
+    const sessionRows: Row[] = (!q
+      ? [...matchedSessions].sort(byRecency)
+      : rank(matchedSessions, (s) => [s.title, s.familiarId]))
       .slice(0, RESULT_LIMITS.session)
       .map((s) => ({
         id: `s:${s.id}`,
@@ -393,22 +394,22 @@ export function CommandPalette({
         familiar: s.familiarId ? familiarById.get(s.familiarId) ?? null : null,
       }));
 
-    const cardRows: Row[] = cards
+    const cardRows: Row[] = rank(cards
       .filter((c) => {
         if (scoped) {
           if (!c.familiarId || !scope!.has(c.familiarId)) return false;
         }
         if (!q) return true;
         return (
-          c.title.toLowerCase().includes(q) ||
-          (c.labels ?? []).some((l) => l.toLowerCase().includes(q)) ||
-          c.status.toLowerCase().includes(q) ||
-          c.priority.toLowerCase().includes(q)
+          fz(c.title) ||
+          (c.labels ?? []).some((l) => fz(l)) ||
+          fz(c.status) ||
+          fz(c.priority)
         );
       })
       // Empty query → lead with the most-recently-updated tasks ("recent tasks"
-      // jump-list); while searching keep the match order.
-      .sort((a, b) => (q ? 0 : new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime()))
+      // jump-list); while searching `rank` (below) orders by fuzzy score.
+      .sort((a, b) => (q ? 0 : new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime())), (c) => [c.title, ...(c.labels ?? [])])
       .slice(0, RESULT_LIMITS.card)
       .map((c) => ({
         id: `card:${c.id}`,
@@ -421,11 +422,7 @@ export function CommandPalette({
       .filter((e) => {
         if (scoped && !scope!.has(e.familiar_id)) return false;
         if (!q) return true;
-        return (
-          e.title.toLowerCase().includes(q) ||
-          (e.excerpt ?? "").toLowerCase().includes(q) ||
-          e.familiar_id.toLowerCase().includes(q)
-        );
+        return fz(e.title) || (e.excerpt ?? "").toLowerCase().includes(q) || fz(e.familiar_id);
       })
       .slice(0, RESULT_LIMITS.covenMemory)
       .map((e) => ({
@@ -440,12 +437,7 @@ export function CommandPalette({
     const fsMemoryRows: Row[] = scoped
       ? []
       : fsMemory
-          .filter(
-            (e) =>
-              !q ||
-              e.relPath.toLowerCase().includes(q) ||
-              e.rootLabel.toLowerCase().includes(q),
-          )
+          .filter((e) => !q || fz(e.relPath) || fz(e.rootLabel))
           .slice(0, RESULT_LIMITS.fsMemory)
           .map((e) => ({ id: `fm:${e.fullPath}`, kind: "fs-memory", entry: e }));
 
@@ -503,8 +495,8 @@ export function CommandPalette({
             ? c.name.startsWith(slashToken) ||
               (c.aliases ?? []).some((a) => a.startsWith(slashToken))
             : !q ||
-              c.name.includes(q) ||
-              (c.aliases ?? []).some((a) => a.includes(q)) ||
+              fz(c.name) ||
+              (c.aliases ?? []).some((a) => fz(a)) ||
               c.description.toLowerCase().includes(q),
         )
           // /save renders its dedicated per-destination rows above instead.
@@ -524,7 +516,7 @@ export function CommandPalette({
 
     const shortcutRows: Row[] = [];
     const toggleLabel = "Toggle Familiar Chat";
-    if (!scoped && (!q || toggleLabel.toLowerCase().includes(q) || "⌘⇧b".includes(q))) {
+    if (!scoped && (!q || fz(toggleLabel) || "⌘⇧b".includes(q))) {
       shortcutRows.push({
         id: "shortcut:toggle-agent",
         kind: "shortcut",
@@ -558,18 +550,15 @@ export function CommandPalette({
     // command or a familiar scope (where surface nav would be noise).
     const surfaceRows: Row[] = (scoped || slashToken)
       ? []
-      : FOLDER_MODES.filter((fm) => {
+      : rank(FOLDER_MODES.filter((fm) => {
           if (fm.id === "github") return addons?.github === true;
           if (fm.id === "library") return addons?.library === true;
           return true;
         })
-          .filter(
-            (fm) =>
-              !q ||
-              fm.label.toLowerCase().includes(q) ||
-              fm.id.includes(q) ||
-              fm.description.toLowerCase().includes(q),
-          )
+          // Fuzzy on the short label/id; substring-only on the long description
+          // (subsequence-matching prose surfaces irrelevant items).
+          .filter((fm) => !q || fz(fm.label) || fz(fm.id) || fm.description.toLowerCase().includes(q)),
+          (fm) => [fm.label, fm.id])
           .map((fm) => ({
             id: `surface:${fm.id}`,
             kind: "command" as const,
@@ -582,8 +571,7 @@ export function CommandPalette({
     // expanded + scrolled to that project). Hidden while scoped or typing slash.
     const projectRows: Row[] = (scoped || slashToken)
       ? []
-      : projects
-          .filter((p) => !q || p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q))
+      : rank(projects.filter((p) => !q || fz(p.name) || fz(p.root)), (p) => [p.name, p.root])
           .slice(0, 6)
           .map((p) => ({
             id: `project:${p.id}`,
@@ -602,8 +590,7 @@ export function CommandPalette({
     ];
     const boardViewRows: Row[] = (scoped || slashToken)
       ? []
-      : BOARD_VIEWS
-          .filter((v) => !q || v.label.toLowerCase().includes(q) || v.terms.includes(q))
+      : rank(BOARD_VIEWS.filter((v) => !q || fz(v.label) || fz(v.terms)), (v) => [v.label, v.terms])
           .map((v) => ({
             id: `board-view:${v.view}`,
             kind: "command" as const,

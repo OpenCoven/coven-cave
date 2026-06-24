@@ -85,6 +85,7 @@ export const SUITES = {
     "src/components/command-palette.test.ts",
     "src/components/command-palette-save-link.test.ts",
     "src/lib/command-palette-scope.test.ts",
+    "src/lib/fuzzy-match.test.ts",
     "src/components/home-chat-handoff.test.ts",
     "src/components/home-composer.test.ts",
     "src/components/home-composer-centering.test.ts",
