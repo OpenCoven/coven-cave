@@ -89,13 +89,16 @@ assert.match(
 
 // --- App chrome applies accent, mode, and propagates the palette ------------
 
-assert.match(app, /\.environment\(\\\.chrome, app\.chrome\)/, "App should inject the chrome palette");
-assert.match(app, /\.tint\(app\.chrome\.accent\)/, "App should tint controls with the desktop accent");
+// Chrome + scheme are resolved through the appearance override (Match desktop /
+// Light / Dark) before being applied.
+assert.match(app, /\.environment\(\\\.chrome, resolved\.chrome\)/, "App should inject the resolved chrome palette");
+assert.match(app, /\.tint\(resolved\.chrome\.accent\)/, "App should tint controls with the resolved accent");
 assert.match(
   app,
-  /\.preferredColorScheme\(app\.chrome\.colorScheme\)/,
-  "App should follow the desktop light/dark mode (not a hardcoded scheme)",
+  /\.preferredColorScheme\(resolved\.scheme\)/,
+  "App should apply the resolved light/dark mode (not a hardcoded scheme)",
 );
+assert.match(app, /mode\.resolve\(desktop: app\.chrome\)/, "App resolves the appearance override against the desktop chrome");
 assert.doesNotMatch(
   app,
   /\.preferredColorScheme\(\.dark\)/,
