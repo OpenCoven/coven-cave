@@ -573,6 +573,7 @@ export function FlowView() {
                 }}
               >
                 <textarea
+                  aria-label="Flow prompt"
                   value={onboardingPrompt}
                   onChange={(event) => setOnboardingPrompt(event.target.value)}
                   placeholder="Describe a flow to create"
