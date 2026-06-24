@@ -34,8 +34,24 @@ struct RemindersView: View {
                         HStack {
                             Button(allSelected ? "Deselect All" : "Select All") { toggleSelectAll() }
                             Spacer()
-                            Button(role: .destructive) { confirmingBulkDelete = true } label: {
-                                Text(selectedIds.isEmpty ? "Delete" : "Delete (\(selectedIds.count))")
+                            Menu {
+                                Button { Task { await app.markRemindersDone(selectedIds); exitSelect() } } label: {
+                                    Label("Mark done", systemImage: "checkmark.circle")
+                                }
+                                Menu {
+                                    Button("15 minutes") { Task { await app.snoozeReminders(selectedIds, minutes: 15); exitSelect() } }
+                                    Button("1 hour") { Task { await app.snoozeReminders(selectedIds, minutes: 60); exitSelect() } }
+                                    Button("1 day") { Task { await app.snoozeReminders(selectedIds, minutes: 1440); exitSelect() } }
+                                } label: { Label("Snooze", systemImage: "moon.zzz") }
+                                Button { Task { await app.dismissReminders(selectedIds); exitSelect() } } label: {
+                                    Label("Dismiss", systemImage: "xmark.circle")
+                                }
+                                Divider()
+                                Button(role: .destructive) { confirmingBulkDelete = true } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            } label: {
+                                Text(selectedIds.isEmpty ? "Actions" : "Actions (\(selectedIds.count))")
                                     .fontWeight(.semibold)
                             }
                             .disabled(selectedIds.isEmpty)
