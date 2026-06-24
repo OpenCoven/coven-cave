@@ -262,6 +262,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         <button type="button" className="sidebar-action-row focus-ring" onClick={onNewChat} title="New chat">
           <Icon
             name="ph:note-pencil"
+            className="sidebar-action-icon"
             width={CAVE_ICON_SIZE.sidePanelAction}
             height={CAVE_ICON_SIZE.sidePanelAction}
             aria-hidden
