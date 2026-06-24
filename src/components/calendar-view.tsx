@@ -1023,41 +1023,39 @@ function MonthView({
               const isCurrentMonth = day.getMonth() === anchor.getMonth();
               const isToday = now ? isSameDay(day, now) : false;
 
+              // Clicking an empty part of a current-month day pre-fills the add
+              // form for that day; the date number still navigates into the day.
+              const canAdd = isCurrentMonth && !!onAddEntry;
+              const itemsSuffix = dayItems.length ? `, ${dayItems.length} item${dayItems.length !== 1 ? "s" : ""}` : "";
+              const onCell = () => {
+                if (canAdd) onAddEntry!({ fireAt: defaultEntryFireAt(day) });
+                else onDayClick?.(day);
+              };
               return (
                 <div
                   key={i}
                   role="button"
                   tabIndex={0}
-                  aria-label={`${fmtDateHeading(day)}${dayItems.length ? `, ${dayItems.length} item${dayItems.length !== 1 ? "s" : ""}` : ""}`}
-                  onClick={() => onDayClick?.(day)}
+                  aria-label={`${canAdd ? `Add a reminder on ${fmtDateHeading(day)}` : fmtDateHeading(day)}${itemsSuffix}`}
+                  onClick={onCell}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
-                      onDayClick?.(day);
+                      onCell();
                     }
                   }}
+                  title={canAdd ? "Click to add a reminder — click the date to open the day" : undefined}
                   className={`group relative focus-ring-inset flex cursor-pointer flex-col overflow-hidden p-1.5 transition-colors ${
                     isCurrentMonth
                       ? "bg-[var(--bg-panel)] hover:bg-[var(--bg-raised)]"
                       : "bg-[var(--bg-base)] hover:bg-[var(--bg-panel)]"
                   } ${isToday ? "ring-1 ring-inset ring-[var(--accent-presence)]" : ""}`}
                 >
-                  {onAddEntry && isCurrentMonth && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAddEntry({ fireAt: defaultEntryFireAt(day) });
-                      }}
-                      aria-label={`Add a reminder on ${fmtDateHeading(day)}`}
-                      title="Add reminder"
-                      className="focus-ring absolute right-1 top-1 hidden h-4 w-4 items-center justify-center rounded text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--accent-presence)] group-hover:flex group-focus-within:flex"
-                    >
-                      <Icon name="ph:plus" width={10} aria-hidden />
-                    </button>
-                  )}
-                  <span
-                    className={`mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onDayClick?.(day); }}
+                    aria-label={`Open ${fmtDateHeading(day)}`}
+                    className={`focus-ring mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${
                       isToday
                         ? "bg-[var(--accent-presence)] text-white"
                         : isCurrentMonth
@@ -1066,7 +1064,7 @@ function MonthView({
                     }`}
                   >
                     {day.getDate()}
-                  </span>
+                  </button>
                   <div className="flex flex-col gap-0.5 overflow-hidden">
                     {dayDeadlines.slice(0, 2).map((d) => (
                       <DeadlineChip key={d.id} deadline={d} onOpen={onOpenDeadline} size="xs" />
