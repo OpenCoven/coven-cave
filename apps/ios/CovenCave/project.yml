@@ -52,3 +52,21 @@ targets:
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
         IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    dependencies:
+      - target: CovenCaveWidgets
+
+  # Widget extension hosting the "task running" Live Activity (Lock Screen +
+  # Dynamic Island). Shares TaskActivityAttributes.swift with the app target.
+  CovenCaveWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: CovenCaveWidgets
+      - path: CovenCave/LiveActivity/TaskActivityAttributes.swift
+    settings:
+      base:
+        INFOPLIST_FILE: CovenCaveWidgets/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: ai.opencoven.cave.widgets
+        PRODUCT_NAME: CovenCaveWidgets
+        IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+        SKIP_INSTALL: YES

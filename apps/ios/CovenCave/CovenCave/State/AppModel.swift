@@ -171,6 +171,8 @@ final class AppModel {
             tasksError = error.localizedDescription
         }
         tasksLoaded = true
+        // A task that finished on the desktop should drop its Lock Screen activity.
+        await LiveActivityManager.shared.reconcile(tasks)
     }
 
     // MARK: - Task actions
@@ -185,6 +187,7 @@ final class AppModel {
             let updated = try await client.updateTask(cardId: card.id, status: status)
             applyTask(id: card.id) { $0 = updated }
             Haptics.tap()
+            await LiveActivityManager.shared.reconcile(tasks)
         } catch {
             tasks = previous
             tasksError = error.localizedDescription
