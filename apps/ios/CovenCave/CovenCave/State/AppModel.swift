@@ -133,11 +133,16 @@ final class AppModel {
         return CaveClient(connection: connection)
     }
 
+    /// familiarId → when its chats were last viewed. A familiar reads as
+    /// "unread" when its latest activity is newer than this. Persisted.
+    var familiarViews: [String: Date] = [:]
+
     init() {
         connection = CaveConnection.load()
         loadThreads()
         loadCardLinks()
         loadFamiliarOrder()
+        loadFamiliarViews()
         if connection != nil { connectionState = .checking }
     }
 
@@ -554,10 +559,40 @@ final class AppModel {
         guard let client else { return }
         do {
             familiars = applyFamiliarOrder(try await client.familiars())
+            seedFamiliarViews(familiars.map(\.id))
             familiarsError = nil
         } catch {
             familiarsError = error.localizedDescription
         }
+    }
+
+    // MARK: - Unread tracking
+
+    /// True when a familiar has activity newer than the last time its chats were
+    /// viewed. New familiars are seeded as "seen now" (see `seedFamiliarViews`),
+    /// so only genuinely new activity — e.g. a reply that arrived on the desktop
+    /// — flags as unread, not the entire backlog on first launch.
+    func hasUnread(_ familiarId: String) -> Bool {
+        guard let seen = familiarViews[familiarId],
+              let activity = lastActivity(for: familiarId) else { return false }
+        return activity > seen
+    }
+
+    /// Mark a familiar's chats as read (call when opening them).
+    func markFamiliarViewed(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        let now = Date()
+        for id in ids { familiarViews[id] = now }
+        persistFamiliarViews()
+    }
+
+    /// Baseline any not-yet-tracked familiar as seen "now" so existing history
+    /// isn't all flagged unread; only later activity counts.
+    private func seedFamiliarViews(_ ids: [String]) {
+        let now = Date()
+        var changed = false
+        for id in ids where familiarViews[id] == nil { familiarViews[id] = now; changed = true }
+        if changed { persistFamiliarViews() }
     }
 
     /// Drag-reorder familiars in the Chats tab; persists the new order.
@@ -1074,5 +1109,28 @@ final class AppModel {
             return
         }
         familiarOrder = order
+    }
+
+    private var familiarViewsFileURL: URL {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("cave-familiar-views.json")
+    }
+
+    private func persistFamiliarViews() {
+        do {
+            let data = try JSONEncoder().encode(familiarViews)
+            try data.write(to: familiarViewsFileURL, options: .atomic)
+        } catch {
+            // Non-fatal: best-effort persistence.
+        }
+    }
+
+    private func loadFamiliarViews() {
+        guard let data = try? Data(contentsOf: familiarViewsFileURL),
+              let views = try? JSONDecoder().decode([String: Date].self, from: data) else {
+            return
+        }
+        familiarViews = views
     }
 }

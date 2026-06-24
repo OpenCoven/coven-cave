@@ -367,6 +367,7 @@ struct ChatsHomeView: View {
 /// of how many conversations they have and when they were last active.
 struct FamiliarRow: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.chrome) private var chrome
     let familiar: Familiar
 
     var body: some View {
@@ -375,7 +376,13 @@ struct FamiliarRow: View {
                        url: app.client?.avatarURL(for: familiar),
                        size: 48, showStatus: true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(familiar.displayName).font(.headline).lineLimit(1)
+                HStack(spacing: 6) {
+                    // Unread: activity newer than the last time you opened it.
+                    if app.hasUnread(familiar.id) {
+                        Circle().fill(chrome.accent).frame(width: 7, height: 7)
+                    }
+                    Text(familiar.displayName).font(.headline).lineLimit(1)
+                }
                 if let role = familiar.role, !role.isEmpty {
                     Text(role).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -402,6 +409,7 @@ struct FamiliarRow: View {
     /// One spoken summary of the row: name, role, chat count, last activity.
     private var accessibilityText: String {
         var parts: [String] = [familiar.displayName]
+        if app.hasUnread(familiar.id) { parts.append("unread") }
         if let role = familiar.role, !role.isEmpty { parts.append(role) }
         let count = app.threadCount(for: familiar.id)
         parts.append(count == 1 ? "1 chat" : "\(count) chats")

@@ -91,6 +91,7 @@ struct FamiliarThreadsView: View {
         }
         .refreshable { await app.loadSessions() }
         .task { await app.loadSessions() }
+        .onAppear { app.markFamiliarViewed([familiar.id]) }
         .safeAreaInset(edge: .bottom) {
             if selectMode {
                 HStack {
