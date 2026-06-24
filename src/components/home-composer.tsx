@@ -16,8 +16,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Familiar, SessionRow } from "@/lib/types";
-import type { InboxItem } from "@/lib/cave-inbox";
+import type { Familiar } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
 import { modelSlashOptions, resolveModelArg } from "@/lib/slash-model";
 import type { ChatModelState } from "@/lib/chat-model-state";
@@ -36,15 +35,44 @@ const DESTINATIONS: { id: Destination; label: string; icon: IconName }[] = [
 ];
 
 const PLACEHOLDERS: Record<Destination, string> = {
-  chat: "Ask a familiar anything…",
+  chat: "Do anything",
   board: "Describe a new task…",
   reminder: "Remind me about…",
 };
 
+// Connector cards mirror the Codex-style cold start: one-tap entry points into
+// the marketplace for the integrations that give a familiar real context.
+type Connector = {
+  id: string;
+  title: string;
+  subtitle: string;
+  glyph: "slack" | "gmail" | "drive";
+};
+
+const CONNECTORS: Connector[] = [
+  {
+    id: "slack",
+    title: "Connect messaging",
+    subtitle: "Get context from recent team discussions",
+    glyph: "slack",
+  },
+  {
+    id: "gmail",
+    title: "Connect email",
+    subtitle: "Summarize stakeholder asks from email",
+    glyph: "gmail",
+  },
+  {
+    id: "drive",
+    title: "Connect files",
+    subtitle: "Review results, research, and plans",
+    glyph: "drive",
+  },
+];
+
 type Props = {
   familiars: Familiar[];
   activeFamiliarId: string | null;
-  sessions: SessionRow[];
   onSetActiveFamiliar: (id: string) => void;
   /** Open a new chat that sends `prompt` through ChatView's streaming path.
    *  Home never talks to the chat API itself — a fire-and-cancel send here
@@ -56,13 +84,9 @@ type Props = {
   /** Submit a slash command. Mirrors the chat composer's escape hatch so
    *  `/inbox`, `/board`, `/remind …` etc. work from the home screen too. */
   onSlash?: (command: string, args: string) => void;
+  /** Open the marketplace for a connector card (Slack / Gmail / Drive). */
+  onConnect?: (connectorId: string) => void;
 };
-
-const SEED_SUGGESTIONS = [
-  "Summarise what my active familiar has been working on today",
-  "Create a board card for the next app polish pass",
-  "Remind me to review PRs tomorrow at 10 AM",
-];
 
 // Persist the in-progress prompt so a page reload doesn't eat what you were
 // typing on the home screen (mirrors the chat composer's draft persistence).
@@ -94,19 +118,17 @@ function writeHomeDraft(text: string) {
 export function HomeComposer({
   familiars,
   activeFamiliarId,
-  sessions,
   onSetActiveFamiliar,
   onStartChat,
   onNavigateToBoard,
   onNavigateToInbox,
   onToast,
   onSlash,
+  onConnect,
 }: Props) {
   const [text, setText] = useState(() => readHomeDraft());
   const [destination, setDestination] = useState<Destination>("chat");
   const [sending, setSending] = useState(false);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(true);
   const [history, setHistory] = useState<string[]>(() => readComposerHistory(HOME_HISTORY_KEY));
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
   const [slashIdx, setSlashIdx] = useState(0);
@@ -207,36 +229,24 @@ export function HomeComposer({
     setTimeout(() => textareaRef.current?.focus(), 80);
   }, []);
 
-  // Build suggestions from recent sessions + inbox
-  useEffect(() => {
-    let cancelled = false;
-    setSuggestionsLoading(true);
-    void (async () => {
-      const lines: string[] = [];
-      const recentTitles = sessions
-        .filter((s) => !s.archived_at && s.title)
-        .sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""))
-        .slice(0, 2)
-        .map((s) => `Continue: ${s.title}`);
-      lines.push(...recentTitles);
-      try {
-        const res = await fetch("/api/inbox?status=pending", { cache: "no-store" });
-        if (res.ok) {
-          const json = (await res.json()) as { ok: boolean; items: InboxItem[] };
-          if (json.ok) lines.push(...json.items.slice(0, 3 - lines.length).map((i) => i.title));
-        }
-      } catch { /* silent — falls back to seeds below */ }
-      while (lines.length < 3) {
-        const seed = SEED_SUGGESTIONS[lines.length % SEED_SUGGESTIONS.length];
-        if (seed && !lines.includes(seed)) lines.push(seed); else break;
-      }
-      if (!cancelled) {
-        setSuggestions(lines.slice(0, 3));
-        setSuggestionsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [sessions]);
+  // Short model label for the toolbar chip (e.g. "openai/gpt-5.5" → "gpt-5.5").
+  const modelLabel = useMemo(() => {
+    const m = modelState?.effectiveModel;
+    if (!m || m === "unknown") return null;
+    return m.includes("/") ? m.slice(m.lastIndexOf("/") + 1) : m;
+  }, [modelState]);
+
+  // The "＋" affordance reveals the slash-command menu (board/remind/model/…),
+  // and the model chip jumps straight to the inline /model picker. Both keep the
+  // home composer's single text entry path — no separate dialogs to wire up.
+  const openCommands = useCallback(() => {
+    setText((t) => (t.trim() ? t : "/"));
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
+  const openModelPicker = useCallback(() => {
+    setText("/model ");
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
 
   // Auto-grow textarea
   const autoGrow = useCallback(() => {
@@ -450,7 +460,7 @@ export function HomeComposer({
 
       {/* Headline */}
       <div className="home-composer-hero">
-        <h1 className="home-composer-headline">What can the Coven do?</h1>
+        <h1 className="home-composer-headline">What should we build in coven-cave?</h1>
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the
@@ -551,6 +561,16 @@ export function HomeComposer({
 
         {/* Action bar */}
         <div className="hc-action-bar">
+          <button
+            type="button"
+            className="hc-add-btn"
+            onClick={openCommands}
+            aria-label="Commands"
+            title="Slash commands"
+          >
+            <Icon name="ph:plus" width={15} aria-hidden />
+          </button>
+
           <label className="hc-familiar-selector">
             <Icon name="ph:sparkle" width={13} className="hc-familiar-glyph" aria-hidden />
             <select
@@ -600,7 +620,20 @@ export function HomeComposer({
             ))}
           </div>
 
-          {/* Right: send */}
+          {/* Right cluster: model chip + circular send */}
+          {modelLabel ? (
+            <button
+              type="button"
+              className="hc-model-chip"
+              onClick={openModelPicker}
+              title="Change model"
+            >
+              <Icon name="ph:lightning-fill" width={12} className="hc-model-bolt" aria-hidden />
+              <span className="hc-model-name">{modelLabel}</span>
+              <Icon name="ph:caret-down-bold" width={9} aria-hidden />
+            </button>
+          ) : null}
+
           <button
             type="button"
             className={`hc-send-btn${sending ? " sending" : ""}${!text.trim() ? " empty" : ""}`}
@@ -611,10 +644,7 @@ export function HomeComposer({
             {sending ? (
               <span className="hc-spinner" />
             ) : (
-              <>
-                <Icon name="ph:arrow-up-bold" width={11} aria-hidden />
-                <span className="hc-send-label">Send</span>
-              </>
+              <Icon name="ph:arrow-up-bold" width={14} aria-hidden />
             )}
           </button>
         </div>
@@ -625,28 +655,68 @@ export function HomeComposer({
         ⏎ send · ⇧⏎ newline · ↑↓ history · / commands
       </div>
 
-      {/* Suggestions */}
-      {suggestionsLoading ? (
-        <div className="home-composer-suggestions" aria-hidden>
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="hc-suggestion-skeleton" />
-          ))}
-        </div>
-      ) : suggestions.length > 0 ? (
-        <div className="home-composer-suggestions">
-          {suggestions.map((s, i) => (
-            <button
-              key={i}
-              type="button"
-              className="hc-suggestion"
-              onClick={() => { setText(s); setTimeout(() => textareaRef.current?.focus(), 0); }}
-            >
-              <Icon name="ph:arrow-bend-up-right" width={11} className="hc-suggestion-icon" aria-hidden />
-              <span>{s}</span>
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {/* Connector cards — one-tap entry points into the marketplace. */}
+      <div className="home-composer-suggestions home-composer-connectors">
+        {CONNECTORS.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className="hc-connector"
+            onClick={() => {
+              if (onConnect) onConnect(c.id);
+              else onToast("Open the Marketplace to connect integrations.");
+            }}
+          >
+            <span className="hc-connector-glyph" aria-hidden>
+              <BrandGlyph glyph={c.glyph} />
+            </span>
+            <span className="hc-connector-title">{c.title}</span>
+            <span className="hc-connector-sub">{c.subtitle}</span>
+          </button>
+        ))}
+      </div>
     </div>
+  );
+}
+
+// ─── Brand glyphs ───────────────────────────────────────────────────────────
+// Inline, full-colour marks for the connector cards. The shared Icon component
+// only ships the monochrome Phosphor subset, so the multi-colour brand logos
+// live here as small inline SVGs.
+function BrandGlyph({ glyph }: { glyph: Connector["glyph"] }) {
+  if (glyph === "slack") {
+    return (
+      <svg viewBox="0 0 122.8 122.8" width="22" height="22" aria-hidden focusable="false">
+        <path d="M25.8 77.6a12.9 12.9 0 1 1-12.9-12.9h12.9z" fill="#E01E5A" />
+        <path d="M32.3 77.6a12.9 12.9 0 0 1 25.8 0v32.3a12.9 12.9 0 0 1-25.8 0z" fill="#E01E5A" />
+        <path d="M45.2 25.8a12.9 12.9 0 1 1 12.9-12.9v12.9z" fill="#36C5F0" />
+        <path d="M45.2 32.3a12.9 12.9 0 0 1 0 25.8H12.9a12.9 12.9 0 0 1 0-25.8z" fill="#36C5F0" />
+        <path d="M97 45.2a12.9 12.9 0 1 1 12.9 12.9H97z" fill="#2EB67D" />
+        <path d="M90.5 45.2a12.9 12.9 0 0 1-25.8 0V12.9a12.9 12.9 0 0 1 25.8 0z" fill="#2EB67D" />
+        <path d="M77.6 97a12.9 12.9 0 1 1-12.9 12.9V97z" fill="#ECB22E" />
+        <path d="M77.6 90.5a12.9 12.9 0 0 1 0-25.8h32.3a12.9 12.9 0 0 1 0 25.8z" fill="#ECB22E" />
+      </svg>
+    );
+  }
+  if (glyph === "gmail") {
+    return (
+      <svg viewBox="0 0 48 36" width="22" height="22" aria-hidden focusable="false">
+        <path fill="#4285F4" d="M3.27 35.5H10V19L0 11.5v20.73c0 1.8 1.47 3.27 3.27 3.27z" />
+        <path fill="#34A853" d="M38 35.5h6.73c1.8 0 3.27-1.47 3.27-3.27V11.5L38 19z" />
+        <path fill="#FBBC04" d="M38 3.77V19l10-7.5V5.27c0-4.55-5.2-7.14-8.84-4.41z" />
+        <path fill="#EA4335" d="M10 19V3.77L24 14.32 38 3.77V19L24 29.55z" />
+        <path fill="#C5221F" d="M0 5.27V11.5l10 7.5V3.77L8.84.86C5.2-1.87 0 .72 0 5.27z" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 87.3 78" width="22" height="22" aria-hidden focusable="false">
+      <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
+      <path d="M43.65 25L29.9 1.2c-1.35.8-2.5 1.9-3.3 3.3L1.2 48.5C.4 49.9 0 51.45 0 53h27.5z" fill="#00ac47" />
+      <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.45z" fill="#ea4335" />
+      <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.9 0H34.4c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
+      <path d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
+      <path d="M73.4 26.5L60.65 4.5c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 53h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
+    </svg>
   );
 }

@@ -33,11 +33,13 @@ assert.match(source, /⏎ send · ⇧⏎ newline · ↑↓ history · \/ command
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 assert.match(css, /\.hc-keyboard-hint\s*\{[\s\S]*?color:\s*var\(--text-muted\)/, ".hc-keyboard-hint CSS with --text-muted");
 
-// ───────── Task 3: Visible Send label ─────────
-assert.match(source, /<span className="hc-send-label">Send<\/span>/, "Send label in button body");
-assert.match(source, /aria-label="Send"/, "Button keeps aria-label='Send'");
-assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?gap:\s*5px/, ".hc-send-btn uses gap: 5px");
-assert.doesNotMatch(css, /\.hc-send-btn\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*32px;[\s\S]*?\}/, "Old fixed 32x32 size removed");
-assert.match(css, /\.hc-send-label\s*\{/, ".hc-send-label rule defined");
+// ───────── Task 3: Circular icon-only Send button ─────────
+// The Codex-style composer uses a round arrow button. The visible "Send" text
+// label is gone, but the button keeps an aria-label so screen readers announce
+// it, and the icon-only disc is a full circle.
+assert.match(source, /aria-label="Send"/, "Send button keeps aria-label='Send'");
+assert.doesNotMatch(source, /className="hc-send-label"/, "visible Send text label removed (button is icon-only)");
+assert.doesNotMatch(css, /\.hc-send-label\s*\{/, "old .hc-send-label rule removed");
+assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*999px/, ".hc-send-btn is a circular disc");
 
 console.log("home-composer-polish.test.ts: ok");

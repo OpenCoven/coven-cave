@@ -11,26 +11,29 @@ const globals = await readFile(
   "utf8",
 );
 
-// ───── Suggestion chips ellipsis cleanly inside their max-width ─────
-// Without these, long chip titles ("Continue: Task context: Title: …") spill
-// past the suggestion-row edge and clip at the viewport on phones.
-const chipMatch = css.match(/\.hc-suggestion\s*\{([^}]*)\}/);
-assert.ok(chipMatch, ".hc-suggestion rule must exist");
+// ───── Connector cards lay out 3-up and don't overflow their column ─────
+// The cards replaced the suggestion chips; they grid 3-up on desktop and stack
+// to a single column on narrow viewports so titles/subtitles never clip.
+const connectorsMatch = css.match(/\.home-composer-connectors\s*\{([^}]*)\}/);
+assert.ok(connectorsMatch, ".home-composer-connectors grid rule must exist");
 assert.match(
-  chipMatch[1],
-  /max-width:\s*min\(100%, 360px\);/,
-  ".hc-suggestion caps chip width at 360px",
+  connectorsMatch[1],
+  /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/,
+  ".home-composer-connectors is a 3-up grid with min-width:0 tracks (cards can shrink)",
 );
+
+const connectorMatch = css.match(/\.hc-connector\s*\{([^}]*)\}/);
+assert.ok(connectorMatch, ".hc-connector rule must exist");
 assert.match(
-  chipMatch[1],
+  connectorMatch[1],
   /min-width:\s*0;/,
-  ".hc-suggestion has min-width: 0 so flex children can shrink for ellipsis",
+  ".hc-connector has min-width: 0 so the card can shrink inside its grid track",
 );
 
 assert.match(
   css,
-  /\.hc-suggestion > span\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/,
-  ".hc-suggestion > span ellipsis chain (min-width: 0 + overflow + text-overflow + nowrap)",
+  /@media \(max-width: 640px\)\s*\{[\s\S]*?\.home-composer-connectors\s*\{[\s\S]*?grid-template-columns:\s*1fr;/,
+  "connector cards collapse to a single column under 640px",
 );
 
 // ───── Phone composer controls are thumb-sized ─────
@@ -42,8 +45,8 @@ assert.match(
 
 assert.match(
   css,
-  /@media \(max-width: 520px\)\s*\{[\s\S]*?\.hc-suggestion\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
-  "phone suggestion chips should meet the shared touch target",
+  /@media \(max-width: 640px\)\s*\{[\s\S]*?\.hc-connector\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
+  "stacked connector cards should meet the shared touch target",
 );
 
 // ───── Keyboard hint hides on touch ─────

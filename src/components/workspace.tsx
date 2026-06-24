@@ -189,6 +189,11 @@ export function Workspace() {
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
+  // Deep-link target for the Roles surface's inner tabs. The home connector
+  // cards open the marketplace tab; cleared once we leave Roles so a later
+  // sidebar visit lands on the default Roles tab.
+  const [pendingPluginsTab, setPendingPluginsTab] =
+    useState<"marketplace" | null>(null);
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
@@ -413,6 +418,12 @@ export function Workspace() {
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
     return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
   }, []);
+
+  // Once the Roles deep-link has been consumed (PluginsView mounts with the
+  // requested tab), drop it so a later sidebar visit opens the default tab.
+  useEffect(() => {
+    if (mode !== "roles" && pendingPluginsTab) setPendingPluginsTab(null);
+  }, [mode, pendingPluginsTab]);
 
   // Click-to-open a file from chat: the comux pane (Code/Terminal) handles
   // `cave:open-project-file` directly when it's showing. When neither is, switch
@@ -1877,7 +1888,11 @@ export function Workspace() {
       <PluginsView
         key={mode}
         tabs={["roles", "skills", "marketplace", "capabilities"]}
-        initialTab={mode === "capabilities" ? "capabilities" : "roles"}
+        initialTab={
+          mode === "capabilities"
+            ? "capabilities"
+            : pendingPluginsTab ?? "roles"
+        }
         activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
@@ -1924,13 +1939,16 @@ export function Workspace() {
       <HomeComposer
         familiars={familiars}
         activeFamiliarId={activeId}
-        sessions={sessions}
         onSetActiveFamiliar={setActiveId}
         onStartChat={(prompt, fid) => startFamiliarChat(fid, null, prompt)}
         onNavigateToBoard={() => setMode("board")}
         onNavigateToInbox={() => setMode("inbox")}
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
+        onConnect={() => {
+          setPendingPluginsTab("marketplace");
+          setMode("roles");
+        }}
       />
     )}
     </div>
