@@ -158,6 +158,7 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
                   type="button"
                   className="workflow-run-row"
                   aria-expanded={expanded}
+                  aria-controls={`workflow-run-exp-${run.id}`}
                   onClick={() => setExpandedId(expanded ? null : run.id)}
                 >
                   <Icon
@@ -173,7 +174,7 @@ export function WorkflowRunsPanel({ runs, loading, workflow, playback, onReplayR
                   </span>
                 </button>
                 {expanded && (
-                  <div className="workflow-run-expansion">
+                  <div className="workflow-run-expansion" id={`workflow-run-exp-${run.id}`}>
                     <dl className="workflow-run-meta">
                       <div>
                         <dt>Source</dt>

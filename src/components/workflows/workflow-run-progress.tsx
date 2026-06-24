@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import {
   parseWorkflowStepProgress,
@@ -36,6 +36,9 @@ export function WorkflowRunProgress({ run }: { run: WorkflowRunRecord }) {
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      // Don't poll the transcript while the tab is hidden — resume on re-show.
+      if (document.hidden) return;
       try {
         const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
           cache: "no-store",
@@ -58,11 +61,17 @@ export function WorkflowRunProgress({ run }: { run: WorkflowRunRecord }) {
       if (alive && live) timer = setTimeout(tick, POLL_MS);
     };
     void tick();
+    // Resume polling (with an immediate refresh) when the tab becomes visible.
+    const onVisible = () => { if (!document.hidden && alive && live) void tick(); };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       alive = false;
       if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [sessionId, live]);
+
+  const detailBaseId = useId();
 
   if (!sessionId) return null;
 
@@ -81,7 +90,7 @@ export function WorkflowRunProgress({ run }: { run: WorkflowRunRecord }) {
 
   return (
     <div className="workflow-run-progress">
-      <div className="workflow-run-progress-head">
+      <div className="workflow-run-progress-head" role="status" aria-live="polite">
         {live && !progress.done && (
           <Icon name="ph:circle-notch-bold" width={12} className="workflow-spin" aria-hidden />
         )}
@@ -104,6 +113,7 @@ export function WorkflowRunProgress({ run }: { run: WorkflowRunRecord }) {
                   type="button"
                   className="workflow-progress-step-row"
                   aria-expanded={hasDetail ? open : undefined}
+                  aria-controls={hasDetail ? `${detailBaseId}-${step.id}` : undefined}
                   disabled={!hasDetail}
                   onClick={() => setOpenStep(open ? null : step.id)}
                 >
@@ -116,7 +126,9 @@ export function WorkflowRunProgress({ run }: { run: WorkflowRunRecord }) {
                   <span className="workflow-run-step-status">{step.status}</span>
                   {hasDetail && <Icon name={open ? "ph:caret-down" : "ph:caret-right"} width={10} aria-hidden />}
                 </button>
-                {open && hasDetail && <pre className="workflow-progress-step-detail">{step.detail}</pre>}
+                {open && hasDetail && (
+                  <pre id={`${detailBaseId}-${step.id}`} className="workflow-progress-step-detail">{step.detail}</pre>
+                )}
               </li>
             );
           })}
@@ -128,7 +140,7 @@ export function WorkflowRunProgress({ run }: { run: WorkflowRunRecord }) {
       ) : (
         <p className="workflow-muted">Waiting for the agent's first output…</p>
       )}
-      {error && <p className="workflow-muted">{error}</p>}
+      {error && <p className="workflow-muted" role="alert">{error}</p>}
     </div>
   );
 }
