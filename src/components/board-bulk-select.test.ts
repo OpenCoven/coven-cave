@@ -13,7 +13,13 @@ assert.match(view, /<SelectionToolbar/, "select mode renders the shared Selectio
 // The three bulk actions exist.
 assert.match(view, /const bulkMove = async \(status: CardStatus\)/, "bulk move-to-status is wired");
 assert.match(view, /const bulkAssign = async \(familiarId: string\)/, "bulk assign-familiar is wired");
-assert.match(view, /const bulkDelete = async/, "bulk delete is wired");
+assert.match(view, /const bulkDelete = \(\) =>/, "bulk delete is wired");
+// Bulk delete is deferred + undoable (no native confirm): it routes through the
+// shared useUndoDelete helper and raises an UndoToast instead of window.confirm.
+assert.match(view, /deleteCards\(sel\)/, "bulk delete routes through the deferred deleteCards helper");
+assert.doesNotMatch(view, /window\.confirm/, "board no longer uses a native confirm for deletes");
+assert.match(view, /useUndoDelete<Card\[\]>\(\)/, "board uses the shared useUndoDelete hook");
+assert.match(view, /<UndoToast/, "board renders the shared UndoToast for deletes");
 // Select mode is threaded into BOTH the kanban and the table.
 assert.match(view, /<BoardKanban[\s\S]*?selectMode=\{cardSelect\.selectMode\}/, "kanban receives select mode");
 assert.match(view, /<BoardTable[\s\S]*?selectMode=\{cardSelect\.selectMode\}/, "table receives select mode");

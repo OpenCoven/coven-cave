@@ -14,8 +14,8 @@ assert.match(
 
 assert.match(
   source,
-  /\[cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds\]/,
-  "BoardView filtered memo deps include activeFamiliarId + scopeFamiliarIds so re-filter triggers on familiar switch / multiselect change",
+  /\[cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending\]/,
+  "BoardView filtered memo deps include activeFamiliarId + scopeFamiliarIds (and deletePending for the undo-window hide) so re-filter triggers on familiar switch / multiselect change",
 );
 
 // Multiselect: when a scope set is supplied, the board filters to the union via

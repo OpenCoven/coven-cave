@@ -11,6 +11,8 @@ import { type Card, type CardStatus, STATUSES } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
+import { UndoToast } from "@/components/ui/undo-toast";
+import { useUndoDelete } from "@/lib/use-undo-delete";
 import { familiarInScope } from "@/lib/familiar-multiselect";
 import { BoardKanban } from "@/components/board-kanban";
 import { BoardGantt } from "@/components/board-gantt";
@@ -45,6 +47,9 @@ type Props = {
 export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliarIds, onJumpToSession, onOpenUrl }: Props) {
   const isMobile = useIsMobile();
   const [cards, setCards] = useState<Card[]>([]);
+  // Deferred + undoable task deletion: cards hide immediately, the DELETEs fire
+  // only after the undo window, and Undo restores them (mirrors chat/projects).
+  const { pending: deletePending, scheduleDelete: scheduleCardDelete, undo: undoCardDelete, commit: commitCardDelete } = useUndoDelete<Card[]>();
   const [error, setError] = useState<string | null>(null);
   // Distinguish "still loading" from "loaded and empty" so the empty-state
   // CTA doesn't flash on every open before the first GET resolves.
@@ -161,17 +166,18 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   }, [cards]);
 
   const familiarsById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
-  const filtered = useMemo(
-    () =>
-      cards.filter(
-        (c) =>
-          (scopeFamiliarIds
-            ? familiarInScope(scopeFamiliarIds, c.familiarId)
-            : activeFamiliarId === null || c.familiarId === activeFamiliarId) &&
-          cardMatchesBoardSearch(c, searchQuery, familiarsById),
-      ),
-    [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds],
-  );
+  const filtered = useMemo(() => {
+    // Hide cards whose delete is pending in the undo window (restored on Undo).
+    const hidden = new Set((deletePending?.item ?? []).map((c) => c.id));
+    return cards.filter(
+      (c) =>
+        !hidden.has(c.id) &&
+        (scopeFamiliarIds
+          ? familiarInScope(scopeFamiliarIds, c.familiarId)
+          : activeFamiliarId === null || c.familiarId === activeFamiliarId) &&
+        cardMatchesBoardSearch(c, searchQuery, familiarsById),
+    );
+  }, [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending]);
 
   const stats = useMemo(() => ({
     total: filtered.length,
@@ -268,10 +274,43 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     await load();
   };
 
+  // Schedule a deferred, undoable delete of one or more cards. The cards hide at
+  // once (via the `filtered` exclusion), and the actual DELETEs fire only when
+  // the undo window lapses; Undo just drops the timer and the cards reappear.
+  const deleteCards = useCallback((toRemove: Card[]) => {
+    if (toRemove.length === 0) return;
+    const idSet = new Set(toRemove.map((c) => c.id));
+    if (selectedCardId && idSet.has(selectedCardId)) setSelectedCardId(null);
+    setClearedBanner(null); // one bottom undo affordance at a time
+    scheduleCardDelete(
+      toRemove,
+      `${toRemove.length} task${toRemove.length === 1 ? "" : "s"}`,
+      async () => {
+        // Commit: drop from local state, then fire the DELETEs. Both the unhide
+        // (pending → null) and this removal batch, so the cards never flash back.
+        setCards((prev) => prev.filter((c) => !idSet.has(c.id)));
+        const results = await Promise.all(
+          toRemove.map(async (c) => {
+            try {
+              const res = await fetch(`/api/board/${c.id}`, { method: "DELETE" });
+              return (await res.json()).ok as boolean;
+            } catch { return false; }
+          }),
+        );
+        const failed = results.filter((ok) => !ok).length;
+        if (failed > 0) {
+          setActionError(`Couldn't delete ${failed} of ${toRemove.length} task${toRemove.length === 1 ? "" : "s"} — reverted those.`);
+          await load();
+        } else {
+          setActionError(null);
+        }
+      },
+    );
+  }, [selectedCardId, scheduleCardDelete, load]);
+
   const removeCard = async (id: string) => {
-    const res = await fetch(`/api/board/${id}`, { method: "DELETE" });
-    const json = await res.json();
-    if (json.ok) { if (selectedCardId === id) setSelectedCardId(null); await load(); }
+    const card = cards.find((c) => c.id === id);
+    if (card) deleteCards([card]);
   };
 
   // ── Bulk select (kanban + table) ────────────────────────────────────────────
@@ -297,31 +336,12 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     cardSelect.exit();
   };
 
-  const bulkDelete = async () => {
-    const ids = selectedCards().map((c) => c.id);
-    if (ids.length === 0) { cardSelect.exit(); return; }
-    if (!window.confirm(`Delete ${ids.length} task${ids.length === 1 ? "" : "s"}? This can't be undone.`)) return;
-    setBulkBusy(true);
-    const idSet = new Set(ids);
-    setCards((prev) => prev.filter((c) => !idSet.has(c.id)));
-    if (selectedCardId && idSet.has(selectedCardId)) setSelectedCardId(null);
-    const results = await Promise.all(
-      ids.map(async (id) => {
-        try {
-          const res = await fetch(`/api/board/${id}`, { method: "DELETE" });
-          return (await res.json()).ok as boolean;
-        } catch { return false; }
-      }),
-    );
-    setBulkBusy(false);
+  const bulkDelete = () => {
+    const sel = selectedCards();
+    if (sel.length === 0) { cardSelect.exit(); return; }
     cardSelect.exit();
-    const failed = results.filter((ok) => !ok).length;
-    if (failed > 0) {
-      setActionError(`Couldn't delete ${failed} of ${ids.length} task${ids.length === 1 ? "" : "s"} — reverted those.`);
-      await load();
-    } else {
-      setActionError(null);
-    }
+    // Deferred + undoable — no native confirm; the undo toast is the safety net.
+    deleteCards(sel);
   };
 
   const STATUS_LABELS: Record<CardStatus, string> = {
@@ -870,6 +890,15 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         familiars={familiars} sessions={sessions} projects={projects}
         defaultStatus={modalDefaultStatus} defaultFamiliarId={activeFamiliarId}
         onCreate={create} />
+      {deletePending ? (
+        <UndoToast
+          key={deletePending.id}
+          message={`Deleted ${deletePending.label}`}
+          undoAriaLabel="Undo delete"
+          onUndo={undoCardDelete}
+          onDismiss={commitCardDelete}
+        />
+      ) : null}
     </section>
   );
 }
