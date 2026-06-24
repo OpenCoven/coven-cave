@@ -52,6 +52,7 @@ export function FlowLibrary(props: FlowLibraryProps) {
       </div>
       <form className="flow-library-prompt" aria-label="Create flow from prompt" onSubmit={submitPrompt}>
         <textarea
+          aria-label="Flow prompt"
           value={promptDraft}
           onChange={(event) => setPromptDraft(event.target.value)}
           placeholder="Describe a flow to create"
