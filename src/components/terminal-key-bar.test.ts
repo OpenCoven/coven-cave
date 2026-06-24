@@ -27,4 +27,10 @@ assert.match(
   "sticky Ctrl folds the next character into its C0 control code",
 );
 
+// Touch Find: ⌘F can't be produced by a soft keyboard, so the bar exposes a
+// Find button that opens the in-buffer search.
+assert.match(bar, /onFind\?: \(\) => void/, "the key bar accepts an onFind handler");
+assert.match(bar, /aria-label="Find in terminal"[\s\S]{0,80}ph:magnifying-glass/, "the bar renders a labelled Find button");
+assert.match(term, /<TerminalKeyBar[^>]*onFind=\{openFind\}/, "the terminal wires the bar's Find button to openFind");
+
 console.log("terminal-key-bar.test.ts: ok");
