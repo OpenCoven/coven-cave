@@ -119,4 +119,26 @@ assert.match(gantt, /title=\{`\$\{full\} — \$\{hint\}`\}/, "each zoom button e
 assert.match(gantt, />\s*\{short\}\s*<\/button>/, "buttons render the compact single-letter label");
 assert.match(styles, /\.board-group-toggle \.cg-zoom-cell/, "the zoom glyph cell is styled to match the segmented control");
 
+// Auto-center: opening the Gantt scrolls the timeline to today once (latched,
+// so it never fights a later manual scroll).
+assert.match(gantt, /const didAutoCenterRef = useRef\(false\)/, "auto-center latches after the first center");
+assert.match(gantt, /const scrollToToday = \(\): boolean =>/, "scrollToToday reports whether it scrolled");
+assert.match(gantt, /centerOnTodayRef\.current = scrollToToday/, "render wires the scroller into the auto-center ref");
+assert.match(gantt, /if \(centerOnTodayRef\.current\(\)\) didAutoCenterRef\.current = true/, "the effect centers once the scroller is ready, then latches");
+
+// Quick-schedule presets: undated tasks get one-click This week / Next week.
+assert.match(gantt, /const schedulePreset = \(cardId: string, weeksAhead: number\)/, "a schedulePreset helper sets a Mon–Sun week");
+assert.match(gantt, /addDays\(startOfWeekMon\(todayUtc\), weeksAhead \* 7\)/, "presets anchor on this/next Monday");
+assert.match(gantt, /onClick=\{\(\) => schedulePreset\(c\.id, 0\)\}[\s\S]{0,80}This week/, "the tray offers a This week preset");
+assert.match(gantt, /onClick=\{\(\) => schedulePreset\(c\.id, 1\)\}[\s\S]{0,80}Next week/, "the tray offers a Next week preset");
+assert.match(styles, /\.cg-preset-btn/, "preset buttons are styled");
+
+// Status filter: chips toggle whole categories off; the timeline range stays global.
+assert.match(gantt, /const \[hiddenCats, setHiddenCats\] = useState<Set<GanttCategory>>/, "hidden status categories are tracked in a Set");
+assert.match(gantt, /const CATEGORY_CHIPS: Array<\[GanttCategory, string, string\]>/, "the filter chips are data-driven");
+assert.match(gantt, /aria-label="Filter by status"/, "the filter control is labelled");
+assert.match(gantt, /g\.rows\.filter\(\(r\) => !hiddenCats\.has\(r\.category\)\)/, "filtered categories drop from the visible rows");
+assert.match(gantt, /cg-filter-chip\$\{off \? " cg-filter-chip--off" : ""\}/, "chips show an off state");
+assert.match(styles, /\.cg-filter-chip/, "filter chips are styled");
+
 console.log("board-schedule-window.test.ts: ok");
