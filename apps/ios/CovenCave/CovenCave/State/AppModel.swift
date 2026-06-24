@@ -107,6 +107,10 @@ final class AppModel {
     var remindersError: String?
     var remindersLoaded = false
 
+    var journalDays: [JournalDay] = []
+    var journalError: String?
+    var journalLoaded = false
+
     // MARK: - Developer tab
 
     /// Configured project roots, shared across the Code and Terminal surfaces.
@@ -356,6 +360,17 @@ final class AppModel {
             remindersError = error.localizedDescription
         }
         remindersLoaded = true
+    }
+
+    func loadJournal() async {
+        guard let client else { return }
+        do {
+            journalDays = try await client.journalDays()
+            journalError = nil
+        } catch {
+            journalError = error.localizedDescription
+        }
+        journalLoaded = true
     }
 
     /// Optimistically remove reminders, then DELETE each; reverts on failure.

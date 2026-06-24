@@ -397,6 +397,30 @@ struct CaveClient {
         }
     }
 
+    /// `GET /api/journal` — the list of days that have a reflection.
+    func journalDays() async throws -> [JournalDay] {
+        let req = try request("api/journal")
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(JournalDaysResponse.self, from: data).days
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// `GET /api/journal?date=yyyy-MM-dd` — one day's reflection.
+    func journalDay(date: String) async throws -> JournalEntry {
+        let req = try request("api/journal?date=\(urlQuery(date))")
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(JournalDayResponse.self, from: data).entry
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
     /// `DELETE /api/inbox/{id}` — remove a reminder.
     func deleteReminder(id: String) async throws {
         let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id

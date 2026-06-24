@@ -11,12 +11,19 @@ struct CalendarView: View {
     @State private var taskSelection: BoardCard?
     /// A reminder awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: Reminder?
+    @State private var showJournal = false
 
     var body: some View {
         NavigationStack {
             content
                 .navigationTitle("Calendar")
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showJournal = true } label: { Image(systemName: "book") }
+                            .accessibilityLabel("Journal")
+                    }
+                }
                 .refreshable { await reload() }
                 .task {
                     if !app.remindersLoaded { await app.loadReminders() }
@@ -25,6 +32,7 @@ struct CalendarView: View {
                 .sheet(item: $taskSelection) { card in
                     NavigationStack { TaskDetailView(card: card) }
                 }
+                .sheet(isPresented: $showJournal) { JournalView() }
                 .confirmationDialog("Delete this reminder?",
                                     isPresented: deleteDialogBinding,
                                     titleVisibility: .visible,
