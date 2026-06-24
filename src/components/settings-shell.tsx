@@ -20,7 +20,7 @@ import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
-import { normalizedColorToHex } from "@/lib/theme-token-hex";
+import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
 import {
   CORNER_RADIUS_OPTIONS,
@@ -640,24 +640,28 @@ const THEME_SYNC_KEYS = [
 ] as const;
 
 /**
- * Resolve any CSS colour string to plain sRGB hex via a `<canvas>` `fillStyle`
- * round-trip. `getComputedStyle` hands back a custom property's *authored* value
- * (`lab(...)`, `oklch(...)`, `color-mix(...)`), which a hex-only client (iOS
- * `Color(hex:)`) can't read; assigning it to a canvas context and reading it
- * back normalises it to `#rrggbb` / `rgba(...)` in sRGB. Falls back to the raw
- * value if the context is unavailable or rejects the colour, so a token is
- * never made worse than it is today.
+ * Resolve any CSS colour string to plain sRGB hex by *rasterising* it: paint the
+ * colour onto a 1×1 canvas and read the pixel back. `getComputedStyle` hands
+ * back a custom property's *authored* value (`lab(...)`, `oklch(...)`,
+ * `color-mix(...)`), which a hex-only client (iOS `Color(hex:)`) can't read.
+ *
+ * NB: reading `ctx.fillStyle` back does NOT down-convert — modern engines keep
+ * `lab()`/`oklch()` there (CSS Color 4). Painting forces conversion into the
+ * canvas's sRGB backing store, so `getImageData` yields real sRGB bytes. Falls
+ * back to the raw value if the context is unavailable or the read throws, so a
+ * token is never made worse than it is today.
  */
 function resolveTokenToHex(ctx: CanvasRenderingContext2D | null, raw: string): string {
   if (!ctx) return raw;
-  const SENTINEL = "#010203";
-  ctx.fillStyle = SENTINEL;
-  ctx.fillStyle = raw;
-  const got = ctx.fillStyle;
-  // An unparseable colour leaves fillStyle at the sentinel — keep the original.
-  if (typeof got !== "string") return raw;
-  if (got.toLowerCase() === SENTINEL && raw.trim().toLowerCase() !== SENTINEL) return raw;
-  return normalizedColorToHex(got);
+  try {
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = raw;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    return rgbaBytesToHex(r, g, b, a);
+  } catch {
+    return raw;
+  }
 }
 
 function persistThemeTokens() {
@@ -665,7 +669,9 @@ function persistThemeTokens() {
   try {
     const html = document.documentElement;
     const cs = getComputedStyle(html);
-    const ctx = document.createElement("canvas").getContext("2d");
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 1;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     const tokens: Record<string, string> = {};
     for (const key of THEME_SYNC_KEYS) {
       const value = cs.getPropertyValue(key).trim();
