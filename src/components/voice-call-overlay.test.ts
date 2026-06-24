@@ -65,4 +65,37 @@ assert.match(
   "end-call button reads as the destructive primary action",
 );
 
+// ── Call status + errors are announced to assistive tech ─────────────────────
+// Was: a plain <span> whose text cycled through requesting-mic → connecting →
+// live → error with no live region, so screen readers heard nothing.
+assert.match(
+  component,
+  /className="voice-call-overlay__state" role="status" aria-live="polite"/,
+  "the call-status label is a polite live region so transitions are announced",
+);
+assert.match(
+  component,
+  /className="voice-call-overlay__error" role="alert"/,
+  "the error block is an alert so failures interrupt the screen reader",
+);
+assert.match(
+  component,
+  /aria-describedby=\{state\.state === "error" \? "voice-call-overlay-error" : undefined\}/,
+  "the dialog is described by the error message while in the error state",
+);
+assert.match(
+  component,
+  /<div id="voice-call-overlay-error">\{errorMessage\(state\.errorCode\)\}<\/div>/,
+  "the error headline is a human message, not the raw error code",
+);
+
+// ── Raw error codes map to actionable messages ───────────────────────────────
+assert.match(component, /function errorMessage\(code: string \| undefined\): string/, "errorMessage maps codes to readable text");
+assert.match(component, /case "microphone_denied":[\s\S]*?Microphone access was denied/, "microphone_denied becomes a friendly, actionable message");
+assert.doesNotMatch(
+  component,
+  /<div>\{state\.errorCode\}<\/div>/,
+  "the raw error code is no longer rendered as the headline",
+);
+
 console.log("voice-call-overlay.test.ts: ok");

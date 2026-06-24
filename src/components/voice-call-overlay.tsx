@@ -143,19 +143,20 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="voice-call-overlay-title"
+        aria-describedby={state.state === "error" ? "voice-call-overlay-error" : undefined}
         tabIndex={-1}
       >
         <header className="voice-call-overlay__header">
           <div className="voice-call-overlay__heading">
             <strong id="voice-call-overlay-title">{familiar.display_name}</strong>
-            <span className="voice-call-overlay__state">{labelFor(state)}</span>
+            <span className="voice-call-overlay__state" role="status" aria-live="polite">{labelFor(state)}</span>
           </div>
           {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
         </header>
         <div className="voice-call-overlay__body">
           {state.state === "error" && (
-            <div className="voice-call-overlay__error">
-              <div>{state.errorCode}</div>
+            <div className="voice-call-overlay__error" role="alert">
+              <div id="voice-call-overlay-error">{errorMessage(state.errorCode)}</div>
               {state.hint && <div className="voice-call-overlay__hint">{state.hint}</div>}
               <button
                 type="button"
@@ -205,6 +206,23 @@ function labelFor(s: CallState): string {
     case "closed": return "Ended";
     case "error": return "Error";
     default: return "";
+  }
+}
+
+// Turn the machine-readable error code into something a person can act on. The
+// raw code (and any provider detail) still surfaces via the `hint` line below.
+function errorMessage(code: string | undefined): string {
+  switch (code) {
+    case "microphone_denied":
+      return "Microphone access was denied. Allow it in your browser settings to start a call.";
+    case "network":
+      return "Couldn't reach the voice service. Check your connection and try again.";
+    case "internal":
+      return "Something went wrong setting up the call. Please try again.";
+    case "connect_failed":
+      return "The call couldn't connect. Please try again.";
+    default:
+      return "The call ran into a problem. Please try again.";
   }
 }
 
