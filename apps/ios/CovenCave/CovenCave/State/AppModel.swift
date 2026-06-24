@@ -421,6 +421,36 @@ final class AppModel {
         }
     }
 
+    // MARK: - Bulk reminder actions
+
+    func markRemindersDone(_ ids: Set<String>) async {
+        await bulkReminderAction(ids, optimistic: "done") { try await $0.markReminderDone(id: $1) }
+    }
+    func dismissReminders(_ ids: Set<String>) async {
+        await bulkReminderAction(ids, optimistic: "dismissed") { try await $0.dismissReminder(id: $1) }
+    }
+    func snoozeReminders(_ ids: Set<String>, minutes: Int) async {
+        await bulkReminderAction(ids, optimistic: "snoozed") { try await $0.snoozeReminder(id: $1, minutes: minutes) }
+    }
+
+    /// Apply an action to every selected reminder: optimistic status for all,
+    /// then run each server call reconciling its echoed item; revert all on any
+    /// failure.
+    private func bulkReminderAction(_ ids: Set<String>, optimistic: String,
+                                    _ call: @escaping (CaveClient, String) async throws -> Reminder?) async {
+        guard let client, !ids.isEmpty else { return }
+        let previous = reminders
+        for id in ids { applyReminder(id: id) { $0.status = optimistic } }
+        do {
+            for id in ids {
+                if let updated = try await call(client, id) { applyReminder(id: id) { $0 = updated } }
+            }
+        } catch {
+            reminders = previous
+            remindersError = error.localizedDescription
+        }
+    }
+
     private func applyReminder(id: String, _ mutate: (inout Reminder) -> Void) {
         guard let idx = reminders.firstIndex(where: { $0.id == id }) else { return }
         var r = reminders[idx]; mutate(&r); reminders[idx] = r

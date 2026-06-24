@@ -521,6 +521,7 @@ export const SUITES = {
     "scripts/ios-export-selected-zip.test.mjs",
     "scripts/ios-reminders-bulk-delete.test.mjs",
     "scripts/ios-reminder-actions.test.mjs",
+    "scripts/ios-reminder-bulk-actions.test.mjs",
     "scripts/ios-reorder-familiars.test.mjs",
     "scripts/ios-github-comment-attach.test.mjs",
     "scripts/ios-theme.test.mjs",

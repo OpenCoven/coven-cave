@@ -28,7 +28,7 @@ assert.match(
 assert.match(view, /struct RemindersView: View/, "a RemindersView exists");
 assert.match(view, /@State private var selectMode = false/, "view has a select mode");
 assert.match(view, /await app\.deleteReminders\(selectedIds\)/, "bulk delete uses the selection");
-assert.match(view, /Text\(selectedIds\.isEmpty \? "Delete" : "Delete \(\\\(selectedIds\.count\)\)"\)/, "Delete (N) bar");
+assert.match(view, /Text\(selectedIds\.isEmpty \? "Actions" : "Actions \(\\\(selectedIds\.count\)\)"\)/, "an Actions (N) bar (delete + bulk actions)");
 assert.match(tasks, /\.sheet\(isPresented: \$showReminders\) \{ RemindersView\(\) \}/, "Tasks tab opens Reminders");
 
 console.log("ios-reminders-bulk-delete.test.mjs: ok");
