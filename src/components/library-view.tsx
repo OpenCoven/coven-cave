@@ -370,11 +370,11 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
           onSelect={(entry: TimelineEntry) => {
             setTimelineSelectedId(entry.item.id);
             if (entry.list === "bookmarks") {
-              setSelectedItem({ kind: "bookmark", item: entry.item as any });
+              setSelectedItem({ kind: "bookmark", item: entry.item as LibraryBookmark });
             } else if (entry.list === "reading") {
-              setSelectedItem({ kind: "reading", item: entry.item as any });
+              setSelectedItem({ kind: "reading", item: entry.item as LibraryReadingItem });
             } else {
-              setSelectedItem({ kind: "github", item: entry.item as any });
+              setSelectedItem({ kind: "github", item: entry.item as LibraryGitHubItem });
             }
           }}
         />

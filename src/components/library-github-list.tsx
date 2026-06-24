@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { useUndoDelete } from "@/lib/use-undo-delete";
+import { useTableRowKeyboardNav } from "@/lib/use-table-row-keynav";
 import { LibraryUndoToast } from "@/components/library-undo-toast";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -612,6 +613,10 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
   const sorted = useMemo(() => sortItems(filtered, sortKey, sortDir), [filtered, sortKey, sortDir]);
   const groups = useMemo(() => groupItems(sorted, groupBy), [sorted, groupBy]);
 
+  // ↑/↓ keyboard navigation across the item rows (rebinds once rows exist).
+  const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
+  useTableRowKeyboardNav(tbodyRef, sorted.length, { disabled: selectMode });
+
   function handleCol(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("asc"); }
@@ -805,7 +810,7 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
         <EmptyState compact icon="ph:magnifying-glass" headline={`No results for “${query}”`} />
       ) : (
         <div className="board-table-wrap">
-          <table className="board-table library-github-table">
+          <table aria-label="Library GitHub" className="board-table library-github-table">
             <thead>
               <tr>
                 {COLS.map((col) => (
@@ -825,7 +830,7 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                 <th className="gh-col-actions" style={{ width: "124px" }} />
               </tr>
             </thead>
-            <tbody>
+            <tbody ref={tbodyRef}>
               {groups.map(({ key, label, items: gi }) => (
                 <React.Fragment key={key}>
                   {groupBy !== "none" && (
@@ -854,6 +859,7 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                     return (
                       <React.Fragment key={item.id}>
                         <tr
+                          data-row="true"
                           className={`gh-row-main${item.id === selectedId ? " selected" : ""}${selectMode && selectedIds.has(item.id) ? " is-selected" : ""}`}
                           role={selectMode ? "checkbox" : undefined}
                           aria-checked={selectMode ? selectedIds.has(item.id) : undefined}

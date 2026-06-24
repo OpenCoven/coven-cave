@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { Icon, type IconName } from "@/lib/icon";
+import { useTableRowKeyboardNav } from "@/lib/use-table-row-keynav";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { LibraryUndoToast } from "@/components/library-undo-toast";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -218,6 +219,10 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
   const filtered = useMemo(() => filterItems(items, query), [items, query]);
   const sorted = useMemo(() => sortItems(filtered, sortKey, sortDir), [filtered, sortKey, sortDir]);
   const groups = useMemo(() => groupItems(sorted, groupBy), [sorted, groupBy]);
+
+  // ↑/↓ keyboard navigation across the item rows (rebinds once rows exist).
+  const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
+  useTableRowKeyboardNav(tbodyRef, sorted.length, { disabled: selectMode });
   const activeGroupOption = BOOKMARK_GROUP_OPTIONS.find((option) => option.id === groupBy) ?? BOOKMARK_GROUP_OPTIONS[0];
 
   function handleCol(key: SortKey) {
@@ -479,7 +484,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                 <th style={{ width: "56px" }} />
               </tr>
             </thead>
-            <tbody>
+            <tbody ref={tbodyRef}>
               {groups.map(({ key, label, items: gi }) => (
                 <React.Fragment key={key}>
                   {groupBy !== "none" && (
@@ -504,6 +509,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                   )}
                   {!collapsed.has(key) && gi.map((item) => (
                     <tr key={`${key}:${item.id || item.url}`}
+                      data-row="true"
                       className={`${item.id === selectedId ? "selected" : ""}${selectMode && selectedIds.has(item.id) ? " is-selected" : ""}`}
                       role={selectMode ? "checkbox" : undefined}
                       aria-checked={selectMode ? selectedIds.has(item.id) : undefined}

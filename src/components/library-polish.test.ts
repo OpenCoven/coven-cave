@@ -723,3 +723,16 @@ for (const [name, src] of [["reading", reading], ["bookmarks", bookmarks], ["git
   assert.doesNotMatch(src, /function bulkDelete\(\)[\s\S]*?void Promise\.all/, `${name} bulk delete no longer fires deletes immediately`);
   assert.match(src, /\[\.\.\.\(Array\.isArray\(restored\) \? restored : \[restored\]\), \.\.\.prev\]/, `${name} undo restores both single and bulk deletes`);
 }
+
+// ── Keyboard-navigable list rows (normal browse mode) ───────────────────────
+// The hand-rolled board-table lists had mouse-only rows for preview-selection
+// (a prior pass only covered bulk-SELECT mode). They now share
+// useTableRowKeyboardNav (↑/↓ + Home/End rove a tab stop, Enter/Space activate),
+// keyed on row count so it binds once the table mounts after the fetch, and
+// disabled in select mode where the rows are independent keyboard checkboxes.
+for (const [name, src] of [["reading", reading], ["bookmarks", bookmarks], ["github", github]]) {
+  assert.match(src, /import \{ useTableRowKeyboardNav \} from "@\/lib\/use-table-row-keynav"/, `${name} imports the shared row-keynav hook`);
+  assert.match(src, /useTableRowKeyboardNav\(tbodyRef, sorted\.length, \{ disabled: selectMode \}\)/, `${name} wires keyboard nav (off in select mode)`);
+  assert.match(src, /<tbody ref=\{tbodyRef\}>/, `${name} binds the hook to its tbody`);
+  assert.match(src, /data-row="true"/, `${name} tags item rows for the roving selector`);
+}

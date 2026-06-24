@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { useUndoDelete } from "@/lib/use-undo-delete";
+import { useTableRowKeyboardNav } from "@/lib/use-table-row-keynav";
 import { LibraryUndoToast } from "@/components/library-undo-toast";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -249,6 +250,10 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
   const sorted = useMemo(() => sortItems(filtered, sortKey, sortDir), [filtered, sortKey, sortDir]);
   const groups = useMemo(() => groupItems(sorted, groupBy), [sorted, groupBy]);
 
+  // ↑/↓ keyboard navigation across the item rows (rebinds once rows exist).
+  const tbodyRef = useRef<HTMLTableSectionElement | null>(null);
+  useTableRowKeyboardNav(tbodyRef, sorted.length, { disabled: selectMode });
+
   function handleCol(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir("asc"); }
@@ -480,7 +485,7 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                 <th className="library-reading-col-actions" style={{ width: "32px" }} />
               </tr>
             </thead>
-            <tbody>
+            <tbody ref={tbodyRef}>
               {groups.map(({ key, label, items: gi }) => (
                 <React.Fragment key={key}>
                   {groupBy !== "none" && (
@@ -505,6 +510,7 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                   )}
                   {!collapsed.has(key) && gi.map((item) => (
                     <tr key={item.id}
+                      data-row="true"
                       className={`library-reading-row${item.id === selectedId ? " selected" : ""}${selectMode && selectedIds.has(item.id) ? " is-selected" : ""}`}
                       role={selectMode ? "checkbox" : undefined}
                       aria-checked={selectMode ? selectedIds.has(item.id) : undefined}
