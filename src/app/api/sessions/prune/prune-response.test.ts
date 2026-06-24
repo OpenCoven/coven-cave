@@ -15,7 +15,7 @@ function has(body: PruneResponseBody, key: string): unknown {
 for (const method of ["daemon", "client"] as const) {
   // Dry run: count under wouldPrune, pruned pinned to 0 — for BOTH paths.
   const dry = prunePayload({ dryRun: true, count: 7, method });
-  assert.equal(dry.wouldPrune, 7, `${method}: dry run surfaces the count under wouldPrune`);
+  assert.equal(has(dry, "wouldPrune"), 7, `${method}: dry run surfaces the count under wouldPrune`);
   assert.equal(dry.pruned, 0, `${method}: dry run reports pruned 0`);
   assert.equal(has(dry, "dryRun"), true, `${method}: dry run flagged`);
   assert.equal(dry.method, method);
@@ -36,7 +36,7 @@ for (const method of ["daemon", "client"] as const) {
 // Zero candidates on a dry run is still a valid count (0), not a missing field —
 // the UI shows "Nothing to prune" from wouldPrune === 0, not from undefined.
 const none = prunePayload({ dryRun: true, count: 0, method: "daemon" });
-assert.equal(none.wouldPrune, 0);
+assert.equal(has(none, "wouldPrune"), 0);
 assert.equal(none.pruned, 0);
 
 console.log("prune-response: all assertions passed");
