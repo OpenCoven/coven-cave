@@ -33,4 +33,25 @@ assert.match(
   "PUT /api/theme must wrap saveTheme so a write failure returns 500 instead of crashing the server",
 );
 
+// The path is env-overridable so tests / E2E / throwaway servers never write a
+// real user's ~/.coven/cave-theme.json (which the iOS app polls).
+assert.match(
+  store,
+  /function themePath\(\): string/,
+  "the snapshot path is resolved through a themePath() function (call-time, not a module const)",
+);
+assert.match(
+  store,
+  /process\.env\.COVEN_THEME_PATH \?\? path\.join\(homedir\(\), "\.coven", "cave-theme\.json"\)/,
+  "themePath honours COVEN_THEME_PATH, falling back to ~/.coven/cave-theme.json",
+);
+
+// The E2E web server points the theme store at a throwaway file.
+const e2e = await readFile(new URL("../../../playwright.config.ts", import.meta.url), "utf8");
+assert.match(
+  e2e,
+  /COVEN_THEME_PATH: join\(tmpdir\(\)/,
+  "the Playwright web server redirects theme writes to a temp file",
+);
+
 console.log("theme-store.test.ts: ok");
