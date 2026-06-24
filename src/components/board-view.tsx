@@ -9,7 +9,7 @@ import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
 import { Icon } from "@/lib/icon";
-import { type Card, type CardStatus, STATUSES } from "@/lib/cave-board-types";
+import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
@@ -387,7 +387,14 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // ── Bulk select (kanban + table) ────────────────────────────────────────────
   const cardSelect = useMultiSelect(filtered, (c) => c.id);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [labelDraft, setLabelDraft] = useState("");
   const selectedCards = () => cardSelect.selectedFrom(filtered);
+  // Existing labels across the board → datalist autocomplete for the bulk
+  // add-label control (NOT a filter row — label filtering is search syntax).
+  const bulkLabelOptions = useMemo(
+    () => [...new Set(cards.flatMap((c) => c.labels))].sort(),
+    [cards],
+  );
 
   const bulkMove = async (status: CardStatus) => {
     const ids = selectedCards().map((c) => c.id);
@@ -407,6 +414,31 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     cardSelect.exit();
   };
 
+  const bulkSetPriority = async (priority: CardPriority) => {
+    const ids = selectedCards().map((c) => c.id);
+    if (ids.length === 0) { cardSelect.exit(); return; }
+    setBulkBusy(true);
+    await Promise.all(ids.map((id) => patchCard(id, { priority })));
+    setBulkBusy(false);
+    cardSelect.exit();
+  };
+
+  // Add one label to every selected card (skip cards that already have it).
+  const bulkAddLabel = async (raw: string) => {
+    const label = raw.trim();
+    const sel = selectedCards();
+    if (!label || sel.length === 0) { if (sel.length === 0) cardSelect.exit(); return; }
+    setBulkBusy(true);
+    await Promise.all(
+      sel
+        .filter((c) => !c.labels.includes(label))
+        .map((c) => patchCard(c.id, { labels: [...c.labels, label] })),
+    );
+    setBulkBusy(false);
+    setLabelDraft("");
+    cardSelect.exit();
+  };
+
   const bulkDelete = () => {
     const sel = selectedCards();
     if (sel.length === 0) { cardSelect.exit(); return; }
@@ -418,6 +450,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const STATUS_LABELS: Record<CardStatus, string> = {
     backlog: "Backlog", inbox: "Inbox", running: "Running",
     review: "Review", blocked: "Blocked", done: "Done",
+  };
+  const PRIORITY_LABELS: Record<CardPriority, string> = {
+    urgent: "Urgent", high: "High", medium: "Medium", low: "Low",
   };
 
   const handleClearDone = async () => {
@@ -840,6 +875,43 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 <option value="">Assign to…</option>
                 {familiars.map((f) => <option key={f.id} value={f.id}>{f.display_name}</option>)}
               </select>
+              <label className="sr-only" htmlFor="board-bulk-priority">Set priority of selected tasks</label>
+              <select
+                id="board-bulk-priority"
+                disabled={bulkBusy || cardSelect.selectedCount === 0}
+                value=""
+                onChange={(e) => { if (e.target.value) void bulkSetPriority(e.target.value as CardPriority); }}
+                className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+              >
+                <option value="">Priority…</option>
+                {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
+              </select>
+              <form
+                className="inline-flex items-center gap-1"
+                onSubmit={(e) => { e.preventDefault(); void bulkAddLabel(labelDraft); }}
+              >
+                <input
+                  list="board-bulk-label-options"
+                  value={labelDraft}
+                  onChange={(e) => setLabelDraft(e.target.value)}
+                  placeholder="Add label…"
+                  aria-label="Add a label to selected tasks"
+                  disabled={bulkBusy || cardSelect.selectedCount === 0}
+                  className="focus-ring w-24 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] disabled:opacity-50"
+                />
+                <datalist id="board-bulk-label-options">
+                  {bulkLabelOptions.map((l) => <option key={l} value={l} />)}
+                </datalist>
+                <button
+                  type="submit"
+                  disabled={bulkBusy || cardSelect.selectedCount === 0 || !labelDraft.trim()}
+                  title="Add this label to the selected tasks"
+                  className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                >
+                  <Icon name="ph:tag-bold" width={11} aria-hidden />
+                  Label
+                </button>
+              </form>
               <button
                 type="button"
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
