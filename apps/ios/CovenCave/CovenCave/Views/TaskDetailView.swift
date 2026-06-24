@@ -14,6 +14,7 @@ struct TaskDetailView: View {
     @State private var renamingTitle = false
     @State private var titleDraft = ""
     @State private var newStep = ""
+    @State private var liveActivity = LiveActivityManager.shared
 
     /// The current card from the store, so status/priority/step edits made here
     /// reflect immediately; falls back to the passed-in snapshot.
@@ -89,6 +90,18 @@ struct TaskDetailView: View {
 
             Button { editingNotes = true } label: {
                 Label(hasNotes ? "Edit notes" : "Add notes", systemImage: "square.and.pencil")
+            }
+
+            // Live Activity: track a running task on the Lock Screen / Dynamic
+            // Island. It ends automatically once the task leaves the running state.
+            if liveActivity.currentTaskId == live.id {
+                Button { Task { await liveActivity.stop() } } label: {
+                    Label("Stop Lock Screen tracking", systemImage: "stop.circle")
+                }
+            } else if live.status == .running && liveActivity.isSupported {
+                Button { Task { await liveActivity.start(for: live) } } label: {
+                    Label("Track on Lock Screen", systemImage: "bolt.badge.clock")
+                }
             }
 
             Divider()
