@@ -714,3 +714,12 @@ for (const [name, src, api] of [["bookmarks", bookmarks, "bookmarks"], ["github"
   assert.match(src, /\{allSelected \? "Clear" : "Select all"\}/, `${name} bulk bar offers select-all / clear`);
   assert.match(src, /className="library-bulk-check"/, `${name} rows show a checkbox in select mode`);
 }
+
+// Bulk delete is undoable across all three lists: it routes through the delayed
+// scheduleDelete (not an immediate Promise.all), and undo restores the batch.
+for (const [name, src] of [["reading", reading], ["bookmarks", bookmarks], ["github", github]]) {
+  assert.match(src, /useUndoDelete<\w+ \| \w+\[\]>\(\)/, `${name} undo entry holds a single item or a bulk batch`);
+  assert.match(src, /scheduleDelete\(\s*removed,/, `${name} bulk delete schedules the batch through the undo window`);
+  assert.doesNotMatch(src, /function bulkDelete\(\)[\s\S]*?void Promise\.all/, `${name} bulk delete no longer fires deletes immediately`);
+  assert.match(src, /\[\.\.\.\(Array\.isArray\(restored\) \? restored : \[restored\]\), \.\.\.prev\]/, `${name} undo restores both single and bulk deletes`);
+}

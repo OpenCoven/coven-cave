@@ -295,7 +295,8 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
     }
   }
 
-  const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<LibraryReadingItem>();
+  // One undo entry holds either a single item or a bulk batch (array).
+  const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<LibraryReadingItem | LibraryReadingItem[]>();
 
   function handleDelete(item: LibraryReadingItem) {
     setItems((prev) => prev.filter((i) => i.id !== item.id));
@@ -308,7 +309,8 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
 
   function handleUndoDelete() {
     if (!undoPending) return;
-    setItems((prev) => [undoPending.item, ...prev]);
+    const restored = undoPending.item;
+    setItems((prev) => [...(Array.isArray(restored) ? restored : [restored]), ...prev]);
     undoDelete();
   }
 
@@ -321,15 +323,19 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
       else items.forEach((i) => next.add(i.id));
       return next;
     });
-  // Bulk remove: optimistic drop + fire the per-item deletes in parallel.
+  // Bulk remove: optimistic drop + a single undo entry; the per-item deletes
+  // fire (in parallel) only after the undo window, so Undo fully restores them.
   function bulkDelete() {
-    const ids = items.filter((i) => selectedIds.has(i.id)).map((i) => i.id);
-    if (ids.length === 0) return;
+    const removed = items.filter((i) => selectedIds.has(i.id));
+    if (removed.length === 0) return;
+    const ids = removed.map((i) => i.id);
     setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
-    void Promise.all(
-      ids.map((id) =>
+    scheduleDelete(
+      removed,
+      `${removed.length} item${removed.length === 1 ? "" : "s"}`,
+      () => Promise.all(ids.map((id) =>
         fetch(`/api/library/reading?id=${encodeURIComponent(id)}`, { method: "DELETE" }).then(() => {}).catch(() => {}),
-      ),
+      )).then(() => {}),
     );
     exitSelect();
   }

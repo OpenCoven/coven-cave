@@ -249,7 +249,7 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
     }
   }
 
-  const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<LibraryBookmark>();
+  const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<LibraryBookmark | LibraryBookmark[]>();
 
   function handleDelete(item: LibraryBookmark) {
     setItems((prev) => prev.filter((i) => i.id !== item.id));
@@ -262,7 +262,8 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
 
   function handleUndoDelete() {
     if (!undoPending) return;
-    setItems((prev) => [undoPending.item, ...prev]);
+    const restored = undoPending.item;
+    setItems((prev) => [...(Array.isArray(restored) ? restored : [restored]), ...prev]);
     undoDelete();
   }
 
@@ -285,13 +286,16 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
       return next;
     });
   function bulkDelete() {
-    const ids = items.filter((i) => selectedIds.has(i.id)).map((i) => i.id);
-    if (ids.length === 0) return;
+    const removed = items.filter((i) => selectedIds.has(i.id));
+    if (removed.length === 0) return;
+    const ids = removed.map((i) => i.id);
     setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
-    void Promise.all(
-      ids.map((id) =>
+    scheduleDelete(
+      removed,
+      `${removed.length} bookmark${removed.length === 1 ? "" : "s"}`,
+      () => Promise.all(ids.map((id) =>
         fetch(`/api/library/bookmarks?id=${encodeURIComponent(id)}`, { method: "DELETE" }).then(() => {}).catch(() => {}),
-      ),
+      )).then(() => {}),
     );
     exitSelect();
   }

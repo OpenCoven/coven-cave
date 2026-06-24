@@ -641,7 +641,7 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
     }
   }
 
-  const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<LibraryGitHubItem>();
+  const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<LibraryGitHubItem | LibraryGitHubItem[]>();
 
   function handleDelete(item: LibraryGitHubItem) {
     setItems((prev) => prev.filter((i) => i.id !== item.id));
@@ -654,7 +654,8 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
 
   function handleUndoDelete() {
     if (!undoPending) return;
-    setItems((prev) => [undoPending.item, ...prev]);
+    const restored = undoPending.item;
+    setItems((prev) => [...(Array.isArray(restored) ? restored : [restored]), ...prev]);
     undoDelete();
   }
 
@@ -677,13 +678,16 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
       return next;
     });
   function bulkDelete() {
-    const ids = items.filter((i) => selectedIds.has(i.id)).map((i) => i.id);
-    if (ids.length === 0) return;
+    const removed = items.filter((i) => selectedIds.has(i.id));
+    if (removed.length === 0) return;
+    const ids = removed.map((i) => i.id);
     setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
-    void Promise.all(
-      ids.map((id) =>
+    scheduleDelete(
+      removed,
+      `${removed.length} item${removed.length === 1 ? "" : "s"}`,
+      () => Promise.all(ids.map((id) =>
         fetch(`/api/library/github?id=${encodeURIComponent(id)}`, { method: "DELETE" }).then(() => {}).catch(() => {}),
-      ),
+      )).then(() => {}),
     );
     exitSelect();
   }
