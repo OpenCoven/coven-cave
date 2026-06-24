@@ -16,7 +16,10 @@ struct TasksView: View {
     @AppStorage("cave.tasks.groupBy") private var groupByRaw = GroupBy.status.rawValue
     @AppStorage("cave.tasks.sortBy") private var sortByRaw = SortBy.priority.rawValue
     @State private var query = ""
-    @State private var path: [BoardCard] = []
+    /// The task shown in the detail column. On iPad this fills the detail pane
+    /// beside the list; on iPhone `NavigationSplitView` collapses and selecting a
+    /// row pushes the detail, so the single-column behaviour is unchanged.
+    @State private var selection: BoardCard?
     /// A task awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: BoardCard?
     @State private var showReminders = false
@@ -44,11 +47,10 @@ struct TasksView: View {
     private var sortBy: SortBy { SortBy(rawValue: sortByRaw) ?? .priority }
 
     var body: some View {
-        NavigationStack(path: $path) {
+        NavigationSplitView {
             content
                 .navigationTitle("Tasks")
                 .navigationBarTitleDisplayMode(.inline)
-                .navigationDestination(for: BoardCard.self) { TaskDetailView(card: $0) }
                 .searchable(text: $query, prompt: "Search tasks")
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -86,7 +88,20 @@ struct TasksView: View {
                     Button("Cancel", role: .cancel) {}
                 } message: { card in Text(card.title) }
                 .sheet(isPresented: $showReminders) { RemindersView() }
+        } detail: {
+            if let selection {
+                NavigationStack { TaskDetailView(card: selection) }
+            } else {
+                ContentUnavailableView {
+                    Label("Select a task", systemImage: "checklist")
+                } description: {
+                    Text("Pick a task to see its details and steps.")
+                }
+            }
         }
+        // Keep the task list visible beside the detail on iPad rather than letting
+        // the detail take over; on iPhone the split view still collapses to a stack.
+        .navigationSplitViewStyle(.balanced)
     }
 
     private var deleteDialogBinding: Binding<Bool> {
@@ -125,7 +140,7 @@ struct TasksView: View {
     /// Consume a cross-tab "open this task" intent set by `requestOpenTask`.
     private func openRequestedCard() {
         guard let card = app.cardToOpen else { return }
-        if path.last?.id != card.id { path.append(card) }
+        if selection?.id != card.id { selection = card }
         app.cardToOpen = nil
     }
 
@@ -157,12 +172,12 @@ struct TasksView: View {
     }
 
     private var taskList: some View {
-        List {
+        List(selection: $selection) {
             ForEach(sections) { section in
                 Section {
                     ForEach(section.cards) { card in
-                        Button { path.append(card) } label: { TaskRow(card: card) }
-                            .buttonStyle(.plain)
+                        TaskRow(card: card)
+                            .tag(card)
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 12))
                             .contextMenu { taskMenu(card) }
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -190,7 +205,6 @@ struct TasksView: View {
         }
         .listStyle(.insetGrouped)
         .themedListBackground()
-        .readableListWidth()
     }
 
     private var emptyState: some View {
