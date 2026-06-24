@@ -134,6 +134,14 @@ export function PluginsView({
   const [busyRoleKey, setBusyRoleKey] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillDetailEntry | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const tablistRef = useRef<HTMLDivElement | null>(null);
+
+  // Switch tabs (clearing the per-tab search). Shared by the tab buttons and
+  // the tablist's arrow-key navigation.
+  const selectTab = useCallback((next: Tab) => {
+    setTab(next);
+    setQuery("");
+  }, []);
 
   const loadRoles = useCallback(async () => {
     setRolesLoaded(false);
@@ -353,20 +361,43 @@ export function PluginsView({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={`Search ${TAB_LABEL[tab].toLowerCase()}`}
+                aria-label={`Search ${TAB_LABEL[tab].toLowerCase()}`}
                 className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
               />
             </label>
           )}
         </div>
-        <div className="mt-4 flex flex-wrap gap-1">
+        <div
+          ref={tablistRef}
+          role="tablist"
+          aria-label="Roles sections"
+          className="mt-4 flex flex-wrap gap-1"
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
+            e.preventDefault();
+            const i = tabSet.indexOf(tab);
+            const ni =
+              e.key === "ArrowRight" ? (i + 1) % tabSet.length
+              : e.key === "ArrowLeft" ? (i - 1 + tabSet.length) % tabSet.length
+              : e.key === "Home" ? 0
+              : tabSet.length - 1;
+            const next = tabSet[ni];
+            if (next) {
+              selectTab(next);
+              tablistRef.current?.querySelector<HTMLButtonElement>(`#plugins-tab-${next}`)?.focus();
+            }
+          }}
+        >
           {tabSet.map((nextTab) => (
             <button
               key={nextTab}
               type="button"
-              onClick={() => {
-                setTab(nextTab);
-                setQuery("");
-              }}
+              role="tab"
+              id={`plugins-tab-${nextTab}`}
+              aria-selected={tab === nextTab}
+              aria-controls={`plugins-panel-${nextTab}`}
+              tabIndex={tab === nextTab ? 0 : -1}
+              onClick={() => selectTab(nextTab)}
               className={`focus-ring flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] transition-colors ${
                 tab === nextTab
                   ? "bg-[var(--text-primary)] text-[var(--bg-base)]"
@@ -388,11 +419,21 @@ export function PluginsView({
       {tab === "capabilities" ? (
         // Self-contained surface: it owns its own scroll, header, search, and
         // filters, so it renders full-bleed (no shared padding/scroll wrapper).
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div
+          role="tabpanel"
+          id={`plugins-panel-${tab}`}
+          aria-labelledby={`plugins-tab-${tab}`}
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <CapabilitiesViewSurface activeHarness={activeHarness} />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div
+          role="tabpanel"
+          id={`plugins-panel-${tab}`}
+          aria-labelledby={`plugins-tab-${tab}`}
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6"
+        >
           {tab === "roles" ? (
             <RolesTab
               roles={filteredRoles}
