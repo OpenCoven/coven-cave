@@ -42,11 +42,12 @@ import {
   readFamiliarWorkspaces,
 } from "@/lib/coven-paths";
 import {
+  OpenClawAgentResolutionError,
   extractOpenClawSessionId,
   extractOpenClawText,
   openClawAgentArgs,
   openClawSessionKey,
-  resolveOpenClawAgentId,
+  resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
 } from "@/lib/openclaw-bridge";
 import { isTrustedChatHarness, covenRunSupportsModelFlag } from "@/lib/harness-adapters";
@@ -567,8 +568,25 @@ function openClawChatResponse(args: {
       // off this id, so it survives OpenClaw's internal session-id rotation.
       const conversationId = args.body.sessionId ?? crypto.randomUUID();
       pushProgress("openclaw-resolve", "Resolving OpenClaw agent", "running");
-      const agentId = await resolveOpenClawAgentId(args.body.familiarId);
-      pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", agentId);
+      let agentBinding;
+      try {
+        agentBinding = await resolveOpenClawAgentBinding(args.body.familiarId);
+      } catch (error) {
+        if (error instanceof OpenClawAgentResolutionError) {
+          pushProgress("openclaw-resolve", "OpenClaw agent resolution failed", "error", error.message);
+          push({ kind: "error", code: error.code, message: error.message });
+          push({
+            kind: "done",
+            durationMs: Date.now() - startedAt,
+            isError: true,
+          });
+          close();
+          return;
+        }
+        throw error;
+      }
+      const agentId = agentBinding.openclawAgentId;
+      pushProgress("openclaw-resolve", "OpenClaw agent resolved", "done", `${agentId} (${agentBinding.source})`);
       const argv = openClawAgentArgs(args.harnessPrompt, agentId, conversationId);
       const spawnArgv = openClawSpawnArgs(argv);
       const cwd = await resolveLocalRuntimeCwd(
@@ -584,6 +602,11 @@ function openClawChatResponse(args: {
         modelSource: args.modelState.source,
         modelApplicationState: args.modelState.applicationState,
         modelApplicationReason: args.modelState.reason,
+        openclawAgentId: agentBinding.openclawAgentId,
+        openclawAgentSource: agentBinding.source,
+        caveSessionId: conversationId,
+        gatewaySessionId: undefined,
+        sessionKey: openClawSessionKey(conversationId),
       };
       pushProgress("openclaw-start", "Starting OpenClaw bridge", "running", cwd);
       const child = spawn(openClawBin(), spawnArgv, {
@@ -657,6 +680,7 @@ function openClawChatResponse(args: {
           try {
             const parsed = JSON.parse(stdout.trim()) as OpenClawAgentJson;
             gatewaySessionId = extractOpenClawSessionId(parsed);
+            if (gatewaySessionId) responseMetadata.gatewaySessionId = gatewaySessionId;
             assistantText = extractOpenClawText(parsed);
             isError = isError || parsed.status === "error";
           } catch {

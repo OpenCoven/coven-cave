@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { covenHome } from "./coven-paths.ts";
+import type { ChatAttachment } from "./chat-attachments.ts";
+import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 
 export type OpenClawAgentJson = {
   status?: string;
@@ -21,6 +23,79 @@ export type OpenClawAgentSummary = {
   identityName?: string;
   isDefault?: boolean;
 };
+
+type OpenClawBridgeRequest = {
+  familiarId: string;
+  prompt: string;
+  conversationId?: string;
+  projectRoot?: string;
+  attachments?: ChatAttachment[];
+  controls?: {
+    reasoningEffort?: "low" | "medium" | "high";
+    responseSpeed?: "fast" | "balanced" | "careful";
+  };
+};
+
+export type OpenClawAgentBinding = {
+  caveFamiliarId: string;
+  openclawAgentId: string;
+  source: "explicit" | "id-match" | "name-match" | "fallback";
+};
+
+export type OpenClawBridgeCapabilities = {
+  streaming: boolean;
+  toolEvents: boolean;
+  stableSessionKey: boolean;
+  localFileAttachments: false;
+  sshRuntime: false;
+  modelOverride: false | "agent-owned";
+  nativeMemory: true;
+  nativeSkills: true;
+  nativeMessaging: true;
+};
+
+export type OpenClawBridgeEvent =
+  | { kind: "session"; sessionId: string }
+  | { kind: "user"; text: string }
+  | { kind: "assistant_chunk"; text: string }
+  | { kind: "tool_use"; id?: string; name: string; input?: string; output?: string; status?: string }
+  | { kind: "progress"; id: string; label: string; status: "running" | "done" | "error"; detail?: string }
+  | { kind: "done"; sessionId: string; durationMs: number; isError?: boolean; responseMetadata: ChatResponseMetadata }
+  | { kind: "error"; message: string; code?: string };
+
+export interface RuntimeBridge {
+  id: "openclaw";
+  resolveAgent(familiarId: string): Promise<OpenClawAgentBinding>;
+  capabilities(): OpenClawBridgeCapabilities;
+  send(request: OpenClawBridgeRequest): AsyncIterable<OpenClawBridgeEvent>;
+}
+
+export class OpenClawAgentResolutionError extends Error {
+  readonly code = "OPENCLAW_AGENT_NOT_FOUND";
+  readonly familiarId: string;
+
+  constructor(familiarId: string) {
+    super(
+      `No OpenClaw agent is bound to Cave familiar "${familiarId}". Add familiar.openclaw_agent or create an OpenClaw agent with a matching id/name.`,
+    );
+    this.name = "OpenClawAgentResolutionError";
+    this.familiarId = familiarId;
+  }
+}
+
+export function openClawBridgeCapabilities(): OpenClawBridgeCapabilities {
+  return {
+    streaming: false,
+    toolEvents: false,
+    stableSessionKey: true,
+    localFileAttachments: false,
+    sshRuntime: false,
+    modelOverride: false,
+    nativeMemory: true,
+    nativeSkills: true,
+    nativeMessaging: true,
+  };
+}
 
 export function readTomlString(block: string, key: string): string | null {
   const quoted = block.match(new RegExp(`^\\s*${key}\\s*=\\s*(['"])(.*?)\\1\\s*(?:#.*)?$`, "m"));
@@ -83,28 +158,55 @@ export function resolveOpenClawAgentIdFromSources(
   familiarId: string,
   explicit: string | null,
   agents: OpenClawAgentSummary[],
+  options: { allowFallback?: boolean } = {},
 ): string {
-  if (explicit) return explicit;
+  return resolveOpenClawAgentBindingFromSources(familiarId, explicit, agents, options)
+    .openclawAgentId;
+}
+
+export function resolveOpenClawAgentBindingFromSources(
+  familiarId: string,
+  explicit: string | null,
+  agents: OpenClawAgentSummary[],
+  options: { allowFallback?: boolean } = {},
+): OpenClawAgentBinding {
+  if (explicit) {
+    return { caveFamiliarId: familiarId, openclawAgentId: explicit, source: "explicit" };
+  }
 
   const exact = agents.find((agent) => agent.id === familiarId)?.id;
-  if (exact) return exact;
+  if (exact) {
+    return { caveFamiliarId: familiarId, openclawAgentId: exact, source: "id-match" };
+  }
 
   const named = agents.find(
     (agent) =>
       (agent.name && slugifyOpenClawAgentName(agent.name) === familiarId) ||
       (agent.identityName && slugifyOpenClawAgentName(agent.identityName) === familiarId),
   )?.id;
-  if (named) return named;
+  if (named) {
+    return { caveFamiliarId: familiarId, openclawAgentId: named, source: "name-match" };
+  }
 
-  return familiarId;
+  if (options.allowFallback) {
+    return { caveFamiliarId: familiarId, openclawAgentId: familiarId, source: "fallback" };
+  }
+
+  throw new OpenClawAgentResolutionError(familiarId);
 }
 
 export async function resolveOpenClawAgentId(familiarId: string): Promise<string> {
+  return (await resolveOpenClawAgentBinding(familiarId)).openclawAgentId;
+}
+
+export async function resolveOpenClawAgentBinding(familiarId: string): Promise<OpenClawAgentBinding> {
   const explicit = await readOpenClawAgentBinding(familiarId);
-  if (explicit) return explicit;
+  if (explicit) {
+    return { caveFamiliarId: familiarId, openclawAgentId: explicit, source: "explicit" };
+  }
 
   const agents = await listOpenClawAgents();
-  return resolveOpenClawAgentIdFromSources(familiarId, null, agents);
+  return resolveOpenClawAgentBindingFromSources(familiarId, null, agents);
 }
 
 export function extractOpenClawText(json: OpenClawAgentJson): string {

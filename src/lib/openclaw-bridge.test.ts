@@ -4,11 +4,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  OpenClawAgentResolutionError,
   extractOpenClawSessionId,
   extractOpenClawText,
+  openClawBridgeCapabilities,
   openClawAgentArgs,
   openClawSessionKey,
   readTomlString,
+  resolveOpenClawAgentBindingFromSources,
   resolveOpenClawAgentId,
   resolveOpenClawAgentIdFromSources,
   slugifyOpenClawAgentName,
@@ -28,6 +31,65 @@ const candidateAgents = [
   { id: "cody-main", name: "Cody Main" },
   { id: "identity-hit", identityName: "Release Review" },
 ];
+
+assert.deepEqual(openClawBridgeCapabilities(), {
+  streaming: false,
+  toolEvents: false,
+  stableSessionKey: true,
+  localFileAttachments: false,
+  sshRuntime: false,
+  modelOverride: false,
+  nativeMemory: true,
+  nativeSkills: true,
+  nativeMessaging: true,
+});
+
+assert.deepEqual(
+  resolveOpenClawAgentBindingFromSources("nova", "explicit-nova", candidateAgents),
+  {
+    caveFamiliarId: "nova",
+    openclawAgentId: "explicit-nova",
+    source: "explicit",
+  },
+  "explicit openclaw_agent binding should return typed binding metadata",
+);
+assert.deepEqual(
+  resolveOpenClawAgentBindingFromSources("nova", null, candidateAgents),
+  {
+    caveFamiliarId: "nova",
+    openclawAgentId: "nova",
+    source: "id-match",
+  },
+  "exact agent id should report id-match source metadata",
+);
+assert.deepEqual(
+  resolveOpenClawAgentBindingFromSources("release-review", null, candidateAgents),
+  {
+    caveFamiliarId: "release-review",
+    openclawAgentId: "identity-hit",
+    source: "name-match",
+  },
+  "slugified display or identity-name matches should report name-match source metadata",
+);
+assert.throws(
+  () => resolveOpenClawAgentBindingFromSources("unknown", null, candidateAgents),
+  (error) =>
+    error instanceof OpenClawAgentResolutionError &&
+    error.code === "OPENCLAW_AGENT_NOT_FOUND" &&
+    /No OpenClaw agent is bound to Cave familiar "unknown"/.test(error.message),
+  "missing OpenClaw agent resolution should fail clearly by default",
+);
+assert.deepEqual(
+  resolveOpenClawAgentBindingFromSources("unknown", null, candidateAgents, {
+    allowFallback: true,
+  }),
+  {
+    caveFamiliarId: "unknown",
+    openclawAgentId: "unknown",
+    source: "fallback",
+  },
+  "fallback-to-familiar-id should be explicit and source-tagged",
+);
 
 assert.equal(
   resolveOpenClawAgentIdFromSources("nova", "explicit-nova", candidateAgents),
@@ -50,9 +112,11 @@ assert.equal(
   "slugified identity name should resolve when no exact id or display name exists",
 );
 assert.equal(
-  resolveOpenClawAgentIdFromSources("unknown", null, candidateAgents),
+  resolveOpenClawAgentIdFromSources("unknown", null, candidateAgents, {
+    allowFallback: true,
+  }),
   "unknown",
-  "unknown familiars intentionally fall back to the familiar id",
+  "legacy id-only helper can still opt into fallback-to-familiar-id",
 );
 
 const previousCovenHome = process.env.COVEN_HOME;
