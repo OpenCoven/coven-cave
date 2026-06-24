@@ -36,6 +36,21 @@ struct SettingsView: View {
                     Text("Save every conversation as Markdown files in a single .zip.")
                 }
 
+                Section {
+                    Picker("Theme", selection: Binding(
+                        get: { app.appearance },
+                        set: { app.appearance = $0 }
+                    )) {
+                        ForEach(AppearancePref.allCases) { pref in
+                            Text(pref.label).tag(pref)
+                        }
+                    }
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("“Sync with desktop” mirrors your Mac's theme. Light, Dark, or System override it on this device only.")
+                }
+
                 Section("Desktop") {
                     LabeledContent("Address") {
                         Text(app.connection?.host ?? "—")

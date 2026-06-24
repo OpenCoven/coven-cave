@@ -1,6 +1,28 @@
 import SwiftUI
 import UIKit
 
+// MARK: - Appearance preference (this device)
+
+/// How this device picks its appearance. By default it mirrors the desktop's
+/// published theme; the other options override that sync locally — using the
+/// built-in adaptive palette in the chosen light/dark (or system) mode.
+enum AppearancePref: String, CaseIterable, Identifiable {
+    case desktop
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .desktop: return "Sync with desktop"
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
+        }
+    }
+}
+
 // MARK: - App-chrome palette
 
 /// The desktop's active appearance, resolved from the colour tokens it publishes

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 /// The bottom tabs. Lifted out of the view so slash commands (`/board`,
 /// `/chats`) can drive tab selection from anywhere.
@@ -116,6 +117,31 @@ final class AppModel {
     /// (`GET /api/theme`). Starts at the built-in look and is replaced once the
     /// desktop theme loads. One-way (desktop → iOS), per the design.
     var chrome: ChromePalette = .fallback
+
+    /// This device's appearance choice. `.desktop` mirrors the synced theme;
+    /// the others override it locally and persist across launches.
+    private static let appearanceKey = "cave.appearance"
+    var appearance: AppearancePref = AppModel.loadAppearancePref() {
+        didSet { UserDefaults.standard.set(appearance.rawValue, forKey: AppModel.appearanceKey) }
+    }
+    private static func loadAppearancePref() -> AppearancePref {
+        AppearancePref(rawValue: UserDefaults.standard.string(forKey: appearanceKey) ?? "") ?? .desktop
+    }
+
+    /// The palette actually shown: the desktop's when syncing, otherwise the
+    /// built-in adaptive palette (whose system colours follow the forced mode).
+    var effectivePalette: ChromePalette {
+        appearance == .desktop ? chrome : .fallback
+    }
+    /// The colour scheme to force app-wide; `nil` means follow the OS.
+    var effectiveColorScheme: ColorScheme? {
+        switch appearance {
+        case .desktop: return chrome.colorScheme
+        case .light: return .light
+        case .dark: return .dark
+        case .system: return nil
+        }
+    }
 
     /// Fetch the desktop theme and adopt its palette. Best-effort: on any
     /// failure the current palette stands, so there's no flash back to the

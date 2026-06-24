@@ -509,6 +509,7 @@ export const SUITES = {
     "scripts/ios-task-notes-edit.test.mjs",
     "scripts/ios-task-actions.test.mjs",
     "scripts/ios-task-search-familiar-scope.test.mjs",
+    "scripts/ios-appearance-override.test.mjs",
     "scripts/ios-thread-rename.test.mjs",
     "scripts/ios-archive-threads.test.mjs",
     "scripts/ios-pin-threads.test.mjs",

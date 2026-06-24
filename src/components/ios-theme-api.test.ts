@@ -23,7 +23,7 @@ assert.match(appModel, /var chrome:\s*ChromePalette = \.fallback/, "AppModel own
 assert.match(appModel, /func loadTheme\(\) async[\s\S]*client\.fetchTheme\(\)[\s\S]*ChromePalette\(snapshot:\s*snapshot\)/, "AppModel fetches and adopts the desktop palette");
 assert.match(appModel, /connectionState = \.connected[\s\S]*await loadFamiliars\(\)[\s\S]*await loadTheme\(\)/, "AppModel loads the theme after connecting");
 
-assert.match(app, /\.environment\(\\\.chrome,\s*app\.chrome\)[\s\S]*\.tint\(app\.chrome\.accent\)[\s\S]*\.preferredColorScheme\(app\.chrome\.colorScheme\)/, "app scene injects and applies desktop chrome");
+assert.match(app, /\.environment\(\\\.chrome,\s*app\.effectivePalette\)[\s\S]*\.tint\(app\.effectivePalette\.accent\)[\s\S]*\.preferredColorScheme\(app\.effectiveColorScheme\)/, "app scene injects and applies the effective chrome (desktop or local override)");
 assert.match(root, /@Environment\(\\\.chrome\) private var chrome/, "RootView reads the chrome palette");
 assert.match(root, /\.background\(chrome\.bgBase\.ignoresSafeArea\(\)\)[\s\S]*\.foregroundStyle\(chrome\.textPrimary\)/, "RootView applies desktop background and foreground");
 assert.match(root, /\.toolbarBackground\(chrome\.bgRaised,\s*for:\s*\.navigationBar,\s*\.tabBar\)/, "RootView applies desktop chrome to navigation and tab bars");

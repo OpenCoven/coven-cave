@@ -8,12 +8,12 @@ struct CovenCaveApp: App {
         WindowGroup {
             RootView()
                 .environment(app)
-                // Match the desktop appearance: propagate its palette to every
-                // view, tint app-wide controls with its accent, and follow its
-                // light/dark mode (defaults to dark until a theme loads).
-                .environment(\.chrome, app.chrome)
-                .tint(app.chrome.accent)
-                .preferredColorScheme(app.chrome.colorScheme)
+                // Appearance: mirror the desktop's palette/mode by default, or
+                // honor this device's local override (Light/Dark/System) — the
+                // effective* accessors resolve which applies.
+                .environment(\.chrome, app.effectivePalette)
+                .tint(app.effectivePalette.accent)
+                .preferredColorScheme(app.effectiveColorScheme)
                 .task {
                     if app.connection != nil {
                         await app.refreshConnection()
