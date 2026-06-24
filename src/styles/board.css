@@ -523,6 +523,11 @@
 .github-surface-header { border-bottom:1px solid color-mix(in oklab,var(--border-hairline) 72%,transparent); }
 .github-surface-footer { border-top:1px solid color-mix(in oklab,var(--border-hairline) 72%,transparent); }
 .gh-compact-header {
+  /* Single source of truth for the height of every control in this band so the
+     auth pill, segmented tabs, org/repo selects, group toggle, and icon buttons
+     all align to one baseline instead of each picking up its own padding-derived
+     height. */
+  --gh-control-h:26px;
   min-height:40px;
   flex-wrap:wrap;
   display:flex;
@@ -548,7 +553,7 @@
 .gh-compact-auth {
   display:inline-flex;
   align-items:center;
-  height:20px;
+  height:var(--gh-control-h);
   border:1px solid var(--border-hairline);
   border-radius:999px;
   padding:0 7px;
@@ -568,7 +573,16 @@
 }
 .gh-compact-tabs {
   flex:0 0 auto;
+  height:var(--gh-control-h);
+  padding:2px;
   background:color-mix(in oklab,var(--bg-raised) 58%,transparent);
+}
+/* Make the segmented tab buttons fill the band height instead of deriving their
+   own height from py padding, so the tabs match the selects and icon buttons. */
+.gh-compact-tabs [role="tab"] {
+  height:100%;
+  padding-top:0;
+  padding-bottom:0;
 }
 .gh-compact-filters {
   margin-left:auto;
@@ -583,8 +597,11 @@
   gap:2px;
 }
 .gh-compact-group-button {
+  display:inline-flex;
+  align-items:center;
+  height:var(--gh-control-h);
   border-radius:6px;
-  padding:4px 8px;
+  padding:0 8px;
   color:var(--text-muted);
   font-size:11px;
   line-height:1;
@@ -603,8 +620,8 @@
 }
 .gh-compact-icon-button {
   display:inline-flex;
-  min-width:24px;
-  height:24px;
+  min-width:var(--gh-control-h);
+  height:var(--gh-control-h);
   align-items:center;
   justify-content:center;
   gap:5px;
@@ -672,11 +689,11 @@
 .gh-familiar-stack-more { margin-left:5px; color:var(--text-muted); font-size:10.5px; }
 
 /* Org/repo filter + group-by controls (right of the kind tabs) */
-.gh-select { appearance:none; -webkit-appearance:none; max-width:170px; padding:3px 22px 3px 8px; border:1px solid var(--border-hairline); border-radius:6px; background-color:var(--bg-base); color:var(--text-secondary); font-size:11px; cursor:pointer; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%238a8a96'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 8px center; transition:background-color .12s,border-color .12s,color .12s; }
+.gh-select { appearance:none; -webkit-appearance:none; max-width:170px; height:var(--gh-control-h); padding:0 22px 0 8px; border:1px solid var(--border-hairline); border-radius:6px; background-color:var(--bg-base); color:var(--text-secondary); font-size:11px; cursor:pointer; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%238a8a96'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 8px center; transition:background-color .12s,border-color .12s,color .12s; }
 .gh-select:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text-primary); background-color:var(--bg-hover); }
 .gh-select:focus-visible { outline:none; border-color:var(--accent-presence); }
 .gh-select:disabled { opacity:.45; cursor:not-allowed; }
-.gh-select-sep { width:1px; height:18px; background:var(--border-hairline); }
+.gh-select-sep { width:1px; height:calc(var(--gh-control-h) - 8px); background:var(--border-hairline); }
 
 /* Group header rows in the GitHub table */
 .gh-table tbody tr.gh-group-row,
