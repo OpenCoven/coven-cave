@@ -389,8 +389,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const [bulkBusy, setBulkBusy] = useState(false);
   const [labelDraft, setLabelDraft] = useState("");
   const selectedCards = () => cardSelect.selectedFrom(filtered);
-  // Existing labels across the board → datalist autocomplete for bulk add.
-  const allLabels = useMemo(
+  // Existing labels across the board → datalist autocomplete for the bulk
+  // add-label control (NOT a filter row — label filtering is search syntax).
+  const bulkLabelOptions = useMemo(
     () => [...new Set(cards.flatMap((c) => c.labels))].sort(),
     [cards],
   );
@@ -899,7 +900,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                   className="focus-ring w-24 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] disabled:opacity-50"
                 />
                 <datalist id="board-bulk-label-options">
-                  {allLabels.map((l) => <option key={l} value={l} />)}
+                  {bulkLabelOptions.map((l) => <option key={l} value={l} />)}
                 </datalist>
                 <button
                   type="submit"
