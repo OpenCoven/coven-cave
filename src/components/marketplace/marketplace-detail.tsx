@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,26 @@ type Props = {
 
 export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
+  type ConnState = { state: "idle" | "testing" | "reachable" | "unreachable"; message?: string };
+  const [conn, setConn] = useState<ConnState>({ state: "idle" });
+
+  const testConnection = useCallback(async () => {
+    setConn({ state: "testing" });
+    try {
+      const res = await fetch("/api/marketplace/validate-endpoint", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: plugin.id }),
+      });
+      const json = (await res.json()) as { ok?: boolean; reachable?: boolean; detail?: string | null; error?: string | null };
+      if (!json.ok) throw new Error(json.error ?? "check failed");
+      setConn(json.reachable
+        ? { state: "reachable", message: json.detail ?? "Reachable" }
+        : { state: "unreachable", message: json.error ?? "Unreachable" });
+    } catch (err) {
+      setConn({ state: "unreachable", message: err instanceof Error ? err.message : "check failed" });
+    }
+  }, [plugin.id]);
   useFocusTrap(true, ref, { onEscape: onClose });
   const state = pluginBadgeState(plugin);
   return (
@@ -92,6 +112,30 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
             <p className="text-[12px] text-[var(--text-muted)]">
               This plugin needs credentials before it can run. Adding it now records your choice; credential setup is a later step.
             </p>
+          </Section>
+        ) : null}
+
+        {plugin.remoteUrl ? (
+          <Section title="Connection">
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Authenticates via OAuth when first used — no setup needed here.
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                loading={conn.state === "testing"}
+                onClick={() => void testConnection()}
+              >
+                Test connection
+              </Button>
+              {conn.state === "reachable" || conn.state === "unreachable" ? (
+                <span className={`inline-flex items-center gap-1 text-[11px] ${conn.state === "reachable" ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"}`}>
+                  <Icon name={conn.state === "reachable" ? "ph:check-circle" : "ph:warning"} width={12} aria-hidden />
+                  {conn.message}
+                </span>
+              ) : null}
+            </div>
           </Section>
         ) : null}
 
