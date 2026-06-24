@@ -4278,48 +4278,86 @@ button:active > .edge-rail-chip {
   z-index: 2;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 7px;
+  padding-top: 8px;
   border: 0;
-  /* A soft top fade keeps the caret legible over a bright video; the rest of
-     the overlay stays transparent so the video shows through. */
-  background: linear-gradient(
-    to bottom,
-    color-mix(in oklch, var(--bg-base) 70%, transparent),
-    transparent 38px
-  );
-  color: #fff;
+  background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.12s;
 }
 
-.companion-rail--video-strip .companion-rail__strip-expand:hover {
-  background: linear-gradient(
-    to bottom,
-    color-mix(in oklch, var(--bg-base) 80%, transparent),
-    color-mix(in oklch, var(--bg-base) 22%, transparent)
-  );
+/* The caret reads as a real button: a small rounded chip pinned at the top. */
+.companion-rail--video-strip .companion-rail__strip-expand > * {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hairline);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: background 0.12s, color 0.12s, transform 0.12s;
+}
+
+.companion-rail--video-strip .companion-rail__strip-expand:hover > * {
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  transform: scale(1.06);
 }
 
 .companion-rail--video-strip #companion-rail-youtube {
   flex: 1 1 auto !important;
 }
 
-/* Rotate the video to run top→bottom and fill the tall, narrow strip.
-   `container-type: size` lets the iframe size off the frame's box: its
-   pre-rotation width = frame height, height = frame width, so after a 90°
-   turn it covers the frame exactly. */
+/* In the narrow peek strip we DON'T show the video sideways (a 16:9 frame
+   rotated into a ~55px column is a head-tilt sliver). Keep the iframe mounted
+   as an invisible sliver so audio never stops, and hand the strip to a calm,
+   upright "now playing" indicator instead. */
 .companion-rail--video-strip .youtube-viewer__frame {
-  container-type: size;
+  flex: 0 0 1px;
+  min-height: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
-.companion-rail--video-strip .youtube-viewer__frame iframe {
-  inset: auto;
-  top: 50%;
-  left: 50%;
-  width: 100cqh;
-  height: 100cqw;
-  transform: translate(-50%, -50%) rotate(90deg);
-  transform-origin: center;
+.companion-rail--video-strip .youtube-viewer__strip {
+  display: flex;
+}
+
+/* Vertical now-playing strip — equalizer + upright (vertical) title, centred in
+   the column. Hidden everywhere except the collapsed video strip. */
+.youtube-viewer__strip {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 40px 4px 18px;
+  background: var(--bg-panel);
+}
+
+.youtube-viewer__strip-title {
+  writing-mode: vertical-rl;
+  max-height: 62%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text-secondary);
+}
+
+/* Larger equalizer for the strip. */
+.youtube-viewer__eq--lg {
+  height: 26px;
+  gap: 3px;
+}
+
+.youtube-viewer__eq--lg i {
+  width: 3px;
 }
 
 /* ── Collapse-to-mini player ────────────────────────────────────────────────
@@ -4371,9 +4409,10 @@ button:active > .edge-rail-chip {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 4px;
-  padding: 0 6px 0 4px;
+  gap: 3px;
+  padding: 0 8px 0 6px;
   background: var(--bg-panel);
+  border-top: 1px solid var(--border-hairline);
 }
 
 .youtube-viewer__mini-btn {
@@ -4381,17 +4420,47 @@ button:active > .edge-rail-chip {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  width: 28px;
   height: 28px;
   border-radius: var(--radius-control);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: color 0.1s, background 0.1s;
+  transition: color 0.1s, background 0.1s, transform 0.1s;
 }
 
 .youtube-viewer__mini-btn:hover {
   background: var(--bg-raised);
   color: var(--text-primary);
+}
+
+.youtube-viewer__mini-btn:active {
+  transform: scale(0.92);
+}
+
+/* The play/pause control reads as primary: a filled accent disc. */
+.youtube-viewer__mini-btn--primary {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+}
+
+.youtube-viewer__mini-btn--primary:hover {
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  filter: brightness(1.08);
+}
+
+/* Equalizer + title share the flexible middle so the title truncates, not the
+   controls. */
+.youtube-viewer__nowplaying {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
 }
 
 .youtube-viewer__mini-title {
@@ -4400,9 +4469,51 @@ button:active > .edge-rail-chip {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  padding: 0 4px;
   font-size: var(--text-xs);
+  font-weight: 500;
   color: var(--text-primary);
+}
+
+/* ── Now-playing equalizer ──────────────────────────────────────────────── */
+.youtube-viewer__eq {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.youtube-viewer__eq i {
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--accent);
+  transform: scaleY(0.35);
+  transform-origin: bottom;
+}
+
+/* Static low bars when paused; lively staggered bounce when playing. */
+.youtube-viewer__eq[data-playing="true"] i {
+  animation: youtube-eq 0.9s ease-in-out infinite;
+}
+
+.youtube-viewer__eq[data-playing="true"] i:nth-child(2) {
+  animation-delay: 0.18s;
+  animation-duration: 1.05s;
+}
+
+.youtube-viewer__eq[data-playing="true"] i:nth-child(3) {
+  animation-delay: 0.36s;
+  animation-duration: 0.78s;
+}
+
+@keyframes youtube-eq {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .youtube-viewer__eq[data-playing="true"] i { animation: none; transform: scaleY(0.7); }
 }
 
 /* Slim accent volume slider — the filled portion follows --vol (set inline). */
@@ -4447,7 +4558,7 @@ button:active > .edge-rail-chip {
    freed height. react-resizable-panels sets each Panel's size via inline
    `flex`, so the override is `!important`; the resizer is hidden while parked. */
 .companion-rail__split:has(.youtube-viewer[data-collapsed="true"]) #companion-rail-youtube {
-  flex: 0 0 36px !important;
+  flex: 0 0 40px !important;
 }
 
 .companion-rail__split:has(.youtube-viewer[data-collapsed="true"]) #companion-rail-main {

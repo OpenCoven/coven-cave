@@ -39,8 +39,21 @@ assert.match(
 );
 assert.match(
   css,
-  /\.companion-rail__split:has\(\.youtube-viewer\[data-collapsed="true"\]\) #companion-rail-youtube \{[\s\S]*?flex: 0 0 36px !important/,
+  /\.companion-rail__split:has\(\.youtube-viewer\[data-collapsed="true"\]\) #companion-rail-youtube \{[\s\S]*?flex: 0 0 40px !important/,
   "collapsed: the bottom pane parks at the mini-bar height so the top pane reclaims the space",
+);
+
+// ── Now-playing polish: primary play disc + an animated equalizer ────────────
+assert.match(
+  view,
+  /youtube-viewer__mini-btn--primary/,
+  "the mini bar's play/pause reads as the primary control",
+);
+assert.match(view, /<Equalizer playing=\{playing\}/, "the mini bar shows a now-playing equalizer");
+assert.match(
+  css,
+  /\.youtube-viewer__eq\[data-playing="true"\] i \{[\s\S]*?animation: youtube-eq/,
+  "the equalizer animates while playing",
 );
 
 console.log("youtube-collapse.test.ts: ok");
