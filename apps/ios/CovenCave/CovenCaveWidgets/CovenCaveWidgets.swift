@@ -257,5 +257,7 @@ struct CovenCaveWidgetsBundle: WidgetBundle {
     var body: some Widget {
         TaskLiveActivity()
         UpNextWidget()
+        RemindersControl()
+        TasksControl()
     }
 }
