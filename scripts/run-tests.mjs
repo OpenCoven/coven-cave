@@ -191,6 +191,7 @@ export const SUITES = {
     "src/components/bottom-terminal-sr-mirror.test.ts",
     "src/components/terminal-key-bar.test.ts",
     "src/components/voice-call-overlay-state.test.ts",
+    "src/components/voice-call-overlay.test.ts",
     "src/lib/session-debug.test.ts",
     "src/components/bottom-terminal-ws-bridge.test.ts",
     "src/lib/library-metadata.test.ts",

@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useReducer, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "@iconify/react";
 import type { Familiar } from "@/lib/types";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { getVoiceProvider } from "@/lib/voice/registry";
 import type { LiveSession, VoiceSessionGrant } from "@/lib/voice/types";
 import { reduce, initialState, type CallState } from "./voice-call-overlay-state";
@@ -19,6 +21,9 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   const grantRef = useRef<VoiceSessionGrant | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useFocusTrap(true, dialogRef, { onEscape: () => dispatch({ type: "CLOSE_REQUEST" }) });
 
   useEffect(() => {
     let cancelled = false;
@@ -130,43 +135,64 @@ export function VoiceCallOverlay({ familiar, sessionId, onClose }: Props) {
   const mm = String(Math.floor(duration / 60)).padStart(2, "0");
   const ss = String(duration % 60).padStart(2, "0");
 
-  return (
-    <div className="voice-call-overlay">
-      <header className="voice-call-overlay__header">
-        <strong>{familiar.display_name}</strong>
-        <span className="voice-call-overlay__state">{labelFor(state)}</span>
-        {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
-      </header>
-      <div className="voice-call-overlay__body">
-        {state.state === "error" && (
-          <div className="voice-call-overlay__error">
-            <div>{state.errorCode}</div>
-            {state.hint && <div className="voice-call-overlay__hint">{state.hint}</div>}
-            <button type="button" onClick={() => dispatch({ type: "RETRY" })}>Try again</button>
+  const overlay = (
+    <div className="voice-call-overlay" role="presentation">
+      <div
+        ref={dialogRef}
+        className="voice-call-overlay__dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="voice-call-overlay-title"
+        tabIndex={-1}
+      >
+        <header className="voice-call-overlay__header">
+          <div className="voice-call-overlay__heading">
+            <strong id="voice-call-overlay-title">{familiar.display_name}</strong>
+            <span className="voice-call-overlay__state">{labelFor(state)}</span>
           </div>
-        )}
+          {state.state === "live" && <span className="voice-call-overlay__duration">{mm}:{ss}</span>}
+        </header>
+        <div className="voice-call-overlay__body">
+          {state.state === "error" && (
+            <div className="voice-call-overlay__error">
+              <div>{state.errorCode}</div>
+              {state.hint && <div className="voice-call-overlay__hint">{state.hint}</div>}
+              <button
+                type="button"
+                className="voice-call-overlay__retry focus-ring"
+                onClick={() => dispatch({ type: "RETRY" })}
+              >
+                Try again
+              </button>
+            </div>
+          )}
+        </div>
+        <footer className="voice-call-overlay__footer">
+          <button
+            type="button"
+            className="voice-call-overlay__control focus-ring"
+            aria-label={state.muted ? "Unmute" : "Mute"}
+            onClick={() => dispatch({ type: "MUTE_TOGGLE" })}
+            disabled={state.state !== "live"}
+          >
+            <Icon icon={state.muted ? "ph:microphone-slash-fill" : "ph:microphone-fill"} />
+          </button>
+          <button
+            type="button"
+            className="voice-call-overlay__end focus-ring"
+            aria-label="End call"
+            onClick={() => dispatch({ type: "CLOSE_REQUEST" })}
+          >
+            End call
+          </button>
+        </footer>
+        <audio ref={audioElRef} autoPlay hidden />
       </div>
-      <footer className="voice-call-overlay__footer">
-        <button
-          type="button"
-          aria-label={state.muted ? "Unmute" : "Mute"}
-          onClick={() => dispatch({ type: "MUTE_TOGGLE" })}
-          disabled={state.state !== "live"}
-        >
-          <Icon icon={state.muted ? "ph:microphone-slash-fill" : "ph:microphone-fill"} />
-        </button>
-        <button
-          type="button"
-          className="voice-call-overlay__end"
-          aria-label="End call"
-          onClick={() => dispatch({ type: "CLOSE_REQUEST" })}
-        >
-          End call
-        </button>
-      </footer>
-      <audio ref={audioElRef} autoPlay hidden />
     </div>
   );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(overlay, document.body);
 }
 
 function labelFor(s: CallState): string {
