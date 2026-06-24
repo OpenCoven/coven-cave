@@ -20,6 +20,9 @@ struct CodeBrowserView: View {
     @State private var results: [SearchFile] = []
     @State private var searching = false
     @State private var searchTruncated = false
+    /// Set when a search request itself fails (vs. legitimately finding nothing),
+    /// so the empty state can say "search failed — Retry" instead of "no results".
+    @State private var searchError: String?
 
     private var searchActive: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -92,6 +95,14 @@ struct CodeBrowserView: View {
         if searching {
             ProgressView().controlSize(.large)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let searchError {
+            ContentUnavailableView {
+                Label("Search failed", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(searchError)
+            } actions: {
+                Button("Retry") { Task { await runSearch() } }.buttonStyle(.borderedProminent)
+            }
         } else if results.isEmpty {
             ContentUnavailableView.search(text: query)
         } else {
@@ -127,7 +138,7 @@ struct CodeBrowserView: View {
     private func runSearch() async {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard q.count >= 2, let root = focusedRoot, let client = app.client else {
-            results = []; searchTruncated = false; return
+            results = []; searchTruncated = false; searchError = nil; return
         }
         // Light debounce so each keystroke doesn't spawn a ripgrep run.
         try? await Task.sleep(for: .milliseconds(300))
@@ -139,8 +150,11 @@ struct CodeBrowserView: View {
             if Task.isCancelled { return }
             results = resp.files ?? []
             searchTruncated = resp.truncated ?? false
+            searchError = nil
         } catch {
+            // Surface the failure instead of a misleading empty "no results".
             results = []; searchTruncated = false
+            searchError = error.localizedDescription
         }
     }
 
@@ -171,6 +185,9 @@ struct CodeNode: View {
     @State private var children: [TreeEntry] = []
     @State private var loaded = false
     @State private var loading = false
+    /// Set when loading this folder's children fails, so the row shows an error +
+    /// Retry instead of an ambiguous "Empty folder".
+    @State private var nodeError: String?
 
     var body: some View {
         if isDir {
@@ -179,6 +196,14 @@ struct CodeNode: View {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
                         Text("Loading…").font(.caption).foregroundStyle(.secondary)
+                    }
+                } else if let nodeError {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                        Text(nodeError).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        Spacer()
+                        Button("Retry") { Task { await load() } }
+                            .font(.caption.weight(.semibold)).buttonStyle(.borderless)
                     }
                 } else if loaded && children.isEmpty {
                     Text("Empty folder").font(.caption).foregroundStyle(.tertiary)
@@ -244,12 +269,16 @@ struct CodeNode: View {
         guard let client = app.client else { return }
         guard !loading else { return }
         loading = true
+        nodeError = nil
         defer { loading = false }
         do {
             children = try await client.projectTree(root: path, depth: 1)
             loaded = true
+            nodeError = nil
         } catch {
-            // leave loaded == false so collapsing + re-expanding retries
+            // Surface the failure (with a Retry) instead of looking like an empty
+            // folder; loaded stays false so collapse + re-expand also retries.
+            nodeError = error.localizedDescription
         }
     }
 

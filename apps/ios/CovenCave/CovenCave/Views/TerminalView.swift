@@ -26,6 +26,20 @@ struct TerminalView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // The xterm webview renders even when the PTY socket is down, so a
+            // failed connection otherwise looks like a frozen shell. Surface it.
+            if !terminal.connected, let err = terminal.error {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text(err).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                    Spacer()
+                    Button("Reconnect") { connect() }
+                        .font(.caption.weight(.semibold)).buttonStyle(.borderless)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
+                .background(.ultraThinMaterial)
+            }
             XtermWebView(
                 terminal: terminal,
                 onInput: { terminal.sendInput($0) },
