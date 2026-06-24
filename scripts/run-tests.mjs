@@ -76,6 +76,7 @@ export const SUITES = {
     "src/lib/readable-text-color.test.ts",
     "src/components/settings-appearance.test.ts",
     "src/components/theme-color-editor.test.ts",
+    "src/lib/theme-token-hex.test.ts",
     "src/components/roles-tools-navigation.test.ts",
     "src/components/top-bar.test.ts",
     "src/components/command-palette.test.ts",
@@ -572,6 +573,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/automation-runner.test.ts",
   "src/lib/server/automation-log-paths.test.ts",
   "src/lib/session-project-scope.test.ts",
+  "src/lib/theme-token-hex.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
