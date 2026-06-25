@@ -33,6 +33,10 @@ import {
 } from "@/lib/chat-tool-events";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
+import {
+  buildPromptWithKnowledgeVault,
+  readKnowledgeVaultForPrompt,
+} from "@/lib/server/knowledge-vault";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
@@ -998,23 +1002,30 @@ export async function POST(req: Request) {
   const dailyMemoryContext = await readFamiliarDailyMemoryStartupContext(
     resolvedFamiliarWorkspace,
   );
+  // Knowledge Vault — curated, cross-harness reference knowledge, separate from
+  // memory. Injected here so every harness (claude/codex/hermes/openclaw) that
+  // consumes `harnessPrompt` below receives the same authoritative context.
+  const knowledgeVaultEntries = await readKnowledgeVaultForPrompt(body.familiarId);
 
   const taskContext = await taskContextForSession(body.sessionId);
   const harnessPrompt = buildPromptWithRuntimeScope(
     buildPromptWithCovenIdentityCanon(
       buildTaskAwarePrompt(
-        buildPromptWithFamiliarStartupContext(
-          appendMentionedFilesBlock(
-            buildPromptWithResponseControls(
-              buildPromptWithAttachments(promptText, attachments, {
-                imagesSupported,
-                imageFilePaths,
-              }),
-              body,
+        buildPromptWithKnowledgeVault(
+          buildPromptWithFamiliarStartupContext(
+            appendMentionedFilesBlock(
+              buildPromptWithResponseControls(
+                buildPromptWithAttachments(promptText, attachments, {
+                  imagesSupported,
+                  imageFilePaths,
+                }),
+                body,
+              ),
+              mentionedFiles,
             ),
-            mentionedFiles,
+            [dailyMemoryContext],
           ),
-          [dailyMemoryContext],
+          knowledgeVaultEntries,
         ),
         taskContext,
       ),

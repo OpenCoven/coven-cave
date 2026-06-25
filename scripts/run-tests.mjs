@@ -493,6 +493,7 @@ export const SUITES = {
     "src/lib/session-list-merge.test.ts",
     "src/lib/server/memory-file-sources.test.ts",
     "src/lib/server/familiar-startup-context.test.ts",
+    "src/lib/server/knowledge-vault.test.ts",
     "src/lib/server/memory-file-paths.test.ts",
     "src/lib/server/skill-file-paths.test.ts",
     "src/lib/server/automation-log-paths.test.ts",

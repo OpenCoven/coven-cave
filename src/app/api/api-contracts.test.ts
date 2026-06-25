@@ -72,6 +72,7 @@ const contracts: RouteContract[] = [
   { route: "/inbox", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/inbox/stream", methods: ["GET"], kind: "stream" },
   { route: "/journal", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/knowledge", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/launch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/library/all", methods: ["GET"], kind: "json" },
   { route: "/library/bookmarks", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true },
