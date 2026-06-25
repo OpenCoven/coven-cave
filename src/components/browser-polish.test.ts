@@ -21,6 +21,26 @@ assert.match(
   /setRailPinned\(\(v\) => !v\)/,
   "[ handler must call setRailPinned((v) => !v)",
 );
+
+// ───────── Rail opens pinned by default (persisted) ─────────
+// The tab rail should start open so its tabs are visible on first open, and
+// remember an explicit auto-hide choice across sessions — without ever
+// covering the top menu bar (it stays inside .browser-pane, below .shell-top).
+assert.match(
+  pane,
+  /useState\(loadRailPinned\)/,
+  "railPinned must initialize from the persisted loadRailPinned() helper",
+);
+assert.match(
+  pane,
+  /function loadRailPinned\(\)[\s\S]*?if \(raw === "0"\) return false;[\s\S]*?return true;\n\}/,
+  "loadRailPinned() must default to true (rail open) when no preference is stored",
+);
+assert.match(
+  pane,
+  /useEffect\(\(\) => \{\s*saveRailPinned\(railPinned\);\s*\}, \[railPinned\]\)/,
+  "railPinned changes must be persisted via saveRailPinned",
+);
 assert.match(
   pane,
   /paneRef\.current\?\.contains\(e\.target as Node\)/,

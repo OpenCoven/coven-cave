@@ -90,6 +90,7 @@ const HOME_URL = "https://opencoven.ai";
 const LOCALHOST_PORTS = [3000, 3001, 5173, 8080, 4000, 4321];
 const NATIVE_BROWSER_LABEL_PREFIX = "cave-browser-";
 const PINNED_STORAGE_KEY = "cave.browser.pinnedTabs.v1";
+const RAIL_PINNED_STORAGE_KEY = "cave.browser.railPinned.v1";
 
 export type BrowserTab = {
   id: string;
@@ -149,6 +150,25 @@ function savePinnedTabs(tabs: BrowserTab[]) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(tabs));
+  } catch { /* ignore */ }
+}
+
+// The tab rail opens pinned by default so the tabs are visible on first open;
+// the user can auto-hide it and we remember that choice across sessions.
+function loadRailPinned(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const raw = window.localStorage.getItem(RAIL_PINNED_STORAGE_KEY);
+    if (raw === "0") return false;
+    if (raw === "1") return true;
+  } catch { /* ignore */ }
+  return true;
+}
+
+function saveRailPinned(pinned: boolean) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(RAIL_PINNED_STORAGE_KEY, pinned ? "1" : "0");
   } catch { /* ignore */ }
 }
 
@@ -248,10 +268,13 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   const [addressBar, setAddressBar] = useState<string>(HOME_URL);
   const [quickOpen, setQuickOpen] = useState(false);
   const [railHover, setRailHover] = useState(false);
-  const [railPinned, setRailPinned] = useState(false);
+  const [railPinned, setRailPinned] = useState(loadRailPinned);
   // Rail expands on hover/focus and stays expanded while the quick-open
   // palette is up so users can verify the active tab visually.
   const railExpanded = railPinned || railHover || quickOpen;
+  useEffect(() => {
+    saveRailPinned(railPinned);
+  }, [railPinned]);
 
   // Collapsible toolbar. The native page webview is an OS-level overlay that
   // always renders above the DOM, so the toolbar and the page can never
