@@ -54,6 +54,18 @@ const chatStorage = {
 
 type FamiliarsScope = "conversation" | "memory" | "projects";
 
+// The standalone chat's mode switch locks the surface into one of three
+// layouts: the conversation alone ("convo"), the Projects browser, or the
+// inline chat↔code split ("code"). It folds the old Sessions/Projects scope
+// tabs and the binary Power toggle into a single segmented selector.
+type ChatMode = "convo" | "projects" | "code";
+
+const CHAT_MODE_ITEMS: { id: ChatMode; label: string; icon: "ph:chat-circle-dots" | "ph:folder" | "ph:code-bold" }[] = [
+  { id: "convo", label: "Convo", icon: "ph:chat-circle-dots" },
+  { id: "projects", label: "Projects", icon: "ph:folder" },
+  { id: "code", label: "Code", icon: "ph:code-bold" },
+];
+
 export type RightPanelKind = "inspector" | "changes" | "debug";
 
 type Props = {
@@ -308,16 +320,33 @@ export function ChatSurface({
       /* ignore — strict privacy mode */
     }
   }, [isCodeSurface]);
-  function togglePowerMode() {
-    setPowerMode((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem(POWER_MODE_KEY, next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
+  function persistPowerMode(next: boolean) {
+    setPowerMode(next);
+    try {
+      window.localStorage.setItem(POWER_MODE_KEY, next ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+  // Current selection for the standalone chat's three-way mode switch, derived
+  // from the existing scope + power-mode state so the rendering below is
+  // unchanged. Projects wins (it owns the whole surface); otherwise power mode
+  // means "code", and a plain conversation means "convo".
+  const chatMode: ChatMode = scope === "projects" ? "projects" : powerMode ? "code" : "convo";
+  function selectChatMode(next: ChatMode) {
+    if (next === "code") {
+      // Keep whatever thread is open; just bring the code split up beside it.
+      setScope("conversation");
+      persistPowerMode(true);
+      return;
+    }
+    persistPowerMode(false);
+    if (next === "projects") {
+      setScope("projects");
+      return;
+    }
+    setScope("conversation");
+    window.setTimeout(() => routerRef.current?.goToList(), 0);
   }
   // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
   // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
@@ -521,51 +550,44 @@ export function ChatSurface({
         <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
           <div className="flex min-w-0 items-center gap-3">
             {/* The active familiar is selected from the global top menu bar /
-                switcher now, so the chat header carries only its scope tabs.
-                Vercel-style borderless underline tabs, flush left. */}
-            <Tabs<FamiliarsScope>
-              bordered={false}
-              value={scope}
-              onChange={(s) => {
-                setScope(s);
-                if (s === "conversation") {
-                  window.setTimeout(() => routerRef.current?.goToList(), 0);
-                }
-              }}
-              // Standalone chat is intentionally minimal: just Sessions + Projects.
-              // Memory is not part of a conversation, so it lives in the Familiars
-              // surface, not the chat header. In Code mode the comux pane owns
-              // project/file navigation, so that surface keeps Sessions + Memory.
-              items={
-                isCodeSurface
-                  ? [
-                      { id: "conversation", label: "Sessions" },
-                      { id: "memory", label: "Memory" },
-                    ]
-                  : [
-                      { id: "conversation", label: "Sessions" },
-                      { id: "projects", label: "Projects" },
-                    ]
-              }
-            />
+                switcher now. In Code mode the comux pane owns project/file
+                navigation, so that surface keeps a Sessions + Memory underline
+                tab pair flush left. The standalone chat instead drives all three
+                of its modes from the segmented switch on the right. */}
+            {isCodeSurface ? (
+              <Tabs<FamiliarsScope>
+                bordered={false}
+                value={scope}
+                onChange={(s) => {
+                  setScope(s);
+                  if (s === "conversation") {
+                    window.setTimeout(() => routerRef.current?.goToList(), 0);
+                  }
+                }}
+                items={[
+                  { id: "conversation", label: "Sessions" },
+                  { id: "memory", label: "Memory" },
+                ]}
+              />
+            ) : null}
           </div>
           {/* Code workspace: layout presets + companion-panel toggle ride on
               this row so the Code surface needs no separate toolbar row.
-              Standalone chat gets the Power-mode toggle instead — it transforms
-              the side area into an inline chat↔code split. */}
+              Standalone chat gets the mode switch instead — a segmented selector
+              that locks the surface into Convo, Projects, or the inline
+              chat↔code split. */}
           {isCodeSurface ? (
             <CodeInlineToolbar />
           ) : (
-            <button
-              type="button"
-              className={`chat-power-toggle${powerMode ? " chat-power-toggle--on" : ""}`}
-              aria-pressed={powerMode}
-              onClick={togglePowerMode}
-              title={powerMode ? "Exit power mode" : "Power mode — split chat with code & terminal"}
-            >
-              <Icon name="ph:lightning-fill" width={13} />
-              <span className="chat-power-toggle__label">Power</span>
-            </button>
+            <Tabs<ChatMode>
+              variant="segment"
+              size="sm"
+              bordered={false}
+              ariaLabel="Chat mode"
+              value={chatMode}
+              onChange={selectChatMode}
+              items={CHAT_MODE_ITEMS}
+            />
           )}
         </div>
 

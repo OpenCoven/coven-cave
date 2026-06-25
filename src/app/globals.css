@@ -7559,57 +7559,6 @@ a.mobile-handoff__link:hover {
   padding-block: 8px;
 }
 
-/* Power-mode toggle — sits at the right edge of the standalone chat's scope-tab
-   row. Off = quiet ghost button; on = lit accent pill, signalling the inline
-   chat↔code split is active. */
-.chat-power-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-  height: 26px;
-  padding-inline: 10px;
-  border-radius: 999px;
-  border: 1px solid var(--border-hairline);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
-}
-
-.chat-power-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.chat-power-toggle:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--ring-focus);
-}
-
-.chat-power-toggle--on {
-  /* Alias the theme accent once so the lit state reads in a single place. */
-  --power-accent: var(--accent);
-  border-color: color-mix(in oklch, var(--power-accent) 55%, transparent);
-  background: color-mix(in oklch, var(--power-accent) 18%, transparent);
-  color: var(--power-accent);
-}
-
-.chat-power-toggle--on:hover {
-  background: color-mix(in oklch, var(--power-accent) 26%, transparent);
-  color: var(--power-accent);
-}
-
-/* Collapse the label to an icon-only chip on narrow screens. */
-@media (max-width: 640px) {
-  .chat-power-toggle__label {
-    display: none;
-  }
-}
-
 /* Dynamic viewport units for layout shell + modals — `100vh` on iOS
    includes the address bar height, so a `100vh` element would push
    content under the chrome. `100dvh` tracks the visible area, including
