@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { Icon, type IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useFamiliarImageUpload, FAMILIAR_IMAGE_ACCEPT } from "@/lib/familiar-image-upload";
-import { useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
+import { useFamiliarStudio, BRAIN_STUDIO_FAMILIAR_KEY, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
@@ -54,8 +54,19 @@ export function FamiliarStudio({ familiars }: Props) {
   const drawerActiveTab = activeTab === "brain" || activeTab === "vault" ? "identity" : activeTab;
   const openBrainStudio = useCallback(() => {
     setActiveTab("brain");
-    window.location.assign("/settings");
-  }, [setActiveTab]);
+    // Carry the current familiar across the full-page navigation (the Settings
+    // provider is a separate instance, so activeFamiliarId would otherwise
+    // reset), and deep-link straight to the Familiars section where the Brain
+    // editor lives — a bare "/settings" lands on General instead.
+    if (activeFamiliarId) {
+      try {
+        window.localStorage.setItem(BRAIN_STUDIO_FAMILIAR_KEY, activeFamiliarId);
+      } catch {
+        /* ignore storage failures */
+      }
+    }
+    window.location.assign("/settings#familiars");
+  }, [setActiveTab, activeFamiliarId]);
 
   // Trap keyboard focus inside the open drawer, focus it on open, wire Escape,
   // and restore focus to the trigger on close — matching every other modal

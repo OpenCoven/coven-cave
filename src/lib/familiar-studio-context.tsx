@@ -15,6 +15,15 @@ export type FamiliarStudioTab = "identity" | "look" | "brain" | "lifecycle" | "m
 const TAB_STORAGE_KEY = "cave:familiar-studio-tab:v1";
 const DEFAULT_TAB: FamiliarStudioTab = "identity";
 
+/**
+ * One-shot handoff for "Open Brain Studio": the right-side drawer (Workspace
+ * provider) writes the familiar id here before a full navigation to
+ * `/settings#familiars`, and the Settings inline panel (a separate, isolated
+ * provider — so `activeFamiliarId` does not carry over) reads it once to select
+ * the same familiar, then clears it.
+ */
+export const BRAIN_STUDIO_FAMILIAR_KEY = "cave:brain-studio-familiar:v1";
+
 type Ctx = {
   /** `null` means closed; a string id means open for a specific familiar. */
   activeFamiliarId: string | null;

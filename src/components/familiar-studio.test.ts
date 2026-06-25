@@ -72,8 +72,8 @@ assert.match(
 );
 assert.match(
   source,
-  /setActiveTab\("brain"\)[\s\S]*window\.location\.assign\("\/settings"\)/,
-  "Open Brain Studio should persist the Brain tab and leave the side panel for the full Settings surface",
+  /setActiveTab\("brain"\)[\s\S]*window\.location\.assign\("\/settings#familiars"\)/,
+  "Open Brain Studio should persist the Brain tab and deep-link to the Familiars section (the full Brain Studio surface), not the General settings page",
 );
 
 // The drawer traps focus, focuses on open, wires Escape, and restores focus on
