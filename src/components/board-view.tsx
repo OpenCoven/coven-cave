@@ -850,7 +850,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 value=""
                 onChange={(e) => { if (e.target.value) void bulkMove(e.target.value as CardStatus); }}
-                className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+                className="focus-ring h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
               >
                 <option value="">Move to…</option>
                 {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
@@ -861,7 +861,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 value=""
                 onChange={(e) => { if (e.target.value) void bulkAssign(e.target.value); }}
-                className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+                className="focus-ring h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
               >
                 <option value="">Assign to…</option>
                 {familiars.map((f) => <option key={f.id} value={f.id}>{f.display_name}</option>)}
@@ -872,7 +872,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 value=""
                 onChange={(e) => { if (e.target.value) void bulkSetPriority(e.target.value as CardPriority); }}
-                className="focus-ring rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+                className="focus-ring h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
               >
                 <option value="">Priority…</option>
                 {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
@@ -888,7 +888,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                   placeholder="Add label…"
                   aria-label="Add a label to selected tasks"
                   disabled={bulkBusy || cardSelect.selectedCount === 0}
-                  className="focus-ring w-24 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] disabled:opacity-50"
+                  className="focus-ring h-6 box-border w-24 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] disabled:opacity-50"
                 />
                 <datalist id="board-bulk-label-options">
                   {bulkLabelOptions.map((l) => <option key={l} value={l} />)}
@@ -897,7 +897,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                   type="submit"
                   disabled={bulkBusy || cardSelect.selectedCount === 0 || !labelDraft.trim()}
                   title="Add this label to the selected tasks"
-                  className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
+                  className="focus-ring h-6 box-border inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
                 >
                   <Icon name="ph:tag-bold" width={11} aria-hidden />
                   Label
@@ -907,7 +907,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 type="button"
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 onClick={() => void bulkDelete()}
-                className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+                className="focus-ring h-6 box-border inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
               >
                 <Icon name="ph:trash-bold" width={11} aria-hidden />
                 {bulkBusy ? "Working…" : `Delete${cardSelect.selectedCount ? ` ${cardSelect.selectedCount}` : ""}`}
