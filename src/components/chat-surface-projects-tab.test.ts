@@ -14,7 +14,7 @@ assert.match(surface, /type FamiliarsScope = "conversation" \| "memory" \| "proj
 // Convo, Projects, then Code — Projects is one of the three locks, not a tab.
 assert.match(
   surface,
-  /\{\s*id:\s*"projects",\s*label:\s*"Projects",\s*icon:\s*"ph:folder"\s*\}/,
+  /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/,
   "Projects is one of the mode-switch options",
 );
 assert.match(surface, /\{\s*id:\s*"convo",\s*label:\s*"Convo"/, "Convo is the conversation-only mode");

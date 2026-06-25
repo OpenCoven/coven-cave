@@ -57,13 +57,15 @@ type FamiliarsScope = "conversation" | "memory" | "projects";
 // The standalone chat's mode switch locks the surface into one of three
 // layouts: the conversation alone ("convo"), the Projects browser, or the
 // inline chat↔code split ("code"). It folds the old Sessions/Projects scope
-// tabs and the binary Power toggle into a single segmented selector.
+// tabs and the binary Power toggle into a single segmented selector. Text-only
+// (no icons) so it stays a compact pill — matching the slim GitHub-style filter
+// segments elsewhere rather than reading as a chunky toolbar.
 type ChatMode = "convo" | "projects" | "code";
 
-const CHAT_MODE_ITEMS: { id: ChatMode; label: string; icon: "ph:chat-circle-dots" | "ph:folder" | "ph:code-bold" }[] = [
-  { id: "convo", label: "Convo", icon: "ph:chat-circle-dots" },
-  { id: "projects", label: "Projects", icon: "ph:folder" },
-  { id: "code", label: "Code", icon: "ph:code-bold" },
+const CHAT_MODE_ITEMS: { id: ChatMode; label: string }[] = [
+  { id: "convo", label: "Convo" },
+  { id: "projects", label: "Projects" },
+  { id: "code", label: "Code" },
 ];
 
 export type RightPanelKind = "inspector" | "changes" | "debug";
