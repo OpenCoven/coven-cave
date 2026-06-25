@@ -10,5 +10,7 @@ assert.match(source, /isUpdateAvailable/, "decides availability via the shared s
 assert.match(source, /AbortSignal\.timeout/, "bounds the GitHub fetch with a timeout");
 assert.match(source, /catch\s*\(/, "fails soft on network/error (never surfaces a false update)");
 assert.match(source, /TTL_MS|cache/, "caches the result to avoid GitHub rate limits");
+assert.match(source, /resolveDownloadUrls/, "resolves direct installer downloads from the release assets");
+assert.match(source, /downloads:/, "returns the per-platform installer download map");
 
 console.log("app/latest-release route.test.ts: ok");

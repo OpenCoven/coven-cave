@@ -15,7 +15,13 @@ assert.match(src, /relaunch\(\)/, "relaunches the app after install");
 
 // Graceful fallback when no updater-enabled release exists yet.
 assert.match(src, /\/api\/app\/latest-release/, "falls back to the server release check");
-assert.match(src, /openExternalUrl/, "fallback opens the release page in the system browser");
+assert.match(src, /openExternalUrl/, "fallback opens the download in the system browser");
+
+// Fallback "Download" resolves a direct platform installer (DMG/MSI/AppImage)
+// via the OS plugin instead of dead-ending on the release page.
+assert.match(src, /pickDownloadUrl/, "fallback resolves a direct platform installer download");
+assert.match(src, /@tauri-apps\/plugin-os/, "resolves the running platform/arch to pick an installer");
+assert.match(src, /resolveDownloadUrl\(fb\)/, "fallback download URL is the resolved installer, not the release page");
 
 // Both surfaces are exported and resolve native-first.
 assert.match(src, /export function UpdateBannerTrigger/, "exports the banner trigger");

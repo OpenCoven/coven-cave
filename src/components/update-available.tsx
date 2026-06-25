@@ -5,7 +5,7 @@ import { Icon } from "@/lib/icon";
 import { isTauri, useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useShellBanners } from "@/lib/shell-banners";
 import { openExternalUrl } from "@/lib/open-external";
-import type { UpdateStatus } from "@/lib/app-update";
+import { pickDownloadUrl, type UpdateStatus } from "@/lib/app-update";
 
 const BANNER_ID = "update-available";
 const RELEASES_PAGE = "https://github.com/OpenCoven/coven-cave/releases/latest";
@@ -91,6 +91,21 @@ async function fetchFallbackStatus(): Promise<UpdateStatus | null> {
   }
 }
 
+/**
+ * Resolve a *direct* installer download for the running desktop platform so the
+ * fallback "Download" actually downloads (DMG / MSI / AppImage) instead of just
+ * opening the release page. Falls back to `status.url` (the release page) when
+ * the OS plugin is unavailable or no matching asset shipped.
+ */
+async function resolveDownloadUrl(status: UpdateStatus): Promise<string> {
+  try {
+    const { platform, arch } = await import("@tauri-apps/plugin-os");
+    return pickDownloadUrl(status, platform(), arch());
+  } catch {
+    return status.url;
+  }
+}
+
 type Resolved =
   | { kind: "current" }
   | { kind: "native"; version: string; update: TauriUpdate }
@@ -101,7 +116,10 @@ async function resolveUpdate(): Promise<Resolved> {
   const native = await checkNativeUpdate();
   if (native) return { kind: "native", version: native.version, update: native };
   const fb = await fetchFallbackStatus();
-  if (fb?.available && fb.latest) return { kind: "fallback", version: fb.latest, url: fb.url };
+  if (fb?.available && fb.latest) {
+    const url = await resolveDownloadUrl(fb);
+    return { kind: "fallback", version: fb.latest, url };
+  }
   return { kind: "current" };
 }
 
