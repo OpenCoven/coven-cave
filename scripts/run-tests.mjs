@@ -32,7 +32,6 @@ export const SUITES = {
     "src/lib/workflow-run-prompt.test.ts",
     "src/lib/workflow-step-progress.test.ts",
     "src/lib/screen-magnification.test.ts",
-    "src/lib/demo-mode.test.ts",
     "src/lib/cave-projects.test.ts",
     "src/lib/project-permissions.test.ts",
     "src/lib/project-status.test.ts",

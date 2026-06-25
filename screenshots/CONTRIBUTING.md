@@ -36,7 +36,7 @@ populated session.
 - **Format**: PNG, no transparency
 - **Window chrome**: native macOS chrome on the `.dmg`-bundled app; the screenshots showcase the desktop product, not the browser dev view
 - **Theme**: dark mode (the app is dark-only)
-- **State**: real data over demo fixtures where possible; use `NEXT_PUBLIC_DEMO=true pnpm dev` for the curated demo familiars when capturing marketing-clean shots
+- **State**: use real data (a running daemon with familiars/sessions) when capturing shots
 - **PII**: scrub any session titles, file paths, or message bodies that contain personal info before committing
 
 ## How to capture

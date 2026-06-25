@@ -6,8 +6,6 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useFamiliarPins } from "@/lib/use-familiar-quick-switch";
 import { setPins, togglePin } from "@/lib/familiar-quick-switch";
-import { demoModeFetchHeaders, isDemoModeEnabled } from "@/lib/demo-mode";
-import { DEMO_FAMILIARS } from "@/lib/demo-seed";
 import type { Familiar } from "@/lib/types";
 import {
   DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
@@ -37,11 +35,10 @@ export function FamiliarPinOrder() {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch("/api/familiars", { cache: "no-store", headers: demoModeFetchHeaders() });
+        const res = await fetch("/api/familiars", { cache: "no-store" });
         const json = await res.json();
         if (cancelled) return;
         if (json.ok) setRawFamiliars((json.familiars ?? []) as Familiar[]);
-        else if (isDemoModeEnabled()) setRawFamiliars(DEMO_FAMILIARS);
       } catch {
         /* transient — keep last good list */
       } finally {

@@ -12,7 +12,6 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { FamiliarPinOrder } from "@/components/familiar-pin-order";
-import { DEMO_FAMILIARS } from "@/lib/demo-seed";
 import type { Familiar } from "@/lib/types";
 import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
@@ -44,13 +43,6 @@ import {
   setFamiliarStripScope,
   useFamiliarStripScope,
 } from "@/lib/familiar-strip-scope";
-import {
-  DEMO_MODE_EVENT,
-  clearDemoModeData,
-  demoModeFetchHeaders,
-  isDemoModeEnabled,
-  setDemoModeEnabled,
-} from "@/lib/demo-mode";
 import { readableTextColor } from "@/lib/readable-text-color";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -84,7 +76,7 @@ const SECTIONS: { id: Section; label: string; icon: string }[] = [
 type SettingsIndexEntry = { section: Section; group?: string; keywords: string };
 const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
-  { section: "general", group: "Startup", keywords: "startup launch autostart open boot demo mode" },
+  { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
   { section: "daemon", group: "Status", keywords: "daemon status running start stop restart" },
   { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },
   { section: "familiars", keywords: "familiars agents personas avatar name look" },
@@ -327,28 +319,6 @@ export function SettingsShell() {
 // ─── Section: General ─────────────────────────────────────────────────────────
 
 function GeneralSection() {
-  // Start from the SSR-safe default (false) so the first client render matches the
-  // server's; read the real localStorage value after mount to avoid an aria-pressed
-  // hydration mismatch on the Demo mode toggle.
-  const [demoMode, setDemoMode] = useState(false);
-
-  useEffect(() => {
-    const sync = () => setDemoMode(isDemoModeEnabled());
-    sync();
-    window.addEventListener(DEMO_MODE_EVENT, sync);
-    return () => window.removeEventListener(DEMO_MODE_EVENT, sync);
-  }, []);
-
-  const updateDemoMode = (enabled: boolean) => {
-    setDemoModeEnabled(enabled);
-    setDemoMode(enabled);
-  };
-
-  const resetDemoMode = () => {
-    clearDemoModeData();
-    setDemoMode(false);
-  };
-
   return (
     <SettingsPage title="General" description="App-wide preferences.">
       <SettingsGroup label="Workspace">
@@ -359,32 +329,6 @@ function GeneralSection() {
       <SettingsGroup label="Startup">
         <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
         <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
-        <SettingsRow
-          label="Demo mode"
-          description="Use local sample familiars, board cards, and inbox items for screenshots."
-        >
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => updateDemoMode(!demoMode)}
-              aria-pressed={demoMode}
-              className={`focus-ring rounded-md border px-3 py-1.5 text-[12px] font-medium ${
-                demoMode
-                  ? "border-[var(--accent-presence)] bg-[color-mix(in_oklch,var(--accent-presence)_18%,transparent)] text-[var(--accent-presence)]"
-                  : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              {demoMode ? "On" : "Off"}
-            </button>
-            <button
-              type="button"
-              onClick={resetDemoMode}
-              className="focus-ring rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-            >
-              Clear demo
-            </button>
-          </div>
-        </SettingsRow>
       </SettingsGroup>
     </SettingsPage>
   );
@@ -710,18 +654,11 @@ function FamiliarsSection() {
     let cancelled = false;
     const loadFamiliars = async () => {
       try {
-        const res = await fetch("/api/familiars", {
-          cache: "no-store",
-          headers: demoModeFetchHeaders(),
-        });
+        const res = await fetch("/api/familiars", { cache: "no-store" });
         const json = await res.json();
         if (cancelled) return;
         if (json.ok) {
           setRawFamiliars((json.familiars ?? []) as Familiar[]);
-        } else if (isDemoModeEnabled()) {
-          // Daemon offline but demo mode on (the toggle lives on this page) —
-          // show sample familiars so the panel is never blank in demo.
-          setRawFamiliars(DEMO_FAMILIARS);
         }
       } catch {
         /* transient — keep last good list */

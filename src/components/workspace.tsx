@@ -65,13 +65,6 @@ import {
 import type { Familiar, SessionRow } from "@/lib/types";
 import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
-import { DEMO_FAMILIARS } from "@/lib/demo-seed";
-import {
-  DEMO_MODE_EVENT,
-  demoModeFetchHeaders,
-  isDemoModeEnabled,
-  persistDemoModeLaunchFlag,
-} from "@/lib/demo-mode";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
@@ -176,7 +169,6 @@ export function Workspace() {
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const resolvedFamiliars = useResolvedFamiliars(familiars);
   const [familiarsError, setFamiliarsError] = useState<string | null>(null);
-  const [demoMode, setDemoMode] = useState(() => isDemoModeEnabled());
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   // false until the first /api/sessions/list fetch settles — lets the chat
   // list show a skeleton instead of flashing its empty state on boot.
@@ -336,14 +328,6 @@ export function Workspace() {
   }, []);
 
   useEffect(() => {
-    persistDemoModeLaunchFlag();
-    const syncDemoMode = () => setDemoMode(isDemoModeEnabled());
-    syncDemoMode();
-    window.addEventListener(DEMO_MODE_EVENT, syncDemoMode);
-    return () => window.removeEventListener(DEMO_MODE_EVENT, syncDemoMode);
-  }, []);
-
-  useEffect(() => {
     setScopeIds(new Set(getFamiliarScope()));
     setActiveFamiliarHydrated(true);
   }, []);
@@ -487,30 +471,20 @@ export function Workspace() {
 
   const loadFamiliars = useCallback(async () => {
     try {
-      const res = await fetch("/api/familiars", {
-        cache: "no-store",
-        headers: demoModeFetchHeaders(demoMode),
-      });
+      const res = await fetch("/api/familiars", { cache: "no-store" });
       const json = await res.json();
       if (!json.ok) {
-        const fallback = demoMode ? DEMO_FAMILIARS : [];
-        setFamiliars(fallback);
-        setFamiliarsError(demoMode ? null : (json.error ?? "daemon offline"));
+        setFamiliars([]);
+        setFamiliarsError(json.error ?? "daemon offline");
         return;
       }
       setFamiliarsError(null);
-      const list = (json.familiars ?? []) as Familiar[];
-      // In demo mode, merge demo familiars for any ids not returned by daemon.
-      const merged = demoMode
-        ? [...list, ...DEMO_FAMILIARS.filter((d) => !list.find((l) => l.id === d.id))]
-        : list;
-      setFamiliars(merged);
+      setFamiliars((json.familiars ?? []) as Familiar[]);
     } catch (err) {
-      const fallback = demoMode ? DEMO_FAMILIARS : [];
-      setFamiliars(fallback);
-      setFamiliarsError(demoMode ? null : (err instanceof Error ? err.message : "fetch failed"));
+      setFamiliars([]);
+      setFamiliarsError(err instanceof Error ? err.message : "fetch failed");
     }
-  }, [demoMode]);
+  }, []);
 
   // Scope the view to a familiar. `null` clears to "All". With `opts.multi`
   // (⌘/Ctrl-click) the id is toggled in/out of the multiselect set; a plain

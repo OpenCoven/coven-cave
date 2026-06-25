@@ -73,18 +73,6 @@ assert.ok(
   `Both create buttons should refuse invalid glyphs; found ${glyphGated.length} guarded block(s)`,
 );
 
-assert.match(
-  source,
-  /enableDemoMode/,
-  "Onboarding should let testers activate demo mode during setup",
-);
-
-assert.match(
-  source,
-  /setDemoModeEnabled\(true\)/,
-  "Onboarding demo activation should use the shared local-only demo mode toggle",
-);
-
 // Install polling gives up after a failure budget so a network drop mid-install
 // surfaces an error instead of an "Installing…" spinner that never resolves.
 assert.match(

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
-import { isDemoModeEnabled } from "@/lib/demo-mode";
 import { relativeTime } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -94,10 +93,6 @@ export function CanvasList({
   }, []);
 
   const load = useCallback(async () => {
-    if (isDemoModeEnabled()) {
-      setArtifacts([]);
-      return;
-    }
     try {
       const res = await fetch("/api/canvas", { cache: "no-store" });
       const json = await res.json().catch(() => ({}));

@@ -6,7 +6,7 @@
 //
 // Requires:
 //   - pnpm dev already running on :3000, or set COVEN_CAVE_SMOKE_URL
-//   - NEXT_PUBLIC_DEMO=true so the rail has seeded familiars
+//   - a running daemon (or mocked /api/familiars) so the rail has familiars
 //
 // Output: prints PASS/FAIL per checklist step. Screenshots are written to
 // /tmp/familiar-studio-smoke/ for forensic inspection.
@@ -85,7 +85,7 @@ async function main() {
   const avatarCount = await avatars.count();
   if (avatarCount > 0) rec("rail renders avatars", "PASS", `${avatarCount} avatars`);
   else {
-    rec("rail renders avatars", "FAIL", "no avatars found — NEXT_PUBLIC_DEMO not set?");
+    rec("rail renders avatars", "FAIL", "no avatars found — is the daemon running with familiars?");
     await browser.close();
     return summarize();
   }

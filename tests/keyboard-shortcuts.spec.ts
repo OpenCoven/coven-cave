@@ -2,16 +2,17 @@ import { expect, test, type Page } from "@playwright/test";
 
 // Behavioral coverage for the keyboard-shortcuts sheet (⌘/ or ?) — a core
 // discoverability surface that had no e2e/behavioral test. The catalog is
-// static, so this needs no /api mocking: demo mode + dismissed onboarding is
-// enough. Also guards the catalog groups (incl. the Terminal/Browser groups
-// added in #1605) and the "don't fire while typing" rule.
+// static, so this only needs the surfaces' /api fetches stubbed empty +
+// dismissed onboarding. Also guards the catalog groups (incl. the
+// Terminal/Browser groups added in #1605) and the "don't fire while typing" rule.
 
 async function gotoApp(page: Page) {
+  await page.route("**/api/familiars**", (r) => r.fulfill({ json: { ok: true, familiars: [] } }));
+  await page.route("**/api/sessions/list**", (r) => r.fulfill({ json: { ok: true, sessions: [] } }));
   await page.addInitScript(() => {
-    window.localStorage.setItem("cave:demo-mode", "1");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
-  await page.goto("/?demo=1");
+  await page.goto("/");
   // Wait until the workspace has hydrated — the global keydown handler is
   // attached in a useEffect, so a key pressed before hydration is lost. The
   // home composer textbox is a reliable "interactive now" signal.

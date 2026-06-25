@@ -3,8 +3,6 @@
 import "@/styles/board.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
-import { DEMO_BOARD_CARDS } from "@/lib/demo-seed";
-import { DEMO_MODE_EVENT, isDemoModeEnabled } from "@/lib/demo-mode";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
@@ -123,9 +121,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       const json = await res.json();
       if (json.ok) {
         const loaded = json.cards as Card[];
-        // Demo mode only seeds when the API actually returned ok+empty.
-        // On error, fall through so the user sees the failure.
-        setCards(isDemoModeEnabled() && loaded.length === 0 ? DEMO_BOARD_CARDS : loaded);
+        setCards(loaded);
         setError(null);
       } else {
         setCards([]);
@@ -156,11 +152,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, []);
-  useEffect(() => {
-    const onDemoModeChange = () => { void load(); };
-    window.addEventListener(DEMO_MODE_EVENT, onDemoModeChange);
-    return () => window.removeEventListener(DEMO_MODE_EVENT, onDemoModeChange);
-  }, [load]);
   useEffect(() => { localStorage.setItem("cave:board:viewMode", viewMode); }, [viewMode]);
   // The command palette can switch the board view directly (e.g. "Board: Gantt
   // timeline"); honor it live when the board is already mounted.

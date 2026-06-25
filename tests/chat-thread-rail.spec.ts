@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
 // navigator reached via ⌘2. The rail groups sessions under their project
 // folders (expanded), exposes an "All sessions" scope and a session search that
 // surfaces a flat "Results" section. Desktop only — the rail is `hidden lg:flex`.
-// Demo mode supplies familiars; /api/sessions/list is mocked for determinism.
+// /api/familiars + /api/sessions/list are mocked for determinism.
 
 const ISO = "2026-06-12T10:00:00.000Z";
 const SESSIONS = [
@@ -24,15 +24,17 @@ const SESSIONS = [
 
 async function gotoChat(page: Page) {
   await page.addInitScript(() => {
-    window.localStorage.setItem("cave:demo-mode", "1");
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
+  await page.route("**/api/familiars**", (route) =>
+    route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
+  );
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: SESSIONS } }),
   );
-  await page.goto("/?demo=1");
+  await page.goto("/");
   // Switch to the Chat surface (⌘2) — default landing is Home.
   await page.waitForTimeout(500);
   await page.keyboard.press("Meta+2");

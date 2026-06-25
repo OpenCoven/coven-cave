@@ -15,7 +15,6 @@ import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
-import { setDemoModeEnabled } from "@/lib/demo-mode";
 
 // Guided onboarding: one numbered path from "nothing installed" to "chatting
 // with a familiar". Every step carries its own instructions, a one-click
@@ -1036,15 +1035,6 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     openFamiliarStudio(id);
   };
 
-  const enableDemoMode = () => {
-    setDemoModeEnabled(true);
-    try {
-      localStorage.setItem("cave:onboarding:dismissed", "1");
-    } catch {
-      /* private mode */
-    }
-    onDismiss();
-  };
 
   // Restore a prior "skip Coven Code" choice so a failing install can't trap
   // the user on this step across reloads.
@@ -1530,36 +1520,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
             </div>
           </details>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <section className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/25 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">
-                    Tester demo mode
-                  </h2>
-                  <p className="mt-1 text-[12px] leading-5 text-[var(--text-secondary)]">
-                    Explore Cave with sample data — no installs needed. Demo
-                    data is opt-in for testers and never appears in normal
-                    installs.
-                  </p>
-                </div>
-                <Icon
-                  name="ph:toggle-right-bold"
-                  className="text-[var(--text-muted)]"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={enableDemoMode}
-                className="focus-ring mt-3 inline-flex items-center justify-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-2 text-[12px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
-              >
-                <Icon name="ph:sparkle" />
-                Open demo Cave
-              </button>
-            </section>
-
-            <MaintenancePanel prune={prune} setPrune={setPrune} />
-          </div>
+          <MaintenancePanel prune={prune} setPrune={setPrune} />
         </main>
 
         <footer className="flex items-center justify-between border-t border-[var(--border-hairline)] py-4">

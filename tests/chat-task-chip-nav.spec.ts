@@ -61,11 +61,13 @@ const CONTEXT = {
 
 async function setup(page: Page) {
   await page.addInitScript(() => {
-    window.localStorage.setItem("cave:demo-mode", "1");
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
   });
+  await page.route("**/api/familiars**", (route) =>
+    route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
+  );
   await page.route("**/api/sessions/list**", (route) =>
     route.fulfill({ json: { ok: true, sessions: [SESSION] } }),
   );
@@ -84,7 +86,7 @@ async function setup(page: Page) {
     }
     return route.continue();
   });
-  await page.goto("/?demo=1");
+  await page.goto("/");
   await page.waitForTimeout(500);
   await page.keyboard.press("Meta+2");
   await page.waitForSelector(".chat-surface", { timeout: 30_000 });

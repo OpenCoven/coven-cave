@@ -1,6 +1,6 @@
 // Drive a headed Chromium against http://localhost:3000 and capture
 // each of the README-referenced screenshots. Requires the dev server
-// to already be running with NEXT_PUBLIC_DEMO=true so sidebar + sample
+// to already be running against a daemon (or mocked APIs) so sidebar + sample
 // activity are populated.
 //
 // Run: node scripts/capture-screenshots.mjs
