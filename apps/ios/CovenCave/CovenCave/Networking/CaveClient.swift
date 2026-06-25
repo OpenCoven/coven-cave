@@ -386,9 +386,29 @@ struct CaveClient {
 
     /// `GET /api/theme` — the desktop's active theme + resolved colour tokens, so
     /// the app chrome can match the desktop appearance. Same connection as
-    /// `api/familiars` etc.; one-way (desktop → iOS).
+    /// `api/familiars` etc.
     func fetchTheme() async throws -> ThemeSnapshot {
         let req = try request("api/theme")
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(ThemeResponse.self, from: data).theme
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// `PUT /api/theme` — override the desktop's active theme from the phone.
+    /// Sends only `{themeId, mode}`: the phone can't resolve the desktop's
+    /// `oklch` / `color-mix` tokens to hex, so it names the preset and lets the
+    /// desktop adopt it and re-publish the resolved tokens — which the app then
+    /// picks up on its next `fetchTheme` poll for full-fidelity chrome. Returns
+    /// the saved snapshot.
+    @discardableResult
+    func publishTheme(themeId: String, mode: String) async throws -> ThemeSnapshot {
+        struct Body: Encodable { let themeId: String; let mode: String }
+        let payload = try JSONEncoder().encode(Body(themeId: themeId, mode: mode))
+        let req = try request("api/theme", method: "PUT", body: payload)
         let (data, resp) = try await session.data(for: req)
         try Self.check(resp)
         do {
