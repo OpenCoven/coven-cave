@@ -565,6 +565,14 @@ export function CommandPalette({
       : rank(FOLDER_MODES.filter((fm) => {
           if (fm.id === "github") return addons?.github === true;
           if (fm.id === "library") return addons?.library === true;
+          if (fm.id === "code") return addons?.code === true;
+          if (fm.id === "terminal") return addons?.terminal === true;
+          if (fm.id === "browser") return addons?.browser === true;
+          if (fm.id === "flow") return addons?.flow === true;
+          if (fm.id === "roles") return addons?.roles === true;
+          if (fm.id === "groupchat") return addons?.groupchat === true;
+          if (fm.id === "journal") return addons?.journal === true;
+          if (fm.id === "docs") return addons?.docs === true;
           return true;
         })
           // Fuzzy on the short label/id; substring-only on the long description

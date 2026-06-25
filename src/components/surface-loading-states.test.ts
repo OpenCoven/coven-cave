@@ -76,8 +76,13 @@ assert.doesNotMatch(
 );
 assert.match(
   settings,
-  /\{loading \? \([\s\S]{0,200}animate-pulse/,
-  "Settings integrations shows skeleton rows while the daemon status loads",
+  /loading \? skeleton\(/,
+  "Settings add-ons shows skeleton rows while the config loads",
+);
+assert.match(
+  settings,
+  /const skeleton = [\s\S]{0,160}animate-pulse/,
+  "the add-ons skeleton helper renders animate-pulse placeholder rows",
 );
 
 const vault = read("./vault-panel.tsx");

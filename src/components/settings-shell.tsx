@@ -89,7 +89,7 @@ const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },
   { section: "familiars", keywords: "familiars agents personas avatar name look" },
   { section: "permissions", keywords: "permissions allow deny tools access guard security" },
-  { section: "addons", group: "Integrations", keywords: "add-ons addons integrations plugins github youtube sidebar" },
+  { section: "addons", group: "Integrations", keywords: "add-ons addons integrations plugins github youtube sidebar surfaces code terminal browser flow roles journal coven group chat library" },
   { section: "mobile", group: "Steps", keywords: "phone mobile connect qr pair tailscale" },
   { section: "mobile", group: "Why there’s no password", keywords: "password security auth login" },
   { section: "mobile", group: "Get the app", keywords: "app download ios testflight install" },
@@ -498,45 +498,119 @@ function DaemonSection() {
 
 // ─── Section: Add-ons ─────────────────────────────────────────────────────────────
 
-type AddonKey = "github" | "library";
+type AddonKey =
+  | "github"
+  | "library"
+  | "code"
+  | "terminal"
+  | "browser"
+  | "flow"
+  | "roles"
+  | "groupchat"
+  | "journal"
+  | "docs";
 
 const ADDON_ROWS: Array<{
   key: AddonKey;
   label: string;
   icon: string;
+  group: "integrations" | "surfaces";
   description: string;
 }> = [
+  // Integrations
   {
     key: "github",
     label: "GitHub",
     icon: "ph:github-logo",
+    group: "integrations",
     description: "Browse open issues and pull requests, attach them to tasks, and hand off to a familiar.",
   },
   {
     key: "library",
     label: "Library",
     icon: "ph:books",
+    group: "integrations",
     description: "Save links, notes, and references for your familiars to draw from.",
+  },
+  // Sidebar surfaces — off by default to keep Cave simple; turn on what you need.
+  {
+    key: "code",
+    label: "Code",
+    icon: "ph:code",
+    group: "surfaces",
+    description: "Chat with a familiar beside your files and a terminal.",
+  },
+  {
+    key: "terminal",
+    label: "Terminal",
+    icon: "ph:terminal-window",
+    group: "surfaces",
+    description: "A shell session running in your project.",
+  },
+  {
+    key: "browser",
+    label: "Browser",
+    icon: "ph:globe",
+    group: "surfaces",
+    description: "A built-in web browser.",
+  },
+  {
+    key: "flow",
+    label: "Flow",
+    icon: "ph:flow-arrow",
+    group: "surfaces",
+    description: "Freeform automation editor — wire nodes on a canvas.",
+  },
+  {
+    key: "roles",
+    label: "Roles",
+    icon: "ph:mask-happy",
+    group: "surfaces",
+    description: "Agent personas, workflows, skills, and capabilities.",
+  },
+  {
+    key: "groupchat",
+    label: "Group chat",
+    icon: "ph:users-three",
+    group: "surfaces",
+    description: "Broadcast one prompt to a coven of familiars at once.",
+  },
+  {
+    key: "journal",
+    label: "Journal",
+    icon: "ph:book-open",
+    group: "surfaces",
+    description: "Your daily journal and generated sketches.",
+  },
+  {
+    key: "docs",
+    label: "Coven",
+    icon: "ph:book-bookmark",
+    group: "surfaces",
+    description: "OpenCoven docs, feedback, and social tabs.",
   },
 ];
 
+const DEFAULT_ADDONS = Object.fromEntries(
+  ADDON_ROWS.map((r) => [r.key, false]),
+) as Record<AddonKey, boolean>;
+
 function AddonsSection() {
-  const [addons, setAddons] = useState<Record<AddonKey, boolean>>({
-    github: false,
-    library: false,
-  });
+  const [addons, setAddons] = useState<Record<AddonKey, boolean>>(DEFAULT_ADDONS);
   const [loading, setLoading] = useState(true);
   const [toggleError, setToggleError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/config", { cache: "no-store" })
       .then((r) => r.json())
-      .then((j: { ok?: boolean; config?: { addons?: { github?: boolean; library?: boolean } } }) => {
+      .then((j: { ok?: boolean; config?: { addons?: Partial<Record<AddonKey, boolean>> } }) => {
         if (j.ok && j.config?.addons) {
-          setAddons({
-            github: j.config.addons.github ?? false,
-            library: j.config.addons.library ?? false,
-          });
+          const cfg = j.config.addons;
+          setAddons(
+            Object.fromEntries(
+              ADDON_ROWS.map((r) => [r.key, cfg[r.key] ?? false]),
+            ) as Record<AddonKey, boolean>,
+          );
         }
       })
       .catch(() => {})
@@ -564,55 +638,60 @@ function AddonsSection() {
     }
   };
 
+  const renderRow = (row: (typeof ADDON_ROWS)[number]) => (
+    <div key={row.key} className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <Icon
+          name={row.icon as Parameters<typeof Icon>[0]["name"]}
+          width={18}
+          className="shrink-0 text-[var(--text-muted)]"
+        />
+        <div className="min-w-0">
+          <p className="text-[13px] text-[var(--text-primary)]">{row.label}</p>
+          <p className="text-[11px] text-[var(--text-muted)]">{row.description}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={addons[row.key]}
+        onClick={() => void toggle(row.key)}
+        className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-150 ${
+          addons[row.key]
+            ? "bg-[var(--accent-presence)]"
+            : "bg-[var(--bg-elevated)]"
+        }`}
+      >
+        <span
+          className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-150 ${
+            addons[row.key] ? "translate-x-4" : "translate-x-0.5"
+          } mt-0.5`}
+        />
+      </button>
+    </div>
+  );
+
+  const skeleton = (rows: number) => (
+    <div aria-hidden className="animate-pulse space-y-3 px-4 py-3">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex items-center justify-between gap-4">
+          <span className="h-3 w-1/3 rounded bg-[var(--bg-hover)]" />
+          <span className="h-5 w-9 rounded-full bg-[var(--bg-hover)] opacity-70" />
+        </div>
+      ))}
+    </div>
+  );
+
   return (
-    <SettingsPage title="Add-ons" description="Optional integrations. Disabled add-ons are hidden from the sidebar.">
+    <SettingsPage title="Add-ons" description="Optional surfaces and integrations. Anything disabled here is hidden from the sidebar — turn on what you need.">
       {toggleError && (
         <p role="alert" className="mb-2 px-1 text-[12px] text-[var(--color-danger)]">{toggleError}</p>
       )}
+      <SettingsGroup label="Sidebar surfaces">
+        {loading ? skeleton(4) : ADDON_ROWS.filter((r) => r.group === "surfaces").map(renderRow)}
+      </SettingsGroup>
       <SettingsGroup label="Integrations">
-        {loading ? (
-          <div aria-hidden className="animate-pulse space-y-3 px-4 py-3">
-            {[0, 1].map((i) => (
-              <div key={i} className="flex items-center justify-between gap-4">
-                <span className="h-3 w-1/3 rounded bg-[var(--bg-hover)]" />
-                <span className="h-5 w-9 rounded-full bg-[var(--bg-hover)] opacity-70" />
-              </div>
-            ))}
-          </div>
-        ) : (
-          ADDON_ROWS.map((row) => (
-            <div key={row.key} className="flex items-center justify-between gap-4 px-4 py-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <Icon
-                  name={row.icon as Parameters<typeof Icon>[0]["name"]}
-                  width={18}
-                  className="shrink-0 text-[var(--text-muted)]"
-                />
-                <div className="min-w-0">
-                  <p className="text-[13px] text-[var(--text-primary)]">{row.label}</p>
-                  <p className="text-[11px] text-[var(--text-muted)]">{row.description}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={addons[row.key]}
-                onClick={() => void toggle(row.key)}
-                className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-150 ${
-                  addons[row.key]
-                    ? "bg-[var(--accent-presence)]"
-                    : "bg-[var(--bg-elevated)]"
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-150 ${
-                    addons[row.key] ? "translate-x-4" : "translate-x-0.5"
-                  } mt-0.5`}
-                />
-              </button>
-            </div>
-          ))
-        )}
+        {loading ? skeleton(2) : ADDON_ROWS.filter((r) => r.group === "integrations").map(renderRow)}
       </SettingsGroup>
     </SettingsPage>
   );

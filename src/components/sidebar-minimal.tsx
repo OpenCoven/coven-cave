@@ -43,6 +43,14 @@ export type FolderMode =
 export type AddonsConfig = {
   github?: boolean;
   library?: boolean;
+  code?: boolean;
+  terminal?: boolean;
+  browser?: boolean;
+  flow?: boolean;
+  roles?: boolean;
+  groupchat?: boolean;
+  journal?: boolean;
+  docs?: boolean;
 };
 
 export type SidebarMinimalProps = {
@@ -235,11 +243,20 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onModeChange(id);
   };
 
-  // Filter out disabled add-on items. GitHub and Library are gated add-ons,
-  // hidden from the nav until enabled in Settings → Add-ons (both default off).
+  // Gated surfaces are hidden from the nav until enabled in Settings → Add-ons
+  // (all default off). This keeps the default Cave to a simple core — Home, Chat,
+  // Board, Calendar, Schedules — with everything else opt-in.
   const visibleFolderModes = FOLDER_MODES.filter((fm) => {
     if (fm.id === "github") return addons?.github === true;
     if (fm.id === "library") return addons?.library === true;
+    if (fm.id === "code") return addons?.code === true;
+    if (fm.id === "terminal") return addons?.terminal === true;
+    if (fm.id === "browser") return addons?.browser === true;
+    if (fm.id === "flow") return addons?.flow === true;
+    if (fm.id === "roles") return addons?.roles === true;
+    if (fm.id === "groupchat") return addons?.groupchat === true;
+    if (fm.id === "journal") return addons?.journal === true;
+    if (fm.id === "docs") return addons?.docs === true;
     return true;
   });
 
@@ -288,23 +305,27 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           ))}
         </SidebarSection>
 
-        <SidebarSection label="Tools">
-          {toolsModes.map((fm) => (
-            <FolderRow
-              key={fm.id}
-              id={fm.id}
-              label={fm.label}
-              iconName={fm.iconName}
-              // Capabilities now lives as a tab on the Roles page, so keep the
-              // Roles entry lit when that mode is active.
-              active={mode === fm.id || (fm.id === "roles" && mode === "capabilities")}
-              badge={fm.badge?.(props)}
-              kbd={fm.kbd}
-              description={fm.description}
-              onClick={() => handleModeSelect(fm.id)}
-            />
-          ))}
-        </SidebarSection>
+        {/* Hide the whole Tools section when every tool is gated off — an empty
+            labelled section reads as broken. */}
+        {toolsModes.length > 0 && (
+          <SidebarSection label="Tools">
+            {toolsModes.map((fm) => (
+              <FolderRow
+                key={fm.id}
+                id={fm.id}
+                label={fm.label}
+                iconName={fm.iconName}
+                // Capabilities now lives as a tab on the Roles page, so keep the
+                // Roles entry lit when that mode is active.
+                active={mode === fm.id || (fm.id === "roles" && mode === "capabilities")}
+                badge={fm.badge?.(props)}
+                kbd={fm.kbd}
+                description={fm.description}
+                onClick={() => handleModeSelect(fm.id)}
+              />
+            ))}
+          </SidebarSection>
+        )}
 
         <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
       </div>
