@@ -87,7 +87,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   home: "Home",
   chat: "Familiars",
   groupchat: "Group Chat",
-  board: "Board",
+  board: "Tasks",
   calendar: "Calendar",
   inbox: "Schedules",
   library: "Library",

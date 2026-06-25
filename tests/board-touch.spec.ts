@@ -11,7 +11,7 @@ test("touch long-press drag moves a card between columns", async ({ page }) => {
   // Dismiss the onboarding overlay (covers the shell on a fresh CI profile).
   await page.addInitScript(() => window.localStorage.setItem("cave:onboarding:dismissed", "1"));
   await page.goto("/"); await page.waitForSelector(".shell-frame", { timeout: 60000 });
-  await page.locator(".sidebar-nav-scroll").getByRole("button", { name: /^Board\b/ }).click();
+  await page.locator(".sidebar-nav-scroll").getByRole("button", { name: /^Tasks\b/ }).click();
   await page.waitForSelector(".board-kanban-card", { timeout: 60000 });
 
   const card = page.locator(".board-kanban-card").first();

@@ -72,13 +72,18 @@ test.describe("mobile foundations", () => {
     await page.goto("/");
     await page.waitForSelector(".shell-frame");
 
-    const surfaces = ["Home", "Chat", "Board", "Calendar", "Browser", "Terminal", "Code"];
-    const sidebar = page.locator(".sidebar-nav-scroll");
+    // Drive by mode id via the navigate-mode event rather than clicking nav
+    // rows: most of these surfaces are now opt-in add-ons (hidden from the nav by
+    // default), but they still render when navigated — so this stays a true
+    // cross-surface chrome check without depending on which rows are visible.
+    const surfaces = ["home", "chat", "board", "calendar", "browser", "terminal", "code"];
 
     for (const surface of surfaces) {
-      if (surface !== "Home") {
-        await sidebar.getByRole("button", { name: new RegExp(`^${surface}\\b`) }).click();
-      }
+      await page.evaluate(
+        (mode) => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } })),
+        surface,
+      );
+      await page.waitForTimeout(200);
 
       await expect(page.locator(".top-bar"), `desktop top bar should stay hidden on ${surface}`).toBeHidden();
 
