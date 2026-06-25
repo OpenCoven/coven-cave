@@ -1262,7 +1262,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           </section>
         ) : null}
 
-        {!effectiveComplete ? (
+        {!status?.complete ? (
           <section className="mt-5" aria-label="Ask Salem for setup help">
             <SalemPathfinderEntry
               mode="setup"
