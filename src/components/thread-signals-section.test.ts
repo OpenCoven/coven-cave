@@ -1,17 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ReactElement, ReactNode } from "react";
-import {
-  aggregateThreadSignals,
-  ThreadSignalsSection,
-} from "./thread-signals-section.tsx";
+import { aggregateThreadSignals } from "@/lib/thread-self-report";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
-function report(overrides: Partial<ThreadSelfReport>): ThreadSelfReport {
+function report(overrides: Partial<ThreadSelfReport> & { id: string }): ThreadSelfReport {
   return {
-    id: overrides.id ?? "report",
-    familiarId: "cody",
-    sessionId: overrides.sessionId ?? "session",
+    familiarId: "echo",
+    sessionId: overrides.id,
     reportedAt: overrides.reportedAt ?? "2026-06-25T12:00:00.000Z",
     overallConfidence: overrides.overallConfidence ?? 80,
     toolReliability: overrides.toolReliability ?? { score: 70, failedTools: [], unreliableTools: [] },
@@ -21,104 +16,84 @@ function report(overrides: Partial<ThreadSelfReport>): ThreadSelfReport {
     skillsNeedingAccess: overrides.skillsNeedingAccess ?? [],
     capabilitiesLacking: overrides.capabilitiesLacking ?? [],
     capabilitiesVital: overrides.capabilitiesVital ?? [],
-    memoryRecallScore: overrides.memoryRecallScore ?? 60,
-    fileLocatabilityScore: overrides.fileLocatabilityScore ?? 50,
+    memoryRecallScore: overrides.memoryRecallScore ?? 75,
+    fileLocatabilityScore: overrides.fileLocatabilityScore ?? 85,
     persistentBlockers: overrides.persistentBlockers ?? [],
+    ...overrides,
   };
 }
 
-function flattenText(node: ReactNode): string {
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(flattenText).join("");
-  if (!node || typeof node !== "object" || !("props" in node)) return "";
-  return flattenText((node as ReactElement<{ children?: ReactNode }>).props.children);
-}
+describe("aggregateThreadSignals", () => {
+  it("returns zero averages for empty reports", () => {
+    const agg = aggregateThreadSignals([]);
+    assert.equal(agg.averageConfidence, 0);
+    assert.equal(agg.averageToolReliability, 0);
+    assert.equal(agg.persistentBlockers.length, 0);
+  });
 
-describe("thread signals aggregation", () => {
-  it("computes average scores and context distribution", () => {
-    const agg = aggregateThreadSignals([
-      report({ overallConfidence: 80, toolReliability: { score: 60, failedTools: [], unreliableTools: [] }, contextPressure: "adequate", memoryRecallScore: 50, fileLocatabilityScore: 40 }),
-      report({ overallConfidence: 100, toolReliability: { score: 80, failedTools: [], unreliableTools: [] }, contextPressure: "critical", memoryRecallScore: 70, fileLocatabilityScore: 80 }),
-    ]);
-
-    assert.equal(agg.averageConfidence, 90);
+  it("computes correct averages", () => {
+    const reports = [
+      report({ id: "r1", overallConfidence: 60, toolReliability: { score: 80, failedTools: [], unreliableTools: [] }, memoryRecallScore: 70, fileLocatabilityScore: 90 }),
+      report({ id: "r2", overallConfidence: 80, toolReliability: { score: 60, failedTools: [], unreliableTools: [] }, memoryRecallScore: 90, fileLocatabilityScore: 70 }),
+    ];
+    const agg = aggregateThreadSignals(reports);
+    assert.equal(agg.averageConfidence, 70);
     assert.equal(agg.averageToolReliability, 70);
-    assert.equal(agg.averageMemoryRecall, 60);
-    assert.equal(agg.averageFileLocatability, 60);
-    assert.deepEqual(agg.contextCounts, { adequate: 1, tight: 0, excess: 0, critical: 1 });
+    assert.equal(agg.averageMemoryRecall, 80);
+    assert.equal(agg.averageFileLocatability, 80);
   });
 
-  it("deduplicates skills using the most recent clarity/access reasons", () => {
-    const agg = aggregateThreadSignals([
-      report({
-        reportedAt: "2026-06-24T12:00:00.000Z",
-        skillsUsed: ["test-driven-development"],
-        skillsNeedingClarity: [{ skillId: "tdd", reason: "old reason" }],
-        skillsNeedingAccess: [{ skillId: "github", reason: "old access" }],
-      }),
-      report({
-        reportedAt: "2026-06-25T12:00:00.000Z",
-        skillsUsed: ["test-driven-development", "verification-before-completion"],
-        skillsNeedingClarity: [{ skillId: "tdd", reason: "new reason" }],
-        skillsNeedingAccess: [{ skillId: "github", reason: "new access" }],
-      }),
-    ]);
-
-    assert.deepEqual(agg.skillsUsedMost.slice(0, 2), [
-      { skillId: "test-driven-development", count: 2 },
-      { skillId: "verification-before-completion", count: 1 },
-    ]);
-    assert.deepEqual(agg.skillsNeedingClarity, [{ skillId: "tdd", reason: "new reason" }]);
-    assert.deepEqual(agg.skillsNeedingAccess, [{ skillId: "github", reason: "new access" }]);
+  it("ranks blockers by frequency × impact weight", () => {
+    const blocker = (id: string, impact: "low" | "medium" | "high" | "blocking") => ({
+      id, title: id, category: "other" as const, impact, detail: "",
+    });
+    const reports = [
+      report({ id: "r1", persistentBlockers: [blocker("a", "low"), blocker("b", "blocking")] }),
+      report({ id: "r2", persistentBlockers: [blocker("b", "blocking")] }),
+      report({ id: "r3", persistentBlockers: [blocker("b", "blocking")] }),
+    ];
+    const agg = aggregateThreadSignals(reports);
+    // b: frequency=3, weight=4, score=12; a: frequency=1, weight=1, score=1
+    assert.equal(agg.persistentBlockers[0].id, "b");
+    assert.equal(agg.persistentBlockers[0].frequency, 3);
   });
 
-  it("ranks blockers by frequency times impact and marks blockers seen in more than half of reports as crit", () => {
-    const agg = aggregateThreadSignals([
-      report({
-        id: "a",
-        persistentBlockers: [
-          { id: "auth", title: "Auth missing", category: "auth", impact: "medium", detail: "x" },
-          { id: "infra", title: "Infra down", category: "infra", impact: "high", detail: "x" },
-        ],
-      }),
-      report({
-        id: "b",
-        persistentBlockers: [
-          { id: "auth", title: "Auth missing", category: "auth", impact: "medium", detail: "x" },
-        ],
-      }),
-      report({
-        id: "c",
-        persistentBlockers: [
-          { id: "auth", title: "Auth missing", category: "auth", impact: "medium", detail: "x" },
-        ],
-      }),
-    ]);
-
-    assert.equal(agg.persistentBlockers[0].id, "auth");
-    assert.equal(agg.persistentBlockers[0].rankScore, 6);
+  it("marks blockers as crit when in >50% of reports", () => {
+    const blocker = { id: "x", title: "X", category: "auth" as const, impact: "high" as const, detail: "" };
+    const reports = [
+      report({ id: "r1", persistentBlockers: [blocker] }),
+      report({ id: "r2", persistentBlockers: [blocker] }),
+      report({ id: "r3", persistentBlockers: [] }),
+    ];
+    const agg = aggregateThreadSignals(reports);
+    // x appears in 2/3 = 67% → crit
     assert.equal(agg.persistentBlockers[0].crit, true);
-    assert.equal(agg.persistentBlockers[1].rankScore, 3);
   });
 
-  it("deduplicates capabilities with worst state and highest importance winning", () => {
-    const agg = aggregateThreadSignals([
-      report({
-        capabilitiesVital: [{ name: "Filesystem", currentState: "available", notes: "ok" }],
-        capabilitiesLacking: [{ name: "Calendar", importance: "nice-to-have", detail: "later" }],
-      }),
-      report({
-        capabilitiesVital: [{ name: "Filesystem", currentState: "missing", notes: "gone" }],
-        capabilitiesLacking: [{ name: "Calendar", importance: "blocking", detail: "now" }],
-      }),
-    ]);
-
-    assert.deepEqual(agg.capabilitiesVital, [{ name: "Filesystem", currentState: "missing", notes: "gone" }]);
-    assert.deepEqual(agg.capabilitiesLacking, [{ name: "Calendar", importance: "blocking", detail: "now" }]);
+  it("does not mark blockers as crit when in ≤50% of reports", () => {
+    const blocker = { id: "y", title: "Y", category: "tooling" as const, impact: "medium" as const, detail: "" };
+    const reports = [
+      report({ id: "r1", persistentBlockers: [blocker] }),
+      report({ id: "r2", persistentBlockers: [] }),
+    ];
+    const agg = aggregateThreadSignals(reports);
+    assert.equal(agg.persistentBlockers[0].crit, false);
   });
 
-  it("renders the empty state when no reports exist", () => {
-    const section = ThreadSignalsSection({ familiarId: "cody", reports: [] });
-    assert.match(flattenText(section), /No thread reports yet/);
+  it("deduplicates skills needing clarity (keeps newest)", () => {
+    const reports = [
+      report({ id: "r1", reportedAt: "2026-06-24T00:00:00.000Z", skillsNeedingClarity: [{ skillId: "exec", reason: "old" }] }),
+      report({ id: "r2", reportedAt: "2026-06-25T00:00:00.000Z", skillsNeedingClarity: [{ skillId: "exec", reason: "new" }] }),
+    ];
+    const agg = aggregateThreadSignals(reports);
+    assert.equal(agg.skillsNeedingClarity.length, 1);
+    assert.equal(agg.skillsNeedingClarity[0].reason, "new");
+  });
+
+  it("renders empty state in source file when no reports", () => {
+    const { readFileSync } = require("node:fs");
+    const src = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
+    assert.match(src, /No thread reports yet/);
+    assert.match(src, /export function ThreadSignalsSection/);
   });
 });

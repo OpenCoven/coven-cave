@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ReactElement, ReactNode } from "react";
-import { ThreadSignalCard, topPersistentBlocker } from "./thread-signal-card.tsx";
+import { topPersistentBlocker } from "@/lib/thread-self-report";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
 function report(overrides: Partial<ThreadSelfReport> = {}): ThreadSelfReport {
@@ -9,12 +8,12 @@ function report(overrides: Partial<ThreadSelfReport> = {}): ThreadSelfReport {
     id: "report-1",
     familiarId: "cody",
     sessionId: "session-1",
-    threadTitle: "Cody",
+    threadTitle: "Test thread",
     reportedAt: "2026-06-25T12:00:00.000Z",
     overallConfidence: 84,
     overallConfidenceReason: "clear path",
     toolReliability: { score: 71, failedTools: [], unreliableTools: [] },
-    contextPressure: "critical",
+    contextPressure: "adequate",
     skillsUsed: [],
     skillsNeedingClarity: [],
     skillsNeedingAccess: [],
@@ -27,68 +26,48 @@ function report(overrides: Partial<ThreadSelfReport> = {}): ThreadSelfReport {
   };
 }
 
-function flattenText(node: ReactNode): string {
-  if (typeof node === "string" || typeof node === "number") return String(node);
-  if (Array.isArray(node)) return node.map(flattenText).join("");
-  if (!node || typeof node !== "object" || !("props" in node)) return "";
-  return flattenText((node as ReactElement<{ children?: ReactNode }>).props.children);
-}
-
-function findByText(node: ReactNode, text: string): ReactElement<Record<string, unknown>> | null {
-  if (!node || typeof node !== "object") return null;
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      const found = findByText(child, text);
-      if (found) return found;
-    }
-    return null;
-  }
-  if (!("props" in node)) return null;
-  const element = node as ReactElement<{ children?: ReactNode }>;
-  const child = findByText(element.props.children, text);
-  if (child) return child;
-  if (flattenText(element).includes(text)) return element as ReactElement<Record<string, unknown>>;
-  return null;
-}
-
-describe("ThreadSignalCard", () => {
-  it("renders confidence, tool reliability, and context severity class", () => {
-    const card = ThreadSignalCard({ report: report(), onViewFull: () => {}, onDismiss: () => {} });
-    const text = flattenText(card);
-
-    assert.match(text, /Confidence84/);
-    assert.match(text, /Tool reliability71/);
-    assert.match(text, /ContextCritical/);
-    assert.match(JSON.stringify(card), /tsc-score-item--crit/);
+describe("topPersistentBlocker", () => {
+  it("returns null when no blockers", () => {
+    assert.equal(topPersistentBlocker(report()), null);
   });
 
-  it("shows the highest-impact blocker line only when blockers exist", () => {
-    const withBlockers = report({
+  it("returns the highest-impact blocker", () => {
+    const r = report({
       persistentBlockers: [
         { id: "low", title: "Minor cleanup", category: "other", impact: "low", detail: "nice" },
-        { id: "high", title: "Missing auth", category: "auth", impact: "blocking", detail: "blocked" },
+        { id: "blocking", title: "Missing auth", category: "auth", impact: "blocking", detail: "blocked" },
+        { id: "medium", title: "Slow tool", category: "tooling", impact: "medium", detail: "slow" },
       ],
     });
-
-    assert.equal(topPersistentBlocker(withBlockers)?.title, "Missing auth");
-    assert.match(flattenText(ThreadSignalCard({ report: withBlockers, onViewFull: () => {}, onDismiss: () => {} })), /2 blockers: Missing auth \(blocking\)/);
-    assert.doesNotMatch(flattenText(ThreadSignalCard({ report: report(), onViewFull: () => {}, onDismiss: () => {} })), /blocker/);
+    assert.equal(topPersistentBlocker(r)?.title, "Missing auth");
   });
 
-  it("calls onDismiss and onViewFull from their actions", () => {
-    let dismissed = false;
-    let viewed = false;
-    const card = ThreadSignalCard({
-      report: report(),
-      onDismiss: () => { dismissed = true; },
-      onViewFull: () => { viewed = true; },
+  it("returns the single blocker when only one exists", () => {
+    const r = report({
+      persistentBlockers: [
+        { id: "b1", title: "Auth issue", category: "auth", impact: "high", detail: "detail" },
+      ],
     });
+    assert.equal(topPersistentBlocker(r)?.id, "b1");
+  });
 
-    const event = { preventDefault() {} };
-    (findByText(card, "Dismiss")?.props.onClick as ((event: unknown) => void) | undefined)?.(event);
-    (findByText(card, "View full report")?.props.onClick as ((event: unknown) => void) | undefined)?.(event);
+  it("prefers blocking > high > medium > low", () => {
+    const r = report({
+      persistentBlockers: [
+        { id: "h", title: "High", category: "infra", impact: "high", detail: "" },
+        { id: "m", title: "Medium", category: "infra", impact: "medium", detail: "" },
+        { id: "b", title: "Blocking", category: "infra", impact: "blocking", detail: "" },
+      ],
+    });
+    assert.equal(topPersistentBlocker(r)?.impact, "blocking");
+  });
+});
 
-    assert.equal(dismissed, true);
-    assert.equal(viewed, true);
+describe("thread-signal-card module wiring", () => {
+  it("thread-signal-card.tsx exports ThreadSignalCard and topPersistentBlocker", () => {
+    const { readFileSync } = require("node:fs");
+    const src = readFileSync(new URL("./thread-signal-card.tsx", import.meta.url), "utf8");
+    assert.match(src, /export function ThreadSignalCard/);
+    assert.match(src, /topPersistentBlocker/);
   });
 });

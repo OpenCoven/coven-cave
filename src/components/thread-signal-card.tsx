@@ -3,7 +3,7 @@
 import type { MouseEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { relativeTime } from "@/lib/relative-time";
-import { contextPressureLabel, type BlockerImpact, type ThreadSelfReport } from "@/lib/thread-self-report";
+import { contextPressureLabel, topPersistentBlocker, type ThreadSelfReport } from "@/lib/thread-self-report";
 
 type ThreadSignalCardProps = {
   report: ThreadSelfReport;
@@ -11,16 +11,6 @@ type ThreadSignalCardProps = {
   onDismiss: () => void;
 };
 
-const IMPACT_WEIGHT: Record<BlockerImpact, number> = {
-  low: 1,
-  medium: 2,
-  high: 3,
-  blocking: 4,
-};
-
-export function topPersistentBlocker(report: ThreadSelfReport) {
-  return [...report.persistentBlockers].sort((a, b) => IMPACT_WEIGHT[b.impact] - IMPACT_WEIGHT[a.impact])[0] ?? null;
-}
 
 export function ThreadSignalCard({ report, onViewFull, onDismiss }: ThreadSignalCardProps) {
   const context = contextPressureLabel(report.contextPressure);
