@@ -49,11 +49,15 @@ export function isValidKnowledgeId(id: unknown): id is string {
 
 /** Derive a safe id from a free-form title (best-effort; may be empty). */
 export function slugifyKnowledgeId(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
+  // Cap length first, then collapse non-slug runs. The leading/trailing dashes
+  // are trimmed with index walks rather than an anchored `/-+$/` regex, which
+  // backtracks quadratically on long dash runs (ReDoS).
+  const collapsed = title.slice(0, 200).toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  let start = 0;
+  let end = collapsed.length;
+  while (start < end && collapsed[start] === "-") start += 1;
+  while (end > start && collapsed[end - 1] === "-") end -= 1;
+  return collapsed.slice(start, end).slice(0, 64);
 }
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -192,7 +196,15 @@ export function buildPromptWithKnowledgeVault(
 // ── Filesystem store ─────────────────────────────────────────────────────────
 
 function entryPath(id: string): string {
-  return path.join(covenKnowledgeRoot(), `${id}.md`);
+  // Single chokepoint where a vault path is built from the (slug-validated) id.
+  // Resolve and assert containment directly under the vault root so a path can
+  // never escape it, even if a caller forgets the id guard.
+  const root = path.resolve(covenKnowledgeRoot());
+  const resolved = path.resolve(root, `${id}.md`);
+  if (!resolved.startsWith(root + path.sep) || path.dirname(resolved) !== root) {
+    throw new Error("invalid knowledge id");
+  }
+  return resolved;
 }
 
 /** List every vault entry on disk. Returns [] when the directory is absent or
