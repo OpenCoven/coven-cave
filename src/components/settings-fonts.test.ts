@@ -16,6 +16,11 @@ assert.match(src, /fontStack\(/, "preview rendered with fontStack");
 assert.match(src, /DEFAULT_FONT_PAIR_ID/, "reset targets the default pair");
 assert.match(src, /Reset/, "exposes a reset control");
 assert.match(src, /Typography pair/, "renders a single pair selector");
+assert.match(
+  src,
+  /id="typography-pair"[\s\S]*?style=\{\{ width: "min\(100%, 300px\)", maxWidth: "100%" \}\}/,
+  "typography pair selector uses a responsive width that fits curated pair labels",
+);
 assert.match(src, /Interface/, "keeps the interface preview");
 assert.match(src, /Code &amp; terminal/, "keeps the code and terminal preview");
 

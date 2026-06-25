@@ -315,7 +315,7 @@ export function FontSettings() {
           <select
             id="typography-pair"
             className="gh-select"
-            style={{ maxWidth: "260px" }}
+            style={{ width: "min(100%, 300px)", maxWidth: "100%" }}
             value={pairId}
             onChange={(e) => selectPair(e.target.value)}
             aria-label="Typography pair"
