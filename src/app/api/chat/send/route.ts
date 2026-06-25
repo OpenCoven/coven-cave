@@ -98,6 +98,7 @@ import {
   type TurnUsage,
 } from "@/lib/usage-format";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
+import type { StreamEvent } from "@/lib/stream-events";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -127,30 +128,6 @@ type SendBody = {
 type ReasoningEffort = "low" | "medium" | "high";
 type ResponseSpeed = "fast" | "balanced" | "careful";
 
-type StreamEvent =
-  | { kind: "session"; sessionId: string }
-  | { kind: "user"; text: string }
-  | { kind: "assistant_chunk"; text: string }
-  | { kind: "progress"; id?: string; label: string; detail?: string; status?: "running" | "done" | "error"; durationMs?: number }
-  | {
-      kind: "tool_use";
-      id?: string;
-      name: string;
-      input?: string;
-      output?: string;
-      status?: "running" | "ok" | "error";
-      durationMs?: number;
-    }
-  | {
-      kind: "done";
-      durationMs?: number;
-      isError?: boolean;
-      sessionId?: string;
-      usage?: TurnUsage;
-      costUsd?: number;
-      responseMetadata?: ChatResponseMetadata;
-    }
-  | { kind: "error"; message: string; code?: string };
 
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
 // Examples:

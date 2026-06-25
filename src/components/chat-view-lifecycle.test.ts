@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+const streamEvents = readFileSync(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 
 assert.match(
@@ -42,8 +43,8 @@ assert.match(
 );
 
 assert.match(
-  source,
-  /\{ kind: "progress"; id\?: string; label: string; detail\?: string; status\?: "running" \| "done" \| "error"; durationMs\?: number \}/,
+  streamEvents,
+  /\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "error";\s*durationMs\?: number;\s*\}/,
   "Chat streams should expose non-token progress events for quiet phases",
 );
 
@@ -251,8 +252,8 @@ assert.match(
 // ── CHAT-D12-02: per-turn token usage + cost ──
 
 assert.match(
-  source,
-  /kind: "done"; durationMs\?: number; isError\?: boolean; sessionId\?: string; usage\?: TurnUsage; costUsd\?: number/,
+  streamEvents,
+  /kind: "done";\s*durationMs\?: number;\s*isError\?: boolean;\s*sessionId\?: string;\s*usage\?: TurnUsage;\s*costUsd\?: number/,
   "The done StreamEvent must carry optional usage and cost fields (CHAT-D12-02)",
 );
 

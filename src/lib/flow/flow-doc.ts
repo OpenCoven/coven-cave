@@ -23,6 +23,13 @@ export type FlowStickyData = {
   height: number;
 };
 
+export type FlowExecutionDataPolicy = {
+  /** Manual editor/test runs omit persisted per-node details when true. */
+  redactManual?: boolean;
+  /** Production trigger runs omit persisted per-node details when true. */
+  redactProduction?: boolean;
+};
+
 export type FlowNode = {
   id: string;
   /** Node type id from the catalog, e.g. "trigger.manual", "logic.if". */
@@ -33,6 +40,8 @@ export type FlowNode = {
   params: Record<string, FlowParamValue>;
   /** Disabled nodes are skipped at run time but stay on the canvas. */
   disabled?: boolean;
+  /** Development-only pinned output reused by manual/partial runs. */
+  pinnedData?: string;
   notes?: string;
   /** Present only on sticky-note nodes. */
   sticky?: FlowStickyData;
@@ -55,6 +64,8 @@ export type FlowDoc = {
   name: string;
   /** n8n "Active" toggle — whether the flow's triggers are armed. */
   active: boolean;
+  /** Execution-history data retention policy. */
+  executionData?: FlowExecutionDataPolicy;
   nodes: FlowNode[];
   edges: FlowEdge[];
   createdAt: string;
@@ -142,6 +153,51 @@ export function setNodeNotes(doc: FlowDoc, id: string, notes: string): FlowDoc {
   return mapNode(doc, id, (node) => ({ ...node, notes }));
 }
 
+export function setNodePinnedData(doc: FlowDoc, id: string, pinnedData: string): FlowDoc {
+  const trimmed = pinnedData.trim();
+  return mapNode(doc, id, (node) => {
+    if (!trimmed) {
+      const { pinnedData: _pinnedData, ...rest } = node;
+      return rest;
+    }
+    return { ...node, pinnedData: trimmed };
+  });
+}
+
+export function setExecutionDataRedaction(
+  doc: FlowDoc,
+  mode: "manual" | "production",
+  redacted: boolean,
+): FlowDoc {
+  const key = mode === "production" ? "redactProduction" : "redactManual";
+  const executionData: FlowExecutionDataPolicy = { ...(doc.executionData ?? {}) };
+  if (redacted) executionData[key] = true;
+  else delete executionData[key];
+  return Object.keys(executionData).length > 0
+    ? { ...doc, executionData }
+    : omitExecutionData(doc);
+}
+
+export function flowRunRedactsData(doc: FlowDoc, mode: "manual" | "production"): boolean {
+  return mode === "production"
+    ? doc.executionData?.redactProduction === true
+    : doc.executionData?.redactManual === true;
+}
+
+export function setPinnedDataForNodes(doc: FlowDoc, pinnedDataByNodeId: Record<string, string>): FlowDoc {
+  let next = doc;
+  for (const [id, pinnedData] of Object.entries(pinnedDataByNodeId)) {
+    if (!pinnedData.trim()) continue;
+    next = setNodePinnedData(next, id, pinnedData);
+  }
+  return next;
+}
+
+function omitExecutionData(doc: FlowDoc): FlowDoc {
+  const { executionData: _executionData, ...rest } = doc;
+  return rest;
+}
+
 export function toggleNodeDisabled(doc: FlowDoc, id: string): FlowDoc {
   return mapNode(doc, id, (node) => ({ ...node, disabled: !node.disabled }));
 }
@@ -194,6 +250,15 @@ export function disconnectEndpoints(doc: FlowDoc, source: string, target: string
   return { ...doc, edges: doc.edges.filter((edge) => !(edge.source === source && edge.target === target)) };
 }
 
+export function nodeExecutionChangedSinceSnapshot(
+  current: FlowDoc,
+  snapshot: FlowDoc | undefined,
+  nodeId: string,
+): boolean {
+  if (!snapshot) return false;
+  return nodeExecutionSignature(current, nodeId) !== nodeExecutionSignature(snapshot, nodeId);
+}
+
 /**
  * Splice a new node into an existing edge: `A → B` becomes `A → node → B`.
  * The original edge is removed and two new edges wire the node in through its
@@ -234,6 +299,51 @@ export function addConnectedNode(
     next = connect(next, from.nodeId, from.handleId, node.id, inHandle);
   }
   return next;
+}
+
+function nodeExecutionSignature(doc: FlowDoc, nodeId: string): string | null {
+  const node = findNode(doc, nodeId);
+  if (!node) return null;
+  const edges = doc.edges
+    .filter((edge) => edge.source === nodeId || edge.target === nodeId)
+    .map((edge) => ({
+      source: edge.source,
+      sourceHandle: edge.sourceHandle,
+      target: edge.target,
+      targetHandle: edge.targetHandle,
+    }))
+    .sort(compareEdgeSignatures);
+  return JSON.stringify({
+    type: node.type,
+    params: sortedRecord(node.params),
+    disabled: Boolean(node.disabled),
+    pinnedData: node.pinnedData?.trim() ?? "",
+    sticky: node.sticky
+      ? {
+          color: node.sticky.color,
+          height: node.sticky.height,
+          text: node.sticky.text,
+          width: node.sticky.width,
+        }
+      : null,
+    edges,
+  });
+}
+
+function sortedRecord(record: Record<string, FlowParamValue>): Record<string, FlowParamValue> {
+  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function compareEdgeSignatures(
+  a: Pick<FlowEdge, "source" | "sourceHandle" | "target" | "targetHandle">,
+  b: Pick<FlowEdge, "source" | "sourceHandle" | "target" | "targetHandle">,
+): number {
+  return (
+    a.source.localeCompare(b.source) ||
+    a.sourceHandle.localeCompare(b.sourceHandle) ||
+    a.target.localeCompare(b.target) ||
+    a.targetHandle.localeCompare(b.targetHandle)
+  );
 }
 
 function mapNode(doc: FlowDoc, id: string, fn: (node: FlowNode) => FlowNode): FlowDoc {

@@ -48,12 +48,22 @@ function coerceDoc(value: unknown): FlowDoc | null {
     id: value.id,
     name: typeof value.name === "string" && value.name.trim() ? value.name : value.id,
     active: Boolean(value.active),
+    executionData: coerceExecutionData(value.executionData),
     nodes: value.nodes,
     edges: value.edges,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : now,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : now,
     schema: typeof value.schema === "number" ? value.schema : FLOW_SCHEMA_VERSION,
   };
+}
+
+function coerceExecutionData(value: unknown): FlowDoc["executionData"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const data = value as FlowDoc["executionData"];
+  const next: NonNullable<FlowDoc["executionData"]> = {};
+  if (data?.redactManual === true) next.redactManual = true;
+  if (data?.redactProduction === true) next.redactProduction = true;
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
 export async function listFlows(): Promise<FlowDoc[]> {

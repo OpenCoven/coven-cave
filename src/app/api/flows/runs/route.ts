@@ -5,6 +5,7 @@ import type { FlowRunRecord } from "@/lib/flows";
 export const dynamic = "force-dynamic";
 
 const STATUSES = new Set(["preview", "running", "succeeded", "failed"]);
+const MODES = new Set(["manual", "production"]);
 
 /** Newest-first run history, optionally `?flowId=` filtered. */
 export async function GET(req: Request) {
@@ -31,12 +32,16 @@ export async function POST(req: Request) {
     flowId: body.flowId,
     flowName: typeof body.flowName === "string" ? body.flowName : undefined,
     status: body.status,
+    mode: typeof body.mode === "string" && MODES.has(body.mode) ? body.mode : undefined,
+    customData: coerceCustomData(body.customData),
+    redacted: body.redacted === true ? true : undefined,
     startedAt: typeof body.startedAt === "string" ? body.startedAt : new Date().toISOString(),
     finishedAt: typeof body.finishedAt === "string" ? body.finishedAt : undefined,
     steps: Array.isArray(body.steps) ? body.steps : [],
     summary: typeof body.summary === "string" ? body.summary : undefined,
     source: body.source === "daemon" ? "daemon" : "cave",
     sessionId: typeof body.sessionId === "string" ? body.sessionId : undefined,
+    flowSnapshot: coerceFlowSnapshot(body.flowSnapshot),
   });
   return NextResponse.json({ ok: true, run });
 }
@@ -60,8 +65,25 @@ export async function PATCH(req: Request) {
   if (Array.isArray(body.steps)) patch.steps = body.steps;
   if (typeof body.finishedAt === "string") patch.finishedAt = body.finishedAt;
   if (typeof body.summary === "string") patch.summary = body.summary;
+  if (body.redacted === true) patch.redacted = true;
   const run = await updateFlowRun(body.id, patch);
   return NextResponse.json({ ok: Boolean(run), run: run ?? undefined });
+}
+
+function coerceCustomData(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value)
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
+    .map(([key, data]) => [key, data.trim()]);
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function coerceFlowSnapshot(value: unknown): FlowRunRecord["flowSnapshot"] {
+  if (!value || typeof value !== "object") return undefined;
+  const snapshot = value as FlowRunRecord["flowSnapshot"];
+  return typeof snapshot?.id === "string" && Array.isArray(snapshot.nodes) && Array.isArray(snapshot.edges)
+    ? snapshot
+    : undefined;
 }
 
 /** Clear run history — one flow's runs (`?flowId=`) or the whole store. */

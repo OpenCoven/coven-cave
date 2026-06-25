@@ -64,6 +64,7 @@ import {
   formatRuntime,
   type ChatResponseMetadata,
 } from "@/lib/chat-response-metadata";
+import type { StreamEvent } from "@/lib/stream-events";
 import { extractNextPaths } from "@/lib/next-paths";
 import {
   chatProjectById,
@@ -173,15 +174,6 @@ export type ChatViewHandle = {
   clearTranscript: () => void;
   runSlash: (command: string) => void;
 };
-
-type StreamEvent =
-  | { kind: "session"; sessionId: string }
-  | { kind: "user"; text: string }
-  | { kind: "assistant_chunk"; text: string }
-  | { kind: "progress"; id?: string; label: string; detail?: string; status?: "running" | "done" | "error"; durationMs?: number }
-  | { kind: "tool_use"; id?: string; name: string; input?: string; output?: string; status?: "running" | "ok" | "error"; durationMs?: number }
-  | { kind: "done"; durationMs?: number; isError?: boolean; sessionId?: string; usage?: TurnUsage; costUsd?: number; responseMetadata?: ChatResponseMetadata }
-  | { kind: "error"; message: string; code?: string };
 
 type ComposerAttachment = ChatAttachment & { id: string };
 type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error";

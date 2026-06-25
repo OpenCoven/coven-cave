@@ -1,24 +1,18 @@
 import { NextResponse } from "next/server";
-import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
-import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
-import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
-import { loadFlow, recordFlowRun } from "@/lib/server/flow-store";
-import { compileFlowPrompt, flowExecutionOrder, flowRunBlockReason } from "@/lib/flow/flow-compile";
+import { MAX_SESSION_JSON_BYTES } from "@/lib/server/session-security";
+import { loadFlow } from "@/lib/server/flow-store";
+import { startFlowSession } from "@/lib/server/flow-executor";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
 
 export const dynamic = "force-dynamic";
 
-type RunBody = { id?: string; projectRoot?: string | null };
-
-/** First familiar referenced anywhere in the flow, to attribute the session. */
-function flowFamiliar(flow: FlowDoc): string | null {
-  for (const node of flow.nodes) {
-    const familiar = node.params?.familiar;
-    if (typeof familiar === "string" && familiar.trim()) return familiar.trim();
-  }
-  return null;
-}
+type RunBody = {
+  id?: string;
+  projectRoot?: string | null;
+  targetNodeId?: string | null;
+  flowSnapshot?: FlowDoc | null;
+};
 
 /**
  * Execute a flow. Like the Workflow Studio, Cave has no native flow engine, so
@@ -35,71 +29,23 @@ export async function POST(req: Request) {
   const parsed = await readJsonBody<RunBody>(req, MAX_SESSION_JSON_BYTES);
   if (!parsed.ok) return parsed.response;
   const { id, projectRoot: rawRoot } = parsed.body;
+  const targetNodeId =
+    typeof parsed.body.targetNodeId === "string" && parsed.body.targetNodeId.trim()
+      ? parsed.body.targetNodeId.trim()
+      : undefined;
   if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
 
   const flow = await loadFlow(id);
   if (!flow) return NextResponse.json({ ok: false, error: "flow not found" }, { status: 404 });
 
-  const blocked = flowRunBlockReason(flow);
-  if (!blocked.ok) {
-    return NextResponse.json({ ok: false, error: blocked.reason }, { status: 400 });
-  }
-
-  const projectRoot = normalizeProjectRoot(rawRoot ?? process.cwd());
-  if (!projectRoot) {
-    return NextResponse.json({ ok: false, error: "invalid project root" }, { status: 400 });
-  }
-
-  const config = await loadConfig();
-  const familiarId = flowFamiliar(flow);
-  const binding = familiarId ? bindingFor(config, familiarId) : { harness: config.defaults.harness };
-  if (!isAllowedHarness(binding.harness)) {
+  const snapshotId = parsed.body.flowSnapshot?.id;
+  const runFlowDoc = snapshotId === id && parsed.body.flowSnapshot ? parsed.body.flowSnapshot : flow;
+  const result = await startFlowSession(runFlowDoc, { projectRoot: rawRoot, targetNodeId, mode: "manual" });
+  if (!result.ok) {
     return NextResponse.json(
-      { ok: false, error: `harness '${binding.harness}' can't run as an agent session` },
-      { status: 409 },
+      { ok: false, unavailable: result.unavailable, error: result.error },
+      { status: result.status ?? 200 },
     );
   }
-
-  const prompt = compileFlowPrompt(flow);
-  const res = await callDaemon<{ id: string; status: string }>({
-    method: "POST",
-    path: "/api/v1/sessions",
-    body: { projectRoot, harness: binding.harness, prompt, ...(familiarId ? { familiarId } : {}) },
-    timeoutMs: 8000,
-  });
-
-  if (!res.ok || !res.data?.id) {
-    if (res.status === 0) {
-      return NextResponse.json({ ok: false, unavailable: true, error: "daemon offline" });
-    }
-    return NextResponse.json(
-      { ok: false, error: extractDaemonError(res) ?? res.error ?? `daemon http ${res.status}` },
-      { status: res.status || 502 },
-    );
-  }
-
-  const sessionId = res.data.id;
-  await Promise.all([
-    familiarId ? recordSessionFamiliar(sessionId, familiarId) : Promise.resolve(),
-    setSessionTitle(sessionId, `Flow: ${flow.name}`),
-  ]);
-
-  const order = flowExecutionOrder(flow);
-  const byId = new Map(flow.nodes.map((node) => [node.id, node]));
-  const run = await recordFlowRun({
-    flowId: flow.id,
-    flowName: flow.name,
-    status: "running",
-    startedAt: new Date().toISOString(),
-    steps: order.map((stepId) => ({
-      id: stepId,
-      type: byId.get(stepId)?.type ?? "unknown",
-      status: "pending" as const,
-    })),
-    summary: `agent session ${sessionId.slice(0, 8)}`,
-    source: "cave",
-    sessionId,
-  });
-
-  return NextResponse.json({ ok: true, run, sessionId, executor: "session" });
+  return NextResponse.json({ ok: true, run: result.run, sessionId: result.sessionId, executor: result.executor });
 }

@@ -8,9 +8,10 @@ const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "ut
 const conversations = await readFile(new URL("../lib/cave-conversations.ts", import.meta.url), "utf8");
 const sessionMerge = await readFile(new URL("../lib/session-list-merge.ts", import.meta.url), "utf8");
 const types = await readFile(new URL("../lib/types.ts", import.meta.url), "utf8");
+const streamEvents = await readFile(new URL("../lib/stream-events.ts", import.meta.url), "utf8");
 
 assert.match(
-  chatRoute,
+  streamEvents,
   /type StreamEvent =[\s\S]*kind: "done";[\s\S]*responseMetadata\?: ChatResponseMetadata/,
   "Chat send done events should carry explicit response metadata",
 );
@@ -82,7 +83,7 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  chatView,
+  streamEvents,
   /type StreamEvent =[\s\S]*kind: "done";[\s\S]*responseMetadata\?: ChatResponseMetadata/,
   "ChatView should accept response metadata from done events",
 );

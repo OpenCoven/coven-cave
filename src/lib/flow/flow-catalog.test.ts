@@ -31,6 +31,15 @@ const NOW = "2026-01-01T00:00:00.000Z";
   assert.deepEqual(ifNode?.outputs.map((p) => p.id), ["true", "false"]);
 }
 
+// Execution Data node saves custom run metadata for execution filters
+{
+  const executionData = catalogNode("data.execution");
+  assert.ok(executionData, "catalog exposes an Execution Data node");
+  assert.equal(executionData?.group, "Data");
+  assert.equal(executionData?.params.some((field) => field.key === "key"), true);
+  assert.equal(executionData?.params.some((field) => field.key === "value"), true);
+}
+
 // groups follow CATALOG_GROUP_ORDER and cover triggers first
 {
   const groups = catalogGroups();

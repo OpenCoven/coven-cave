@@ -411,6 +411,21 @@ export const FLOW_CATALOG: FlowNodeType[] = [
     outputs: [],
     params: [{ key: "label", label: "Result label", control: "text", placeholder: "done" }],
   },
+  {
+    type: "data.execution",
+    label: "Execution Data",
+    category: "data",
+    group: "Data",
+    icon: "ph:tag-bold",
+    accent: CATEGORY_ACCENT.data,
+    description: "Saves a key/value field on each execution so runs can be filtered later.",
+    inputs: ONE_IN,
+    outputs: MAIN_OUT,
+    params: [
+      { key: "key", label: "Key", control: "text", placeholder: "customer" },
+      { key: "value", label: "Value", control: "text", placeholder: "OpenCoven" },
+    ],
+  },
 
   // ---- Human -------------------------------------------------------------
   {

@@ -159,7 +159,10 @@ function ReadingRow({
   );
 }
 
-function FontPreview({
+// A single type specimen: a small caption (role · font name) over a live
+// sample rendered in the selected font. Two of these stack inside one inset
+// panel so the preview reads as a cohesive specimen sheet with no dead gutter.
+function FontSpecimen({
   slot,
   label,
   fontId,
@@ -170,11 +173,15 @@ function FontPreview({
 }) {
   const opt = fontOptionById(fontId);
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="text-[12px] font-medium text-[var(--text-secondary)]">{label}</div>
-      <div className="truncate text-[11px] text-[var(--text-muted)]">{opt?.label}</div>
+    <div className="px-3.5 py-2.5">
+      <div className="flex items-baseline gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+          {label}
+        </span>
+        <span className="truncate text-[11px] text-[var(--text-muted)]">· {opt?.label}</span>
+      </div>
       <p
-        className="text-[15px] text-[var(--text-primary)] truncate"
+        className="mt-1 truncate text-[16px] leading-snug text-[var(--text-primary)]"
         style={{ fontFamily: opt ? fontStack(opt) : undefined }}
       >
         {PREVIEW[slot]}
@@ -302,35 +309,35 @@ export function FontSettings() {
         label="Typography"
         description="Choose the interface and code fonts and how text is sized. Changes apply immediately."
       >
-        {/* Fonts — one approved pair selector, then read-only previews. */}
-        <div className="grid grid-cols-1 gap-4 px-4 py-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <label className="text-[12px] font-medium text-[var(--text-secondary)]" htmlFor="typography-pair">
-              Typography pair
-            </label>
-            <select
-              id="typography-pair"
-              className="gh-select"
-              style={{ maxWidth: "360px" }}
-              value={pairId}
-              onChange={(e) => selectPair(e.target.value)}
-              aria-label="Typography pair"
-            >
-              {FONT_PAIRS.map((pair) => (
-                <option key={pair.id} value={pair.id}>
-                  {pair.label}
-                </option>
-              ))}
-            </select>
+        {/* Pair selector — label-left / control-right, consistent with every
+            other row in Typography (no wasted full-width row). */}
+        <ReadingRow label="Typography pair" hint="Approved interface + code pairing.">
+          <select
+            id="typography-pair"
+            className="gh-select"
+            style={{ maxWidth: "260px" }}
+            value={pairId}
+            onChange={(e) => selectPair(e.target.value)}
+            aria-label="Typography pair"
+          >
+            {FONT_PAIRS.map((pair) => (
+              <option key={pair.id} value={pair.id}>
+                {pair.label}
+              </option>
+            ))}
+          </select>
+        </ReadingRow>
+
+        {/* Live specimen — one inset panel, both samples, no center gutter. */}
+        <div className="px-4 py-3">
+          <div className="overflow-hidden rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] divide-y divide-[var(--border-hairline)]">
+            <FontSpecimen slot="sans" label="Interface" fontId={selectedPair.sansId} />
+            <FontSpecimen slot="mono" label={<>Code &amp; terminal</>} fontId={selectedPair.monoId} />
           </div>
-          <FontPreview slot="sans" label="Interface" fontId={selectedPair.sansId} />
-          <FontPreview slot="mono" label={<>Code &amp; terminal</>} fontId={selectedPair.monoId} />
         </div>
 
         {/* Text size — the one control that scales the whole UI, not just prose. */}
-        <div className="flex flex-col gap-1.5 px-4 py-3">
-          <label className="text-[12px] font-medium text-[var(--text-secondary)]">Text size</label>
-          <p className="text-[11px] text-[var(--text-muted)] -mt-0.5">Scale all text and UI.</p>
+        <ReadingRow label="Text size" hint="Scales all text and UI.">
           <div className={segWrap}>
             {SCREEN_SCALE_OPTIONS.map((option) => (
               <button
@@ -345,7 +352,7 @@ export function FontSettings() {
               </button>
             ))}
           </div>
-        </div>
+        </ReadingRow>
       </SettingsGroup>
 
       {/* Reading text — one shared caption, then compact label/control rows. */}

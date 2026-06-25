@@ -54,6 +54,11 @@ const contracts: RouteContract[] = [
   { route: "/flows/run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows/runs", methods: ["GET", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows/session-transcript", methods: ["GET"], kind: "json" },
+  { route: "/flows/webhook", methods: ["DELETE", "GET", "PATCH", "POST", "PUT"], kind: "json" },
+  { route: "/flows/webhook/[...path]", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], kind: "json" },
+  { route: "/flows/webhook-test", methods: ["DELETE", "GET", "PATCH", "POST", "PUT"], kind: "json" },
+  { route: "/flows/webhook-test/[...path]", methods: ["DELETE", "GET", "PATCH", "POST", "PUT"], kind: "json" },
+  { route: "/flows/webhook-test/listen", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/comment", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/github/comments", methods: ["GET"], kind: "json" },
   { route: "/github/item", methods: ["GET"], kind: "json" },
@@ -164,11 +169,20 @@ function routeFromFile(file: string): string {
 }
 
 function exportedMethods(source: string): string[] {
-  return [...source.matchAll(/export async function (GET|POST|PUT|PATCH|DELETE)\b/g)].map((match) => match[1]);
+  const direct = [...source.matchAll(/export async function (GET|POST|PUT|PATCH|DELETE)\b/g)].map((match) => match[1]);
+  const aliases = [...source.matchAll(/^\s*[A-Za-z_$][\w$]*\s+as (GET|POST|PUT|PATCH|DELETE)\b/gm)].map((match) => match[1]);
+  return [...direct, ...aliases];
 }
 
 function usesJsonResponse(source: string): boolean {
   return /NextResponse\.json|Response\.json|new Response\(/.test(source);
+}
+
+function effectiveRouteSource(file: string, source: string): string {
+  const reexport = source.match(/from\s+"(\.[^"]+\/route)";/);
+  if (!reexport) return source;
+  const target = path.resolve(path.dirname(file), `${reexport[1]}.ts`);
+  return `${source}\n${readFileSync(target, "utf8")}`;
 }
 
 const routeFiles = walkRoutes(apiRoot);
@@ -180,15 +194,16 @@ assert.deepEqual(actualRoutes, contractRoutes, "every src/app/api route must hav
 for (const contract of contracts) {
   const file = path.join(apiRoot, ...contract.route.slice(1).split("/"), "route.ts");
   const source = readFileSync(file, "utf8");
+  const effectiveSource = effectiveRouteSource(file, source);
 
   assert.deepEqual(exportedMethods(source), contract.methods, `${contract.route} HTTP method exports changed`);
-  assert.equal(usesJsonResponse(source), true, `${contract.route} must return an explicit Response/NextResponse`);
+  assert.equal(usesJsonResponse(effectiveSource), true, `${contract.route} must return an explicit Response/NextResponse`);
 
-  const readsJson = /req\.json\(\)|readJsonBody[<(]/.test(source);
+  const readsJson = /req\.json\(\)|readJsonBody[<(]/.test(effectiveSource);
   assert.equal(readsJson, contract.readsJson === true, `${contract.route} req.json() contract changed`);
 
   if (contract.invalidJson === "guarded") {
-    assert.match(source, /invalid json|invalid JSON|readJsonBody/, `${contract.route} must preserve invalid-JSON handling`);
+    assert.match(effectiveSource, /invalid json|invalid JSON|readJsonBody/, `${contract.route} must preserve invalid-JSON handling`);
   }
   if (contract.invalidJson === "fallback-empty") {
     assert.match(source, /let body:[\s\S]{0,160}=\s*\{\}/, `${contract.route} must initialize an optional request body`);

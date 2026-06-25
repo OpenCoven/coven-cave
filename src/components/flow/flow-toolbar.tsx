@@ -14,6 +14,8 @@ export type FlowToolbarProps = {
   tab: FlowTab;
   saving: boolean;
   executing: boolean;
+  manualDataRedacted: boolean;
+  productionDataRedacted: boolean;
   /** A live agent-session run is in progress — show Stop instead of Execute. */
   running: boolean;
   onRename: (name: string) => void;
@@ -21,6 +23,7 @@ export type FlowToolbarProps = {
   onTab: (tab: FlowTab) => void;
   onUndo: () => void;
   onRedo: () => void;
+  onToggleExecutionDataRedaction: (mode: "manual" | "production") => void;
   onSave: () => void;
   onExecute: () => void;
   onStop: () => void;
@@ -34,6 +37,17 @@ export function FlowToolbar(props: FlowToolbarProps) {
           <Icon name="ph:flow-arrow" width={16} />
         </span>
         <NameField value={props.name} onCommit={props.onRename} />
+        <button
+          type="button"
+          className={`flow-status-button${props.active ? " is-on" : ""}`}
+          role="switch"
+          aria-checked={props.active}
+          aria-label={props.active ? "Deactivate flow triggers" : "Activate flow triggers"}
+          onClick={props.onToggleActive}
+          title={props.active ? "Active — triggers armed" : "Inactive — triggers off"}
+        >
+          <span className="flow-status-dot" aria-hidden />
+        </button>
         {props.dirty && <span className="flow-toolbar-dirty" title="Unsaved changes">●</span>}
       </div>
 
@@ -77,17 +91,27 @@ export function FlowToolbar(props: FlowToolbarProps) {
         >
           <Icon name="ph:arrow-clockwise" width={15} />
         </button>
-
         <button
           type="button"
-          className={`flow-active-toggle${props.active ? " is-on" : ""}`}
+          className={`flow-toolbar-redaction${props.manualDataRedacted ? " is-on" : ""}`}
           role="switch"
-          aria-checked={props.active}
-          onClick={props.onToggleActive}
-          title={props.active ? "Active — triggers armed" : "Inactive"}
+          aria-checked={props.manualDataRedacted}
+          aria-label={props.manualDataRedacted ? "Store manual execution data" : "Redact manual execution data"}
+          title={props.manualDataRedacted ? "Manual data redacted" : "Manual data stored"}
+          onClick={() => props.onToggleExecutionDataRedaction("manual")}
         >
-          <span className="flow-active-knob" aria-hidden />
-          <span className="flow-active-label">{props.active ? "Active" : "Inactive"}</span>
+          <Icon name="ph:database-bold" width={14} />
+        </button>
+        <button
+          type="button"
+          className={`flow-toolbar-redaction${props.productionDataRedacted ? " is-on" : ""}`}
+          role="switch"
+          aria-checked={props.productionDataRedacted}
+          aria-label={props.productionDataRedacted ? "Store production execution data" : "Redact production execution data"}
+          title={props.productionDataRedacted ? "Production data redacted" : "Production data stored"}
+          onClick={() => props.onToggleExecutionDataRedaction("production")}
+        >
+          <Icon name="ph:lock-simple" width={14} />
         </button>
 
         <button
@@ -129,6 +153,7 @@ function NameField({ value, onCommit }: { value: string; onCommit: (name: string
   return (
     <input
       className="flow-toolbar-name"
+      size={Math.max(8, Math.min(28, draft.length + 1))}
       value={draft}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => draft.trim() && draft !== value && onCommit(draft)}

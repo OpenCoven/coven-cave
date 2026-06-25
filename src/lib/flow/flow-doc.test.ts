@@ -6,15 +6,20 @@ import {
   disconnect,
   edgeId,
   emptyFlow,
+  flowRunRedactsData,
   flowDraftReducer,
   initialFlowDraft,
   moveNodes,
   nextNodeId,
+  nodeExecutionChangedSinceSnapshot,
   removeNode,
   renameNode,
   sameDoc,
   setActive,
+  setExecutionDataRedaction,
   setNodeParam,
+  setNodePinnedData,
+  setPinnedDataForNodes,
   spliceNodeOnEdge,
   uniqueNodeName,
   type FlowDoc,
@@ -123,9 +128,45 @@ function base(): FlowDoc {
   let doc = base();
   doc = setNodeParam(doc, "a", "prompt", "hello");
   assert.equal(doc.nodes.find((n) => n.id === "a")?.params.prompt, "hello");
+  doc = setNodePinnedData(doc, "a", '{"ok":true}');
+  assert.equal(doc.nodes.find((n) => n.id === "a")?.pinnedData, '{"ok":true}', "pinned output is stored on the node");
+  doc = setNodePinnedData(doc, "a", "");
+  assert.equal(doc.nodes.find((n) => n.id === "a")?.pinnedData, undefined, "blank pinned output unpins the node");
   doc = setActive(doc, true);
   assert.equal(doc.active, true);
   assert.equal(setActive(doc, true), doc, "no-op active toggle returns same doc");
+}
+
+// setPinnedDataForNodes applies execution data to matching nodes only
+{
+  const doc = setPinnedDataForNodes(base(), {
+    trigger: "trigger fired",
+    a: "agent output",
+    ghost: "ignored",
+    b: "   ",
+  });
+  assert.equal(doc.nodes.find((n) => n.id === "trigger")?.pinnedData, "trigger fired");
+  assert.equal(doc.nodes.find((n) => n.id === "a")?.pinnedData, "agent output");
+  assert.equal(doc.nodes.find((n) => n.id === "b")?.pinnedData, undefined, "blank execution detail is not pinned");
+  assert.equal(doc.nodes.some((n) => n.id === "ghost"), false, "unknown execution node ids do not create nodes");
+}
+
+// execution-data redaction policy can differ for manual and production runs
+{
+  let doc = base();
+  assert.equal(flowRunRedactsData(doc, "manual"), false, "missing policy keeps manual run data inspectable");
+  assert.equal(flowRunRedactsData(doc, "production"), false, "missing policy keeps production run data inspectable");
+
+  doc = setExecutionDataRedaction(doc, "manual", true);
+  assert.equal(flowRunRedactsData(doc, "manual"), true, "manual runs can redact stored execution data");
+  assert.equal(flowRunRedactsData(doc, "production"), false, "production policy remains independent");
+
+  doc = setExecutionDataRedaction(doc, "production", true);
+  assert.equal(flowRunRedactsData(doc, "production"), true, "production runs can redact stored execution data");
+
+  doc = setExecutionDataRedaction(doc, "manual", false);
+  assert.equal(flowRunRedactsData(doc, "manual"), false, "manual redaction can be disabled");
+  assert.deepEqual(doc.executionData, { redactProduction: true }, "false policy values are omitted");
 }
 
 // draft reducer: apply/undo/redo + dirty
@@ -151,6 +192,40 @@ function base(): FlowDoc {
   const b = { ...a, updatedAt: "2099-01-01T00:00:00.000Z" };
   assert.equal(sameDoc(a, b), true);
   assert.equal(sameDoc(a, setActive(a, true)), false);
+}
+
+// execution signatures ignore canvas-only edits but flag stale run data
+{
+  let snapshot = base();
+  snapshot = connect(snapshot, "trigger", "main", "a", "in");
+  const moved = moveNodes(snapshot, { a: { x: 500, y: 120 } });
+  const renamed = renameNode(snapshot, "a", "Renamed display only");
+  const noted = { ...snapshot, nodes: snapshot.nodes.map((n) => n.id === "a" ? { ...n, notes: "operator note" } : n) };
+  assert.equal(nodeExecutionChangedSinceSnapshot(moved, snapshot, "a"), false, "position-only edits keep run data fresh");
+  assert.equal(nodeExecutionChangedSinceSnapshot(renamed, snapshot, "a"), false, "display-name edits keep run data fresh");
+  assert.equal(nodeExecutionChangedSinceSnapshot(noted, snapshot, "a"), false, "notes-only edits keep run data fresh");
+  assert.equal(nodeExecutionChangedSinceSnapshot(snapshot, undefined, "a"), false, "old runs without snapshots are not marked stale");
+
+  assert.equal(
+    nodeExecutionChangedSinceSnapshot(setNodeParam(snapshot, "a", "prompt", "new"), snapshot, "a"),
+    true,
+    "param edits make stored run data stale",
+  );
+  assert.equal(
+    nodeExecutionChangedSinceSnapshot(setNodePinnedData(snapshot, "a", "fixture"), snapshot, "a"),
+    true,
+    "pinned-data edits make stored run data stale",
+  );
+  assert.equal(
+    nodeExecutionChangedSinceSnapshot(connect(snapshot, "a", "main", "b", "in"), snapshot, "a"),
+    true,
+    "edge edits touching the node make stored run data stale",
+  );
+  assert.equal(
+    nodeExecutionChangedSinceSnapshot(removeNode(snapshot, "a"), snapshot, "a"),
+    true,
+    "missing current node makes stored run data stale",
+  );
 }
 
 // spliceNodeOnEdge: A→B becomes A→mid→B

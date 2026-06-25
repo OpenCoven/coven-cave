@@ -17,7 +17,7 @@ import type { FlowEdge } from "./flow-doc.ts";
 export type FlowNodePhase = "pending" | "running" | "succeeded" | "failed" | "skipped";
 
 /** Live marker status → canvas phase. `active` reads as "running". */
-export function flowPhase(status: WorkflowStepProgressStatus): FlowNodePhase {
+export function flowPhase(status: WorkflowStepProgressStatus | FlowRunStepStatus): FlowNodePhase {
   return status === "active" ? "running" : status;
 }
 
@@ -46,12 +46,25 @@ export function parseFlowRunProgress(transcript: string, orderedNodeIds: string[
   };
 }
 
+/** Persisted run steps → canvas phases for inspecting a historical execution. */
+export function phasesFromRunSteps(steps: FlowRunStepRecord[]): Record<string, FlowNodePhase> {
+  return Object.fromEntries(steps.map((step) => [step.id, step.status]));
+}
+
 export type FlowNodeRunData = {
   status: FlowNodePhase;
+  /** The current node wiring/config differs from the snapshot that produced this data. */
+  stale?: boolean;
   /** This node's narration from the run (its "output"). */
   output: string;
   /** Upstream nodes feeding this one, with their narration (its "input"). */
   inputs: Array<{ nodeId: string; detail: string }>;
+};
+
+type FlowNodeRunDataStep = {
+  id: string;
+  status: WorkflowStepProgressStatus | FlowRunStepStatus;
+  detail?: string;
 };
 
 /**
@@ -61,7 +74,7 @@ export type FlowNodeRunData = {
  */
 export function selectNodeRunData(
   edges: FlowEdge[],
-  steps: WorkflowStepProgress[],
+  steps: FlowNodeRunDataStep[],
   nodeId: string,
 ): FlowNodeRunData {
   const byId = new Map(steps.map((step) => [step.id, step]));
@@ -93,9 +106,16 @@ function finalStepStatus(status: WorkflowStepProgressStatus | undefined): FlowRu
 export function finalizeFlowSteps(
   runSteps: FlowRunStepRecord[],
   progressSteps: WorkflowStepProgress[],
+  options: { redactDetails?: boolean } = {},
 ): { steps: FlowRunStepRecord[]; status: FlowRunStatus } {
-  const byId = new Map(progressSteps.map((step) => [step.id, step.status]));
-  const steps = runSteps.map((step) => ({ ...step, status: finalStepStatus(byId.get(step.id)) }));
+  const byId = new Map(progressSteps.map((step) => [step.id, step]));
+  const steps = runSteps.map((step) => {
+    const { detail: _detail, ...rest } = step;
+    const progress = byId.get(step.id);
+    const next: FlowRunStepRecord = { ...rest, status: finalStepStatus(progress?.status) };
+    if (!options.redactDetails && progress?.detail) next.detail = progress.detail;
+    return next;
+  });
   const status: FlowRunStatus = steps.some((step) => step.status === "failed") ? "failed" : "succeeded";
   return { steps, status };
 }

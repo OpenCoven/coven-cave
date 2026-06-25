@@ -2,30 +2,30 @@
 #
 # Format:
 #   ENV_VAR_NAME:
-#     ref: "op://VaultName/ItemTitle/field"   # 1Password secret reference
+#     ref: "op://VaultName/ItemTitle/field"
 #     description: "human-readable note"
-#     required: false   # whether app will warn if unresolved
+#     required: false
 #
 # Secrets are NEVER stored here — only the op:// reference.
-# Cave resolves them at runtime via `op read` (requires 1Password desktop + CLI authed).
-# This file is safe to commit; it contains no credentials.
+# Safe to commit; contains no credentials.
 
 GITHUB_PAT:
   ref: "op://Development/GitHub PAT/credential"
   description: "GitHub Personal Access Token (read:user, repo, notifications)"
-  required: false
 
 GITHUB_USERNAME:
   ref: "op://Development/GitHub PAT/username"
   description: "GitHub username associated with the PAT"
-  required: false
 
 OPENAI_API_KEY:
   ref: "op://Development/OpenAI API Key 2/credential"
   description: "OpenAI API key, used to mint ephemeral tokens for Realtime voice"
-  required: false
 
 GOOGLE_API_KEY:
   ref: ""
   description: "Google AI Studio key, used to mint ephemeral tokens for Gemini Live (v1.1)"
-  required: false
+
+GITHUB_PERSONAL_ACCESS_TOKEN:
+  ref: "op://Developer/GitHub PAT/credential"
+  description: "GitHub Token"
+  required: true

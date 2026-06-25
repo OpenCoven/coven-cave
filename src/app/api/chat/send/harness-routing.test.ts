@@ -19,6 +19,10 @@ const chatRoute = await readFile(
   new URL("./route.ts", import.meta.url),
   "utf8",
 );
+const streamEvents = await readFile(
+  new URL("../../../../lib/stream-events.ts", import.meta.url),
+  "utf8",
+);
 const openclawBridge = await readFile(
   new URL("../../../../lib/openclaw-bridge.ts", import.meta.url),
   "utf8",
@@ -330,8 +334,8 @@ assert.match(
 );
 
 assert.match(
-  chatRoute,
-  /\| \{ kind: "progress"; id\?: string; label: string; detail\?: string; status\?: "running" \| "done" \| "error"; durationMs\?: number \}/,
+  streamEvents,
+  /\|\s*\{\s*kind: "progress";\s*id\?: string;\s*label: string;\s*detail\?: string;\s*status\?: "running" \| "done" \| "error";\s*durationMs\?: number;\s*\}/,
   "Native chat streams should expose progress SSE events for quiet phases",
 );
 
@@ -767,7 +771,7 @@ assert.match(
 );
 
 assert.match(
-  chatRoute,
+  streamEvents,
   /kind: "done";[\s\S]*?usage\?: TurnUsage;[\s\S]*?costUsd\?: number;/,
   "The done StreamEvent must carry optional usage and costUsd fields (CHAT-D12-02)",
 );

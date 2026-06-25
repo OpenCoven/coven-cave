@@ -5,6 +5,7 @@
 // Fetch helpers wrap the /api/flows endpoints.
 
 import type { FlowDoc } from "./flow/flow-doc.ts";
+import type { FlowExecutionMode } from "./flow/flow-compile.ts";
 
 export type { FlowDoc, FlowNode, FlowEdge } from "./flow/flow-doc.ts";
 
@@ -16,6 +17,7 @@ export type FlowRunStepRecord = {
   id: string;
   type: string;
   status: FlowRunStepStatus;
+  detail?: string;
 };
 
 export type FlowRunRecord = {
@@ -23,6 +25,12 @@ export type FlowRunRecord = {
   flowId: string;
   flowName?: string;
   status: FlowRunStatus;
+  /** Manual editor/test runs can use pinned data; production trigger runs ignore it. */
+  mode?: FlowExecutionMode;
+  /** Saved custom execution data, used for execution-history filtering. */
+  customData?: Record<string, string>;
+  /** Per-node execution details were intentionally not persisted. */
+  redacted?: boolean;
   startedAt: string;
   finishedAt?: string;
   steps: FlowRunStepRecord[];
@@ -30,6 +38,8 @@ export type FlowRunRecord = {
   source: "cave" | "daemon";
   /** Live agent session id when the session executor ran the flow. */
   sessionId?: string;
+  /** Exact workflow document used for this execution, for original-workflow retry. */
+  flowSnapshot?: FlowDoc;
 };
 
 export type FlowListResponse = { ok: boolean; flows?: FlowDoc[]; error?: string };
@@ -42,6 +52,14 @@ export type FlowRunResponse = {
   sessionId?: string;
   run?: FlowRunRecord;
   unavailable?: boolean;
+  error?: string;
+};
+export type FlowWebhookListenResponse = {
+  ok: boolean;
+  method?: string;
+  path?: string;
+  testUrlPath?: string;
+  expiresAt?: string;
   error?: string;
 };
 
@@ -68,13 +86,25 @@ export async function deleteFlow(id: string): Promise<FlowMutationResponse> {
   return readJson<FlowMutationResponse>(response);
 }
 
-export async function runFlow(id: string): Promise<FlowRunResponse> {
+export async function runFlow(id: string, targetNodeId?: string, flowSnapshot?: FlowDoc): Promise<FlowRunResponse> {
   const response = await fetch("/api/flows/run", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id }),
+    body: JSON.stringify({ id, targetNodeId, flowSnapshot }),
   });
   return readJson<FlowRunResponse>(response);
+}
+
+export async function listenFlowWebhookTest(
+  flow: FlowDoc,
+  triggerId: string,
+): Promise<FlowWebhookListenResponse> {
+  const response = await fetch("/api/flows/webhook-test/listen", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ flow, triggerId }),
+  });
+  return readJson<FlowWebhookListenResponse>(response);
 }
 
 export async function listFlowRuns(flowId: string): Promise<FlowRunsResponse> {
@@ -95,7 +125,7 @@ export async function recordFlowRun(input: Omit<FlowRunRecord, "id">): Promise<{
 
 export async function updateFlowRun(
   id: string,
-  patch: Partial<Pick<FlowRunRecord, "status" | "steps" | "finishedAt" | "summary">>,
+  patch: Partial<Pick<FlowRunRecord, "status" | "steps" | "finishedAt" | "summary" | "redacted">>,
 ): Promise<{ ok: boolean; run?: FlowRunRecord }> {
   const response = await fetch("/api/flows/runs", {
     method: "PATCH",

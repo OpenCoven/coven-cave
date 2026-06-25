@@ -13,15 +13,20 @@ import {
   connect,
   disconnect,
   emptyFlow,
+  flowRunRedactsData,
   flowDraftReducer,
   initialFlowDraft,
   moveNodes,
+  nodeExecutionChangedSinceSnapshot,
   removeNode,
   renameFlow,
   renameNode,
   setActive,
+  setExecutionDataRedaction,
   setNodeNotes,
   setNodeParam,
+  setNodePinnedData,
+  setPinnedDataForNodes,
   spliceNodeOnEdge,
   toggleNodeDisabled,
   updateSticky,
@@ -34,10 +39,11 @@ import {
 } from "@/lib/flow/flow-doc";
 import { buildPromptFlow, flowNameFromPrompt } from "@/lib/flow/flow-prompt";
 import { flowRunBlockReason } from "@/lib/flow/flow-compile";
-import { finalizeFlowSteps, selectNodeRunData } from "@/lib/flow/flow-progress";
+import { finalizeFlowSteps, phasesFromRunSteps, selectNodeRunData } from "@/lib/flow/flow-progress";
 import {
   clearFlowRuns,
   deleteFlow,
+  listenFlowWebhookTest,
   listFlowRuns,
   listFlows,
   recordFlowRun,
@@ -99,6 +105,10 @@ export function FlowView() {
   // Live per-node phases parsed from the active run's agent-session transcript.
   const progress = useFlowRun(activeRun);
   const running = activeRun?.status === "running" && !progress.done;
+  const displayedPhases = useMemo(
+    () => activeRun ? (progress.markersFound ? progress.phases : phasesFromRunSteps(activeRun.steps)) : null,
+    [activeRun, progress.markersFound, progress.phases],
+  );
 
   // What picking a catalog node should do: drop it free, wire it to a dragged
   // handle, or splice it into an edge.
@@ -206,7 +216,7 @@ export function FlowView() {
   // freeze the overlay at its final colours and persist the verdict + steps.
   useEffect(() => {
     if (!activeRun || activeRun.status !== "running" || !progress.done) return;
-    const { steps, status } = finalizeFlowSteps(activeRun.steps, progress.steps);
+    const { steps, status } = finalizeFlowSteps(activeRun.steps, progress.steps, { redactDetails: activeRun.redacted });
     const finishedAt = new Date().toISOString();
     const finalized: FlowRunRecord = { ...activeRun, status, steps, finishedAt };
     setActiveRun(finalized); // status flips off "running" → polling stops
@@ -236,11 +246,17 @@ export function FlowView() {
     [doc, selectedNodeId],
   );
 
-  // Input/output data shown in the detail view, from the active/last run's
-  // per-node narration. Null until a run has produced markers.
+  // Input/output data shown in the detail view, from the live transcript or
+  // persisted run-step detail when inspecting a historical execution.
   const selectedRunData = useMemo(() => {
-    if (!doc || !selectedNode || !activeRun || !progress.markersFound) return null;
-    return selectNodeRunData(doc.edges, progress.steps, selectedNode.id);
+    if (!doc || !selectedNode || !activeRun) return null;
+    const runDataSteps = progress.markersFound ? progress.steps : activeRun.steps;
+    if (!progress.markersFound && !runDataSteps.some((step) => step.detail?.trim())) return null;
+    const runData = selectNodeRunData(doc.edges, runDataSteps, selectedNode.id);
+    return {
+      ...runData,
+      stale: nodeExecutionChangedSinceSnapshot(doc, activeRun.flowSnapshot, selectedNode.id),
+    };
   }, [doc, selectedNode, activeRun, progress.markersFound, progress.steps]);
 
   const uniqueId = useCallback(
@@ -420,9 +436,10 @@ export function FlowView() {
     }
   }, [dispatchDraft, doc, saveFlow, showNotice]);
 
-  const execute = useCallback(async () => {
+  const execute = useCallback(async (nodeId?: string, flowSnapshot?: FlowDoc) => {
     if (!doc) return;
-    const block = flowRunBlockReason(doc);
+    const runDoc = flowSnapshot ?? doc;
+    const block = flowRunBlockReason(runDoc, nodeId);
     if (!block.ok) {
       showNotice(block.reason ?? "this flow can't run yet");
       return;
@@ -430,24 +447,27 @@ export function FlowView() {
     setExecuting(true);
     try {
       // Persist first so the run executes the latest graph.
-      if (dirty) {
+      if (dirty && !flowSnapshot) {
         const saved = await saveFlow(doc);
         if (saved.ok && saved.flow) dispatchDraft({ type: "mark-saved", doc: saved.flow });
       }
-      const result = await runFlow(doc.id);
+      const result = await runFlow(runDoc.id, nodeId, flowSnapshot);
       if (result.unavailable) {
         // No daemon to spawn a session — record an honest local preview so the
         // run still lands in history, and tell the user nothing executed.
         await recordFlowRun({
-          flowId: doc.id,
-          flowName: doc.name,
+          flowId: runDoc.id,
+          flowName: runDoc.name,
           status: "preview",
+          mode: "manual",
+          redacted: flowRunRedactsData(runDoc, "manual") || undefined,
           startedAt: new Date().toISOString(),
           steps: [],
-          summary: "preview only — daemon offline",
+          summary: nodeId ? `preview only — daemon offline (${nodeId})` : "preview only — daemon offline",
           source: "cave",
+          flowSnapshot: runDoc,
         });
-        await loadRuns(doc.id);
+        await loadRuns(runDoc.id);
         setTab("executions");
         showNotice("Daemon offline — recorded a preview (no execution).");
         return;
@@ -462,17 +482,19 @@ export function FlowView() {
         setActiveRun(result.run);
         setSelectedNodeId(null);
         setTab("editor");
-        showNotice("Running — watch the nodes light up, or open the session in Chat.");
+        showNotice(nodeId ? "Running selected step — upstream nodes will light up first." : "Running — watch the nodes light up, or open the session in Chat.");
       } else {
         showNotice("Execution started.");
       }
-      await loadRuns(doc.id);
+      await loadRuns(runDoc.id);
     } catch (err) {
       showNotice(err instanceof Error ? err.message : "run failed");
     } finally {
       setExecuting(false);
     }
   }, [dirty, dispatchDraft, doc, loadRuns, recordFlowRun, runFlow, saveFlow, showNotice]);
+
+  const executeNode = useCallback((nodeId: string) => void execute(nodeId), [execute]);
 
   const stop = useCallback(async () => {
     if (!activeRun) return;
@@ -493,6 +515,48 @@ export function FlowView() {
   const openSession = useCallback((sessionId: string) => {
     if (typeof window !== "undefined") window.location.hash = `chat-${sessionId}`;
   }, []);
+
+  const inspectRun = useCallback((run: FlowRunRecord) => {
+    setActiveRun(run);
+    setSelectedNodeId(
+      run.steps.find((step) => step.status === "failed")?.id ?? run.steps[0]?.id ?? null,
+    );
+    setTab("editor");
+    showNotice("Inspecting execution on the canvas.");
+  }, [showNotice]);
+
+  const retryRun = useCallback((run: FlowRunRecord, mode: "current" | "original") => {
+    const flowSnapshot = mode === "original" ? run.flowSnapshot : undefined;
+    if (mode === "original" && !flowSnapshot) {
+      showNotice("This execution does not have an original workflow snapshot.");
+      return;
+    }
+    setActiveRun(run);
+    setSelectedNodeId(null);
+    void execute(undefined, flowSnapshot);
+  }, [execute, showNotice]);
+
+  const loadRunData = useCallback((run: FlowRunRecord) => {
+    const detailByNodeId = Object.fromEntries(
+      run.steps
+        .filter((step) => step.detail?.trim())
+        .map((step) => [step.id, step.detail?.trim() ?? ""]),
+    );
+    if (Object.keys(detailByNodeId).length === 0) {
+      showNotice("No stored execution data to copy.");
+      return;
+    }
+    mutate((d) => setPinnedDataForNodes(d, detailByNodeId));
+    setActiveRun(run);
+    setSelectedNodeId(
+      run.steps.find((step) => step.status === "failed")?.id ??
+        run.steps.find((step) => step.detail?.trim())?.id ??
+        null,
+    );
+    setTab("editor");
+    const detailCount = Object.keys(detailByNodeId).length;
+    showNotice(`Pinned execution data for ${detailCount} node${detailCount === 1 ? "" : "s"}.`);
+  }, [mutate, showNotice]);
 
   // ---- Canvas / node mutation handlers ----
   const requestAdd = useCallback((position: FlowPosition) => {
@@ -577,7 +641,22 @@ export function FlowView() {
     [mutate],
   );
   const onChangeNotes = useCallback((id: string, notes: string) => mutate((d) => setNodeNotes(d, id, notes)), [mutate]);
+  const onPinData = useCallback((id: string, data: string) => mutate((d) => setNodePinnedData(d, id, data)), [mutate]);
   const onToggleDisabled = useCallback((id: string) => mutate((d) => toggleNodeDisabled(d, id)), [mutate]);
+  const listenWebhookTest = useCallback(
+    async (id: string) => {
+      if (!doc) return null;
+      const result = await listenFlowWebhookTest(doc, id);
+      if (!result.ok || !result.testUrlPath || !result.expiresAt) {
+        showNotice(result.error ?? "couldn't listen for test event");
+        return null;
+      }
+      const origin = typeof window === "undefined" ? "" : window.location.origin;
+      showNotice("Listening for test event for 120 seconds.");
+      return { testUrl: `${origin}${result.testUrlPath}`, expiresAt: result.expiresAt };
+    },
+    [doc, showNotice],
+  );
   const onChangeSticky = useCallback(
     (id: string, patch: Partial<FlowStickyData>) => mutate((d) => updateSticky(d, id, patch)),
     [mutate],
@@ -668,8 +747,11 @@ export function FlowView() {
               tab={tab}
               saving={saving}
               executing={executing}
+              manualDataRedacted={flowRunRedactsData(doc, "manual")}
+              productionDataRedacted={flowRunRedactsData(doc, "production")}
               onRename={(name) => mutate((d) => renameFlow(d, name))}
               onToggleActive={() => mutate((d) => setActive(d, !d.active))}
+              onToggleExecutionDataRedaction={(mode) => mutate((d) => setExecutionDataRedaction(d, mode, !flowRunRedactsData(d, mode)))}
               onTab={setTab}
               onUndo={() => dispatchDraft({ type: "undo" })}
               onRedo={() => dispatchDraft({ type: "redo" })}
@@ -686,7 +768,7 @@ export function FlowView() {
                 <FlowCanvas
                   doc={doc}
                   selectedNodeId={selectedNodeId}
-                  phases={activeRun ? progress.phases : null}
+                  phases={displayedPhases}
                   activeNodeId={running ? progress.activeNodeId : null}
                   viewResetKey={viewResetKey}
                   onSelectNode={setSelectedNodeId}
@@ -724,6 +806,9 @@ export function FlowView() {
                     onChangeParam={(key, value) => onChangeParam(selectedNode.id, key, value)}
                     onChangeNotes={(notes) => onChangeNotes(selectedNode.id, notes)}
                     onToggleDisabled={() => onToggleDisabled(selectedNode.id)}
+                    onExecuteNode={() => void executeNode(selectedNode.id)}
+                    onPinData={(data) => onPinData(selectedNode.id, data)}
+                    onListenWebhookTest={() => listenWebhookTest(selectedNode.id)}
                     onChangeSticky={(patch) => onChangeSticky(selectedNode.id, patch)}
                     onDelete={() => onRemoveNode(selectedNode.id)}
                     onClose={() => setSelectedNodeId(null)}
@@ -734,6 +819,9 @@ export function FlowView() {
               <FlowExecutions
                 runs={runs}
                 loading={runsLoading}
+                onInspectRun={inspectRun}
+                onRetryRun={retryRun}
+                onLoadRunData={loadRunData}
                 onOpenSession={openSession}
                 onClear={() => {
                   if (selectedId) {

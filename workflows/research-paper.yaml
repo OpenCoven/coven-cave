@@ -1,0 +1,96 @@
+id: research-paper
+version: 0.1.0
+name: Research Paper
+summary: Produce a cited Markdown paper from a topic input with at least 8 distinct source materials and a quality check.
+familiar: sage
+pattern: adversarial-verification
+tags:
+  - research
+  - paper
+  - synthesis
+limits:
+  max_agents: 6
+  timeout_s: 3600
+  cost_ceiling_usd: 10
+permissions:
+  - web.read
+  - file.read
+  - memory.read
+  - file.write
+visibility:
+  public: true
+  coven_cave: true
+steps:
+  - id: input
+    kind: input
+    name: Topic input
+    summary: Topic, scope, audience, length target, and optional citation style for the Markdown paper.
+  - id: scope-paper
+    kind: agent
+    name: Scope paper
+    uses: sage
+    summary: Turn the topic input into a research question, thesis direction, inclusion criteria, and evidence standard.
+    requires:
+      - input
+  - id: source-plan
+    kind: agent
+    name: Source plan
+    uses: sage
+    summary: Plan distinct source categories and search angles so the final paper is not built from one material type.
+    requires:
+      - scope-paper
+  - id: gather-sources
+    kind: agent
+    name: Gather sources
+    uses: sage
+    summary: Collect at least 8 source materials, each with title, author or publisher, date, URL or location, source type, and relevance note.
+    requires:
+      - source-plan
+  - id: distinct-source-check
+    kind: agent
+    name: Distinct source check
+    uses: sage
+    summary: Deduplicate sources and confirm at least 8 distinct source materials remain before drafting.
+    requires:
+      - gather-sources
+  - id: outline-paper
+    kind: agent
+    name: Outline paper
+    uses: sage
+    summary: Build a paper outline that maps each major claim to one or more verified sources.
+    requires:
+      - distinct-source-check
+  - id: draft-markdown
+    kind: agent
+    name: Draft Markdown paper
+    uses: sage
+    summary: Write the paper as Markdown with citations in the requested style and a references section containing at least 8 distinct sources.
+    requires:
+      - outline-paper
+  - id: quality-check
+    kind: agent
+    name: Quality check
+    uses: sage
+    summary: Verify topic coverage, citation support, distinct-source count, Markdown structure, unsupported claims, and obvious factual conflicts.
+    requires:
+      - draft-markdown
+  - id: final-paper
+    kind: agent
+    name: Final paper
+    uses: sage
+    summary: Apply quality-check fixes and produce the final Markdown paper plus a short quality-check report.
+    requires:
+      - quality-check
+  - id: save-paper
+    kind: tool
+    name: Save paper
+    uses: cave.output
+    summary: Save the final paper as a .md artifact and include the source list and quality-check report.
+    requires:
+      - final-paper
+  - id: output
+    kind: output
+    name: Markdown paper
+    summary: A final .md paper with at least 8 distinct sources and an attached quality-check report.
+    requires:
+      - save-paper

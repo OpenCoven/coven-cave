@@ -5,6 +5,7 @@ import { Icon } from "@/lib/icon";
 import { STICKY_COLORS, type FlowNodeType, type FlowParamField } from "@/lib/flow/flow-catalog";
 import type { FlowNode, FlowParamValue, FlowStickyData } from "@/lib/flow/flow-doc";
 import type { FlowNodeRunData } from "@/lib/flow/flow-progress";
+import { webhookProductionPath, webhookTestPath } from "@/lib/flow/flow-webhook";
 
 export type NodeDetailOption = { value: string; label: string };
 
@@ -19,6 +20,9 @@ export type NodeDetailViewProps = {
   onChangeParam: (key: string, value: FlowParamValue) => void;
   onChangeNotes: (notes: string) => void;
   onToggleDisabled: () => void;
+  onExecuteNode: () => void;
+  onPinData: (data: string) => void;
+  onListenWebhookTest: () => Promise<{ testUrl: string; expiresAt: string } | null>;
   onChangeSticky: (patch: Partial<FlowStickyData>) => void;
   onDelete: () => void;
   onClose: () => void;
@@ -51,6 +55,10 @@ export function NodeDetailView(props: NodeDetailViewProps) {
       {def?.description && <p className="flow-ndv-desc">{def.description}</p>}
 
       <div className="flow-ndv-fields">
+        {node.type === "trigger.webhook" && (
+          <WebhookUrlsSection node={node} onListenWebhookTest={props.onListenWebhookTest} />
+        )}
+
         {(def?.params ?? []).length === 0 && (
           <p className="flow-ndv-no-params">This node has no parameters.</p>
         )}
@@ -77,9 +85,15 @@ export function NodeDetailView(props: NodeDetailViewProps) {
         </label>
 
         {props.runData && <RunDataSection data={props.runData} />}
+
+        <PinnedDataSection node={node} runData={props.runData} onPinData={props.onPinData} />
       </div>
 
       <footer className="flow-ndv-foot">
+        <button type="button" className="flow-ndv-action flow-ndv-primary" onClick={props.onExecuteNode}>
+          <Icon name="ph:play" width={13} />
+          Execute step
+        </button>
         <button type="button" className="flow-ndv-action" onClick={props.onToggleDisabled}>
           <Icon name={node.disabled ? "ph:play" : "ph:pause"} width={13} />
           {node.disabled ? "Enable" : "Disable"}
@@ -93,6 +107,72 @@ export function NodeDetailView(props: NodeDetailViewProps) {
   );
 }
 
+function WebhookUrlsSection({
+  node,
+  onListenWebhookTest,
+}: {
+  node: FlowNode;
+  onListenWebhookTest: () => Promise<{ testUrl: string; expiresAt: string } | null>;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [testListen, setTestListen] = useState<{ testUrl: string; expiresAt: string } | null>(null);
+  const method = typeof node.params.method === "string" && node.params.method.trim()
+    ? node.params.method.trim().toUpperCase()
+    : "POST";
+  const path = typeof node.params.path === "string" ? node.params.path : "/hook";
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  const productionUrl = `${origin}${webhookProductionPath(path)}`;
+  const testUrl = testListen?.testUrl ?? `${origin}${webhookTestPath(path)}`;
+  const copyUrl = async (url: string) => {
+    if (!navigator.clipboard) return;
+    await navigator.clipboard.writeText(url);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
+  const listen = async () => {
+    setListening(true);
+    try {
+      const result = await onListenWebhookTest();
+      if (result) setTestListen(result);
+    } finally {
+      setListening(false);
+    }
+  };
+
+  return (
+    <section className="flow-ndv-webhook" aria-label="Webhook URLs">
+      <div className="flow-ndv-webhook-head">
+        <span className="flow-ndv-label">Webhook URLs</span>
+        <span className="flow-ndv-webhook-method">{method}</span>
+      </div>
+      <div className="flow-ndv-webhook-url-row">
+        <span className="flow-ndv-webhook-url-label">Production URL</span>
+        <code className="flow-ndv-webhook-url">{productionUrl}</code>
+        <button type="button" className="flow-ndv-mini-action" onClick={() => void copyUrl(productionUrl)}>
+          {copied ? "Copied" : "Copy URL"}
+        </button>
+      </div>
+      <div className="flow-ndv-webhook-url-row">
+        <span className="flow-ndv-webhook-url-label">Test URL</span>
+        <code className="flow-ndv-webhook-url">{testUrl}</code>
+        <button type="button" className="flow-ndv-mini-action" onClick={() => void copyUrl(testUrl)}>
+          {copied ? "Copied" : "Copy URL"}
+        </button>
+      </div>
+      <button type="button" className="flow-ndv-webhook-listen" disabled={listening} onClick={() => void listen()}>
+        <Icon name="ph:play" width={13} />
+        {listening ? "Listening..." : "Listen for test event"}
+      </button>
+      <p className="flow-ndv-webhook-note">
+        {testListen
+          ? `Test URL is listening until ${new Date(testListen.expiresAt).toLocaleTimeString()}.`
+          : "Production URL is armed when this flow is active and saved. Test URL listens for 120 seconds."}
+      </p>
+    </section>
+  );
+}
+
 /** n8n-style data view: what fed into this node and what it produced, from the
  *  latest run's per-node narration. */
 function RunDataSection({ data }: { data: FlowNodeRunData }) {
@@ -103,7 +183,11 @@ function RunDataSection({ data }: { data: FlowNodeRunData }) {
           {RUN_STATUS_LABEL[data.status]}
         </span>
         <span className="flow-ndv-data-title">Run data</span>
+        {data.stale && <span className="flow-ndv-data-stale">Stale data</span>}
       </div>
+      {data.stale && (
+        <p className="flow-ndv-data-stale-note">Node changed since this execution. Rerun it to refresh data.</p>
+      )}
 
       <div className="flow-ndv-data-block">
         <span className="flow-ndv-data-label">
@@ -128,6 +212,50 @@ function RunDataSection({ data }: { data: FlowNodeRunData }) {
         <pre className="flow-ndv-data-text">{data.output.trim() || "—"}</pre>
       </div>
     </div>
+  );
+}
+
+function PinnedDataSection({
+  node,
+  runData,
+  onPinData,
+}: {
+  node: FlowNode;
+  runData: FlowNodeRunData | null;
+  onPinData: (data: string) => void;
+}) {
+  const pinned = node.pinnedData ?? "";
+  const canPinOutput = Boolean(runData?.output.trim());
+  return (
+    <section className={`flow-ndv-pinned${pinned ? " is-active" : ""}`} aria-label="Pinned data">
+      <div className="flow-ndv-pinned-head">
+        <span className="flow-ndv-label">Pinned data</span>
+        <div className="flow-ndv-pinned-actions">
+          <button
+            type="button"
+            className="flow-ndv-mini-action"
+            disabled={!canPinOutput}
+            onClick={() => onPinData(runData?.output ?? "")}
+          >
+            Pin output
+          </button>
+          {pinned && (
+            <button type="button" className="flow-ndv-mini-action" onClick={() => onPinData("")}>
+              Unpin
+            </button>
+          )}
+        </div>
+      </div>
+      <textarea
+        className="flow-ndv-textarea flow-ndv-code"
+        rows={4}
+        spellCheck={false}
+        value={pinned}
+        placeholder="Paste JSON or text to reuse as this node's output during manual runs"
+        onChange={(event) => onPinData(event.target.value)}
+      />
+      {pinned && <p className="flow-ndv-pinned-note">Manual runs reuse this output instead of recomputing the node.</p>}
+    </section>
   );
 }
 
