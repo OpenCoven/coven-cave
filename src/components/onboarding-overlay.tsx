@@ -118,6 +118,10 @@ const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
   (target) => INSTALL_TARGET_KIND[target] === "npm",
 );
 
+/** Persists the user's choice to skip the (required) Coven Code install so a
+ *  failing install can't permanently strand onboarding. */
+const COVEN_CODE_SKIP_KEY = "cave:onboarding:skip-coven-code";
+
 type SshCheckState =
   | { state: "idle" }
   | { state: "checking" }
@@ -338,6 +342,13 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [installResults, setInstallResults] = useState<
     Partial<Record<InstallTarget, InstallResult>>
   >({});
+  // npm installs are mutually exclusive server-side (the route 409s a second
+  // concurrent one), so a user who clicks "install both" otherwise gets a
+  // failure on the second. Queue npm targets here and drain them one at a time.
+  const [installQueue, setInstallQueue] = useState<InstallTarget[]>([]);
+  // "Required + skippable": Coven Code is required to finish setup, but a
+  // user can skip it so a failing install never permanently strands onboarding.
+  const [covenCodeSkipped, setCovenCodeSkipped] = useState(false);
   const [nodeHint, setNodeHint] = useState<string | null>(null);
   // Remote (SSH) runtime for the new familiar (/api/onboarding/ssh-check)
   const [sshEnabled, setSshEnabled] = useState(false);
@@ -541,7 +552,23 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     setTimeout(() => setDiagCopy("idle"), 2000);
   };
 
-  const runInstall = async (target: InstallTarget) => {
+  // Guards the gap between dispatching an install POST and the running job
+  // appearing in installJobs, so the drain effect can't double-start the queue.
+  const installInFlightRef = useRef(false);
+
+  const markQueued = (target: InstallTarget) => {
+    setInstallResults((prev) => ({
+      ...prev,
+      [target]: {
+        ok: true,
+        detail: "Queued — starts when the current install finishes.",
+      },
+    }));
+  };
+
+  // Actually dispatch the install and hand the running job to the poll effect.
+  const postInstall = useCallback(async (target: InstallTarget) => {
+    installInFlightRef.current = true;
     setSetupError(null);
     setNodeHint(null);
     setInstallResults((prev) => {
@@ -579,7 +606,13 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         return;
       }
       if (!res.ok) {
-        // 409 (another npm install running) and hard start failures land here.
+        // Lost the race for the single npm lane — re-queue and let the drain
+        // effect retry instead of surfacing a "wait for X to finish" error.
+        if (res.status === 409 && INSTALL_TARGET_KIND[target] === "npm") {
+          setInstallQueue((q) => (q.includes(target) ? q : [...q, target]));
+          markQueued(target);
+          return;
+        }
         setInstallResults((prev) => ({
           ...prev,
           [target]: {
@@ -612,8 +645,38 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           detail: err instanceof Error ? err.message : "install failed",
         },
       }));
+    } finally {
+      installInFlightRef.current = false;
     }
+  }, []);
+
+  // UI entry point. npm installs are mutually exclusive (the server 409s a
+  // second concurrent one), so when the npm lane is busy or already has work
+  // queued, enqueue this target and let the drain effect run it next — this is
+  // what makes "install both" work instead of failing the second one.
+  const runInstall = (target: InstallTarget) => {
+    if (
+      INSTALL_TARGET_KIND[target] === "npm" &&
+      (anyNpmInstallRunning(installJobs) ||
+        installInFlightRef.current ||
+        installQueue.length > 0)
+    ) {
+      setInstallQueue((q) => (q.includes(target) ? q : [...q, target]));
+      markQueued(target);
+      return;
+    }
+    void postInstall(target);
   };
+
+  // Drain the npm queue one at a time as the lane frees up.
+  useEffect(() => {
+    if (installQueue.length === 0) return;
+    if (installInFlightRef.current) return;
+    if (anyNpmInstallRunning(installJobs)) return;
+    const next = installQueue[0];
+    setInstallQueue((q) => q.slice(1));
+    void postInstall(next);
+  }, [installQueue, installJobs, postInstall]);
 
   // Poll cadence is keyed on WHICH targets are running, not on the job map
   // itself — every poll stores a fresh view object, and keying on the map
@@ -972,14 +1035,47 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     onDismiss();
   };
 
+  // Restore a prior "skip Coven Code" choice so a failing install can't trap
+  // the user on this step across reloads.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(COVEN_CODE_SKIP_KEY) === "1") setCovenCodeSkipped(true);
+    } catch {
+      /* private mode */
+    }
+  }, []);
+
+  const skipCovenCode = () => {
+    setCovenCodeSkipped(true);
+    try {
+      localStorage.setItem(COVEN_CODE_SKIP_KEY, "1");
+    } catch {
+      /* private mode */
+    }
+  };
+
+  // Coven Code is a required OpenCoven tool, but skippable so a failed install
+  // can never permanently strand onboarding (see covenCodeSkipped).
+  const covenCodeInstalled = !!status?.tools?.find((t) => t.id === "coven-code")?.installed;
+  const covenCodeSatisfied = covenCodeInstalled || covenCodeSkipped;
+  // Server `complete` already requires every other step; AND-in the Coven Code
+  // requirement so the finish CTA only appears once both tools are handled.
+  const effectiveComplete = (status?.complete ?? false) && covenCodeSatisfied;
+
   const steps = useMemo<GuidedStep[]>(() => {
     const s = status?.steps;
     return [
       {
         key: "covenCli",
-        title: "Install the coven CLI",
-        ok: !!s?.covenCli.ok,
-        detail: s?.covenCli.detail ?? s?.covenCli.hint ?? "checking...",
+        title: "Install the OpenCoven tools",
+        // Require both coven CLI (server step) and Coven Code (required, but
+        // skippable) before this step counts as done.
+        ok: !!s?.covenCli.ok && covenCodeSatisfied,
+        detail: !s?.covenCli.ok
+          ? (s?.covenCli.detail ?? s?.covenCli.hint ?? "checking...")
+          : covenCodeSatisfied
+            ? (s?.covenCli.detail ?? "Installed")
+            : "coven CLI ready — Coven Code still needs installing.",
         icon: "ph:gear-six",
       },
       {
@@ -1030,7 +1126,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         icon: "ph:git-branch-bold",
       },
     ];
-  }, [status]);
+  }, [status, covenCodeSatisfied]);
 
   // The step the guide spotlights: the first required step that isn't done.
   const activeStepKey = useMemo(() => {
@@ -1166,7 +1262,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           </section>
         ) : null}
 
-        {!status?.complete ? (
+        {!effectiveComplete ? (
           <section className="mt-5" aria-label="Ask Salem for setup help">
             <SalemPathfinderEntry
               mode="setup"
@@ -1250,6 +1346,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             installResults={installResults}
                             tools={status?.tools ?? []}
                             nodeHint={nodeHint}
+                            covenCodeInstalled={covenCodeInstalled}
+                            covenCodeSkipped={covenCodeSkipped}
+                            onSkipCovenCode={skipCovenCode}
                             onInstall={(target) => void runInstall(target)}
                             onCopy={copyText}
                           />
@@ -1386,7 +1485,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                           <StepMeetFamiliars
                             familiars={familiarsList}
                             statusOk={step.ok}
-                            complete={!!status?.complete}
+                            complete={effectiveComplete}
                             onEdit={editFamiliar}
                             onOpenCave={onDismiss}
                           />
@@ -1466,7 +1565,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           >
             Skip for now
           </button>
-          {status?.complete ? (
+          {effectiveComplete ? (
             <button
               onClick={onDismiss}
               className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
@@ -1633,6 +1732,9 @@ function StepCovenCli({
   installResults,
   tools,
   nodeHint,
+  covenCodeInstalled,
+  covenCodeSkipped,
+  onSkipCovenCode,
   onInstall,
   onCopy,
 }: {
@@ -1641,33 +1743,41 @@ function StepCovenCli({
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   tools: OpenCovenToolStatus[];
   nodeHint: string | null;
+  covenCodeInstalled: boolean;
+  covenCodeSkipped: boolean;
+  onSkipCovenCode: () => void;
   onInstall: (target: "coven-cli" | "coven-code") => void;
   onCopy: (text: string) => Promise<boolean>;
 }) {
-  const npmJobRunning = anyNpmInstallRunning(installJobs);
   const job = installJobs["coven-cli"];
   const busy = job?.status === "running";
+  // Per-target busy only — npm targets queue server-side now, so a running
+  // install no longer needs to disable the others (that blocked "install both").
+  const covenCodeJobRunning = installJobs["coven-code"]?.status === "running";
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
-        The coven CLI powers everything Cave does. Cave can install it for you
-        — or copy the command and run it in any terminal.
+        Cave needs two OpenCoven tools — the <strong>coven CLI</strong> (powers
+        everything) and <strong>Coven Code</strong> (required). Install both with
+        one click — Cave runs them one after another so they never collide — or
+        copy the command to run it yourself.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <button
-          onClick={() => onInstall("coven-cli")}
-          disabled={busy || npmJobRunning}
-          aria-busy={busy}
+          onClick={() => {
+            onInstall("coven-cli");
+            onInstall("coven-code");
+          }}
+          disabled={busy || covenCodeJobRunning}
+          aria-busy={busy || covenCodeJobRunning}
           className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
         >
-          {busy ? (
+          {busy || covenCodeJobRunning ? (
             <Icon name="ph:circle-notch-bold" className="animate-spin" />
           ) : (
             <Icon name="ph:arrow-down-bold" />
           )}
-          {busy && job
-            ? `Installing… ${formatElapsed(job.elapsedMs)}`
-            : "Install coven CLI"}
+          {busy || covenCodeJobRunning ? "Installing…" : "Install both tools"}
         </button>
         <span className="text-[11px] text-[var(--text-muted)]">
           or run it yourself:
@@ -1687,6 +1797,8 @@ function StepCovenCli({
               const toolBusy = toolJob?.status === "running";
               const needsAction = !tool.installed || tool.outdated;
               const result = installResults[tool.id];
+              const isCovenCode = tool.id === "coven-code";
+              const showSkip = isCovenCode && !tool.installed && !covenCodeSkipped;
               return (
                 <div
                   key={tool.id}
@@ -1694,8 +1806,13 @@ function StepCovenCli({
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <div className="truncate text-[12px] font-medium text-[var(--text-primary)]">
+                      <div className="flex items-center gap-1.5 truncate text-[12px] font-medium text-[var(--text-primary)]">
                         {tool.label}
+                        {isCovenCode ? (
+                          <span className="rounded-full border border-[var(--border-hairline)] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--text-muted)]">
+                            {covenCodeInstalled ? "Required" : covenCodeSkipped ? "Skipped" : "Required"}
+                          </span>
+                        ) : null}
                       </div>
                       <div className="mt-0.5 truncate font-mono text-[11px] text-[var(--text-muted)]">
                         {openCovenToolVersionText(tool)}
@@ -1720,7 +1837,7 @@ function StepCovenCli({
                         <button
                           type="button"
                           onClick={() => onInstall(tool.id)}
-                          disabled={toolBusy || npmJobRunning}
+                          disabled={toolBusy}
                           aria-busy={toolBusy}
                           className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 py-1.5 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] disabled:opacity-50"
                         >
@@ -1734,6 +1851,16 @@ function StepCovenCli({
                             : tool.outdated
                               ? "Update"
                               : "Install"}
+                        </button>
+                      ) : null}
+                      {showSkip ? (
+                        <button
+                          type="button"
+                          onClick={onSkipCovenCode}
+                          className="focus-ring rounded-md px-2 py-1.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:underline"
+                          title="Continue setup without Coven Code — you can install it later from Settings."
+                        >
+                          Skip for now
                         </button>
                       ) : null}
                     </div>
