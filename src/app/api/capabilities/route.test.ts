@@ -52,6 +52,18 @@ assert.match(
 
 assert.match(
   source,
+  /const id = canonicalHarnessId\(m\.harness_id\);\s*if \(!byId\.has\(id\)\) byId\.set\(id, m\);/,
+  "Manifests must be deduped by canonical harness id so a duplicate/aliased harness (e.g. Hermes) renders only once",
+);
+
+assert.match(
+  source,
+  /const present = new Set\(manifests\.map\(\(m\) => canonicalHarnessId\(m\.harness_id\)\)\)/,
+  "Presence is computed on the canonical id so an aliased aggregate manifest isn't double-counted by the backfill",
+);
+
+assert.match(
+  source,
   /supplementClaudeSkills/,
   "Claude manifests are supplemented with the local ~/.claude/skills scan",
 );

@@ -50,7 +50,7 @@ import {
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
 } from "@/lib/openclaw-bridge";
-import { isTrustedChatHarness, covenRunSupportsModelFlag } from "@/lib/harness-adapters";
+import { isTrustedChatHarness, covenRunSupportsModelFlag, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   type ConversationFile,
   type ChatTurn,
@@ -837,6 +837,12 @@ export async function POST(req: Request) {
 
   const config = await loadConfig();
   const binding = bindingFor(config, body.familiarId);
+  // Canonicalize the bound harness id up front so a familiar carrying a
+  // package/alias id (e.g. "hermes-agent" for Hermes) is recognized as the
+  // trusted "hermes" adapter — otherwise the trust gate below 403s and `coven
+  // run` is invoked with an unknown harness name. Every downstream check and
+  // the spawn use this canonical id.
+  binding.harness = canonicalHarnessId(binding.harness);
   const sshRuntime = isSshRuntime(binding.runtime) ? binding.runtime : null;
   const existingConversation = body.sessionId
     ? await loadConversation(body.sessionId).catch(() => null)

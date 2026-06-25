@@ -36,6 +36,12 @@ assert.match(
 
 assert.match(
   chatRoute,
+  /binding\.harness = canonicalHarnessId\(binding\.harness\)/,
+  "Native chat must canonicalize the bound harness id (e.g. hermes-agent → hermes) before the trust gate, so an aliased familiar isn't 403'd",
+);
+
+assert.match(
+  chatRoute,
   /const adapter = COMPATIBILITY_ADAPTERS\.find\(\(h\) => h\.id === binding\.harness\);/,
   "Native chat should consult bundled adapter metadata before spawning a harness",
 );

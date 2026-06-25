@@ -101,8 +101,32 @@ export function isTrustedOnboardingHarness(harness: string): boolean {
   return TRUSTED_ONBOARDING_HARNESSES.has(harness);
 }
 
+// The daemon and older familiar configs sometimes carry a project/package
+// alias instead of the canonical adapter id — e.g. "hermes-agent" (the repo +
+// package is NousResearch/hermes-agent, even though its binary is `hermes`).
+// A familiar bound to such an alias fails the chat trust gate (a spurious 403)
+// and shows up as a SECOND runtime row next to the canonical backfill. Mapping
+// aliases (and bare binary names) back to the adapter id fixes both.
+const HARNESS_ALIASES: Record<string, string> = {
+  "hermes-agent": "hermes",
+  "claude-code": "claude",
+  "openai-codex": "codex",
+};
+
+export function canonicalHarnessId(harness: string): string {
+  if (typeof harness !== "string") return harness;
+  const key = harness.trim().toLowerCase();
+  if (!key) return harness;
+  if (HARNESS_ALIASES[key]) return HARNESS_ALIASES[key];
+  const byId = COMPATIBILITY_ADAPTERS.find((a) => a.id.toLowerCase() === key);
+  if (byId) return byId.id;
+  const byBinary = COMPATIBILITY_ADAPTERS.find((a) => a.binary.toLowerCase() === key);
+  if (byBinary) return byBinary.id;
+  return harness;
+}
+
 export function isTrustedChatHarness(harness: string): boolean {
-  return TRUSTED_CHAT_HARNESSES.has(harness);
+  return TRUSTED_CHAT_HARNESSES.has(canonicalHarnessId(harness));
 }
 
 export function openClawAdapterReport(openclawAgentCount: number): AdapterReport {

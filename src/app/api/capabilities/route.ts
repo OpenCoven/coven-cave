@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
-import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { COMPATIBILITY_ADAPTERS, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   openClawBridgeCapabilities,
   type OpenClawBridgeCapabilities,
@@ -173,13 +173,24 @@ async function ensureAdapterCoverage(
   manifests: HarnessCapabilityManifest[],
   refresh: string,
 ): Promise<HarnessCapabilityManifest[]> {
-  const present = new Set(manifests.map((m) => m.harness_id));
+  const present = new Set(manifests.map((m) => canonicalHarnessId(m.harness_id)));
   const missing = COMPATIBILITY_ADAPTERS.map((adapter) => adapter.id).filter((id) => !present.has(id));
-  if (missing.length === 0) return manifests;
-  const backfilled = (await Promise.all(missing.map((id) => fetchHarnessManifest(id, refresh)))).filter(
-    (m): m is HarnessCapabilityManifest => m !== null,
-  );
-  return [...manifests, ...backfilled];
+  const backfilled = missing.length
+    ? (await Promise.all(missing.map((id) => fetchHarnessManifest(id, refresh)))).filter(
+        (m): m is HarnessCapabilityManifest => m !== null,
+      )
+    : [];
+  // Dedup by CANONICAL harness id, first occurrence wins. The daemon can report
+  // the same harness twice — or under an alias (e.g. "hermes-agent") that the
+  // missing-calc no longer treats as absent — and a backfilled adapter must
+  // never re-add an id already covered. Aggregate-reported manifests come
+  // first, so they always beat the synthetic backfill, matching the contract.
+  const byId = new Map<string, HarnessCapabilityManifest>();
+  for (const m of [...manifests, ...backfilled]) {
+    const id = canonicalHarnessId(m.harness_id);
+    if (!byId.has(id)) byId.set(id, m);
+  }
+  return [...byId.values()];
 }
 
 export async function GET(req: Request) {

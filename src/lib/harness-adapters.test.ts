@@ -11,6 +11,7 @@ import {
   isTrustedChatHarness,
   isTrustedOnboardingHarness,
   openClawAdapterReport,
+  canonicalHarnessId,
 } from "./harness-adapters.ts";
 
 // Model-parity gating probe: forwarding `--model` must stay off until the
@@ -152,6 +153,18 @@ assert.equal(isTrustedChatHarness("openclaw"), true);
 assert.equal(isTrustedChatHarness("attacker-adapter"), false);
 assert.equal(isTrustedOnboardingHarness("openclaw"), true);
 assert.equal(isTrustedOnboardingHarness("attacker-adapter"), false);
+
+// canonicalHarnessId collapses package/alias ids and bare binary names back to
+// the adapter id, so a familiar bound to "hermes-agent" (the NousResearch repo
+// name) is recognized as the trusted "hermes" adapter instead of 403-ing.
+assert.equal(canonicalHarnessId("hermes-agent"), "hermes");
+assert.equal(canonicalHarnessId("Hermes-Agent"), "hermes", "alias match is case-insensitive");
+assert.equal(canonicalHarnessId("claude-code"), "claude");
+assert.equal(canonicalHarnessId("hermes"), "hermes", "canonical id passes through");
+assert.equal(canonicalHarnessId("HERMES"), "hermes", "id match is case-insensitive");
+assert.equal(canonicalHarnessId("attacker-adapter"), "attacker-adapter", "unknown ids are unchanged (still untrusted)");
+assert.equal(isTrustedChatHarness("hermes-agent"), true, "the Hermes package alias must clear the chat trust gate");
+assert.equal(isTrustedChatHarness("attacker-adapter"), false, "canonicalization must not trust an unknown harness");
 
 assert.deepEqual(adapterSetupState(merged), {
   ok: true,
