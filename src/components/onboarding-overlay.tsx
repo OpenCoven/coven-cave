@@ -1996,6 +1996,7 @@ function StepFamiliar(props: {
     sshCheck,
     sshSetup,
   } = props;
+  const [agentQuery, setAgentQuery] = useState("");
   const glyphInvalid =
     familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:");
   const selectedOpenClawAgent =
@@ -2005,6 +2006,23 @@ function StepFamiliar(props: {
   const openClawAgentCountLabel = agentsLoading
     ? "Scanning"
     : `${openclawAgents.length} ${openclawAgents.length === 1 ? "agent" : "agents"}`;
+  // Exactly one path is ever selected — picking a harness clears the agent and
+  // vice versa upstream. Drives progressive disclosure of the config form below.
+  const optionChosen = selectedHarnessId != null || selectedAgentId != null;
+  // Option B can list many discovered agents; surface a filter once the list is
+  // long enough to be awkward to scan by eye.
+  const showAgentSearch = openclawAgents.length > 6;
+  const trimmedAgentQuery = agentQuery.trim().toLowerCase();
+  const visibleAgents = trimmedAgentQuery
+    ? openclawAgents.filter((agent) =>
+        [
+          agent.displayName,
+          agent.id,
+          agent.role ?? "",
+          agent.workspacePath ?? "",
+        ].some((field) => field.toLowerCase().includes(trimmedAgentQuery)),
+      )
+    : openclawAgents;
   return (
     <div className="flex flex-col gap-4">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -2018,11 +2036,19 @@ function StepFamiliar(props: {
         </div>
       ) : null}
 
+      <p className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+        Choose one setup path
+      </p>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
           <h3 className="text-[12px] font-semibold text-[var(--text-primary)]">
-            Option A — new familiar from an installed runtime
+            Option A — start fresh from an installed runtime
           </h3>
+          <p className="mt-1 text-[11px] leading-4 text-[var(--text-secondary)]">
+            Spin up a brand-new Coven familiar powered by a runtime installed on
+            this machine.
+          </p>
           <div className="mt-2 grid gap-2">
             {chatHarnesses.map((adapter) => {
               const active = selectedHarnessId === adapter.id;
@@ -2125,53 +2151,106 @@ function StepFamiliar(props: {
               </div>
             </div>
           ) : (
-            <div className="mt-3 grid max-h-[16rem] gap-2 overflow-y-auto pr-1">
-              {openclawAgents.map((agent) => {
-                const active = selectedAgentId === agent.id;
-                return (
-                  <button
-                    key={agent.id}
-                    onClick={() => props.onSelectAgent(agent)}
-                    className={`focus-ring rounded-lg border p-3 text-left ${
-                      active
-                        ? "border-[color-mix(in_oklch,var(--accent-presence)_60%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] text-[var(--text-primary)]"
-                        : "border-[var(--border-hairline)] bg-[var(--bg-base)]/55 text-[var(--text-secondary)] hover:border-[var(--accent-presence)]"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-[12px] font-medium">
-                        {agent.displayName}
-                      </span>
-                      {active ? (
-                        <Icon
-                          name="ph:check-bold"
-                          className="text-[var(--accent-presence)]"
-                        />
-                      ) : null}
-                    </div>
-                    <div className="mt-1 grid gap-0.5 font-mono text-[10px] text-[var(--text-muted)]">
-                      <div className="truncate">{agent.id}</div>
-                      {agent.workspacePath ? (
-                        <div className="truncate">{agent.workspacePath}</div>
-                      ) : null}
-                    </div>
-                    {agent.role ? (
-                      <div className="mt-1 truncate text-[11px] text-[var(--text-secondary)]">
-                        {agent.role}
-                      </div>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
+            <>
+              {showAgentSearch ? (
+                <div className="relative mt-3">
+                  <Icon
+                    name="ph:magnifying-glass"
+                    className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                  />
+                  <input
+                    value={agentQuery}
+                    onChange={(e) => setAgentQuery(e.target.value)}
+                    placeholder={`Search ${openclawAgents.length} agents by name, id, or role…`}
+                    aria-label="Search OpenClaw agents"
+                    className="focus-ring w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] py-1.5 pl-8 pr-3 text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+                  />
+                </div>
+              ) : null}
+              {visibleAgents.length === 0 ? (
+                <p className="mt-3 text-[12px] leading-5 text-[var(--text-secondary)]">
+                  No agents match{" "}
+                  <span className="font-medium text-[var(--text-primary)]">
+                    {agentQuery.trim()}
+                  </span>
+                  .
+                </p>
+              ) : (
+                <div className="mt-3 grid max-h-[16rem] gap-2 overflow-y-auto pr-1">
+                  {visibleAgents.map((agent) => {
+                    const active = selectedAgentId === agent.id;
+                    return (
+                      <button
+                        key={agent.id}
+                        onClick={() => props.onSelectAgent(agent)}
+                        className={`focus-ring rounded-lg border p-3 text-left ${
+                          active
+                            ? "border-[color-mix(in_oklch,var(--accent-presence)_60%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_14%,transparent)] text-[var(--text-primary)]"
+                            : "border-[var(--border-hairline)] bg-[var(--bg-base)]/55 text-[var(--text-secondary)] hover:border-[var(--accent-presence)]"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-[12px] font-medium">
+                            {agent.displayName}
+                          </span>
+                          {active ? (
+                            <Icon
+                              name="ph:check-bold"
+                              className="text-[var(--accent-presence)]"
+                            />
+                          ) : null}
+                        </div>
+                        <div className="mt-1 grid gap-0.5 font-mono text-[10px] text-[var(--text-muted)]">
+                          <div className="truncate">{agent.id}</div>
+                          {agent.workspacePath ? (
+                            <div className="truncate">{agent.workspacePath}</div>
+                          ) : null}
+                        </div>
+                        {agent.role ? (
+                          <div className="mt-1 truncate text-[11px] text-[var(--text-secondary)]">
+                            {agent.role}
+                          </div>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
 
+      {/* Config form is revealed only once a path is chosen, and the SSH /
+          confirm blocks below are scoped to Option A — so the user never sees
+          fields that don't apply to their selection. */}
+      {optionChosen ? (
+        <>
+          <div className="rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--text-secondary)]">
+            {selectedHarnessId ? (
+              <>
+                Setting up a new{" "}
+                <span className="font-medium text-[var(--text-primary)]">
+                  {selectedHarness?.label}
+                </span>{" "}
+                familiar. Every field below is optional — sensible defaults fill
+                in.
+              </>
+            ) : (
+              <>
+                Connecting{" "}
+                <span className="font-medium text-[var(--text-primary)]">
+                  {selectedOpenClawAgent?.displayName}
+                </span>
+                . Give it a name; the rest is optional.
+              </>
+            )}
+          </div>
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <label className="block">
           <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            Name
+            Name{selectedAgentId ? " (required)" : " (optional)"}
           </span>
           <input
             value={familiarName}
@@ -2182,7 +2261,7 @@ function StepFamiliar(props: {
         </label>
         <label className="block">
           <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            Role
+            Role (optional)
           </span>
           <input
             value={familiarRole}
@@ -2193,7 +2272,7 @@ function StepFamiliar(props: {
         </label>
         <label className="block">
           <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            Glyph
+            Glyph (optional)
           </span>
           <input
             value={familiarGlyph}
@@ -2223,7 +2302,7 @@ function StepFamiliar(props: {
         </label>
         <label className="block">
           <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            Description
+            Description (optional)
           </span>
           <input
             value={familiarDescription}
@@ -2234,6 +2313,7 @@ function StepFamiliar(props: {
         </label>
       </div>
 
+      {selectedHarnessId ? (
       <section className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
         <label className="flex items-start gap-2">
           <input
@@ -2318,7 +2398,9 @@ function StepFamiliar(props: {
           </div>
         ) : null}
       </section>
+      ) : null}
 
+      {selectedHarnessId ? (
       <label className="flex items-start gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3 text-[12px] leading-5 text-[var(--text-secondary)]">
         <input
           type="checkbox"
@@ -2342,6 +2424,7 @@ function StepFamiliar(props: {
           .
         </span>
       </label>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         {selectedHarnessId ? (
@@ -2378,6 +2461,16 @@ function StepFamiliar(props: {
           </button>
         ) : null}
       </div>
+        </>
+      ) : (
+        <p className="rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)]/35 px-3 py-4 text-[12px] leading-5 text-[var(--text-secondary)]">
+          Pick{" "}
+          <span className="font-medium text-[var(--text-primary)]">Option A</span>{" "}
+          or{" "}
+          <span className="font-medium text-[var(--text-primary)]">Option B</span>{" "}
+          above to name and create your familiar.
+        </p>
+      )}
     </div>
   );
 }
