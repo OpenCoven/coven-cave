@@ -51,6 +51,7 @@ import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-sto
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
+import { ThreadSignalCard } from "@/components/thread-signal-card";
 import { looksLikeCsv } from "@/lib/csv-import";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
 import {
@@ -78,6 +79,7 @@ import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
 import { resolveActivePath, siblingsOf, childLeaf } from "@/lib/conversation-tree";
+import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
 type ToolEvent = {
   id: string;
@@ -883,6 +885,32 @@ function HeaderDebugButton({ onOpenDebug }: { onOpenDebug: () => void }) {
       onClick={onOpenDebug}
     >
       <Icon name="ph:bug-bold" width={15} aria-hidden />
+    </button>
+  );
+}
+
+function HeaderReflectButton({
+  reflecting,
+  onReflect,
+}: {
+  reflecting: boolean;
+  onReflect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="focus-ring cave-chat-icon-button"
+      aria-label="Reflect on this thread"
+      title="Reflect on this thread"
+      disabled={reflecting}
+      onClick={onReflect}
+    >
+      <Icon
+        name={reflecting ? "ph:circle-notch-bold" : "ph:brain-bold"}
+        width={15}
+        className={reflecting ? "animate-spin" : undefined}
+        aria-hidden
+      />
     </button>
   );
 }
@@ -1799,6 +1827,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [pendingBranchParent, setPendingBranchParent] = useState<string | null | undefined>(undefined);
   const [historyState, setHistoryState] = useState<ChatHistoryState>("idle");
   const [debugModalOpen, setDebugModalOpen] = useState(false);
+  const [reflecting, setReflecting] = useState(false);
+  const [reflectError, setReflectError] = useState<string | null>(null);
+  const [threadSignalReport, setThreadSignalReport] = useState<ThreadSelfReport | null>(null);
 
   // Publish live chat state for the session debug pane (right panel / modal).
   // Per-instance token: a second ChatView (right-panel Chat tab) unmounting
@@ -1817,6 +1848,41 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setDebugModalOpen(true);
     }
   }, []);
+
+  const reflectOnThread = useCallback(async () => {
+    if (!sessionId || reflecting) return;
+    setReflecting(true);
+    setReflectError(null);
+    try {
+      const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          trigger: "manual",
+          threadTitle: session?.title ?? familiar.display_name,
+        }),
+      });
+      const json = await res.json() as { ok: true; report: ThreadSelfReport } | { ok: false; error?: string };
+      if (!json.ok) throw new Error(json.error ?? "reflection failed");
+      setThreadSignalReport(json.report);
+    } catch (err) {
+      setReflectError(err instanceof Error ? err.message : "reflection failed");
+    } finally {
+      setReflecting(false);
+    }
+  }, [familiar.display_name, familiar.id, reflecting, session?.title, sessionId]);
+
+  useEffect(() => {
+    setThreadSignalReport(null);
+    setReflectError(null);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!reflectError) return;
+    const timer = window.setTimeout(() => setReflectError(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [reflectError]);
 
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
@@ -3686,6 +3752,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onOpenDebug={openDebug}
               />
             )}
+            {sessionId && familiar.id ? (
+              <HeaderReflectButton reflecting={reflecting} onReflect={() => void reflectOnThread()} />
+            ) : null}
           </div>
         </MetaLine>
         <LinkedContextRow
@@ -3843,6 +3912,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               archiving={archivingChat}
             />
           ) : null}
+          {threadSignalReport ? (
+            <ThreadSignalCard
+              report={threadSignalReport}
+              onDismiss={() => setThreadSignalReport(null)}
+              onViewFull={() => {
+                const params = new URLSearchParams({ sessionId: threadSignalReport.sessionId });
+                window.location.href = `/dashboard/familiars/${encodeURIComponent(threadSignalReport.familiarId)}/analytics?${params.toString()}`;
+              }}
+            />
+          ) : null}
           <div ref={tailRef} />
         </div>
 
@@ -3871,6 +3950,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </button>
         )}
       </div>
+
+      {reflectError ? (
+        <div
+          role="alert"
+          className="mx-4 mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_18%,transparent)] px-3 py-2 text-xs text-[var(--color-warning)]"
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="min-w-0 truncate">{reflectError}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setReflectError(null)}
+            aria-label="Dismiss reflection error"
+            className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded hover:bg-[var(--bg-raised)]"
+          >
+            <Icon name="ph:x-bold" width={10} aria-hidden />
+          </button>
+        </div>
+      ) : null}
 
       {error ? (
         <ChatErrorStrip

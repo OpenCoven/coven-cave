@@ -10,6 +10,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { ThreadSignalsSection } from "@/components/thread-signals-section";
 import { Icon } from "@/lib/icon";
 
 export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
@@ -168,6 +169,14 @@ export function FamiliarAnalyticsContent({
             ))}
           </div>
         )}
+      </section>
+
+      <section className="fa-section" aria-labelledby="fa-thread-signals-title">
+        <div className="fa-section__head">
+          <h2 id="fa-thread-signals-title" className="fa-section__title">Thread Signals</h2>
+          <span>{model.threadReports.length} {model.threadReports.length === 1 ? "report" : "reports"}</span>
+        </div>
+        <ThreadSignalsSection familiarId={model.familiarId} reports={model.threadReports} />
       </section>
 
       <section className="fa-section" aria-labelledby="fa-eval-title">

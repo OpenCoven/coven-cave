@@ -9,6 +9,7 @@ import type { ContractReport } from "@/lib/familiar-contract";
 import { deriveGrowthReport, type FamiliarGrowthReport } from "@/lib/familiar-growth-signals";
 import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-requests";
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
+import type { ThreadSelfReport } from "@/lib/thread-self-report";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =
@@ -35,6 +36,10 @@ type RetroApiResponse =
   | { ok: true; snapshot: RetroRunsSnapshot }
   | { ok: false; snapshot?: RetroRunsSnapshot; error?: string };
 
+type SelfReportsResponse =
+  | { ok: true; reports: ThreadSelfReport[]; total: number }
+  | { ok: false; reports?: ThreadSelfReport[]; total?: number; error?: string };
+
 export type FamiliarAnalyticsData = {
   familiarId: string;
   familiars: Familiar[];
@@ -43,6 +48,7 @@ export type FamiliarAnalyticsData = {
   sessions: SessionRow[];
   covenEntries: CovenMemoryEntry[];
   retroSnapshot: RetroRunsSnapshot;
+  threadReports: ThreadSelfReport[];
   errors: string[];
 };
 
@@ -54,6 +60,7 @@ export type FamiliarAnalyticsModel = {
   growthReport: FamiliarGrowthReport | null;
   confidence: ConfidenceScore;
   healRequests: SelfHealRequest[];
+  threadReports: ThreadSelfReport[];
   errors: string[];
 };
 
@@ -87,6 +94,14 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function getOptionalJson<T>(url: string, fallback: T): Promise<T> {
+  try {
+    return await getJson<T>(url);
+  } catch {
+    return fallback;
+  }
+}
+
 function retroStateFor(snapshot: RetroRunsSnapshot, familiarId: string): RetroFamiliarState | null {
   return snapshot.familiars.find((state) => state.familiarId === familiarId) ?? null;
 }
@@ -104,6 +119,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     sessionsJson,
     memoryJson,
     retroJson,
+    selfReportsJson,
   ] = await Promise.all([
     getJson<FamiliarsResponse>("/api/familiars"),
     getJson<ContractResponse>(`/api/familiars/${encodedId}/contract`),
@@ -111,6 +127,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     getJson<SessionsResponse>("/api/sessions/list"),
     getJson<CovenMemoryResponse>("/api/coven-memory"),
     getJson<RetroApiResponse>("/api/retro-runs"),
+    getOptionalJson<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: true, reports: [], total: 0 }),
   ]);
 
   const errors = [
@@ -130,6 +147,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     sessions: sessionsJson.sessions ?? [],
     covenEntries: memoryJson.entries ?? [],
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
+    threadReports: selfReportsJson.ok ? selfReportsJson.reports : [],
     errors,
   };
 }
@@ -168,6 +186,7 @@ export function buildFamiliarAnalyticsModel(data: FamiliarAnalyticsData): Famili
     growthReport,
     confidence,
     healRequests,
+    threadReports: data.threadReports,
     errors: data.errors,
   };
 }
