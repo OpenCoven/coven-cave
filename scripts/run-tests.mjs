@@ -111,6 +111,7 @@ export const SUITES = {
     "src/components/home-feed.test.ts",
     "src/components/home-composer-centering.test.ts",
     "src/components/ios-theme-api.test.ts",
+    "src/components/ios-query-url.test.ts",
     "src/components/chat-all-familiars-project-list.test.ts",
     "src/components/chat-list-delete.test.ts",
     "src/components/chat-list-collapse.test.ts",
