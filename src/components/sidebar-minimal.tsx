@@ -95,7 +95,7 @@ const FOLDER_MODES: Array<{
   { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", group: "work", description: "Your daily journal and generated sketches" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4", description: "Schedule and timeline of work" },
-  { id: "inbox", label: "Schedules", iconName: "ph:calendar-bold", group: "work", kbd: "⌘5", description: "Reminders and recurring agent automations", badge: (p) => badgeText(p.scheduleNeedsCount) },
+  { id: "inbox", label: "Automations", iconName: "ph:lightning-bold", group: "work", kbd: "⌘5", description: "Reminders, crons, workflows, and flows in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Tools
   { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘6", description: "Built-in web browser" },
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description: "Shell session in your project" },

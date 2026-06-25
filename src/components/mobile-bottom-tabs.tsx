@@ -25,7 +25,7 @@ const TABS: TabDef[] = [
   { id: "home", label: "Home", ariaLabel: "Home", iconName: "ph:house-bold" },
   { id: "chat", label: "Chat", ariaLabel: "Chat", iconName: "ph:chats" },
   { id: "board", label: "Board", ariaLabel: "Board", iconName: "ph:kanban" },
-  { id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-bold" },
+  { id: "inbox", label: "Auto", ariaLabel: "Automations", iconName: "ph:lightning-bold" },
   { id: "library", label: "Library", ariaLabel: "Library", iconName: "ph:books" },
 ];
 

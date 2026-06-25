@@ -14,7 +14,7 @@ assert.match(vault, /No secrets match/, "vault shows a no-matches message");
 
 const auto = read("./automations-view.tsx");
 assert.match(auto, /import \{ SearchInput \} from "@\/components\/ui\/search-input"/, "automations imports SearchInput");
-assert.match(auto, /<SearchInput[\s\S]*?aria-label="Filter schedules"/, "automations renders a schedules filter");
+assert.match(auto, /<SearchInput[\s\S]*?aria-label="Filter automations"/, "automations renders an automations filter");
 // The text filter applies to all three tabs' source derivations.
 assert.match(auto, /isScheduleInboxItem\(it\) && !hiddenIds\.has\(it\.id\) && \(!q \|\| \(it\.title \?\? ""\)\.toLowerCase\(\)\.includes\(q\)\)/, "reminders honor the text filter");
 assert.match(auto, /a\.name\.toLowerCase\(\)\.includes\(q\)/, "automations honor the text filter");

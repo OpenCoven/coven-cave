@@ -115,8 +115,8 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-bold", group: "work", kbd: "⌘5", description:/,
-  "Schedules should stay on the inbox route as the ⌘5 Work surface",
+  /\{ id: "inbox", label: "Automations", iconName: "ph:lightning-bold", group: "work", kbd: "⌘5", description:/,
+  "Automations should stay on the inbox route as the ⌘5 Work surface",
 );
 
 assert.match(

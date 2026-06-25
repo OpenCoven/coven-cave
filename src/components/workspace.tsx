@@ -89,7 +89,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   groupchat: "Group Chat",
   board: "Board",
   calendar: "Calendar",
-  inbox: "Schedules",
+  inbox: "Automations",
   library: "Library",
   browser: "Browser",
   terminal: "Terminal",
@@ -1429,6 +1429,7 @@ export function Workspace() {
       case "/chat":
         showFamiliarChatList();
         return true;
+      case "/automations":
       case "/inbox":
         setMode("inbox");
         return true;

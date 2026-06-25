@@ -83,7 +83,7 @@ assert.match(
   "switchModel should PATCH the chosen model through setChatModel",
 );
 
-for (const command of ["/journal", "/inbox", "/remind", "/attach", "/tui", "/toggle-agent"]) {
+for (const command of ["/journal", "/automations", "/remind", "/attach", "/tui", "/toggle-agent"]) {
   const escaped = command.replace("/", "\\/");
   assert.match(
     iosSlash,

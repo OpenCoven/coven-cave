@@ -33,8 +33,8 @@ assert.match(
 
 assert.match(
   mobileTabs,
-  /{ id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-bold" }/,
-  "Mobile bottom tabs should keep the Schedules label short while preserving the full accessible name",
+  /{ id: "inbox", label: "Auto", ariaLabel: "Automations", iconName: "ph:lightning-bold" }/,
+  "Mobile bottom tabs should keep the Automations label short while preserving the full accessible name",
 );
 
 assert.match(
