@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
+import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { PermissionsSection } from "@/components/settings-permissions";
@@ -1504,79 +1505,36 @@ function AppearanceSection() {
       {/* ── Familiar switcher ── choose the top-bar familiar control: a row of
           quick-switch avatars, or just the switcher dropdown. */}
       <SettingsGroup label="Familiar switcher">
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
-          <div className="min-w-0">
-            <div className="text-[12px] font-medium text-[var(--text-secondary)]">
-              Top-bar style
-            </div>
-            <div className="text-[11px] text-[var(--text-muted)]">
-              Show recent &amp; pinned familiars as a row of avatars, or just the switcher dropdown.
-            </div>
-          </div>
-          <div
-            role="group"
-            aria-label="Familiar switcher style"
-            className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5"
-          >
-            {FAMILIAR_SWITCHER_STYLE_OPTIONS.map((option) => {
-              const active = familiarSwitcherStyle === option;
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => setFamiliarSwitcherStyle(option)}
-                  className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                    active
-                      ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                  }`}
-                >
-                  {FAMILIAR_SWITCHER_STYLE_LABELS[option]}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <SettingControlRow
+          label="Top-bar style"
+          hint="Show recent & pinned familiars as a row of avatars, or just the switcher dropdown."
+        >
+          <Segmented
+            ariaLabel="Familiar switcher style"
+            options={FAMILIAR_SWITCHER_STYLE_OPTIONS}
+            value={familiarSwitcherStyle}
+            onChange={(option) => setFamiliarSwitcherStyle(option)}
+            getLabel={(option) => FAMILIAR_SWITCHER_STYLE_LABELS[option]}
+          />
+        </SettingControlRow>
 
         {/* Avatars shown + Pin order — only meaningful for the avatar strip, so
             they follow the style toggle and show only when that style is active. */}
         {familiarSwitcherStyle === "avatars" ? (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-[var(--border-hairline)] px-4 py-3">
-              <div className="min-w-0">
-                <div className="text-[12px] font-medium text-[var(--text-secondary)]">
-                  Avatars shown
-                </div>
-                <div className="text-[11px] text-[var(--text-muted)]">
-                  Show only your pinned familiars in the strip, or every familiar.
-                </div>
-              </div>
-              <div
-                role="group"
-                aria-label="Familiars shown in the avatar strip"
-                className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5"
-              >
-                {FAMILIAR_STRIP_SCOPE_OPTIONS.map((option) => {
-                  const active = familiarStripScope === option;
-                  return (
-                    <button
-                      key={option}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setFamiliarStripScope(option)}
-                      className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                        active
-                          ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
-                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                      }`}
-                    >
-                      {FAMILIAR_STRIP_SCOPE_LABELS[option]}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <SettingControlRow
+              label="Avatars shown"
+              hint="Show only your pinned familiars in the strip, or every familiar."
+              className="border-t border-[var(--border-hairline)]"
+            >
+              <Segmented
+                ariaLabel="Familiars shown in the avatar strip"
+                options={FAMILIAR_STRIP_SCOPE_OPTIONS}
+                value={familiarStripScope}
+                onChange={(option) => setFamiliarStripScope(option)}
+                getLabel={(option) => FAMILIAR_STRIP_SCOPE_LABELS[option]}
+              />
+            </SettingControlRow>
 
             <div className="border-t border-[var(--border-hairline)] px-4 py-3">
               <div className="mb-2 min-w-0">
@@ -1596,40 +1554,18 @@ function AppearanceSection() {
       {/* ── Corner radius ── a minor shape tweak (drives the shared --radius
           tokens), kept last so the primary color/theme and text controls lead. */}
       <SettingsGroup label="Corners">
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
-          <div className="min-w-0">
-            <div className="text-[12px] font-medium text-[var(--text-secondary)]">
-              Corner radius
-            </div>
-            <div className="text-[11px] text-[var(--text-muted)]">
-              Roundedness of buttons, cards, and the familiar switcher.
-            </div>
-          </div>
-          <div
-            role="group"
-            aria-label="Corner radius"
-            className="flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5"
-          >
-            {CORNER_RADIUS_OPTIONS.map((option) => {
-              const active = cornerRadius === option;
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => handleSetCornerRadius(option)}
-                  className={`focus-ring rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-                    active
-                      ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                  }`}
-                >
-                  {CORNER_RADIUS_LABELS[option]}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <SettingControlRow
+          label="Corner radius"
+          hint="Roundedness of buttons, cards, and the familiar switcher."
+        >
+          <Segmented
+            ariaLabel="Corner radius"
+            options={CORNER_RADIUS_OPTIONS}
+            value={cornerRadius}
+            onChange={(option) => handleSetCornerRadius(option)}
+            getLabel={(option) => CORNER_RADIUS_LABELS[option]}
+          />
+        </SettingControlRow>
       </SettingsGroup>
     </SettingsPage>
   );

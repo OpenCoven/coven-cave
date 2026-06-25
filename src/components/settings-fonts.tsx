@@ -132,7 +132,7 @@ const segWrap =
 function segBtn(active: boolean, extra = ""): string {
   return `focus-ring ${extra} rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
     active
-      ? "bg-[var(--accent-presence)] text-white"
+      ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
       : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
   }`;
 }
