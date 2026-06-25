@@ -1,4 +1,4 @@
-import type { FlowDoc, FlowNode } from "./flow-doc.ts";
+import { publishedFlowForProduction, type FlowDoc, type FlowNode } from "./flow-doc.ts";
 
 export type FlowWebhookMatch =
   | { ok: true; flow: FlowDoc; trigger: FlowNode }
@@ -38,9 +38,10 @@ function webhookTriggerMatches(node: FlowNode, method: string, path: string): bo
 export function findWebhookFlow(flows: FlowDoc[], method: string, path: string): FlowWebhookMatch {
   const matches: Array<{ flow: FlowDoc; trigger: FlowNode }> = [];
   for (const flow of flows) {
-    if (!flow.active) continue;
-    for (const node of flow.nodes) {
-      if (webhookTriggerMatches(node, method, path)) matches.push({ flow, trigger: node });
+    const productionFlow = publishedFlowForProduction(flow);
+    if (!productionFlow) continue;
+    for (const node of productionFlow.nodes) {
+      if (webhookTriggerMatches(node, method, path)) matches.push({ flow: productionFlow, trigger: node });
     }
   }
   if (matches.length === 0) return { ok: false, error: "webhook not found", status: 404 };

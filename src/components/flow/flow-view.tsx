@@ -12,33 +12,41 @@ import {
   addConnectedNode,
   connect,
   disconnect,
+  duplicateNode,
   emptyFlow,
+  flowPublishStatus,
   flowRunRedactsData,
   flowDraftReducer,
   initialFlowDraft,
   moveNodes,
   nodeExecutionChangedSinceSnapshot,
+  publishFlow,
   removeNode,
   renameFlow,
   renameNode,
   setActive,
   setExecutionDataRedaction,
+  setNodeDisplayNote,
+  setNodeExecutionSettings,
   setNodeNotes,
   setNodeParam,
   setNodePinnedData,
   setPinnedDataForNodes,
   spliceNodeOnEdge,
+  tidyFlowLayout,
   toggleNodeDisabled,
+  unpublishFlow,
   updateSticky,
   type FlowDoc,
   type FlowDraftAction,
   type FlowDraftState,
+  type FlowNodeSettings,
   type FlowParamValue,
   type FlowPosition,
   type FlowStickyData,
 } from "@/lib/flow/flow-doc";
 import { buildPromptFlow, flowNameFromPrompt } from "@/lib/flow/flow-prompt";
-import { flowRunBlockReason } from "@/lib/flow/flow-compile";
+import { flowPublishBlockReason, flowRunBlockReason } from "@/lib/flow/flow-compile";
 import { finalizeFlowSteps, phasesFromRunSteps, selectNodeRunData } from "@/lib/flow/flow-progress";
 import {
   clearFlowRuns,
@@ -88,7 +96,7 @@ export function FlowView() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [tab, setTab] = useState<FlowTab>("editor");
   const [catalogOpen, setCatalogOpen] = useState(false);
-  const [viewResetKey] = useState(0);
+  const [viewResetKey, setViewResetKey] = useState(0);
   const [saving, setSaving] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -118,6 +126,7 @@ export function FlowView() {
 
   const doc = draftState?.doc ?? null;
   const dirty = draftState?.dirty ?? false;
+  const publishBlock = useMemo(() => doc ? flowPublishBlockReason(doc) : { ok: false }, [doc]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -258,6 +267,16 @@ export function FlowView() {
       stale: nodeExecutionChangedSinceSnapshot(doc, activeRun.flowSnapshot, selectedNode.id),
     };
   }, [doc, selectedNode, activeRun, progress.markersFound, progress.steps]);
+
+  const staleNodeIds = useMemo(() => {
+    if (!doc || !activeRun?.flowSnapshot) return {};
+    return Object.fromEntries(
+      doc.nodes.map((node) => [
+        node.id,
+        nodeExecutionChangedSinceSnapshot(doc, activeRun.flowSnapshot, node.id),
+      ]),
+    );
+  }, [doc, activeRun?.flowSnapshot]);
 
   const uniqueId = useCallback(
     (base: string) => {
@@ -435,6 +454,40 @@ export function FlowView() {
       setSaving(false);
     }
   }, [dispatchDraft, doc, saveFlow, showNotice]);
+
+  const persistFlow = useCallback(async (next: FlowDoc, message: string) => {
+    setSaving(true);
+    try {
+      const result = await saveFlow(next);
+      if (!result.ok || !result.flow) {
+        showNotice(result.error ?? "save failed");
+        return;
+      }
+      dispatchDraft({ type: "mark-saved", doc: result.flow });
+      setFlows((current) => {
+        const without = current.filter((f) => f.id !== result.flow!.id);
+        return [result.flow!, ...without];
+      });
+      showNotice(message);
+    } finally {
+      setSaving(false);
+    }
+  }, [dispatchDraft, saveFlow, showNotice]);
+
+  const publish = useCallback(() => {
+    if (!doc) return;
+    const block = flowPublishBlockReason(doc);
+    if (!block.ok) {
+      showNotice(block.reason ?? "this flow can't be published yet");
+      return;
+    }
+    void persistFlow(publishFlow(doc, new Date().toISOString()), "Flow published. Production triggers use this version.");
+  }, [doc, persistFlow, showNotice]);
+
+  const unpublish = useCallback(() => {
+    if (!doc) return;
+    void persistFlow(unpublishFlow(doc), "Flow unpublished. Production triggers are disabled.");
+  }, [doc, persistFlow]);
 
   const execute = useCallback(async (nodeId?: string, flowSnapshot?: FlowDoc) => {
     if (!doc) return;
@@ -635,13 +688,35 @@ export function FlowView() {
     [mutate],
   );
   const onMoveNodes = useCallback((positions: Record<string, FlowPosition>) => mutate((d) => moveNodes(d, positions)), [mutate]);
+  const tidy = useCallback(() => {
+    mutate((d) => tidyFlowLayout(d));
+    setViewResetKey((key) => key + 1);
+  }, [mutate]);
   const onRenameNode = useCallback((id: string, name: string) => mutate((d) => renameNode(d, id, name)), [mutate]);
   const onChangeParam = useCallback(
     (id: string, key: string, value: FlowParamValue) => mutate((d) => setNodeParam(d, id, key, value)),
     [mutate],
   );
   const onChangeNotes = useCallback((id: string, notes: string) => mutate((d) => setNodeNotes(d, id, notes)), [mutate]);
+  const onToggleDisplayNote = useCallback(
+    (id: string) => mutate((d) => {
+      const node = d.nodes.find((n) => n.id === id);
+      return setNodeDisplayNote(d, id, node?.displayNote !== true);
+    }),
+    [mutate],
+  );
+  const onChangeSettings = useCallback(
+    (id: string, patch: Partial<FlowNodeSettings>) => mutate((d) => setNodeExecutionSettings(d, id, patch)),
+    [mutate],
+  );
   const onPinData = useCallback((id: string, data: string) => mutate((d) => setNodePinnedData(d, id, data)), [mutate]);
+  const onDuplicateNode = useCallback((id: string) => {
+    if (!doc) return;
+    const result = duplicateNode(doc, id);
+    if (!result.nodeId) return;
+    dispatchDraft({ type: "apply", next: result.doc });
+    setSelectedNodeId(result.nodeId);
+  }, [dispatchDraft, doc]);
   const onToggleDisabled = useCallback((id: string) => mutate((d) => toggleNodeDisabled(d, id)), [mutate]);
   const listenWebhookTest = useCallback(
     async (id: string) => {
@@ -749,9 +824,13 @@ export function FlowView() {
               executing={executing}
               manualDataRedacted={flowRunRedactsData(doc, "manual")}
               productionDataRedacted={flowRunRedactsData(doc, "production")}
+              publishStatus={flowPublishStatus(doc)}
+              publishBlockReason={publishBlock.ok ? undefined : publishBlock.reason}
               onRename={(name) => mutate((d) => renameFlow(d, name))}
               onToggleActive={() => mutate((d) => setActive(d, !d.active))}
               onToggleExecutionDataRedaction={(mode) => mutate((d) => setExecutionDataRedaction(d, mode, !flowRunRedactsData(d, mode)))}
+              onPublish={publish}
+              onUnpublish={unpublish}
               onTab={setTab}
               onUndo={() => dispatchDraft({ type: "undo" })}
               onRedo={() => dispatchDraft({ type: "redo" })}
@@ -769,6 +848,7 @@ export function FlowView() {
                   doc={doc}
                   selectedNodeId={selectedNodeId}
                   phases={displayedPhases}
+                  staleNodeIds={staleNodeIds}
                   activeNodeId={running ? progress.activeNodeId : null}
                   viewResetKey={viewResetKey}
                   onSelectNode={setSelectedNodeId}
@@ -780,6 +860,7 @@ export function FlowView() {
                   onRequestAdd={requestAdd}
                   onConnectToNew={requestConnectToNew}
                   onInsertEdge={requestInsertEdge}
+                  onTidy={tidy}
                   onStickyText={(id, text) => onChangeSticky(id, { text })}
                   onStickySize={(id, width, height) => onChangeSticky(id, { width, height })}
                 />
@@ -805,9 +886,12 @@ export function FlowView() {
                     onRename={(name) => onRenameNode(selectedNode.id, name)}
                     onChangeParam={(key, value) => onChangeParam(selectedNode.id, key, value)}
                     onChangeNotes={(notes) => onChangeNotes(selectedNode.id, notes)}
+                    onToggleDisplayNote={() => onToggleDisplayNote(selectedNode.id)}
+                    onChangeSettings={(patch) => onChangeSettings(selectedNode.id, patch)}
                     onToggleDisabled={() => onToggleDisabled(selectedNode.id)}
                     onExecuteNode={() => void executeNode(selectedNode.id)}
                     onPinData={(data) => onPinData(selectedNode.id, data)}
+                    onDuplicate={() => onDuplicateNode(selectedNode.id)}
                     onListenWebhookTest={() => listenWebhookTest(selectedNode.id)}
                     onChangeSticky={(patch) => onChangeSticky(selectedNode.id, patch)}
                     onDelete={() => onRemoveNode(selectedNode.id)}

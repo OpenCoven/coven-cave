@@ -14,6 +14,7 @@ export type FlowNodeData = {
   node: FlowNode;
   def: FlowNodeType | undefined;
   phase?: FlowNodePhase;
+  stale?: boolean;
   /** Sticky-only: commit inline-edited text / resized dimensions to the doc. */
   onStickyText?: (text: string) => void;
   onStickySize?: (width: number, height: number) => void;
@@ -31,16 +32,18 @@ function handleTop(index: number, count: number): string {
 
 /** The n8n-style node card: icon tile, name, type subtitle, port handles. */
 export function FlowNodeView({ data, selected }: NodeProps<FlowRFNode>) {
-  const { node, def, phase } = data;
+  const { node, def, phase, stale } = data;
   const accent = def?.accent ?? "#7b7f87";
   const inputs = def?.inputs ?? [];
   const outputs = def?.outputs ?? [];
   const isTrigger = def?.isTrigger === true;
+  const displayedNote = node.displayNote ? node.notes?.trim() : "";
   const classes = [
     "flow-node",
     `flow-node-${def?.category ?? "unknown"}`,
     isTrigger ? "flow-node-trigger" : "",
     node.disabled ? "is-disabled" : "",
+    stale ? "is-stale" : "",
     phase ? `flow-node-phase-${phase}` : "",
     selected ? "is-selected" : "",
   ]
@@ -68,9 +71,23 @@ export function FlowNodeView({ data, selected }: NodeProps<FlowRFNode>) {
           {node.name}
         </span>
         <span className="flow-node-type">{def?.label ?? node.type}</span>
+        {displayedNote && (
+          <span className="flow-node-note-text" title={displayedNote}>
+            {displayedNote}
+          </span>
+        )}
       </span>
 
-      {node.disabled && <span className="flow-node-disabled-badge">disabled</span>}
+      {node.disabled && (
+        <span className="flow-node-disabled-badge" aria-label="Disabled">
+          disabled
+        </span>
+      )}
+      {stale && (
+        <span className="flow-node-stale-badge" aria-label="Stale data" title="Node data is stale">
+          <Icon name="ph:warning" width={13} />
+        </span>
+      )}
       {phase && (
         <span className={`flow-node-phase-dot flow-node-phase-dot-${phase}`} aria-label={phase}>
           {phase === "running" && <span className="flow-node-spinner" aria-hidden />}

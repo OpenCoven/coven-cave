@@ -9,6 +9,7 @@ const source = readFileSync(new URL("./[...path]/route.ts", import.meta.url), "u
 const baseRoute = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(source, /findWebhookFlow/, "route finds a saved active webhook flow by method/path");
+assert.match(source, /match\.flow/, "route should execute the flow document returned by webhook matching");
 assert.match(source, /startFlowSession/, "route starts the matched flow through the shared session executor");
 assert.match(source, /mode: "production"/, "production webhooks must execute in production mode");
 assert.match(source, /triggerInput/, "route passes request data into the compiled flow prompt");

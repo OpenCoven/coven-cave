@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
-import { compileFlowPrompt, flowExecutionOrder, flowPartialExecutionOrder, flowRunBlockReason } from "./flow-compile.ts";
-import { addNode, connect, emptyFlow, type FlowDoc, type FlowNode } from "./flow-doc.ts";
+import {
+  compileFlowPrompt,
+  flowExecutionOrder,
+  flowPartialExecutionOrder,
+  flowPublishBlockReason,
+  flowRunBlockReason,
+} from "./flow-compile.ts";
+import { addNode, connect, emptyFlow, setNodeExecutionSettings, type FlowDoc, type FlowNode } from "./flow-doc.ts";
 
 const NOW = "2026-01-01T00:00:00.000Z";
 
@@ -149,6 +155,46 @@ function build(nodes: Array<[string, string]>, edges: Array<[string, string]>): 
   assert.doesNotMatch(prompt, /devOnly/, "production prompt must not leak pinned development data");
 }
 
+// node execution settings compile into run instructions the session executor can honor.
+{
+  let doc = build(
+    [["t", "trigger.manual"], ["api", "http"], ["out", "data.output"]],
+    [["t", "api"], ["api", "out"]],
+  );
+  doc = setNodeExecutionSettings(doc, "api", {
+    alwaysOutputData: true,
+    executeOnce: true,
+    retryOnFail: true,
+    maxTries: 3,
+    onError: "continue",
+  });
+  const prompt = compileFlowPrompt(doc);
+  assert.match(prompt, /Execution settings/, "prompt should expose configured node behavior");
+  assert.match(prompt, /Always output data: emit an empty item if this node returns no data/, "always-output behavior should be visible to the executor");
+  assert.match(prompt, /Execute once: run this node once using only the first input item/, "execute-once behavior should be visible to the executor");
+  assert.match(prompt, /Retry on fail: up to 3 tries/, "retry policy should be visible to the executor");
+  assert.match(prompt, /On error: continue with the last valid output/, "continue-on-error policy should be visible");
+}
+
+// n8n-style expression parameters compile as dynamic expressions rather than
+// plain fixed config values.
+{
+  let doc = build(
+    [["t", "trigger.manual"], ["filter", "logic.filter"], ["out", "data.output"]],
+    [["t", "filter"], ["filter", "out"]],
+  );
+  doc = {
+    ...doc,
+    nodes: doc.nodes.map((node) =>
+      node.id === "filter" ? { ...node, params: { condition: "={{ $json.score > 0.5 }}" } } : node,
+    ),
+  };
+  const prompt = compileFlowPrompt(doc);
+  assert.match(prompt, /Expression parameters/, "prompt should separate dynamic expression config");
+  assert.match(prompt, /Keep when: =\{\{ \$json\.score > 0\.5 \}\}/, "prompt should preserve expression syntax");
+  assert.match(prompt, /Evaluate these n8n-style expressions/, "prompt should tell the executor expressions are dynamic");
+}
+
 // webhook/production executions include the incoming request data as the
 // trigger node's starting output, so downstream nodes can act on it.
 {
@@ -185,6 +231,38 @@ function build(nodes: Array<[string, string]>, edges: Array<[string, string]>): 
     node.id === "a" ? { ...node, disabled: true } : node,
   );
   assert.equal(flowRunBlockReason(onlyDisabledStep).ok, false, "disabled steps do not make a flow runnable");
+}
+
+// publish block reasons: production publishing requires a real production
+// trigger and at least one enabled downstream step.
+{
+  assert.deepEqual(
+    flowPublishBlockReason(build([["t", "trigger.manual"], ["a", "familiar"]], [["t", "a"]])),
+    { ok: false, reason: "Add a webhook, schedule, or chat trigger before publishing." },
+    "manual-only flows can be manually executed but cannot be published to production",
+  );
+  assert.deepEqual(
+    flowPublishBlockReason(build([["hook", "trigger.webhook"], ["a", "familiar"]], [])),
+    { ok: false, reason: "Add a step after the production trigger." },
+    "publish needs a production trigger connected to executable work",
+  );
+  const disabledStep = build([["hook", "trigger.webhook"], ["a", "familiar"]], [["hook", "a"]]);
+  disabledStep.nodes = disabledStep.nodes.map((node) => node.id === "a" ? { ...node, disabled: true } : node);
+  assert.deepEqual(
+    flowPublishBlockReason(disabledStep),
+    { ok: false, reason: "Add a step after the production trigger." },
+    "disabled downstream nodes do not make a publishable production flow",
+  );
+  assert.deepEqual(
+    flowPublishBlockReason(build([["hook", "trigger.webhook"], ["a", "familiar"]], [["hook", "a"]])),
+    { ok: true },
+    "webhook-triggered work is publishable",
+  );
+  assert.deepEqual(
+    flowPublishBlockReason(build([["schedule", "trigger.schedule"], ["a", "familiar"]], [["schedule", "a"]])),
+    { ok: true },
+    "scheduled work is publishable",
+  );
 }
 
 // compileFlowPrompt: includes marker protocol + node ids in order

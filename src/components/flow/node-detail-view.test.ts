@@ -7,6 +7,23 @@ const view = readFileSync(new URL("./flow-view.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../styles/flow.css", import.meta.url), "utf8");
 
 assert.match(detail, /onPinData: \(data: string\) => void/, "NDV accepts pinned-data updates");
+assert.match(detail, /onToggleDisplayNote: \(\) => void/, "NDV accepts display-note toggles");
+assert.match(detail, /onDuplicate: \(\) => void/, "NDV exposes a selected-node duplicate action");
+assert.match(detail, /onChangeSettings: \(patch: Partial<FlowNodeSettings>\) => void/, "NDV accepts execution setting updates");
+assert.match(detail, /Deactivate node/, "NDV exposes disabled-node state in the settings panel");
+assert.match(detail, /checked=\{node\.disabled === true\}/, "NDV disabled-node toggle reflects selected node state");
+assert.match(detail, /disabled=\{node\.disabled === true\}/, "NDV blocks direct step execution while a node is disabled");
+assert.match(detail, /Fixed/, "NDV exposes fixed-value parameter mode");
+assert.match(detail, /Expression/, "NDV exposes expression parameter mode");
+assert.match(detail, /toExpressionValue/, "NDV can convert a fixed field into n8n-style expression syntax");
+assert.match(detail, /fromExpressionValue/, "NDV can convert expression syntax back to a fixed field");
+assert.match(detail, /Execution settings/, "NDV exposes n8n-style node execution settings");
+assert.match(detail, /Display note in flow/, "NDV exposes n8n-style display-note toggle");
+assert.match(detail, /Always output data/, "NDV exposes always-output-data");
+assert.match(detail, /Execute once/, "NDV exposes execute-once");
+assert.match(detail, /Retry on fail/, "NDV exposes retry-on-fail");
+assert.match(detail, /Max tries/, "NDV exposes retry count");
+assert.match(detail, /On error/, "NDV exposes on-error policy");
 assert.match(detail, /Pinned data/, "NDV exposes a pinned-data section");
 assert.match(detail, /Pin output/, "NDV can pin the latest run output");
 assert.match(detail, /Unpin/, "NDV can clear pinned data");
@@ -23,12 +40,20 @@ assert.match(detail, /webhookProductionPath/, "Webhook URL controls use the shar
 assert.match(detail, /onListenWebhookTest: \(\) => Promise/, "NDV exposes a listen-for-test-event callback");
 
 assert.match(view, /setNodePinnedData/, "FlowView imports pinned-data mutation");
+assert.match(view, /setNodeDisplayNote/, "FlowView imports display-note mutation");
+assert.match(view, /setNodeExecutionSettings/, "FlowView imports execution setting mutation");
+assert.match(view, /duplicateNode/, "FlowView imports the pure duplicate-node mutation");
+assert.match(view, /onDuplicateNode/, "FlowView has a selected-node duplicate handler");
+assert.match(view, /onDuplicate=\{\(\) => onDuplicateNode\(selectedNode\.id\)\}/, "FlowView wires selected node duplication");
 assert.match(view, /onPinData=\{\(data\) => onPinData\(selectedNode\.id, data\)\}/, "FlowView wires selected node pinning");
+assert.match(view, /onToggleDisplayNote=\{\(\) => onToggleDisplayNote\(selectedNode\.id\)\}/, "FlowView wires selected node display-note toggle");
+assert.match(view, /onChangeSettings=\{\(patch\) => onChangeSettings\(selectedNode\.id, patch\)\}/, "FlowView wires selected node settings");
 assert.match(view, /listenWebhookTest/, "FlowView wires webhook test listener registration");
 assert.match(view, /nodeExecutionChangedSinceSnapshot/, "FlowView marks inspected run data stale when the node changed since its run snapshot");
 
 assert.match(styles, /\.flow-ndv-pinned/, "Pinned data controls are styled");
 assert.match(styles, /\.flow-ndv-data-stale/, "Stale run-data badge is styled");
 assert.match(styles, /\.flow-ndv-webhook/, "Webhook URL controls are styled");
+assert.match(styles, /\.flow-ndv-foot \{[^}]*flex-wrap: wrap/, "NDV footer actions should wrap in narrow panels");
 
 console.log("node-detail-view.test.ts OK");

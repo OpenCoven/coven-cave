@@ -30,6 +30,33 @@ export type FlowExecutionDataPolicy = {
   redactProduction?: boolean;
 };
 
+export type FlowNodeOnError = "stop" | "continue" | "continueErrorOutput";
+
+export type FlowNodeSettings = {
+  alwaysOutputData?: boolean;
+  executeOnce?: boolean;
+  retryOnFail?: boolean;
+  maxTries?: number;
+  onError?: FlowNodeOnError;
+};
+
+export type FlowPublishedSnapshot = {
+  id: string;
+  name: string;
+  active: boolean;
+  executionData?: FlowExecutionDataPolicy;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  createdAt: string;
+  updatedAt: string;
+  schema: number;
+};
+
+export type FlowPublishedVersion = {
+  publishedAt: string;
+  snapshot: FlowPublishedSnapshot;
+};
+
 export type FlowNode = {
   id: string;
   /** Node type id from the catalog, e.g. "trigger.manual", "logic.if". */
@@ -42,7 +69,11 @@ export type FlowNode = {
   disabled?: boolean;
   /** Development-only pinned output reused by manual/partial runs. */
   pinnedData?: string;
+  /** Generic n8n-style runtime behavior for this node. Defaults are omitted. */
+  settings?: FlowNodeSettings;
   notes?: string;
+  /** Show notes as a subtitle on the canvas, n8n's "Display note in flow". */
+  displayNote?: boolean;
   /** Present only on sticky-note nodes. */
   sticky?: FlowStickyData;
 };
@@ -64,6 +95,8 @@ export type FlowDoc = {
   name: string;
   /** n8n "Active" toggle — whether the flow's triggers are armed. */
   active: boolean;
+  /** Production version. Draft edits do not affect webhook/schedule execution until republished. */
+  published?: FlowPublishedVersion;
   /** Execution-history data retention policy. */
   executionData?: FlowExecutionDataPolicy;
   nodes: FlowNode[];
@@ -124,6 +157,28 @@ export function removeNode(doc: FlowDoc, id: string): FlowDoc {
   };
 }
 
+export type DuplicateNodeResult = { doc: FlowDoc; nodeId: string | null };
+
+export function duplicateNode(
+  doc: FlowDoc,
+  id: string,
+  offset: FlowPosition = { x: 56, y: 56 },
+): DuplicateNodeResult {
+  const source = findNode(doc, id);
+  if (!source) return { doc, nodeId: null };
+  const nodeId = nextNodeId(doc, source.id);
+  const duplicate: FlowNode = {
+    ...structuredClone(source),
+    id: nodeId,
+    name: uniqueNodeName(doc, source.name),
+    position: {
+      x: source.position.x + offset.x,
+      y: source.position.y + offset.y,
+    },
+  };
+  return { doc: addNode(doc, duplicate), nodeId };
+}
+
 export function moveNode(doc: FlowDoc, id: string, position: FlowPosition): FlowDoc {
   return mapNode(doc, id, (node) => ({ ...node, position }));
 }
@@ -137,6 +192,78 @@ export function moveNodes(doc: FlowDoc, positions: Record<string, FlowPosition>)
     return { ...node, position: next };
   });
   return changed ? { ...doc, nodes } : doc;
+}
+
+const TIDY_ORIGIN: FlowPosition = { x: 120, y: 120 };
+const TIDY_COLUMN_GAP = 260;
+const TIDY_ROW_GAP = 132;
+
+export function tidyFlowLayout(doc: FlowDoc): FlowDoc {
+  const layoutNodes = doc.nodes.filter((node) => !node.sticky);
+  if (layoutNodes.length === 0) return doc;
+  const layoutIds = new Set(layoutNodes.map((node) => node.id));
+  const order = [...layoutNodes].sort(compareNodesForTidy);
+  const orderIndex = new Map(order.map((node, index) => [node.id, index]));
+  const children = new Map<string, string[]>();
+  const indegree = new Map<string, number>();
+  const depth = new Map<string, number>();
+  for (const node of order) {
+    children.set(node.id, []);
+    indegree.set(node.id, 0);
+    depth.set(node.id, 0);
+  }
+  for (const edge of doc.edges) {
+    if (!layoutIds.has(edge.source) || !layoutIds.has(edge.target)) continue;
+    children.get(edge.source)?.push(edge.target);
+    indegree.set(edge.target, (indegree.get(edge.target) ?? 0) + 1);
+  }
+  for (const targets of children.values()) {
+    targets.sort((a, b) => (orderIndex.get(a) ?? 0) - (orderIndex.get(b) ?? 0));
+  }
+
+  const queue = order.filter((node) => (indegree.get(node.id) ?? 0) === 0).map((node) => node.id);
+  const emitted = new Set<string>();
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const id = queue[cursor];
+    if (emitted.has(id)) continue;
+    emitted.add(id);
+    for (const target of children.get(id) ?? []) {
+      depth.set(target, Math.max(depth.get(target) ?? 0, (depth.get(id) ?? 0) + 1));
+      const nextIndegree = (indegree.get(target) ?? 1) - 1;
+      indegree.set(target, nextIndegree);
+      if (nextIndegree === 0) queue.push(target);
+    }
+  }
+
+  for (const node of order) {
+    if (emitted.has(node.id)) continue;
+    const incomingDepths = doc.edges
+      .filter((edge) => edge.target === node.id && layoutIds.has(edge.source) && emitted.has(edge.source))
+      .map((edge) => (depth.get(edge.source) ?? 0) + 1);
+    depth.set(node.id, incomingDepths.length ? Math.max(...incomingDepths) : 0);
+    emitted.add(node.id);
+  }
+
+  const layers = new Map<number, FlowNode[]>();
+  for (const node of order) {
+    const layer = depth.get(node.id) ?? 0;
+    const nodes = layers.get(layer) ?? [];
+    nodes.push(node);
+    layers.set(layer, nodes);
+  }
+
+  const positions = new Map<string, FlowPosition>();
+  for (const [layer, nodes] of [...layers.entries()].sort(([a], [b]) => a - b)) {
+    nodes.sort(compareNodesForTidy);
+    nodes.forEach((node, row) => {
+      positions.set(node.id, {
+        x: TIDY_ORIGIN.x + layer * TIDY_COLUMN_GAP,
+        y: TIDY_ORIGIN.y + row * TIDY_ROW_GAP,
+      });
+    });
+  }
+
+  return moveNodes(doc, Object.fromEntries(positions));
 }
 
 export function renameNode(doc: FlowDoc, id: string, name: string): FlowDoc {
@@ -153,6 +280,16 @@ export function setNodeNotes(doc: FlowDoc, id: string, notes: string): FlowDoc {
   return mapNode(doc, id, (node) => ({ ...node, notes }));
 }
 
+export function setNodeDisplayNote(doc: FlowDoc, id: string, displayNote: boolean): FlowDoc {
+  return mapNode(doc, id, (node) => {
+    if (!displayNote) {
+      const { displayNote: _displayNote, ...rest } = node;
+      return rest;
+    }
+    return { ...node, displayNote: true };
+  });
+}
+
 export function setNodePinnedData(doc: FlowDoc, id: string, pinnedData: string): FlowDoc {
   const trimmed = pinnedData.trim();
   return mapNode(doc, id, (node) => {
@@ -162,6 +299,37 @@ export function setNodePinnedData(doc: FlowDoc, id: string, pinnedData: string):
     }
     return { ...node, pinnedData: trimmed };
   });
+}
+
+export function setNodeExecutionSettings(
+  doc: FlowDoc,
+  id: string,
+  patch: Partial<FlowNodeSettings>,
+): FlowDoc {
+  return mapNode(doc, id, (node) => {
+    const settings = normalizeNodeSettings({ ...(node.settings ?? {}), ...patch });
+    if (!settings) {
+      const { settings: _settings, ...rest } = node;
+      return rest;
+    }
+    return { ...node, settings };
+  });
+}
+
+export function normalizeNodeSettings(settings: Partial<FlowNodeSettings>): FlowNodeSettings | undefined {
+  const next: FlowNodeSettings = {};
+  if (settings.alwaysOutputData === true) next.alwaysOutputData = true;
+  if (settings.executeOnce === true) next.executeOnce = true;
+  const retryOnFail = settings.retryOnFail === true;
+  if (retryOnFail) {
+    next.retryOnFail = true;
+    const maxTries = normalizeMaxTries(settings.maxTries);
+    if (maxTries > 1) next.maxTries = maxTries;
+  }
+  if (settings.onError === "continue" || settings.onError === "continueErrorOutput") {
+    next.onError = settings.onError;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
 }
 
 export function setExecutionDataRedaction(
@@ -184,6 +352,42 @@ export function flowRunRedactsData(doc: FlowDoc, mode: "manual" | "production"):
     : doc.executionData?.redactManual === true;
 }
 
+export function publishFlow(doc: FlowDoc, now: string): FlowDoc {
+  return {
+    ...doc,
+    published: {
+      publishedAt: now,
+      snapshot: flowPublishedSnapshot(doc),
+    },
+  };
+}
+
+export function unpublishFlow(doc: FlowDoc): FlowDoc {
+  if (!doc.published) return doc;
+  const { published: _published, ...rest } = doc;
+  return rest;
+}
+
+export function hasUnpublishedFlowChanges(doc: FlowDoc): boolean {
+  if (!doc.published) return false;
+  return !samePublishedRuntime(flowPublishedSnapshot(doc), doc.published.snapshot);
+}
+
+export function flowPublishStatus(doc: FlowDoc): "unpublished" | "published" | "changed" {
+  if (!doc.published) return "unpublished";
+  return hasUnpublishedFlowChanges(doc) ? "changed" : "published";
+}
+
+export function publishedFlowForProduction(doc: FlowDoc): FlowDoc | null {
+  if (!doc.active || !doc.published) return null;
+  return {
+    ...doc.published.snapshot,
+    active: true,
+    executionData: doc.executionData,
+    published: doc.published,
+  };
+}
+
 export function setPinnedDataForNodes(doc: FlowDoc, pinnedDataByNodeId: Record<string, string>): FlowDoc {
   let next = doc;
   for (const [id, pinnedData] of Object.entries(pinnedDataByNodeId)) {
@@ -198,8 +402,38 @@ function omitExecutionData(doc: FlowDoc): FlowDoc {
   return rest;
 }
 
+function flowPublishedSnapshot(doc: FlowDoc): FlowPublishedSnapshot {
+  return {
+    id: doc.id,
+    name: doc.name,
+    active: doc.active,
+    ...(doc.executionData ? { executionData: doc.executionData } : {}),
+    nodes: structuredClone(doc.nodes),
+    edges: structuredClone(doc.edges),
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+    schema: doc.schema,
+  };
+}
+
+function samePublishedRuntime(a: FlowPublishedSnapshot, b: FlowPublishedSnapshot): boolean {
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.schema === b.schema &&
+    JSON.stringify(a.nodes) === JSON.stringify(b.nodes) &&
+    JSON.stringify(a.edges) === JSON.stringify(b.edges)
+  );
+}
+
 export function toggleNodeDisabled(doc: FlowDoc, id: string): FlowDoc {
-  return mapNode(doc, id, (node) => ({ ...node, disabled: !node.disabled }));
+  return mapNode(doc, id, (node) => {
+    if (node.disabled) {
+      const { disabled: _disabled, ...rest } = node;
+      return rest;
+    }
+    return { ...node, disabled: true };
+  });
 }
 
 export function updateSticky(doc: FlowDoc, id: string, patch: Partial<FlowStickyData>): FlowDoc {
@@ -317,7 +551,10 @@ function nodeExecutionSignature(doc: FlowDoc, nodeId: string): string | null {
     type: node.type,
     params: sortedRecord(node.params),
     disabled: Boolean(node.disabled),
+    effectiveParents: effectiveExecutableParents(doc, nodeId),
+    effectiveParentPinnedData: effectiveParentPinnedData(doc, nodeId),
     pinnedData: node.pinnedData?.trim() ?? "",
+    settings: normalizedSettingsRecord(node.settings),
     sticky: node.sticky
       ? {
           color: node.sticky.color,
@@ -328,6 +565,38 @@ function nodeExecutionSignature(doc: FlowDoc, nodeId: string): string | null {
       : null,
     edges,
   });
+}
+
+function effectiveParentPinnedData(doc: FlowDoc, nodeId: string): Array<{ id: string; pinnedData: string }> {
+  return effectiveExecutableParents(doc, nodeId)
+    .map((id) => ({ id, pinnedData: findNode(doc, id)?.pinnedData?.trim() ?? "" }))
+    .filter((entry) => entry.pinnedData.length > 0);
+}
+
+function effectiveExecutableParents(doc: FlowDoc, nodeId: string, seen = new Set<string>()): string[] {
+  if (seen.has(nodeId)) return [];
+  seen.add(nodeId);
+  const parents = new Set<string>();
+  for (const edge of doc.edges) {
+    if (edge.target !== nodeId) continue;
+    const source = findNode(doc, edge.source);
+    if (!source) continue;
+    if (source.disabled) {
+      for (const parent of effectiveExecutableParents(doc, source.id, seen)) parents.add(parent);
+    } else {
+      parents.add(source.id);
+    }
+  }
+  return [...parents].sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeMaxTries(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 1;
+  return Math.min(10, Math.max(1, Math.round(value)));
+}
+
+function normalizedSettingsRecord(settings: FlowNodeSettings | undefined): FlowNodeSettings | null {
+  return normalizeNodeSettings(settings ?? {}) ?? null;
 }
 
 function sortedRecord(record: Record<string, FlowParamValue>): Record<string, FlowParamValue> {
@@ -344,6 +613,10 @@ function compareEdgeSignatures(
     a.target.localeCompare(b.target) ||
     a.targetHandle.localeCompare(b.targetHandle)
   );
+}
+
+function compareNodesForTidy(a: FlowNode, b: FlowNode): number {
+  return a.position.y - b.position.y || a.position.x - b.position.x || a.id.localeCompare(b.id);
 }
 
 function mapNode(doc: FlowDoc, id: string, fn: (node: FlowNode) => FlowNode): FlowDoc {
@@ -439,6 +712,8 @@ export function sameDoc(a: FlowDoc, b: FlowDoc): boolean {
   return (
     a.name === b.name &&
     a.active === b.active &&
+    JSON.stringify(a.executionData ?? null) === JSON.stringify(b.executionData ?? null) &&
+    JSON.stringify(a.published ?? null) === JSON.stringify(b.published ?? null) &&
     JSON.stringify(a.nodes) === JSON.stringify(b.nodes) &&
     JSON.stringify(a.edges) === JSON.stringify(b.edges)
   );
