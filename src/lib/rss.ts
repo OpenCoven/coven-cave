@@ -61,12 +61,22 @@ export function decodeEntities(input: string): string {
   });
 }
 
-/** Unwrap CDATA, strip residual markup, decode entities, and collapse runs of
- *  whitespace to single spaces. Safe on plain text too. */
+/** Unwrap CDATA, decode entities, strip residual markup, and collapse runs of
+ *  whitespace to single spaces. Safe on plain text too.
+ *
+ *  Order matters: entities are decoded *before* tags are stripped, so an encoded
+ *  `&lt;script&gt;` can't survive stripping as live markup; and the strip runs to
+ *  a fixed point, since removing one tag can re-expose a nested one
+ *  (`<scr<i>ipt>` → `<script>`). */
 export function cleanText(raw: string): string {
   const withoutCdata = raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1");
-  const withoutTags = withoutCdata.replace(/<[^>]+>/g, "");
-  return decodeEntities(withoutTags).replace(/\s+/g, " ").trim();
+  let text = decodeEntities(withoutCdata);
+  let prev: string;
+  do {
+    prev = text;
+    text = text.replace(/<[^>]*>/g, "");
+  } while (text !== prev);
+  return text.replace(/\s+/g, " ").trim();
 }
 
 /** Inner text of the first `<tag>…</tag>` in `block` (attributes allowed),

@@ -17,6 +17,9 @@ assert.equal(decodeEntities("AT&amp;T &lt;b&gt; &#39;x&#39; &#x27;y&#x27;"), "AT
 assert.equal(decodeEntities("&unknownentity; stays"), "&unknownentity; stays");
 assert.equal(cleanText("<![CDATA[Hello &amp; <b>world</b>]]>"), "Hello & world");
 assert.equal(cleanText("  multi\n  line   text "), "multi line text");
+// Entities are decoded BEFORE tags are stripped, so encoded markup is removed
+// rather than re-exposed as live text.
+assert.equal(cleanText("&lt;b&gt;Bold&lt;/b&gt; &amp; clean"), "Bold & clean");
 
 // ── Date normalization (RFC-822 + ISO) ───────────────────────────────────────
 assert.equal(normalizeDate("Wed, 02 Oct 2024 13:00:00 GMT"), "2024-10-02T13:00:00.000Z");
