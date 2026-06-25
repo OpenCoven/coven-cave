@@ -15,7 +15,18 @@ const DEFAULT_CONFIG: CaveConfig = {
   defaults: { harness: "codex", model: "openai/gpt-5.5" },
   familiars: {},
   roles: [],
-  addons: { github: false, library: false },
+  addons: {
+    github: false,
+    library: false,
+    code: false,
+    terminal: false,
+    browser: false,
+    flow: false,
+    roles: false,
+    groupchat: false,
+    journal: false,
+    docs: false,
+  },
   marketplace: { installed: {} },
 };
 
@@ -93,6 +104,14 @@ export type CaveConfig = {
   addons?: {
     github?: boolean;
     library?: boolean;
+    code?: boolean;
+    terminal?: boolean;
+    browser?: boolean;
+    flow?: boolean;
+    roles?: boolean;
+    groupchat?: boolean;
+    journal?: boolean;
+    docs?: boolean;
   };
   marketplace: {
     installed: Record<string, MarketplaceInstallEntry>;
@@ -124,6 +143,14 @@ export async function loadConfig(): Promise<CaveConfig> {
       addons: {
         github: parsed.addons?.github ?? false,
         library: parsed.addons?.library ?? false,
+        code: parsed.addons?.code ?? false,
+        terminal: parsed.addons?.terminal ?? false,
+        browser: parsed.addons?.browser ?? false,
+        flow: parsed.addons?.flow ?? false,
+        roles: parsed.addons?.roles ?? false,
+        groupchat: parsed.addons?.groupchat ?? false,
+        journal: parsed.addons?.journal ?? false,
+        docs: parsed.addons?.docs ?? false,
       },
       marketplace: {
         installed: parsed.marketplace?.installed ?? {},
