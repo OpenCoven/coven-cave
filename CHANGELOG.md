@@ -7,6 +7,41 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.116] - 2026-06-25
+
+Patch release on top of v0.0.115. Headline: flows get a proper production-publish
+lane plus n8n-parity polish (per-node settings, duplicate node, display-note
+toggle, tidy layout, expression-vs-fixed param descriptions) (#1947). Familiar
+analytics finished wiring up across the stack (#1944, #1945, #1946).
+
+### Added
+
+- **Flow / Publish** - the flow toolbar now has a Publish action that snapshots
+  the current draft into the production version, so webhook and schedule runs
+  no longer pick up unsaved edits. Republish to roll the production snapshot
+  forward; Unpublish to clear it (#1947).
+- **Flow / Node settings** - n8n-style per-node options: `alwaysOutputData`,
+  `executeOnce`, `retryOnFail` with `maxTries`, and `onError`
+  (`stop` | `continue` | `continueErrorOutput`) (#1947).
+- **Flow / Duplicate node** - one-click duplicate in the node detail view
+  (positions, name, params, settings all cloned) (#1947).
+- **Flow / Display note in flow** - per-node toggle that surfaces the node's
+  notes as a subtitle on the canvas (#1947).
+- **Flow / Tidy layout** - column-based auto-layout helper that respects
+  sticky-note nodes (#1947).
+- **Familiar analytics** - end-to-end wiring for the self-report backend,
+  thread-signal card, chat-reflect trigger, and the analytics surface itself
+  (#1944, #1945, #1946).
+
+### Changed
+
+- **Flow / Compile descriptions** - parameter logs now split expression-bound
+  and fixed values so on-the-fly substitutions are easier to read at a glance
+  (#1947).
+- **Flow store** - `coerceFlowNodes` normalizes legacy node payloads and the
+  new `disabled` / `displayNote` / `settings` / `published` fields on every
+  write, so older flows upgrade cleanly without manual migration (#1947).
+
 ## [0.0.115] - 2026-06-25
 
 Patch release on top of v0.0.114: a harness-identity fix that unblocks native
