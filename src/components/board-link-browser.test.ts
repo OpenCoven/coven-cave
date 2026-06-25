@@ -8,8 +8,8 @@ const boardInspector = await readFile(new URL("./board-inspector.tsx", import.me
 
 assert.match(
   workspace,
-  /<BoardView[\s\S]*onOpenUrl=\{\(url\) => \{[\s\S]*setMode\("browser"\)[\s\S]*browserPaneRef\.current\?\.navigateTo\(url\)/,
-  "Workspace should route board task links into the embedded BrowserPane",
+  /<BoardView[\s\S]*onOpenUrl=\{openUrlExternally\}/,
+  "Workspace should route board task links to the system browser via openUrlExternally",
 );
 
 assert.match(
