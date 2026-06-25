@@ -25,6 +25,7 @@ import { readComposerHistory, writeComposerHistory } from "@/lib/composer-histor
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
+import { HomeRssWidget } from "@/components/home/rss-widget";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,36 +42,6 @@ const PLACEHOLDERS: Record<Destination, string> = {
   board: "Describe a new task…",
   reminder: "Remind me about…",
 };
-
-// Connector cards mirror the Codex-style cold start: one-tap entry points into
-// the marketplace for the integrations that give a familiar real context.
-type Connector = {
-  id: string;
-  title: string;
-  subtitle: string;
-  glyph: "slack" | "gmail" | "drive";
-};
-
-const CONNECTORS: Connector[] = [
-  {
-    id: "slack",
-    title: "Connect messaging",
-    subtitle: "Get context from recent team discussions",
-    glyph: "slack",
-  },
-  {
-    id: "gmail",
-    title: "Connect email",
-    subtitle: "Summarize stakeholder asks from email",
-    glyph: "gmail",
-  },
-  {
-    id: "drive",
-    title: "Connect files",
-    subtitle: "Review results, research, and plans",
-    glyph: "drive",
-  },
-];
 
 type Props = {
   familiars: Familiar[];
@@ -89,8 +60,8 @@ type Props = {
   onSlash?: (command: string, args: string) => void;
   /** Resume a recent chat from the "Jump back in" strip. */
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
-  /** Open the marketplace for a connector card (Slack / Gmail / Drive). */
-  onConnect?: (connectorId: string) => void;
+  /** Open an RSS article in Cave's in-app browser. */
+  onOpenUrl?: (url: string) => void;
 };
 
 // Persist the in-progress prompt so a page reload doesn't eat what you were
@@ -131,7 +102,7 @@ export function HomeComposer({
   onToast,
   onSlash,
   onOpenSession,
-  onConnect,
+  onOpenUrl,
 }: Props) {
   const [text, setText] = useState(() => readHomeDraft());
   const [destination, setDestination] = useState<Destination>("chat");
@@ -710,68 +681,13 @@ export function HomeComposer({
         </div>
       )}
 
-      {/* Connector cards — one-tap entry points into the marketplace. */}
-      <div className="home-composer-suggestions home-composer-connectors">
-        {CONNECTORS.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            className="hc-connector"
-            onClick={() => {
-              if (onConnect) onConnect(c.id);
-              else onToast("Open the Marketplace to connect integrations.");
-            }}
-          >
-            <span className="hc-connector-glyph" aria-hidden>
-              <BrandGlyph glyph={c.glyph} />
-            </span>
-            <span className="hc-connector-title">{c.title}</span>
-            <span className="hc-connector-sub">{c.subtitle}</span>
-          </button>
-        ))}
-      </div>
+      {/* Live RSS feed — the latest across a curated set of sources. */}
+      <HomeRssWidget
+        onOpenUrl={(url) => {
+          if (onOpenUrl) onOpenUrl(url);
+          else window.open(url, "_blank", "noopener,noreferrer");
+        }}
+      />
     </div>
-  );
-}
-
-// ─── Brand glyphs ───────────────────────────────────────────────────────────
-// Inline, full-colour marks for the connector cards. The shared Icon component
-// only ships the monochrome Phosphor subset, so the multi-colour brand logos
-// live here as small inline SVGs.
-function BrandGlyph({ glyph }: { glyph: Connector["glyph"] }) {
-  if (glyph === "slack") {
-    return (
-      <svg viewBox="0 0 122.8 122.8" width="22" height="22" aria-hidden focusable="false">
-        <path d="M25.8 77.6a12.9 12.9 0 1 1-12.9-12.9h12.9z" fill="#E01E5A" />
-        <path d="M32.3 77.6a12.9 12.9 0 0 1 25.8 0v32.3a12.9 12.9 0 0 1-25.8 0z" fill="#E01E5A" />
-        <path d="M45.2 25.8a12.9 12.9 0 1 1 12.9-12.9v12.9z" fill="#36C5F0" />
-        <path d="M45.2 32.3a12.9 12.9 0 0 1 0 25.8H12.9a12.9 12.9 0 0 1 0-25.8z" fill="#36C5F0" />
-        <path d="M97 45.2a12.9 12.9 0 1 1 12.9 12.9H97z" fill="#2EB67D" />
-        <path d="M90.5 45.2a12.9 12.9 0 0 1-25.8 0V12.9a12.9 12.9 0 0 1 25.8 0z" fill="#2EB67D" />
-        <path d="M77.6 97a12.9 12.9 0 1 1-12.9 12.9V97z" fill="#ECB22E" />
-        <path d="M77.6 90.5a12.9 12.9 0 0 1 0-25.8h32.3a12.9 12.9 0 0 1 0 25.8z" fill="#ECB22E" />
-      </svg>
-    );
-  }
-  if (glyph === "gmail") {
-    return (
-      <svg viewBox="0 0 48 36" width="22" height="22" aria-hidden focusable="false">
-        <path fill="#4285F4" d="M3.27 35.5H10V19L0 11.5v20.73c0 1.8 1.47 3.27 3.27 3.27z" />
-        <path fill="#34A853" d="M38 35.5h6.73c1.8 0 3.27-1.47 3.27-3.27V11.5L38 19z" />
-        <path fill="#FBBC04" d="M38 3.77V19l10-7.5V5.27c0-4.55-5.2-7.14-8.84-4.41z" />
-        <path fill="#EA4335" d="M10 19V3.77L24 14.32 38 3.77V19L24 29.55z" />
-        <path fill="#C5221F" d="M0 5.27V11.5l10 7.5V3.77L8.84.86C5.2-1.87 0 .72 0 5.27z" />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 87.3 78" width="22" height="22" aria-hidden focusable="false">
-      <path d="M6.6 66.85l3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8H0c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
-      <path d="M43.65 25L29.9 1.2c-1.35.8-2.5 1.9-3.3 3.3L1.2 48.5C.4 49.9 0 51.45 0 53h27.5z" fill="#00ac47" />
-      <path d="M73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5H59.8l5.85 11.45z" fill="#ea4335" />
-      <path d="M43.65 25L57.4 1.2C56.05.4 54.5 0 52.9 0H34.4c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
-      <path d="M59.8 53H27.5L13.75 76.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
-      <path d="M73.4 26.5L60.65 4.5c-.8-1.4-1.95-2.5-3.3-3.3L43.65 25 59.8 53h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
-    </svg>
   );
 }

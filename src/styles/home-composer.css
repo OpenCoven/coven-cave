@@ -393,11 +393,11 @@
   to { transform: rotate(360deg); }
 }
 
-/* ── Connector cards ─────────────────────────────────────────────────────────
- *   Codex-style cold-start cards: one-tap entry points into the marketplace
- *   for the integrations that give a familiar real context. The wrapper keeps
+/* ── Live RSS widget ─────────────────────────────────────────────────────────
+ *   A compact feed reader replacing the old connector cards. The wrapper keeps
  *   the `.home-composer-suggestions` class so it inherits the home layout's
- *   1200px content cap and viewport centering. */
+ *   1200px content cap and viewport centering; `.home-rss` overrides the
+ *   flex-center to a single vertical card. */
 .home-composer-suggestions {
   display: flex;
   flex-wrap: wrap;
@@ -408,79 +408,271 @@
   margin-inline: auto;
 }
 
-.home-composer-connectors {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+.home-rss {
+  display: block;
   margin-top: 8px;
-}
-
-.hc-connector {
-  display: grid;
-  grid-template-rows: auto auto auto;
-  gap: 10px;
-  min-width: 0;
-  padding: 18px 18px 20px;
-  border-radius: 16px;
   border: 1px solid var(--border-hairline);
+  border-radius: 16px;
   background: color-mix(in oklch, var(--bg-raised) 55%, var(--bg-base));
+  overflow: hidden;
   text-align: left;
-  cursor: pointer;
-  transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
 }
 
-.hc-connector:hover {
-  background: color-mix(in oklch, var(--bg-raised) 80%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--accent-presence) 30%, var(--border-hairline));
-  transform: translateY(-1px);
+.home-rss__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px 11px 14px;
+  border-bottom: 1px solid var(--border-hairline);
 }
 
-.hc-connector-glyph {
+.home-rss__title {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
-  height: 24px;
-}
-
-.hc-connector-title {
-  font-size: 15px;
+  gap: 7px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
-.hc-connector-sub {
-  font-size: 13px;
-  line-height: 1.45;
+.home-rss__title-icon {
+  color: var(--accent-presence);
+}
+
+.home-rss__live {
+  font-size: 11px;
+  font-weight: 500;
   color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-base);
+}
+
+.home-rss__chips {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.home-rss__chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+.home-rss__chip:hover {
+  background: var(--bg-base);
+  color: var(--text-secondary);
+}
+.home-rss__chip.is-active {
+  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.home-rss__refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.home-rss__refresh:hover:not(:disabled) {
+  background: var(--bg-base);
+  border-color: var(--border-hairline);
+  color: var(--text-secondary);
+}
+.home-rss__refresh.is-spinning svg {
+  animation: hc-spin 0.8s linear infinite;
+}
+
+.home-rss__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+
+.home-rss__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.home-rss__item:hover {
+  background: var(--bg-base);
+}
+.home-rss__item:hover .home-rss__open {
+  opacity: 0.6;
+}
+
+.home-rss__fav {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: var(--bg-base);
+}
+
+.home-rss__body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-rss__item-title {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.home-rss__meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.home-rss__source {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+.home-rss__time {
+  flex-shrink: 0;
+}
+
+.home-rss__open {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+/* Skeleton + empty/error states */
+.home-rss__item--skeleton {
+  cursor: default;
+}
+.home-rss__sk-dot,
+.home-rss__sk-line {
+  background: linear-gradient(
+    90deg,
+    var(--bg-raised) 0%,
+    color-mix(in oklch, var(--bg-raised) 70%, var(--bg-elevated) 30%) 50%,
+    var(--bg-raised) 100%
+  );
+  background-size: 200% 100%;
+  animation: ui-skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+}
+.home-rss__sk-dot {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+.home-rss__sk-line {
+  height: 10px;
+  width: 100%;
+}
+.home-rss__sk-line--short {
+  width: 40%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-rss__sk-dot,
+  .home-rss__sk-line {
+    animation: none;
+    opacity: 0.65;
+  }
+}
+
+.home-rss__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 30px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.home-rss__retry {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-presence);
+  background: transparent;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 35%, transparent);
+  border-radius: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.home-rss__retry:hover {
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
 }
 
 @media (max-width: 640px) {
-  .home-composer-connectors {
-    grid-template-columns: 1fr;
-    gap: 10px;
+  .home-rss__list {
+    max-height: 280px;
   }
-  .hc-connector {
-    min-height: var(--touch-target);
-    grid-template-rows: none;
-    grid-template-columns: auto 1fr;
-    grid-template-areas:
-      "glyph title"
-      "glyph sub";
-    align-items: center;
-    column-gap: 14px;
-    row-gap: 2px;
-    padding: 14px 16px;
+  .home-rss__chips {
+    display: none;
   }
-  .hc-connector-glyph { grid-area: glyph; }
-  .hc-connector-title { grid-area: title; }
-  .hc-connector-sub { grid-area: sub; }
+  .home-rss__item {
+    padding: 10px;
+  }
 }
 
 /* ── Focus rings (keyboard-only) ─────────────────────────────────────────── */
 .hc-dest-pill,
 .hc-send-btn,
-.hc-connector,
+.home-rss__item,
+.home-rss__chip,
+.home-rss__refresh,
+.home-rss__retry,
 .hc-add-btn,
 .hc-model-chip,
 .hc-familiar-select {
@@ -488,7 +680,10 @@
 }
 .hc-dest-pill:focus-visible,
 .hc-send-btn:focus-visible,
-.hc-connector:focus-visible,
+.home-rss__item:focus-visible,
+.home-rss__chip:focus-visible,
+.home-rss__refresh:focus-visible,
+.home-rss__retry:focus-visible,
 .hc-add-btn:focus-visible,
 .hc-model-chip:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);

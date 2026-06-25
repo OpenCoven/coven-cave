@@ -11,29 +11,36 @@ const globals = await readFile(
   "utf8",
 );
 
-// ───── Connector cards lay out 3-up and don't overflow their column ─────
-// The cards replaced the suggestion chips; they grid 3-up on desktop and stack
-// to a single column on narrow viewports so titles/subtitles never clip.
-const connectorsMatch = css.match(/\.home-composer-connectors\s*\{([^}]*)\}/);
-assert.ok(connectorsMatch, ".home-composer-connectors grid rule must exist");
+// ───── RSS widget rows ellipsis cleanly and scroll within a bounded card ─────
+// The live RSS widget replaced the connector cards. Its rows must clamp long
+// titles (so they never overflow the card) and the list must cap its height and
+// scroll rather than pushing the page.
+const titleMatch = css.match(/\.home-rss__item-title\s*\{([^}]*)\}/);
+assert.ok(titleMatch, ".home-rss__item-title rule must exist");
 assert.match(
-  connectorsMatch[1],
-  /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\);/,
-  ".home-composer-connectors is a 3-up grid with min-width:0 tracks (cards can shrink)",
+  titleMatch[1],
+  /-webkit-line-clamp:\s*2;/,
+  ".home-rss__item-title clamps to 2 lines so long headlines don't overflow",
 );
 
-const connectorMatch = css.match(/\.hc-connector\s*\{([^}]*)\}/);
-assert.ok(connectorMatch, ".hc-connector rule must exist");
+const listMatch = css.match(/\.home-rss__list\s*\{([^}]*)\}/);
+assert.ok(listMatch, ".home-rss__list rule must exist");
 assert.match(
-  connectorMatch[1],
-  /min-width:\s*0;/,
-  ".hc-connector has min-width: 0 so the card can shrink inside its grid track",
+  listMatch[1],
+  /max-height:\s*\d+px;/,
+  ".home-rss__list caps its height",
+);
+assert.match(
+  listMatch[1],
+  /overflow-y:\s*auto;/,
+  ".home-rss__list scrolls instead of pushing the page",
 );
 
+// On phones the filter chips hide (no room) and the list shrinks.
 assert.match(
   css,
-  /@media \(max-width: 640px\)\s*\{[\s\S]*?\.home-composer-connectors\s*\{[\s\S]*?grid-template-columns:\s*1fr;/,
-  "connector cards collapse to a single column under 640px",
+  /@media \(max-width: 640px\)\s*\{[\s\S]*?\.home-rss__chips\s*\{[\s\S]*?display:\s*none;/,
+  "RSS filter chips hide under 640px",
 );
 
 // ───── Phone composer controls are thumb-sized ─────
@@ -43,11 +50,6 @@ assert.match(
   "phone composer action bar wraps into thumb-sized familiar/send/destination controls",
 );
 
-assert.match(
-  css,
-  /@media \(max-width: 640px\)\s*\{[\s\S]*?\.hc-connector\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
-  "stacked connector cards should meet the shared touch target",
-);
 
 // ───── Keyboard hint hides on touch ─────
 // Touch devices have no physical keyboard — hide the desktop-only legend.

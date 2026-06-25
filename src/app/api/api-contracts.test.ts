@@ -115,6 +115,7 @@ const contracts: RouteContract[] = [
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
+  { route: "/rss", methods: ["GET"], kind: "json" },
   { route: "/salem", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/salem/pathfinder", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/salem/pathfinder/feedback", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
