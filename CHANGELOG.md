@@ -7,6 +7,42 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.115] - 2026-06-25
+
+Patch release on top of v0.0.114: a harness-identity fix that unblocks native
+chat for aliased runtimes, onboarding/installer clarity, and reliability polish
+for the terminal and chat surfaces.
+
+### Added
+
+- **Browser** - the tab rail opens (pinned) by default and remembers an
+  explicit auto-hide choice across sessions (#1916).
+- **Chat** - an inline debug/error strip below the chat surfaces the latest
+  failure (#1920).
+
+### Fixed
+
+- **Harness identity** - canonicalize harness ids (e.g. `hermes-agent` →
+  `hermes`) so an aliased familiar no longer triggers a spurious chat-bridge
+  403, and dedup duplicate/aliased runtime rows in the capabilities view
+  (#1921).
+- **Terminal** - no longer hangs on "Starting terminal…"; added a watchdog,
+  retry, and fail-visible state (#1919).
+- **Onboarding** - require Coven Code at startup and make "install both" work
+  (#1924); clarify the "Create your familiar" step and re-indent its config
+  form (#1915, #1922).
+- **Updater** - the About-page Download fetches a direct installer instead of
+  the release page (#1923).
+- **Familiar Studio** - "Open Brain Studio" now actually opens the Brain
+  surface (#1917).
+- **Home** - clear the daemon-offline banner immediately after the user starts
+  the daemon (#1914).
+
+### Changed
+
+- Hide the add-a-new-harness/runtime panel in the capabilities view for now
+  (#1918).
+
 ## [0.0.114] - 2026-06-25
 
 Patch release on top of v0.0.113 with the next iOS utility sweep, a broader
