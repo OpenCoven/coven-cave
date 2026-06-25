@@ -22,9 +22,9 @@ import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/date
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-type Track = "synthesis" | "prompt" | "memory";
+export type Track = "synthesis" | "prompt" | "memory";
 
-type LoopIteration = {
+export type LoopIteration = {
   id: string;
   timestamp: string;
   track: Track;
@@ -37,7 +37,7 @@ type LoopIteration = {
   notes?: string;
 };
 
-type EvalLoopState = {
+export type EvalLoopState = {
   familiar_id: string;
   last_run: string | null;
   iterations: LoopIteration[];

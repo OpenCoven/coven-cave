@@ -5,7 +5,7 @@ import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 
 export const dynamic = "force-dynamic";
 
-type DaemonFamiliar = {
+export type DaemonFamiliar = {
   id: string;
   display_name: string;
   role: string;
