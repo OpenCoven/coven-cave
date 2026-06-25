@@ -7,8 +7,13 @@ const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "
 // ───────── Task 1: Destination-aware placeholder + drop subtitle ─────────
 assert.match(
   source,
-  /const PLACEHOLDERS: Record<Destination, string> = \{[\s\S]*?chat:[\s\S]*?board:[\s\S]*?reminder:[\s\S]*?\}/,
-  "PLACEHOLDERS must be a Record<Destination, string> with chat/board/reminder keys",
+  /const PLACEHOLDERS: Record<Destination, string> = \{[\s\S]*?chat:[\s\S]*?board:[\s\S]*?\}/,
+  "PLACEHOLDERS must be a Record<Destination, string> with chat/board keys",
+);
+assert.doesNotMatch(
+  source,
+  /reminder: "Remind me about/,
+  "Reminder should not be a home-composer destination placeholder",
 );
 assert.match(
   source,

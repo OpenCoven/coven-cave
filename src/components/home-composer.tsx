@@ -20,27 +20,27 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
 import { modelSlashOptions, resolveModelArg } from "@/lib/slash-model";
 import type { ChatModelState } from "@/lib/chat-model-state";
-import { draftReminderFromText } from "@/lib/reminder-draft";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { HomeFeed } from "@/components/home/home-feed";
+import { useProjects } from "@/lib/use-projects";
+import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
+import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type Destination = "chat" | "board" | "reminder";
+export type Destination = "chat" | "board";
 
 const DESTINATIONS: { id: Destination; label: string; icon: IconName }[] = [
-  { id: "chat",     label: "Familiar", icon: "ph:chat-circle-dots" },
-  { id: "board",    label: "Tasks",    icon: "ph:kanban" },
-  { id: "reminder", label: "Reminder", icon: "ph:alarm-fill" },
+  { id: "chat",  label: "Chat", icon: "ph:chat-circle-dots" },
+  { id: "board", label: "Task", icon: "ph:kanban" },
 ];
 
 const PLACEHOLDERS: Record<Destination, string> = {
   chat: "Summon something magical",
   board: "Describe a new task…",
-  reminder: "Remind me about…",
 };
 
 type Props = {
@@ -51,9 +51,8 @@ type Props = {
   /** Open a new chat that sends `prompt` through ChatView's streaming path.
    *  Home never talks to the chat API itself — a fire-and-cancel send here
    *  aborts the request, which kills the harness before the transcript saves. */
-  onStartChat: (prompt: string, familiarId: string) => void;
+  onStartChat: (prompt: string, familiarId: string, projectRoot: string | null) => void;
   onNavigateToBoard: () => void;
-  onNavigateToInbox: () => void;
   onToast: (msg: string) => void;
   /** Submit a slash command. Mirrors the chat composer's escape hatch so
    *  `/inbox`, `/board`, `/remind …` etc. work from the home screen too. */
@@ -98,7 +97,6 @@ export function HomeComposer({
   onSetActiveFamiliar,
   onStartChat,
   onNavigateToBoard,
-  onNavigateToInbox,
   onToast,
   onSlash,
   onOpenSession,
@@ -115,7 +113,28 @@ export function HomeComposer({
   const slashListboxId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const selectedFamiliarId = activeFamiliarId ?? familiars[0]?.id ?? "";
+  const selectedFamiliar = useMemo(
+    () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? null,
+    [familiars, selectedFamiliarId],
+  );
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
+  const { projects } = useProjects({ familiarId: selectedFamiliarId || null });
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null,
+    [projects, selectedProjectId],
+  );
+  const selectedRuntime =
+    modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude";
+  const runtimeModelOptions = useMemo(() => catalogForRuntime(selectedRuntime)?.models ?? [], [selectedRuntime]);
+  const selectedModelId = runtimeModelOptions.some((model) => model.id === modelState?.effectiveModel)
+    ? modelState!.effectiveModel
+    : runtimeModelOptions[0]?.id ?? "";
+
+  useEffect(() => {
+    if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) return;
+    setSelectedProjectId(projects[0]?.id ?? "");
+  }, [projects, selectedProjectId]);
 
   // Show the selected familiar's effective model on the home composer. No session
   // exists here, so GET keys on familiarId only. The `cancelled` flag drops any
@@ -170,6 +189,56 @@ export function HomeComposer({
     [selectedFamiliarId],
   );
 
+  const refetchModelState = useCallback(() => {
+    if (!selectedFamiliarId) return;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/chat/model-state?familiarId=${encodeURIComponent(selectedFamiliarId)}`,
+          { cache: "no-store" },
+        );
+        const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
+        if (json.ok && json.state) setModelState(json.state);
+      } catch {
+        /* keep the optimistic value */
+      }
+    })();
+  }, [selectedFamiliarId]);
+
+  const handleSelectRuntime = useCallback(
+    (runtime: string) => {
+      if (!selectedFamiliarId) return;
+      const nextModel = defaultModelForRuntime(runtime);
+      setModelState((current) => ({
+        familiarId: selectedFamiliarId,
+        runtime: current?.runtime ?? null,
+        harness: runtime,
+        effectiveModel: nextModel,
+        source: "familiar-default",
+        applicationState: "saved",
+        reason: "Selected from the home composer.",
+      }));
+      void (async () => {
+        try {
+          const res = await fetch("/api/config", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              familiars: {
+                [selectedFamiliarId]: { harness: runtime, model: nextModel },
+              },
+            }),
+          });
+          const json = (await res.json().catch(() => ({ ok: false }))) as { ok?: boolean };
+          if (json.ok) refetchModelState();
+        } catch {
+          refetchModelState();
+        }
+      })();
+    },
+    [refetchModelState, selectedFamiliarId],
+  );
+
   // Mirror the chat composer's matching rule: surface only while the user is
   // still typing the command token (no whitespace yet).
   const slashSuggestions: SlashCommand[] = useMemo(() => {
@@ -180,7 +249,7 @@ export function HomeComposer({
 
   // Inline model picker: typing "/model <partial>" shows model options.
   const modelHarness =
-    modelState?.harness ?? familiars.find((f) => f.id === selectedFamiliarId)?.harness ?? "claude";
+    modelState?.harness ?? selectedFamiliar?.harness ?? "claude";
   const modelOptions = useMemo(() => modelSlashOptions(text, modelHarness), [text, modelHarness]);
   const modelMenuActive = (modelOptions?.length ?? 0) > 0;
   // Either inline listbox (slash commands or the /model picker) shares the same
@@ -207,22 +276,9 @@ export function HomeComposer({
     setTimeout(() => textareaRef.current?.focus(), 80);
   }, []);
 
-  // Short model label for the toolbar chip (e.g. "openai/gpt-5.5" → "gpt-5.5").
-  const modelLabel = useMemo(() => {
-    const m = modelState?.effectiveModel;
-    if (!m || m === "unknown") return null;
-    return m.includes("/") ? m.slice(m.lastIndexOf("/") + 1) : m;
-  }, [modelState]);
-
-  // The "＋" affordance reveals the slash-command menu (board/remind/model/…),
-  // and the model chip jumps straight to the inline /model picker. Both keep the
-  // home composer's single text entry path — no separate dialogs to wire up.
+  // The "＋" affordance reveals the slash-command menu (board/remind/model/…).
   const openCommands = useCallback(() => {
     setText((t) => (t.trim() ? t : "/"));
-    setTimeout(() => textareaRef.current?.focus(), 0);
-  }, []);
-  const openModelPicker = useCallback(() => {
-    setText("/model ");
     setTimeout(() => textareaRef.current?.focus(), 0);
   }, []);
 
@@ -406,41 +462,23 @@ export function HomeComposer({
           // request server-side — the harness is killed mid-run and the
           // transcript never saves, so the opened chat 404s.
           setText("");
-          onStartChat(prompt, selectedFamiliarId);
+          onStartChat(prompt, selectedFamiliarId, selectedProject?.root ?? null);
           break;
         }
         case "board": {
           const res = await fetch("/api/board", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ title: prompt, familiarId: activeFamiliarId ?? null }),
+            body: JSON.stringify({
+              title: prompt,
+              familiarId: activeFamiliarId ?? null,
+              cwd: selectedProject?.root ?? null,
+              projectId: selectedProject?.id ?? null,
+            }),
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
           if (json.ok) { setText(""); onNavigateToBoard(); }
           else onToast("Board card creation failed.");
-          break;
-        }
-        case "reminder": {
-          const reminder = draftReminderFromText(prompt);
-          if (!reminder.ok) {
-            onToast("Add a reminder time with @ 5pm, @ tomorrow 10am, or start with in 30m.");
-            break;
-          }
-          const res = await fetch("/api/inbox", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              kind: "reminder",
-              title: reminder.title,
-              fireAt: reminder.fireAt,
-              recurrence: reminder.recurrence,
-              source: "user",
-              familiarId: activeFamiliarId ?? null,
-            }),
-          });
-          const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
-          if (json.ok) { setText(""); onNavigateToInbox(); }
-          else onToast("Reminder creation failed.");
           break;
         }
       }
@@ -448,14 +486,16 @@ export function HomeComposer({
       setSending(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, destination, activeFamiliarId, selectedFamiliarId, sending, onSlash, onStartChat]);
+  }, [text, destination, activeFamiliarId, selectedFamiliarId, selectedProject, sending, onSlash, onStartChat]);
 
   return (
     <div className="home-composer-root">
 
       {/* Headline */}
       <div className="home-composer-hero">
-        <h1 className="home-composer-headline">What should we cast in coven-cave?</h1>
+        <h1 className="home-composer-headline">
+          {`What should we build in ${selectedProject?.name ?? "Coven Cave"}?`}
+        </h1>
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the
@@ -590,6 +630,28 @@ export function HomeComposer({
             <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
           </label>
 
+          <label className="hc-familiar-selector hc-project-selector">
+            <Icon name="ph:folder" width={13} className="hc-familiar-glyph" aria-hidden />
+            <select
+              aria-label="Choose project"
+              className="hc-familiar-select"
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.currentTarget.value)}
+              disabled={projects.length === 0 || sending}
+            >
+              {projects.length === 0 ? (
+                <option value="">No projects</option>
+              ) : (
+                projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))
+              )}
+            </select>
+            <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+          </label>
+
           {/* Destination pills */}
           <div
             className="hc-dest-pills"
@@ -615,19 +677,45 @@ export function HomeComposer({
             ))}
           </div>
 
-          {/* Right cluster: model chip + circular send */}
-          {modelLabel ? (
-            <button
-              type="button"
-              className="hc-model-chip"
-              onClick={openModelPicker}
-              title="Change model"
+          <label className="hc-familiar-selector hc-runtime-selector">
+            <Icon name="ph:terminal-window" width={13} className="hc-familiar-glyph" aria-hidden />
+            <select
+              aria-label="Choose runtime"
+              className="hc-familiar-select"
+              value={selectedRuntime}
+              onChange={(e) => handleSelectRuntime(e.currentTarget.value)}
+              disabled={!selectedFamiliarId || sending}
             >
-              <Icon name="ph:lightning-fill" width={12} className="hc-model-bolt" aria-hidden />
-              <span className="hc-model-name">{modelLabel}</span>
-              <Icon name="ph:caret-down-bold" width={9} aria-hidden />
-            </button>
-          ) : null}
+              {COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => (
+                <option key={adapter.id} value={adapter.id}>
+                  {adapter.label}
+                </option>
+              ))}
+            </select>
+            <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+          </label>
+
+          <label className="hc-familiar-selector hc-model-selector">
+            <Icon name="ph:lightning-fill" width={13} className="hc-familiar-glyph hc-model-bolt" aria-hidden />
+            <select
+              aria-label="Choose model"
+              className="hc-familiar-select"
+              value={selectedModelId}
+              onChange={(e) => handleSelectModel(e.currentTarget.value)}
+              disabled={!selectedFamiliarId || runtimeModelOptions.length === 0 || sending}
+            >
+              {runtimeModelOptions.length === 0 ? (
+                <option value="">Runtime managed</option>
+              ) : (
+                runtimeModelOptions.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}
+                  </option>
+                ))
+              )}
+            </select>
+            <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+          </label>
 
           <button
             type="button"

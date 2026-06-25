@@ -1909,9 +1909,8 @@ export function Workspace() {
         activeFamiliarId={activeId}
         sessions={sessions}
         onSetActiveFamiliar={setActiveId}
-        onStartChat={(prompt, fid) => startFamiliarChat(fid, null, prompt)}
+        onStartChat={(prompt, fid, projectRoot) => startFamiliarChat(fid, projectRoot, prompt)}
         onNavigateToBoard={() => setMode("board")}
-        onNavigateToInbox={() => setMode("inbox")}
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}

@@ -55,8 +55,20 @@ assert.match(
 
 assert.match(
   source,
-  /aria-label="Add files"/,
-  "Add button should have an explicit accessible label",
+  /const CHAT_ATTACHMENT_ACCEPT = \[[\s\S]*"image\/\*"[\s\S]*"video\/\*"[\s\S]*"application\/pdf"[\s\S]*"\.md"[\s\S]*"\.json"[\s\S]*\]\.join\(","\)/,
+  "Chat attachments should explicitly accept images, videos, documents, and common text/code files",
+);
+
+assert.match(
+  source,
+  /accept=\{CHAT_ATTACHMENT_ACCEPT\}/,
+  "The hidden file input behind the plus button should use the shared attachment accept list",
+);
+
+assert.match(
+  source,
+  /aria-label="Attach images, videos, or files"/,
+  "Add button should have an explicit accessible label for images, videos, and files",
 );
 
 assert.match(
@@ -79,7 +91,13 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-action-row"[\s\S]*aria-label="Add files"[\s\S]*aria-label="Send message"/,
+  /function attachmentIcon[\s\S]*startsWith\("image\/"\)[\s\S]*"ph:camera"[\s\S]*startsWith\("video\/"\)[\s\S]*"ph:video"[\s\S]*"ph:paperclip"/,
+  "Attachment chips should distinguish images and videos from generic files",
+);
+
+assert.match(
+  source,
+  /className="cave-composer-action-row"[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*aria-label="Send message"/,
   "Composer should keep Add and Send in the primary row above the dropdown divider",
 );
 

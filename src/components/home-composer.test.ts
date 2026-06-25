@@ -7,20 +7,74 @@ const destinations = source.match(/const DESTINATIONS:[\s\S]*?\n\];/)?.[0] ?? ""
 
 assert.match(
   destinations,
-  /id: "chat"[\s\S]*label: "Familiar"/,
-  "HomeComposer should frame chat launch as a Familiar destination",
+  /id: "chat"[\s\S]*label: "Chat"/,
+  "HomeComposer should frame chat launch as a Chat destination",
 );
 
 assert.match(
   destinations,
-  /id: "board"[\s\S]*label: "Tasks"/,
-  "HomeComposer should keep Tasks as a launch destination",
+  /id: "board"[\s\S]*label: "Task"/,
+  "HomeComposer should keep Task as a launch destination",
 );
 
-assert.match(
+assert.doesNotMatch(
   destinations,
   /id: "reminder"[\s\S]*label: "Reminder"/,
-  "HomeComposer should keep Reminder as a launch destination",
+  "HomeComposer should not offer Reminder as a home launch destination",
+);
+
+assert.match(
+  source,
+  /useProjects\(\{ familiarId: selectedFamiliarId \|\| null \}\)/,
+  "HomeComposer should load a familiar-scoped project list for the project selector",
+);
+
+assert.match(
+  source,
+  /home-composer-headline[\s\S]*?\{`What should we build in \$\{selectedProject\?\.name \?\? "Coven Cave"\}\?`\}/,
+  "HomeComposer headline should reflect the selected project name",
+);
+
+assert.match(
+  source,
+  /aria-label="Choose project"[\s\S]*value=\{selectedProjectId\}/,
+  "HomeComposer should render a project selector",
+);
+
+assert.match(
+  source,
+  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null\)/,
+  "HomeComposer should hand the selected project root to chat start",
+);
+
+assert.match(
+  source,
+  /body: JSON\.stringify\(\{[\s\S]*?title: prompt,[\s\S]*?familiarId: activeFamiliarId \?\? null,[\s\S]*?cwd: selectedProject\?\.root \?\? null,[\s\S]*?projectId: selectedProject\?\.id \?\? null,[\s\S]*?\}\)/,
+  "HomeComposer should attach the selected project to task creation",
+);
+
+assert.match(
+  source,
+  /aria-label="Choose runtime"[\s\S]*value=\{selectedRuntime\}/,
+  "HomeComposer should expose a runtime selector for the selected familiar",
+);
+
+assert.match(
+  source,
+  /aria-label="Choose model"[\s\S]*value=\{selectedModelId\}/,
+  "HomeComposer should expose a model selector for the selected familiar",
+);
+
+assert.match(
+  source,
+  /const runtimeModelOptions = useMemo\(\(\) => catalogForRuntime\(selectedRuntime\)\?\.models \?\? \[\], \[selectedRuntime\]\)/,
+  "HomeComposer model options should be derived strictly from the selected runtime catalog",
+);
+
+assert.doesNotMatch(
+  source,
+  /<option[^>]*value="openai\/gpt-5\.5"[\s\S]*?<option[^>]*value="anthropic\/claude/,
+  "HomeComposer must not hard-code a mixed-provider model menu",
 );
 
 assert.doesNotMatch(
@@ -43,7 +97,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId\)/,
+  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null\)/,
   "HomeComposer should hand the selected agent chat prompt to the workspace, which opens a new chat that auto-sends it",
 );
 
