@@ -7,6 +7,29 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.117] - 2026-06-25
+
+Patch release on top of v0.0.116. Headline: Cave no longer ships a built-in
+familiar roster. Runtime familiar discovery, library routing, workflows, and
+chat/document helpers now resolve familiar identities from user configuration
+instead of hard-coded OpenCoven names (#1957).
+
+### Changed
+
+- **Familiar roster** - removed built-in familiar ids from runtime fallbacks and
+  moved library workspace resolution to `~/.coven/familiars.toml`, preserving
+  per-familiar research roots without assuming any default names (#1957).
+- **Library** - document lookup, document chat, and rename/move paths now choose
+  the configured familiar workspace by request, absolute path, or first
+  configured workspace instead of a static research root (#1957).
+- **Workflows** - bundled workflow templates use role-oriented ids and metadata
+  rather than OpenCoven familiar names (#1957).
+
+### Fixed
+
+- **Regression coverage** - added source guards and API contract coverage so
+  hard-coded runtime familiar rosters do not quietly return (#1957).
+
 ## [0.0.116] - 2026-06-25
 
 Patch release on top of v0.0.115. Headline: flows get a proper production-publish
