@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import { Icon } from "@/lib/icon";
+import { extractNextPaths } from "@/lib/next-paths";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
@@ -596,6 +597,11 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                       <div className="flex flex-col gap-3 pl-1">
                         {replies.map((r) => {
                           const f = byId.get(r.familiarId);
+                          // Strip the piggybacked `<coven:next-paths>` suggestions
+                          // block (and its streaming partial) from the visible
+                          // reply, mirroring the single-chat surface — otherwise
+                          // the raw control markup leaks into the coven bubble.
+                          const visibleText = extractNextPaths(r.text).visible;
                           return (
                             <div key={r.id} className="flex gap-2">
                               {f && (
@@ -608,7 +614,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                   role="assistant"
                                   label={f?.display_name ?? r.familiarId}
                                   content={
-                                    r.text ||
+                                    visibleText ||
                                     (r.status === "error"
                                       ? `⚠️ ${r.error ?? "failed"}`
                                       : r.activity
