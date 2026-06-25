@@ -16,8 +16,7 @@ const EMPTY: FlowRunProgress = {
 
 /**
  * Live node-phase progress for an active flow run. Polls the run's agent
- * session transcript (the same `/api/chat/conversation/[id]` endpoint the
- * Workflow Studio uses) and parses the `@@step-…` markers into per-node phases.
+ * session transcript and parses the `@@step-…` markers into per-node phases.
  * Polling stops once the run is no longer `running` or every node has resolved,
  * keeping the last parsed phases so the canvas holds the finished state.
  */
@@ -35,19 +34,16 @@ export function useFlowRun(run: FlowRunRecord | null): FlowRunProgress {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const tick = async () => {
       try {
-        const res = await fetch(`/api/chat/conversation/${encodeURIComponent(sessionId)}`, {
+        const params = new URLSearchParams({ sessionId });
+        const res = await fetch(`/api/flows/session-transcript?${params.toString()}`, {
           cache: "no-store",
         });
         const json = (await res.json().catch(() => null)) as
-          | { ok?: boolean; conversation?: { turns?: Array<{ role?: string; text?: string }> } }
+          | { ok?: boolean; transcript?: string }
           | null;
         if (!alive) return;
-        if (json?.ok && Array.isArray(json.conversation?.turns)) {
-          const text = json.conversation.turns
-            .filter((turn) => turn.role === "assistant")
-            .map((turn) => turn.text ?? "")
-            .join("\n");
-          setTranscript(text);
+        if (json?.ok && typeof json.transcript === "string") {
+          setTranscript(json.transcript);
         }
       } catch {
         // transient — keep the last transcript and retry on the next tick

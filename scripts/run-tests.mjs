@@ -482,6 +482,7 @@ export const SUITES = {
     "src/app/api/capabilities/route.test.ts",
     "src/app/api/workflows/route.test.ts",
     "src/app/api/workflows/run/route.test.ts",
+    "src/app/api/flows/session-transcript/route.test.ts",
     "src/lib/cave-chat-titles.test.ts",
     "src/lib/session-title-canon.test.ts",
     "src/lib/chat-model-state.test.ts",
