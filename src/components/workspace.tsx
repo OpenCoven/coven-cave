@@ -1815,11 +1815,7 @@ export function Workspace() {
       />
     ) : mode === "library" ? (
       <LibraryView
-        onOpenUrl={(url) => {
-          setMode("browser");
-          // Give the pane one frame to mount/become active, then navigate
-          requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
-        }}
+        onOpenUrl={openUrlExternally}
         sessions={sessions}
         onOpenSession={openFamiliarSession}
         onNewProjectChat={openProjectChat}
@@ -1830,10 +1826,7 @@ export function Workspace() {
         sessions={sessions}
         activeFamiliarId={activeId}
         scopeFamiliarIds={scopeIds}
-        onOpenUrl={(url) => {
-          setMode("browser");
-          requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
-        }}
+        onOpenUrl={openUrlExternally}
         onJumpToSession={(sessionId, familiarId) => {
           openFamiliarSession(sessionId, familiarId);
         }}
@@ -1931,10 +1924,7 @@ export function Workspace() {
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
-        onOpenUrl={(url) => {
-          setMode("browser");
-          requestAnimationFrame(() => browserPaneRef.current?.navigateTo(url));
-        }}
+        onOpenUrl={openUrlExternally}
       />
     )}
     </div>
