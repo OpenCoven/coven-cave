@@ -1753,9 +1753,8 @@ function StepCovenCli({
 }) {
   const job = installJobs["coven-cli"];
   const busy = job?.status === "running";
-  // Per-target busy only — npm targets queue server-side now, so a running
+  // Per-target busy only — npm installs are queued client-side now, so a running
   // install no longer needs to disable the others (that blocked "install both").
-  const covenCodeJobRunning = installJobs["coven-code"]?.status === "running";
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
