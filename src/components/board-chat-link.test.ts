@@ -64,6 +64,6 @@ assert.match(
 );
 assert.match(
   chatSendRoute,
-  /buildTaskAwarePrompt\(\s*(?:buildPromptWithFamiliarStartupContext\([\s\S]{0,120})?(?:appendMentionedFilesBlock\(\s*)?buildPromptWithAttachments/,
+  /buildTaskAwarePrompt\(\s*(?:buildPromptWithKnowledgeVault\(\s*)?(?:buildPromptWithFamiliarStartupContext\([\s\S]{0,120})?(?:appendMentionedFilesBlock\(\s*)?buildPromptWithAttachments/,
   "Chat send should include task context in the harness prompt only",
 );
