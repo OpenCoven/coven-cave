@@ -92,7 +92,7 @@ const FOLDER_MODES: Array<{
   { id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1", description: "Overview and quick actions" },
   { id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2", description: "Talk with your familiars" },
   { id: "groupchat", label: "Group", iconName: "ph:users-three", group: "work", description: "Group chat — broadcast to a coven of familiars at once" },
-  { id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
+  { id: "board", label: "Tasks", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", group: "work", description: "Your daily journal and generated sketches" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4", description: "Schedule and timeline of work" },
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-bold", group: "work", kbd: "⌘5", description: "Reminders and recurring agent automations", badge: (p) => badgeText(p.scheduleNeedsCount) },

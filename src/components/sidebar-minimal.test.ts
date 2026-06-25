@@ -109,8 +109,8 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "board", label: "Board", iconName: "ph:kanban", group: "work", kbd: "⌘3", description:/,
-  "Board should move to the ⌘3 Work shortcut after removing Familiars",
+  /\{ id: "board", label: "Tasks", iconName: "ph:kanban", group: "work", kbd: "⌘3", description:/,
+  "the Tasks surface (mode id 'board') sits on the ⌘3 Work shortcut",
 );
 
 assert.match(
