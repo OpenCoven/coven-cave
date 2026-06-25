@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { topPersistentBlocker } from "@/lib/thread-self-report";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
+
+const source = readFileSync(new URL("./thread-signal-card.tsx", import.meta.url), "utf8");
 
 function report(overrides: Partial<ThreadSelfReport> = {}): ThreadSelfReport {
   return {
@@ -65,9 +68,9 @@ describe("topPersistentBlocker", () => {
 
 describe("thread-signal-card module wiring", () => {
   it("thread-signal-card.tsx exports ThreadSignalCard and topPersistentBlocker", () => {
-    const { readFileSync } = require("node:fs");
-    const src = readFileSync(new URL("./thread-signal-card.tsx", import.meta.url), "utf8");
-    assert.match(src, /export function ThreadSignalCard/);
-    assert.match(src, /topPersistentBlocker/);
+    assert.match(source, /export function ThreadSignalCard/);
+    assert.match(source, /topPersistentBlocker/);
+    assert.match(source, /onClick=\{\(event\) => stopAndRun\(event, onViewFull\)\}/);
+    assert.match(source, /onClick=\{\(event\) => stopAndRun\(event, onDismiss\)\}/);
   });
 });

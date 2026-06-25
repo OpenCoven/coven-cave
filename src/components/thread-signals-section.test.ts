@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { aggregateThreadSignals } from "@/lib/thread-self-report";
+import { aggregateThreadSignals, THREAD_SIGNALS_EMPTY_STATE } from "@/lib/thread-self-report";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
+
+const source = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
 
 function report(overrides: Partial<ThreadSelfReport> & { id: string }): ThreadSelfReport {
   return {
@@ -91,9 +94,9 @@ describe("aggregateThreadSignals", () => {
   });
 
   it("renders empty state in source file when no reports", () => {
-    const { readFileSync } = require("node:fs");
-    const src = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
-    assert.match(src, /No thread reports yet/);
-    assert.match(src, /export function ThreadSignalsSection/);
+    assert.match(source, /reports\.length === 0/);
+    assert.match(source, /THREAD_SIGNALS_EMPTY_STATE/);
+    assert.match(THREAD_SIGNALS_EMPTY_STATE, /No thread reports yet/);
+    assert.match(source, /export function ThreadSignalsSection/);
   });
 });
