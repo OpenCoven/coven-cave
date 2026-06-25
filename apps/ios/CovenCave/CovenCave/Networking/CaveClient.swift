@@ -20,7 +20,23 @@ struct CaveClient {
     }
 
     private func request(_ path: String, method: String = "GET", body: Data? = nil) throws -> URLRequest {
-        let url = try base.appendingPathComponent(path)
+        // `appendingPathComponent` percent-encodes "?" to "%3F", which turns a
+        // path like "api/journal?date=…" into a bogus path segment the server
+        // 404s on. Split the query off, append only the path, then reattach the
+        // query as a real query string. Callers already percent-encode values
+        // (urlQuery), so set `percentEncodedQuery` to avoid double-encoding.
+        let parts = path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
+        let pathPart = String(parts[0])
+        let queryPart = parts.count > 1 ? String(parts[1]) : nil
+        var url = try base.appendingPathComponent(pathPart)
+        if let queryPart, !queryPart.isEmpty {
+            guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+                throw CaveError.notConfigured
+            }
+            comps.percentEncodedQuery = queryPart
+            guard let composed = comps.url else { throw CaveError.notConfigured }
+            url = composed
+        }
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
