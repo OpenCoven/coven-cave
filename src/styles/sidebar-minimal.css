@@ -1058,8 +1058,10 @@
   align-items: center;
 }
 
-/* Each row becomes a centered 40px square hit target — comfortable for the
-   icon, still a wide-enough click area. */
+/* Every rail control is the same centered 40px rounded square — one shared
+   hit-area box so the compose, nav, and footer icons read as a single family
+   (previously: compose had a 2px accent outline, the active row a tinted box
+   with a left bar, and the rest were bare icons). */
 .shell-nav--rail .sidebar-folder-row,
 .shell-nav--rail .sidebar-action-row,
 .shell-nav--rail .sidebar-foot-btn,
@@ -1068,8 +1070,49 @@
   flex: none;
   gap: 0;
   width: 40px;
+  height: 40px;
+  min-height: 0;
   padding: 0;
   margin: 0 auto;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+/* Uniform hover box for every rail control (the active row keeps its own fill
+   below, so it's excluded here). */
+.shell-nav--rail .sidebar-folder-row:not(.sidebar-folder-row--active):hover,
+.shell-nav--rail .sidebar-foot-btn:hover,
+.shell-nav--rail .sidebar-foot-icon-btn:hover {
+  background: color-mix(in oklch, var(--text-primary) 8%, transparent);
+  border-color: var(--border-hairline);
+  color: var(--text-primary);
+}
+
+/* Compose ("new chat") shares the exact same square — drop its loud 2px accent
+   outline — and stays recognisable purely through its accent glyph. */
+.shell-nav--rail .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--accent-presence);
+  font-weight: 500;
+}
+.shell-nav--rail .sidebar-actions:not(.sidebar-actions--footer) .sidebar-action-row:hover {
+  background: color-mix(in oklch, var(--accent-presence) 14%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, transparent);
+}
+
+/* The active destination is the one persistent fill: a single accent-tinted
+   square (no left bar, which looks off-centre under a centred icon). */
+.shell-nav--rail .sidebar-folder-row--active {
+  background: color-mix(in oklch, var(--accent-presence) 16%, transparent);
+  border-color: color-mix(in oklch, var(--accent-presence) 38%, transparent);
+  box-shadow: none;
+  color: var(--text-primary);
+}
+.shell-nav--rail .sidebar-folder-row--active:hover {
+  background: color-mix(in oklch, var(--accent-presence) 22%, transparent);
 }
 
 /* Nav icon sizing follows the global icon scale in globals.css. */
