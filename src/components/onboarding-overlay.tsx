@@ -2247,220 +2247,220 @@ function StepFamiliar(props: {
             )}
           </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <label className="block">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            Name{selectedAgentId ? " (required)" : " (optional)"}
-          </span>
-          <input
-            value={familiarName}
-            onChange={(e) => props.setFamiliarName(e.target.value)}
-            placeholder="Example: Riley"
-            className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-          />
-        </label>
-        <label className="block">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            Role (optional)
-          </span>
-          <input
-            value={familiarRole}
-            onChange={(e) => props.setFamiliarRole(e.target.value)}
-            placeholder="Research, Code, Ops..."
-            className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-          />
-        </label>
-        <label className="block">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            Glyph (optional)
-          </span>
-          <input
-            value={familiarGlyph}
-            onChange={(e) => props.setFamiliarGlyph(e.target.value)}
-            placeholder="ph:sparkle-fill"
-            aria-invalid={familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")}
-            className={`focus-ring mt-1 w-full rounded-md border bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] ${
-              glyphInvalid
-                ? "border-[var(--color-danger)] focus:border-[var(--color-danger)]"
-                : "border-[var(--border-hairline)] focus:border-[var(--border-strong)]"
-            }`}
-          />
-          {glyphInvalid ? (
-            <span className="mt-1 block text-[11px] text-[var(--color-danger)]">
-              Must start with <code className="font-mono">ph:</code> — see{" "}
-              <a
-                href="https://phosphoricons.com"
-                target="_blank"
-                rel="noreferrer"
-                className="underline"
-              >
-                phosphoricons.com
-              </a>
-              .
-            </span>
-          ) : null}
-        </label>
-        <label className="block">
-          <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-            Description (optional)
-          </span>
-          <input
-            value={familiarDescription}
-            onChange={(e) => props.setFamiliarDescription(e.target.value)}
-            placeholder="What should this familiar help with?"
-            className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-          />
-        </label>
-      </div>
-
-      {selectedHarnessId ? (
-      <section className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
-        <label className="flex items-start gap-2">
-          <input
-            type="checkbox"
-            checked={sshEnabled}
-            onChange={(e) => props.setSshEnabled(e.currentTarget.checked)}
-            className="mt-1 h-4 w-4 accent-[var(--accent-presence)]"
-          />
-          <span className="text-[12px] leading-5 text-[var(--text-secondary)]">
-            <span className="font-medium text-[var(--text-primary)]">
-              Runs on a remote machine (SSH)
-            </span>{" "}
-            — the familiar&rsquo;s runtime uses SSH transport on another box (a
-            build server, a homelab, a VM). Cave connects non-interactively
-            with your SSH keys and never stores passwords or key material.
-          </span>
-        </label>
-        {sshEnabled ? (
-          <div className="mt-3 flex flex-col gap-3">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                  Host
-                </span>
-                <input
-                  value={sshHost}
-                  onChange={(e) => props.setSshHost(e.target.value)}
-                  placeholder="ssh-alias or hostname"
-                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                />
-              </label>
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                  Remote directory
-                </span>
-                <input
-                  value={sshCwd}
-                  onChange={(e) => props.setSshCwd(e.target.value)}
-                  placeholder="/home/me/projects"
-                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                />
-              </label>
-              <label className="block">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-                  Remote coven command
-                </span>
-                <input
-                  value={sshCommand}
-                  onChange={(e) => props.setSshCommand(e.target.value)}
-                  placeholder="coven (default)"
-                  className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
-                />
-              </label>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={props.onTestSsh}
-                disabled={sshCheck.state === "checking" || !sshHost.trim()}
-                className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
-              >
-                <Icon name="ph:plug-bold" />
-                {sshCheck.state === "checking" ? "Testing…" : "Test connection"}
-              </button>
-              {sshCheck.state === "ok" ? (
-                <span className="text-[11px] text-[var(--color-success)]">
-                  {sshCheck.detail}
-                </span>
-              ) : sshCheck.state === "fail" ? (
-                <span className="text-[11px] text-[var(--color-danger)]">
-                  {sshCheck.detail}
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <label className="block">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                Name{selectedAgentId ? " (required)" : " (optional)"}
+              </span>
+              <input
+                value={familiarName}
+                onChange={(e) => props.setFamiliarName(e.target.value)}
+                placeholder="Example: Riley"
+                className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                Role (optional)
+              </span>
+              <input
+                value={familiarRole}
+                onChange={(e) => props.setFamiliarRole(e.target.value)}
+                placeholder="Research, Code, Ops..."
+                className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                Glyph (optional)
+              </span>
+              <input
+                value={familiarGlyph}
+                onChange={(e) => props.setFamiliarGlyph(e.target.value)}
+                placeholder="ph:sparkle-fill"
+                aria-invalid={familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:")}
+                className={`focus-ring mt-1 w-full rounded-md border bg-[var(--bg-base)] px-3 py-2 font-mono text-[13px] text-[var(--text-primary)] ${
+                  glyphInvalid
+                    ? "border-[var(--color-danger)] focus:border-[var(--color-danger)]"
+                    : "border-[var(--border-hairline)] focus:border-[var(--border-strong)]"
+                }`}
+              />
+              {glyphInvalid ? (
+                <span className="mt-1 block text-[11px] text-[var(--color-danger)]">
+                  Must start with <code className="font-mono">ph:</code> — see{" "}
+                  <a
+                    href="https://phosphoricons.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    phosphoricons.com
+                  </a>
+                  .
                 </span>
               ) : null}
-            </div>
-            <details>
-              <summary className="cursor-pointer text-[12px] text-[var(--text-secondary)]">
-                SSH key setup (one-time)
-              </summary>
-              <div className="mt-2">
-                <InstructionList title="" items={sshSetup} />
-              </div>
-            </details>
+            </label>
+            <label className="block">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                Description (optional)
+              </span>
+              <input
+                value={familiarDescription}
+                onChange={(e) => props.setFamiliarDescription(e.target.value)}
+                placeholder="What should this familiar help with?"
+                className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+              />
+            </label>
           </div>
-        ) : null}
-      </section>
-      ) : null}
 
-      {selectedHarnessId ? (
-      <label className="flex items-start gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3 text-[12px] leading-5 text-[var(--text-secondary)]">
-        <input
-          type="checkbox"
-          checked={confirmCreateNewFamiliar}
-          onChange={(e) =>
-            props.setConfirmCreateNewFamiliar(e.currentTarget.checked)
-          }
-          disabled={!daemonReady || !selectedHarnessId || picking !== null}
-          className="mt-1 h-4 w-4 accent-[var(--accent-presence)] disabled:opacity-50"
-        />
-        <span>
-          I understand this creates a new Coven familiar
-          {selectedHarness ? (
-            <>
-              {" "}bound to the{" "}
-              <span className="font-medium text-[var(--text-primary)]">
-                {selectedHarness.label}
-              </span>{" "}runtime
-            </>
+          {selectedHarnessId ? (
+            <section className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={sshEnabled}
+                  onChange={(e) => props.setSshEnabled(e.currentTarget.checked)}
+                  className="mt-1 h-4 w-4 accent-[var(--accent-presence)]"
+                />
+                <span className="text-[12px] leading-5 text-[var(--text-secondary)]">
+                  <span className="font-medium text-[var(--text-primary)]">
+                    Runs on a remote machine (SSH)
+                  </span>{" "}
+                  — the familiar&rsquo;s runtime uses SSH transport on another box (a
+                  build server, a homelab, a VM). Cave connects non-interactively
+                  with your SSH keys and never stores passwords or key material.
+                </span>
+              </label>
+              {sshEnabled ? (
+                <div className="mt-3 flex flex-col gap-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="block">
+                      <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                        Host
+                      </span>
+                      <input
+                        value={sshHost}
+                        onChange={(e) => props.setSshHost(e.target.value)}
+                        placeholder="ssh-alias or hostname"
+                        className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                        Remote directory
+                      </span>
+                      <input
+                        value={sshCwd}
+                        onChange={(e) => props.setSshCwd(e.target.value)}
+                        placeholder="/home/me/projects"
+                        className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[11px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                        Remote coven command
+                      </span>
+                      <input
+                        value={sshCommand}
+                        onChange={(e) => props.setSshCommand(e.target.value)}
+                        placeholder="coven (default)"
+                        className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[12px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={props.onTestSsh}
+                      disabled={sshCheck.state === "checking" || !sshHost.trim()}
+                      className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
+                    >
+                      <Icon name="ph:plug-bold" />
+                      {sshCheck.state === "checking" ? "Testing…" : "Test connection"}
+                    </button>
+                    {sshCheck.state === "ok" ? (
+                      <span className="text-[11px] text-[var(--color-success)]">
+                        {sshCheck.detail}
+                      </span>
+                    ) : sshCheck.state === "fail" ? (
+                      <span className="text-[11px] text-[var(--color-danger)]">
+                        {sshCheck.detail}
+                      </span>
+                    ) : null}
+                  </div>
+                  <details>
+                    <summary className="cursor-pointer text-[12px] text-[var(--text-secondary)]">
+                      SSH key setup (one-time)
+                    </summary>
+                    <div className="mt-2">
+                      <InstructionList title="" items={sshSetup} />
+                    </div>
+                  </details>
+                </div>
+              ) : null}
+            </section>
           ) : null}
-          .
-        </span>
-      </label>
-      ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        {selectedHarnessId ? (
-          <button
-            onClick={props.onCreateLocal}
-            disabled={
-              !daemonReady ||
-              picking !== null ||
-              !confirmCreateNewFamiliar ||
-              (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
-            }
-            className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
-          >
-            <Icon name="ph:terminal-window" />
-            {picking === "local" ? "Creating..." : "Create new Coven familiar"}
-          </button>
-        ) : selectedAgentId ? (
-          <button
-            onClick={props.onConnectAgent}
-            disabled={
-              !daemonReady ||
-              picking !== null ||
-              familiarName.trim().length === 0 ||
-              (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
-            }
-            className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
-          >
-            <Icon name="ph:git-fork" />
-            {picking === "familiar"
-              ? "Connecting..."
-              : selectedOpenClawAgent
-                ? `Connect ${selectedOpenClawAgent.displayName}`
-                : "Connect OpenClaw agent"}
-          </button>
-        ) : null}
-      </div>
+          {selectedHarnessId ? (
+            <label className="flex items-start gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3 text-[12px] leading-5 text-[var(--text-secondary)]">
+              <input
+                type="checkbox"
+                checked={confirmCreateNewFamiliar}
+                onChange={(e) =>
+                  props.setConfirmCreateNewFamiliar(e.currentTarget.checked)
+                }
+                disabled={!daemonReady || !selectedHarnessId || picking !== null}
+                className="mt-1 h-4 w-4 accent-[var(--accent-presence)] disabled:opacity-50"
+              />
+              <span>
+                I understand this creates a new Coven familiar
+                {selectedHarness ? (
+                  <>
+                    {" "}bound to the{" "}
+                    <span className="font-medium text-[var(--text-primary)]">
+                      {selectedHarness.label}
+                    </span>{" "}runtime
+                  </>
+                ) : null}
+                .
+              </span>
+            </label>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-3">
+            {selectedHarnessId ? (
+              <button
+                onClick={props.onCreateLocal}
+                disabled={
+                  !daemonReady ||
+                  picking !== null ||
+                  !confirmCreateNewFamiliar ||
+                  (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
+                }
+                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+              >
+                <Icon name="ph:terminal-window" />
+                {picking === "local" ? "Creating..." : "Create new Coven familiar"}
+              </button>
+            ) : selectedAgentId ? (
+              <button
+                onClick={props.onConnectAgent}
+                disabled={
+                  !daemonReady ||
+                  picking !== null ||
+                  familiarName.trim().length === 0 ||
+                  (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
+                }
+                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+              >
+                <Icon name="ph:git-fork" />
+                {picking === "familiar"
+                  ? "Connecting..."
+                  : selectedOpenClawAgent
+                    ? `Connect ${selectedOpenClawAgent.displayName}`
+                    : "Connect OpenClaw agent"}
+              </button>
+            ) : null}
+          </div>
         </>
       ) : (
         <p className="rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)]/35 px-3 py-4 text-[12px] leading-5 text-[var(--text-secondary)]">
