@@ -4004,11 +4004,11 @@ button:active > .edge-rail-chip {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  /* Match the collapsed nav-rail button hit target (.shell-nav--rail
-     .sidebar-action-row is a 40px square) so the top toggles line up in
-     width with the sidepanel's icon buttons. */
-  width: 40px;
-  height: 40px;
+  /* Match the height of the adjacent top-bar controls (the familiar switcher
+     and search box sit at 28px) so the sidepanel toggles line up with the rest
+     of the bar rather than towering over it. */
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-base);
@@ -7557,6 +7557,57 @@ a.mobile-handoff__link:hover {
 
 .chat-scope-tabs--minimal [role="tab"] {
   padding-block: 8px;
+}
+
+/* Power-mode toggle — sits at the right edge of the standalone chat's scope-tab
+   row. Off = quiet ghost button; on = lit accent pill, signalling the inline
+   chat↔code split is active. */
+.chat-power-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 26px;
+  padding-inline: 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.chat-power-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.chat-power-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring-focus);
+}
+
+.chat-power-toggle--on {
+  /* Alias the theme accent once so the lit state reads in a single place. */
+  --power-accent: var(--accent);
+  border-color: color-mix(in oklch, var(--power-accent) 55%, transparent);
+  background: color-mix(in oklch, var(--power-accent) 18%, transparent);
+  color: var(--power-accent);
+}
+
+.chat-power-toggle--on:hover {
+  background: color-mix(in oklch, var(--power-accent) 26%, transparent);
+  color: var(--power-accent);
+}
+
+/* Collapse the label to an icon-only chip on narrow screens. */
+@media (max-width: 640px) {
+  .chat-power-toggle__label {
+    display: none;
+  }
 }
 
 /* Dynamic viewport units for layout shell + modals — `100vh` on iOS

@@ -5,6 +5,7 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 import { ProjectsView } from "@/components/projects-view";
+import { ComuxView } from "@/components/comux-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { DebugPane } from "@/components/debug-pane";
@@ -25,6 +26,11 @@ import type { PendingChatAction } from "@/lib/pending-chat-action";
 // the set of mounted panel ids, so the no-sidebar layout doesn't clobber the
 // with-sidebar one. localStorage-backed, fails soft under strict privacy modes.
 const CHAT_GROUP_ID = "cave.chat.widths.v1";
+// Power mode = the standalone chat transforms its side area into an inline
+// chat↔code split (the comux coding surface beside the conversation). Toggle
+// state and the split width persist independently of the inspector layout.
+const POWER_MODE_KEY = "cave:chat-power-mode:v1";
+const POWER_GROUP_ID = "cave.chat.power.widths.v1";
 const chatStorage = {
   getItem(key: string): string | null {
     if (typeof window === "undefined") return null;
@@ -172,6 +178,7 @@ function RightPanel({
               onCreateReminder={onCreateReminder}
               onOpenInboxItem={onOpenInboxItem}
               onInboxItemChanged={onInboxItemChanged}
+              hideMemory
             />
           )}
           {active === "debug" && <DebugPane />}
@@ -229,6 +236,7 @@ function RightPanel({
                 onCreateReminder={onCreateReminder}
                 onOpenInboxItem={onOpenInboxItem}
                 onInboxItemChanged={onInboxItemChanged}
+                hideMemory
               />
             )}
             {primaryPanel === "debug" && <DebugPane />}
@@ -288,6 +296,29 @@ export function ChatSurface({
   const isCodeSurface = surface === "code";
   const [scope, setScope] = useState<FamiliarsScope>("conversation");
   const [rightExpanded, setRightExpanded] = useState(false);
+  // Power mode applies only to the standalone chat surface (the Code workspace
+  // already *is* a chat↔code split). Hydrated from localStorage after mount to
+  // stay SSR-safe.
+  const [powerMode, setPowerMode] = useState(false);
+  useEffect(() => {
+    if (isCodeSurface) return;
+    try {
+      setPowerMode(window.localStorage.getItem(POWER_MODE_KEY) === "1");
+    } catch {
+      /* ignore — strict privacy mode */
+    }
+  }, [isCodeSurface]);
+  function togglePowerMode() {
+    setPowerMode((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(POWER_MODE_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
   // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
   // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
   // be unreachable. On mobile we render them in a right-edge sheet overlay instead.
@@ -303,12 +334,22 @@ export function ChatSurface({
     onSetInspectorOpen(next === "inspector");
   }
 
-  // Persist the chat / right-sidebar split. panelIds tracks which panels are
-  // actually mounted so the with-sidebar and no-sidebar layouts persist separately.
-  const showRightSidebar = rightPanel !== null && !isMobile;
+  // Power mode owns the side area when on (standalone, desktop); otherwise the
+  // inspector/debug/changes sidebar does. They are mutually exclusive so the
+  // chat thread never has to share its row with both.
+  const showPowerPanel = powerMode && !isCodeSurface && !isMobile;
+  const showRightSidebar = !showPowerPanel && rightPanel !== null && !isMobile;
+
+  // Persist the chat / right-area split. panelIds tracks which panels are
+  // actually mounted so the power-split, with-sidebar, and bare layouts persist
+  // separately (the power split is much wider than the 230px inspector rail).
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: CHAT_GROUP_ID,
-    panelIds: showRightSidebar ? ["chat-main", "right-sidebar"] : ["chat-main"],
+    id: showPowerPanel ? POWER_GROUP_ID : CHAT_GROUP_ID,
+    panelIds: showPowerPanel
+      ? ["chat-main", "code-power"]
+      : showRightSidebar
+        ? ["chat-main", "right-sidebar"]
+        : ["chat-main"],
     storage: chatStorage,
   });
 
@@ -491,8 +532,10 @@ export function ChatSurface({
                   window.setTimeout(() => routerRef.current?.goToList(), 0);
                 }
               }}
-              // In Code mode the comux pane owns project/file navigation, so the
-              // duplicate Projects tab is dropped — only Sessions + Memory here.
+              // Standalone chat is intentionally minimal: just Sessions + Projects.
+              // Memory is not part of a conversation, so it lives in the Familiars
+              // surface, not the chat header. In Code mode the comux pane owns
+              // project/file navigation, so that surface keeps Sessions + Memory.
               items={
                 isCodeSurface
                   ? [
@@ -501,15 +544,29 @@ export function ChatSurface({
                     ]
                   : [
                       { id: "conversation", label: "Sessions" },
-                      { id: "memory", label: "Memory" },
                       { id: "projects", label: "Projects" },
                     ]
               }
             />
           </div>
           {/* Code workspace: layout presets + companion-panel toggle ride on
-              this row so the Code surface needs no separate toolbar row. */}
-          {isCodeSurface ? <CodeInlineToolbar /> : null}
+              this row so the Code surface needs no separate toolbar row.
+              Standalone chat gets the Power-mode toggle instead — it transforms
+              the side area into an inline chat↔code split. */}
+          {isCodeSurface ? (
+            <CodeInlineToolbar />
+          ) : (
+            <button
+              type="button"
+              className={`chat-power-toggle${powerMode ? " chat-power-toggle--on" : ""}`}
+              aria-pressed={powerMode}
+              onClick={togglePowerMode}
+              title={powerMode ? "Exit power mode" : "Power mode — split chat with code & terminal"}
+            >
+              <Icon name="ph:lightning-fill" width={13} />
+              <span className="chat-power-toggle__label">Power</span>
+            </button>
+          )}
         </div>
 
         {scope === "memory" ? (
@@ -531,7 +588,7 @@ export function ChatSurface({
             defaultLayout={defaultLayout}
             onLayoutChanged={onLayoutChanged}
           >
-            <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize="45%">
+            <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize={showPowerPanel ? "32%" : "45%"}>
               <div className="min-h-0 min-w-0 flex-1" data-surface={surface}>
                 <ChatRouter
                   ref={routerRef}
@@ -540,7 +597,7 @@ export function ChatSurface({
                   sessions={sessions}
                   daemonRunning={daemonRunning}
                   sessionsLoaded={sessionsLoaded}
-                  compact={isCodeSurface}
+                  compact={isCodeSurface || showPowerPanel}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionStarted={onSessionStarted}
                   onSessionsChanged={onSessionsChanged}
@@ -553,7 +610,38 @@ export function ChatSurface({
                 />
               </div>
             </Panel>
-            {rightPanel !== null && !isMobile && (
+            {/* Power mode: the side area becomes the comux coding surface — file
+                tree + editable preview + terminal — beside the conversation, a
+                single resizable split. Same component the Code workspace uses,
+                with its own isolated terminal/layout namespace. */}
+            {showPowerPanel && (
+              <>
+                <Separator className="shell-separator hidden lg:flex">
+                  <SeparatorHandle orientation="col" />
+                </Separator>
+                <Panel
+                  id="code-power"
+                  className="hidden min-h-0 min-w-0 lg:flex"
+                  defaultSize="50%"
+                  minSize="35%"
+                >
+                  <div className="chat-power-pane flex min-h-0 min-w-0 flex-1 flex-col">
+                    <ComuxView
+                      view="projects"
+                      active={powerMode}
+                      storageNamespace=":chat-power"
+                      sessions={sessions}
+                      onOpenSession={(sessionId, familiarId) => {
+                        if (familiarId) onSetActiveFamiliar(familiarId);
+                        window.setTimeout(() => routerRef.current?.openSession(sessionId), 0);
+                      }}
+                      onNewChat={startProjectChat}
+                    />
+                  </div>
+                </Panel>
+              </>
+            )}
+            {showRightSidebar && (
               <>
                 {/* Defaults to 230px (mirrors the internal left rail, chat-thread-rail
                     is w-[230px]) but is drag-resizable via the handle below, clamped

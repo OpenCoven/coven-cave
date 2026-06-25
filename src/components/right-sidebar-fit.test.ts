@@ -21,11 +21,13 @@ assert.match(
   "The right sidebar should have an outer drag-to-resize separator before it",
 );
 
-// The split width must persist across reloads via useDefaultLayout.
+// The split width must persist across reloads via useDefaultLayout. The id is
+// CHAT_GROUP_ID for the inspector layout and POWER_GROUP_ID for the wider
+// chat↔code power split (persisted separately so they don't clobber each other).
 assert.match(
   chatSurface,
-  /useDefaultLayout\(\{[\s\S]*id: CHAT_GROUP_ID[\s\S]*storage: chatStorage/,
-  "ChatSurface should persist the chat/right-sidebar split width across reloads",
+  /useDefaultLayout\(\{[\s\S]*id: showPowerPanel \? POWER_GROUP_ID : CHAT_GROUP_ID[\s\S]*storage: chatStorage/,
+  "ChatSurface should persist the chat/right-area split width across reloads",
 );
 
 assert.match(
