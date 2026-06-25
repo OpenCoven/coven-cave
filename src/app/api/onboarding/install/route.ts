@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { execFile, spawn } from "node:child_process";
+import { access } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { stripAnsi } from "@/lib/ansi";
 import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
@@ -100,6 +103,70 @@ function isInstallTarget(value: unknown): value is InstallTarget {
   return typeof value === "string" && value in INSTALL_TARGETS;
 }
 
+/** Walk up from `start` to the nearest directory that actually exists. The
+ *  global npm dirs may not exist yet on a fresh prefix, so we check the
+ *  closest existing ancestor for writability instead. */
+async function nearestExistingDir(start: string): Promise<string | null> {
+  let cur = start;
+  for (let i = 0; i < 16; i++) {
+    try {
+      await access(cur);
+      return cur;
+    } catch {
+      const parent = dirname(cur);
+      if (parent === cur) return null;
+      cur = parent;
+    }
+  }
+  return null;
+}
+
+/** True when the current user can write the global npm install dirs. A
+ *  root-owned prefix (system Node under /usr/local, distro packages) is what
+ *  makes `npm install -g` fail with EACCES and need sudo. nvm/fnm/Homebrew
+ *  prefixes are user-owned and return true here, so we never sudo them. */
+async function npmGlobalDirsWritable(npm: string): Promise<boolean> {
+  let prefix: string;
+  try {
+    const { stdout } = await execFileAsync(npm, ["prefix", "-g"], {
+      env: covenSpawnEnv(),
+      timeout: 5000,
+    });
+    prefix = stdout.trim();
+  } catch {
+    // Can't determine the prefix — don't force sudo on a guess.
+    return true;
+  }
+  if (!prefix) return true;
+  // npm writes the package tree under <prefix>/lib/node_modules and the bin
+  // shims under <prefix>/bin on POSIX. Either being unwritable needs sudo.
+  for (const dir of [join(prefix, "lib", "node_modules"), join(prefix, "bin")]) {
+    const existing = await nearestExistingDir(dir);
+    if (!existing) continue;
+    try {
+      await access(existing, fsConstants.W_OK);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** `sudo -n true` succeeds only when sudo needs no password (cached creds or
+ *  a NOPASSWD rule). We never spawn a password-prompting sudo from this
+ *  non-interactive server context — with no TTY it would hang forever. */
+async function passwordlessSudoAvailable(): Promise<boolean> {
+  try {
+    await execFileAsync("sudo", ["-n", "true"], {
+      env: covenSpawnEnv(),
+      timeout: 3000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 type SpawnPlan = {
   command: string;
   args: string[];
@@ -114,10 +181,36 @@ function sleep(ms: number) {
  *  prerequisite is missing (npm targets need npm on PATH). */
 async function spawnPlanFor(
   target: (typeof INSTALL_TARGETS)[InstallTarget],
-): Promise<SpawnPlan | { npmMissing: true } | null> {
+): Promise<
+  | SpawnPlan
+  | { npmMissing: true }
+  | { sudoRequired: true; packageName: string }
+  | null
+> {
   if (target.kind === "npm") {
     const npm = await commandPath("npm");
     if (!npm) return { npmMissing: true };
+
+    // On POSIX a root-owned global prefix (system Node, /usr/local) fails
+    // `npm install -g` with EACCES. Elevate ONLY when the prefix really isn't
+    // writable; nvm/fnm/Homebrew prefixes are user-owned and must not be
+    // sudo'd (root-owned files there break later user installs).
+    if (process.platform !== "win32" && !(await npmGlobalDirsWritable(npm))) {
+      // No TTY here: a password-prompting `sudo` would block forever. Only
+      // auto-elevate when passwordless sudo works; otherwise bail with a
+      // marker so the UI can tell the user to run it themselves.
+      if (await passwordlessSudoAvailable()) {
+        return {
+          command: "sudo",
+          // `-n` keeps sudo non-interactive — argv stays fully fixed
+          // (allowlisted package, no user input).
+          args: ["-n", npm, "install", "-g", target.packageName],
+          shell: false,
+        };
+      }
+      return { sudoRequired: true, packageName: target.packageName };
+    }
+
     return {
       command: npm,
       args: ["install", "-g", target.packageName],
@@ -275,6 +368,16 @@ function installFailureHint(targetName: InstallTarget, output: string): string |
   ) {
     return "coven.exe is still locked by a running daemon. Cave tried to stop it first; fully quit Cave, end the coven process in Task Manager if it remains, then retry the update.";
   }
+  // Backstop for a non-writable global prefix that slipped past the upfront
+  // writability check (race, or a prefix we couldn't resolve): npm reports a
+  // permission error and the user needs to re-run the install with sudo.
+  const target = INSTALL_TARGETS[targetName];
+  if (
+    target.kind === "npm" &&
+    /(EACCES|EPERM|EROFS|permission denied)/i.test(output)
+  ) {
+    return `npm couldn't write to the global directory (permission denied). Re-run the install in a terminal with sudo: \`sudo npm install -g ${target.packageName}\`.`;
+  }
   return null;
 }
 
@@ -358,6 +461,17 @@ export async function POST(req: Request) {
         npmMissing: true,
         error: "npm is not available on PATH",
         hint: nodeInstallHint(),
+      },
+      { status: 422 },
+    );
+  }
+  if (plan && "sudoRequired" in plan) {
+    return NextResponse.json(
+      {
+        ok: false,
+        sudoRequired: true,
+        error: "the global npm directory needs elevated permissions to write",
+        hint: `Cave can't write to the global npm directory and passwordless sudo isn't available here. Run \`sudo npm install -g ${plan.packageName}\` in a terminal, then click Install again.`,
       },
       { status: 422 },
     );
