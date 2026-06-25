@@ -50,6 +50,7 @@ const contracts: RouteContract[] = [
   { route: "/familiars", methods: ["GET"], kind: "json" },
   { route: "/github/activity", methods: ["GET"], kind: "json" },
   { route: "/github/assigned", methods: ["GET"], kind: "json" },
+  { route: "/github/repos", methods: ["GET"], kind: "json" },
   { route: "/flows", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows/run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows/runs", methods: ["GET", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -69,6 +70,7 @@ const contracts: RouteContract[] = [
   { route: "/grant-proposals/[id]", methods: ["PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/grant-proposals", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/harnesses", methods: ["GET"], kind: "json" },
+  { route: "/home-tweets", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/inbox/[id]/dismiss", methods: ["POST"], kind: "json" },
   { route: "/inbox/[id]/done", methods: ["POST"], kind: "json" },
   { route: "/inbox/[id]", methods: ["PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -150,6 +152,7 @@ const contracts: RouteContract[] = [
   { route: "/workflows/save", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/workflows/validate", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/workflows", methods: ["GET"], kind: "json" },
+  { route: "/youtube", methods: ["GET"], kind: "json" },
 ];
 
 function walkRoutes(dir: string): string[] {

@@ -25,7 +25,7 @@ import { readComposerHistory, writeComposerHistory } from "@/lib/composer-histor
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
-import { HomeRssWidget } from "@/components/home/rss-widget";
+import { HomeFeed } from "@/components/home/home-feed";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -681,8 +681,8 @@ export function HomeComposer({
         </div>
       )}
 
-      {/* Live RSS feed — the latest across a curated set of sources. */}
-      <HomeRssWidget
+      {/* Content feed — YouTube videos, curated X posts, and GitHub repos. */}
+      <HomeFeed
         onOpenUrl={(url) => {
           if (onOpenUrl) onOpenUrl(url);
           else window.open(url, "_blank", "noopener,noreferrer");
