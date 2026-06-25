@@ -31,7 +31,7 @@ export function TodaySummary({
         title="Today's report"
         hint={summary.generatedAt ? `Generated ${relativeTime(summary.generatedAt, now)}` : undefined}
       />
-      <div className={`dash-today__grid${summary.imageUrl ? " dash-today__grid--media" : ""}`}>
+      <div className="dash-today__grid">
         <div className="dr-panel dash-today__panel">
           {hasBody ? (
             <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>
@@ -58,9 +58,6 @@ export function TodaySummary({
             </div>
           ) : null}
         </div>
-        {summary.imageUrl ? (
-          <img className="dr-cardimg dash-today__img" src={summary.imageUrl} alt={summary.alt} />
-        ) : null}
       </div>
     </section>
   );

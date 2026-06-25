@@ -11,36 +11,36 @@ const globals = await readFile(
   "utf8",
 );
 
-// ───── RSS widget rows ellipsis cleanly and scroll within a bounded card ─────
-// The live RSS widget replaced the connector cards. Its rows must clamp long
-// titles (so they never overflow the card) and the list must cap its height and
-// scroll rather than pushing the page.
-const titleMatch = css.match(/\.home-rss__item-title\s*\{([^}]*)\}/);
-assert.ok(titleMatch, ".home-rss__item-title rule must exist");
+// ───── Home feed rows ellipsis cleanly and scroll within a bounded card ─────
+// The home content feed (Videos · Tweets · Repos) replaced the RSS widget. Its
+// video titles must clamp (so they never overflow the card) and each tab's list
+// must cap its height and scroll rather than pushing the page.
+const titleMatch = css.match(/\.home-feed__vtitle\s*\{([^}]*)\}/);
+assert.ok(titleMatch, ".home-feed__vtitle rule must exist");
 assert.match(
   titleMatch[1],
   /-webkit-line-clamp:\s*2;/,
-  ".home-rss__item-title clamps to 2 lines so long headlines don't overflow",
+  ".home-feed__vtitle clamps to 2 lines so long titles don't overflow",
 );
 
-const listMatch = css.match(/\.home-rss__list\s*\{([^}]*)\}/);
-assert.ok(listMatch, ".home-rss__list rule must exist");
+const listMatch = css.match(/\.home-feed__list\s*\{([^}]*)\}/);
+assert.ok(listMatch, ".home-feed__list rule must exist");
 assert.match(
   listMatch[1],
   /max-height:\s*\d+px;/,
-  ".home-rss__list caps its height",
+  ".home-feed__list caps its height",
 );
 assert.match(
   listMatch[1],
   /overflow-y:\s*auto;/,
-  ".home-rss__list scrolls instead of pushing the page",
+  ".home-feed__list scrolls instead of pushing the page",
 );
 
-// On phones the filter chips hide (no room) and the list shrinks.
+// On phones the two-up videos grid collapses to a single column.
 assert.match(
   css,
-  /@media \(max-width: 640px\)\s*\{[\s\S]*?\.home-rss__chips\s*\{[\s\S]*?display:\s*none;/,
-  "RSS filter chips hide under 640px",
+  /@media \(max-width: 640px\)\s*\{[\s\S]*?\.home-feed__videos\s*\{[\s\S]*?grid-template-columns:\s*1fr;/,
+  "home feed videos collapse to one column under 640px",
 );
 
 // ───── Phone composer controls are thumb-sized ─────
