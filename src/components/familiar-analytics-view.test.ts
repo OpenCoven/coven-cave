@@ -1,0 +1,265 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { afterEach, describe, it } from "node:test";
+import {
+  buildFamiliarAnalyticsModel,
+  loadFamiliarAnalyticsData,
+} from "./familiar-analytics-data.ts";
+
+const source = readFileSync(new URL("./familiar-analytics-view.tsx", import.meta.url), "utf8");
+
+const highEvalState = {
+  familiar_id: "cody",
+  last_run: "2026-06-25T12:00:00.000Z",
+  iterations: [
+    {
+      id: "revert-1",
+      timestamp: "2026-06-25T12:00:00.000Z",
+      track: "prompt",
+      iteration: 1,
+      change_summary: "Prompt change reverted",
+      metric_before: 0.7,
+      metric_after: 0.5,
+      delta: -0.2,
+      outcome: "REVERT",
+    },
+  ],
+  track_counts: { synthesis: 0, prompt: 1, memory: 0 },
+  total_accepted: 0,
+  total_reverted: 1,
+  running: false,
+};
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+const originalFetch = globalThis.fetch;
+
+function mockFetchFor(score: "low" | "trusted") {
+  const familiar =
+    score === "trusted"
+      ? { id: "cody", display_name: "Cody", role: "agent", memory_freshness: "fresh", avatarUrl: "/avatar.png" }
+      : { id: "cody", display_name: "Cody", role: "agent", memory_freshness: null };
+  const contract =
+    score === "trusted"
+      ? {
+          specVersion: "0.1.0",
+          pass: true,
+          properties: [
+            { property: "Named Identity", pass: true },
+            { property: "Defined Purpose", pass: true },
+            { property: "Bounded Authority", pass: true },
+            { property: "Persistent Memory", pass: true },
+            { property: "Human Belonging", pass: true },
+          ],
+          violations: [],
+          warnings: [],
+        }
+      : {
+          specVersion: "0.1.0",
+          pass: false,
+          properties: [
+            { property: "Named Identity", pass: false },
+            { property: "Defined Purpose", pass: false },
+            { property: "Bounded Authority", pass: false },
+            { property: "Persistent Memory", pass: false },
+            { property: "Human Belonging", pass: false },
+          ],
+          violations: [],
+          warnings: [],
+        };
+
+  const responses = new Map<string, unknown>([
+    ["/api/familiars", { ok: true, familiars: [familiar] }],
+    ["/api/familiars/cody/contract", { ok: true, report: contract }],
+    ["/api/skills/eval-loop/cody", { ok: true, state: score === "trusted" ? highEvalState : null }],
+    [
+      "/api/sessions/list",
+      {
+        ok: true,
+        sessions: score === "trusted"
+          ? Array.from({ length: 10 }, (_, index) => ({
+              id: `session-${index}`,
+              project_root: "/tmp/cave",
+              harness: "codex",
+              title: "Session",
+              status: "complete",
+              exit_code: 0,
+              archived_at: null,
+              created_at: "2026-06-25T12:00:00.000Z",
+              updated_at: "2026-06-25T12:00:00.000Z",
+              familiarId: "cody",
+            }))
+          : [],
+      },
+    ],
+    [
+      "/api/coven-memory",
+      {
+        ok: true,
+        entries: score === "trusted"
+          ? [
+              {
+                id: "memory-1",
+                familiar_id: "cody",
+                title: "Recent memory",
+                path: "memory.md",
+                updated_at: "2026-06-25T12:00:00.000Z",
+              },
+            ]
+          : [],
+      },
+    ],
+    [
+      "/api/retro-runs",
+      {
+        ok: true,
+        snapshot: {
+          generatedAt: "2026-06-25T12:00:00.000Z",
+          summary: {
+            totalRuns: score === "trusted" ? 5 : 0,
+            accepted: score === "trusted" ? 5 : 0,
+            reverted: 0,
+            runningFamiliars: 0,
+            familiarsWithData: score === "trusted" ? 1 : 0,
+            trackCounts: { synthesis: score === "trusted" ? 5 : 0, prompt: 0, memory: 0 },
+            lastRun: null,
+          },
+          familiars:
+            score === "trusted"
+              ? [
+                  {
+                    familiarId: "cody",
+                    familiarName: "Cody",
+                    familiarRole: "agent",
+                    lastRun: "2026-06-25T12:00:00.000Z",
+                    running: false,
+                    trackCounts: { synthesis: 5, prompt: 0, memory: 0 },
+                    totalAccepted: 5,
+                    totalReverted: 0,
+                    runs: [
+                      {
+                        id: "run-1",
+                        familiarId: "cody",
+                        familiarName: "Cody",
+                        familiarRole: "agent",
+                        iterationId: "iter-1",
+                        iteration: 1,
+                        timestamp: "2026-06-25T12:00:00.000Z",
+                        track: "synthesis",
+                        outcome: "ACCEPT",
+                        changeSummary: "Accepted",
+                        metricBefore: 0,
+                        metricAfter: 1,
+                        delta: 1,
+                        raw: {},
+                      },
+                      {
+                        id: "run-2",
+                        familiarId: "cody",
+                        familiarName: "Cody",
+                        familiarRole: "agent",
+                        iterationId: "iter-2",
+                        iteration: 2,
+                        timestamp: "2026-06-24T12:00:00.000Z",
+                        track: "synthesis",
+                        outcome: "ACCEPT",
+                        changeSummary: "Accepted",
+                        metricBefore: 0,
+                        metricAfter: 1,
+                        delta: 1,
+                        raw: {},
+                      },
+                      {
+                        id: "run-3",
+                        familiarId: "cody",
+                        familiarName: "Cody",
+                        familiarRole: "agent",
+                        iterationId: "iter-3",
+                        iteration: 3,
+                        timestamp: "2026-06-23T12:00:00.000Z",
+                        track: "synthesis",
+                        outcome: "ACCEPT",
+                        changeSummary: "Accepted",
+                        metricBefore: 0,
+                        metricAfter: 1,
+                        delta: 1,
+                        raw: {},
+                      },
+                      {
+                        id: "run-4",
+                        familiarId: "cody",
+                        familiarName: "Cody",
+                        familiarRole: "agent",
+                        iterationId: "iter-4",
+                        iteration: 4,
+                        timestamp: "2026-06-22T12:00:00.000Z",
+                        track: "synthesis",
+                        outcome: "ACCEPT",
+                        changeSummary: "Accepted",
+                        metricBefore: 0,
+                        metricAfter: 1,
+                        delta: 1,
+                        raw: {},
+                      },
+                      {
+                        id: "run-5",
+                        familiarId: "cody",
+                        familiarName: "Cody",
+                        familiarRole: "agent",
+                        iterationId: "iter-5",
+                        iteration: 5,
+                        timestamp: "2026-06-21T12:00:00.000Z",
+                        track: "synthesis",
+                        outcome: "ACCEPT",
+                        changeSummary: "Accepted",
+                        metricBefore: 0,
+                        metricAfter: 1,
+                        delta: 1,
+                        raw: {},
+                      },
+                    ],
+                    raw: {},
+                  },
+                ]
+              : [],
+          runs: [],
+        },
+      },
+    ],
+  ]);
+
+  globalThis.fetch = (async (url: RequestInfo | URL) => ({
+    json: async () => responses.get(String(url)),
+  })) as typeof fetch;
+}
+
+describe("FamiliarAnalyticsView", () => {
+  it("builds a renderable model with mocked fetch responses and shows the Low label", async () => {
+    mockFetchFor("low");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data);
+
+    assert.equal(model.confidence.label, "Low");
+    assert.match(source, /export function FamiliarAnalyticsContent/);
+  });
+
+  it("shows the Trusted label for high-data mocks", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data);
+
+    assert.equal(model.confidence.label, "Trusted");
+  });
+
+  it("renders the heal request count and keeps EvalLoopPanel present", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data);
+
+    assert.equal(model.healRequests.length, 1);
+    assert.match(source, /model\.healRequests\.length === 1 \? "request" : "requests"/);
+    assert.match(source, /<EvalLoopPanel[\s\S]*familiarId=\{model\.familiar\.id\}/);
+  });
+});
