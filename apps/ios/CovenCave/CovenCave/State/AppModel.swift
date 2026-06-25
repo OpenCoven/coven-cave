@@ -123,8 +123,19 @@ final class AppModel {
 
     /// App-chrome palette mirrored from the desktop's published theme
     /// (`GET /api/theme`). Starts at the built-in look and is replaced once the
-    /// desktop theme loads. One-way (desktop → iOS), per the design.
+    /// desktop theme loads.
     var chrome: ChromePalette = .fallback
+
+    /// The desktop's currently-published theme id + light/dark mode, mirrored
+    /// from the last `GET /api/theme`. Drives the Settings theme picker's
+    /// selected state so the active card is highlighted. `nil` until a theme
+    /// loads (disconnected / pre-poll).
+    var publishedThemeId: String?
+    var publishedMode: String?
+
+    /// True while a phone-initiated theme override is in flight, so the picker
+    /// can show progress and ignore double-taps.
+    var publishingTheme = false
 
     /// Fetch the desktop theme and adopt its palette. Best-effort: on any
     /// failure the current palette stands, so there's no flash back to the
@@ -132,9 +143,42 @@ final class AppModel {
     func loadTheme() async {
         guard let client else { return }
         if let snapshot = try? await client.fetchTheme() {
-            let next = ChromePalette(snapshot: snapshot)
-            if next != chrome { chrome = next }
+            adopt(snapshot)
         }
+    }
+
+    /// Apply a fetched/published snapshot: refresh the chrome palette and record
+    /// the active theme id + mode for the picker. Only assigns on change so an
+    /// unchanged poll stays a cheap no-op (no needless view invalidation).
+    private func adopt(_ snapshot: ThemeSnapshot) {
+        let next = ChromePalette(snapshot: snapshot)
+        if next != chrome { chrome = next }
+        if publishedThemeId != snapshot.themeId { publishedThemeId = snapshot.themeId }
+        if publishedMode != snapshot.mode { publishedMode = snapshot.mode }
+    }
+
+    /// Override the desktop's active theme from the phone (`PUT /api/theme`).
+    /// The desktop adopts the preset and re-publishes resolved tokens; we adopt
+    /// the returned snapshot immediately so the phone re-themes without waiting
+    /// for the next 20s poll. Best-effort — a failed write leaves the current
+    /// theme untouched and surfaces `false` so the caller can flag it.
+    @discardableResult
+    func setDesktopTheme(themeId: String, mode: String) async -> Bool {
+        guard let client else { return false }
+        publishingTheme = true
+        defer { publishingTheme = false }
+        guard let snapshot = try? await client.publishTheme(themeId: themeId, mode: mode) else {
+            return false
+        }
+        adopt(snapshot)
+        // The desktop resolves the real hex tokens asynchronously after it
+        // adopts; re-poll shortly so the phone upgrades from the preset's
+        // bundled swatch to the desktop's exact palette.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            await self?.loadTheme()
+        }
+        return true
     }
 
     var client: CaveClient? {
