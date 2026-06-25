@@ -163,8 +163,8 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /<ChatRouter[\s\S]*?compact=\{isCodeSurface\}/,
-  "ChatSurface should suppress the in-chat project sidebar in Code mode via compact",
+  /<ChatRouter[\s\S]*?compact=\{isCodeSurface \|\| showPowerPanel\}/,
+  "ChatSurface should suppress the in-chat project sidebar in Code mode and power mode via compact",
 );
 assert.match(
   chatSurface,

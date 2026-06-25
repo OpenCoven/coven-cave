@@ -71,9 +71,11 @@ assert.match(
 
 // Gate the inline desktop sidebar on !isMobile so only one RightPanel mounts per
 // breakpoint — otherwise InspectorPane double-fetches and duplicates DOM ids.
+// The gate now folds into showRightSidebar (= !showPowerPanel && rightPanel !==
+// null && !isMobile), which keeps the !isMobile guarantee.
 assert.match(
   source,
-  /rightPanel !== null && !isMobile && \(/,
+  /const showRightSidebar = !showPowerPanel && rightPanel !== null && !isMobile/,
   "Inline desktop right sidebar should not also mount on mobile (avoids duplicate RightPanel)",
 );
 

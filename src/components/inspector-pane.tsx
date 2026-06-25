@@ -55,6 +55,10 @@ type Props = {
   compact?: boolean;
   /** When set, the Memory tab shows an "Open full memory →" footer button. */
   onOpenFullView?: () => void;
+  /** Drop the Memory tab entirely. The chat surface uses this — memory is not
+   *  part of a conversation, so it lives in the Familiars surface, not the
+   *  chat-side inspector. Defaults to false (the standalone inspector keeps it). */
+  hideMemory?: boolean;
 };
 
 const TAB_LABEL: Record<Tab, string> = {
@@ -120,8 +124,16 @@ export function InspectorPane({
   onInboxItemChanged,
   compact = false,
   onOpenFullView,
+  hideMemory = false,
 }: Props) {
-  const [tab, setTab] = useState<Tab>("memory");
+  const [tab, setTab] = useState<Tab>(hideMemory ? "familiar" : "memory");
+  // If memory is hidden but the pane somehow lands on it (prop flip), fall back
+  // to the Familiar tab so the panel never renders an empty memory body.
+  useEffect(() => {
+    if (hideMemory && tab === "memory") setTab("familiar");
+  }, [hideMemory, tab]);
+
+  const visibleTabs = hideMemory ? INSPECTOR_TABS.filter((t) => t !== "memory") : INSPECTOR_TABS;
 
   const familiarInbox = useMemo(() => {
     if (!familiar) return [];
@@ -154,7 +166,7 @@ export function InspectorPane({
           ariaLabel="Inspector sections"
           value={tab}
           onChange={setTab}
-          items={INSPECTOR_TABS.map((t) => ({
+          items={visibleTabs.map((t) => ({
             id: t,
             label:
               t === "inbox" && inboxBadge > 0 ? (
@@ -182,7 +194,7 @@ export function InspectorPane({
           tab === "memory" ? "overflow-hidden" : "overflow-y-auto"
         }`}
       >
-        {tab === "memory" ? <MemoryTab familiar={familiar} onOpenFullView={onOpenFullView} /> : null}
+        {tab === "memory" && !hideMemory ? <MemoryTab familiar={familiar} onOpenFullView={onOpenFullView} /> : null}
         {tab === "familiar" ? <FamiliarCapabilityPanel familiar={familiar} /> : null}
         {tab === "inbox" ? (
           <InboxTab

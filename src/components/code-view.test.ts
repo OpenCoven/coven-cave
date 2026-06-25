@@ -52,7 +52,8 @@ assert.match(
 );
 assert.match(toolbar, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per preset");
 // The toolbar is mounted on the Code surface's tab row + carries the panel toggle.
-assert.match(chatSurface, /isCodeSurface \? <CodeInlineToolbar \/> : null/, "the Code tab row hosts the inline toolbar");
+// (Standalone chat shows the Power-mode toggle on that row instead of null.)
+assert.match(chatSurface, /isCodeSurface \? \(\s*<CodeInlineToolbar \/>\s*\) : \(/, "the Code tab row hosts the inline toolbar");
 assert.match(toolbar, /code-panel-toggle/, "the toolbar includes the companion-panel toggle");
 assert.match(toolbar, /cave:toggle-right-panel/, "the panel toggle asks the shell to toggle the companion panel");
 

@@ -9,11 +9,19 @@ assert.match(events, /CHAT_OPEN_PROJECTS_EVENT = "cave:chat-open-projects"/, "ev
 
 assert.match(surface, /import \{ ProjectsView \} from "@\/components\/projects-view"/, "chat-surface imports ProjectsView");
 assert.match(surface, /CHAT_OPEN_PROJECTS_EVENT/, "chat-surface references the reroute event");
-assert.match(surface, /type FamiliarsScope = "conversation" \| "memory" \| "projects"/, "scope union includes projects");
+assert.match(surface, /type FamiliarsScope = "conversation" \| "memory" \| "projects"/, "scope union still includes memory (Code surface) + projects");
+// Standalone chat is intentionally minimal: Sessions then Projects, no Memory —
+// memory is not part of a conversation (it lives in the Familiars surface). The
+// standalone branch is the ` : [ … ]` arm after the isCodeSurface ternary.
 assert.match(
   surface,
-  /\{\s*id:\s*"conversation",\s*label:\s*"Sessions"\s*\}[\s\S]*?\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\}[\s\S]*?\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/,
-  "shared Tabs items list all three scopes ending with the projects tab",
+  /:\s*\[\s*\{\s*id:\s*"conversation",\s*label:\s*"Sessions"\s*\},\s*\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\},?\s*\]/,
+  "standalone chat tab list is Sessions then Projects (Memory dropped)",
+);
+assert.doesNotMatch(
+  surface,
+  /:\s*\[\s*\{\s*id:\s*"conversation",\s*label:\s*"Sessions"\s*\},\s*\{\s*id:\s*"memory"/,
+  "standalone chat tab list must not include a Memory tab",
 );
 assert.match(surface, /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/, "projects tab is labeled");
 assert.match(surface, /scope === "projects" && !isCodeSurface \? \(/, "projects scope renders its own panel (standalone chat only)");
