@@ -254,6 +254,10 @@ export const SUITES = {
     "src/lib/familiar-heal-requests.test.ts",
     "src/lib/thread-self-report.test.ts",
     "src/components/familiar-analytics-view.test.ts",
+    "src/lib/server/familiar-self-reports.test.ts",
+    "src/components/thread-signal-card.test.ts",
+    "src/components/thread-signals-section.test.ts",
+    "src/components/chat-view.test.ts",
     "src/components/familiars-view-stats.test.ts",
     "src/components/automations-detail-inputs.test.ts",
     "src/components/automations-view.test.ts",
@@ -670,6 +674,10 @@ const ALIAS_LOADER = new Set([
   "src/lib/familiar-growth-signals.test.ts",
   "src/lib/familiar-growth-route-wiring.test.ts",
   "src/components/familiar-analytics-view.test.ts",
+  "src/lib/server/familiar-self-reports.test.ts",
+  "src/components/thread-signal-card.test.ts",
+  "src/components/thread-signals-section.test.ts",
+  "src/components/chat-view.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
