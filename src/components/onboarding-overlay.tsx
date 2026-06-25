@@ -557,6 +557,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const installInFlightRef = useRef(false);
 
   const markQueued = (target: InstallTarget) => {
+    setSetupError(null);
+    setNodeHint(null);
     setInstallResults((prev) => ({
       ...prev,
       [target]: {
