@@ -42,6 +42,24 @@ assert.match(
 
 assert.match(
   source,
+  /HeaderReflectButton[\s\S]*Reflect on this thread[\s\S]*ph:brain-bold/,
+  "ChatView should expose a Reflect action in the chat header",
+);
+
+assert.match(
+  source,
+  /fetch\(`\/api\/familiars\/\$\{encodeURIComponent\(familiar\.id\)\}\/self-report`[\s\S]*sessionId[\s\S]*trigger: "manual"/,
+  "Reflect should POST the current session to the self-report API",
+);
+
+assert.match(
+  source,
+  /<ThreadSignalCard[\s\S]*report=\{threadSignalReport\}/,
+  "Successful reflection should render the ThreadSignalCard in the transcript",
+);
+
+assert.match(
+  source,
   /onOpenUrl\?: \(url: string\) => void/,
   "ChatView should accept a URL opener from Workspace so chat links can open in the side-panel browser",
 );

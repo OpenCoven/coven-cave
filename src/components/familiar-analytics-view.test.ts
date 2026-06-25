@@ -228,6 +228,32 @@ function mockFetchFor(score: "low" | "trusted") {
         },
       },
     ],
+    [
+      "/api/familiars/cody/self-reports?limit=30",
+      {
+        ok: true,
+        total: 1,
+        reports: [
+          {
+            id: "thread-report-1",
+            familiarId: "cody",
+            sessionId: "session-1",
+            reportedAt: "2026-06-25T12:00:00.000Z",
+            overallConfidence: 80,
+            toolReliability: { score: 70, failedTools: [], unreliableTools: [] },
+            contextPressure: "adequate",
+            skillsUsed: [],
+            skillsNeedingClarity: [],
+            skillsNeedingAccess: [],
+            capabilitiesLacking: [],
+            capabilitiesVital: [],
+            memoryRecallScore: 65,
+            fileLocatabilityScore: 60,
+            persistentBlockers: [],
+          },
+        ],
+      },
+    ],
   ]);
 
   globalThis.fetch = (async (url: RequestInfo | URL) => ({
@@ -259,7 +285,9 @@ describe("FamiliarAnalyticsView", () => {
     const model = buildFamiliarAnalyticsModel(data);
 
     assert.equal(model.healRequests.length, 1);
+    assert.equal(model.threadReports.length, 1);
     assert.match(source, /model\.healRequests\.length === 1 \? "request" : "requests"/);
+    assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{model\.threadReports\}/);
     assert.match(source, /<EvalLoopPanel[\s\S]*familiarId=\{model\.familiar\.id\}/);
   });
 });
