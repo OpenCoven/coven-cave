@@ -21,6 +21,11 @@ import { Icon } from "@/lib/icon";
 // (e.g. `cargo build`) don't flood SR or thrash React.
 const MIRROR_LINES = 50;
 const MIRROR_DEBOUNCE_MS = 250;
+// The xterm lazy-import + PTY handshake is "a few seconds"; well past that with
+// no connection means startup hung (a wedged native command, a transport await
+// that never settled, or `platform` never resolving off "unknown"). Surface a
+// Retry rather than spinning forever.
+const START_WATCHDOG_MS = 15_000;
 
 function stripAnsi(text: string): string {
   return text
@@ -227,6 +232,12 @@ export function BottomTerminal({
   // Until then the pane shows a "Starting terminal…" overlay instead of looking
   // blank during the lazy xterm import + WebSocket handshake (~a few seconds).
   const [ready, setReady] = useState(false);
+  // Startup never resolved — a thrown/hung transport await, or `platform` stuck
+  // at "unknown" so neither transport effect ran. Surfaced (with Retry) instead
+  // of an indefinite "Starting terminal…" spinner. `retryNonce` re-runs the
+  // transport effects when the user retries.
+  const [startError, setStartError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   // useTauriPlatform() resolves async and starts at "unknown". Desktop uses
   // Tauri IPC; browser dev/prod AND Tauri-mobile use the WebSocket PTY
   // bridge — the mobile webview is served by a remote Cave server, and the
@@ -300,6 +311,29 @@ export function BottomTerminal({
     }
   }, [active]);
 
+  // Startup watchdog: covers every way the terminal can stall before `ready` —
+  // a native pty_* command that never returns, a transport await that throws/
+  // hangs, or `platform` stuck at "unknown" so neither transport effect runs.
+  // Without this the user just stares at "Starting terminal…" forever.
+  useEffect(() => {
+    if (ready || unavailable || startError) return;
+    const id = setTimeout(() => {
+      setStartError("The terminal didn't finish starting — the shell backend isn't responding.");
+      log("startup watchdog fired", { platform, retryNonce });
+    }, START_WATCHDOG_MS);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, unavailable, startError, platform, retryNonce]);
+
+  // Re-run the transport effects (retryNonce is in their deps) and reset the
+  // overlay state so the watchdog re-arms.
+  const retryStart = useCallback(() => {
+    setStartError(null);
+    setUnavailable(false);
+    setReady(false);
+    setRetryNonce((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
@@ -312,6 +346,7 @@ export function BottomTerminal({
     let cleanup: (() => void) | null = null;
 
     void (async () => {
+     try {
       // Skip all logs in browser dev — only log when Tauri is actually present
       const inTauri = typeof window !== "undefined" && !!(window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
       if (inTauri) log("mount: loading tauri bridge");
@@ -476,13 +511,22 @@ export function BottomTerminal({
       };
 
       if (disposed) cleanup();
+     } catch (err) {
+       // A thrown/rejected await (loadTauri, createXterm, listen, a native
+       // command) must not leave the pane stuck on "Starting terminal…" — surface
+       // it (with Retry) instead of hanging silently.
+       if (!disposed) {
+         log("desktop terminal startup FAILED", err);
+         setStartError(`Terminal failed to start: ${String(err)}`);
+       }
+     }
     })();
 
     return () => {
       disposed = true;
       cleanup?.();
     };
-  }, [threadId, platform, openFind]);
+  }, [threadId, platform, openFind, retryNonce]);
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -496,6 +540,7 @@ export function BottomTerminal({
     let cleanup: (() => void) | null = null;
 
     void (async () => {
+     try {
       const { term, fit, search } = await createXterm(wrap, {
         onResults: (index, count) => setFindInfo({ index, count }),
         onRequestFind: openFind,
@@ -666,13 +711,19 @@ export function BottomTerminal({
       };
 
       if (disposed) cleanup();
+     } catch (err) {
+       if (!disposed) {
+         log("ws terminal startup FAILED", err);
+         setStartError(`Terminal failed to start: ${String(err)}`);
+       }
+     }
     })();
 
     return () => {
       disposed = true;
       cleanup?.();
     };
-  }, [threadId, platform, pushToMirror, openFind]);
+  }, [threadId, platform, pushToMirror, openFind, retryNonce]);
 
   if (unavailable) {
     return (
@@ -737,8 +788,25 @@ export function BottomTerminal({
         </div>
       ) : null}
       {/* Overlay while the xterm lazy-loads and the PTY (native or WebSocket)
-          connects — without it the pane reads as blank for a few seconds. */}
-      {!ready ? (
+          connects — without it the pane reads as blank for a few seconds. If
+          startup stalls or throws, it flips to a visible error + Retry instead
+          of spinning forever. */}
+      {!ready && startError ? (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center text-[11px] text-[var(--text-muted)]"
+          style={{ background: "oklch(0.11 0.022 293)" }}
+          role="alert"
+        >
+          <span className="max-w-[42ch] text-[var(--text-secondary)]">{startError}</span>
+          <button
+            type="button"
+            onClick={retryStart}
+            className="focus-ring rounded-md border border-[var(--border-strong)] bg-[var(--bg-elevated)] px-3 py-1 text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
+          >
+            Retry
+          </button>
+        </div>
+      ) : !ready ? (
         <div
           className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 text-[11px] text-[var(--text-muted)]"
           style={{ background: "oklch(0.11 0.022 293)" }}
