@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
+import { FamiliarAnalyticsView } from "@/components/familiar-analytics-view";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { SnoozeMenu } from "@/components/snooze-menu";
@@ -17,7 +18,7 @@ import type { AdapterReport } from "@/lib/harness-adapters";
 import { scopeMemoryFilesToFamiliar } from "@/lib/memory-file-scope";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 
-type Tab = "memory" | "familiar" | "inbox";
+type Tab = "memory" | "familiar" | "analytics" | "inbox";
 
 
 
@@ -64,10 +65,11 @@ type Props = {
 const TAB_LABEL: Record<Tab, string> = {
   memory: "Memory",
   familiar: "Familiar",
+  analytics: "Analytics",
   inbox: "Automations",
 };
 
-const INSPECTOR_TABS: Tab[] = ["memory", "familiar", "inbox"];
+const INSPECTOR_TABS: Tab[] = ["memory", "familiar", "analytics", "inbox"];
 
 function InspectorEmpty({
   icon,
@@ -196,6 +198,7 @@ export function InspectorPane({
       >
         {tab === "memory" && !hideMemory ? <MemoryTab familiar={familiar} onOpenFullView={onOpenFullView} /> : null}
         {tab === "familiar" ? <FamiliarCapabilityPanel familiar={familiar} /> : null}
+        {tab === "analytics" && familiar ? <FamiliarAnalyticsView familiarId={familiar.id} /> : null}
         {tab === "inbox" ? (
           <InboxTab
             familiar={familiar}

@@ -1,9 +1,10 @@
 import type { EvalLoopState } from "@/components/eval-loop-panel";
 import type { ContractReport, ContractViolation } from "@/lib/familiar-contract";
 import type { FamiliarGrowthReport, GrowthSignal } from "@/lib/familiar-growth-signals";
+import type { BlockerCategory, ThreadSignalsAggregate } from "@/lib/thread-self-report";
 
-export type HealSource = "eval-loop" | "contract" | "growth-signal";
-export type HealActionKind = "run-eval" | "fix-contract" | "write-memory" | "manual";
+export type HealSource = "eval-loop" | "contract" | "growth-signal" | "self-report-aggregate";
+export type HealActionKind = "run-eval" | "fix-contract" | "write-memory" | "request-skill" | "manual";
 
 export type SelfHealRequest = {
   id: string;
@@ -52,6 +53,13 @@ function fromContractViolation(
 function actionKindForGrowthSignal(signal: GrowthSignal): HealActionKind {
   const criticalMemoryKinds = new Set<GrowthSignal["kind"]>(["session-gap", "no-memory", "stale-memory"]);
   if (signal.severity === "crit" && criticalMemoryKinds.has(signal.kind)) return "write-memory";
+  return "manual";
+}
+
+function actionKindForBlockerCategory(category: BlockerCategory): HealActionKind {
+  if (category === "auth") return "fix-contract";
+  if (category === "context") return "write-memory";
+  if (category === "skill") return "request-skill";
   return "manual";
 }
 
@@ -118,4 +126,31 @@ export function deriveHealRequests(args: {
   }
 
   return sortRequests(requests);
+}
+
+export function escalateBlockers(
+  familiarId: string,
+  aggregate: ThreadSignalsAggregate,
+  existingRequests: SelfHealRequest[],
+): SelfHealRequest[] {
+  const existingIds = new Set(existingRequests.map((request) => request.id));
+  return aggregate.persistentBlockers
+    .filter((blocker) => blocker.crit && !existingIds.has(blocker.id))
+    .map((blocker) => {
+      const actionKind = actionKindForBlockerCategory(blocker.category);
+      return {
+        id: blocker.id,
+        familiarId,
+        source: "self-report-aggregate" as const,
+        severity: "crit" as const,
+        title: blocker.title,
+        detail: blocker.detail,
+        suggestedAction:
+          blocker.suggestedResolution ??
+          "Review the recurring blocker and choose the next manual intervention.",
+        actionKind,
+        createdAt: blocker.firstSeenAt ?? STATIC_CREATED_AT,
+        resolved: false,
+      };
+    });
 }

@@ -71,6 +71,7 @@ export type FamiliarBinding = {
   voiceProvider?: string;
   voiceModel?: string;
   voiceName?: string;
+  autoSelfReport?: boolean;
   runtime?: FamiliarRuntime;
 };
 
@@ -267,6 +268,7 @@ export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBind
     voiceProvider: f.voiceProvider,
     voiceModel: f.voiceModel,
     voiceName: f.voiceName,
+    autoSelfReport: f.autoSelfReport ?? false,
     runtime: normalizeFamiliarRuntime(f.runtime ?? config.defaults.runtime),
   };
 }

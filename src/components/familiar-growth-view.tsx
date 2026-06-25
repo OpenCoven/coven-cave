@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -255,6 +256,12 @@ export function FamiliarGrowthView({
                       </span>
                       <i className={`growth-dot growth-dot--${report.healthLabel}`} aria-label={report.healthLabel} />
                     </button>
+                    <Link
+                      href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
+                      className="ml-[54px] mt-1 inline-flex text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-presence)]"
+                    >
+                      Analytics →
+                    </Link>
                   </li>
                 );
               })}

@@ -19,5 +19,10 @@ assert.match(
   /harnessOverride: configEntry\.harness \?\? null/,
   "Familiars API should expose whether the familiar has an explicit harness override",
 );
+assert.match(
+  source,
+  /autoSelfReport: configEntry\.autoSelfReport \?\? false/,
+  "Familiars API should expose per-familiar auto self-report config with a false default",
+);
 
 console.log("familiars route.test.ts: ok");

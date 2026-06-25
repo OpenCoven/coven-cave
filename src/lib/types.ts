@@ -36,6 +36,7 @@ export type Familiar = {
   voiceProvider?: string;
   voiceModel?: string;
   voiceName?: string;
+  autoSelfReport?: boolean;
 };
 
 export type DaemonStatus = {

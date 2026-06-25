@@ -69,6 +69,7 @@ try {
         harness: "claude",
         model: "anthropic/claude-sonnet-4-6",
         voiceProvider: "openai",
+        autoSelfReport: true,
       },
     },
   });
@@ -85,6 +86,7 @@ try {
     harness: "claude",
     model: "anthropic/claude-sonnet-4-6",
     voiceProvider: "openai",
+    autoSelfReport: true,
     display_name: "Nova Prime",
     role: "review familiar",
   });
@@ -92,6 +94,8 @@ try {
   const novaBinding = config.bindingFor(cfg, "nova");
   assert.equal(novaBinding.display_name, "Nova Prime");
   assert.equal(novaBinding.role, "review familiar");
+  assert.equal(novaBinding.autoSelfReport, true);
+  assert.equal(config.bindingFor(cfg, "missing").autoSelfReport, false);
 
   await config.saveConfig({
     familiars: {
@@ -104,6 +108,7 @@ try {
   assert.deepEqual(cfg.familiars.nova, {
     harness: "claude",
     model: "anthropic/claude-sonnet-4-6",
+    autoSelfReport: true,
     display_name: "Nova Prime",
     role: "review familiar",
   });
