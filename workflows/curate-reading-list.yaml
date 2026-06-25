@@ -2,7 +2,7 @@ id: curate-reading-list
 version: 0.1.0
 name: Curate Reading List
 summary: Triage library items, remove noise, prioritize what matters, and produce a useful reading queue.
-familiar: sage
+familiar: research
 pattern: classify-and-act
 tags:
   - library
@@ -26,21 +26,21 @@ steps:
   - id: load-library
     kind: agent
     name: Load library context
-    uses: sage
+    uses: research
     summary: Read current bookmarks, reading statuses, collections, and active project needs.
     requires:
       - input
   - id: classify-items
     kind: agent
     name: Classify items
-    uses: sage
+    uses: research
     summary: Mark items as active, later, duplicate, stale, done, or reject.
     requires:
       - load-library
   - id: prioritize-queue
     kind: agent
     name: Prioritize queue
-    uses: sage
+    uses: research
     summary: Rank active items by relevance, source quality, time sensitivity, and synthesis value.
     requires:
       - classify-items

@@ -207,7 +207,7 @@ async function resolveFamiliarWorkspace(
       const s = await stat(resolvedDeclared);
       if (s.isDirectory()) return resolvedDeclared;
     } catch {
-      /* fall through to default familiar workspace */
+      /* fall through to the derived workspace path */
     }
   }
   const familiarsRoot = familiarWorkspacesRoot();

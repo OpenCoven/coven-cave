@@ -1,23 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
-import { homedir } from "node:os";
 import type { LibraryDoc, LibraryCollection } from "@/lib/library-types";
-
-// ── Familiar registry ─────────────────────────────────────────────────────────
-// Each entry is a workspace root that exposes a research/ dir.
-// Phase 1: Sage only. Phase 2: add Echo, Cody, etc. here (or read from coven daemon).
-const FAMILIAR_WORKSPACES: { id: string; name: string; icon: string; root: string }[] = [
-  {
-    id: "sage",
-    name: "Sage",
-    icon: "ph:leaf-fill",
-    root: path.join(homedir(), ".openclaw", "workspace", "sage"),
-  },
-];
+import {
+  readFamiliarLibraryWorkspaces,
+  researchRootFor,
+  type FamiliarLibraryWorkspace,
+} from "@/lib/familiar-library-workspaces";
 
 // ── library.yaml schema (optional per-workspace manifest) ────────────────────
-// If ~/.openclaw/workspace/<familiar>/research/library.yaml exists, it controls
+// If <familiar workspace>/research/library.yaml exists, it controls
 // which subdirectories appear, their labels, icons, and sort order.
 // Format:
 //   collections:
@@ -107,8 +99,8 @@ function collectionHasViewableFiles(collection: LibraryCollection): boolean {
 // 1. Start with auto-discovered subdirs
 // 2. Apply manifest overrides (label, icon, hidden, order)
 // 3. Prepend "All" sentinel
-function buildCollections(familiar: typeof FAMILIAR_WORKSPACES[number]): LibraryCollection[] {
-  const researchRoot = path.join(familiar.root, "research");
+function buildCollections(familiar: FamiliarLibraryWorkspace): LibraryCollection[] {
+  const researchRoot = researchRootFor(familiar);
   const discovered = discoverCollections(researchRoot);
   const manifest = loadManifest(researchRoot);
 
@@ -213,26 +205,52 @@ function parseTags(fm: Record<string, string>): string[] {
 // ── Route handler ────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const collectionId = req.nextUrl.searchParams.get("collection") ?? "all";
-  const familiarId   = req.nextUrl.searchParams.get("familiar") ?? FAMILIAR_WORKSPACES[0].id;
   const includeDocs = req.nextUrl.searchParams.get("docs") !== "0";
+  const familiarWorkspaces = readFamiliarLibraryWorkspaces();
+  const requestedFamiliarId = req.nextUrl.searchParams.get("familiar");
+  const familiar =
+    familiarWorkspaces.find((f) => f.id === requestedFamiliarId) ??
+    familiarWorkspaces[0] ??
+    null;
 
-  const familiar = FAMILIAR_WORKSPACES.find((f) => f.id === familiarId) ?? FAMILIAR_WORKSPACES[0];
-  const researchRoot = path.join(familiar.root, "research");
+  if (!familiar) {
+    return NextResponse.json({
+      ok: true,
+      docs: [],
+      collection: collectionId,
+      familiar: null,
+      collections: [],
+      familiars: [],
+    });
+  }
+
+  const researchRoot = researchRootFor(familiar);
   const familiarRoot = realpathOrResolve(familiar.root);
   const collections = buildCollections(familiar);
+  const familiarOptions = familiarWorkspaces.map(({ id, name, icon }) => ({ id, name, icon }));
 
   if (!includeDocs) {
     return NextResponse.json({
       ok: true,
       docs: [],
       collection: collectionId,
-      familiar: familiarId,
+      familiar: familiar.id,
       collections,
-      familiars: FAMILIAR_WORKSPACES.map(({ id, name, icon }) => ({ id, name, icon })),
+      familiars: familiarOptions,
     });
   }
 
   const col = collections.find((c) => c.id === collectionId) ?? collections[0];
+  if (!col) {
+    return NextResponse.json({
+      ok: true,
+      docs: [],
+      collection: collectionId,
+      familiar: familiar.id,
+      collections,
+      familiars: familiarOptions,
+    });
+  }
 
   const resolvedColPath = resolveResearchPath(col.path, researchRoot);
   if (!resolvedColPath) {
@@ -271,8 +289,8 @@ export async function GET(req: NextRequest) {
     ok: true,
     docs,
     collection: collectionId,
-    familiar: familiarId,
+    familiar: familiar.id,
     collections,
-    familiars: FAMILIAR_WORKSPACES.map(({ id, name, icon }) => ({ id, name, icon })),
+    familiars: familiarOptions,
   });
 }

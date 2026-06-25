@@ -7,7 +7,7 @@ import { isValidFamiliarId } from "@/lib/server/familiar-id";
  * Resolves a familiar's avatar image from its workspace:
  *   ~/.coven/workspaces/familiars/<id>/avatars/<image>.<ext>
  *
- * The convention is `<id>.<ext>` (e.g. `cody/avatars/cody.png`), but any image
+ * The convention is `<id>.<ext>` (e.g. `builder/avatars/builder.png`), but any image
  * in the `avatars/` dir is accepted — the `<id>.<ext>` match wins, otherwise the
  * first image by sorted name. The chosen filename is picked from the directory
  * listing (never from client input), and the `id` is slug-guarded, so this

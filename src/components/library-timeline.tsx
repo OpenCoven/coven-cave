@@ -193,7 +193,7 @@ export function LibraryTimeline({
             value={search}
             onValueChange={setSearch}
             placeholder="Search links…"
-            title="Search links — try chat: github: sage:"
+            title="Search links - try chat: github: researcher:"
             onClear={() => setSearch("")}
             containerClassName="library-timeline-search"
           />

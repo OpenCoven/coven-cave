@@ -41,7 +41,7 @@ const COLOR_PRESETS: ColorPreset[] = [
     inputFallback: "#f0bd82",
   },
   {
-    label: "Sage",
+    label: "Moss",
     color: "oklch(0.80 0.08 145)",
     inputFallback: "#91d3a4",
   },

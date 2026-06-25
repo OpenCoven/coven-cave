@@ -2,7 +2,7 @@ id: coven-orchestration
 version: 0.1.0
 name: Coven Orchestration
 summary: Coordinate familiar lanes, monitor gates, preserve memory, and report completion with evidence.
-familiar: nova
+familiar: orchestration
 pattern: fan-out-and-synthesize
 tags:
   - orchestration
@@ -27,7 +27,7 @@ steps:
   - id: define-goal
     kind: agent
     name: Define goal and gates
-    uses: nova
+    uses: orchestration
     summary: Capture Val's goal, hard constraints, approval gates, and completion proof.
     requires:
       - input
@@ -48,14 +48,14 @@ steps:
   - id: dispatch-work
     kind: agent
     name: Dispatch work
-    uses: nova
+    uses: orchestration
     summary: Prepare bounded handoffs with context, acceptance criteria, and stop conditions.
     requires:
       - approval-gate
   - id: monitor-gates
     kind: agent
     name: Monitor gates
-    uses: nova
+    uses: orchestration
     summary: Track review status, verification, unresolved blockers, and owner handoffs.
     requires:
       - dispatch-work

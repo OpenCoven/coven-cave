@@ -2,7 +2,7 @@ id: scoped-implementation
 version: 0.1.0
 name: Scoped Implementation
 summary: Inspect, patch narrowly, verify meaningfully, and hand off without crossing approval gates.
-familiar: cody
+familiar: code
 pattern: sequential
 tags:
   - code
@@ -27,7 +27,7 @@ steps:
   - id: inspect-scope
     kind: agent
     name: Inspect scope
-    uses: cody
+    uses: code
     summary: Read requirements, current code, conventions, and unrelated dirty work.
     requires:
       - input
@@ -41,7 +41,7 @@ steps:
   - id: patch
     kind: agent
     name: Patch focused files
-    uses: cody
+    uses: code
     summary: Make the smallest code change that satisfies the test and existing patterns.
     requires:
       - failing-test

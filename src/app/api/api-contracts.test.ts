@@ -247,13 +247,18 @@ for (const contract of contracts) {
     );
     assert.match(
       source,
-      /function listResearchEntries\(root: string\)[\s\S]*fs\.readdirSync\(dir, \{ withFileTypes: true \}\)[\s\S]*isWithinRoot\(realPath, root\)[\s\S]*relativeToSage/,
+      /function listResearchEntries\(root: string, familiarRoot: string\)[\s\S]*fs\.readdirSync\(dir, \{ withFileTypes: true \}\)[\s\S]*isWithinRoot\(realPath, root\)[\s\S]*relativeToFamiliar/,
       `${contract.route} should build an allowlist from trusted research-root entries`,
     );
     assert.match(
       source,
-      /const requestedAbsolute = isAbsolute \? normalizeAbsolutePath\(input, root\) : null;[\s\S]*const requestedRelative = isAbsolute \? null : normalizeRelativeId\(input\);[\s\S]*listResearchEntries\(root\)\.find/,
+      /const requestedAbsolute = isAbsolute \? normalizeAbsolutePath\(input, root\) : null;[\s\S]*const requestedRelative = isAbsolute \? null : normalizeRelativeId\(input\);[\s\S]*listResearchEntries\(root, familiar\.root\)\.find/,
       `${contract.route} should use user input only to select from the trusted research allowlist`,
+    );
+    assert.match(
+      source,
+      /readFamiliarLibraryWorkspaces\(\)/,
+      `${contract.route} should resolve document roots from configured familiar workspaces`,
     );
     assert.doesNotMatch(
       source,

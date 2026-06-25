@@ -3,16 +3,16 @@ import { workflowToGraph, workflowNodeTone } from "./workflow-graph.ts";
 import type { WorkflowDryRunPlan, WorkflowSummary } from "./workflows.ts";
 
 const workflow: WorkflowSummary = {
-  id: "nova-release-review",
+  id: "release-review",
   version: "1.0.0",
   name: "Release Review",
   summary: "Review a release with gate, familiar, validator, and output.",
-  familiar: "nova",
+  familiar: "orchestration",
   pattern: "sequential",
   validation_state: "valid",
   steps: [
     { id: "gate", kind: "human-gate", name: "Val approval", uses: "valentina" },
-    { id: "review", kind: "agent", name: "Nova review", uses: "nova" },
+    { id: "review", kind: "agent", name: "Release review", uses: "orchestration" },
     { id: "lint", kind: "skill", name: "Schema lint", uses: "cwf-validator@^1.0.0" },
     { id: "brief", kind: "tool", name: "Release brief", uses: "cave.output" },
   ],
@@ -112,10 +112,10 @@ assert.deepEqual(
 
 const dryRun: WorkflowDryRunPlan = {
   ok: true,
-  workflowId: "nova-release-review",
+  workflowId: "release-review",
   steps: [
     { id: "gate", kind: "human-gate", uses: "valentina", status: "blocked", blockers: [{ code: "gate.waiting", tier: "preflight" }] },
-    { id: "review", kind: "agent", uses: "nova", status: "ready" },
+    { id: "review", kind: "agent", uses: "orchestration", status: "ready" },
   ],
   issues: [],
 };

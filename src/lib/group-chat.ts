@@ -161,7 +161,7 @@ export function defaultGroupName(names: string[]): string {
 export type MentionableFamiliar = { id: string; name: string };
 
 /** True for a char that may not abut the end of a matched `@name` (a word char,
- *  so `@Nova` does not greedily match a participant named `Nov`). */
+ *  so `@Alpha` does not greedily match a participant named `Al`). */
 function isWordChar(ch: string | undefined): boolean {
   return ch !== undefined && /[a-z0-9_]/i.test(ch);
 }
@@ -175,8 +175,8 @@ function isMentionBoundary(before: string): boolean {
 /**
  * Scan free text for `@mentions` of the given participants and return the ids
  * of every familiar named (deduped, in first-seen order). Matching is
- * case-insensitive and prefers the longest participant name, so `@Nova Star`
- * resolves to "Nova Star" rather than a shorter "Nova". Only ids present in
+ * case-insensitive and prefers the longest participant name, so `@Alpha Star`
+ * resolves to "Alpha Star" rather than a shorter "Alpha". Only ids present in
  * `participants` are ever returned. Empty result ⇒ no valid mention ⇒ caller
  * should broadcast to the whole coven.
  */
@@ -194,7 +194,7 @@ export function parseMentions(text: string, participants: MentionableFamiliar[])
     for (const p of byLongest) {
       const name = p.name.toLowerCase();
       if (!rest.startsWith(name)) continue;
-      if (isWordChar(rest[name.length])) continue; // `@Novak` ≠ `@Nova`
+      if (isWordChar(rest[name.length])) continue; // `@Alpine` ≠ `@Alpha`
       if (!ids.includes(p.id)) ids.push(p.id);
       break;
     }

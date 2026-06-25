@@ -219,9 +219,9 @@ function buildSalemSearchContext(rows: Row[], query: string): SalemSearchContext
 // (case- and whitespace-insensitive, substring). Everything else in the query
 // becomes a free-text filter applied *within* that scope.
 //
-//   "@nova"              → scope: nova,        rest: ""
+//   "@researcher"        → scope: researcher,  rest: ""
 //   "@val readme"        → scope: valentina,   rest: "readme"
-//   "browser @nova"      → scope: nova,        rest: "browser"
+//   "browser @researcher"  → scope: researcher, rest: "browser"
 //   "@"                  → scope: all (suggest list), rest: ""
 //   "hello"              → no scope
 //

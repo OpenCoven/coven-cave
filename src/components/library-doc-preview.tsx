@@ -634,7 +634,7 @@ function stripLeadingTitleHeading(body: string, title: string): string {
 }
 
 // ── Leading metadata block ───────────────────────────────────────
-// Research notes from Sage open with a metadata paragraph — a run of
+// Research notes can open with a metadata paragraph — a run of
 // `**Date:** … **Source:** … **Stars:** …` bold-label pairs written as the
 // first body paragraph. `parseLeadingMetadata` (see lib/library-metadata)
 // lifts it out of the markdown so we can render it as a collapsible
@@ -941,7 +941,7 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
       <div className="library-preview-title">{doc.title}</div>
       <div className="library-preview-meta library-preview-meta--with-actions">
         <span className="library-preview-meta-left">
-          <span className="library-preview-familiar"><Icon name="ph:robot" width={12} className="inline-block mr-1 text-[var(--text-muted)]" />Sage</span>
+          <span className="library-preview-familiar"><Icon name="ph:robot" width={12} className="inline-block mr-1 text-[var(--text-muted)]" />{doc.familiar}</span>
           <span className="library-preview-sep">·</span>
           <span className="library-preview-date">{fmtDate(doc.modifiedAt)}</span>
           <span className="library-preview-sep">·</span>
@@ -965,7 +965,7 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
             <span>Open</span>
           </button>
           <CopyButton
-            text={`~/.openclaw/workspace/sage/${doc.id}`}
+            text={doc.absolutePath ?? doc.id}
             label="Copy"
             compact
           />
@@ -1030,7 +1030,7 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
             )}
           </div>
         ) : (
-          <LibraryChatPanel doc={doc} familiarId="sage" />
+          <LibraryChatPanel doc={doc} familiarId={doc.familiar} />
         )}
       </div>
 
@@ -1053,7 +1053,7 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
             <div className="library-reader-header">
               <div className="library-reader-title">{doc.title}</div>
               <div className="library-reader-meta">
-                <span className="library-preview-familiar"><Icon name="ph:robot" width={12} className="inline-block mr-1 text-[var(--text-muted)]" />Sage</span>
+                <span className="library-preview-familiar"><Icon name="ph:robot" width={12} className="inline-block mr-1 text-[var(--text-muted)]" />{doc.familiar}</span>
                 <span className="library-preview-sep">·</span>
                 <span className="library-preview-date">{fmtDate(doc.modifiedAt)}</span>
                 <span className="library-preview-sep">·</span>

@@ -40,11 +40,11 @@ export const mockEnvironment: EnvironmentInspectorData = {
 };
 
 export const mockSubagents: SubagentData[] = [
-  { id: "cody", name: "Cody", status: "active", familiar: familiar("cody", "Cody", "ph:robot") },
-  { id: "kitty", name: "Kitty", status: "done", familiar: familiar("kitty", "Kitty", "ph:cat") },
-  { id: "sage", name: "Sage", status: "idle", familiar: familiar("sage", "Sage", "ph:book-open") },
-  { id: "echo", name: "Echo", status: "done", familiar: familiar("echo", "Echo", "ph:chats") },
-  { id: "astra", name: "Astra", status: "idle", familiar: familiar("astra", "Astra", "ph:sparkle") },
+  { id: "builder", name: "Builder", status: "active", familiar: familiar("builder", "Builder", "ph:robot") },
+  { id: "operator", name: "Operator", status: "done", familiar: familiar("operator", "Operator", "ph:terminal-window") },
+  { id: "researcher", name: "Researcher", status: "idle", familiar: familiar("researcher", "Researcher", "ph:book-open") },
+  { id: "archivist", name: "Archivist", status: "done", familiar: familiar("archivist", "Archivist", "ph:chats") },
+  { id: "strategist", name: "Strategist", status: "idle", familiar: familiar("strategist", "Strategist", "ph:sparkle") },
 ];
 
 export const mockSources: SourceData[] = [];

@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
-import { homedir } from "node:os";
 import type { LibraryDocBody } from "@/lib/library-types";
 import { renameOrMoveResearchDoc } from "./doc-file";
+import {
+  readFamiliarLibraryWorkspaces,
+  researchRootFor,
+  type FamiliarLibraryWorkspace,
+} from "@/lib/familiar-library-workspaces";
 
-const SAGE_ROOT = path.join(homedir(), ".openclaw", "workspace", "sage");
-const RESEARCH_ROOT = path.join(SAGE_ROOT, "research");
 const MAX_SIZE = 512 * 1024; // 512KB
 
 type ResearchPathResolution =
   | { ok: true; path: string }
   | { ok: false; reason: "forbidden" | "not_found" | "not_file" };
 
-// Security: must be within sage research dir
+// Security: document paths must stay inside the selected familiar's research dir.
 function realpathOrResolveFromBase(base: string, value: string): string {
   const resolved = path.resolve(base, value);
   try {
@@ -41,9 +43,9 @@ function normalizeAbsolutePath(value: string, root: string): string | null {
   return normalized;
 }
 
-function listResearchEntries(root: string): Array<{ path: string; relativeToSage: string; isFile: boolean }> {
-  const entries: Array<{ path: string; relativeToSage: string; isFile: boolean }> = [];
-  const sageRoot = realpathOrResolveFromBase("/", SAGE_ROOT);
+function listResearchEntries(root: string, familiarRoot: string): Array<{ path: string; relativeToFamiliar: string; isFile: boolean }> {
+  const entries: Array<{ path: string; relativeToFamiliar: string; isFile: boolean }> = [];
+  const realFamiliarRoot = realpathOrResolveFromBase("/", familiarRoot);
 
   function walk(dir: string) {
     let dirents: fs.Dirent[];
@@ -58,12 +60,12 @@ function listResearchEntries(root: string): Array<{ path: string; relativeToSage
       const realPath = realpathOrResolveFromBase("/", fullPath);
       if (!isWithinRoot(realPath, root)) continue;
       if (dirent.isDirectory()) {
-        entries.push({ path: realPath, relativeToSage: path.relative(sageRoot, realPath), isFile: false });
+        entries.push({ path: realPath, relativeToFamiliar: path.relative(realFamiliarRoot, realPath), isFile: false });
         walk(realPath);
         continue;
       }
       if (dirent.isFile()) {
-        entries.push({ path: realPath, relativeToSage: path.relative(sageRoot, realPath), isFile: true });
+        entries.push({ path: realPath, relativeToFamiliar: path.relative(realFamiliarRoot, realPath), isFile: true });
       }
     }
   }
@@ -72,18 +74,18 @@ function listResearchEntries(root: string): Array<{ path: string; relativeToSage
   return entries;
 }
 
-function resolveResearchPath(input: string, isAbsolute: boolean): ResearchPathResolution {
-  const root = realpathOrResolveFromBase("/", RESEARCH_ROOT);
+function resolveResearchPath(input: string, isAbsolute: boolean, familiar: FamiliarLibraryWorkspace): ResearchPathResolution {
+  const root = realpathOrResolveFromBase("/", researchRootFor(familiar));
   const requestedAbsolute = isAbsolute ? normalizeAbsolutePath(input, root) : null;
   const requestedRelative = isAbsolute ? null : normalizeRelativeId(input);
   if (isAbsolute ? !requestedAbsolute : !requestedRelative) {
     return { ok: false, reason: "forbidden" };
   }
 
-  const match = listResearchEntries(root).find((entry) =>
+  const match = listResearchEntries(root, familiar.root).find((entry) =>
     isAbsolute
       ? entry.path === requestedAbsolute
-      : entry.relativeToSage === requestedRelative,
+      : entry.relativeToFamiliar === requestedRelative,
   );
 
   if (!match) {
@@ -95,6 +97,21 @@ function resolveResearchPath(input: string, isAbsolute: boolean): ResearchPathRe
   }
 
   return { ok: true, path: match.path };
+}
+
+function workspaceForRequest(req: NextRequest, absolutePath: string | null): FamiliarLibraryWorkspace | null {
+  const workspaces = readFamiliarLibraryWorkspaces();
+  const requested = req.nextUrl.searchParams.get("familiar");
+  const byId = requested ? workspaces.find((f) => f.id === requested) : null;
+  if (byId) return byId;
+  if (absolutePath) {
+    const normalized = path.normalize(absolutePath);
+    return workspaces.find((f) => {
+      const root = path.normalize(researchRootFor(f));
+      return normalized === root || normalized.startsWith(root + path.sep);
+    }) ?? null;
+  }
+  return workspaces[0] ?? null;
 }
 
 function parseFrontmatter(content: string): { frontmatter: Record<string, string>; body: string } {
@@ -144,16 +161,19 @@ function stripMarkdown(text: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  // Accept either ?path= (absolute, legacy) or ?id= (relative to sage root)
+  // Accept either ?path= (absolute) or ?id= (relative to the familiar root)
   const filePath = req.nextUrl.searchParams.get("path");
   const docId = req.nextUrl.searchParams.get("id");
+  const familiar = workspaceForRequest(req, filePath);
+  if (!familiar) {
+    return NextResponse.json({ ok: false, error: "no familiar library configured" }, { status: 404 });
+  }
 
   let resolution: ResearchPathResolution;
   if (filePath) {
-    resolution = resolveResearchPath(filePath, true);
+    resolution = resolveResearchPath(filePath, true, familiar);
   } else if (docId) {
-    // id is relative to the sage workspace root (e.g. "research/synthesis/foo.md")
-    resolution = resolveResearchPath(docId, false);
+    resolution = resolveResearchPath(docId, false, familiar);
   } else {
     return NextResponse.json({ ok: false, error: "missing path or id param" }, { status: 400 });
   }
@@ -205,13 +225,13 @@ export async function GET(req: NextRequest) {
   const tags = extractTags(frontmatter);
   const excerpt = stripMarkdown(body).slice(0, 200);
 
-  const id = path.relative(realpathOrResolveFromBase("/", SAGE_ROOT), resolved);
+  const id = path.relative(realpathOrResolveFromBase("/", familiar.root), resolved);
 
   const doc: LibraryDocBody = {
     id,
     title,
-    familiar: "sage",
-    collection: "sage",
+    familiar: familiar.id,
+    collection: familiar.id,
     modifiedAt: stat.mtime.toISOString(),
     tags,
     excerpt,
@@ -231,10 +251,20 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
 
-  const result = await renameOrMoveResearchDoc(
-    typeof body === "object" && body !== null ? body : {},
-    { sageRoot: SAGE_ROOT, researchRoot: RESEARCH_ROOT },
-  );
+  const input = typeof body === "object" && body !== null ? body : {};
+  const inputPath = typeof (input as { path?: unknown }).path === "string"
+    ? (input as { path: string }).path
+    : null;
+  const familiar = workspaceForRequest(req, inputPath);
+  if (!familiar) {
+    return NextResponse.json({ ok: false, error: "no familiar library configured" }, { status: 404 });
+  }
+
+  const result = await renameOrMoveResearchDoc(input, {
+    familiarId: familiar.id,
+    familiarRoot: familiar.root,
+    researchRoot: researchRootFor(familiar),
+  });
 
   if (!result.ok) {
     return NextResponse.json({ ok: false, error: result.error }, { status: result.status });

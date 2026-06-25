@@ -2,7 +2,7 @@ id: system-architecture-review
 version: 0.1.0
 name: System Architecture Review
 summary: Gather context, compare designs, define trust boundaries, and prepare an implementation-ready plan.
-familiar: nova
+familiar: orchestration
 pattern: adversarial-verification
 tags:
   - architecture
@@ -26,28 +26,28 @@ steps:
   - id: gather-context
     kind: agent
     name: Gather context
-    uses: nova
+    uses: orchestration
     summary: Read requirements, existing architecture, repo boundaries, and relevant memory.
     requires:
       - input
   - id: define-boundaries
     kind: agent
     name: Define boundaries
-    uses: nova
+    uses: orchestration
     summary: Identify data flow, trust boundaries, ownership, and approval-sensitive surfaces.
     requires:
       - gather-context
   - id: compare-approaches
     kind: agent
     name: Compare approaches
-    uses: nova
+    uses: orchestration
     summary: Evaluate two or three designs with tradeoffs, risks, and migration cost.
     requires:
       - define-boundaries
   - id: adversarial-review
     kind: agent
     name: Adversarial review
-    uses: nova
+    uses: orchestration
     summary: Challenge the recommended design for hidden coupling, unsafe trust, and rollout risk.
     requires:
       - compare-approaches

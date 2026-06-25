@@ -2,9 +2,9 @@ import type { Familiar } from "@/lib/types";
 
 // Familiar-scoping for the command palette.
 //
-//   "@nova"              → scope: nova,        rest: ""
+//   "@researcher"        → scope: researcher,  rest: ""
 //   "@val readme"        → scope: val,         rest: "readme"
-//   "browser @nova"      → scope: nova,        rest: "browser"
+//   "browser @researcher" → scope: researcher, rest: "browser"
 //   "@"                  → scope: all (suggest list), rest: ""
 //   "hello"              → no scope
 //

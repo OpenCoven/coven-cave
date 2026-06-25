@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const root = await mkdtemp(path.join(tmpdir(), "library-chat-doc-"));
-const researchRoot = path.join(root, "sage", "research");
+const researchRoot = path.join(root, "researcher", "research");
 const outsideFile = path.join(root, "secret.md");
 
 const { readLibraryChatDocument, resolveLibraryChatDocPath } = await import("./chat-doc-path.ts");

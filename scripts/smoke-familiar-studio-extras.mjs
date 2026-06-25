@@ -259,8 +259,8 @@ async function main() {
 
   // Read current config before the test
   const configBefore = JSON.parse(await readFile(CONFIG_PATH, "utf8"));
-  // The previous drag-test moved nova to position 2, so the *current* first
-  // rail avatar is whoever ended up at position 0 (sage in the demo seed).
+  // The previous drag-test moved a demo familiar to position 2, so the
+  // current first rail avatar is whoever ended up at position 0.
   // Read the actual data-id from the DOM at brain-test time.
   const targetFamiliarId = await firstAvatar.getAttribute("data-id");
   const harnessBefore = configBefore.familiars?.[targetFamiliarId]?.harness ?? null;

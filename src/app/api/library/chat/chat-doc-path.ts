@@ -5,7 +5,7 @@
  * Extracted so it can be tested independently of the HTTP layer.
  *
  * Security contract:
- *   - The resolved real path must be within ~/.openclaw/workspace/sage/research/
+ *   - The resolved real path must be within the selected familiar's research root
  *   - No symlink escapes (realpath is used)
  *   - No null bytes, no non-absolute inputs
  *   - Max file size: 200KB
@@ -14,15 +14,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { homedir } from "node:os";
-
-const SAGE_RESEARCH_ROOT = path.join(
-  homedir(),
-  ".openclaw",
-  "workspace",
-  "sage",
-  "research",
-);
+import { readFamiliarLibraryWorkspaces, researchRootFor } from "../../../../lib/familiar-library-workspaces.ts";
 
 const MAX_DOC_BYTES = 200 * 1024; // 200KB
 
@@ -36,6 +28,7 @@ export type LibraryChatDocumentRead =
 
 type LibraryChatDocPathOptions = {
   researchRoot?: string;
+  familiarId?: string;
 };
 
 function isWithinRoot(value: string, root: string): boolean {
@@ -73,7 +66,7 @@ function listResearchEntries(root: string): Array<{ path: string; isFile: boolea
  * Resolve and validate a raw (absolute) path for library chat access.
  *
  * Returns `{ ok: true, path }` when the path is safe, exists, is a regular
- * file, and is within the sage research root. Otherwise returns a typed
+ * file, and is within the configured research root. Otherwise returns a typed
  * failure reason for the caller to translate to an HTTP status.
  */
 export function resolveLibraryChatDocPath(
@@ -88,10 +81,24 @@ export function resolveLibraryChatDocPath(
   // Normalize to remove any .. sequences before attempting realpath.
   const normalized = path.normalize(rawPath);
 
+  const configuredRoot = options.researchRoot ?? (() => {
+    const workspaces = readFamiliarLibraryWorkspaces();
+    const byId = options.familiarId ? workspaces.find((f) => f.id === options.familiarId) : null;
+    if (byId) return researchRootFor(byId);
+    const normalized = path.normalize(rawPath);
+    const byPath = workspaces.find((f) => {
+      const root = path.normalize(researchRootFor(f));
+      return normalized === root || normalized.startsWith(root + path.sep);
+    });
+    return byPath ? researchRootFor(byPath) : null;
+  })();
+
+  if (!configuredRoot) return { ok: false, reason: "not_found" };
+
   // Resolve the real research root (handles symlinks in the home path itself).
   let resolvedRoot: string;
   try {
-    resolvedRoot = fs.realpathSync(options.researchRoot ?? SAGE_RESEARCH_ROOT);
+    resolvedRoot = fs.realpathSync(configuredRoot);
   } catch {
     // Research root doesn't exist yet — nothing can be found within it.
     return { ok: false, reason: "not_found" };

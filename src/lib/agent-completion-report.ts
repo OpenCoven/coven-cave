@@ -64,7 +64,7 @@ export interface AgentReportMetadata {
   prState?: string;
   /** Linked issue references (e.g. ["#230"]). */
   linkedIssues?: string[];
-  /** Optional shared-checkout claim holder ("nova", "codex-a", etc.). */
+  /** Optional shared-checkout claim holder ("agent-a", "codex-a", etc.). */
   claim?: string;
 }
 
