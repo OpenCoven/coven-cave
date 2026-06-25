@@ -34,10 +34,12 @@ assert.match(source, /<FamiliarStudioMemoryTab familiar=\{familiar\} allFamiliar
 assert.match(source, /VaultPanel/, "Wires the Vault settings panel inside familiar settings");
 assert.match(source, /id: "vault", label: "Vault"/, "Exposes Vault as a familiar settings tab");
 
-// Detail pane is never empty on entry: auto-selects the first familiar and
-// recovers when the current selection disappears.
+// Detail pane is never empty on entry: auto-selects a familiar (the one-shot
+// "Open Brain Studio" handoff id when present, else the first) and recovers when
+// the current selection disappears.
 assert.match(source, /resolved\.some\(\(f\) => f\.id === activeFamiliarId\)/, "Recovers when the selected familiar vanishes");
-assert.match(source, /openFamiliarStudio\(resolved\[0\]\.id\)/, "Auto-selects the first familiar");
+assert.match(source, /openFamiliarStudio\(handoff \?\? resolved\[0\]\.id\)/, "Auto-selects the Brain Studio handoff familiar, falling back to the first");
+assert.match(source, /BRAIN_STUDIO_FAMILIAR_KEY/, "Reads the one-shot Brain Studio handoff key");
 
 // Autosave footer carries over from the drawer.
 assert.match(source, /Changes save automatically/, "Shows the autosave footer");

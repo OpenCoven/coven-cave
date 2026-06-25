@@ -3,7 +3,7 @@
 import { useEffect, useMemo, type CSSProperties } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { Tabs } from "@/components/ui/tabs";
-import { useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
+import { useFamiliarStudio, BRAIN_STUDIO_FAMILIAR_KEY, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
 import { useDaemonSyncStatus } from "@/lib/daemon-sync-status";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { FamiliarStudioIdentityTab } from "./familiar-studio-identity-tab";
@@ -54,12 +54,24 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
     [resolved, activeFamiliarId],
   );
 
-  // Auto-select the first familiar so the detail pane is never empty on entry,
-  // and recover if the current selection vanishes (archived/removed) while open.
+  // Auto-select a familiar so the detail pane is never empty on entry, and
+  // recover if the current selection vanishes (archived/removed) while open.
+  // Prefer the one-shot handoff id written by "Open Brain Studio" so the right
+  // familiar opens (not just the first), then fall back to the first.
   useEffect(() => {
     if (resolved.length === 0) return;
     if (!activeFamiliarId || !resolved.some((f) => f.id === activeFamiliarId)) {
-      openFamiliarStudio(resolved[0].id);
+      let handoff: string | null = null;
+      try {
+        const stored = window.localStorage.getItem(BRAIN_STUDIO_FAMILIAR_KEY);
+        if (stored) {
+          window.localStorage.removeItem(BRAIN_STUDIO_FAMILIAR_KEY);
+          if (resolved.some((f) => f.id === stored)) handoff = stored;
+        }
+      } catch {
+        /* ignore storage failures */
+      }
+      openFamiliarStudio(handoff ?? resolved[0].id);
     }
   }, [resolved, activeFamiliarId, openFamiliarStudio]);
 
