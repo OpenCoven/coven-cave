@@ -23,7 +23,7 @@
   "x-coven": {
     "displayName": "Netdata",
     "category": "Cloud & Infrastructure",
-    "trust": "official-remote",
+    "trust": "official-local",
     "sourceRefs": [
       "https://learn.netdata.cloud/docs/netdata-ai/mcp"
     ],
@@ -51,18 +51,34 @@
   },
   "mcpServers": {
     "netdata": {
-      "url": "${NETDATA_MCP_URL}",
-      "type": "http"
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@latest",
+        "--http",
+        "${NETDATA_MCP_URL}",
+        "--header",
+        "Authorization: Bearer ${NETDATA_API_KEY}"
+      ],
+      "type": "stdio"
     }
   },
   "userConfig": {
     "netdata_mcp_url": {
       "type": "string",
       "title": "Netdata MCP URL",
-      "description": "MCP endpoint of your Netdata agent (e.g. http://localhost:19999/mcp). Requires Netdata v2.6.0+.",
+      "description": "MCP endpoint: a local agent/parent (http://YOUR_IP:19999/mcp, Netdata v2.7.2+) or Netdata Cloud (https://app.netdata.cloud/api/v1/mcp).",
       "required": true,
       "sensitive": false,
       "env": "NETDATA_MCP_URL"
+    },
+    "netdata_api_key": {
+      "type": "string",
+      "title": "Netdata API Key",
+      "description": "Bearer token. For a local agent it is the dev-preview key at /var/lib/netdata/mcp_dev_preview_api_key; for Cloud, a token with scope:mcp.",
+      "required": true,
+      "sensitive": true,
+      "env": "NETDATA_API_KEY"
     }
   }
 }

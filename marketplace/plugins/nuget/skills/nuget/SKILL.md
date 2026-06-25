@@ -13,6 +13,7 @@ Use NuGet MCP for current package versions and vulnerability-aware dependency ch
 - Review packages for known vulnerabilities
 
 ## Guardrails
+- Requires the .NET 10 SDK (provides the dnx command)
 - Confirm before changing project dependencies
 - Prefer fixed, current versions
 - Flag supply-chain risks explicitly

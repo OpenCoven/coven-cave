@@ -278,8 +278,16 @@
       "type": "stdio"
     },
     "netdata": {
-      "url": "${NETDATA_MCP_URL}",
-      "type": "http"
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote@latest",
+        "--http",
+        "${NETDATA_MCP_URL}",
+        "--header",
+        "Authorization: Bearer ${NETDATA_API_KEY}"
+      ],
+      "type": "stdio"
     },
     "fabric": {
       "command": "npx",
