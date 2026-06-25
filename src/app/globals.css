@@ -3968,6 +3968,37 @@ button:active > .edge-rail-chip {
   background: transparent;
 }
 
+/* ────────────────────────────────────────────────
+   Seamless macOS title bar (Tauri desktop)
+   The native title bar is set to `Overlay` (see src-tauri/src/lib.rs), so the
+   webview fills to the very top and the traffic-light buttons float over this
+   bar — there's no separate native title strip and no seam. We:
+     1. reserve room on the left so the toggle doesn't sit under the lights,
+     2. give the bar a touch more height to comfortably frame the lights,
+     3. make the empty bar background a window-drag handle, while keeping every
+        interactive control clickable (no-drag).
+   `[data-tauri-titlebar]` is set on <html> only in the macOS desktop shell
+   (see shell.tsx), so browser/Windows/Linux are untouched. Scoped to the
+   desktop layout (≥1024px) to match where `.menu-bar` renders.
+   ──────────────────────────────────────────────── */
+@media (min-width: 1024px) {
+  :root[data-tauri-titlebar] .shell-top {
+    /* ~78px clears the three traffic lights + their left inset. */
+    padding-left: 78px;
+    min-height: 52px;
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  :root[data-tauri-titlebar] .shell-top :is(
+    button, a, input, select, textarea, kbd, label,
+    [role="button"], [role="textbox"], [contenteditable], .menu-bar__search
+  ) {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+}
+
 .shell-top-toggle {
   display: inline-flex;
   align-items: center;

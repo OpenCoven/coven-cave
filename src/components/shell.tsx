@@ -166,6 +166,23 @@ function ShellInner({
   useEffect(() => {
     if (!isMobile) setMobileDrawer(null);
   }, [isMobile]);
+
+  // Seamless macOS title bar: only the macOS desktop Tauri shell overlays the
+  // native title bar (lib.rs sets TitleBarStyle::Overlay), so only there do we
+  // mark <html> to reserve room for the traffic lights and make the top bar a
+  // drag handle (see [data-tauri-titlebar] in globals.css). Browser, Windows,
+  // Linux, and Tauri-mobile keep their normal chrome.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isTauri = "__TAURI_INTERNALS__" in window;
+    const isMac = /Mac/i.test(navigator.platform || navigator.userAgent || "");
+    if (!isTauri || !isMac) return;
+    const root = document.documentElement;
+    root.dataset.tauriTitlebar = "";
+    return () => {
+      delete root.dataset.tauriTitlebar;
+    };
+  }, []);
   const mobileChromeState: ShellMobileChromeState = {
     navDrawerOpen: isMobile && mobileDrawer === "nav",
     listDrawerOpen: isMobile && mobileDrawer === "list",

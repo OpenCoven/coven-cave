@@ -1090,6 +1090,19 @@ pub fn run() {
             // handler intercepts dragenter/dragover/drop before the DOM sees
             // them.
             .disable_drag_drop_handler();
+            // macOS: dissolve the seam between the native title bar and the
+            // app's top toolbar. `Overlay` lets the webview content fill to the
+            // very top (the traffic-light buttons float over it) and
+            // `hidden_title` drops the centered "CovenCave" label, so the
+            // toolbar reads as one continuous strip. The web side reserves room
+            // for the traffic lights and makes the bar draggable (see
+            // `[data-tauri-titlebar]` in globals.css). No-op on Windows/Linux.
+            #[cfg(target_os = "macos")]
+            {
+                main_window = main_window
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
+                    .hidden_title(true);
+            }
             // Dev-only automation hook: WKWebView has no external driver
             // protocol, so dev tooling (terminal e2e checks, screenshots)
             // can inject a script that runs before the page loads. No-op in
