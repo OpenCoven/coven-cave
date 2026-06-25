@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/lib/icon";
 import {
   aggregateThreadSignals,
+  THREAD_SIGNALS_EMPTY_STATE,
   type RankedBlocker,
   type ThreadSignalsAggregate,
   type ThreadSelfReport,
@@ -53,8 +54,8 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
   if (reports.length === 0) {
     return (
       <div className="fa-thread-empty">
-        <EmptyState compact icon="ph:brain-bold" headline="No thread reports yet. Use 'Reflect on this thread' to generate the first one." />
-        <span className="sr-only">No thread reports yet. Use 'Reflect on this thread' to generate the first one.</span>
+        <EmptyState compact icon="ph:brain-bold" headline={THREAD_SIGNALS_EMPTY_STATE} />
+        <span className="sr-only">{THREAD_SIGNALS_EMPTY_STATE}</span>
       </div>
     );
   }

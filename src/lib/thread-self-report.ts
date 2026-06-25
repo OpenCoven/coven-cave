@@ -105,6 +105,8 @@ export type ThreadSignalsAggregate = {
   persistentBlockers: RankedBlocker[];
 };
 
+export const THREAD_SIGNALS_EMPTY_STATE = "No thread reports yet. Use 'Reflect on this thread' to generate the first one.";
+
 const IMPORTANCE_WEIGHT: Record<CapabilityImportance, number> = { "nice-to-have": 1, important: 2, blocking: 3 };
 const STATE_WEIGHT: Record<CapabilityState, number> = { available: 1, degraded: 2, missing: 3 };
 
