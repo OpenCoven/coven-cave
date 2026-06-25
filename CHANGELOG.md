@@ -7,6 +7,47 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.114] - 2026-06-25
+
+Patch release on top of v0.0.113 with the next iOS utility sweep, a broader
+marketplace catalog, and desktop polish for Home, Tasks, GitHub, and Flow.
+
+### Added
+
+- **iOS controls and notifications** - Control Center controls for reminders
+  and running tasks (#1906), on-device notifications for upcoming reminders
+  (#1892), and Lock Screen / StandBy widgets for the next reminder (#1897).
+- **Marketplace catalog expansion** - 44 MCP plugins across 13 categories
+  (#1902).
+- **Home surface** - Codex-style composer + connector cards (#1907) and a
+  "Jump back in" recent-chats strip (#1910).
+- **Board table** - spreadsheet-grade task table striping, reorder, resize, and
+  autofit (#1905).
+- **GitHub view** - free-text search over the activity list (#1900).
+- **Group chat targeting** - @-tag familiars to target a message at a subset of
+  the coven (#1896).
+- **Flow** - template gallery (#1893).
+
+### Changed
+
+- Removed the legacy Workflows page (#1898).
+- Added `usePausablePoll` and adopted the canonical reduced-motion hook
+  (#1909).
+
+### Fixed
+
+- **iOS navigation** - remove the empty nav-bar band atop Developer GitHub and
+  Library (#1912).
+- **Shell and sidebar** - align top sidepanel toggles to nav-rail button width
+  (#1904) and size the New-chat icon to match the collapsed rail (#1911).
+- **Chat progress** - make truncated progress-step details expandable (#1903).
+- **Canvas accessibility** - fullscreen dialog, tab arrow navigation, and
+  selected `aria-current` (#1895).
+- **Journal accessibility** - save with Cmd/Ctrl+Enter and restore focus on exit
+  (#1891).
+- **Schedules** - per-row quick actions for run-now and pause/resume (#1894).
+- **Eval loop panel** - guard undefined iterations (#1908).
+
 ## [0.0.113] - 2026-06-24
 
 Another huge release: **120 PRs** building on the v0.0.112 push. The iOS app gains a real **Calendar tab**, **Library/Bookmarks**, **Journal**, **Live Activities**, **Siri Shortcuts / App Intents**, **iPad split-view** across Chats/Tasks/Developer, a **Board (kanban) view**, and an actionable **home-screen widget**. The desktop gets a new visual **Flow editor** (n8n-style), a **Marketplace** surface with credential & config collection, a redesigned **Code Projects explorer**, broad **undo** support, and a wide **accessibility sweep**. Group Chat (broadcast one prompt to many familiars) ships as the foundation for the v1 group-chat work tracked in opencoven/coven#258.
