@@ -242,6 +242,7 @@ export const SUITES = {
     "src/components/automations-view.test.ts",
     "src/components/inbox-feed-a11y.test.ts",
     "src/components/schedules-tabs.test.ts",
+    "src/lib/automations/automation-entry.test.ts",
     "src/lib/inbox-feed.test.ts",
     "src/lib/daily-summary-notifications.test.ts",
     "src/components/daily-summary-notifications.test.ts",
