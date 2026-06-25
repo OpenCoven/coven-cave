@@ -1830,6 +1830,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [reflecting, setReflecting] = useState(false);
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [threadSignalReport, setThreadSignalReport] = useState<ThreadSelfReport | null>(null);
+  const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
+  const autoSelfReportEligibilityRef = useRef<{ sessionId: string | null; eligible: boolean }>({
+    sessionId: null,
+    eligible: false,
+  });
 
   // Publish live chat state for the session debug pane (right panel / modal).
   // Per-instance token: a second ChatView (right-panel Chat tab) unmounting
@@ -1872,6 +1877,47 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setReflecting(false);
     }
   }, [familiar.display_name, familiar.id, reflecting, session?.title, sessionId]);
+
+  const autoReflectOnThread = useCallback(async (targetSessionId: string) => {
+    if (!familiar.autoSelfReport) return;
+    try {
+      const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sessionId: targetSessionId,
+          trigger: "auto",
+          threadTitle: session?.title ?? familiar.display_name,
+        }),
+      });
+      const json = await res.json().catch(() => null) as
+        | { ok: true; report: ThreadSelfReport }
+        | { ok: false; error?: string }
+        | null;
+      if (json?.ok) setThreadSignalReport(json.report);
+    } catch {
+      /* Auto self-report is best-effort and intentionally silent. */
+    }
+  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, session?.title]);
+
+  useEffect(() => {
+    const status = session?.status?.toLowerCase();
+    const eligible = Boolean(
+      session?.archived_at ||
+      status === "closed" ||
+      status === "completed" ||
+      status === "complete" ||
+      status === "done" ||
+      status === "stopped",
+    );
+    const previous = autoSelfReportEligibilityRef.current;
+    const reachedClosedState = previous.sessionId === sessionId && !previous.eligible && eligible;
+    autoSelfReportEligibilityRef.current = { sessionId, eligible };
+    if (!sessionId || !reachedClosedState || !familiar.autoSelfReport) return;
+    if (autoSelfReportSessionsRef.current.has(sessionId)) return;
+    autoSelfReportSessionsRef.current.add(sessionId);
+    void autoReflectOnThread(sessionId);
+  }, [autoReflectOnThread, familiar.autoSelfReport, session?.archived_at, session?.status, sessionId]);
 
   useEffect(() => {
     setThreadSignalReport(null);

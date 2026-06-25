@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { Tabs } from "@/components/ui/tabs";
@@ -383,68 +384,77 @@ function FamiliarRosterCard({
   const sessionsLabel =
     stats.sessionsLast7d > 0 ? ` · ${stats.sessionsLast7d} this week` : "";
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="focus-ring familiars-view__card group flex h-full flex-col items-stretch gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 text-left transition-colors hover:border-[var(--accent-presence)]/50 hover:bg-[var(--bg-raised)]/60"
-      aria-label={`Open ${familiar.display_name}`}
-    >
-      <div className="flex items-center gap-2">
-        <FamiliarAvatar familiar={familiar} size="sm" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-semibold text-[var(--text-primary)]">
-            {familiar.display_name}
-          </span>
-          <span className="block truncate text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
-            {familiar.role || familiar.harness || familiar.id}
-          </span>
-        </span>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
-        <span
-          className={`inline-flex h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-[var(--accent-presence)]" : "bg-[var(--text-muted)]"}`}
-          aria-hidden="true"
-        />
-        <span>{daemonRunning ? "online" : "offline"}</span>
-        {stats.hasActiveSession ? (
-          <span className="rounded bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[9px] text-[var(--accent-presence)]">
-            active session
-          </span>
-        ) : null}
-        {responseNeeded ? (
-          <span className="rounded bg-[var(--color-warning)]/15 px-1.5 py-0.5 text-[9px] text-[var(--color-warning)]">
-            response needed
-          </span>
-        ) : null}
-      </div>
-
-      <p className="text-[11px] text-[var(--text-secondary)]">
-        {lastSessionLabel}{sessionsLabel}
-      </p>
-
-      <div className="mt-auto border-t border-[var(--border-hairline)] pt-2 text-[11px] text-[var(--text-secondary)]">
-        {memoryStatus === "loading" ? (
-          <span className="text-[var(--text-muted)]">Loading memory…</span>
-        ) : memoryStatus === "error" ? (
-          <span className="text-[var(--text-muted)]">Memory unavailable</span>
-        ) : stats.memoryCount === 0 ? (
-          <span className="text-[var(--text-muted)]">No memories yet</span>
-        ) : (
-          <>
-            <span className="block">
-              {stats.memoryCount} memor{stats.memoryCount === 1 ? "y" : "ies"}
-              {stats.latestMemory ? ` · last write ${age(stats.latestMemory.updatedAt)}` : ""}
+    <div className="flex h-full flex-col">
+      <button
+        type="button"
+        onClick={onSelect}
+        className="focus-ring familiars-view__card group flex h-full flex-col items-stretch gap-2 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-3 text-left transition-colors hover:border-[var(--accent-presence)]/50 hover:bg-[var(--bg-raised)]/60"
+        aria-label={`Open ${familiar.display_name}`}
+      >
+        <div className="flex items-center gap-2">
+          <FamiliarAvatar familiar={familiar} size="sm" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[13px] font-semibold text-[var(--text-primary)]">
+              {familiar.display_name}
             </span>
-            {stats.latestMemory ? (
-              <span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">
-                {stats.latestMemory.title}
+            <span className="block truncate text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+              {familiar.role || familiar.harness || familiar.id}
+            </span>
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
+          <span
+            className={`inline-flex h-1.5 w-1.5 rounded-full ${daemonRunning ? "bg-[var(--accent-presence)]" : "bg-[var(--text-muted)]"}`}
+            aria-hidden="true"
+          />
+          <span>{daemonRunning ? "online" : "offline"}</span>
+          {stats.hasActiveSession ? (
+            <span className="rounded bg-[var(--accent-presence)]/15 px-1.5 py-0.5 text-[9px] text-[var(--accent-presence)]">
+              active session
+            </span>
+          ) : null}
+          {responseNeeded ? (
+            <span className="rounded bg-[var(--color-warning)]/15 px-1.5 py-0.5 text-[9px] text-[var(--color-warning)]">
+              response needed
+            </span>
+          ) : null}
+        </div>
+
+        <p className="text-[11px] text-[var(--text-secondary)]">
+          {lastSessionLabel}{sessionsLabel}
+        </p>
+
+        <div className="mt-auto border-t border-[var(--border-hairline)] pt-2 text-[11px] text-[var(--text-secondary)]">
+          {memoryStatus === "loading" ? (
+            <span className="text-[var(--text-muted)]">Loading memory…</span>
+          ) : memoryStatus === "error" ? (
+            <span className="text-[var(--text-muted)]">Memory unavailable</span>
+          ) : stats.memoryCount === 0 ? (
+            <span className="text-[var(--text-muted)]">No memories yet</span>
+          ) : (
+            <>
+              <span className="block">
+                {stats.memoryCount} memor{stats.memoryCount === 1 ? "y" : "ies"}
+                {stats.latestMemory ? ` · last write ${age(stats.latestMemory.updatedAt)}` : ""}
               </span>
-            ) : null}
-          </>
-        )}
-      </div>
-    </button>
+              {stats.latestMemory ? (
+                <span className="mt-0.5 block truncate text-[10px] text-[var(--text-muted)]">
+                  {stats.latestMemory.title}
+                </span>
+              ) : null}
+            </>
+          )}
+        </div>
+      </button>
+      <Link
+        href={`/dashboard/familiars/${encodeURIComponent(familiar.id)}/analytics`}
+        aria-label={`Open analytics for ${familiar.display_name}`}
+        className="mt-1 self-start text-[10px] text-[var(--text-muted)] hover:text-[var(--accent-presence)]"
+      >
+        Analytics →
+      </Link>
+    </div>
   );
 }
 

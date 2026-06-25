@@ -11,7 +11,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { ThreadSignalsSection } from "@/components/thread-signals-section";
+import { escalateBlockers } from "@/lib/familiar-heal-requests";
 import { Icon } from "@/lib/icon";
+import { aggregateThreadSignals } from "@/lib/thread-self-report";
 
 export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
   const [data, setData] = useState<FamiliarAnalyticsData | null>(null);
@@ -75,6 +77,15 @@ export function FamiliarAnalyticsContent({
 }) {
   const familiarName = model.familiar?.display_name ?? model.familiarId;
   const familiarRole = model.familiar?.role || model.familiar?.harness || "Familiar";
+  const threadSignalsAggregate = useMemo(
+    () => model.threadReports.length > 0 ? aggregateThreadSignals(model.threadReports) : null,
+    [model.threadReports],
+  );
+  const healRequests = useMemo(() => {
+    if (!threadSignalsAggregate) return model.healRequests;
+    const escalated = escalateBlockers(model.familiarId, threadSignalsAggregate, model.healRequests);
+    return [...escalated, ...model.healRequests];
+  }, [model.familiarId, model.healRequests, threadSignalsAggregate]);
 
   return (
     <>
@@ -151,13 +162,13 @@ export function FamiliarAnalyticsContent({
       <section className="fa-section" aria-labelledby="fa-heal-title">
         <div className="fa-section__head">
           <h2 id="fa-heal-title" className="fa-section__title">Self-Heal Requests</h2>
-          <span>{model.healRequests.length} {model.healRequests.length === 1 ? "request" : "requests"}</span>
+          <span>{healRequests.length} {healRequests.length === 1 ? "request" : "requests"}</span>
         </div>
-        {model.healRequests.length === 0 ? (
+        {healRequests.length === 0 ? (
           <EmptyState compact icon="ph:check-circle-bold" headline="No self-heal requests." />
         ) : (
           <div className="fa-heal-list">
-            {model.healRequests.map((request) => (
+            {healRequests.map((request) => (
               <article key={request.id} className={`fa-heal-card fa-heal-card--${request.severity}`}>
                 <div>
                   <span>{request.source}</span>

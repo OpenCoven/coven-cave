@@ -54,6 +54,18 @@ assert.match(
 
 assert.match(
   source,
+  /familiar\.autoSelfReport[\s\S]*trigger: "auto"/,
+  "Archived chats should only auto-trigger self-report when the familiar config enables autoSelfReport",
+);
+
+assert.match(
+  source,
+  /catch \{[\s\S]*Auto self-report is best-effort and intentionally silent/,
+  "Auto self-report failures should be silent",
+);
+
+assert.match(
+  source,
   /<ThreadSignalCard[\s\S]*report=\{threadSignalReport\}/,
   "Successful reflection should render the ThreadSignalCard in the transcript",
 );

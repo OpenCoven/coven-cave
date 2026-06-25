@@ -254,6 +254,7 @@ export const SUITES = {
     "src/lib/familiar-heal-requests.test.ts",
     "src/lib/thread-self-report.test.ts",
     "src/components/familiar-analytics-view.test.ts",
+    "src/components/familiar-analytics-navigation.test.ts",
     "src/lib/server/familiar-self-reports.test.ts",
     "src/components/thread-signal-card.test.ts",
     "src/components/thread-signals-section.test.ts",

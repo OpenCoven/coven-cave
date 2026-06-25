@@ -286,7 +286,8 @@ describe("FamiliarAnalyticsView", () => {
 
     assert.equal(model.healRequests.length, 1);
     assert.equal(model.threadReports.length, 1);
-    assert.match(source, /model\.healRequests\.length === 1 \? "request" : "requests"/);
+    assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
+    assert.match(source, /healRequests\.length === 1 \? "request" : "requests"/);
     assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{model\.threadReports\}/);
     assert.match(source, /<EvalLoopPanel[\s\S]*familiarId=\{model\.familiar\.id\}/);
   });

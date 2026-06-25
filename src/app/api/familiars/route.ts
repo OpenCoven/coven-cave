@@ -58,6 +58,7 @@ export async function GET() {
         voiceProvider: binding.voiceProvider,
         voiceModel: binding.voiceModel,
         voiceName: binding.voiceName,
+        autoSelfReport: configEntry.autoSelfReport ?? false,
         avatarUrl: avatar
           ? `/api/familiars/${encodeURIComponent(f.id)}/avatar?v=${Math.round(avatar.mtimeMs)}&format=png`
           : undefined,
