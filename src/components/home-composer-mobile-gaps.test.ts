@@ -12,15 +12,15 @@ const globals = await readFile(
 );
 
 // ───── Home feed rows ellipsis cleanly and scroll within a bounded card ─────
-// The home content feed (Videos · Tweets · Repos) replaced the RSS widget. Its
-// video titles must clamp (so they never overflow the card) and each tab's list
+// The home content feed (Tweets · Repos) replaced the RSS widget. Its row
+// descriptions must clamp (so they never overflow the card) and each tab's list
 // must cap its height and scroll rather than pushing the page.
-const titleMatch = css.match(/\.home-feed__vtitle\s*\{([^}]*)\}/);
-assert.ok(titleMatch, ".home-feed__vtitle rule must exist");
+const descMatch = css.match(/\.home-feed__rowdesc\s*\{([^}]*)\}/);
+assert.ok(descMatch, ".home-feed__rowdesc rule must exist");
 assert.match(
-  titleMatch[1],
+  descMatch[1],
   /-webkit-line-clamp:\s*2;/,
-  ".home-feed__vtitle clamps to 2 lines so long titles don't overflow",
+  ".home-feed__rowdesc clamps to 2 lines so long descriptions don't overflow",
 );
 
 const listMatch = css.match(/\.home-feed__list\s*\{([^}]*)\}/);
@@ -36,11 +36,11 @@ assert.match(
   ".home-feed__list scrolls instead of pushing the page",
 );
 
-// On phones the two-up videos grid collapses to a single column.
+// On phones the feed list shrinks its capped height.
 assert.match(
   css,
-  /@media \(max-width: 640px\)\s*\{[\s\S]*?\.home-feed__videos\s*\{[\s\S]*?grid-template-columns:\s*1fr;/,
-  "home feed videos collapse to one column under 640px",
+  /@media \(max-width: 640px\)\s*\{[\s\S]*?\.home-feed__list\s*\{[\s\S]*?max-height:\s*\d+px;/,
+  "home feed list caps its height under 640px",
 );
 
 // ───── Phone composer controls are thumb-sized ─────

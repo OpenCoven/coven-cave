@@ -13,6 +13,10 @@ export type ParsedFeedItem = {
   link: string;
   /** Normalized ISO-8601 timestamp, or null when the feed omitted/garbled it. */
   isoDate: string | null;
+  /** Raw inner HTML of the item's body (`<content:encoded>`/`<description>` for
+   *  RSS, `<content>`/`<summary>` for Atom) — CDATA unwrapped, tags KEPT so
+   *  callers can extract embedded links. Undefined when the item has no body. */
+  descriptionHtml?: string;
 };
 
 export type ParsedFeed = {
@@ -121,6 +125,37 @@ function parseAttrs(raw: string): Record<string, string> {
   return attrs;
 }
 
+/** Inner HTML of the first `<tag>…</tag>` — CDATA unwrapped, markup KEPT. */
+function rawTag(block: string, tag: string): string | null {
+  const re = new RegExp(`<${escapeTag(tag)}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${escapeTag(tag)}>`, "i");
+  const m = re.exec(block);
+  if (!m) return null;
+  return m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
+}
+
+/** First non-empty raw HTML among several candidate tags. */
+function firstRawTag(block: string, tags: string[]): string | undefined {
+  for (const tag of tags) {
+    const value = rawTag(block, tag);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+/** Extract `<a href>` links (url + cleaned link text) from an HTML fragment, in
+ *  document order. Useful for "digest" feed items whose body lists multiple
+ *  stories as links. */
+export function extractLinks(html: string): { url: string; title: string }[] {
+  if (!html) return [];
+  const out: { url: string; title: string }[] = [];
+  for (const m of html.matchAll(/<a\b[^>]*?href\s*=\s*"([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)) {
+    const url = decodeEntities(m[1]).trim();
+    const title = cleanText(m[2]);
+    if (url && title) out.push({ url, title });
+  }
+  return out;
+}
+
 /** Normalize an RFC-822 (`pubDate`) or ISO-8601 (`updated`) date to ISO, or
  *  null when unparseable. */
 export function normalizeDate(raw: string | null): string | null {
@@ -152,7 +187,10 @@ export function parseFeed(xml: string): ParsedFeed {
     const dateRaw = isAtom
       ? firstOfTags(block, ["published", "updated"])
       : firstOfTags(block, ["pubDate", "dc:date", "date"]);
-    items.push({ title: itemTitle, link, isoDate: normalizeDate(dateRaw) });
+    const descriptionHtml = isAtom
+      ? firstRawTag(block, ["content", "summary"])
+      : firstRawTag(block, ["content:encoded", "description"]);
+    items.push({ title: itemTitle, link, isoDate: normalizeDate(dateRaw), descriptionHtml });
   }
   return { title, items };
 }
