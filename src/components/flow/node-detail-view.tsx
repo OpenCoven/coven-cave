@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
 import { STICKY_COLORS, type FlowNodeType, type FlowParamField } from "@/lib/flow/flow-catalog";
-import type { FlowNode, FlowParamValue, FlowStickyData } from "@/lib/flow/flow-doc";
+import type { FlowNode, FlowNodeSettings, FlowParamValue, FlowStickyData } from "@/lib/flow/flow-doc";
 import type { FlowNodeRunData } from "@/lib/flow/flow-progress";
 import { webhookProductionPath, webhookTestPath } from "@/lib/flow/flow-webhook";
 
@@ -19,9 +19,12 @@ export type NodeDetailViewProps = {
   onRename: (name: string) => void;
   onChangeParam: (key: string, value: FlowParamValue) => void;
   onChangeNotes: (notes: string) => void;
+  onToggleDisplayNote: () => void;
+  onChangeSettings: (patch: Partial<FlowNodeSettings>) => void;
   onToggleDisabled: () => void;
   onExecuteNode: () => void;
   onPinData: (data: string) => void;
+  onDuplicate: () => void;
   onListenWebhookTest: () => Promise<{ testUrl: string; expiresAt: string } | null>;
   onChangeSticky: (patch: Partial<FlowStickyData>) => void;
   onDelete: () => void;
@@ -83,6 +86,22 @@ export function NodeDetailView(props: NodeDetailViewProps) {
             onChange={(event) => props.onChangeNotes(event.target.value)}
           />
         </label>
+        <label className="flow-ndv-field">
+          <span className="flow-ndv-toggle">
+            <input
+              type="checkbox"
+              checked={node.displayNote === true}
+              onChange={props.onToggleDisplayNote}
+            />
+            <span>Display note in flow</span>
+          </span>
+        </label>
+
+        <ExecutionSettingsSection
+          node={node}
+          onChangeSettings={props.onChangeSettings}
+          onToggleDisabled={props.onToggleDisabled}
+        />
 
         {props.runData && <RunDataSection data={props.runData} />}
 
@@ -90,7 +109,13 @@ export function NodeDetailView(props: NodeDetailViewProps) {
       </div>
 
       <footer className="flow-ndv-foot">
-        <button type="button" className="flow-ndv-action flow-ndv-primary" onClick={props.onExecuteNode}>
+        <button
+          type="button"
+          className="flow-ndv-action flow-ndv-primary"
+          onClick={props.onExecuteNode}
+          disabled={node.disabled === true}
+          title={node.disabled ? "Enable this node before executing it." : undefined}
+        >
           <Icon name="ph:play" width={13} />
           Execute step
         </button>
@@ -98,12 +123,107 @@ export function NodeDetailView(props: NodeDetailViewProps) {
           <Icon name={node.disabled ? "ph:play" : "ph:pause"} width={13} />
           {node.disabled ? "Enable" : "Disable"}
         </button>
+        <button type="button" className="flow-ndv-action" onClick={props.onDuplicate}>
+          <Icon name="ph:copy" width={13} />
+          Duplicate
+        </button>
         <button type="button" className="flow-ndv-action flow-ndv-danger" onClick={props.onDelete}>
           <Icon name="ph:trash" width={13} />
           Delete
         </button>
       </footer>
     </aside>
+  );
+}
+
+function ExecutionSettingsSection({
+  node,
+  onChangeSettings,
+  onToggleDisabled,
+}: {
+  node: FlowNode;
+  onChangeSettings: (patch: Partial<FlowNodeSettings>) => void;
+  onToggleDisabled: () => void;
+}) {
+  const settings = node.settings ?? {};
+  const alwaysOutputData = settings.alwaysOutputData === true;
+  const executeOnce = settings.executeOnce === true;
+  const retryOnFail = settings.retryOnFail === true;
+  const maxTries = settings.maxTries ?? 2;
+  const onError = settings.onError ?? "stop";
+  return (
+    <section className="flow-ndv-settings" aria-label="Execution settings">
+      <span className="flow-ndv-label">Execution settings</span>
+      <label className="flow-ndv-field">
+        <span className="flow-ndv-toggle">
+          <input
+            type="checkbox"
+            checked={node.disabled === true}
+            onChange={onToggleDisabled}
+          />
+          <span>Deactivate node</span>
+        </span>
+      </label>
+      <label className="flow-ndv-field">
+        <span className="flow-ndv-toggle">
+          <input
+            type="checkbox"
+            checked={alwaysOutputData}
+            onChange={(event) => onChangeSettings({ alwaysOutputData: event.target.checked })}
+          />
+          <span>Always output data</span>
+        </span>
+      </label>
+      <label className="flow-ndv-field">
+        <span className="flow-ndv-toggle">
+          <input
+            type="checkbox"
+            checked={executeOnce}
+            onChange={(event) => onChangeSettings({ executeOnce: event.target.checked })}
+          />
+          <span>Execute once</span>
+        </span>
+      </label>
+      <label className="flow-ndv-field">
+        <span className="flow-ndv-toggle">
+          <input
+            type="checkbox"
+            checked={retryOnFail}
+            onChange={(event) =>
+              onChangeSettings({
+                retryOnFail: event.target.checked,
+                maxTries: event.target.checked ? maxTries : 1,
+              })
+            }
+          />
+          <span>Retry on fail</span>
+        </span>
+      </label>
+      <label className="flow-ndv-field">
+        <span className="flow-ndv-label">Max tries</span>
+        <input
+          className="flow-ndv-input"
+          type="number"
+          min={1}
+          max={10}
+          value={maxTries}
+          disabled={!retryOnFail}
+          onChange={(event) => onChangeSettings({ maxTries: Number(event.target.value) })}
+        />
+      </label>
+      <label className="flow-ndv-field">
+        <span className="flow-ndv-label">On error</span>
+        <select
+          className="flow-ndv-input"
+          value={onError}
+          onChange={(event) => onChangeSettings({ onError: event.target.value as FlowNodeSettings["onError"] })}
+        >
+          <option value="stop">Stop workflow</option>
+          <option value="continue">Continue with last output</option>
+          <option value="continueErrorOutput">Continue using error output</option>
+        </select>
+      </label>
+    </section>
   );
 }
 
@@ -273,12 +393,38 @@ function ParamRow({
   onChange: (value: FlowParamValue) => void;
 }) {
   const str = value === undefined || value === null ? "" : String(value);
+  const expressionCapable = canUseExpressionMode(field);
+  const expressionMode = expressionCapable && isExpressionValue(str);
   return (
-    <label className="flow-ndv-field">
-      <span className="flow-ndv-label">{field.label}</span>
+    <div className="flow-ndv-field">
+      <span className="flow-ndv-param-head">
+        <span className="flow-ndv-label">{field.label}</span>
+        {expressionCapable && (
+          <span className="flow-ndv-param-mode" aria-label={`${field.label} value mode`}>
+            <button
+              type="button"
+              className={!expressionMode ? "is-active" : ""}
+              onClick={() => {
+                if (expressionMode) onChange(fromExpressionValue(str));
+              }}
+            >
+              Fixed
+            </button>
+            <button
+              type="button"
+              className={expressionMode ? "is-active" : ""}
+              onClick={() => {
+                if (!expressionMode) onChange(toExpressionValue(str));
+              }}
+            >
+              Expression
+            </button>
+          </span>
+        )}
+      </span>
       {renderControl()}
       {field.help && <span className="flow-ndv-help">{field.help}</span>}
-    </label>
+    </div>
   );
 
   function renderControl() {
@@ -287,6 +433,7 @@ function ParamRow({
         return (
           <textarea
             className="flow-ndv-textarea"
+            aria-label={field.label}
             rows={4}
             value={str}
             placeholder={field.placeholder}
@@ -297,6 +444,7 @@ function ParamRow({
         return (
           <textarea
             className="flow-ndv-textarea flow-ndv-code"
+            aria-label={field.label}
             rows={5}
             spellCheck={false}
             value={str}
@@ -308,6 +456,7 @@ function ParamRow({
         return (
           <textarea
             className="flow-ndv-textarea flow-ndv-code"
+            aria-label={field.label}
             rows={3}
             spellCheck={false}
             value={str}
@@ -319,6 +468,7 @@ function ParamRow({
         return (
           <input
             className="flow-ndv-input"
+            aria-label={field.label}
             type="number"
             value={str}
             onChange={(event) => onChange(event.target.value === "" ? "" : Number(event.target.value))}
@@ -329,6 +479,7 @@ function ParamRow({
           <span className="flow-ndv-toggle">
             <input
               type="checkbox"
+              aria-label={field.label}
               checked={value === true}
               onChange={(event) => onChange(event.target.checked)}
             />
@@ -337,7 +488,12 @@ function ParamRow({
         );
       case "select":
         return (
-          <select className="flow-ndv-input" value={str} onChange={(event) => onChange(event.target.value)}>
+          <select
+            className="flow-ndv-input"
+            aria-label={field.label}
+            value={str}
+            onChange={(event) => onChange(event.target.value)}
+          >
             {!field.default && <option value="">Choose…</option>}
             {(field.options ?? []).map((option) => (
               <option key={option.value} value={option.value}>
@@ -348,7 +504,12 @@ function ParamRow({
         );
       case "familiar":
         return (
-          <select className="flow-ndv-input" value={str} onChange={(event) => onChange(event.target.value)}>
+          <select
+            className="flow-ndv-input"
+            aria-label={field.label}
+            value={str}
+            onChange={(event) => onChange(event.target.value)}
+          >
             <option value="">Choose a familiar…</option>
             {familiarOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -361,6 +522,7 @@ function ParamRow({
         return (
           <input
             className="flow-ndv-input"
+            aria-label={field.label}
             list="flow-skill-options"
             value={str}
             placeholder="skill id"
@@ -371,6 +533,7 @@ function ParamRow({
         return (
           <input
             className="flow-ndv-input"
+            aria-label={field.label}
             type="text"
             value={str}
             placeholder={field.placeholder}
@@ -379,6 +542,31 @@ function ParamRow({
         );
     }
   }
+}
+
+function canUseExpressionMode(field: FlowParamField): boolean {
+  return ["text", "textarea", "json", "code"].includes(field.control);
+}
+
+function isExpressionValue(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.startsWith("=") || /\{\{[\s\S]+?\}\}/.test(trimmed);
+}
+
+function toExpressionValue(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "={{ }}";
+  if (isExpressionValue(trimmed)) return value;
+  return `={{ ${JSON.stringify(value)} }}`;
+}
+
+function fromExpressionValue(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("={{") && trimmed.endsWith("}}")) {
+    return trimmed.slice(3, -2).trim();
+  }
+  if (trimmed.startsWith("=")) return trimmed.slice(1).trim();
+  return value;
 }
 
 function StickyDetail(props: NodeDetailViewProps) {
@@ -422,6 +610,10 @@ function StickyDetail(props: NodeDetailViewProps) {
         </div>
       </div>
       <footer className="flow-ndv-foot">
+        <button type="button" className="flow-ndv-action" onClick={props.onDuplicate}>
+          <Icon name="ph:copy" width={13} />
+          Duplicate
+        </button>
         <button type="button" className="flow-ndv-action flow-ndv-danger" onClick={props.onDelete}>
           <Icon name="ph:trash" width={13} />
           Delete

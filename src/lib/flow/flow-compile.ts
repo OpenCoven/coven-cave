@@ -106,6 +106,21 @@ export function flowRunBlockReason(doc: FlowDoc, targetNodeId?: string): FlowRun
   return { ok: true };
 }
 
+export function flowPublishBlockReason(doc: FlowDoc): FlowRunBlock {
+  const productionTriggers = doc.nodes.filter((node) =>
+    isExecutable(node) &&
+    catalogNode(node.type)?.isTrigger === true &&
+    node.type !== "trigger.manual"
+  );
+  if (productionTriggers.length === 0) {
+    return { ok: false, reason: "Add a webhook, schedule, or chat trigger before publishing." };
+  }
+  if (!productionTriggers.some((node) => executableTargets(doc, node.id).length > 0)) {
+    return { ok: false, reason: "Add a step after the production trigger." };
+  }
+  return { ok: true };
+}
+
 function isSticky(node: FlowNode): boolean {
   return Boolean(node.sticky) || catalogNode(node.type)?.sticky === true;
 }
@@ -152,14 +167,30 @@ function executableTargets(doc: FlowDoc, sourceId: string, seen = new Set<string
 function describeParams(node: FlowNode): string {
   const def = catalogNode(node.type);
   if (!def || def.params.length === 0) return "";
-  const parts: string[] = [];
+  const fixedParts: string[] = [];
+  const expressionParts: string[] = [];
   for (const field of def.params) {
     const value = node.params[field.key];
     if (value === undefined || value === "" || value === null) continue;
     const text = typeof value === "string" ? value.replace(/\s+/g, " ").slice(0, 120) : String(value);
-    parts.push(`${field.label}: ${text}`);
+    if (isExpressionParam(value)) expressionParts.push(`${field.label}: ${text}`);
+    else fixedParts.push(`${field.label}: ${text}`);
   }
-  return parts.join("; ");
+  const sections: string[] = [];
+  if (fixedParts.length) sections.push(`config: ${fixedParts.join("; ")}`);
+  if (expressionParts.length) {
+    sections.push([
+      `Expression parameters: ${expressionParts.join("; ")}`,
+      "Evaluate these n8n-style expressions against the incoming item data before running this node.",
+    ].join("\n    "));
+  }
+  return sections.join("\n    ");
+}
+
+function isExpressionParam(value: FlowNode["params"][string]): boolean {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  return trimmed.startsWith("=") || /\{\{[\s\S]+?\}\}/.test(trimmed);
 }
 
 function describePinnedData(node: FlowNode): string {
@@ -171,6 +202,28 @@ function describePinnedData(node: FlowNode): string {
     text,
     "This node has pinned data; do not call external services or recompute it. Treat the pinned output as this node's result, emit the start/done markers for UI progress, then continue.",
   ].join("\n    ");
+}
+
+function describeExecutionSettings(node: FlowNode): string {
+  const settings = node.settings;
+  if (!settings) return "";
+  const parts: string[] = [];
+  if (settings.alwaysOutputData) {
+    parts.push("Always output data: emit an empty item if this node returns no data.");
+  }
+  if (settings.executeOnce) {
+    parts.push("Execute once: run this node once using only the first input item.");
+  }
+  if (settings.retryOnFail) {
+    const tries = settings.maxTries && settings.maxTries > 1 ? settings.maxTries : 2;
+    parts.push(`Retry on fail: up to ${tries} tries.`);
+  }
+  if (settings.onError === "continue") {
+    parts.push("On error: continue with the last valid output.");
+  } else if (settings.onError === "continueErrorOutput") {
+    parts.push("On error: continue and pass error details downstream.");
+  }
+  return parts.length ? ["Execution settings:", ...parts].join("\n    ") : "";
 }
 
 function describeTriggerInput(input: FlowTriggerInput | undefined): string {
@@ -225,10 +278,12 @@ export function compileFlowPrompt(
     const targets = executableTargets(doc, id).filter((target) => runSet.has(target));
     const params = describeParams(node);
     const pinned = mode === "manual" ? describePinnedData(node) : "";
+    const settings = describeExecutionSettings(node);
     lines.push(
       `- [${id}] ${node.name} — ${def?.label ?? node.type}` +
-        (params ? `\n    config: ${params}` : "") +
+        (params ? `\n    ${params}` : "") +
         (pinned ? `\n    ${pinned}` : "") +
+        (settings ? `\n    ${settings}` : "") +
         (targets.length ? `\n    then → ${targets.join(", ")}` : ""),
     );
   }

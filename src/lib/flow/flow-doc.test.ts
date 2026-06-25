@@ -4,23 +4,34 @@ import {
   addNode,
   connect,
   disconnect,
+  duplicateNode,
   edgeId,
   emptyFlow,
   flowRunRedactsData,
+  flowPublishStatus,
   flowDraftReducer,
+  hasUnpublishedFlowChanges,
   initialFlowDraft,
   moveNodes,
   nextNodeId,
   nodeExecutionChangedSinceSnapshot,
+  publishedFlowForProduction,
+  publishFlow,
   removeNode,
   renameNode,
   sameDoc,
   setActive,
+  setNodeDisplayNote,
   setExecutionDataRedaction,
+  setNodeExecutionSettings,
+  setNodeNotes,
   setNodeParam,
   setNodePinnedData,
   setPinnedDataForNodes,
   spliceNodeOnEdge,
+  tidyFlowLayout,
+  toggleNodeDisabled,
+  unpublishFlow,
   uniqueNodeName,
   type FlowDoc,
   type FlowNode,
@@ -98,6 +109,25 @@ function base(): FlowDoc {
   assert.equal(doc.edges.length, 0, "edges touching removed node are dropped");
 }
 
+// duplicateNode creates an unconnected copy with unique id/name and offset
+{
+  let doc = base();
+  doc = connect(doc, "trigger", "main", "a", "in");
+  doc = setNodeParam(doc, "a", "prompt", "summarize input");
+  doc = setNodePinnedData(doc, "a", '{"fixture":true}');
+  const result = duplicateNode(doc, "a");
+  assert.equal(result.nodeId, "a-2");
+  assert.equal(result.doc.nodes.length, doc.nodes.length + 1, "duplicate appends one node");
+  assert.equal(result.doc.edges.length, doc.edges.length, "duplicate does not copy graph connections");
+  const copy = result.doc.nodes.find((n) => n.id === "a-2");
+  assert.ok(copy, "duplicate node exists");
+  assert.equal(copy.name, "a 1", "duplicate display name stays unique");
+  assert.deepEqual(copy.params, { prompt: "summarize input" }, "duplicate preserves params");
+  assert.equal(copy.pinnedData, '{"fixture":true}', "duplicate preserves pinned development data");
+  assert.deepEqual(copy.position, { x: 56, y: 56 }, "duplicate is offset from the source node");
+  assert.equal(duplicateNode(result.doc, "ghost").doc, result.doc, "missing source is a no-op");
+}
+
 // disconnect by id
 {
   let doc = base();
@@ -116,6 +146,29 @@ function base(): FlowDoc {
   assert.equal(unchanged, doc, "no-op move returns the same doc");
 }
 
+// tidyFlowLayout arranges executable graph nodes while preserving sticky notes and edges
+{
+  let doc = emptyFlow("tidy", "Tidy", NOW);
+  doc = addNode(doc, node("b", "familiar", 900, 12));
+  doc = addNode(doc, node("trigger", "trigger.manual", 740, 800));
+  doc = addNode(doc, node("a", "familiar", -80, 420));
+  doc = addNode(doc, {
+    ...node("note", "sticky.note", 333, 444),
+    sticky: { text: "keep me", color: "yellow", width: 240, height: 160 },
+  });
+  doc = connect(doc, "trigger", "main", "a", "in");
+  doc = connect(doc, "trigger", "main", "b", "in");
+
+  const tidied = tidyFlowLayout(doc);
+  assert.deepEqual(tidied.edges, doc.edges, "tidy does not rewrite graph connections");
+  assert.deepEqual(tidied.nodes.find((n) => n.id === "note")?.position, { x: 333, y: 444 }, "sticky notes stay where the user placed them");
+  assert.deepEqual(tidied.nodes.find((n) => n.id === "trigger")?.position, { x: 120, y: 120 }, "root trigger starts the tidy grid");
+  assert.equal(tidied.nodes.find((n) => n.id === "a")?.position.x, 380, "downstream nodes move into the next column");
+  assert.equal(tidied.nodes.find((n) => n.id === "b")?.position.x, 380, "parallel downstream nodes share a column");
+  assert.notEqual(tidied.nodes.find((n) => n.id === "a")?.position.y, tidied.nodes.find((n) => n.id === "b")?.position.y, "parallel nodes are vertically staggered");
+  assert.equal(tidyFlowLayout(tidied), tidied, "already tidy layouts are a no-op");
+}
+
 // renameNode keeps names unique
 {
   let doc = base();
@@ -132,9 +185,77 @@ function base(): FlowDoc {
   assert.equal(doc.nodes.find((n) => n.id === "a")?.pinnedData, '{"ok":true}', "pinned output is stored on the node");
   doc = setNodePinnedData(doc, "a", "");
   assert.equal(doc.nodes.find((n) => n.id === "a")?.pinnedData, undefined, "blank pinned output unpins the node");
+  doc = setNodeNotes(doc, "a", "check this branch");
+  doc = setNodeDisplayNote(doc, "a", true);
+  assert.equal(doc.nodes.find((n) => n.id === "a")?.displayNote, true, "display-note flag is stored on the node");
+  doc = setNodeDisplayNote(doc, "a", false);
+  assert.equal(doc.nodes.find((n) => n.id === "a")?.displayNote, undefined, "default display-note flag is omitted");
   doc = setActive(doc, true);
   assert.equal(doc.active, true);
   assert.equal(setActive(doc, true), doc, "no-op active toggle returns same doc");
+}
+
+// disabled-node state is n8n-style executable state: toggling off omits the
+// default, and deactivating a node makes downstream run data stale because the
+// effective execution path bypasses it.
+{
+  let doc = base();
+  doc = connect(doc, "trigger", "main", "a", "in");
+  doc = connect(doc, "a", "main", "b", "in");
+  const snapshot = doc;
+  doc = toggleNodeDisabled(doc, "a");
+  assert.equal(doc.nodes.find((n) => n.id === "a")?.disabled, true, "disabled flag is stored on the node");
+  assert.equal(
+    nodeExecutionChangedSinceSnapshot(doc, snapshot, "b"),
+    true,
+    "deactivating an upstream node marks the first downstream node stale",
+  );
+  doc = toggleNodeDisabled(doc, "a");
+  assert.equal(doc.nodes.find((n) => n.id === "a")?.disabled, undefined, "default enabled state is omitted");
+}
+
+// node execution settings normalize defaults and stay part of the executable node signature
+{
+  let doc = base();
+  doc = setNodeExecutionSettings(doc, "a", {
+    alwaysOutputData: true,
+    executeOnce: true,
+    retryOnFail: true,
+    maxTries: 4,
+    onError: "continue",
+  });
+  assert.deepEqual(
+    doc.nodes.find((n) => n.id === "a")?.settings,
+    {
+      alwaysOutputData: true,
+      executeOnce: true,
+      retryOnFail: true,
+      maxTries: 4,
+      onError: "continue",
+    },
+    "execution settings are stored on the node",
+  );
+  doc = setNodeExecutionSettings(doc, "a", {
+    alwaysOutputData: false,
+    executeOnce: false,
+    retryOnFail: false,
+    maxTries: 1,
+    onError: "stop",
+  });
+  assert.equal(doc.nodes.find((n) => n.id === "a")?.settings, undefined, "default settings are omitted");
+
+  const snapshot = setNodeExecutionSettings(base(), "a", { onError: "continue" });
+  const changed = setNodeExecutionSettings(snapshot, "a", {
+    alwaysOutputData: true,
+    executeOnce: true,
+    retryOnFail: true,
+    maxTries: 2,
+  });
+  assert.equal(
+    nodeExecutionChangedSinceSnapshot(changed, snapshot, "a"),
+    true,
+    "execution setting edits make stored run data stale",
+  );
 }
 
 // setPinnedDataForNodes applies execution data to matching nodes only
@@ -169,6 +290,33 @@ function base(): FlowDoc {
   assert.deepEqual(doc.executionData, { redactProduction: true }, "false policy values are omitted");
 }
 
+// publish snapshots: production gets the last published graph, not draft edits
+{
+  let doc = connect(base(), "trigger", "main", "a", "in");
+  doc = setActive(doc, true);
+  const published = publishFlow(doc, NOW);
+  assert.equal(flowPublishStatus(published), "published");
+  assert.equal(hasUnpublishedFlowChanges(published), false);
+  assert.deepEqual(
+    published.published?.snapshot.nodes.map((n) => n.id),
+    ["trigger", "a", "b"],
+    "publish stores a runtime snapshot",
+  );
+
+  const draft = setNodeParam(published, "a", "prompt", "draft-only");
+  assert.equal(flowPublishStatus(draft), "changed", "runtime edits after publish are clearly unpublished");
+  assert.equal(hasUnpublishedFlowChanges(draft), true);
+  assert.equal(
+    publishedFlowForProduction(draft)?.nodes.find((n) => n.id === "a")?.params.prompt,
+    undefined,
+    "production resolves the published snapshot instead of draft params",
+  );
+
+  const inactive = setActive(draft, false);
+  assert.equal(publishedFlowForProduction(inactive), null, "inactive flows do not expose production triggers");
+  assert.equal(flowPublishStatus(unpublishFlow(draft)), "unpublished", "unpublish clears the production snapshot");
+}
+
 // draft reducer: apply/undo/redo + dirty
 {
   let state = initialFlowDraft(base());
@@ -198,12 +346,15 @@ function base(): FlowDoc {
 {
   let snapshot = base();
   snapshot = connect(snapshot, "trigger", "main", "a", "in");
+  snapshot = connect(snapshot, "a", "main", "b", "in");
   const moved = moveNodes(snapshot, { a: { x: 500, y: 120 } });
   const renamed = renameNode(snapshot, "a", "Renamed display only");
   const noted = { ...snapshot, nodes: snapshot.nodes.map((n) => n.id === "a" ? { ...n, notes: "operator note" } : n) };
+  const displayedNote = setNodeDisplayNote(noted, "a", true);
   assert.equal(nodeExecutionChangedSinceSnapshot(moved, snapshot, "a"), false, "position-only edits keep run data fresh");
   assert.equal(nodeExecutionChangedSinceSnapshot(renamed, snapshot, "a"), false, "display-name edits keep run data fresh");
   assert.equal(nodeExecutionChangedSinceSnapshot(noted, snapshot, "a"), false, "notes-only edits keep run data fresh");
+  assert.equal(nodeExecutionChangedSinceSnapshot(displayedNote, snapshot, "a"), false, "display-note edits keep run data fresh");
   assert.equal(nodeExecutionChangedSinceSnapshot(snapshot, undefined, "a"), false, "old runs without snapshots are not marked stale");
 
   assert.equal(
@@ -217,7 +368,12 @@ function base(): FlowDoc {
     "pinned-data edits make stored run data stale",
   );
   assert.equal(
-    nodeExecutionChangedSinceSnapshot(connect(snapshot, "a", "main", "b", "in"), snapshot, "a"),
+    nodeExecutionChangedSinceSnapshot(setNodePinnedData(snapshot, "a", "fixture"), snapshot, "b"),
+    true,
+    "pinned-data edits make the direct downstream node stale",
+  );
+  assert.equal(
+    nodeExecutionChangedSinceSnapshot(disconnect(snapshot, snapshot.edges.find((edge) => edge.source === "a")?.id ?? ""), snapshot, "a"),
     true,
     "edge edits touching the node make stored run data stale",
   );

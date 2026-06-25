@@ -16,6 +16,8 @@ export type FlowToolbarProps = {
   executing: boolean;
   manualDataRedacted: boolean;
   productionDataRedacted: boolean;
+  publishStatus: "unpublished" | "published" | "changed";
+  publishBlockReason?: string;
   /** A live agent-session run is in progress — show Stop instead of Execute. */
   running: boolean;
   onRename: (name: string) => void;
@@ -24,12 +26,19 @@ export type FlowToolbarProps = {
   onUndo: () => void;
   onRedo: () => void;
   onToggleExecutionDataRedaction: (mode: "manual" | "production") => void;
+  onPublish: () => void;
+  onUnpublish: () => void;
   onSave: () => void;
   onExecute: () => void;
   onStop: () => void;
 };
 
 export function FlowToolbar(props: FlowToolbarProps) {
+  const publishLabel = props.publishStatus === "changed"
+    ? "Publish changes"
+    : props.publishStatus === "published"
+      ? "Published"
+      : "Publish";
   return (
     <header className="flow-toolbar">
       <div className="flow-toolbar-left">
@@ -112,6 +121,25 @@ export function FlowToolbar(props: FlowToolbarProps) {
           onClick={() => props.onToggleExecutionDataRedaction("production")}
         >
           <Icon name="ph:lock-simple" width={14} />
+        </button>
+        <span className={`flow-toolbar-publish-status flow-toolbar-publish-status-${props.publishStatus}`}>
+          {props.publishStatus === "unpublished"
+            ? "Unpublished"
+            : props.publishStatus === "changed"
+              ? "Unpublished changes"
+              : "Published"}
+        </span>
+        <button
+          type="button"
+          className="flow-toolbar-publish"
+          onClick={props.publishStatus === "published" ? props.onUnpublish : props.onPublish}
+          disabled={props.saving || Boolean(props.publishBlockReason)}
+          title={props.publishStatus === "published"
+            ? "Unpublish production version"
+            : props.publishBlockReason ?? "Publish current draft to production"}
+        >
+          <Icon name={props.publishStatus === "published" ? "ph:pause" : "ph:cloud-arrow-up-bold"} width={13} />
+          {props.saving ? "Saving…" : publishLabel}
         </button>
 
         <button

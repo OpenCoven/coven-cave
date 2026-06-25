@@ -44,6 +44,8 @@ export type FlowCanvasProps = {
   selectedNodeId: string | null;
   /** node id → live run phase, when an execution/preview is walking. */
   phases?: Record<string, FlowNodePhase> | null;
+  /** node id → run data is stale relative to the active run snapshot. */
+  staleNodeIds?: Record<string, boolean>;
   activeNodeId?: string | null;
   viewResetKey: number;
   onSelectNode: (id: string | null) => void;
@@ -61,6 +63,7 @@ export type FlowCanvasProps = {
   /** Sticky-note inline edits. */
   onStickyText: (id: string, text: string) => void;
   onStickySize: (id: string, width: number, height: number) => void;
+  onTidy: () => void;
 };
 
 function FlowCanvasInner(props: FlowCanvasProps) {
@@ -68,6 +71,7 @@ function FlowCanvasInner(props: FlowCanvasProps) {
     doc,
     selectedNodeId,
     phases,
+    staleNodeIds,
     activeNodeId,
     viewResetKey,
     onSelectNode,
@@ -138,13 +142,14 @@ function FlowCanvasInner(props: FlowCanvasProps) {
     () =>
       nodes.map((node) => {
         const phase = phases?.[node.id];
+        const stale = staleNodeIds?.[node.id] === true;
         return {
           ...node,
           selected: node.id === selectedNodeId,
-          data: phase ? { ...node.data, phase } : node.data,
+          data: phase || stale ? { ...node.data, ...(phase ? { phase } : {}), ...(stale ? { stale } : {}) } : node.data,
         };
       }),
-    [nodes, phases, selectedNodeId],
+    [nodes, phases, selectedNodeId, staleNodeIds],
   );
 
   const edges = useMemo<Edge[]>(
@@ -282,6 +287,15 @@ function FlowCanvasInner(props: FlowCanvasProps) {
           title={showMiniMap ? "Hide minimap" : "Show minimap"}
         >
           <Icon name="ph:graph" width={14} />
+        </button>
+        <button
+          type="button"
+          className="flow-canvas-tool"
+          onClick={props.onTidy}
+          title="Tidy up workflow"
+          aria-label="Tidy up workflow"
+        >
+          <Icon name="ph:squares-four" width={14} />
         </button>
       </div>
       <ReactFlow

@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic-write.ts";
-import { FLOW_SCHEMA_VERSION, type FlowDoc } from "../flow/flow-doc.ts";
+import { FLOW_SCHEMA_VERSION, normalizeNodeSettings, type FlowDoc, type FlowNodeSettings } from "../flow/flow-doc.ts";
 import type { FlowRunRecord } from "../flows.ts";
 
 export const FLOW_RUNS_CAP = 200;
@@ -48,13 +48,53 @@ function coerceDoc(value: unknown): FlowDoc | null {
     id: value.id,
     name: typeof value.name === "string" && value.name.trim() ? value.name : value.id,
     active: Boolean(value.active),
+    published: coercePublished(value.published),
     executionData: coerceExecutionData(value.executionData),
-    nodes: value.nodes,
+    nodes: coerceFlowNodes(value.nodes),
     edges: value.edges,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : now,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : now,
     schema: typeof value.schema === "number" ? value.schema : FLOW_SCHEMA_VERSION,
   };
+}
+
+function coerceFlowNodes(value: unknown): FlowDoc["nodes"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((node) => node && typeof node === "object" && !Array.isArray(node))
+    .map((node): Record<string, unknown> => {
+      const record = node as Record<string, unknown>;
+      const settings = coerceNodeSettings(record.settings);
+      const displayNote = record.displayNote === true;
+      const disabled = record.disabled === true;
+      const { settings: _settings, displayNote: _displayNote, disabled: _disabled, ...rest } = record;
+      const next: Record<string, unknown> = { ...rest };
+      if (settings) next.settings = settings;
+      if (displayNote) next.displayNote = true;
+      if (disabled) next.disabled = true;
+      return next;
+    })
+    .filter((node): node is FlowDoc["nodes"][number] => (
+      typeof node.id === "string" &&
+      typeof node.type === "string" &&
+      typeof node.name === "string" &&
+      Boolean(node.position) &&
+      typeof node.position === "object" &&
+      typeof node.params === "object" &&
+      node.params !== null
+    ));
+}
+
+function coerceNodeSettings(value: unknown): FlowNodeSettings | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Partial<FlowNodeSettings>;
+  return normalizeNodeSettings({
+    alwaysOutputData: raw.alwaysOutputData,
+    executeOnce: raw.executeOnce,
+    retryOnFail: raw.retryOnFail,
+    maxTries: raw.maxTries,
+    onError: raw.onError,
+  });
 }
 
 function coerceExecutionData(value: unknown): FlowDoc["executionData"] {
@@ -64,6 +104,31 @@ function coerceExecutionData(value: unknown): FlowDoc["executionData"] {
   if (data?.redactManual === true) next.redactManual = true;
   if (data?.redactProduction === true) next.redactProduction = true;
   return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function coercePublished(value: unknown): FlowDoc["published"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const published = value as Partial<NonNullable<FlowDoc["published"]>>;
+  const snapshot = published.snapshot;
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return undefined;
+  const doc = snapshot as Partial<FlowDoc>;
+  if (typeof published.publishedAt !== "string" || typeof doc.id !== "string") return undefined;
+  if (!Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) return undefined;
+  const now = new Date().toISOString();
+  return {
+    publishedAt: published.publishedAt,
+    snapshot: {
+      id: doc.id,
+      name: typeof doc.name === "string" && doc.name.trim() ? doc.name : doc.id,
+      active: Boolean(doc.active),
+      executionData: coerceExecutionData(doc.executionData),
+      nodes: coerceFlowNodes(doc.nodes),
+      edges: doc.edges,
+      createdAt: typeof doc.createdAt === "string" ? doc.createdAt : now,
+      updatedAt: typeof doc.updatedAt === "string" ? doc.updatedAt : now,
+      schema: typeof doc.schema === "number" ? doc.schema : FLOW_SCHEMA_VERSION,
+    },
+  };
 }
 
 export async function listFlows(): Promise<FlowDoc[]> {
