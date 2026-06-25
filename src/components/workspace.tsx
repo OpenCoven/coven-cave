@@ -269,7 +269,7 @@ export function Workspace() {
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
 
-  const refreshDaemonStatus = useCallback(async () => {
+  const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
     let running = false;
     try {
       const res = await fetch("/api/daemon/status", { cache: "no-store" });
@@ -280,10 +280,16 @@ export function Workspace() {
       setDaemonRunning(false);
     } finally {
       // Drive the sticky offline signal: any failed poll marks the daemon
-      // offline immediately, but it takes two *consecutive* healthy polls to
-      // clear — otherwise a flapping zombie daemon keeps dismissing the banner.
+      // offline immediately, but a background poll takes two *consecutive*
+      // healthy polls to clear — otherwise a flapping zombie daemon keeps
+      // dismissing the banner.
       if (running) {
         daemonHealthyStreakRef.current += 1;
+        // A `trusted` refresh follows an explicit user-initiated start, so a
+        // healthy answer is enough to clear the banner immediately — without it
+        // the "Start daemon" banner lingered for a poll cycle (~5s) after the
+        // daemon was already up.
+        if (opts?.trusted) daemonHealthyStreakRef.current = 2;
         if (daemonHealthyStreakRef.current >= 2) setDaemonOffline(false);
       } else {
         daemonHealthyStreakRef.current = 0;
@@ -303,7 +309,9 @@ export function Workspace() {
         throw new Error(json?.error || json?.stderr || "daemon did not start");
       }
       dismissBanner("daemon-start-error");
-      await refreshDaemonStatus();
+      // Trusted: the user just started it and the API reported success, so a
+      // single healthy status poll is enough to dismiss the offline banner now.
+      await refreshDaemonStatus({ trusted: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "daemon did not start";
       pushBanner({
