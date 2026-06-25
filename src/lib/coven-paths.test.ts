@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   covenWorkspaceRoot,
   covenWorkspacesRoot,
+  familiarIds,
   familiarWorkspace,
   familiarWorkspacesRoot,
   parseFamiliarWorkspaces,
@@ -30,20 +31,20 @@ function restoreEnv() {
 
 const workspaces = parseFamiliarWorkspaces(`
 [[familiar]]
-id = "sage"
-workspace = "~/coven/sage"
+id = "researcher"
+workspace = "~/coven/researcher"
 
 [[familiar]]
-id = 'cody'
-workspace = '/tmp/coven-cody' # trailing comment
+id = 'builder'
+workspace = '/tmp/coven-builder' # trailing comment
 
 [[familiar]]
-id = "echo"
+id = "observer"
 `);
 
-assert.equal(workspaces.get("sage"), path.join(process.env.HOME ?? "", "coven", "sage"));
-assert.equal(workspaces.get("cody"), "/tmp/coven-cody");
-assert.equal(workspaces.has("echo"), false);
+assert.equal(workspaces.get("researcher"), path.join(process.env.HOME ?? "", "coven", "researcher"));
+assert.equal(workspaces.get("builder"), "/tmp/coven-builder");
+assert.equal(workspaces.has("observer"), false);
 
 try {
   process.env.COVEN_HOME = "/tmp/coven-home";
@@ -55,12 +56,13 @@ try {
   assert.equal(covenWorkspacesRoot(), "/tmp/coven-home/workspaces");
   assert.equal(covenWorkspaceRoot(), "/tmp/coven-home/workspaces");
   assert.equal(familiarWorkspacesRoot(), "/tmp/coven-home/workspaces/familiars");
-  assert.equal(await familiarWorkspace("nova"), "/tmp/coven-home/workspaces/familiars/nova");
+  assert.equal(await familiarWorkspace("orchestrator"), "/tmp/coven-home/workspaces/familiars/orchestrator");
+  assert.deepEqual(await familiarIds(), [], "familiarIds only returns declared familiars");
 
   process.env.COVEN_WORKSPACES_ROOT = "/tmp/coven-workspaces";
   assert.equal(covenWorkspacesRoot(), "/tmp/coven-workspaces");
   assert.equal(covenWorkspaceRoot(), "/tmp/coven-workspaces");
-  assert.equal(await familiarWorkspace("kitty"), "/tmp/coven-workspaces/familiars/kitty");
+  assert.equal(await familiarWorkspace("helper"), "/tmp/coven-workspaces/familiars/helper");
 
   process.env.COVEN_WORKSPACE_ROOT = "/tmp/explicit-workspace-root";
   assert.equal(covenWorkspaceRoot(), "/tmp/explicit-workspace-root");

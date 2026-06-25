@@ -5,8 +5,8 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 
 const root = await mkdtemp(path.join(tmpdir(), "library-doc-route-"));
-const sageRoot = path.join(root, "sage");
-const researchRoot = path.join(sageRoot, "research");
+const familiarRoot = path.join(root, "researcher");
+const researchRoot = path.join(familiarRoot, "research");
 
 try {
   await mkdir(path.join(researchRoot, "synthesis"), { recursive: true });
@@ -22,7 +22,7 @@ try {
       title: "New Note",
       collection: "sources",
     },
-    { sageRoot, researchRoot },
+    { familiarId: "researcher", familiarRoot, researchRoot },
   );
 
   assert.equal(result.ok, true);

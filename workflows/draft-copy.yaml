@@ -2,7 +2,7 @@ id: draft-copy
 version: 0.1.0
 name: Draft Copy
 summary: Turn product intent into clear copy, revise tone, check claims, and prepare approval-ready drafts.
-familiar: charm
+familiar: comms
 pattern: generate-and-filter
 tags:
   - copy
@@ -25,28 +25,28 @@ steps:
   - id: define-brief
     kind: agent
     name: Define brief
-    uses: charm
+    uses: comms
     summary: Capture audience, surface, desired outcome, voice, constraints, and source material.
     requires:
       - input
   - id: generate-options
     kind: agent
     name: Generate options
-    uses: charm
+    uses: comms
     summary: Draft multiple copy directions with different emphasis and length.
     requires:
       - define-brief
   - id: filter-claims
     kind: agent
     name: Filter claims
-    uses: charm
+    uses: comms
     summary: Remove vague hype, unsupported claims, and anything that needs factual research.
     requires:
       - generate-options
   - id: revise-tone
     kind: agent
     name: Revise tone
-    uses: charm
+    uses: comms
     summary: Shape the strongest option for clarity, platform fit, and Val's voice.
     requires:
       - filter-claims

@@ -16,8 +16,8 @@ const OUT = resolve(ROOT, "screenshots");
 const VIEWPORT = { width: 1440, height: 900 };
 const DPR = 2;
 
-const SESSION_ID = "demo-cody-2a-relay";
-const FAMILIAR_ID = "cody";
+const SESSION_ID = "demo-builder-2a-relay";
+const FAMILIAR_ID = "builder";
 
 const CONVERSATION = {
   sessionId: SESSION_ID,
@@ -99,7 +99,7 @@ const SESSION_LIST = [
     origin: "chat",
   },
   {
-    id: "demo-cody-vault-mutex",
+    id: "demo-builder-vault-mutex",
     project_root: "/Users/buns/Documents/GitHub/OpenCoven/coven",
     harness: "claude-code",
     title: "Vault write-chain — confirm mutex shape",
@@ -112,7 +112,7 @@ const SESSION_LIST = [
     origin: "chat",
   },
   {
-    id: "demo-cody-board-search",
+    id: "demo-builder-board-search",
     project_root: "/Users/buns/Documents/GitHub/OpenCoven/coven-cave",
     harness: "claude-code",
     title: "board: refactor search to honor `is:open` + `cwd:` filters",
@@ -129,13 +129,13 @@ const SESSION_LIST = [
 const FAMILIARS = [
   {
     id: FAMILIAR_ID,
-    display_name: "Cody",
-    role: "Code Familiar",
+    display_name: "Builder",
+    role: "Build Familiar",
     harness: "claude-code",
     model: "claude-opus-4.7",
     status: "active",
     active_sessions: 1,
-    icon: "ph:code-fill",
+    icon: "ph:robot",
     note: "Working on Hexes Phase 2A",
     memory_freshness: "fresh",
   },

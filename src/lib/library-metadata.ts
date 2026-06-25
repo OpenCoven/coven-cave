@@ -1,6 +1,6 @@
 // Leading-metadata extraction for library research notes.
 //
-// Sage's research notes open with a metadata paragraph — a run of
+// Research notes can open with a metadata paragraph — a run of
 // `**Date:** … **Source:** … **Stars:** …` bold-label pairs. Rendered inline
 // it's a hard-to-scan wrapped blob, so the preview lifts it out of the markdown
 // and renders it as a collapsible key/value grid. This module is the pure
@@ -91,7 +91,7 @@ function isSubtitleBlock(lines: string[], start: number, end: number): boolean {
 
 /** Extract metadata from a single block, blockquote-aware and peeling any
  *  leading subtitle/byline LINES that precede the first label within the block
- *  (e.g. `**Research note by Sage · …**` then `**Requested by:** …`). Returns
+ *  (e.g. `**Research note by Researcher · …**` then `**Requested by:** …`). Returns
  *  the entries plus the peeled leading lines (kept for `rest`), or null. */
 function metadataFromBlock(
   lines: string[],

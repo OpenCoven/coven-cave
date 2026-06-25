@@ -4,7 +4,7 @@ import { modelSlashOptions, resolveModelArg, formatModelList } from "./slash-mod
 
 // --- modelSlashOptions: only active in /model arg position -------------------
 assert.equal(modelSlashOptions("/mod", "claude"), null, "not /model arg position until a space is typed");
-assert.equal(modelSlashOptions("/familiar nova", "claude"), null, "ignores other commands");
+assert.equal(modelSlashOptions("/familiar researcher", "claude"), null, "ignores other commands");
 
 const all = modelSlashOptions("/model ", "claude");
 assert.ok(Array.isArray(all) && all.length === 4, "‘/model ’ lists every claude model");

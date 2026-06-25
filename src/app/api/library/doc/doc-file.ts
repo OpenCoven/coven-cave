@@ -3,7 +3,8 @@ import path from "node:path";
 import type { LibraryDocBody } from "@/lib/library-types";
 
 export type ResearchRoots = {
-  sageRoot: string;
+  familiarId: string;
+  familiarRoot: string;
   researchRoot: string;
 };
 
@@ -49,9 +50,9 @@ function normalizeAbsolutePath(value: string, root: string): string | null {
   return normalized;
 }
 
-function listResearchEntries(root: string, sageRoot: string): Array<{ path: string; relativeToSage: string; isFile: boolean }> {
-  const entries: Array<{ path: string; relativeToSage: string; isFile: boolean }> = [];
-  const realSageRoot = realpathOrResolveFromBase("/", sageRoot);
+function listResearchEntries(root: string, familiarRoot: string): Array<{ path: string; relativeToFamiliar: string; isFile: boolean }> {
+  const entries: Array<{ path: string; relativeToFamiliar: string; isFile: boolean }> = [];
+  const realFamiliarRoot = realpathOrResolveFromBase("/", familiarRoot);
 
   function walk(dir: string) {
     let dirents: fs.Dirent[];
@@ -66,10 +67,10 @@ function listResearchEntries(root: string, sageRoot: string): Array<{ path: stri
       const realPath = realpathOrResolveFromBase("/", fullPath);
       if (!isWithinRoot(realPath, root)) continue;
       if (dirent.isDirectory()) {
-        entries.push({ path: realPath, relativeToSage: path.relative(realSageRoot, realPath), isFile: false });
+        entries.push({ path: realPath, relativeToFamiliar: path.relative(realFamiliarRoot, realPath), isFile: false });
         walk(realPath);
       } else if (dirent.isFile()) {
-        entries.push({ path: realPath, relativeToSage: path.relative(realSageRoot, realPath), isFile: true });
+        entries.push({ path: realPath, relativeToFamiliar: path.relative(realFamiliarRoot, realPath), isFile: true });
       }
     }
   }
@@ -86,10 +87,10 @@ function resolveResearchPath(input: string, isAbsolute: boolean, roots: Research
     return { ok: false, reason: "forbidden" };
   }
 
-  const match = listResearchEntries(root, roots.sageRoot).find((entry) =>
+  const match = listResearchEntries(root, roots.familiarRoot).find((entry) =>
     isAbsolute
       ? entry.path === requestedAbsolute
-      : entry.relativeToSage === requestedRelative,
+      : entry.relativeToFamiliar === requestedRelative,
   );
 
   if (!match) return { ok: false, reason: "not_found" };
@@ -197,9 +198,9 @@ function docFromFile(filePath: string, roots: ResearchRoots): LibraryDocBody {
   const stem = path.basename(filePath, ".md");
   const title = frontmatter.title ?? extractTitle(body, stem);
   return {
-    id: path.relative(realpathOrResolveFromBase("/", roots.sageRoot), filePath),
+    id: path.relative(realpathOrResolveFromBase("/", roots.familiarRoot), filePath),
+    familiar: roots.familiarId,
     title,
-    familiar: "sage",
     collection: collectionFromFile(filePath, roots),
     modifiedAt: stat.mtime.toISOString(),
     tags: extractTags(frontmatter),

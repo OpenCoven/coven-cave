@@ -10,7 +10,7 @@ cwds = []
 tags = ["coven", "familiars", "daily-notes", "reflection", "weekly"]
 prompt = '''Synthesize a weekly reflection for every Coven familiar from its daily notes.
 
-For each familiar (enumerate from `~/.coven/familiars.toml` plus the default ids):
+For each familiar (enumerate only from `~/.coven/familiars.toml`):
 1. Read this week's daily notes in `~/.coven/workspaces/familiars/<familiarId>/notes/` (the last 7 `<YYYY-MM-DD>.md` files). Each has a `## Notes` digest and a `## Self-reflection`.
 2. In that familiar's voice (read its `SOUL.md` / `IDENTITY.md`), write a short weekly synthesis: the throughline of the week, what improved, recurring friction, and one concrete intention for next week. Reference the daily reflections — note where a stated intention was followed through and where it slipped.
 3. Write it to the familiar's MEMORY (so it surfaces in Cave's Familiars → Memory tab), as:

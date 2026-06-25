@@ -78,7 +78,7 @@ assert.equal(
 );
 
 // ── sanitizeSessionTitle ──
-const canonPrompt = buildPromptWithCovenIdentityCanon("hello", "nova");
+const canonPrompt = buildPromptWithCovenIdentityCanon("hello", "orchestrator");
 const leakedTitle = canonPrompt.split("\n").slice(0, 2).join(" ").slice(0, 60);
 assert.equal(
   sanitizeSessionTitle(leakedTitle),

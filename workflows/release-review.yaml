@@ -1,10 +1,10 @@
 # Cave Workflow manifest — local source for the Workflow Studio.
 # Scanned by src/lib/workflow-source.ts when the daemon has no workflow engine.
-id: nova-release-review
+id: release-review
 version: 1.0.0
 name: Release Review
-summary: Gate a release behind Val's approval, run Nova's review, lint the manifest, and emit a brief.
-familiar: nova
+summary: Gate a release behind Val's approval, run orchestration review, lint the manifest, and emit a brief.
+familiar: orchestration
 pattern: sequential
 tags:
   - release
@@ -33,8 +33,8 @@ steps:
       - input
   - id: review
     kind: agent
-    name: Nova review
-    uses: nova
+    name: Orchestration review
+    uses: orchestration
     summary: Review the release diff for regressions and missing changelog entries.
     requires:
       - gate

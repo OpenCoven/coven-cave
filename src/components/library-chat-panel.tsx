@@ -151,7 +151,7 @@ export type LibraryChatPanelProps = {
   familiarId?: string;
 };
 
-export function LibraryChatPanel({ doc, familiarId = "sage" }: LibraryChatPanelProps) {
+export function LibraryChatPanel({ doc, familiarId }: LibraryChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>(() => [makeGreeting()]);
   const [inputValue, setInputValue] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -377,7 +377,7 @@ export function LibraryChatPanel({ doc, familiarId = "sage" }: LibraryChatPanelP
       <div className="library-chat-header">
         <span className="library-chat-header-label">
           <Icon name="ph:robot" width={13} className="library-chat-header-icon" />
-          Chat with Sage
+          Chat with {familiarId}
         </span>
         <button
           type="button"

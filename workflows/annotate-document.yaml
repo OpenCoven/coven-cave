@@ -2,7 +2,7 @@ id: annotate-document
 version: 0.1.0
 name: Annotate Document
 summary: Read a document, extract durable notes, cite exact evidence, and save review-ready annotations.
-familiar: sage
+familiar: research
 pattern: sequential
 tags:
   - library
@@ -25,28 +25,28 @@ steps:
   - id: intake
     kind: agent
     name: Document intake
-    uses: sage
+    uses: research
     summary: Identify the document, requested angle, citation needs, and output location.
     requires:
       - input
   - id: read-pass
     kind: agent
     name: Read for structure
-    uses: sage
+    uses: research
     summary: Skim sections, headings, claims, and source metadata before writing notes.
     requires:
       - intake
   - id: annotate-claims
     kind: agent
     name: Annotate claims
-    uses: sage
+    uses: research
     summary: Extract key claims, page or section anchors, caveats, and follow-up questions.
     requires:
       - read-pass
   - id: verify-citations
     kind: agent
     name: Verify citations
-    uses: sage
+    uses: research
     summary: Check every annotation has accurate source context and uncertainty markers.
     requires:
       - annotate-claims

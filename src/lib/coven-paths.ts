@@ -2,8 +2,6 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-export const DEFAULT_FAMILIAR_IDS = ["sage", "echo", "charm", "astra", "cody", "kitty", "nova"];
-
 export function covenHome(): string {
   return process.env.COVEN_HOME || path.join(homedir(), ".coven");
 }
@@ -66,5 +64,5 @@ export async function familiarWorkspace(familiarId: string): Promise<string> {
 
 export async function familiarIds(): Promise<string[]> {
   const declared = await readFamiliarWorkspaces();
-  return Array.from(new Set([...DEFAULT_FAMILIAR_IDS, ...declared.keys()]));
+  return Array.from(declared.keys());
 }

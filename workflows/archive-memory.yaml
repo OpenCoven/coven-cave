@@ -2,7 +2,7 @@ id: archive-memory
 version: 0.1.0
 name: Archive Memory
 summary: Capture daily context, isolate durable memory candidates, and hold long-term writes for review.
-familiar: echo
+familiar: memory
 pattern: sequential
 tags:
   - memory
@@ -26,21 +26,21 @@ steps:
   - id: collect-context
     kind: agent
     name: Collect context
-    uses: echo
+    uses: memory
     summary: Gather daily notes, decisions, open loops, and relevant project summaries.
     requires:
       - input
   - id: separate-records
     kind: agent
     name: Separate records
-    uses: echo
+    uses: memory
     summary: Split facts, decisions, feelings or signals, follow-ups, and raw private context.
     requires:
       - collect-context
   - id: identify-candidates
     kind: agent
     name: Identify candidates
-    uses: echo
+    uses: memory
     summary: Mark durable memory candidates and reject noise, secrets, or weakly supported claims.
     requires:
       - separate-records

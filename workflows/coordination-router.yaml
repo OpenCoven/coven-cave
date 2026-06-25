@@ -2,7 +2,7 @@ id: coordination-router
 version: 0.1.0
 name: Coordination Router
 summary: Classify work, select the right familiar lane, prepare handoffs, and surface routing risks.
-familiar: astra
+familiar: strategy
 pattern: classify-and-act
 tags:
   - coordination
@@ -25,21 +25,21 @@ steps:
   - id: classify-task
     kind: agent
     name: Classify task
-    uses: astra
+    uses: strategy
     summary: Identify whether the work is research, implementation, memory, comms, strategy, or orchestration.
     requires:
       - input
   - id: map-dependencies
     kind: agent
     name: Map dependencies
-    uses: astra
+    uses: strategy
     summary: Name prerequisites, missing context, approval needs, and likely blockers.
     requires:
       - classify-task
   - id: choose-lane
     kind: agent
     name: Choose familiar lane
-    uses: astra
+    uses: strategy
     summary: Select the responsible familiar and supporting lanes based on task shape and risk.
     requires:
       - map-dependencies

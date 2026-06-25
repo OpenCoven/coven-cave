@@ -189,8 +189,8 @@ assert.match(github, /\(a\.savedAt \?\? ""\)\.localeCompare\(b\.savedAt \?\? ""\
 const timeline = await readFile(new URL("./library-timeline.tsx", import.meta.url), "utf8");
 const docsList = await readFile(new URL("./library-doc-list.tsx", import.meta.url), "utf8");
 assert.match(timeline, /placeholder="Search links…"/, "Timeline placeholder must be 'Search links…'");
-assert.match(timeline, /title="Search links — try chat: github: sage:"/, "Verbose hint must live in title=");
-assert.doesNotMatch(timeline, /placeholder="Search links — try chat: github: sage:"/, "Old long placeholder must be removed");
+assert.match(timeline, /title="Search links - try chat: github: researcher:"/, "Verbose hint must live in title=");
+assert.doesNotMatch(timeline, /placeholder="Search links - try chat: github: researcher:"/, "Old long placeholder must be removed");
 assert.match(timeline, /title="Timeline"/, "Unified Library view header should match the Timeline rail label");
 assert.doesNotMatch(timeline, /title="All"/, "Unified Library view should not keep the old ambiguous All header");
 assert.match(

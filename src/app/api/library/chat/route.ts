@@ -8,7 +8,7 @@
  * the OpenClaw CLI (same spawn pattern as /api/chat/send).
  *
  * Security:
- *   - docPath must resolve within ~/.openclaw/workspace/sage/research/ (realpath)
+ *   - docPath must resolve within a configured familiar research root (realpath)
  *   - No shell interpolation: all args via array
  *   - Max document size: 200KB (truncated at paragraph boundary with note)
  *   - Max conversation history: 12 messages (6 turns)
@@ -143,7 +143,7 @@ function buildSystemContext(
     ? "\n\n[Note: The document was truncated to fit the context window. The above represents the first ~200KB of the original.]\n"
     : "";
 
-  return `You are Sage, a research familiar. You are answering questions about a specific document from your research library.
+  return `You are a research familiar. You are answering questions about a specific document from your research library.
 
 ## Document: ${title}
 
@@ -173,7 +173,7 @@ function buildFullPrompt(
   if (history.length > 0) {
     parts.push("\n---\n## Prior conversation\n");
     for (const msg of history) {
-      const label = msg.role === "user" ? "User" : "Sage";
+      const label = msg.role === "user" ? "User" : "Assistant";
       parts.push(`**${label}:** ${msg.text.trim()}`);
     }
   }
@@ -195,7 +195,10 @@ export async function POST(req: Request): Promise<Response> {
     return errorStream("Invalid JSON body.");
   }
 
-  const familiarId = body.familiarId?.trim() || "sage";
+  const familiarId = body.familiarId?.trim();
+  if (!familiarId) {
+    return errorStream("familiarId is required.");
+  }
   const sessionId = body.sessionId?.trim() || crypto.randomUUID();
   const rawMessages: ChatMessage[] = Array.isArray(body.messages) ? body.messages : [];
 
@@ -219,7 +222,7 @@ export async function POST(req: Request): Promise<Response> {
     return errorStream("docPath is required.");
   }
 
-  const documentRead = readLibraryChatDocument(body.docPath);
+  const documentRead = readLibraryChatDocument(body.docPath, { familiarId });
 
   if (!documentRead.ok) {
     switch (documentRead.reason) {
@@ -244,7 +247,7 @@ export async function POST(req: Request): Promise<Response> {
         // in this route, so this branch is a belt-and-suspenders guard — the
         // resolver uses the same MAX_DOC_BYTES constant. Surface as an error.
         return errorStream(
-          `Document is too large (max ${MAX_DOC_BYTES / 1024}KB). Contact Sage to pre-process it.`,
+          `Document is too large (max ${MAX_DOC_BYTES / 1024}KB). Pre-process it before chatting.`,
         );
     }
   }
