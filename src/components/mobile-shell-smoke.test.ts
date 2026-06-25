@@ -205,18 +205,23 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const openUrlInCompanionBrowser = useCallback\(\(url: string\) => \{/,
-  "Workspace should provide a dedicated side-panel browser opener for chat links",
+  /const openUrlExternally = useCallback\(\(url: string\) => \{/,
+  "Workspace should provide an external-link opener for chat/feed/board links",
 );
 assert.match(
   workspace,
-  /setRailTab\("browser"\)[\s\S]*requestAnimationFrame\(\(\) => shellRef\.current\?\.openFamiliar\(\)\)[\s\S]*requestAnimationFrame\(\(\) => companionBrowserPaneRef\.current\?\.navigateTo\(url\)\)/,
-  "Chat link opens should select Browser, open the right sidepanel, then navigate the companion browser pane",
+  /window\.open\(url, "_blank", "noopener,noreferrer"\)/,
+  "Link opens should fall back to window.open for the system browser outside Tauri",
 );
 assert.match(
   workspace,
-  /onOpenUrl=\{openUrlInCompanionBrowser\}/,
-  "Workspace should thread the side-panel browser opener into ChatSurface",
+  /invoke\("shell_open", \{ url \}\)/,
+  "Link opens should hand the URL to the system browser via the Tauri shell_open command on desktop",
+);
+assert.match(
+  workspace,
+  /onOpenUrl=\{openUrlExternally\}/,
+  "Workspace should thread the external-link opener into ChatSurface",
 );
 assert.match(
   workspace,

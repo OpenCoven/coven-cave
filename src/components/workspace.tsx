@@ -1612,10 +1612,27 @@ export function Workspace() {
     requestAnimationFrame(() => shellRef.current?.openFamiliar());
   }, [familiarPanelOpen, railTab]);
 
-  const openUrlInCompanionBrowser = useCallback((url: string) => {
-    setRailTab("browser");
-    requestAnimationFrame(() => shellRef.current?.openFamiliar());
-    requestAnimationFrame(() => companionBrowserPaneRef.current?.navigateTo(url));
+  // Open a link in the user's real system browser. On desktop (Tauri) we hand
+  // the URL to the `shell_open` Rust command so it lands in Safari/Chrome; in
+  // plain browser dev (and as a fallback if the invoke fails) we fall back to
+  // window.open. This is the path every feed/chat/board "open link" button hits
+  // via onOpenUrl.
+  const openUrlExternally = useCallback((url: string) => {
+    const openExternally = () => window.open(url, "_blank", "noopener,noreferrer");
+    // @ts-expect-error Tauri injects this at runtime
+    const inTauri = typeof window !== "undefined" && !!window.__TAURI_INTERNALS__;
+    if (!inTauri) {
+      openExternally();
+      return;
+    }
+    void (async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("shell_open", { url });
+      } catch {
+        openExternally();
+      }
+    })();
   }, []);
 
   const openProjectChat = useCallback((projectRoot: string) => {
@@ -1741,13 +1758,13 @@ export function Workspace() {
         onInboxItemChanged={refreshInbox}
         onSessionsChanged={loadSessions}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-        onOpenUrl={openUrlInCompanionBrowser}
+        onOpenUrl={openUrlExternally}
       />
     ) : mode === "groupchat" ? (
       <GroupChatView
         familiars={resolvedFamiliars}
         onSessionStarted={loadSessions}
-        onOpenUrl={openUrlInCompanionBrowser}
+        onOpenUrl={openUrlExternally}
       />
     ) : mode === "code" ? (
       <CodeView
@@ -1780,7 +1797,7 @@ export function Workspace() {
             onInboxItemChanged={refreshInbox}
             onSessionsChanged={loadSessions}
             onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-            onOpenUrl={openUrlInCompanionBrowser}
+            onOpenUrl={openUrlExternally}
           />
         }
         comux={
