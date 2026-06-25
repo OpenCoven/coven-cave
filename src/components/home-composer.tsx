@@ -38,7 +38,7 @@ const DESTINATIONS: { id: Destination; label: string; icon: IconName }[] = [
 ];
 
 const PLACEHOLDERS: Record<Destination, string> = {
-  chat: "Do anything",
+  chat: "Summon something magical",
   board: "Describe a new task…",
   reminder: "Remind me about…",
 };
@@ -455,7 +455,7 @@ export function HomeComposer({
 
       {/* Headline */}
       <div className="home-composer-hero">
-        <h1 className="home-composer-headline">What should we build in coven-cave?</h1>
+        <h1 className="home-composer-headline">What should we cast in coven-cave?</h1>
       </div>
 
       {/* Composer card — wrapped so the slash menu can render above the

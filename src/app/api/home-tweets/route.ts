@@ -1,48 +1,59 @@
 import { NextResponse } from "next/server";
-import { isLocalOrigin } from "@/lib/server/local-origin";
-import { addTweet, listTweets, removeTweet } from "@/lib/server/home-tweets";
+import { canonicalLink, cleanText, parseFeed } from "@/lib/rss";
+import { parseTweetRef, type TweetItem } from "@/lib/home-feed";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Home Tweets feed — a small user-curated list of X/Twitter post URLs to embed.
+ * Home Tweets feed — the latest posts from the OpenCoven X/Twitter account,
+ * via an rss.app RSS bridge (X has no public timeline API). The browser can't
+ * fetch the feed cross-origin, so this route fetches + parses it server-side.
  *
- *   GET    /api/home-tweets             → { ok, items }
- *   POST   /api/home-tweets  { url }    → { ok, item }      (add; idempotent)
- *   DELETE /api/home-tweets?id=<id>     → { ok, deleted }
+ *   GET /api/home-tweets[?refresh=1] → { ok, items: TweetItem[] }
  *
- * URLs are validated to twitter.com/x.com post links before storage; writes are
- * gated to local-origin requests.
+ * The feed URL is a server constant — no request input reaches the fetch.
  */
-export async function GET() {
-  const items = await listTweets();
-  return NextResponse.json({ ok: true, items });
-}
 
-export async function POST(req: Request) {
-  if (!isLocalOrigin(req)) {
-    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+const FEED_URL = "https://rss.app/feeds/RJweavVApIIJt0XC.xml";
+const TTL_MS = 5 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 6000;
+const MAX_ITEMS = 20;
+
+let cache: { at: number; items: TweetItem[] } | null = null;
+
+export async function GET(req: Request) {
+  const refresh = new URL(req.url).searchParams.get("refresh") === "1";
+  const now = Date.now();
+  if (!refresh && cache && now - cache.at < TTL_MS) {
+    return NextResponse.json({ ok: true, items: cache.items });
   }
-  let body: { url?: unknown };
+
   try {
-    body = await req.json();
+    const res = await fetch(FEED_URL, {
+      headers: {
+        "User-Agent": "coven-cave/rss (+https://github.com/OpenCoven/coven-cave)",
+        Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+      },
+      cache: "no-store",
+      redirect: "follow",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      return NextResponse.json({ ok: true, items: cache?.items ?? [] });
+    }
+    const xml = await res.text();
+    const parsed = parseFeed(xml);
+    const items: TweetItem[] = parsed.items.slice(0, MAX_ITEMS).map((it, i) => ({
+      id: it.link ? canonicalLink(it.link) : `tweet-${i}`,
+      url: it.link,
+      title: cleanText(it.title),
+      handle: it.link ? (parseTweetRef(it.link)?.handle ?? null) : null,
+      isoDate: it.isoDate,
+    }));
+    cache = { at: now, items };
+    return NextResponse.json({ ok: true, items });
   } catch {
-    return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
+    return NextResponse.json({ ok: true, items: cache?.items ?? [] });
   }
-  const url = typeof body.url === "string" ? body.url.trim() : "";
-  if (!url) return NextResponse.json({ ok: false, error: "url required" }, { status: 400 });
-  const result = await addTweet(url);
-  if (!result.ok) return NextResponse.json(result, { status: 400 });
-  return NextResponse.json(result);
-}
-
-export async function DELETE(req: Request) {
-  if (!isLocalOrigin(req)) {
-    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  }
-  const id = new URL(req.url).searchParams.get("id")?.trim() ?? "";
-  if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
-  const deleted = await removeTweet(id);
-  return NextResponse.json({ ok: true, deleted });
 }

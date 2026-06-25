@@ -3,7 +3,7 @@
 // Pure / framework-free (no node imports) so the browser components and the
 // server routes can share it.
 
-export type FeedTab = "videos" | "tweets" | "repos";
+export type FeedTab = "tweets" | "repos";
 
 /** A YouTube video, sourced from a channel's Atom feed via /api/youtube. */
 export type VideoItem = {
@@ -34,14 +34,18 @@ export type RepoItem = {
   pushedAt: string | null;
 };
 
-/** A configured tweet/X post to embed, from /api/home-tweets. */
+/** A post from the X/Twitter RSS feed (rss.app), from /api/home-tweets. */
 export type TweetItem = {
-  /** Stable key — the status id, or the url. */
+  /** Stable key — the canonical link (falls back to the title). */
   id: string;
-  /** The canonical post URL (normalized to x.com). */
+  /** The post URL. */
   url: string;
-  /** @handle parsed from the url, when present. */
+  /** Post title/headline (cleaned of markup). */
+  title: string;
+  /** @handle parsed from the url/feed, when present. */
   handle: string | null;
+  /** ISO publish timestamp, when present. */
+  isoDate: string | null;
 };
 
 const YT_HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be"]);
