@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { copyText } from "@/lib/clipboard";
+import {
+  shouldQueueInstall,
+  enqueueInstall,
+  nextDrainTarget,
+  shouldRequeueOn409,
+} from "@/lib/onboarding-install-queue";
 import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
@@ -610,8 +616,8 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       if (!res.ok) {
         // Lost the race for the single npm lane — re-queue and let the drain
         // effect retry instead of surfacing a "wait for X to finish" error.
-        if (res.status === 409 && INSTALL_TARGET_KIND[target] === "npm") {
-          setInstallQueue((q) => (q.includes(target) ? q : [...q, target]));
+        if (shouldRequeueOn409(INSTALL_TARGET_KIND[target], res.status)) {
+          setInstallQueue((q) => enqueueInstall(q, target));
           markQueued(target);
           return;
         }
@@ -658,12 +664,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // what makes "install both" work instead of failing the second one.
   const runInstall = (target: InstallTarget) => {
     if (
-      INSTALL_TARGET_KIND[target] === "npm" &&
-      (anyNpmInstallRunning(installJobs) ||
-        installInFlightRef.current ||
-        installQueue.length > 0)
+      shouldQueueInstall({
+        kind: INSTALL_TARGET_KIND[target],
+        npmBusy: anyNpmInstallRunning(installJobs),
+        inFlight: installInFlightRef.current,
+        queuedCount: installQueue.length,
+      })
     ) {
-      setInstallQueue((q) => (q.includes(target) ? q : [...q, target]));
+      setInstallQueue((q) => enqueueInstall(q, target));
       markQueued(target);
       return;
     }
@@ -672,10 +680,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 
   // Drain the npm queue one at a time as the lane frees up.
   useEffect(() => {
-    if (installQueue.length === 0) return;
-    if (installInFlightRef.current) return;
-    if (anyNpmInstallRunning(installJobs)) return;
-    const next = installQueue[0];
+    const next = nextDrainTarget(installQueue, {
+      npmBusy: anyNpmInstallRunning(installJobs),
+      inFlight: installInFlightRef.current,
+    });
+    if (next == null) return;
     setInstallQueue((q) => q.slice(1));
     void postInstall(next);
   }, [installQueue, installJobs, postInstall]);
