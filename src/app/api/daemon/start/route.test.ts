@@ -16,4 +16,22 @@ assert.match(
   "daemon start runs Windows npm .cmd shims through shell mode",
 );
 
+assert.match(
+  source,
+  /export async function POST\(request: Request\)/,
+  "daemon start route should inspect the request body",
+);
+
+assert.match(
+  source,
+  /const restart = body\?\.restart === true/,
+  "daemon start route should accept an explicit restart option",
+);
+
+assert.match(
+  source,
+  /if \(!restart\) \{[\s\S]*callDaemon\(\{ path: "\/api\/v1\/health", timeoutMs: 1500 \}\)[\s\S]*alreadyRunning: true[\s\S]*\}/,
+  "plain start should stay idempotent while restart bypasses the healthy-daemon guard",
+);
+
 console.log("daemon start route.test.ts: ok");

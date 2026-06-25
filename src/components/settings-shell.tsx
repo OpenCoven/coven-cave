@@ -358,6 +358,7 @@ function DaemonSection() {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
   const refresh = () => {
@@ -384,6 +385,27 @@ function DaemonSection() {
       setStartError(err instanceof Error ? err.message : "daemon did not start");
     } finally {
       setStarting(false);
+    }
+  };
+
+  const restartDaemon = async () => {
+    setRestarting(true);
+    setStartError(null);
+    try {
+      const res = await fetch("/api/daemon/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restart: true }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || json?.stderr || "daemon did not restart");
+      }
+      refresh();
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : "daemon did not restart");
+    } finally {
+      setRestarting(false);
     }
   };
 
@@ -416,10 +438,22 @@ function DaemonSection() {
               {starting ? "Starting..." : "Start daemon"}
             </button>
           )}
+          {status?.running && (
+            <button
+              type="button"
+              onClick={restartDaemon}
+              disabled={restarting}
+              className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
+              title="coven daemon start"
+            >
+              <Icon name="ph:arrow-clockwise" width={12} />
+              {restarting ? "Restarting..." : "Restart daemon"}
+            </button>
+          )}
           <button
             type="button"
             onClick={refresh}
-            className={`focus-ring ${status?.running ? "ml-auto" : ""} flex items-center gap-1 rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]`}
+            className="focus-ring flex items-center gap-1 rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:arrow-clockwise" width={11} />
             Refresh
