@@ -14,6 +14,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarsMemoryView, MemoryFilesList } from "@/components/familiars-memory-view";
 import type { FileMemoryEntry } from "@/components/familiars-memory-view";
 import { FamiliarDailyNotes } from "@/components/familiar-daily-notes";
+import { HomeFeed } from "@/components/home/home-feed";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ type AgentsViewProps = {
   onOpenSession: (sessionId: string, familiarId?: string | null) => void;
   onOpenMemoryFile: (path: string) => void;
   onOpenOnboarding: () => void;
+  onOpenUrl: (url: string) => void;
 };
 
 function familiarMatches(familiar: Familiar, query: string): boolean {
@@ -69,6 +71,7 @@ export function FamiliarsView({
   onOpenSession,
   onOpenMemoryFile,
   onOpenOnboarding,
+  onOpenUrl,
 }: AgentsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
@@ -282,6 +285,7 @@ export function FamiliarsView({
               onStartChat={() => onStartChat(selectedFamiliar.id)}
               onOpenSession={(sid) => onOpenSession(sid, selectedFamiliar.id)}
               onOpenMemoryFile={onOpenMemoryFile}
+              onOpenUrl={onOpenUrl}
             />
           </div>
         ) : visibleFamiliars.length === 0 ? (
@@ -572,13 +576,14 @@ function FamiliarDetailRail({ familiars, selectedId, onSelect, onPreview, onBack
 // FamiliarDetailPanel — right-side panel with Memory / Files / Sessions tabs
 // ────────────────────────────────────────────────────────────────────────────
 
-type DetailTab = "memory" | "daily-notes" | "files" | "sessions";
+type DetailTab = "memory" | "daily-notes" | "files" | "sessions" | "feed";
 
 const DETAIL_TABS: { id: DetailTab; label: string }[] = [
   { id: "memory", label: "Memory" },
   { id: "daily-notes", label: "Daily Notes" },
   { id: "files", label: "Files" },
   { id: "sessions", label: "Sessions" },
+  { id: "feed", label: "Feed" },
 ];
 
 type AgentDetailPanelProps = {
@@ -593,6 +598,7 @@ type AgentDetailPanelProps = {
   onStartChat: () => void;
   onOpenSession: (sessionId: string) => void;
   onOpenMemoryFile: (path: string) => void;
+  onOpenUrl: (url: string) => void;
 };
 
 function FamiliarDetailPanel({
@@ -607,6 +613,7 @@ function FamiliarDetailPanel({
   onStartChat,
   onOpenSession,
   onOpenMemoryFile,
+  onOpenUrl,
 }: AgentDetailPanelProps) {
   const [tab, setTab] = useState<DetailTab>("memory");
   const familiarSessions = useMemo(
@@ -713,6 +720,10 @@ function FamiliarDetailPanel({
             <p className="mt-2 text-[10px] text-[var(--text-muted)]">
               Only files traced to {familiar.display_name} are shown here.
             </p>
+          </div>
+        ) : tab === "feed" ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+            <HomeFeed onOpenUrl={onOpenUrl} />
           </div>
         ) : (
           <div className="h-full overflow-y-auto p-4">

@@ -24,7 +24,6 @@ import { readComposerHistory, writeComposerHistory } from "@/lib/composer-histor
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
-import { HomeFeed } from "@/components/home/home-feed";
 import { useProjects } from "@/lib/use-projects";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
@@ -59,8 +58,6 @@ type Props = {
   onSlash?: (command: string, args: string) => void;
   /** Resume a recent chat from the "Jump back in" strip. */
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
-  /** Open an RSS article in Cave's in-app browser. */
-  onOpenUrl?: (url: string) => void;
 };
 
 // Persist the in-progress prompt so a page reload doesn't eat what you were
@@ -100,7 +97,6 @@ export function HomeComposer({
   onToast,
   onSlash,
   onOpenSession,
-  onOpenUrl,
 }: Props) {
   const [text, setText] = useState(() => readHomeDraft());
   const [destination, setDestination] = useState<Destination>("chat");
@@ -768,14 +764,6 @@ export function HomeComposer({
           </div>
         </div>
       )}
-
-      {/* Content feed — YouTube videos, curated X posts, and GitHub repos. */}
-      <HomeFeed
-        onOpenUrl={(url) => {
-          if (onOpenUrl) onOpenUrl(url);
-          else window.open(url, "_blank", "noopener,noreferrer");
-        }}
-      />
     </div>
   );
 }

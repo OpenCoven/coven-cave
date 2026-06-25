@@ -4,10 +4,14 @@ import { readFileSync } from "node:fs";
 
 const feed = readFileSync(new URL("./home/home-feed.tsx", import.meta.url), "utf8");
 const composer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const familiarsView = readFileSync(new URL("./familiars-view.tsx", import.meta.url), "utf8");
 
-// Home renders the content feed, not the old RSS/world-news widget.
-assert.match(composer, /import \{ HomeFeed \} from "@\/components\/home\/home-feed"/, "home-composer imports HomeFeed");
-assert.match(composer, /<HomeFeed/, "home-composer renders HomeFeed");
+// The content feed now lives as a per-familiar "Feed" tab in the Familiars
+// detail panel, not on the Home composer.
+assert.match(familiarsView, /import \{ HomeFeed \} from "@\/components\/home\/home-feed"/, "familiars-view imports HomeFeed");
+assert.match(familiarsView, /<HomeFeed onOpenUrl=\{onOpenUrl\}/, "familiars-view renders HomeFeed in the Feed tab");
+assert.match(familiarsView, /\{ id: "feed", label: "Feed" \}/, "detail panel exposes a Feed tab");
+assert.doesNotMatch(composer, /<HomeFeed/, "the content feed no longer renders on the Home composer");
 assert.doesNotMatch(composer, /HomeRssWidget|rss-widget/, "the old RSS widget is gone from home");
 
 // Two tabs: Tweets · Repos. The YouTube/Videos tab was removed.

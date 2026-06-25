@@ -1729,6 +1729,7 @@ export function Workspace() {
           window.location.hash = `memory:${encodeURIComponent(path)}`;
         }}
         onOpenOnboarding={openOnboarding}
+        onOpenUrl={openUrlExternally}
       />
     ) : mode === "chat" ? (
       <ChatSurface
@@ -1924,7 +1925,6 @@ export function Workspace() {
         onToast={pushToast}
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
-        onOpenUrl={openUrlExternally}
       />
     )}
     </div>
