@@ -6,6 +6,10 @@ export const IMAGE_ATTACHMENTS_UNSUPPORTED_NOTE =
   "(image attachments are not supported by this harness)";
 const IMAGE_NOT_DELIVERED_NOTE =
   "(image attachment was not delivered — payload missing or over the size limit)";
+const VIDEO_METADATA_ONLY_NOTE =
+  "(video attached as metadata only — frames and audio are not decoded yet)";
+const FILE_METADATA_ONLY_NOTE =
+  "(file attached as metadata only — text content was not available)";
 
 export type ChatAttachment = {
   name: string;
@@ -64,6 +68,10 @@ export function cleanImageDataUrl(
 
 function isImageAttachment(attachment: ChatAttachment): boolean {
   return Boolean((attachment.mimeType ?? attachment.type)?.startsWith("image/"));
+}
+
+function isVideoAttachment(attachment: ChatAttachment): boolean {
+  return Boolean((attachment.mimeType ?? attachment.type)?.startsWith("video/"));
 }
 
 export function normalizeChatAttachments(input: unknown): ChatAttachment[] {
@@ -160,8 +168,10 @@ export function buildPromptWithAttachments(
       } else {
         body = IMAGE_NOT_DELIVERED_NOTE;
       }
+    } else if (isVideoAttachment(attachment)) {
+      body = VIDEO_METADATA_ONLY_NOTE;
     } else {
-      body = "(content unavailable)";
+      body = FILE_METADATA_ONLY_NOTE;
     }
     return `${index + 1}. ${attachment.name} (${metadataFor(attachment)})\n${body}`;
   });

@@ -206,6 +206,41 @@ const SPEED_OPTIONS: Array<{ value: ComposerResponseSpeed; label: string }> = [
   { value: "balanced", label: "Balanced" },
   { value: "careful", label: "Careful" },
 ];
+const CHAT_ATTACHMENT_ACCEPT = [
+  "image/*",
+  "video/*",
+  "application/pdf",
+  "application/json",
+  "text/*",
+  ".txt",
+  ".md",
+  ".markdown",
+  ".json",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".csv",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".css",
+  ".scss",
+  ".html",
+  ".xml",
+  ".rs",
+  ".go",
+  ".py",
+  ".rb",
+  ".swift",
+  ".java",
+  ".kt",
+  ".sh",
+  ".zsh",
+  ".fish",
+  ".sql",
+  ".log",
+].join(",");
 
 function readComposerPrefs(): {
   thinkingEffort: ComposerThinkingEffort;
@@ -572,6 +607,16 @@ function isTextLike(file: File): boolean {
   if (file.type.startsWith("text/")) return true;
   if (/\/(json|xml|yaml|toml|javascript|typescript|x-sh|csv)$/i.test(file.type)) return true;
   return /\.(txt|md|markdown|json|yaml|yml|toml|csv|ts|tsx|js|jsx|css|scss|html|xml|rs|go|py|rb|swift|java|kt|sh|zsh|fish|sql|log)$/i.test(file.name);
+}
+
+function attachmentIcon(attachment: Pick<ChatAttachment, "mimeType" | "type">): IconName {
+  const mimeType = attachment.mimeType ?? attachment.type ?? "";
+  if (mimeType.startsWith("image/")) return "ph:camera";
+  if (mimeType.startsWith("video/")) return "ph:video";
+  if (mimeType.startsWith("text/") || /json|xml|yaml|toml|csv|javascript|typescript/.test(mimeType)) {
+    return "ph:file-text";
+  }
+  return "ph:paperclip";
 }
 
 function hasDraggedFiles(types: DataTransfer["types"]): boolean {
@@ -1801,7 +1846,13 @@ function MobileChatActionStrip({
         <Icon name="ph:magnifying-glass" width={13} aria-hidden />
         Summarize
       </button>
-      <button type="button" onClick={onAttach} disabled={!canAttach || busy} className="cave-mobile-action-chip">
+      <button
+        type="button"
+        onClick={onAttach}
+        disabled={!canAttach || busy}
+        className="cave-mobile-action-chip"
+        title="Attach images, videos, or files"
+      >
         <Icon name="ph:paperclip" width={13} aria-hidden />
         Attach
       </button>
@@ -4195,7 +4246,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     key={attachment.id}
                     className="inline-flex max-w-56 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/50 px-2 py-1 text-[11px] text-[var(--text-secondary)]"
                   >
-                    <Icon name="ph:paperclip" width={12} />
+                    <Icon name={attachmentIcon(attachment)} width={12} />
                     <span className="truncate">{attachment.name}</span>
                     <span className="shrink-0 text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
                     <button
@@ -4277,6 +4328,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 <input
                   ref={fileInputRef}
                   type="file"
+                  accept={CHAT_ATTACHMENT_ACCEPT}
                   multiple
                   className="hidden"
                   onChange={(e) => {
@@ -4291,8 +4343,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 <button
                   type="button"
                   className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
-                  title="Add files"
-                  aria-label="Add files"
+                  title="Attach images, videos, or files"
+                  aria-label="Attach images, videos, or files"
                   disabled={busy || attachments.length >= 10}
                   onClick={() => fileInputRef.current?.click()}
                 >
@@ -5005,7 +5057,7 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
       >
         {/* Header */}
         <div className="flex items-center gap-2 border-b border-[var(--border-hairline)]/60 px-4 py-2.5">
-          <Icon name="ph:paperclip" width={13} className="shrink-0 text-[var(--text-muted)]" />
+          <Icon name={attachmentIcon(attachment)} width={13} className="shrink-0 text-[var(--text-muted)]" />
           <span className="flex-1 truncate text-[12px] text-[var(--text-secondary)]">{attachment.name}</span>
           <span className="shrink-0 text-[11px] text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
           {attachment.truncated ? (
@@ -5152,7 +5204,7 @@ function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
             title={`View ${attachment.name}`}
             onClick={() => setSelected(attachment)}
           >
-            <Icon name="ph:paperclip" width={12} className="shrink-0 text-[var(--text-muted)]" />
+            <Icon name={attachmentIcon(attachment)} width={12} className="shrink-0 text-[var(--text-muted)]" />
             <span className="truncate">{attachment.name}</span>
             <span className="shrink-0 text-[var(--text-muted)]">{fmtBytes(attachment.size)}</span>
             {attachment.truncated ? (

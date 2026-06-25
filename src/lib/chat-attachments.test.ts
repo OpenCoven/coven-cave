@@ -44,6 +44,30 @@ assert.match(prompt, /2\. diagram\.png \(image\/png, 128 B\)\n\(image attachment
 assert.doesNotMatch(prompt, /2\. diagram\.png[^\n]*\n\(content unavailable\)/);
 assert.match(prompt, /3\. secret\.txt \(text\/plain, 12 B\)/);
 
+const mediaPrompt = buildPromptWithAttachments("Summarize these.", normalizeChatAttachments([
+  {
+    name: "demo.mp4",
+    type: "video/mp4",
+    mimeType: "video/mp4",
+    size: 1_048_576,
+  },
+  {
+    name: "bundle.zip",
+    type: "application/zip",
+    mimeType: "application/zip",
+    size: 2048,
+  },
+]));
+assert.match(
+  mediaPrompt,
+  /1\. demo\.mp4 \(video\/mp4, 1\.0 MB\)\n\(video attached as metadata only — frames and audio are not decoded yet\)/,
+);
+assert.match(
+  mediaPrompt,
+  /2\. bundle\.zip \(application\/zip, 2\.0 KB\)\n\(file attached as metadata only — text content was not available\)/,
+);
+assert.doesNotMatch(mediaPrompt, /\(content unavailable\)/);
+
 const attachmentOnly = buildPromptWithAttachments("", [attachments[0]]);
 assert.match(attachmentOnly, /^Review the attached file\./);
 
