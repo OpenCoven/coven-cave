@@ -11,6 +11,7 @@ import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/ch
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon, type IconName } from "@/lib/icon";
+import { useCopy } from "@/lib/use-copy";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
@@ -334,6 +335,133 @@ function fmtDuration(ms?: number): string | null {
 function DurationText({ durationMs }: { durationMs?: number }) {
   const duration = fmtDuration(durationMs);
   return duration ? <span className="font-mono text-[10px] text-[var(--text-muted)]">{duration}</span> : null;
+}
+
+type ErrorStripTool = { id: string; name: string; input?: string; output?: string; status: "running" | "ok" | "error"; durationMs?: number };
+type ErrorStripStep = { id: string; label: string; detail?: string; status: "running" | "done" | "error" };
+type ErrorStripTurn = { tools?: ErrorStripTool[]; progress?: ErrorStripStep[]; lifecycle?: string };
+
+/** Inline error/debug strip between the transcript and the composer. Shows the
+ *  latest chat error message + code, and (expandable) the failing turn's errored
+ *  tool/step output so the debug detail is visible without opening the side
+ *  Debug pane. Auto-expands on every new error (keyed on `errorSeq`). */
+function ChatErrorStrip({
+  message,
+  code,
+  errorSeq,
+  failingTurn,
+  canRetry,
+  busy,
+  onRetry,
+  onOpenDebug,
+  onDismiss,
+}: {
+  message: string;
+  code?: string;
+  errorSeq: number;
+  failingTurn: ErrorStripTurn | null;
+  canRetry: boolean;
+  busy: boolean;
+  onRetry: () => void;
+  onOpenDebug: () => void;
+  onDismiss: () => void;
+}) {
+  const { copied, copy } = useCopy();
+  const erroredTools = (failingTurn?.tools ?? []).filter((t) => t.status === "error");
+  const erroredSteps = (failingTurn?.progress ?? []).filter((p) => p.status === "error");
+  const hasDetail = Boolean(code) || erroredTools.length > 0 || erroredSteps.length > 0;
+  const [open, setOpen] = useState(true);
+  // Re-expand whenever a *new* error fires so the latest detail is front-and-centre.
+  useEffect(() => {
+    setOpen(true);
+  }, [errorSeq]);
+
+  const detailText = useMemo(() => {
+    const lines: string[] = [message];
+    if (code) lines.push(`code: ${code}`);
+    for (const t of erroredTools) {
+      const dur = fmtDuration(t.durationMs);
+      lines.push(`\ntool: ${t.name} ✗ error${dur ? ` (${dur})` : ""}`);
+      if (t.input) lines.push(t.input);
+      if (t.output) lines.push(t.output);
+    }
+    for (const p of erroredSteps) {
+      lines.push(`\nstep: ${p.label} ✗ error`);
+      if (p.detail) lines.push(p.detail);
+    }
+    return lines.join("\n");
+  }, [message, code, erroredTools, erroredSteps]);
+
+  const btn =
+    "focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40";
+  const pre =
+    "mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[var(--bg-base)]/40 px-2 py-1 font-mono text-[11px] leading-relaxed text-[var(--text-secondary)]";
+
+  return (
+    <div
+      role="alert"
+      className="cave-chat-error-strip shrink-0 border-t border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_14%,transparent)] text-[var(--color-warning)]"
+    >
+      <div className="flex items-center gap-2 px-5 py-2 text-xs">
+        <Icon name="ph:warning-fill" width={13} aria-hidden className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate font-medium">{message}</span>
+        {code ? (
+          <span className="shrink-0 rounded border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-1.5 py-0.5 font-mono text-[10px]">
+            {code}
+          </span>
+        ) : null}
+        <div className="flex shrink-0 items-center gap-1">
+          {hasDetail ? (
+            <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open} className={btn}>
+              <Icon name={open ? "ph:caret-down-bold" : "ph:caret-right-bold"} width={11} aria-hidden />
+              {open ? "Hide" : "Details"}
+            </button>
+          ) : null}
+          <button type="button" onClick={() => copy(detailText)} className={btn}>
+            <Icon name={copied ? "ph:check-bold" : "ph:copy"} width={11} aria-hidden />
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <button type="button" onClick={onOpenDebug} className={btn}>
+            <Icon name="ph:bug-bold" width={11} aria-hidden />
+            Debug
+          </button>
+          {canRetry ? (
+            <button type="button" onClick={onRetry} disabled={busy} className={btn}>
+              <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
+              Retry
+            </button>
+          ) : null}
+          <button type="button" onClick={onDismiss} aria-label="Dismiss error" className={btn}>
+            <Icon name="ph:x-bold" width={11} aria-hidden />
+          </button>
+        </div>
+      </div>
+      {hasDetail && open ? (
+        <div className="max-h-48 overflow-auto border-t border-[color-mix(in_oklch,var(--color-warning)_22%,transparent)] px-5 py-2">
+          {erroredTools.map((t) => (
+            <div key={t.id} className="mb-2 last:mb-0">
+              <div className="text-[11px] font-semibold text-[var(--color-warning)]">
+                tool: {t.name} ✗ error{t.durationMs != null ? ` · ${fmtDuration(t.durationMs)}` : ""}
+              </div>
+              {t.input ? <pre className={pre}>{t.input}</pre> : null}
+              {t.output ? <pre className={pre}>{t.output}</pre> : null}
+            </div>
+          ))}
+          {erroredSteps.map((p) => (
+            <div key={p.id} className="mb-2 last:mb-0">
+              <div className="text-[11px] font-semibold text-[var(--color-warning)]">step: {p.label} ✗ error</div>
+              {p.detail ? <pre className={pre}>{p.detail}</pre> : null}
+            </div>
+          ))}
+          {erroredTools.length === 0 && erroredSteps.length === 0 ? (
+            <div className="text-[11px] text-[var(--text-secondary)]">
+              No tool output captured for this turn. Open Debug for the full session events.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 /** CHAT-D12-02: compact per-turn token/cost readout ("12.4k tok · $0.08")
@@ -1724,6 +1852,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [replyTarget, setReplyTarget] = useState<ReplyTarget | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Debug context for the inline error strip below the chat: which turn failed
+  // and an optional machine code. `seq` increments per occurrence so the strip
+  // re-expands its detail every time a *new* error fires (not just the first).
+  const [debugError, setDebugError] = useState<{ seq: number; turnId?: string; code?: string } | null>(null);
+  const debugErrorSeqRef = useRef(0);
+  const raiseDebugError = useCallback((ctx: { turnId?: string; code?: string }) => {
+    debugErrorSeqRef.current += 1;
+    setDebugError({ seq: debugErrorSeqRef.current, ...ctx });
+  }, []);
   const [lastFailedSend, setLastFailedSend] = useState<FailedSend | null>(null);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
@@ -2681,6 +2818,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
     setBusy(true);
     setError(null);
+    setDebugError(null);
     setLastFailedSend(null);
     liveSessionIdRef.current = currentSessionRef.current;
     setHistoryState("loaded");
@@ -2771,6 +2909,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           status: "error",
         });
         markAssistantError(assistantId);
+        raiseDebugError({ turnId: assistantId, code: `HTTP ${res.status}` });
         return;
       }
 
@@ -2827,6 +2966,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setError(err instanceof Error ? err.message : "send failed");
         setLastFailedSend(request);
         markAssistantError(assistantId);
+        raiseDebugError({ turnId: assistantId });
       }
     } finally {
       abortRef.current = null;
@@ -3133,7 +3273,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               : t,
           ),
         );
-        if (ev.isError) setLastFailedSend(request);
+        if (ev.isError) {
+          setLastFailedSend(request);
+          // A turn that finishes with isError used to leave no banner — only an
+          // inline failed marker. Surface it in the debug strip too, pulling the
+          // message from the turn's errored step when the stream gave none.
+          setError((prev) => prev ?? "The agent run ended with an error.");
+          raiseDebugError({ turnId: assistantId });
+        }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
           liveSessionIdRef.current = ev.sessionId;
@@ -3147,6 +3294,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setError(ev.message);
         setLastFailedSend(request);
         markAssistantError(assistantId);
+        raiseDebugError({ turnId: assistantId, code: ev.code });
         if (ev.code === "ENOENT") onOpenOnboarding?.();
         return;
       }
@@ -3733,23 +3881,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       </div>
 
       {error ? (
-        <div
-          role="alert"
-          className="flex items-center justify-between gap-3 border-t border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_16%,transparent)] px-5 py-2 text-xs text-[var(--color-warning)]"
-        >
-          <span className="min-w-0 truncate">{error}</span>
-          {lastFailedSend ? (
-            <button
-              type="button"
-              onClick={retryLastSend}
-              disabled={busy}
-              className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_42%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium text-[var(--color-warning)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40"
-            >
-              <Icon name="ph:arrow-clockwise" width={12} aria-hidden />
-              Retry
-            </button>
-          ) : null}
-        </div>
+        <ChatErrorStrip
+          message={error}
+          code={debugError?.code}
+          errorSeq={debugError?.seq ?? 0}
+          failingTurn={
+            debugError?.turnId ? turns.find((t) => t.id === debugError.turnId) ?? null : null
+          }
+          canRetry={!!lastFailedSend}
+          busy={busy}
+          onRetry={retryLastSend}
+          onOpenDebug={openDebug}
+          onDismiss={() => {
+            setError(null);
+            setDebugError(null);
+          }}
+        />
       ) : null}
 
       <footer

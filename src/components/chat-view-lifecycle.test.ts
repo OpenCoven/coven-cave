@@ -238,7 +238,7 @@ assert.match(
 // lastFailedSend banner state alongside the per-turn affordance.
 assert.match(
   source,
-  /case "done":[\s\S]*?if \(ev\.isError\) setLastFailedSend\(request\);/,
+  /case "done":[\s\S]*?if \(ev\.isError\) \{[\s\S]*?setLastFailedSend\(request\);/,
   "Failed dones must still arm lastFailedSend for the transport retry path (CHAT-D12-03)",
 );
 
