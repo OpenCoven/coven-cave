@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { canonicalLink, cleanText, parseFeed } from "@/lib/rss";
+import { canonicalLink, cleanText, extractLinks, parseFeed } from "@/lib/rss";
 import { parseTweetRef, type TweetItem } from "@/lib/home-feed";
 
 export const dynamic = "force-dynamic";
@@ -44,15 +44,32 @@ export async function GET(req: Request) {
     }
     const xml = await res.text();
     const parsed = parseFeed(xml);
-    const items: TweetItem[] = parsed.items.slice(0, MAX_ITEMS).map((it, i) => ({
-      id: it.link ? canonicalLink(it.link) : `tweet-${i}`,
-      url: it.link,
-      title: cleanText(it.title),
-      handle: it.link ? (parseTweetRef(it.link)?.handle ?? null) : null,
-      isoDate: it.isoDate,
-    }));
-    cache = { at: now, items };
-    return NextResponse.json({ ok: true, items });
+
+    // rss.app bundles the timeline into "digest" items whose body lists several
+    // key stories as links. Expand each story into its own row; fall back to the
+    // item itself when a body has no story links.
+    const STORY_RE = /(?:twitter\.com|x\.com)\/[^/]+\/status\//i;
+    const seen = new Set<string>();
+    const items: TweetItem[] = [];
+    const add = (url: string, title: string, isoDate: string | null) => {
+      if (!url || !title) return;
+      const key = canonicalLink(url);
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push({ id: key, url, title, handle: parseTweetRef(url)?.handle ?? null, isoDate });
+    };
+    for (const it of parsed.items) {
+      const stories = extractLinks(it.descriptionHtml ?? "").filter((l) => STORY_RE.test(l.url));
+      if (stories.length > 0) {
+        for (const s of stories) add(s.url, s.title, it.isoDate);
+      } else {
+        add(it.link, cleanText(it.title), it.isoDate);
+      }
+      if (items.length >= MAX_ITEMS) break;
+    }
+
+    cache = { at: now, items: items.slice(0, MAX_ITEMS) };
+    return NextResponse.json({ ok: true, items: cache.items });
   } catch {
     return NextResponse.json({ ok: true, items: cache?.items ?? [] });
   }

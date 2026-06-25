@@ -10,6 +10,7 @@ import {
   canonicalLink,
   relativeAge,
   mergeFeedItems,
+  extractLinks,
 } from "./rss.ts";
 
 // ── Entities + text cleanup ──────────────────────────────────────────────────
@@ -119,5 +120,34 @@ assert.deepEqual(merged.map((i) => i.title), ["B", "A", "C"], "newest first; und
 
 const capped = mergeFeedItems([merged.map((i) => ({ ...i }))], 2);
 assert.equal(capped.length, 2, "limit caps the merged list");
+
+// ── descriptionHtml + extractLinks (digest feeds → per-story rows) ────────────
+const DIGEST = `<rss version="2.0"><channel>
+  <title>Digest</title>
+  <item>
+    <title>Weekly digest</title>
+    <link>https://rss.app/brief/posts/abc</link>
+    <pubDate>Wed, 02 Oct 2024 13:00:00 GMT</pubDate>
+    <description><![CDATA[<h2>Key Stories</h2><ul>
+      <li><p><strong><a href="https://x.com/OpenCvn/status/111">CastCodes turns AI tasks into routes</a></strong> — summary one</p></li>
+      <li><p><strong><a href="https://x.com/OpenCvn/status/222">Scoped memory &amp; clear protocols</a></strong> — summary two</p></li>
+    </ul>]]></description>
+  </item>
+</channel></rss>`;
+
+const digest = parseFeed(DIGEST);
+assert.equal(digest.items.length, 1, "digest has a single item");
+assert.ok(digest.items[0].descriptionHtml?.includes("<a href"), "descriptionHtml keeps the <a> tags");
+
+const links = extractLinks(digest.items[0].descriptionHtml);
+assert.equal(links.length, 2, "two key stories extracted");
+assert.deepEqual(
+  links.map((l) => l.url),
+  ["https://x.com/OpenCvn/status/111", "https://x.com/OpenCvn/status/222"],
+  "story URLs in document order",
+);
+assert.equal(links[0].title, "CastCodes turns AI tasks into routes", "story title is the link text, cleaned");
+assert.equal(links[1].title, "Scoped memory & clear protocols", "entities decoded in story title");
+assert.deepEqual(extractLinks(""), [], "no body → no links");
 
 console.log("rss.test.ts: ok");
