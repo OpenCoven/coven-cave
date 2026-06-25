@@ -2104,6 +2104,8 @@ function StepFamiliar(props: {
     selectedAgentId != null
       ? openclawAgents.find((agent) => agent.id === selectedAgentId) ?? null
       : null;
+  const firstInstalledHarness =
+    chatHarnesses.find((adapter) => adapter.installed) ?? null;
   const openClawAgentCountLabel = agentsLoading
     ? "Scanning"
     : `${openclawAgents.length} ${openclawAgents.length === 1 ? "agent" : "agents"}`;
@@ -2324,7 +2326,9 @@ function StepFamiliar(props: {
 
       {/* Config form is revealed only once a path is chosen, and the SSH /
           confirm blocks below are scoped to Option A — so the user never sees
-          fields that don't apply to their selection. */}
+          fields that don't apply to their selection. The CTA row still keeps
+          the other path reachable so Option A never disappears after choosing
+          an OpenClaw agent. */}
       {optionChosen ? (
         <>
           <div className="rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)] px-3 py-2 text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -2542,7 +2546,26 @@ function StepFamiliar(props: {
                 <Icon name="ph:terminal-window" />
                 {picking === "local" ? "Creating..." : "Create new Coven familiar"}
               </button>
-            ) : selectedAgentId ? (
+            ) : null}
+            {!selectedHarnessId && selectedAgentId ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (firstInstalledHarness) props.onSelectHarness(firstInstalledHarness);
+                }}
+                disabled={!daemonReady || picking !== null || !firstInstalledHarness}
+                title={
+                  firstInstalledHarness
+                    ? `Use ${firstInstalledHarness.label} for Option A`
+                    : "Install a runtime first to create a new Coven familiar."
+                }
+                className="focus-ring inline-flex items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--bg-raised)] px-4 py-2 text-[13px] font-medium text-[var(--text-primary)] hover:border-[var(--accent-presence)] disabled:opacity-50"
+              >
+                <Icon name="ph:terminal-window" />
+                Create new Coven familiar
+              </button>
+            ) : null}
+            {selectedAgentId ? (
               <button
                 onClick={props.onConnectAgent}
                 disabled={

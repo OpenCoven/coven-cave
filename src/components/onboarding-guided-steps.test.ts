@@ -154,10 +154,16 @@ assert.match(
   "SSH copy is explicit that Cave holds no secrets",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
   /selectedHarnessId \? \([\s\S]*Create new Coven familiar[\s\S]*\) : selectedAgentId \? \([\s\S]*Connect OpenClaw agent[\s\S]*\) : null/,
-  "the familiar binding step shows only the CTA for the selected setup path",
+  "choosing an OpenClaw agent must not hide the Option A create-new-familiar CTA",
+);
+
+assert.match(
+  source,
+  /Create new Coven familiar[\s\S]*Connect OpenClaw agent/,
+  "the familiar binding step keeps both Option A and Option B actions available",
 );
 
 assert.match(
