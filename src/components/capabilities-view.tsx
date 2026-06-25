@@ -11,7 +11,9 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { OpenCovenSubmissionPanel } from "@/components/opencoven-submission-panel";
+// Hidden for now — the OpenCoven submissions panel (add a new harness/runtime)
+// is parked until the flow is ready. Re-enable the import + render below to restore.
+// import { OpenCovenSubmissionPanel } from "@/components/opencoven-submission-panel";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import {
   filterCapabilityItems,
@@ -384,7 +386,10 @@ export function CapabilitiesViewSurface({
             </div>
           </div>
 
-          <OpenCovenSubmissionPanel />
+          {/* Hidden for now — add-a-new-harness/runtime (OpenCoven submissions)
+              is parked until the flow is ready. Restore the import above + this
+              line to bring it back. */}
+          {/* <OpenCovenSubmissionPanel /> */}
 
           {!loaded ? (
             <CapabilitiesSkeleton />
