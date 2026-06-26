@@ -1,0 +1,4 @@
+# Screenshots are ignored by default so ad-hoc verification captures dropped
+# here don't get committed accidentally or clutter `git status`.
+# Documentation screenshots are committed explicitly with `git add -f`.
+*.png
