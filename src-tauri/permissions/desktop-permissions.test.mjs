@@ -129,6 +129,12 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     capabilityAllowsOrigin(loopbackBrowserCapability, "http://[::1]:64203/"),
     "packaged random IPv6 loopback sidecar port should be allowed restricted browser IPC",
   );
+  for (const permission of ["core:event:allow-listen", "core:event:allow-unlisten"]) {
+    assert.ok(
+      loopbackBrowserCapability.permissions.includes(permission),
+      `loopback terminal/browser pages must be allowed to use Tauri event ${permission}`,
+    );
+  }
   for (const permission of [
     "allow-pty-start",
     "allow-pty-write",
