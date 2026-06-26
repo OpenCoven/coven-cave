@@ -1,6 +1,6 @@
 // @ts-nocheck
-// The Automations surface (nav id `inbox`) unifies the four "runs for you"
-// primitives — reminders, crons, workflows, flows — plus an Activity feed, all
+// The Automations surface (nav id `inbox`) unifies the three "runs for you"
+// primitives — reminders, crons, flows — plus an Activity feed, all
 // under one typed model. This pins the renamed surface + its tab structure.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -47,8 +47,8 @@ assert.match(
 // ── Unified typed tab model ─────────────────────────────────────────────────
 assert.match(
   automations,
-  /type AutomationTab = "all" \| "reminders" \| "crons" \| "workflows" \| "flows" \| "activity"/,
-  "Surface exposes the six-way unified tab union",
+  /type AutomationTab = "all" \| "reminders" \| "crons" \| "flows" \| "activity"/,
+  "Surface exposes the five-way unified tab union",
 );
 assert.match(
   automations,
@@ -62,13 +62,13 @@ assert.match(automations, /<Tabs[\s\S]{0,200}variant="segment"/, "Tabs use the s
 assert.match(automations, /\{ id: "all", label: "All", count: allEntries\.length \}/, "All tab over the unified entry list");
 assert.match(automations, /\{ id: "reminders", label: "Reminders", count: typeCounts\.reminder \}/, "Reminders tab");
 assert.match(automations, /\{ id: "crons", label: "Crons", count: typeCounts\.cron \}/, "Crons tab (renamed from Automations)");
-assert.match(automations, /\{ id: "workflows", label: "Workflows", count: typeCounts\.workflow \}/, "Workflows tab");
+assert.doesNotMatch(automations, /\{ id: "workflows", label: "Workflows"/, "Workflows tab should be removed now that Flow owns this surface");
 assert.match(automations, /\{ id: "flows", label: "Flows", count: typeCounts\.flow \}/, "Flows tab");
 assert.match(automations, /\{ id: "activity", label: "Activity", count: items\.length \}/, "Activity tab over the full inbox feed");
 assert.match(
   automations,
-  /id: "all"[\s\S]*id: "reminders"[\s\S]*id: "crons"[\s\S]*id: "workflows"[\s\S]*id: "flows"[\s\S]*id: "activity"/,
-  "tabs ordered All, Reminders, Crons, Workflows, Flows, Activity",
+  /id: "all"[\s\S]*id: "reminders"[\s\S]*id: "crons"[\s\S]*id: "flows"[\s\S]*id: "activity"/,
+  "tabs ordered All, Reminders, Crons, Flows, Activity",
 );
 
 // ── The four primitives are merged through one pure model ────────────────────
@@ -81,21 +81,21 @@ assert.match(automations, /buildAutomationEntries\(\{/, "All entries come from b
 assert.match(automations, /countByType\(/, "Tab counts come from countByType");
 assert.match(automations, /function AutomationAllList/, "All tab renders through a unified list component");
 assert.match(automations, /function AutomationTypeChip/, "Each entry carries a type chip");
-assert.match(automations, /function WorkflowList/, "Workflows tab renders workflows");
+assert.doesNotMatch(automations, /function WorkflowList/, "Legacy Workflows list component should be removed from Automations");
 assert.match(automations, /function FlowList/, "Flows tab renders flows");
 assert.match(automations, /function InboxFeedList/, "Activity tab renders through the inbox feed-list component");
 
-// Workflows + flows are loaded alongside reminders + crons.
-assert.match(automations, /listWorkflows\(\)/, "Surface loads workflow manifests");
+// Flows are loaded alongside reminders + crons. Legacy workflow manifests are no longer shown here.
+assert.doesNotMatch(automations, /listWorkflows\(\)/, "Surface should not load legacy workflow manifests");
 assert.match(automations, /listFlows\(\)/, "Surface loads flow docs");
 // Run is daemon-first and honest when offline.
-assert.match(automations, /runWorkflow\(\{ id: wf\.id \}\)/, "Workflows run via the workflow run client");
+assert.doesNotMatch(automations, /runWorkflow\(/, "Surface should not expose legacy workflow runs");
 assert.match(automations, /runFlow\(flow\.id\)/, "Flows run via the flow run client");
 assert.match(automations, /isn't reachable right now/, "Run surfaces an honest message when the daemon is offline");
 
-// "Open" on a workflow/flow jumps to its dedicated editor surface.
+// "Open" on a flow jumps to its dedicated editor surface.
 assert.match(automations, /cave:navigate-mode/, "Open routes to a dedicated editor surface via the navigation bridge");
-assert.match(automations, /navigateToMode\("roles"\)/, "Workflows open in the Roles surface");
+assert.doesNotMatch(automations, /navigateToMode\("roles"\)/, "Legacy workflow opens should not route users to Roles");
 assert.match(automations, /navigateToMode\("flow"\)/, "Flows open in the Flow editor surface");
 
 // Reminders are still the schedule-shaped inbox subset.

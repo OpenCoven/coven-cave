@@ -527,6 +527,66 @@ struct CaveClient {
         try await inboxAction(id, "snooze", body: try JSONEncoder().encode(["minutes": minutes]))
     }
 
+    // MARK: - Content feed (Tweets · Repos)
+
+    /// One OpenCoven repo from the curated star list. Mirrors the web
+    /// `RepoItem` (src/lib/home-feed.ts).
+    struct RepoFeedItem: Decodable, Identifiable {
+        let id: String
+        let fullName: String
+        let description: String?
+        let stars: Int
+        let language: String?
+        let url: String
+        let pushedAt: String?
+    }
+
+    /// One post from the OpenCoven timeline (RSS-backed). Mirrors the web
+    /// `TweetItem` (src/lib/home-feed.ts).
+    struct TweetFeedItem: Decodable, Identifiable {
+        let id: String
+        let url: String
+        let title: String
+        let handle: String?
+        let isoDate: String?
+    }
+
+    private struct ReposResponse: Decodable {
+        let ok: Bool?
+        let items: [RepoFeedItem]?
+        let configured: Bool?
+    }
+    private struct TweetsResponse: Decodable {
+        let ok: Bool?
+        let items: [TweetFeedItem]?
+    }
+
+    /// Repos from the OpenCoven star list. `configured == false` means the
+    /// desktop has no GitHub token yet (the list query needs one).
+    func repos() async throws -> (items: [RepoFeedItem], configured: Bool) {
+        let req = try request("api/github/repos")
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            let decoded = try JSONDecoder().decode(ReposResponse.self, from: data)
+            return (decoded.items ?? [], decoded.configured ?? true)
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
+    /// Latest OpenCoven posts. `refresh` bypasses the desktop's short cache.
+    func homeTweets(refresh: Bool = false) async throws -> [TweetFeedItem] {
+        let req = try request("api/home-tweets" + (refresh ? "?refresh=1" : ""))
+        let (data, resp) = try await session.data(for: req)
+        try Self.check(resp)
+        do {
+            return try JSONDecoder().decode(TweetsResponse.self, from: data).items ?? []
+        } catch {
+            throw CaveError.decoding(String(describing: error))
+        }
+    }
+
     // MARK: - Helpers
 
     private static func check(_ resp: URLResponse) throws {

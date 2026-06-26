@@ -103,14 +103,14 @@ const FOLDER_MODES: Array<{
   { id: "board", label: "Tasks", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", group: "work", description: "Your daily journal and generated sketches" },
   { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4", description: "Schedule and timeline of work" },
-  { id: "inbox", label: "Automations", iconName: "ph:lightning-bold", group: "work", kbd: "⌘5", description: "Reminders, crons, workflows, and flows in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
+  { id: "inbox", label: "Automations", iconName: "ph:lightning-bold", group: "work", kbd: "⌘5", description: "Reminders, crons, and flows in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Tools
   { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘6", description: "Built-in web browser" },
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description: "Shell session in your project" },
   { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘8", description: "Chat with a familiar beside your files and terminal" },
   { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description: "Saved docs, links, and reading" },
   { id: "docs", label: "Coven", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven docs, feedback, and social tabs" },
-  { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, workflows, skills, and the capabilities your familiars can use" },
+  { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, skills, and the capabilities your familiars can use" },
   { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.

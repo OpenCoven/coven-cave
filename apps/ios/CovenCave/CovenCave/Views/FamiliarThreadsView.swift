@@ -19,6 +19,9 @@ struct FamiliarThreadsView: View {
     @State private var selectedIds: Set<String> = []
     @State private var confirmingBulkDelete = false
     @State private var exportArchive: ExportArchive?
+    /// Threads vs the OpenCoven content feed (mirrors the desktop Feed tab).
+    @State private var section: ThreadSection = .threads
+    private enum ThreadSection { case threads, feed }
 
     /// One row in the list: an on-device thread or a server-only session.
     private enum Entry: Identifiable {
@@ -55,11 +58,24 @@ struct FamiliarThreadsView: View {
     }
 
     var body: some View {
-        Group {
-            if entries.isEmpty && archivedLocalCount == 0 {
-                emptyState
-            } else {
-                threadList
+        VStack(spacing: 0) {
+            Picker("Section", selection: $section) {
+                Text("Threads").tag(ThreadSection.threads)
+                Text("Feed").tag(ThreadSection.feed)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
+            switch section {
+            case .threads:
+                if entries.isEmpty && archivedLocalCount == 0 {
+                    emptyState
+                } else {
+                    threadList
+                }
+            case .feed:
+                FamiliarFeedView()
             }
         }
         .navigationTitle(familiar.displayName)
@@ -84,7 +100,7 @@ struct FamiliarThreadsView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                if !selectMode && hasLocalThreads {
+                if !selectMode && hasLocalThreads && section == .threads {
                     Button("Select") { withAnimation { selectMode = true } }
                 }
             }
@@ -93,7 +109,7 @@ struct FamiliarThreadsView: View {
         .task { await app.loadSessions() }
         .onAppear { app.markFamiliarViewed([familiar.id]) }
         .safeAreaInset(edge: .bottom) {
-            if selectMode {
+            if selectMode && section == .threads {
                 HStack {
                     Button(allLocalSelected ? "Deselect All" : "Select All") { toggleSelectAll() }
                     Spacer()

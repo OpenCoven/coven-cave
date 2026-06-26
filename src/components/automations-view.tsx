@@ -33,7 +33,6 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 import { AutomationCreateDialog, type AutomationCreateInput } from "@/components/automation-create-dialog";
-import { listWorkflows, runWorkflow, type WorkflowSummary } from "@/lib/workflows";
 import { listFlows, runFlow, type FlowDoc } from "@/lib/flows";
 import {
   buildAutomationEntries,
@@ -67,12 +66,12 @@ function linkLabel(link: LinkRef): string {
   return "Memory";
 }
 
-// The Automations surface unifies four primitives under one typed model:
-// reminders, crons (Codex automations), workflows, and flows — plus an Activity
+// The Automations surface unifies three primitives under one typed model:
+// reminders, crons (Codex automations), and flows — plus an Activity
 // feed (the full inbox). "all" shows every automation in one list.
-type AutomationTab = "all" | "reminders" | "crons" | "workflows" | "flows" | "activity";
+type AutomationTab = "all" | "reminders" | "crons" | "flows" | "activity";
 
-// Fire a cross-surface navigation so "Open" on a workflow/flow jumps to its
+// Fire a cross-surface navigation so "Open" on a flow jumps to its
 // dedicated editor surface (the Workspace owns setMode; see cave:navigate-mode).
 function navigateToMode(mode: string) {
   if (typeof window === "undefined") return;
@@ -1532,7 +1531,7 @@ function AutomationAllList({
   );
 }
 
-// Shared row shell for the workflow + flow tabs: name, meta, Run + Open actions.
+// Shared row shell for managed automation tabs: name, meta, Run + Open actions.
 function ManagedAutomationRow({
   type,
   name,
@@ -1577,45 +1576,6 @@ function ManagedAutomationRow({
         <Icon name="ph:arrow-square-out" width={11} aria-hidden />
         Open
       </button>
-    </div>
-  );
-}
-
-function WorkflowList({
-  workflows,
-  query,
-  busyId,
-  familiarLabel,
-  onRun,
-  onOpen,
-}: {
-  workflows: WorkflowSummary[];
-  query: string;
-  busyId: string | null;
-  familiarLabel: (id?: string | null) => string | null;
-  onRun: (wf: WorkflowSummary) => void;
-  onOpen: (wf: WorkflowSummary) => void;
-}) {
-  const visible = workflows.filter(
-    (w) => !query || (w.name ?? w.id).toLowerCase().includes(query) || (w.summary ?? "").toLowerCase().includes(query),
-  );
-  return (
-    <div className="space-y-1.5 pt-1">
-      {visible.map((wf) => {
-        const fam = familiarLabel(wf.familiar);
-        const steps = wf.steps?.length ? `${wf.steps.length} steps` : "Workflow";
-        return (
-          <ManagedAutomationRow
-            key={wf.id}
-            type="workflow"
-            name={wf.name ?? wf.id}
-            meta={[wf.summary || steps, fam].filter(Boolean).join(" · ")}
-            busy={busyId === `workflow:${wf.id}`}
-            onRun={() => onRun(wf)}
-            onOpen={() => onOpen(wf)}
-          />
-        );
-      })}
     </div>
   );
 }
@@ -1665,7 +1625,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<InboxItem[]>([]);
   const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
-  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   const [flows, setFlows] = useState<FlowDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
@@ -1689,10 +1648,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   const load = useCallback(async () => {
     try {
-      const [inboxRes, codexRes, wfRes, flowRes] = await Promise.all([
+      const [inboxRes, codexRes, flowRes] = await Promise.all([
         fetch("/api/inbox", { cache: "no-store" }),
         fetch("/api/codex-automations", { cache: "no-store" }),
-        listWorkflows().catch(() => ({ ok: false, workflows: [] })),
         listFlows().catch(() => ({ ok: false, flows: [] })),
       ]);
       const inboxJson = await inboxRes.json();
@@ -1702,9 +1660,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const codexJson = await codexRes.json();
       if (!mountedRef.current) return;
       if (codexJson.ok) setCodexAutos(codexJson.automations ?? []);
-      // Workflows + flows are best-effort: a missing daemon/store shouldn't
-      // blank the whole surface, just drop those two types from the list.
-      if (wfRes.ok) setWorkflows(wfRes.workflows ?? []);
+      // Flows are best-effort: a missing daemon/store shouldn't blank the whole
+      // surface, just drop Flow rows from the list.
       if (flowRes.ok) setFlows(flowRes.flows ?? []);
       setError(null);
     } catch (err) {
@@ -1948,24 +1905,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, [load]);
 
-  // ── Workflows + flows ───────────────────────────────────────────────────
+  // ── Flows ───────────────────────────────────────────────────────────────
   // Cave has no native execution engine, so "run" is daemon-first and returns
   // { unavailable: true } when the daemon is offline rather than faking a run.
-  const runWorkflowNow = useCallback(async (wf: WorkflowSummary) => {
-    if (!(await confirm({ title: `Run “${wf.name ?? wf.id}”?`, body: "This spawns an agent session to execute the workflow.", confirmLabel: "Run" }))) return;
-    setBusyId(`workflow:${wf.id}`);
-    try {
-      const res = await runWorkflow({ id: wf.id });
-      if (res.unavailable) { setError("Workflows run through the Coven daemon — it isn't reachable right now."); return; }
-      if (!res.ok) throw new Error(res.error ?? "run failed");
-      if (res.sessionId) onOpenSession?.(res.sessionId, wf.familiar ?? null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "workflow run failed");
-    } finally {
-      setBusyId(null);
-    }
-  }, [confirm, onOpenSession]);
-
   const runFlowNow = useCallback(async (flow: FlowDoc) => {
     if (!(await confirm({ title: `Run “${flow.name}”?`, body: "This spawns an agent session to execute the flow graph.", confirmLabel: "Run" }))) return;
     setBusyId(`flow:${flow.id}`);
@@ -1983,7 +1925,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   // "Open" routes to each type's dedicated editor surface.
   const openEntry = useCallback((entry: AutomationEntry) => {
-    if (entry.type === "workflow") { navigateToMode("roles"); return; }
     if (entry.type === "flow") { navigateToMode("flow"); return; }
     // reminders + crons are edited inline here — select their detail panel.
     if (entry.type === "reminder") {
@@ -2138,12 +2079,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         buildAutomationEntries({
           reminders: items.filter((it) => isScheduleInboxItem(it) && !hiddenIds.has(it.id)),
           crons: codexAutos.filter((a) => !hiddenIds.has(a.id)),
-          workflows,
           flows,
         }),
         q,
       ),
-    [items, codexAutos, workflows, flows, hiddenIds, q],
+    [items, codexAutos, flows, hiddenIds, q],
   );
   const typeCounts = useMemo(
     () =>
@@ -2151,11 +2091,10 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         buildAutomationEntries({
           reminders: items.filter(isScheduleInboxItem),
           crons: codexAutos,
-          workflows,
           flows,
         }),
       ),
-    [items, codexAutos, workflows, flows],
+    [items, codexAutos, flows],
   );
 
   const selectTab = (tab: AutomationTab) => {
@@ -2185,7 +2124,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               Automations
             </h1>
             <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
-              Reminders, crons, workflows, and flows — everything that runs for you, in one place.
+              Reminders, crons, and flows — everything that runs for you, in one place.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -2200,7 +2139,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                 Select
               </button>
             )}
-            {/* Typed "New" menu — one entry point for all four automation types. */}
+            {/* Typed "New" menu — one entry point for the automation types. */}
             <div className="relative">
               <Button className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setNewMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={newMenuOpen}>
                 New
@@ -2230,13 +2169,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                       onClick={() => { setNewMenuOpen(false); setCreateOpen(true); }}
                     />
                     <NewMenuItem
-                      icon={AUTOMATION_TYPE_META.workflow.icon}
-                      accent={AUTOMATION_TYPE_META.workflow.accent}
-                      label="Workflow"
-                      blurb={AUTOMATION_TYPE_META.workflow.blurb}
-                      onClick={() => { setNewMenuOpen(false); navigateToMode("roles"); }}
-                    />
-                    <NewMenuItem
                       icon={AUTOMATION_TYPE_META.flow.icon}
                       accent={AUTOMATION_TYPE_META.flow.accent}
                       label="Flow"
@@ -2260,7 +2192,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               { id: "all", label: "All", count: allEntries.length },
               { id: "reminders", label: "Reminders", count: typeCounts.reminder },
               { id: "crons", label: "Crons", count: typeCounts.cron },
-              { id: "workflows", label: "Workflows", count: typeCounts.workflow },
               { id: "flows", label: "Flows", count: typeCounts.flow },
               { id: "activity", label: "Activity", count: items.length },
             ] satisfies TabItem<AutomationTab>[]}
@@ -2270,10 +2201,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         {/* Text filter for the active tab. Gated on the UNfiltered presence of
             rows so filtering to zero never hides the box (you can still clear). */}
         {initialLoadDone && !reminderSelect.selectMode && (
-          activeTab === "all" ? typeCounts.reminder + typeCounts.cron + typeCounts.workflow + typeCounts.flow > 0
+          activeTab === "all" ? typeCounts.reminder + typeCounts.cron + typeCounts.flow > 0
           : activeTab === "activity" ? items.length > 0
           : activeTab === "crons" ? codexAutos.length > 0
-          : activeTab === "workflows" ? workflows.length > 0
           : activeTab === "flows" ? flows.length > 0
           : items.some(isScheduleInboxItem)
         ) ? (
@@ -2285,7 +2215,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               placeholder={
                 activeTab === "all" ? "Filter automations…"
                 : activeTab === "crons" ? "Filter crons…"
-                : activeTab === "workflows" ? "Filter workflows…"
                 : activeTab === "flows" ? "Filter flows…"
                 : activeTab === "activity" ? "Filter activity…"
                 : "Filter reminders…"
@@ -2327,7 +2256,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             (activeTab === "all" && allEntries.length === 0) ||
             (activeTab === "reminders" && remindersEmpty) ||
             (activeTab === "crons" && codexActive.length + codexPaused.length === 0) ||
-            (activeTab === "workflows" && workflows.filter((w) => (w.name ?? w.id).toLowerCase().includes(q) || (w.summary ?? "").toLowerCase().includes(q)).length === 0) ||
             (activeTab === "flows" && flows.filter((f) => (f.name || "").toLowerCase().includes(q)).length === 0) ||
             (activeTab === "activity" && inboxFeed.needsYou.length + inboxFeed.active.length + inboxFeed.resolved.length === 0)
           ) ? (
@@ -2342,7 +2270,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               className="mt-12"
               icon="ph:lightning-bold"
               headline="No automations yet"
-              subtitle="Reminders, crons, workflows, and flows all live here. Use “New” to create one."
+              subtitle="Reminders, crons, and flows all live here. Use “New” to create one."
             />
           ) : activeTab === "reminders" && remindersEmpty ? (
             <EmptyState
@@ -2365,14 +2293,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               headline="No crons configured"
               subtitle="A cron runs a familiar on a recurring schedule — set one up to get started."
               actions={<Button leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>New cron</Button>}
-            />
-          ) : activeTab === "workflows" && workflows.length === 0 ? (
-            <EmptyState
-              className="mt-12"
-              icon="ph:graph"
-              headline="No workflows yet"
-              subtitle="Workflows are multi-step agent pipelines. Build one in Roles → Workflows."
-              actions={<Button leadingIcon="ph:arrow-square-out" onClick={() => navigateToMode("roles")}>Open Roles</Button>}
             />
           ) : activeTab === "flows" && flows.length === 0 ? (
             <EmptyState
@@ -2455,15 +2375,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   selectedId={selectedReminderId}
                   familiarLabel={familiarLabel}
                   onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
-                />
-              ) : activeTab === "workflows" ? (
-                <WorkflowList
-                  workflows={workflows}
-                  query={q}
-                  busyId={busyId}
-                  familiarLabel={familiarLabel}
-                  onRun={runWorkflowNow}
-                  onOpen={() => navigateToMode("roles")}
                 />
               ) : activeTab === "flows" ? (
                 <FlowList

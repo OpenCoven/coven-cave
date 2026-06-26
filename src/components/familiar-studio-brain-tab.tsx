@@ -335,7 +335,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                         {manifest.skills.length > 3 ? ` +${manifest.skills.length - 3} more` : ""}</>
                     )}
                   </p>
-                  {/* Skills are building blocks of Workflows — see the Workflows tab in Capabilities */}
+                  {/* Skills are building blocks for Flow nodes and capability assignments. */}
                   {manifest.warnings.length > 0 && (
                     <p className="familiar-studio-brain__capabilities-line familiar-studio-brain__capabilities-line--warn">
                       {manifest.warnings.length} parse warning

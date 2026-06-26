@@ -10,10 +10,18 @@ const styles = readFileSync(new URL("../../styles/flow.css", import.meta.url), "
 assert.match(canvas, /onTidy: \(\) => void/, "FlowCanvas should accept a tidy-workflow action");
 assert.match(canvas, /title="Tidy up workflow"/, "Canvas toolbar should expose n8n-style tidy action");
 assert.match(canvas, /props\.onTidy/, "Canvas tidy button should call the provided action");
+assert.match(canvas, /layoutOrientation: FlowLayoutOrientation/, "FlowCanvas should receive the active layout orientation");
+assert.match(canvas, /onLayoutOrientation: \(orientation: FlowLayoutOrientation\) => void/, "FlowCanvas should expose an orientation switch action");
+assert.match(canvas, /aria-label="Use horizontal layout"/, "Canvas toolbar should expose a horizontal layout switch");
+assert.match(canvas, /aria-label="Use vertical layout"/, "Canvas toolbar should expose a vertical layout switch");
 assert.match(view, /tidyFlowLayout/, "FlowView should import the pure tidy layout mutation");
+assert.match(view, /useState<FlowLayoutOrientation>\("horizontal"\)/, "FlowView should default Flow layout to horizontal");
+assert.match(view, /tidyFlowLayout\(d, layoutOrientation\)/, "Tidy should use the active Flow layout orientation");
+assert.match(view, /tidyFlowLayout\(d, orientation\)/, "Switching orientation should retidy the canvas immediately");
 assert.match(view, /setViewResetKey/, "FlowView should be able to force React Flow to consume tidied positions");
 assert.match(view, /setViewResetKey\(\(key\) => key \+ 1\)/, "Tidy should reset the canvas local position cache");
 assert.match(view, /onTidy=\{tidy\}/, "FlowView should wire tidy into the canvas toolbar");
+assert.match(view, /onLayoutOrientation=\{setAndApplyLayoutOrientation\}/, "FlowView should wire orientation switching into the canvas toolbar");
 assert.match(canvas, /staleNodeIds\?: Record<string, boolean>/, "FlowCanvas should accept stale-node markers");
 assert.match(view, /staleNodeIds/, "FlowView should compute canvas stale-node markers from the active run snapshot");
 assert.match(node, /node\.displayNote/, "Flow nodes should honor the display-note flag");

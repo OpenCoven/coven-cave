@@ -545,7 +545,7 @@ const ADDON_ROWS: Array<{
     label: "Roles",
     icon: "ph:mask-happy",
     group: "surfaces",
-    description: "Agent personas, workflows, skills, and capabilities.",
+    description: "Agent personas, skills, and capabilities.",
   },
   {
     key: "groupchat",

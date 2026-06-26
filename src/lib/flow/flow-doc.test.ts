@@ -167,6 +167,14 @@ function base(): FlowDoc {
   assert.equal(tidied.nodes.find((n) => n.id === "b")?.position.x, 380, "parallel downstream nodes share a column");
   assert.notEqual(tidied.nodes.find((n) => n.id === "a")?.position.y, tidied.nodes.find((n) => n.id === "b")?.position.y, "parallel nodes are vertically staggered");
   assert.equal(tidyFlowLayout(tidied), tidied, "already tidy layouts are a no-op");
+
+  const vertical = tidyFlowLayout(doc, "vertical");
+  assert.deepEqual(vertical.edges, doc.edges, "vertical tidy does not rewrite graph connections");
+  assert.deepEqual(vertical.nodes.find((n) => n.id === "note")?.position, { x: 333, y: 444 }, "vertical tidy preserves sticky notes");
+  assert.deepEqual(vertical.nodes.find((n) => n.id === "trigger")?.position, { x: 120, y: 120 }, "vertical tidy keeps the root at the tidy origin");
+  assert.equal(vertical.nodes.find((n) => n.id === "a")?.position.y, 252, "vertical tidy moves downstream nodes into the next row");
+  assert.equal(vertical.nodes.find((n) => n.id === "b")?.position.y, 252, "parallel downstream nodes share a row in vertical layout");
+  assert.notEqual(vertical.nodes.find((n) => n.id === "a")?.position.x, vertical.nodes.find((n) => n.id === "b")?.position.x, "parallel vertical nodes are horizontally staggered");
 }
 
 // renameNode keeps names unique
