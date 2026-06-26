@@ -250,10 +250,10 @@ export function extractOpenClawSessionId(
 
 /**
  * Conversation identity for the OpenClaw bridge is CAVE-owned. OpenClaw
- * sessions are persisted per session *key* (`agent:<id>:<key>`); the
+ * sessions are persisted per explicit session id/key (`agent:<id>:explicit:<value>`); the
  * `sessionId` inside an entry rotates on daily resets, `/new`, and
- * compaction. Pinning each Cave chat to its own `--session-key` keeps one
- * durable gateway session per conversation. Without a key, every turn lands
+ * compaction. Pinning each Cave chat to its own explicit `--session-id` value keeps one
+ * durable gateway session per conversation. Without an explicit id/key, every turn lands
  * in the shared `agent:<id>:main` session — id rotation then forked each
  * Cave chat into a brand-new conversation, and concurrent chats with the
  * same familiar interleaved context.
@@ -274,7 +274,7 @@ export function openClawAgentArgs(
     "--message",
     harnessPrompt,
     "--json",
-    "--session-key",
+    "--session-id",
     openClawSessionKey(conversationId),
   ];
 }
