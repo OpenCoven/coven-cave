@@ -31,6 +31,12 @@ const CHAT_GROUP_ID = "cave.chat.widths.v1";
 // state and the split width persist independently of the inspector layout.
 const POWER_MODE_KEY = "cave:chat-power-mode:v1";
 const POWER_GROUP_ID = "cave.chat.power.widths.v1";
+// Persisted selection for the standalone chat's Convo/Projects/Code switch, so
+// the surface reopens in the mode you left it (the scope state isn't otherwise
+// persisted — only powerMode was, which left Projects resetting to Convo on
+// reload). Authoritative over POWER_MODE_KEY, which is kept in sync for the
+// power-split layout grouping + back-compat hydration.
+const CHAT_MODE_KEY = "cave:chat-mode:v1";
 const chatStorage = {
   getItem(key: string): string | null {
     if (typeof window === "undefined") return null;
@@ -314,10 +320,17 @@ export function ChatSurface({
   // already *is* a chat↔code split). Hydrated from localStorage after mount to
   // stay SSR-safe.
   const [powerMode, setPowerMode] = useState(false);
+  // Restore the last-used mode after mount (SSR-safe). CHAT_MODE_KEY is the
+  // source of truth; fall back to the legacy POWER_MODE_KEY so users who had
+  // power mode on before this key existed still reopen in Code.
   useEffect(() => {
     if (isCodeSurface) return;
     try {
-      setPowerMode(window.localStorage.getItem(POWER_MODE_KEY) === "1");
+      const saved = window.localStorage.getItem(CHAT_MODE_KEY);
+      if (saved === "projects") setScope("projects");
+      else if (saved === "code" || (saved === null && window.localStorage.getItem(POWER_MODE_KEY) === "1")) {
+        setPowerMode(true);
+      }
     } catch {
       /* ignore — strict privacy mode */
     }
@@ -336,6 +349,11 @@ export function ChatSurface({
   // means "code", and a plain conversation means "convo".
   const chatMode: ChatMode = scope === "projects" ? "projects" : powerMode ? "code" : "convo";
   function selectChatMode(next: ChatMode) {
+    try {
+      window.localStorage.setItem(CHAT_MODE_KEY, next);
+    } catch {
+      /* ignore — strict privacy mode */
+    }
     if (next === "code") {
       // Keep whatever thread is open; just bring the code split up beside it.
       setScope("conversation");

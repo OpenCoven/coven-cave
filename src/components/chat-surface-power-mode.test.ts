@@ -38,6 +38,23 @@ assert.match(
   /function selectChatMode\(next: ChatMode\)/,
   "selecting a mode locks the surface into Convo, Projects, or Code",
 );
+// ── The selection is sticky across reloads ──────────────────────────────────
+assert.match(surface, /CHAT_MODE_KEY = "cave:chat-mode:v1"/, "the chosen mode has a stable storage key");
+assert.match(
+  surface,
+  /window\.localStorage\.setItem\(CHAT_MODE_KEY, next\)/,
+  "selecting a mode persists it so the surface reopens where you left off",
+);
+assert.match(
+  surface,
+  /window\.localStorage\.getItem\(CHAT_MODE_KEY\)/,
+  "the mode is rehydrated from storage on mount",
+);
+assert.match(
+  surface,
+  /saved === "projects"\) setScope\("projects"\)/,
+  "a persisted Projects mode restores the Projects view (not just Code)",
+);
 assert.match(
   surface,
   /<Tabs<ChatMode>\s+variant="segment"/,
