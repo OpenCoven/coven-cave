@@ -59,8 +59,9 @@ export async function POST(
     });
   }
 
-  // card.cwd wins; body.projectRoot covers "card had no CWD, user supplied one" flow.
-  const projectRoot = normalizeProjectRoot(card.cwd ?? body.projectRoot ?? process.cwd());
+  // The UI sends the root for card.projectId when present; prefer that explicit
+  // project scope over any older cwd persisted on the card.
+  const projectRoot = normalizeProjectRoot(body.projectRoot ?? card.cwd ?? process.cwd());
   if (!projectRoot) {
     return NextResponse.json({ ok: false, error: "invalid project root" }, { status: 400 });
   }
@@ -150,10 +151,11 @@ export async function POST(
     familiarId,
     // When we isolated into a worktree, pin the card's CWD to it so reopening
     // the chat lands back in the same worktree. Otherwise keep the prior
-    // behavior of recording a start-time CWD only when the card had none.
+    // behavior of recording the explicit project root when the caller supplied
+    // one.
     ...(worktree
       ? { cwd: sessionRoot }
-      : (!card.cwd && body.projectRoot ? { cwd: body.projectRoot } : {})),
+      : (body.projectRoot ? { cwd: projectRoot } : {})),
   });
   if (!updated) {
     return NextResponse.json({ ok: false, error: "card disappeared" }, { status: 404 });

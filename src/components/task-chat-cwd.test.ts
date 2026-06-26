@@ -1,6 +1,6 @@
 // @ts-nocheck
 // Chats pick a persisted project, and that project owns the runtime root.
-// Task chats still honor the task's stored cwd for existing board cards.
+// Task chats honor the task's assigned project before any older stored cwd.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -70,22 +70,22 @@ assert.doesNotMatch(
   "ChatView should not expose user-facing ROOT/CWD inputs for normal chats",
 );
 
-// ── Task chat: card CWD wins; project selection when absent ─────────────────
+// ── Task chat: assigned project wins; card CWD is the fallback ───────────────
 
 assert.match(
   taskChatRoute,
-  /card\.cwd \?\? body\.projectRoot \?\? process\.cwd\(\)/,
-  "Task chat sessions start in the card's CWD when it has one",
+  /body\.projectRoot \?\? card\.cwd \?\? process\.cwd\(\)/,
+  "Task chat sessions start in the assigned project root when one is supplied",
 );
 assert.match(
   taskChatRoute,
-  /!card\.cwd && body\.projectRoot \? \{ cwd: body\.projectRoot \}/,
-  "A start-time CWD is persisted onto the card",
+  /body\.projectRoot \? \{ cwd: projectRoot \}/,
+  "The assigned project root is persisted onto the card for subsequent task-chat starts",
 );
 assert.match(
   boardView,
-  /const project = card\.projectId \? chatProjectById\(card\.projectId, projects\) : null;[\s\S]{0,180}await startTaskChat\(id, project\.root\);/,
-  "Starting a task chat for a card with only a projectId should use the project's root without a follow-up dialog",
+  /const project = card\?\.projectId \? chatProjectById\(card\.projectId, projects\) : null;[\s\S]{0,180}await startTaskChat\(id, project\.root\);/,
+  "Starting a task chat for a card with projectId should use the project's root without a follow-up dialog",
 );
 assert.match(
   boardInspector,

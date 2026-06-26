@@ -554,12 +554,12 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
 
   const onOpenTaskChat = async (id: string) => {
     const card = cards.find((candidate) => candidate.id === id);
+    const project = card?.projectId ? chatProjectById(card.projectId, projects) : null;
+    if (project) {
+      await startTaskChat(id, project.root);
+      return;
+    }
     if (card && !card.sessionId && !card.cwd) {
-      const project = card.projectId ? chatProjectById(card.projectId, projects) : null;
-      if (project) {
-        await startTaskChat(id, project.root);
-        return;
-      }
       setChatLinkError("Choose a project for this task before starting chat, or open Projects to create one.");
       return;
     }

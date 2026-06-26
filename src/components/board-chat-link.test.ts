@@ -23,6 +23,11 @@ assert.match(
   "Task chat action should navigate to the linked session",
 );
 assert.match(
+  boardView,
+  /const project = card\?\.projectId \? chatProjectById\(card\.projectId, projects\) : null;[\s\S]{0,140}await startTaskChat\(id, project\.root\)/,
+  "Task chats for project-assigned cards should start in the assigned project root",
+);
+assert.match(
   boardInspector,
   /Start chat|Open chat/,
   "Board inspector should show a visible chat button for every task",
@@ -41,6 +46,11 @@ assert.match(
   route,
   /buildInitialTaskChatPrompt\(card\)/,
   "Board chat endpoint should seed new sessions with task context",
+);
+assert.match(
+  route,
+  /normalizeProjectRoot\(body\.projectRoot \?\? card\.cwd \?\? process\.cwd\(\)\)/,
+  "Board chat endpoint should prefer the explicitly assigned project root over stale card cwd",
 );
 assert.match(
   route,
