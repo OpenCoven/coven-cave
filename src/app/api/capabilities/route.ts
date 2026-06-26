@@ -136,7 +136,7 @@ function openClawCapabilityManifest(scannedAt: string): HarnessCapabilityManifes
         enabled: true,
         transport: "local-cli",
         command: "openclaw",
-        args: ["agent", "--json", "--session-key"],
+        args: ["agent", "--json", "--session-id"],
       },
     ],
     warnings: [

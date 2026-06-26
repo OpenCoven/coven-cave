@@ -306,7 +306,7 @@ export async function POST(req: Request): Promise<Response> {
         fullPrompt,
         "--json",
         "--no-persist",
-        "--session-key",
+        "--session-id",
         openClawSessionKey(sessionId),
       ]);
 

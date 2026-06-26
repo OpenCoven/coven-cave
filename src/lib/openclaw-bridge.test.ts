@@ -152,13 +152,13 @@ assert.deepEqual(openClawAgentArgs("hi", "nova", "ABC_123"), [
   "--message",
   "hi",
   "--json",
-  "--session-key",
+  "--session-id",
   "cave-abc-123",
 ]);
 assert.equal(
   openClawAgentArgs("hi", "nova", "ABC_123").includes("--session-id"),
-  false,
-  "OpenClaw bridge must never use raw session ids for resume",
+  true,
+  "OpenClaw bridge must pass the stable Cave-owned id through --session-id",
 );
 
 assert.equal(

@@ -136,13 +136,13 @@ assert.match(
 
 // Session persistence contract (regression: chats forked into new sessions
 // every time OpenClaw rotated its internal session id):
-// 1. every turn pins the conversation to a cave-owned session KEY — keys are
-//    OpenClaw's durable identity; session ids rotate on reset/compaction;
+// 1. every turn pins the conversation to a cave-owned explicit session id/key — values are
+//    OpenClaw's durable identity; internally generated session ids rotate on reset/compaction;
 // 2. the gateway's session id is never adopted as the conversation key.
 assert.match(
   openclawBridge,
-  /"--session-key",\s*\n?\s*openClawSessionKey\(conversationId\)/,
-  "OpenClaw native chat must pin a per-conversation session key",
+  /"--session-id",\s*\n?\s*openClawSessionKey\(conversationId\)/,
+  "OpenClaw native chat must pin a per-conversation explicit session id/key",
 );
 assert.match(
   chatRoute,
@@ -176,8 +176,8 @@ assert.match(
 );
 assert.doesNotMatch(
   chatRoute,
-  /"--session-id"/,
-  "OpenClaw bridge no longer passes raw session ids — keys are the resume contract",
+  /"--session-key"/,
+  "OpenClaw chat route must not emit the removed --session-key flag",
 );
 // Model parity superseded the old "never emit --model" guard: --model is now
 // forwarded, but ONLY behind the coven run capability probe (see the gated
