@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.119] - 2026-06-25
+
+Patch release on top of v0.0.118. Headline: the macOS desktop shell's topmost
+bar is draggable again while keeping all toolbar controls clickable.
+
+### Fixed
+
+- **Desktop shell** - macOS Tauri titlebar mode now marks the rendered top-bar
+  wrappers as drag regions, not only the outer shell row, so users can drag the
+  window from the topmost Cave bar while buttons, inputs, links, and other
+  controls remain `no-drag` (#1972).
+
 ## [0.0.118] - 2026-06-25
 
 Patch release on top of v0.0.117. Headline: the current production line now
