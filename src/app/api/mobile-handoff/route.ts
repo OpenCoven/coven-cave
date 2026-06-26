@@ -98,6 +98,69 @@ function backendUrl(req: Request) {
   return `http://127.0.0.1:${port}`;
 }
 
+function nativeHostFromUrl(value: string) {
+  try {
+    return new URL(value).host;
+  } catch {
+    return null;
+  }
+}
+
+async function ensureNativeAppServe(req: Request) {
+  const self = await runTailscale(["status", "--self", "--json"]);
+  if (!self.ok) {
+    return NextResponse.json(
+      { ok: false, error: "tailscale is not connected", stderr: self.stderr },
+      { status: 503 },
+    );
+  }
+
+  const parsedSelf = parseServeStatus(self.stdout);
+  const selfStatus: unknown = "error" in parsedSelf ? null : parsedSelf.value;
+  const backend = backendUrl(req);
+  const serve = await runTailscale(["serve", "--bg", backend]);
+  const serveWarning = serve.ok
+    ? null
+    : serve.stderr || "Tailscale Serve could not be (re)started.";
+
+  let serveUrl: string | null = null;
+  const status = await runTailscale(["serve", "status", "--json"]);
+  if (status.ok) {
+    const parsed = parseServeStatus(status.stdout);
+    if (!("error" in parsed)) serveUrl = findServeUrl(parsed.value, backend);
+  }
+  if (!serveUrl) serveUrl = magicDnsServeUrl(selfStatus);
+
+  if (!serveUrl) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: serveWarning ?? "tailscale serve URL not found",
+        stderr: serveWarning ?? status.stderr,
+        backendUrl: backend,
+      },
+      { status: 500 },
+    );
+  }
+
+  const qrSvg = await QRCode.toString(serveUrl, {
+    type: "svg",
+    margin: 1,
+    width: 256,
+    errorCorrectionLevel: "M",
+  });
+
+  return NextResponse.json({
+    ok: true,
+    backendUrl: backend,
+    serveUrl,
+    nativeUrl: serveUrl,
+    nativeHost: nativeHostFromUrl(serveUrl),
+    qrSvg,
+    warning: serveWarning ?? undefined,
+  });
+}
+
 async function mobileHandoff(req: Request) {
   const accessSecret = process.env.COVEN_CAVE_ACCESS_TOKEN?.trim();
   if (!accessSecret) {
@@ -210,6 +273,19 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: reset.ok,
       error: reset.ok ? undefined : "failed to reset tailscale serve",
+      stderr: reset.stderr,
+    }, { status: reset.ok ? 200 : 500 });
+  }
+
+  if (action === "app-start") {
+    return ensureNativeAppServe(req);
+  }
+
+  if (action === "app-stop") {
+    const reset = await runTailscale(["serve", "reset"]);
+    return NextResponse.json({
+      ok: reset.ok,
+      error: reset.ok ? undefined : "failed to stop mobile mode",
       stderr: reset.stderr,
     }, { status: reset.ok ? 200 : 500 });
   }

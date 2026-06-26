@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
@@ -55,6 +55,18 @@ type DaemonStatus = {
   workspacePath?: string;
   daemon?: { pid: number; startedAt: string; socket: string };
 };
+
+const MOBILE_MODE_STORAGE_KEY = "cave:mobile-mode-enabled";
+
+function readMobileModeEnabled() {
+  if (typeof window === "undefined") return true;
+  return window.localStorage.getItem(MOBILE_MODE_STORAGE_KEY) !== "false";
+}
+
+function writeMobileModeEnabled(enabled: boolean) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(MOBILE_MODE_STORAGE_KEY, enabled ? "true" : "false");
+}
 
 type Section = "general" | "daemon" | "familiars" | "permissions" | "addons" | "mobile" | "appearance" | "about";
 
@@ -1544,29 +1556,76 @@ function AppearanceSection() {
 
 // ─── Section: Phone (connect the native mobile app) ─────────────────────────────
 
-function CopyValue({ value, label }: { value: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
+function MobileModeToggle() {
+  const [mobileModeEnabled, setMobileModeEnabled] = useState(readMobileModeEnabled);
+  const [host, setHost] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reconcileMobileMode = useCallback(async (enabled: boolean, options?: { busy?: boolean }) => {
+    if (options?.busy) setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/mobile-handoff", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: enabled ? "app-start" : "app-stop" }),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        nativeHost?: string | null;
+        error?: string;
+        stderr?: string;
+      };
+      if (!json.ok) {
+        setError(json.stderr || json.error || "Mobile mode unavailable.");
+        return;
+      }
+      setHost(enabled ? json.nativeHost ?? null : null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Mobile mode unavailable.");
+    } finally {
+      if (options?.busy) setBusy(false);
+    }
+  }, []);
+
+  const onMobileModeChange = async (enabled: boolean) => {
+    writeMobileModeEnabled(enabled);
+    setMobileModeEnabled(enabled);
+    await reconcileMobileMode(enabled, { busy: true });
+  };
+
+  useEffect(() => {
+    void reconcileMobileMode(mobileModeEnabled);
+    if (!mobileModeEnabled) return;
+    const timer = window.setInterval(() => void reconcileMobileMode(true), 60_000);
+    return () => window.clearInterval(timer);
+  }, [mobileModeEnabled, reconcileMobileMode]);
+
   return (
-    <button
-      type="button"
-      onClick={() => {
-        navigator.clipboard?.writeText(value).then(
-          () => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          },
-          () => {},
-        );
-      }}
-      aria-label={`Copy ${label ?? value}`}
-      className="group flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-left transition-colors hover:border-[var(--accent-presence)]"
+    <SettingsRow
+      label="Mobile mode"
+      description="Default on. Cave keeps the native iOS Tailscale route alive until you turn this off."
     >
-      <code className="min-w-0 truncate font-mono text-[12px] text-[var(--text-primary)]">{value}</code>
-      <span className="flex shrink-0 items-center gap-1 text-[11px] text-[var(--text-muted)] group-hover:text-[var(--text-secondary)]">
-        <Icon name={copied ? "ph:check" : "ph:copy"} width={13} />
-        {copied ? "Copied" : "Copy"}
-      </span>
-    </button>
+      <div className="flex min-w-[220px] flex-col items-end gap-1">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={mobileModeEnabled}
+          onClick={() => void onMobileModeChange(!mobileModeEnabled)}
+          disabled={busy}
+          className={`rounded-full border px-3 py-1.5 text-[12px] transition-colors ${
+            mobileModeEnabled
+              ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-contrast)]"
+              : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
+          }`}
+        >
+          {busy ? "Updating..." : mobileModeEnabled ? "On" : "Off"}
+        </button>
+        {host ? <code className="max-w-[220px] truncate text-[11px] text-[var(--text-muted)]">{host}</code> : null}
+        {error ? <span className="max-w-[220px] text-right text-[11px] text-[var(--danger)]">{error}</span> : null}
+      </div>
+    </SettingsRow>
   );
 }
 
@@ -1576,18 +1635,16 @@ function MobileSection() {
       title="Connect on your phone"
       description="Run the native Coven Cave app on your iPhone or iPad and reach this desktop over your Tailscale network — no token, no password."
     >
+      <SettingsGroup label="Mobile mode">
+        <MobileModeToggle />
+      </SettingsGroup>
+
       <SettingsGroup label="Steps">
         <SettingsRow label="1 · Same Tailscale network" description="Sign your phone and this Mac into the same tailnet." />
-        <div className="space-y-2 px-4 py-3">
-          <div>
-            <p className="text-[13px] text-[var(--text-primary)]">2 · Start the mobile server</p>
-            <p className="text-[11px] text-[var(--text-muted)]">Serves this desktop to your tailnet and prints the address + a QR code. Leave it running.</p>
-          </div>
-          <CopyValue value="pnpm mobile:tailscale:app" label="start command" />
-        </div>
+        <SettingsRow label="2 · Mobile mode stays on" description="Cave reconciles Tailscale Serve automatically while the switch is on." />
         <SettingsRow
           label="3 · Enter the address in the app"
-          description="On the app’s connect screen, type the https://… address the command printed (your Mac’s Tailscale name)."
+          description="On the app’s connect screen, type the host shown by mobile mode (your Mac’s Tailscale name)."
         />
         <SettingsRow label="4 · Tap Connect" description="Your familiars and board load over Tailscale. Switch tabs for Chats and Tasks." />
       </SettingsGroup>

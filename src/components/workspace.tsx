@@ -101,6 +101,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 // thread, same in-app hash idiom as `#card-<id>` and `library:projects`.
 // ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
 const CHAT_HASH_PREFIX = "#chat-";
+const MOBILE_MODE_STORAGE_KEY = "cave:mobile-mode-enabled";
 
 function readChatHash(): string | null {
   if (typeof window === "undefined") return null;
@@ -117,6 +118,16 @@ function clearChatHash() {
   if (typeof window === "undefined") return;
   if (!window.location.hash.startsWith(CHAT_HASH_PREFIX)) return;
   window.history.replaceState(null, "", window.location.pathname + window.location.search);
+}
+
+function readMobileModeEnabled() {
+  if (typeof window === "undefined") return true;
+  return window.localStorage.getItem(MOBILE_MODE_STORAGE_KEY) !== "false";
+}
+
+function writeMobileModeEnabled(enabled: boolean) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(MOBILE_MODE_STORAGE_KEY, enabled ? "true" : "false");
 }
 
 function taskCanAnnotateSession(task: GitHubTask): boolean {
@@ -238,6 +249,9 @@ export function Workspace() {
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [addChooserOpen, setAddChooserOpen] = useState(false);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
+  const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
+  const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
+  const [mobileModeError, setMobileModeError] = useState<string | null>(null);
   const [addons, setAddons] = useState<{ github?: boolean; library?: boolean }>({});
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
@@ -255,6 +269,56 @@ export function Workspace() {
   modeRef.current = mode;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
+
+  const setMobileModeEnabled = useCallback((enabled: boolean) => {
+    writeMobileModeEnabled(enabled);
+    setMobileModeEnabledState(enabled);
+  }, []);
+
+  const reconcileMobileMode = useCallback(async (enabled: boolean) => {
+    try {
+      const body = enabled
+        ? { action: "app-start" }
+        : { action: "app-stop" };
+      const res = await fetch("/api/mobile-handoff", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        nativeHost?: string | null;
+        error?: string;
+        stderr?: string;
+      };
+      if (!json.ok) {
+        setMobileModeError(json.stderr || json.error || "Mobile mode unavailable.");
+        if (!enabled) setMobileModeHost(null);
+        return;
+      }
+      setMobileModeError(null);
+      setMobileModeHost(enabled ? json.nativeHost ?? null : null);
+    } catch (err) {
+      setMobileModeError(err instanceof Error ? err.message : "Mobile mode unavailable.");
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      if (cancelled) return;
+      await reconcileMobileMode(mobileModeEnabled);
+    };
+    void run();
+    if (!mobileModeEnabled) return () => {
+      cancelled = true;
+    };
+    const timer = window.setInterval(() => void run(), 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [mobileModeEnabled, reconcileMobileMode]);
 
   const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
     let running = false;
@@ -2189,6 +2253,10 @@ export function Workspace() {
       <MobileHandoffModal
         open={mobileHandoffOpen}
         onClose={() => setMobileHandoffOpen(false)}
+        mobileModeEnabled={mobileModeEnabled}
+        nativeHost={mobileModeHost}
+        mobileModeError={mobileModeError}
+        onMobileModeChange={setMobileModeEnabled}
       />
     </FamiliarStudioProvider>
   );
