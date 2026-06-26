@@ -372,6 +372,13 @@ export function ChatSurface({
   // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
   // be unreachable. On mobile we render them in a right-edge sheet overlay instead.
   const isMobile = useIsMobile();
+  // Code mode is the inline chat↔code split, which needs desktop width — on a
+  // phone `showPowerPanel` is gated off, so the segment would light up with no
+  // effect. Drop it from the mobile switch and render a persisted "code" session
+  // as Convo there (the saved preference is untouched, so it restores on a wider
+  // screen). The base `chatMode` above stays the source of truth for layout.
+  const chatModeItems = isMobile ? CHAT_MODE_ITEMS.filter((m) => m.id !== "code") : CHAT_MODE_ITEMS;
+  const chatModeValue: ChatMode = isMobile && chatMode === "code" ? "convo" : chatMode;
   const consumedPendingActionNonce = useRef<number | null>(null);
 
   // Right panel — prefer new prop, fall back to legacy bool
@@ -604,9 +611,9 @@ export function ChatSurface({
               size="sm"
               bordered={false}
               ariaLabel="Chat mode"
-              value={chatMode}
+              value={chatModeValue}
               onChange={selectChatMode}
-              items={CHAT_MODE_ITEMS}
+              items={chatModeItems}
             />
           )}
         </div>

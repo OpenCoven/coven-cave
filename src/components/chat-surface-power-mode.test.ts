@@ -60,8 +60,22 @@ assert.match(
   /<Tabs<ChatMode>\s+variant="segment"/,
   "the mode switch renders as a segmented (lock-in) selector",
 );
-assert.match(surface, /value=\{chatMode\}/, "the switch reflects the active mode");
+assert.match(surface, /value=\{chatModeValue\}/, "the switch reflects the active mode");
 assert.match(surface, /onChange=\{selectChatMode\}/, "the switch drives mode selection");
+
+// ── Code mode is desktop-only (no inline split on a phone) ──────────────────
+assert.match(
+  surface,
+  /const chatModeItems = isMobile \? CHAT_MODE_ITEMS\.filter\(\(m\) => m\.id !== "code"\) : CHAT_MODE_ITEMS/,
+  "the Code segment is dropped from the switch on mobile",
+);
+assert.match(
+  surface,
+  /const chatModeValue: ChatMode = isMobile && chatMode === "code" \? "convo" : chatMode/,
+  "a persisted Code session shows as Convo on mobile (saved preference untouched)",
+);
+assert.match(surface, /items=\{chatModeItems\}/, "the switch renders the mobile-aware item set");
+
 // The legacy binary Power pill is gone — its layout is now one of three locks.
 assert.doesNotMatch(surface, /chat-power-toggle/, "the binary Power toggle is replaced by the mode switch");
 assert.doesNotMatch(css, /\.chat-power-toggle/, "the dead Power-toggle styling is removed");
