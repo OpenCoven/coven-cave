@@ -27,6 +27,8 @@ flow, Feed, board-chat, screenshot, and home-composer polish.
 
 ### Fixed
 
+- **Tauri permissions** - allowed loopback browser event listeners in the
+  desktop permission set so the native shell can receive local browser events.
 - **Board chat** - task chats now start in the assigned project context instead
   of drifting into the wrong workspace.
 - **Home composer** - removed the keyboard-hint UI and CSS from the home
