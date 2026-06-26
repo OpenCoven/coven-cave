@@ -51,13 +51,8 @@ assert.match(
 );
 
 
-// ───── Keyboard hint hides on touch ─────
-// Touch devices have no physical keyboard — hide the desktop-only legend.
-assert.match(
-  css,
-  /@media \(pointer: coarse\)\s*\{[\s\S]*?\.hc-keyboard-hint\s*\{[\s\S]*?display:\s*none;/,
-  "@media (pointer: coarse) hides .hc-keyboard-hint",
-);
+// The keyboard shortcut legend was removed from the home composer entirely.
+assert.doesNotMatch(css, /\.hc-keyboard-hint\b/, ".hc-keyboard-hint CSS stays removed");
 
 // ───── Data-panel outer wrapper hide on mobile ─────
 // react-resizable-panels wraps each <Panel> in `<div data-panel id="..">`

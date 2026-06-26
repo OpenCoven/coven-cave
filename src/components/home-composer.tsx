@@ -730,10 +730,6 @@ export function HomeComposer({
         </div>
       </div>
 
-      <div className="hc-keyboard-hint">
-        ⏎ send · ⇧⏎ newline · ↑↓ history · / commands
-      </div>
-
       {/* Jump back in — resume a recent chat. The composer above starts new
           intent; this is the "continue where you left off" path. */}
       {onOpenSession && recentSessions.length > 0 && (

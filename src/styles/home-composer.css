@@ -683,21 +683,6 @@
   color: var(--text-muted);
 }
 
-.hc-keyboard-hint {
-  margin-top: 12px;
-  text-align: center;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-/* Touch devices have no physical keyboard — hide the desktop-only shortcut
- * legend so phones don't waste vertical space on irrelevant guidance. */
-@media (pointer: coarse) {
-  .hc-keyboard-hint {
-    display: none;
-  }
-}
-
 /* "Jump back in" — recent chats strip, secondary to the composer hero. */
 .home-recent {
   display: flex;

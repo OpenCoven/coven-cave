@@ -32,11 +32,11 @@ assert.doesNotMatch(
 );
 
 // ───────── Task 2: Keyboard hint strip ─────────
-assert.match(source, /<div className="hc-keyboard-hint">/, "hc-keyboard-hint div in JSX");
-assert.match(source, /⏎ send · ⇧⏎ newline · ↑↓ history · \/ commands/, "Hint copy: send/newline/history/commands");
+assert.doesNotMatch(source, /hc-keyboard-hint/, "home composer should not render the keyboard hint strip");
+assert.doesNotMatch(source, /⏎ send · ⇧⏎ newline · ↑↓ history · \/ commands/, "old shortcut hint copy is removed");
 
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
-assert.match(css, /\.hc-keyboard-hint\s*\{[\s\S]*?color:\s*var\(--text-muted\)/, ".hc-keyboard-hint CSS with --text-muted");
+assert.doesNotMatch(css, /\.hc-keyboard-hint\b/, "unused .hc-keyboard-hint CSS is removed");
 
 // ───────── Task 3: Circular icon-only Send button ─────────
 // The Codex-style composer uses a round arrow button. The visible "Send" text
