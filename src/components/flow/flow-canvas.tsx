@@ -22,7 +22,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { catalogNode } from "@/lib/flow/flow-catalog";
-import type { FlowDoc, FlowPosition } from "@/lib/flow/flow-doc";
+import type { FlowDoc, FlowLayoutOrientation, FlowPosition } from "@/lib/flow/flow-doc";
 import {
   FlowNodeView,
   FlowStickyView,
@@ -48,6 +48,7 @@ export type FlowCanvasProps = {
   staleNodeIds?: Record<string, boolean>;
   activeNodeId?: string | null;
   viewResetKey: number;
+  layoutOrientation: FlowLayoutOrientation;
   onSelectNode: (id: string | null) => void;
   onOpenNode: (id: string) => void;
   onConnect: (source: string, sourceHandle: string, target: string, targetHandle: string) => void;
@@ -64,6 +65,7 @@ export type FlowCanvasProps = {
   onStickyText: (id: string, text: string) => void;
   onStickySize: (id: string, width: number, height: number) => void;
   onTidy: () => void;
+  onLayoutOrientation: (orientation: FlowLayoutOrientation) => void;
 };
 
 function FlowCanvasInner(props: FlowCanvasProps) {
@@ -74,6 +76,7 @@ function FlowCanvasInner(props: FlowCanvasProps) {
     staleNodeIds,
     activeNodeId,
     viewResetKey,
+    layoutOrientation,
     onSelectNode,
     onOpenNode,
     onConnect,
@@ -288,6 +291,28 @@ function FlowCanvasInner(props: FlowCanvasProps) {
         >
           <Icon name="ph:graph" width={14} />
         </button>
+        <div className="flow-canvas-layout-toggle" role="group" aria-label="Flow layout orientation">
+          <button
+            type="button"
+            className={`flow-canvas-tool flow-canvas-layout-tool${layoutOrientation === "horizontal" ? " is-active" : ""}`}
+            aria-pressed={layoutOrientation === "horizontal"}
+            aria-label="Use horizontal layout"
+            title="Use horizontal layout"
+            onClick={() => props.onLayoutOrientation("horizontal")}
+          >
+            <Icon name="ph:columns" width={14} />
+          </button>
+          <button
+            type="button"
+            className={`flow-canvas-tool flow-canvas-layout-tool${layoutOrientation === "vertical" ? " is-active" : ""}`}
+            aria-pressed={layoutOrientation === "vertical"}
+            aria-label="Use vertical layout"
+            title="Use vertical layout"
+            onClick={() => props.onLayoutOrientation("vertical")}
+          >
+            <Icon name="ph:rows" width={14} />
+          </button>
+        </div>
         <button
           type="button"
           className="flow-canvas-tool"

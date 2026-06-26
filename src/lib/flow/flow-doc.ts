@@ -12,6 +12,7 @@
 // catalog (see flow-catalog.ts).
 
 export type FlowPosition = { x: number; y: number };
+export type FlowLayoutOrientation = "horizontal" | "vertical";
 
 export type FlowParamValue = string | number | boolean;
 
@@ -198,7 +199,7 @@ const TIDY_ORIGIN: FlowPosition = { x: 120, y: 120 };
 const TIDY_COLUMN_GAP = 260;
 const TIDY_ROW_GAP = 132;
 
-export function tidyFlowLayout(doc: FlowDoc): FlowDoc {
+export function tidyFlowLayout(doc: FlowDoc, orientation: FlowLayoutOrientation = "horizontal"): FlowDoc {
   const layoutNodes = doc.nodes.filter((node) => !node.sticky);
   if (layoutNodes.length === 0) return doc;
   const layoutIds = new Set(layoutNodes.map((node) => node.id));
@@ -256,10 +257,13 @@ export function tidyFlowLayout(doc: FlowDoc): FlowDoc {
   for (const [layer, nodes] of [...layers.entries()].sort(([a], [b]) => a - b)) {
     nodes.sort(compareNodesForTidy);
     nodes.forEach((node, row) => {
-      positions.set(node.id, {
-        x: TIDY_ORIGIN.x + layer * TIDY_COLUMN_GAP,
-        y: TIDY_ORIGIN.y + row * TIDY_ROW_GAP,
-      });
+      const x = orientation === "vertical"
+        ? TIDY_ORIGIN.x + row * TIDY_COLUMN_GAP
+        : TIDY_ORIGIN.x + layer * TIDY_COLUMN_GAP;
+      const y = orientation === "vertical"
+        ? TIDY_ORIGIN.y + layer * TIDY_ROW_GAP
+        : TIDY_ORIGIN.y + row * TIDY_ROW_GAP;
+      positions.set(node.id, { x, y });
     });
   }
 

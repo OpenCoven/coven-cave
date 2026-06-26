@@ -40,6 +40,7 @@ import {
   type FlowDoc,
   type FlowDraftAction,
   type FlowDraftState,
+  type FlowLayoutOrientation,
   type FlowNodeSettings,
   type FlowParamValue,
   type FlowPosition,
@@ -106,6 +107,7 @@ export function FlowView() {
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false);
+  const [layoutOrientation, setLayoutOrientation] = useState<FlowLayoutOrientation>("horizontal");
   // The run currently overlaid on the canvas (live session, or a finished run
   // whose final state we keep painted until the user switches flows).
   const [activeRun, setActiveRun] = useState<FlowRunRecord | null>(null);
@@ -689,7 +691,12 @@ export function FlowView() {
   );
   const onMoveNodes = useCallback((positions: Record<string, FlowPosition>) => mutate((d) => moveNodes(d, positions)), [mutate]);
   const tidy = useCallback(() => {
-    mutate((d) => tidyFlowLayout(d));
+    mutate((d) => tidyFlowLayout(d, layoutOrientation));
+    setViewResetKey((key) => key + 1);
+  }, [layoutOrientation, mutate]);
+  const setAndApplyLayoutOrientation = useCallback((orientation: FlowLayoutOrientation) => {
+    setLayoutOrientation(orientation);
+    mutate((d) => tidyFlowLayout(d, orientation));
     setViewResetKey((key) => key + 1);
   }, [mutate]);
   const onRenameNode = useCallback((id: string, name: string) => mutate((d) => renameNode(d, id, name)), [mutate]);
@@ -851,6 +858,7 @@ export function FlowView() {
                   staleNodeIds={staleNodeIds}
                   activeNodeId={running ? progress.activeNodeId : null}
                   viewResetKey={viewResetKey}
+                  layoutOrientation={layoutOrientation}
                   onSelectNode={setSelectedNodeId}
                   onOpenNode={setSelectedNodeId}
                   onConnect={onConnect}
@@ -861,6 +869,7 @@ export function FlowView() {
                   onConnectToNew={requestConnectToNew}
                   onInsertEdge={requestInsertEdge}
                   onTidy={tidy}
+                  onLayoutOrientation={setAndApplyLayoutOrientation}
                   onStickyText={(id, text) => onChangeSticky(id, { text })}
                   onStickySize={(id, width, height) => onChangeSticky(id, { width, height })}
                 />

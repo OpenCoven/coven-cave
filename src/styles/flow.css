@@ -150,6 +150,9 @@
 .flow-canvas-tool { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: var(--radius-control); background: color-mix(in oklch, var(--card) 90%, transparent); color: var(--text-primary); font-size: var(--text-sm); font-weight: 500; box-shadow: 0 6px 20px rgb(0 0 0 / 22%); cursor: pointer; }
 .flow-canvas-tool:hover, .flow-canvas-tool.is-active { border-color: color-mix(in oklch, var(--accent-presence) 54%, var(--border)); background: color-mix(in oklch, var(--card) 80%, var(--accent-presence) 20%); }
 .flow-canvas-add { font-weight: 600; }
+.flow-canvas-layout-toggle { display: inline-flex; overflow: hidden; border-radius: var(--radius-control); box-shadow: 0 6px 20px rgb(0 0 0 / 22%); }
+.flow-canvas-layout-tool { width: 31px; justify-content: center; padding: 0; border-radius: 0; box-shadow: none; }
+.flow-canvas-layout-tool + .flow-canvas-layout-tool { margin-left: -1px; }
 
 /* React Flow theming */
 .flow-canvas .react-flow__background { background: var(--bg-base); }
