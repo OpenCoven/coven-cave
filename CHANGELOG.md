@@ -7,6 +7,31 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.118] - 2026-06-25
+
+Patch release on top of v0.0.117. Headline: the current production line now
+matches the `main` and `kitty/main-mirror` tree while shipping the latest chat,
+flow, Feed, board-chat, screenshot, and home-composer polish.
+
+### Added
+
+- **Chat** - the Convo / Projects / Code mode switch now persists across reloads
+  and its control is slimmed down to text-only for a quieter production surface
+  (#1961, #1964).
+- **Chat / Mobile** - Code mode is hidden from the compact mobile chat switch
+  while staying available on larger desktop/tablet layouts (#1968).
+- **Flow** - added the latest flow layout-direction controls and iOS Feed wiring
+  from the production main line (#1962).
+- **Docs screenshots** - added familiar Feed tab captures for desktop and iOS
+  so release documentation reflects the shipped interface (#1966).
+
+### Fixed
+
+- **Board chat** - task chats now start in the assigned project context instead
+  of drifting into the wrong workspace.
+- **Home composer** - removed the keyboard-hint UI and CSS from the home
+  composer to keep the mobile production surface tighter.
+
 ## [0.0.117] - 2026-06-25
 
 Patch release on top of v0.0.116. Headline: Cave no longer ships a built-in
