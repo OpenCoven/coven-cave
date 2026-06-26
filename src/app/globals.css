@@ -3986,6 +3986,14 @@ button:active > .edge-rail-chip {
     /* ~78px clears the three traffic lights + their left inset. */
     padding-left: 78px;
     min-height: 52px;
+  }
+
+  :root[data-tauri-titlebar] :is(
+    .shell-top,
+    .shell-top__bar,
+    .shell-top .menu-bar,
+    .shell-top .top-bar
+  ) {
     -webkit-app-region: drag;
     app-region: drag;
   }
