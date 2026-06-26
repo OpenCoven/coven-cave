@@ -107,6 +107,11 @@ assert.match(
 );
 assert.match(
   css,
+  /:root\[data-tauri-titlebar\]\s+:is\(\s*\.shell-top,\s*\.shell-top__bar,\s*\.shell-top \.menu-bar,\s*\.shell-top \.top-bar\s*\)\s*\{[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?app-region:\s*drag;/,
+  "macOS Tauri titlebar mode should make the full rendered top-bar band draggable",
+);
+assert.match(
+  css,
   /\.shell-top-toggle\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;[\s\S]*?border:\s*1px solid var\(--border-hairline\);[\s\S]*?background:\s*var\(--bg-base\);/,
   "top-bar toggles match the row's compact bordered icon buttons",
 );
