@@ -352,6 +352,7 @@ export const SUITES = {
     "src/lib/memory-source-context.test.ts",
     "src/lib/onboarding-familiars.test.ts",
     "src/lib/onboarding-install-queue.test.ts",
+    "src/app/onboarding-install-route.test.ts",
     "src/lib/openclaw-agents.test.ts",
     "src/lib/openclaw-conversation-tools.test.ts",
     "src/lib/shell-banners.test.ts",

@@ -9,10 +9,12 @@ type HandoffReady = {
   ok: true;
   backendUrl: string;
   serveUrl: string;
+  nativeUrl?: string;
+  nativeHost?: string;
   inviteUrl?: string;
-  url: string;
-  expiresAt: number;
-  expiresAtIso: string;
+  url?: string;
+  expiresAt?: number;
+  expiresAtIso?: string;
   qrSvg: string;
   warning?: string;
 };
@@ -29,6 +31,10 @@ type Props = {
   open: boolean;
   onClose: () => void;
   autoCopyRequest?: number;
+  mobileModeEnabled?: boolean;
+  nativeHost?: string | null;
+  mobileModeError?: string | null;
+  onMobileModeChange?: (enabled: boolean) => void;
 };
 
 function expiryLabel(expiresAtIso: string) {
@@ -43,15 +49,23 @@ function expiryLabel(expiresAtIso: string) {
   }
 }
 
-export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props) {
+export function MobileHandoffModal({
+  open,
+  onClose,
+  autoCopyRequest = 0,
+  mobileModeEnabled = true,
+  nativeHost = null,
+  mobileModeError = null,
+  onMobileModeChange,
+}: Props) {
   const [handoff, setHandoff] = useState<HandoffReady | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState<"invite" | null>(null);
+  const [copied, setCopied] = useState<"host" | "invite" | null>(null);
   const lastAutoCopyRequestRef = useRef(0);
 
   const copyHandoffUrl = useCallback(async (nextHandoff: HandoffReady) => {
-    const url = nextHandoff.inviteUrl || nextHandoff.url;
+    const url = nextHandoff.inviteUrl || nextHandoff.url || nextHandoff.nativeUrl;
     if (!url) return;
     try {
       if (!(await copyText(url))) throw new Error("Clipboard unavailable");
@@ -71,7 +85,7 @@ export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props
       const res = await fetch("/api/mobile-handoff", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "start" }),
+        body: JSON.stringify({ action: "app-start" }),
       });
       const json = (await res.json()) as HandoffResponse;
       if (!json.ok) {
@@ -99,6 +113,17 @@ export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props
   const copyUrl = useCallback(async () => {
     if (handoff) await copyHandoffUrl(handoff);
   }, [copyHandoffUrl, handoff]);
+
+  const copyHost = useCallback(async () => {
+    if (!handoff?.nativeHost) return;
+    try {
+      if (!(await copyText(handoff.nativeHost))) throw new Error("Clipboard unavailable");
+      setCopied("host");
+    } catch (err) {
+      setCopied(null);
+      setError(err instanceof Error ? err.message : "Failed to copy host.");
+    }
+  }, [handoff]);
 
   const resetServe = useCallback(async () => {
     setLoading(true);
@@ -129,10 +154,22 @@ export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props
           <Button variant="ghost" onClick={resetServe} disabled={loading}>
             Reset Serve
           </Button>
+          {onMobileModeChange ? (
+            <Button
+              variant="secondary"
+              onClick={() => onMobileModeChange(!mobileModeEnabled)}
+              disabled={loading}
+            >
+              {mobileModeEnabled ? "Turn off mobile mode" : "Turn on mobile mode"}
+            </Button>
+          ) : null}
           <Button variant="secondary" onClick={() => void start()} loading={loading}>
-            Refresh link
+            Refresh route
           </Button>
-          <Button variant="secondary" onClick={() => void copyUrl()} disabled={!(handoff?.inviteUrl || handoff?.url) || loading}>
+          <Button variant="secondary" onClick={() => void copyHost()} disabled={!handoff?.nativeHost || loading}>
+            {copied === "host" ? "Host copied" : "Copy host"}
+          </Button>
+          <Button variant="secondary" onClick={() => void copyUrl()} disabled={!(handoff?.inviteUrl || handoff?.url || handoff?.nativeUrl) || loading}>
             {copied === "invite" ? "Invite copied" : "Copy invite"}
           </Button>
         </>
@@ -154,32 +191,66 @@ export function MobileHandoffModal({ open, onClose, autoCopyRequest = 0 }: Props
         </div>
 
         <div className="mobile-handoff__body">
-          <p className="mobile-handoff__title">Scan to open CovenCave on your phone.</p>
+          <p className="mobile-handoff__title">Connect CovenCave on your phone.</p>
           {handoff ? (
             <>
-              <p className="mobile-handoff__meta">
-                Expires at {expiryLabel(handoff.expiresAtIso)}
-              </p>
-              <a
-                className="mobile-handoff__url mobile-handoff__link"
-                href={handoff.inviteUrl || handoff.url}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {handoff.inviteUrl || handoff.url}
-              </a>
+              {handoff.nativeHost ? (
+                <>
+                  <p className="mobile-handoff__meta">
+                    Enter this host in the native iOS app. Mobile mode stays alive until you turn it off in Settings.
+                  </p>
+                  <button
+                    type="button"
+                    className="mobile-handoff__url mobile-handoff__copy"
+                    onClick={() => void copyHost()}
+                  >
+                    {handoff.nativeHost}
+                  </button>
+                </>
+              ) : null}
+              {handoff.expiresAtIso ? (
+                <p className="mobile-handoff__meta">
+                  Expires at {expiryLabel(handoff.expiresAtIso)}
+                </p>
+              ) : null}
+              {handoff.inviteUrl || handoff.url ? (
+                <a
+                  className="mobile-handoff__url mobile-handoff__link"
+                  href={handoff.inviteUrl || handoff.url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {handoff.inviteUrl || handoff.url}
+                </a>
+              ) : null}
               <p className="mobile-handoff__hint">
-                Scan the short-lived Tailscale invite link, or copy it and paste it into the mobile app.
+                The QR opens the Tailscale-served desktop page; the host is what the native app needs.
               </p>
               {handoff.warning ? (
                 <p className="mobile-handoff__warning">{handoff.warning}</p>
+              ) : null}
+            </>
+          ) : nativeHost ? (
+            <>
+              <p className="mobile-handoff__meta">
+                Mobile mode is on. Enter this host in the native iOS app.
+              </p>
+              <button
+                type="button"
+                className="mobile-handoff__url mobile-handoff__copy"
+                onClick={() => void copyText(nativeHost)}
+              >
+                {nativeHost}
+              </button>
+              {mobileModeError ? (
+                <p className="mobile-handoff__warning">{mobileModeError}</p>
               ) : null}
             </>
           ) : error ? (
             <p className="mobile-handoff__error">{error}</p>
           ) : (
             <p className="mobile-handoff__meta">
-              Cave will publish the local sidecar through Tailscale Serve and create a short-lived invite.
+              Cave will publish this desktop through Tailscale Serve and show the native app host.
             </p>
           )}
         </div>

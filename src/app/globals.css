@@ -6094,6 +6094,12 @@ button:active > .edge-rail-chip {
   overflow-wrap: anywhere;
 }
 
+.mobile-handoff__copy {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
 a.mobile-handoff__link {
   display: block;
   text-decoration: none;

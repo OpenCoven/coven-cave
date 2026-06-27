@@ -398,6 +398,21 @@ function jobView(job: InstallJob) {
   };
 }
 
+function installStartErrorMessage(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (/resource temporarily unavailable|EAGAIN|uv_thread_create/i.test(message)) {
+    return "Cave could not start the installer because the system is temporarily out of process slots. Wait a moment, then click Install again.";
+  }
+  return message || "install failed to start";
+}
+
+function finishInstallJobError(job: InstallJob, err: unknown) {
+  job.status = "done";
+  job.finishedAt = Date.now();
+  job.ok = false;
+  job.error = installStartErrorMessage(err);
+}
+
 export async function GET(req: Request) {
   const target = new URL(req.url).searchParams.get("target");
   if (!isInstallTarget(target)) {
@@ -500,56 +515,57 @@ export async function POST(req: Request) {
 
   void (async () => {
     try {
-      await prepareForInstall(targetName, target, job);
-    } catch (err) {
-      appendOutput(
-        job,
-        `Preparation warning: ${err instanceof Error ? err.message : String(err)}\n`,
-      );
-    }
+      try {
+        await prepareForInstall(targetName, target, job);
+      } catch (err) {
+        appendOutput(
+          job,
+          `Preparation warning: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
 
-    const child = spawn(plan.command, plan.args, {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: covenSpawnEnv(),
-      shell: plan.shell,
-    });
-    child.stdout.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
-    child.stderr.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
-    let killTimer: NodeJS.Timeout | undefined;
-    const timer = setTimeout(() => {
-      // curl|bash bootstraps can ignore SIGTERM; escalate so the job can't stay running forever
-      job.error = `install timed out after ${target.timeoutMs / 1000}s`;
-      child.kill("SIGTERM");
-      killTimer = setTimeout(() => child.kill("SIGKILL"), 10_000);
-    }, target.timeoutMs);
-    child.on("error", (e) => {
-      clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      job.status = "done";
-      job.finishedAt = Date.now();
-      job.ok = false;
-      job.error = e.message;
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      void (async () => {
-        const installedPath = await commandPath(target.binary);
-        const ok = code === 0 && !!installedPath && !job.error;
-        job.status = "done";
-        job.finishedAt = Date.now();
-        job.ok = ok;
-        job.code = code;
-        job.binaryPath = installedPath;
-        if (!ok && !job.error) {
-          job.error =
-            installFailureHint(targetName, job.output) ??
-            (code === 0
-              ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
-              : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`);
-        }
-      })();
-    });
+      const child = spawn(plan.command, plan.args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: covenSpawnEnv(),
+        shell: plan.shell,
+      });
+      child.stdout.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
+      child.stderr.on("data", (d) => appendOutput(job, stripAnsi(d.toString())));
+      let killTimer: NodeJS.Timeout | undefined;
+      const timer = setTimeout(() => {
+        // curl|bash bootstraps can ignore SIGTERM; escalate so the job can't stay running forever
+        job.error = `install timed out after ${target.timeoutMs / 1000}s`;
+        child.kill("SIGTERM");
+        killTimer = setTimeout(() => child.kill("SIGKILL"), 10_000);
+      }, target.timeoutMs);
+      child.on("error", (e) => {
+        clearTimeout(timer);
+        if (killTimer) clearTimeout(killTimer);
+        finishInstallJobError(job, e);
+      });
+      child.on("close", (code, signal) => {
+        clearTimeout(timer);
+        if (killTimer) clearTimeout(killTimer);
+        void (async () => {
+          const installedPath = await commandPath(target.binary);
+          const ok = code === 0 && !!installedPath && !job.error;
+          job.status = "done";
+          job.finishedAt = Date.now();
+          job.ok = ok;
+          job.code = code;
+          job.binaryPath = installedPath;
+          if (!ok && !job.error) {
+            job.error =
+              installFailureHint(targetName, job.output) ??
+              (code === 0
+                ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
+                : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`);
+          }
+        })();
+      });
+    } catch (err) {
+      finishInstallJobError(job, err);
+    }
   })();
 
   return NextResponse.json(
