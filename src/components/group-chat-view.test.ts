@@ -20,6 +20,8 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
   assert.match(view, /recordSession\(group\.id, reply\.familiarId/, "pins each familiar's session id");
   // A Stop control aborts the in-flight broadcast.
   assert.match(view, /abortRef\.current\?\.abort\(\)/, "Stop aborts the broadcast");
+  // Strips the piggybacked next-paths block so control markup never leaks into a bubble.
+  assert.match(view, /extractNextPaths\(r\.text\)\.visible/, "strips the next-paths block from coven replies");
 });
 
 test("@mentions target a subset of the coven", () => {
