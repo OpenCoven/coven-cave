@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.120] - 2026-06-27
+
+Patch release on top of v0.0.119. Headline: native mobile mode can keep the
+desktop Cave reachable from phone clients without requiring terminal commands.
+
+### Added
+
+- **Mobile handoff** - added a default-on mobile mode toggle that reconciles the
+  native Tailscale Serve host, persists the workspace preference, surfaces
+  non-fatal setup warnings, and lets users copy the native host or reset Serve
+  from the connect modal.
+
 ## [0.0.119] - 2026-06-25
 
 Patch release on top of v0.0.118. Headline: the macOS desktop shell's topmost
