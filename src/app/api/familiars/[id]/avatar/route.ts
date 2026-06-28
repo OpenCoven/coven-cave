@@ -151,11 +151,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: "not a decodable image" }, { status: 400 });
   }
 
-  const avatarsDir = path.join(await familiarWorkspace(id), "avatars");
-  await mkdir(avatarsDir, { recursive: true });
-  await writeFile(path.join(avatarsDir, `${id}.png`), png);
+  const dir = await avatarsDirFor(id);
+  await mkdir(dir, { recursive: true });
+  // `id` is a validated slug (no separators / `..`); basename is a belt-and-
+  // suspenders sanitizer on the filename sink (mirrors familiar-notes.ts).
+  await writeFile(path.join(dir, `${path.basename(id)}.png`), png);
 
   return NextResponse.json({ ok: true });
+}
+
+/** Resolve a familiar's avatars dir, re-asserting the slug guard inline so the
+ *  id can't reach `familiarWorkspace`/`path.join` unvalidated (the barrier
+ *  pattern from familiar-notes.ts). */
+async function avatarsDirFor(id: string): Promise<string> {
+  if (!isValidFamiliarId(id)) throw new Error("invalid familiar id");
+  return path.join(await familiarWorkspace(id), "avatars");
 }
 
 function imageResponse({ body, contentType }: RenderedAvatar): NextResponse {

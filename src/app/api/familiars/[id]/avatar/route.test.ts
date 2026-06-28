@@ -27,8 +27,15 @@ assert.match(source, /sharp\(raw\)/, "POST should decode the upload through shar
 assert.match(source, /not a decodable image/, "POST should reject undecodable payloads with 400");
 assert.match(
   source,
-  /writeFile\(path\.join\(avatarsDir, `\$\{id\}\.png`\)/,
-  "POST should write the canonical <id>.png into the avatars dir",
+  /writeFile\(path\.join\(dir, `\$\{path\.basename\(id\)\}\.png`\)/,
+  "POST should write the canonical <id>.png into the avatars dir (filename sanitized via basename)",
+);
+// The path build re-asserts the slug guard inline (barrier pattern) so the id
+// can't reach familiarWorkspace/path.join unvalidated.
+assert.match(
+  source,
+  /async function avatarsDirFor\(id: string\)[\s\S]*?isValidFamiliarId\(id\)/,
+  "avatars-dir helper must re-assert the id guard before building the path",
 );
 
 // Size is bounded before the expensive decode.
