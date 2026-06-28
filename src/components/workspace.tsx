@@ -9,7 +9,7 @@ import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-m
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
 import { BoardView } from "@/components/board-view";
 import { JournalView } from "@/components/journal/journal-view";
-import { CalendarView, type CalendarDeadline } from "@/components/calendar-view";
+import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
@@ -39,15 +39,21 @@ import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { FamiliarPanel } from "@/components/familiar-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
-import { ComuxView } from "@/components/comux-view";
+// Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
+// their chunks (and deps like @xyflow/react, @uiw/react-codemirror) load on
+// first open instead of shipping in the main bundle. See lazy-surfaces.tsx.
+import {
+  CalendarView,
+  ComuxView,
+  EvalsView,
+  FlowView,
+  GitHubView,
+} from "@/components/lazy-surfaces";
 import { CodeView } from "@/components/code-view";
-import { GitHubView } from "@/components/github-view";
 import { LibraryView } from "@/components/library-view";
 import { CovenPane } from "@/components/docs-pane";
 import { PluginsView } from "@/components/plugins-view";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
-import { FlowView } from "@/components/flow/flow-view";
-import { EvalsView } from "@/components/evals/evals-view";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
