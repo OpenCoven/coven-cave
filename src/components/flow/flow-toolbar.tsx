@@ -45,16 +45,15 @@ export function FlowToolbar(props: FlowToolbarProps) {
         <NameField value={props.name} onCommit={props.onRename} />
         <button
           type="button"
-          className={`flow-status-button${props.active ? " is-on" : ""}`}
+          className={`flow-status-toggle${props.active ? " is-on" : ""}`}
           role="switch"
           aria-checked={props.active}
           aria-label={props.active ? "Deactivate flow triggers" : "Activate flow triggers"}
           onClick={props.onToggleActive}
-          title={props.active ? "Active — triggers armed" : "Inactive — triggers off"}
+          title={props.active ? "Triggers armed — flow runs automatically" : "Triggers off — manual runs only"}
         >
-          <span className="flow-status-dot" aria-hidden />
+          {props.active ? "Active" : "Inactive"}
         </button>
-        {props.dirty && <span className="flow-toolbar-dirty" title="Unsaved changes">●</span>}
       </div>
 
       <nav className="flow-toolbar-tabs" aria-label="Flow view">

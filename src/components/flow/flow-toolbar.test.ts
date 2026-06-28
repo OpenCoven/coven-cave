@@ -7,10 +7,12 @@ const view = readFileSync(new URL("./flow-view.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../styles/flow.css", import.meta.url), "utf8");
 
 assert.doesNotMatch(source, /flow-active-toggle/, "Toolbar should not render the old labelled Active/Inactive pill");
-assert.match(source, /className=\{`flow-status-button/, "Flow active state should be a compact status control by the title");
+assert.match(source, /className=\{`flow-status-toggle/, "Flow active state should be a labelled status toggle by the title");
+assert.match(source, /props\.active \? "Active" : "Inactive"/, "Status toggle should read out the active state as a word, not a bare dot");
+assert.doesNotMatch(source, /flow-toolbar-dirty/, "The cosmetic unsaved-changes dot should be gone (Save already reflects dirty state)");
 assert.match(source, /aria-label=\{props\.active \? "Deactivate flow triggers" : "Activate flow triggers"\}/);
-assert.match(source, /size=\{Math\.max\(8, Math\.min\(28, draft\.length \+ 1\)\)\}/, "Name input should not push the status dot away from the title");
-assert.match(styles, /\.flow-status-button/, "Compact status control needs flow styles");
+assert.match(source, /size=\{Math\.max\(8, Math\.min\(28, draft\.length \+ 1\)\)\}/, "Name input should not push the status toggle away from the title");
+assert.match(styles, /\.flow-status-toggle/, "Labelled status toggle needs flow styles");
 assert.doesNotMatch(styles, /\.flow-active-toggle/, "Old labelled Active/Inactive pill styles should be removed");
 assert.doesNotMatch(source, /flow-toolbar-redaction/, "Execution-data redaction toggles should no longer clutter the toolbar");
 assert.doesNotMatch(source, /onToggleExecutionDataRedaction/, "Toolbar should not expose the removed redaction handler");
