@@ -265,10 +265,19 @@ export function compileFlowPrompt(
     lines.push("");
   }
   lines.push(
-    "Carry out each node below in order, passing the result of one node as the input to the nodes it connects to. " +
-      "Before you start a node print a line `@@step-start <id>`; when it succeeds print `@@step-done <id>`; if it " +
-      "fails print `@@step-fail <id>`. Use the exact node id shown in brackets.",
+    "Carry out each node below in order, passing the result of one node as the input to the nodes it connects to.",
   );
+  lines.push("");
+  lines.push("PROGRESS PROTOCOL — REQUIRED. The UI tracks this run only from these markers, so you MUST emit them:");
+  lines.push("- Print each marker as plain text on its own line, with nothing else on that line.");
+  lines.push("- Do NOT wrap a marker in backticks or a code block, and do NOT put it inside a sentence — a marker that isn't a bare line is ignored and the run will look stuck.");
+  lines.push("- Immediately before working a node, print:  @@step-start <id>");
+  lines.push("- When that node has succeeded, print:        @@step-done <id>");
+  lines.push("- If that node fails, print:                  @@step-fail <id>  (then stop unless the node says to continue).");
+  lines.push("- Use the exact id shown in [brackets] below — not the node's name.");
+  if (order.length > 0) {
+    lines.push(`For example, the very first line of your reply should be:  @@step-start ${order[0]}`);
+  }
   lines.push("");
   lines.push("Nodes:");
   for (const id of order) {
