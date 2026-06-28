@@ -25,8 +25,10 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
+import { openExternalUrl } from "@/lib/open-external";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+const GITHUB_PAT_URL = "https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local";
 
 type LifecycleMove = { to: CardLifecycle; label: string; retry?: boolean };
 const NEXT_MOVES: Record<CardLifecycle, LifecycleMove[]> = {
@@ -133,11 +135,10 @@ function InlinePATSetup({ onSaved }: { onSaved: () => void }) {
       </div>
       {error && <p style={{ fontSize: 10, color: "var(--color-danger)", margin: 0 }}>{error}</p>}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 2 }}>
-        <a href="https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local"
-          target="_blank" rel="noreferrer"
-          style={{ fontSize: 10, color: "var(--accent-presence)", textDecoration: "none" }}>
+        <button type="button" onClick={() => void openExternalUrl(GITHUB_PAT_URL)}
+          style={{ background: "transparent", border: 0, padding: 0, fontSize: 10, color: "var(--accent-presence)", textDecoration: "none", cursor: "pointer" }}>
           Generate PAT →
-        </a>
+        </button>
         <button type="button" disabled={(!pat.trim() && !usernameInput.trim()) || saving} onClick={() => void save()}
           style={{ background: "var(--accent-presence)", color: "var(--text-primary)", border: "none", borderRadius: 6,
             padding: "4px 12px", fontSize: 11, fontWeight: 500, cursor: "pointer", opacity: saving ? 0.6 : 1 }}>

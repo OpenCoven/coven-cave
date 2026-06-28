@@ -370,6 +370,7 @@ export const SUITES = {
     "src/lib/use-undo-delete-keyboard.test.ts",
     "src/lib/use-roving-tabindex.test.ts",
     "src/lib/vault.test.ts",
+    "src/lib/local-encrypted-vault.test.ts",
     "src/app/globals-background.test.ts",
     "src/components/board-chat-link.test.ts",
     "src/components/chat-list-panel.test.ts",

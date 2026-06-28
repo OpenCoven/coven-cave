@@ -18,6 +18,10 @@ assert.match(src, /tool\.outdated \? `\$\{tool\.current\} -> \$\{tool\.latest\}`
 assert.doesNotMatch(src, /tool\.latest\s*\?\s*` -> \$\{tool\.latest\}`/, "version line must not advertise latest when npm latest is older than installed");
 assert.doesNotMatch(src, /tool\.installed \? "Up to date" : "Not found"/, "installed-but-version-unknown tools must not fall through to Up to date");
 assert.match(src, /coven-code/, "coven-code is included in the client install target type");
+assert.match(src, /function buildDiagnosticsText/, "tool diagnostics text is centralized");
+assert.match(src, /navigator\.clipboard\.writeText/, "component can copy tool diagnostics for debugging");
+assert.match(src, /Copy diagnostics/, "About tools exposes a copy diagnostics action");
+assert.match(src, /sidecarTokenPresent/, "diagnostics include whether the sidecar auth bridge captured a token");
 assert.match(src, /Check tools/, "component offers a manual re-check");
 assert.match(settings, /import \{ OpenCovenToolsUpdate \}/, "Settings imports the OpenCoven tools update component");
 assert.match(settings, /<SettingsGroup label="OpenCoven tools">[\s\S]*<OpenCovenToolsUpdate \/>/, "About settings renders the OpenCoven tools group");

@@ -40,4 +40,8 @@ assert.match(src, /transition: reducedMotion \? "none" : "width 0\.2s/, "the pro
 assert.match(src, /transition: reducedMotion \? "none" : "background 0\.15s"/, "the step checkbox drops its transition under reduced motion");
 assert.match(src, /@media \(prefers-reduced-motion: reduce\) \{ \.step-actions \{ transition: none; \} \}/, "the step-actions hover reveal honors reduced motion");
 
+assert.match(src, /import \{ openExternalUrl \} from "@\/lib\/open-external"/, "inline PAT setup imports the system-browser opener");
+assert.match(src, /onClick=\{\(\) => void openExternalUrl\(GITHUB_PAT_URL\)\}/, "inline PAT setup opens GitHub token creation outside the local app");
+assert.doesNotMatch(src, /href="https:\/\/github\.com\/settings\/tokens\/new/, "inline PAT setup no longer uses a plain localhost-bound anchor");
+
 console.log("board-inspector-a11y.test.ts: ok");

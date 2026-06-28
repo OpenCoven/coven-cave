@@ -86,6 +86,21 @@ test("packaged sidecar bootstraps mobile handoff tokens", async () => {
   );
 });
 
+test("Windows packaged sidecar starts without a console window", async () => {
+  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+
+  assert.match(
+    launcher,
+    /std::os::windows::process::CommandExt/,
+    "Windows launcher must import CommandExt so sidecar spawn flags are available",
+  );
+  assert.match(
+    launcher,
+    /cmd\.creation_flags\(0x08000000\)/,
+    "Windows launcher must use CREATE_NO_WINDOW for the Node sidecar process",
+  );
+});
+
 test("macOS release signing includes nested executables like bundled Node", async () => {
   const releaseScript = await readFile(
     new URL("../scripts/release.sh", import.meta.url),

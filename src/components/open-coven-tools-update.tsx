@@ -31,6 +31,8 @@ type InstallResult = {
   detail: string;
 };
 
+const SIDECAR_TOKEN_STORAGE_KEY = "coven-cave:sidecar-auth-token";
+
 function formatElapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
   const minutes = Math.floor(seconds / 60);
@@ -54,10 +56,53 @@ function toolStatusText(tool: ToolStatus): string {
   return "Up to date";
 }
 
+function buildDiagnosticsText({
+  tools,
+  checking,
+  error,
+  installJobs,
+  installResults,
+  href,
+  userAgent,
+  sidecarTokenPresent,
+  tauriInternalsPresent,
+}: {
+  tools: ToolStatus[];
+  checking: boolean;
+  error: string | null;
+  installJobs: Partial<Record<InstallTarget, InstallJobView>>;
+  installResults: Partial<Record<InstallTarget, InstallResult>>;
+  href: string;
+  userAgent: string;
+  sidecarTokenPresent: boolean;
+  tauriInternalsPresent: boolean;
+}): string {
+  return JSON.stringify(
+    {
+      generatedAt: new Date().toISOString(),
+      surface: "Settings/About/OpenCoven tools",
+      location: href,
+      userAgent,
+      sidecarTokenPresent,
+      tauriInternalsPresent,
+      checking,
+      error,
+      tools,
+      installJobs,
+      installResults,
+    },
+    null,
+    2,
+  );
+}
+
 export function OpenCovenToolsUpdate() {
   const [tools, setTools] = useState<ToolStatus[]>([]);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [diagnosticsStatus, setDiagnosticsStatus] = useState<
+    "idle" | "copied" | "failed"
+  >("idle");
   const [installJobs, setInstallJobs] = useState<
     Partial<Record<InstallTarget, InstallJobView>>
   >({});
@@ -211,10 +256,43 @@ export function OpenCovenToolsUpdate() {
     }
   };
 
+  const copyDiagnostics = async () => {
+    try {
+      const text = buildDiagnosticsText({
+        tools,
+        checking,
+        error,
+        installJobs,
+        installResults,
+        href: window.location.href,
+        userAgent: navigator.userAgent,
+        sidecarTokenPresent: Boolean(
+          window.sessionStorage.getItem(SIDECAR_TOKEN_STORAGE_KEY),
+        ),
+        tauriInternalsPresent: "__TAURI_INTERNALS__" in window,
+      });
+      await navigator.clipboard.writeText(text);
+      setDiagnosticsStatus("copied");
+      window.setTimeout(() => setDiagnosticsStatus("idle"), 1800);
+    } catch {
+      setDiagnosticsStatus("failed");
+    }
+  };
+
   const accentBtn =
     "focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50";
   const ghostBtn =
     "focus-ring rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
+  const footerStatusText =
+    diagnosticsStatus === "copied"
+      ? "Diagnostics copied"
+      : diagnosticsStatus === "failed"
+        ? "Diagnostics copy failed"
+        : error
+          ? `Check failed: ${error}`
+          : checking
+            ? "Checking tools..."
+            : "Version source: npm latest";
 
   return (
     <>
@@ -268,13 +346,18 @@ export function OpenCovenToolsUpdate() {
           </div>
         );
       })}
-      <div className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
         <span className="text-[12px] text-[var(--text-secondary)]">
-          {error ? `Check failed: ${error}` : checking ? "Checking tools..." : "Version source: npm latest"}
+          {footerStatusText}
         </span>
-        <button type="button" onClick={() => void load()} className={ghostBtn} disabled={checking}>
-          Check tools
-        </button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <button type="button" onClick={() => void copyDiagnostics()} className={ghostBtn}>
+            Copy diagnostics
+          </button>
+          <button type="button" onClick={() => void load()} className={ghostBtn} disabled={checking}>
+            Check tools
+          </button>
+        </div>
       </div>
     </>
   );

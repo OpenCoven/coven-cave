@@ -341,4 +341,20 @@ assert.match(source, /aria-label="Search GitHub items by title, repo, or number"
 assert.match(source, /No items match/, "a no-match query gets its own empty state");
 assert.match(boardCss, /\.gh-search \{/, "the search box is styled to match the toolbar controls");
 
+assert.match(
+  source,
+  /import \{ openExternalUrl \} from "@\/lib\/open-external"/,
+  "PAT setup imports the system-browser opener",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => void openExternalUrl\(GITHUB_PAT_URL\)\}/,
+  "PAT setup opens token creation on github.com outside the local app surface",
+);
+assert.doesNotMatch(
+  source,
+  /href="https:\/\/github\.com\/settings\/tokens\/new/,
+  "PAT setup no longer relies on a plain anchor that can stay inside localhost",
+);
+
 console.log("github-view-polish.test.ts OK");

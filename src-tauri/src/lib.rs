@@ -3,7 +3,11 @@
 // Tauri tray/menu/webview-builder APIs that aren't available on iOS or
 // Android. Mobile binaries are thin shells: webview only, no sidecar.
 #[cfg(desktop)]
+use rand::{rngs::OsRng, RngCore};
+#[cfg(desktop)]
 use std::net::TcpListener;
+#[cfg(all(desktop, target_os = "windows"))]
+use std::os::windows::process::CommandExt;
 #[cfg(desktop)]
 use std::path::{Path, PathBuf};
 #[cfg(desktop)]
@@ -14,8 +18,6 @@ use std::sync::Mutex;
 use std::thread;
 #[cfg(desktop)]
 use std::time::{Duration, Instant};
-#[cfg(desktop)]
-use rand::{rngs::OsRng, RngCore};
 #[cfg(desktop)]
 use tauri::{
     image::Image,
@@ -1028,6 +1030,11 @@ pub fn run() {
                 cmd.stderr(Stdio::from(err));
             } else {
                 cmd.stderr(Stdio::null());
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
             }
 
             let child = match cmd.spawn() {

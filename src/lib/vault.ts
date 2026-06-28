@@ -1,12 +1,14 @@
 /**
- * Cave Vault — resolves env vars from 1Password secret references
+ * Cave Vault — resolves env vars from encrypted local secrets or 1Password references
  *
- * vault.yaml maps ENV_VAR_NAME → { ref: "op://Vault/Item/field", ... }
+ * vault.yaml maps ENV_VAR_NAME → { storage: "encrypted" } or { ref: "op://Vault/Item/field", ... }
  *
  * Resolution priority:
  *   1. Already in process.env (e.g. set by .env.local or OS env) → use as-is
- *   2. vault.yaml has a ref for this key → resolve via `op read`
- *   3. undefined
+ *   2. Writable .env.local legacy fallback → use as-is
+ *   3. Local encrypted vault → decrypt into process memory
+ *   4. vault.yaml has a ref for this key → resolve via `op read`
+ *   5. undefined
  *
  * Resolved values are cached in process.env for the lifetime of the process
  * so subsequent calls are instant. The raw secret value is NEVER written to
@@ -19,22 +21,25 @@ import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { covenHome } from "./coven-paths.ts";
 import { readEnvLocalValue } from "./env-file.ts";
+import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type VaultEntry = {
-  ref: string;
+  ref?: string;
+  storage?: "1password" | "encrypted";
   description?: string;
   required?: boolean;
 };
 
 export type VaultMap = Record<string, VaultEntry>;
 
-export type VaultStatus = "resolved" | "env-only" | "unresolved" | "error" | "no-ref";
+export type VaultStatus = "resolved" | "encrypted" | "env-only" | "unresolved" | "error" | "no-ref";
 
 export type VaultMappingStatus = {
   key: string;
   ref: string | null;
+  storage: "1password" | "encrypted" | null;
   description: string | null;
   required: boolean;
   status: VaultStatus;
@@ -118,21 +123,27 @@ export function loadVaultMap(force = false): VaultMap {
 export function saveVaultMap(map: VaultMap): void {
   // Serialise back to YAML manually (keeps comments stripped but structure clean)
   const lines = [
-    "# Cave Vault — env var → 1Password secret reference map",
+    "# Cave Vault — env var → encrypted local secret or 1Password reference map",
     "#",
     "# Format:",
     '#   ENV_VAR_NAME:',
+    '#     storage: "encrypted"',
+    "#   ANOTHER_ENV_VAR:",
     '#     ref: "op://VaultName/ItemTitle/field"',
     '#     description: "human-readable note"',
     "#     required: false",
     "#",
-    "# Secrets are NEVER stored here — only the op:// reference.",
+    "# Secrets are NEVER stored here — only storage metadata or an op:// reference.",
     "# Safe to commit; contains no credentials.",
     "",
   ];
   for (const [key, entry] of Object.entries(map)) {
     lines.push(`${key}:`);
-    lines.push(`  ref: "${entry.ref}"`);
+    if (entry.storage === "encrypted") {
+      lines.push('  storage: "encrypted"');
+    } else if (entry.ref) {
+      lines.push(`  ref: "${entry.ref}"`);
+    }
     if (entry.description) lines.push(`  description: "${entry.description.replace(/"/g, "'")}"`);
     if (entry.required) lines.push(`  required: true`);
     lines.push("");
@@ -182,7 +193,7 @@ function opRead(ref: string): string | null {
 
 /**
  * Resolve an env var by key.
- * Checks process.env first, then vault.yaml → `op read`.
+ * Checks process.env first, then local encrypted vault, then vault.yaml → `op read`.
  * Caches in process.env on success.
  * Never logs or persists the value to disk.
  */
@@ -200,9 +211,18 @@ export function resolveSecret(key: string): string | undefined {
     return fromFile;
   }
 
-  // Try vault
   const map = loadVaultMap();
   const entry = map[key];
+
+  const localEncrypted = entry?.storage === "encrypted" || hasLocalEncryptedSecret(key)
+    ? getLocalEncryptedSecret(key)
+    : null;
+  if (localEncrypted?.trim()) {
+    process.env[key] = localEncrypted.trim();
+    return localEncrypted.trim();
+  }
+
+  // Try 1Password vault reference
   if (!entry?.ref) return undefined;
 
   const value = opRead(entry.ref);
@@ -225,9 +245,48 @@ export function getVaultStatuses(): VaultMappingStatus[] {
   return Object.entries(map).map(([key, entry]) => {
     const inEnv = !!(process.env[key]?.trim());
 
+    if (entry.storage === "encrypted" || hasLocalEncryptedSecret(key)) {
+      try {
+        const value = getLocalEncryptedSecret(key);
+        if (value) {
+          process.env[key] = value;
+          return {
+            key, ref: entry.ref ?? null, description: entry.description ?? null,
+            storage: "encrypted",
+            required: entry.required ?? false,
+            status: "encrypted" as VaultStatus, hasValue: true,
+          };
+        }
+        if (inEnv) {
+          return {
+            key, ref: entry.ref ?? null, description: entry.description ?? null,
+            storage: "encrypted",
+            required: entry.required ?? false,
+            status: "env-only" as VaultStatus, hasValue: true,
+          };
+        }
+        return {
+          key, ref: entry.ref ?? null, description: entry.description ?? null,
+          storage: "encrypted",
+          required: entry.required ?? false,
+          status: "unresolved" as VaultStatus, hasValue: false,
+          error: "encrypted local secret is missing",
+        };
+      } catch (e) {
+        return {
+          key, ref: entry.ref ?? null, description: entry.description ?? null,
+          storage: "encrypted",
+          required: entry.required ?? false,
+          status: "error" as VaultStatus, hasValue: false,
+          error: e instanceof Error ? e.message : "unknown error",
+        };
+      }
+    }
+
     if (inEnv) {
       return {
-        key, ref: entry.ref, description: entry.description ?? null,
+        key, ref: entry.ref ?? null, description: entry.description ?? null,
+        storage: entry.storage ?? (entry.ref ? "1password" : null),
         required: entry.required ?? false,
         status: "env-only" as VaultStatus, hasValue: true,
       };
@@ -236,6 +295,7 @@ export function getVaultStatuses(): VaultMappingStatus[] {
     if (!entry.ref) {
       return {
         key, ref: null, description: entry.description ?? null,
+        storage: entry.storage ?? null,
         required: entry.required ?? false,
         status: "no-ref" as VaultStatus, hasValue: false,
       };
@@ -247,12 +307,14 @@ export function getVaultStatuses(): VaultMappingStatus[] {
         process.env[key] = value; // cache
         return {
           key, ref: entry.ref, description: entry.description ?? null,
+          storage: "1password",
           required: entry.required ?? false,
           status: "resolved" as VaultStatus, hasValue: true,
         };
       }
       return {
         key, ref: entry.ref, description: entry.description ?? null,
+        storage: "1password",
         required: entry.required ?? false,
         status: "unresolved" as VaultStatus, hasValue: false,
         error: "op read returned empty — check ref or 1Password auth",
@@ -260,6 +322,7 @@ export function getVaultStatuses(): VaultMappingStatus[] {
     } catch (e) {
       return {
         key, ref: entry.ref, description: entry.description ?? null,
+        storage: "1password",
         required: entry.required ?? false,
         status: "error" as VaultStatus, hasValue: false,
         error: e instanceof Error ? e.message : "unknown error",
