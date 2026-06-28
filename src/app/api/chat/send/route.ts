@@ -31,7 +31,7 @@ import {
   toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
-import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenInvocation, covenSpawnEnv } from "@/lib/coven-bin";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
@@ -393,7 +393,8 @@ function covenRunSupportsModel(): Promise<boolean> {
         resolve(value);
       };
       try {
-        const child = spawn(covenBin(), ["run", "--help"], {
+        const { command, prefixArgs } = covenInvocation();
+        const child = spawn(command, [...prefixArgs, "run", "--help"], {
           env: covenSpawnEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
@@ -1300,16 +1301,22 @@ export async function POST(req: Request) {
                   env: covenSpawnEnv(),
                 });
               })()
-            : spawn(covenBin(), spawnArgs, {
-                // Spawn IN the familiar's workspace when no project root was
-                // supplied, so coven's project-root resolver picks that dir as
-                // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
-                // from the familiar's home. When a project root IS supplied,
-                // honor that instead.
-                cwd: familiarCwd ?? cwd,
-                stdio: ["ignore", "pipe", "pipe"],
-                env: covenSpawnEnv(),
-              });
+            : (() => {
+                // covenInvocation() resolves the Windows `.cmd` shim to
+                // `node coven.js` so the prompt-bearing argv never goes through
+                // a shell (no quoting/injection hazard); identity elsewhere.
+                const { command, prefixArgs } = covenInvocation();
+                return spawn(command, [...prefixArgs, ...spawnArgs], {
+                  // Spawn IN the familiar's workspace when no project root was
+                  // supplied, so coven's project-root resolver picks that dir as
+                  // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
+                  // from the familiar's home. When a project root IS supplied,
+                  // honor that instead.
+                  cwd: familiarCwd ?? cwd,
+                  stdio: ["ignore", "pipe", "pipe"],
+                  env: covenSpawnEnv(),
+                });
+              })();
 
           const onAbort = () => {
             try {

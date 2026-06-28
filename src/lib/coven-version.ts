@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { covenBin, covenSpawnEnv } from "./coven-bin.ts";
+import { covenInvocation, covenSpawnEnv } from "./coven-bin.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,7 +26,8 @@ export function displayCovenVersion({
 
 export async function installedCovenVersion(): Promise<string | null> {
   try {
-    const { stdout, stderr } = await execFileAsync(covenBin(), ["--version"], {
+    const { command, prefixArgs } = covenInvocation();
+    const { stdout, stderr } = await execFileAsync(command, [...prefixArgs, "--version"], {
       env: covenSpawnEnv(),
       timeout: 2500,
     });

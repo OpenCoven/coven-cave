@@ -11,7 +11,7 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
-import { covenBin, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
+import { covenInvocation, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +57,16 @@ async function which(binary: string): Promise<string | null> {
 
 function probeVersion(binary: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
-    const child = spawn(binary, args, { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    let child;
+    try {
+      // spawn() throws synchronously (EINVAL) for a `.cmd`/`.bat` binary on
+      // modern Node — a version probe is best-effort, so degrade to null
+      // instead of letting it reject and 500 the whole route.
+      child = spawn(binary, args, { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      resolve(null);
+      return;
+    }
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (out += d.toString()));
@@ -78,7 +87,8 @@ function probeVersion(binary: string, args: string[]): Promise<string | null> {
 
 function covenSupportsAdapterList(): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = spawn(covenBin(), ["--help"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    const { command, prefixArgs } = covenInvocation();
+    const child = spawn(command, [...prefixArgs, "--help"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (out += d.toString()));
@@ -99,7 +109,8 @@ function covenSupportsAdapterList(): Promise<boolean> {
 
 function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
   return new Promise((resolve) => {
-    const child = spawn(covenBin(), ["adapter", "list", "--json"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
+    const { command, prefixArgs } = covenInvocation();
+    const child = spawn(command, [...prefixArgs, "adapter", "list", "--json"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     const t = setTimeout(() => {
       child.kill("SIGTERM");

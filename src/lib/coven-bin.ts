@@ -23,12 +23,13 @@
 // `covenSpawnEnv()` for the env option.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 let cachedBin: string | null = null;
 let cachedPath: string | null = null;
+let cachedInvocation: { command: string; prefixArgs: string[] } | null = null;
 
 const FORBIDDEN_SPAWN_ENV_KEYS = ["GITHUB_PAT"] as const;
 
@@ -151,6 +152,63 @@ export function covenBin(): string {
 
   cachedBin = "coven";
   return cachedBin;
+}
+
+// Parse an npm/pnpm `.cmd` shim for the Node script it execs, e.g. the line
+//   "%_prog%" "%dp0%\node_modules\@opencoven\cli\bin\coven.js" %*
+// Falls back to the conventional npm-global layout when the shim format is
+// unrecognized. Returns an absolute path to the `.js` entry, or null.
+function resolveWindowsShimTarget(cmdPath: string): string | null {
+  const binDir = path.dirname(cmdPath);
+  try {
+    const text = readFileSync(cmdPath, "utf-8");
+    const match = text.match(/%dp0%[\\/]+(\S+?\.[cm]?js)"/i);
+    if (match) {
+      const resolved = path.join(binDir, match[1].replace(/[\\/]+/g, path.sep));
+      if (existsSync(resolved)) return resolved;
+    }
+  } catch {
+    /* unreadable shim — fall through to the conventional layout */
+  }
+  const fallback = path.join(
+    binDir,
+    "node_modules",
+    "@opencoven",
+    "cli",
+    "bin",
+    "coven.js",
+  );
+  return existsSync(fallback) ? fallback : null;
+}
+
+/**
+ * Resolve how to launch `coven` as a child process: the command plus a fixed
+ * argv prefix that callers prepend to their own args.
+ *
+ * Why this exists: on Windows, npm/pnpm install `coven` as a `.cmd` (batch)
+ * shim. Since the CVE-2024-27980 hardening (Node >=18.20 / 20.12 / 21.7),
+ * `child_process.spawn()`/`execFile()` THROW `EINVAL` when handed a `.cmd` or
+ * `.bat` unless `shell: true` is set — and shell mode is unsafe for argv that
+ * carries user text (chat prompt content). So resolve the shim to the Node
+ * script it wraps and run `node <script>` directly, which safely accepts
+ * arbitrary args. On macOS/Linux `coven` is a real executable, so this is the
+ * identity ({ command: covenBin(), prefixArgs: [] }).
+ *
+ * Usage: const { command, prefixArgs } = covenInvocation();
+ *        spawn(command, [...prefixArgs, ...yourArgs], opts);
+ */
+export function covenInvocation(): { command: string; prefixArgs: string[] } {
+  if (cachedInvocation) return cachedInvocation;
+  const bin = covenBin();
+  if (process.platform === "win32" && /\.(cmd|bat)$/i.test(bin)) {
+    const script = resolveWindowsShimTarget(bin);
+    if (script) {
+      cachedInvocation = { command: process.execPath, prefixArgs: [script] };
+      return cachedInvocation;
+    }
+  }
+  cachedInvocation = { command: bin, prefixArgs: [] };
+  return cachedInvocation;
 }
 
 /**

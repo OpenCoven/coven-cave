@@ -6,7 +6,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { callDaemon } from "@/lib/coven-daemon";
 import { loadConfig } from "@/lib/cave-config";
-import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenInvocation, covenSpawnEnv } from "@/lib/coven-bin";
 import {
   openCovenToolStatuses,
   type OpenCovenToolStatus,
@@ -121,14 +121,15 @@ async function checkHarnessAdapters(
 
 async function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
   try {
-    const { stdout: helpText } = await execFileAsync(covenBin(), ["--help"], {
+    const { command, prefixArgs } = covenInvocation();
+    const { stdout: helpText } = await execFileAsync(command, [...prefixArgs, "--help"], {
       env: covenSpawnEnv(),
       timeout: 1500,
     });
     if (!covenHelpSupportsAdapterList(helpText)) return [];
     const { stdout } = await execFileAsync(
-      covenBin(),
-      ["adapter", "list", "--json"],
+      command,
+      [...prefixArgs, "adapter", "list", "--json"],
       {
         env: covenSpawnEnv(),
         timeout: 3000,
