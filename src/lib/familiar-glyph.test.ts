@@ -4,11 +4,24 @@ import {
   inferGlyphFromRole,
   resolveFamiliarGlyph,
   DEFAULT_FAMILIAR_GLYPH,
+  ROLE_GLYPH_MAP,
 } from "./familiar-glyph.ts";
+import phGlyphs from "./ph-glyph-catalog.json" with { type: "json" };
+
+// Regression guard: every built-in glyph name (role-map + default) MUST exist
+// in the bundled catalog, or it renders an empty glyph. This is exactly how
+// `ph:code-bold` slipped in — the catalog only ships the `-fill` variant.
+{
+  const bundled = new Set(Object.keys(phGlyphs.icons ?? {}).map((n) => `ph:${n}`));
+  const builtIns = [...ROLE_GLYPH_MAP.map(([, name]) => name), DEFAULT_FAMILIAR_GLYPH.name];
+  for (const name of builtIns) {
+    assert.ok(bundled.has(name), `built-in glyph "${name}" missing from ph-glyph-catalog.json (would render blank)`);
+  }
+}
 
 // inferGlyphFromRole — keyword matches
 {
-  assert.equal(inferGlyphFromRole("Code Reviewer")?.name, "ph:code-bold");
+  assert.equal(inferGlyphFromRole("Code Reviewer")?.name, "ph:code-fill");
   assert.equal(inferGlyphFromRole("chat host")?.name, "ph:chat-circle-fill");
   assert.equal(inferGlyphFromRole("Music critic")?.name, "ph:music-notes-fill");
   assert.equal(inferGlyphFromRole("research librarian")?.name, "ph:books-fill");
@@ -30,7 +43,7 @@ import {
 {
   // No override / icon / emoji — should fall through to role inference.
   const fam = { id: "x", role: "code reviewer" } as any;
-  assert.equal(resolveFamiliarGlyph(fam, {}).name, "ph:code-bold");
+  assert.equal(resolveFamiliarGlyph(fam, {}).name, "ph:code-fill");
 }
 
 {

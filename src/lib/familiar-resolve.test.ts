@@ -63,7 +63,7 @@ const base = {
 {
   const noIcon = { ...base, icon: undefined };
   const r = resolveFamiliar(noIcon, { archived: false });
-  assert.equal(r.glyph.name, "ph:code-bold");
+  assert.equal(r.glyph.name, "ph:code-fill");
 }
 
 // No icon, no role match → DEFAULT_FAMILIAR_GLYPH

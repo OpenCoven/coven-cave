@@ -49,9 +49,15 @@ export function serializeGlyph(glyph: FamiliarGlyph): string {
  *
  * The first matching keyword wins, so order keys most-specific → most-generic
  * if you extend this.
+ *
+ * Every name here MUST exist in the bundled glyph catalog
+ * (`ph-glyph-catalog.json`, one variant per base — prefer `-fill`); a name
+ * outside it renders an empty glyph. `familiar-glyph.test.ts` guards this.
  */
-const ROLE_GLYPH_MAP: Array<[string, string]> = [
-  ["code", "ph:code-bold"],
+export const ROLE_GLYPH_MAP: Array<[string, string]> = [
+  // `-fill`, not `-bold`: the trimmed catalog only ships the `-fill` variant, so
+  // `ph:code-bold` was rendering blank for every "code" familiar.
+  ["code", "ph:code-fill"],
   ["chat", "ph:chat-circle-fill"],
   ["music", "ph:music-notes-fill"],
   ["research", "ph:books-fill"],
