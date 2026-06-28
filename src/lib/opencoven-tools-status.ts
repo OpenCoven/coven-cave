@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { compareSemver } from "@/lib/app-update";
-import { covenSpawnEnv } from "@/lib/coven-bin";
+import { covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
 
 const execFileAsync = promisify(execFile);
 
@@ -45,15 +45,24 @@ export type OpenCovenToolStatus = {
 
 async function commandPath(binary: string): Promise<string | null> {
   const finder = process.platform === "win32" ? "where" : "which";
-  try {
-    const { stdout } = await execFileAsync(finder, [binary], {
-      env: covenSpawnEnv(),
-      timeout: 1500,
-    });
-    return stdout.trim().split(/\r?\n/)[0] || null;
-  } catch {
-    return null;
-  }
+  const find = async (env: NodeJS.ProcessEnv): Promise<string | null> => {
+    try {
+      const { stdout } = await execFileAsync(finder, [binary], {
+        env,
+        timeout: 1500,
+      });
+      return stdout.trim().split(/\r?\n/)[0] || null;
+    } catch {
+      return null;
+    }
+  };
+  // covenSpawnEnv() caches PATH for the server's lifetime. A cave launched from
+  // Finder/Spotlight starts with a minimal PATH (no nvm/fnm), so a tool the
+  // user actually has goes undetected and shows as "Not installed". Re-probe
+  // once with a freshly rebuilt PATH before concluding the binary is missing.
+  const found = await find(covenSpawnEnv());
+  if (found) return found;
+  return find(refreshCovenSpawnEnv());
 }
 
 function firstSemver(text: string): string | null {
