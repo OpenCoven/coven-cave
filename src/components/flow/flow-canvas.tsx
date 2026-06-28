@@ -136,11 +136,10 @@ function FlowCanvasInner(props: FlowCanvasProps) {
   // effect can't do this: the fresh canvas mounts with the previous positions
   // and ignores the later controlled update, so a Tidy / orientation switch
   // looked inert (the doc moved but the nodes stayed put).
-  if (syncedViewKey !== viewKey) {
-    setSyncedViewKey(viewKey);
-    nodesRef.current = docNodes;
-    setNodes(docNodes);
-  }
+if (syncedViewKey !== viewKey) {
+  setSyncedViewKey(viewKey);
+  setNodes(docNodes);
+}
 
   // While the view is stable, reconcile structural edits (added/removed nodes)
   // without clobbering the live in-flight positions that keep dragging smooth.
