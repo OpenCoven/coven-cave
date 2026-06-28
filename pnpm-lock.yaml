@@ -101,6 +101,9 @@ importers:
       react-resizable-panels:
         specifier: 4.11.2
         version: 4.11.2(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      sharp:
+        specifier: 0.34.5
+        version: 0.34.5
       shiki:
         specifier: 4.2.0
         version: 4.2.0
@@ -141,9 +144,6 @@ importers:
       highlight.js:
         specifier: 11.11.1
         version: 11.11.1
-      sharp:
-        specifier: 0.34.5
-        version: 0.34.5
       tailwindcss:
         specifier: 4.3.0
         version: 4.3.0

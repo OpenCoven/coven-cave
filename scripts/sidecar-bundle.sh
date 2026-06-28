@@ -145,13 +145,18 @@ prune_sidecar_nonruntime_files() {
 
   echo "==> pruning sidecar non-runtime files"
 
+  # Do NOT prune sharp / @img here. They look optional (images.unoptimized is
+  # true, so Next's own optimizer never loads sharp) but the familiar avatar
+  # route (src/app/api/familiars/[id]/avatar/route.ts) imports sharp at runtime
+  # to downscale + transcode workspace avatars. Stripping them made that route
+  # 404 on every platform — most visibly the macOS DMG, where no global sharp
+  # was reachable as a fallback. prune_foreign_native_packages already trims
+  # @img down to just the build target, so the bundle stays small.
   rm -rf \
     "$dest/node_modules/@playwright" \
     "$dest/node_modules/@types" \
     "$dest/node_modules/playwright" \
-    "$dest/node_modules/playwright-core" \
-    "$dest/node_modules/sharp" \
-    "$dest/node_modules/@img"
+    "$dest/node_modules/playwright-core"
 
   find "$dest" -type f \( \
     -name '*.map' -o \
@@ -290,11 +295,18 @@ fi
 prune_sidecar_nonruntime_files "$DEST"
 
 # Sanity check
-for must in node_modules/@next/env node_modules/@swc/helpers/_; do
+for must in node_modules/@next/env node_modules/@swc/helpers/_ node_modules/sharp; do
   if [ ! -e "$DEST/$must" ]; then
     echo "==> ! bundle still missing $must — sidecar will not boot" >&2
     exit 1
   fi
 done
+
+# sharp needs its platform-native binary (@img/sharp-<target>); without it the
+# familiar avatar route throws at runtime and every avatar 404s.
+if ! ls "$DEST"/node_modules/@img/sharp-* >/dev/null 2>&1; then
+  echo "==> ! bundle missing @img/sharp-* native binary — avatars will 404" >&2
+  exit 1
+fi
 
 echo "==> sidecar bundle ready ($(du -sh "$DEST" | cut -f1))"

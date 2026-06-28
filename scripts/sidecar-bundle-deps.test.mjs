@@ -29,6 +29,25 @@ assert.match(src, /prune_sidecar_nonruntime_files\(\)/, "sidecar must prune non-
 assert.match(src, /node_modules\/playwright-core/, "sidecar must remove Playwright test runtime from the packaged app");
 assert.match(src, /node_modules\/@types/, "sidecar must remove TypeScript declaration packages from the packaged app");
 assert.match(src, /-name '\*\.map'/, "sidecar must remove source maps from the packaged app");
-assert.match(src, /node_modules\/sharp/, "sidecar must remove optional Sharp image optimizer from the packaged app");
+
+// Sharp is a RUNTIME dependency: src/app/api/familiars/[id]/avatar/route.ts
+// imports it to downscale + transcode the (~30MB/4096px) workspace avatars.
+// Sharp and its @img native binaries MUST ship in the packaged app — regression
+// guard for the macOS DMG bug where avatars 404'd after the bundle stripped sharp.
+assert.doesNotMatch(
+  src,
+  /"\$dest\/node_modules\/sharp"/,
+  "sidecar must NOT prune sharp — the avatar route needs it at runtime",
+);
+assert.doesNotMatch(
+  src,
+  /"\$dest\/node_modules\/@img"/,
+  "sidecar must NOT prune @img — sharp's native binaries are required at runtime",
+);
+assert.match(
+  src,
+  /node_modules\/@img\/sharp-\*/,
+  "sidecar must verify the platform sharp binary is present before shipping",
+);
 
 console.log("sidecar-bundle-deps.test: ok");
