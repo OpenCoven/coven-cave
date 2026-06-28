@@ -61,7 +61,8 @@ function ListBlock<T>({
 function discussReviewItem(familiarId: string, item: ThreadSignalReviewItem) {
   window.dispatchEvent(
     new CustomEvent("cave:agents-new-chat", {
-      detail: { familiarId, initialPrompt: buildThreadSignalDiscussionPrompt(item) },
+      // origin "eval" routes this thread to the Evals page and hides it from the chat list.
+      detail: { familiarId, initialPrompt: buildThreadSignalDiscussionPrompt(item), origin: "eval" as const },
     }),
   );
 }

@@ -5,7 +5,7 @@ import {
 } from "./cave-chat-titles.ts";
 import { initiatorFromSessionKey } from "./session-initiator.ts";
 import { inferOrigin } from "./session-origin.ts";
-import type { SessionInitiator, SessionRow } from "./types.ts";
+import type { SessionInitiator, SessionOrigin, SessionRow } from "./types.ts";
 
 export type DaemonSessionRow = Omit<SessionRow, "familiarId" | "origin">;
 
@@ -21,6 +21,7 @@ export type LocalConversationSummary = {
   createdAt?: string;
   updatedAt: string;
   initiator?: SessionInitiator;
+  origin?: SessionOrigin;
 };
 
 type MergeOptions = {
@@ -52,7 +53,7 @@ function localConversationToSession(
     created_at: conv.createdAt ?? conv.updatedAt,
     updated_at: conv.updatedAt,
     familiarId,
-    origin: "chat",
+    origin: conv.origin ?? "chat",
     initiator: conv.initiator ?? { kind: "human", label: "Cave user", channel: "cave" },
   };
 }

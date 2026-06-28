@@ -23,6 +23,7 @@ import {
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
+import type { SessionOrigin } from "@/lib/types";
 import { AssistantFilter } from "@/lib/chat-assistant-filter";
 import {
   flattenToolResultContent,
@@ -123,6 +124,9 @@ type SendBody = {
    *  Explicit null means "branch at the root" (sibling of a root turn) and is
    *  distinct from the field being absent (a normal, non-branch send). */
   parentTurnId?: string | null;
+  /** Provenance for a brand-new conversation (e.g. "eval"). Stamped on the
+   *  conversation file once, when it's first created. */
+  origin?: SessionOrigin;
 };
 
 type ReasoningEffort = "low" | "medium" | "high";
@@ -720,6 +724,7 @@ function openClawChatResponse(args: {
             model: responseMetadata.model,
             runtime: responseMetadata.runtime,
             title: chatTitle,
+            ...(args.body.origin ? { origin: args.body.origin } : {}),
             createdAt: now,
             updatedAt: now,
             turns: [],
@@ -1512,6 +1517,7 @@ export async function POST(req: Request) {
           model: responseMetadata.model,
           runtime: responseMetadata.runtime,
           title: chatTitle,
+          ...(body.origin ? { origin: body.origin } : {}),
           createdAt: now,
           updatedAt: now,
           turns: [],

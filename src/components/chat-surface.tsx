@@ -17,7 +17,7 @@ import { Icon } from "@/lib/icon";
 import { CodeInlineToolbar } from "@/components/code-inline-toolbar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 
 // ── Layout persistence ─────────────────────────────────────────────────────────
@@ -413,10 +413,10 @@ export function ChatSurface({
   // Window events
   useEffect(() => {
     const onNewChat = (e: Event) => {
-      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null; initialPrompt?: string | null }>).detail;
+      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null; initialPrompt?: string | null; origin?: SessionOrigin }>).detail;
       if (d?.familiarId) onSetActiveFamiliar(d.familiarId);
       setScope("conversation");
-      window.setTimeout(() => routerRef.current?.newChat(d?.projectRoot ?? undefined, d?.initialPrompt ?? undefined, d?.familiarId), 0);
+      window.setTimeout(() => routerRef.current?.newChat(d?.projectRoot ?? undefined, d?.initialPrompt ?? undefined, d?.familiarId, d?.origin), 0);
     };
     const onOpenSession = (e: Event) => {
       const d = (e as CustomEvent<{ sessionId?: string; familiarId?: string | null }>).detail;

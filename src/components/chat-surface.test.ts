@@ -241,7 +241,7 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /newChat\(d\?\.projectRoot \?\? undefined, d\?\.initialPrompt \?\? undefined, d\?\.familiarId\)/,
+  /newChat\(d\?\.projectRoot \?\? undefined, d\?\.initialPrompt \?\? undefined, d\?\.familiarId, d\?\.origin\)/,
   "ChatSurface should forward the seeded initialPrompt into newChat",
 );
 

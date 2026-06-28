@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { SessionRow } from "@/lib/types";
 import {
   deriveThreadEvalState,
   rollupEvalGroup,
@@ -65,6 +66,16 @@ function newCase(): EvalCase {
   return { id: freshId("case"), name: "New case", input: "", graders: [{ kind: "contains", value: "" }] };
 }
 
+/** Open a migrated eval-discuss thread back in the chat surface. */
+function openEvalThread(session: SessionRow) {
+  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+  window.dispatchEvent(
+    new CustomEvent("cave:agents-open-session", {
+      detail: { sessionId: session.id, familiarId: session.familiarId },
+    }),
+  );
+}
+
 export function EvalsView({ familiars, activeFamiliarId }: Props) {
   const [suites, setSuites] = useState<EvalSuite[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -75,6 +86,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   const [groups, setGroups] = useState<EvalGroup[]>([]);
   const [threadSnapshots, setThreadSnapshots] = useState<ThreadEvalSnapshot[]>([]);
   const [queue, setQueue] = useState<ManualEvalQueueItem[]>([]);
+  const [evalThreads, setEvalThreads] = useState<SessionRow[]>([]);
   const [tab, setTab] = useState<"editor" | "runs">("editor");
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
@@ -100,22 +112,26 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     let alive = true;
     void (async () => {
       try {
-        const [suitesRes, groupsRes, threadStatesRes, queueRes] = await Promise.all([
+        const [suitesRes, groupsRes, threadStatesRes, queueRes, sessionsRes] = await Promise.all([
           fetch("/api/evals/suites"),
           fetch("/api/evals/groups"),
           fetch("/api/evals/thread-states"),
           fetch("/api/evals/queue"),
+          fetch("/api/sessions/list"),
         ]);
         const data = (await suitesRes.json()) as { ok: boolean; suites?: EvalSuite[] };
         const groupsData = (await groupsRes.json()) as { ok: boolean; groups?: EvalGroup[] };
         const threadStatesData = (await threadStatesRes.json()) as { ok: boolean; snapshots?: ThreadEvalSnapshot[] };
         const queueData = (await queueRes.json()) as { ok: boolean; queue?: ManualEvalQueueItem[] };
+        const sessionsData = (await sessionsRes.json()) as { ok: boolean; sessions?: SessionRow[] };
         if (!alive) return;
         const list = data.suites ?? [];
         setSuites(list);
         setGroups(groupsData.groups ?? []);
         setThreadSnapshots(threadStatesData.snapshots ?? []);
         setQueue(queueData.queue ?? []);
+        // Eval-discuss chat threads, migrated out of the chat list into the Evals page.
+        setEvalThreads((sessionsData.sessions ?? []).filter((s) => s.origin === "eval"));
         if (list.length) selectSuite(list[0]);
       } finally {
         if (alive) setLoaded(true);
@@ -261,7 +277,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     if (data.ok && data.queued) setQueue((prev) => [...data.queued!, ...prev]);
   }, [activeGroup, activeGroupStates]);
 
-  if (loaded && suites.length === 0 && !draft) {
+  if (loaded && suites.length === 0 && evalThreads.length === 0 && !draft) {
     return (
       <div className="evals evals-empty">
         <EmptyState
@@ -301,6 +317,29 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
             </li>
           ))}
         </ul>
+        {evalThreads.length > 0 && (
+          <div className="evals-threads">
+            <div className="evals-threads-head">
+              <span>Discussion threads</span>
+              <span className="evals-threads-count">{evalThreads.length}</span>
+            </div>
+            <ul className="evals-thread-list">
+              {evalThreads.map((thread) => (
+                <li key={thread.id}>
+                  <button
+                    type="button"
+                    className="evals-thread-row"
+                    onClick={() => openEvalThread(thread)}
+                    title="Open this eval discussion in chat"
+                  >
+                    <Icon name="ph:chat-circle-dots" width={13} aria-hidden />
+                    <span className="evals-thread-title">{thread.title || "Eval discussion"}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </aside>
 
       {draft ? (

@@ -89,7 +89,10 @@ export type SessionOrigin =
   | "board"
   | "cron"
   | "heartbeat"
-  | "call";
+  | "call"
+  // Eval-discuss threads — created from the analytics review queue. Surfaced in
+  // the Evals page, not the chat list.
+  | "eval";
 
 export type SessionInitiator = {
   kind: "human" | "familiar" | "system" | "unknown";

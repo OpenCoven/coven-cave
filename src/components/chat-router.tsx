@@ -24,11 +24,11 @@ import {
   selectionKey,
   type ProjectSelection,
 } from "@/lib/chat-project-selection";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 
 type View =
   | { kind: "list" }
-  | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string; familiarId?: string | null };
+  | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string; familiarId?: string | null; origin?: SessionOrigin };
 
 type Props = {
   familiar: Familiar | null;
@@ -57,7 +57,7 @@ type Props = {
 
 export type ChatRouterHandle = {
   goToList: () => void;
-  newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null) => void;
+  newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin) => void;
   openSession: (sessionId: string, findQuery?: string) => void;
   currentSessionId: () => string | null;
   clearTranscript: () => void;
@@ -237,6 +237,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
                 projectRoot: prev.projectRoot,
                 initialPrompt: prev.initialPrompt,
                 familiarId: nextFamiliarId,
+                origin: prev.origin,
               }
         : { kind: "list" },
     );
@@ -246,7 +247,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ref,
     () => ({
       goToList: () => setView({ kind: "list" }),
-      newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null) => {
+      newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin) => {
         const next = selectFamiliarForChat(familiarId);
         setView({
           kind: "chat",
@@ -254,6 +255,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
           projectRoot,
           initialPrompt,
           familiarId: next?.id ?? familiarId ?? null,
+          origin,
         });
       },
       openSession: (sessionId: string, findQuery?: string) => {
@@ -342,6 +344,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             sessionId: null,
             projectRoot: view.kind === "chat" ? view.projectRoot : undefined,
             initialPrompt: view.kind === "chat" ? view.initialPrompt : undefined,
+            origin: view.kind === "chat" ? view.origin : undefined,
             familiarId: next?.id ?? familiarId,
           });
         }}
@@ -399,6 +402,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             session={activeSession}
             projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
             initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
+            origin={view.kind === "chat" ? view.origin : undefined}
             openFindQuery={pendingFind?.query}
             openFindNonce={pendingFind?.nonce}
             daemonRunning={daemonRunning}
