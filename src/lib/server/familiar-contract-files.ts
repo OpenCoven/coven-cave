@@ -1,8 +1,14 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { access } from "node:fs/promises";
 import path from "node:path";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import type { ContractFiles } from "@/lib/familiar-contract";
+import {
+  buildFamiliarContractFiles,
+  type IdentityScaffoldInput,
+} from "@/lib/familiar-identity-scaffold";
 
 /**
  * Loader for a familiar's Familiar Contract files, used by
@@ -59,4 +65,49 @@ export async function readFamiliarContractFiles(id: string): Promise<LoadedContr
   ]);
 
   return { workspace, files: { soul, identity, ward, memory } };
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await access(p, fsConstants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Scaffold a new familiar's Familiar Contract files (SOUL.md / IDENTITY.md /
+ * ward.toml / MEMORY.md) into its workspace so it is contract-compliant from
+ * birth. Purely ADDITIVE: a file that already exists is left untouched, so this
+ * can never clobber identity a familiar (or its person) has already authored.
+ *
+ * The `id` is slug-guarded inline before any path is built. Returns the list of
+ * files actually written (empty when they all already existed).
+ */
+export async function scaffoldFamiliarContractFiles(
+  input: IdentityScaffoldInput,
+): Promise<string[]> {
+  if (!isValidFamiliarId(input.id)) {
+    throw new Error("invalid familiar id");
+  }
+  const workspace = await familiarWorkspace(input.id);
+  await mkdir(workspace, { recursive: true });
+
+  const generated = buildFamiliarContractFiles(input);
+  const byFile: Array<[string, string]> = [
+    [CONTRACT_FILE_NAMES.soul, generated.soul],
+    [CONTRACT_FILE_NAMES.identity, generated.identity],
+    [CONTRACT_FILE_NAMES.ward, generated.ward],
+    [CONTRACT_FILE_NAMES.memory, generated.memory],
+  ];
+
+  const wrote: string[] = [];
+  for (const [name, contents] of byFile) {
+    const target = path.join(workspace, path.basename(name));
+    if (await fileExists(target)) continue;
+    await writeFile(target, contents, "utf8");
+    wrote.push(name);
+  }
+  return wrote;
 }

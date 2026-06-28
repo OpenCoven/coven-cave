@@ -76,4 +76,18 @@ assert.match(
   "POST should tolerate a malformed/empty JSON body",
 );
 
+// POST scaffolds the Familiar Contract so a new familiar is compliant from
+// birth. Best-effort: the scaffold call is wrapped so a workspace write failure
+// can't fail creation (the familiar is already registered in toml + config).
+assert.match(
+  source,
+  /scaffoldFamiliarContractFiles\(\{[\s\S]*?id: draft\.id/,
+  "POST should scaffold the familiar's contract files",
+);
+assert.match(
+  source,
+  /try\s*\{\s*contractWrote = await scaffoldFamiliarContractFiles\([\s\S]*?\}\s*catch\s*\{/,
+  "contract scaffolding must be best-effort (never fail creation)",
+);
+
 console.log("familiars route.test.ts: ok");
