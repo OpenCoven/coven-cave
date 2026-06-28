@@ -83,9 +83,7 @@ export async function GET(req: NextRequest) {
         clearTimeout(timer);
         return NextResponse.json({ ok: false, error: "That host is not allowed." }, { status: 403 });
       }
-      // lgtm[js/request-forgery] target is parsed as http(s), denylisted by hostname,
-      // and DNS-resolved to public addresses immediately above; redirects are
-      // re-validated before every subsequent fetch.
+      // codeql[js/request-forgery] target is parsed as http(s), denylisted by hostname, and DNS-resolved to public addresses before every fetch.
       res = await fetch(target.toString(), {
         headers: {
           // A desktop UA + accept header improves extraction on UA-gated sites.
