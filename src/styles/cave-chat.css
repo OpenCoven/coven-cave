@@ -1667,7 +1667,10 @@ details[open] > .cave-tool-summary::before {
   display: flex;
   min-height: 34px;
   align-items: center;
-  justify-content: space-between;
+  /* Codex-style single control row: attach · selectors (grows) · send.
+     The settings row's flex-grow pushes the send button to the far edge. */
+  justify-content: flex-start;
+  gap: 8px;
   color: var(--text-muted);
 }
 
@@ -1678,21 +1681,23 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-composer-divider {
-  height: 1px;
-  margin: 7px 0 8px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in oklch, var(--foreground) 12%, transparent) 12%,
-    color-mix(in oklch, var(--foreground) 12%, transparent) 88%,
-    transparent
-  );
+  /* Vertical hairline separating the attach control from the inline selectors
+     (was a full-width horizontal rule between the old stacked rows). */
+  width: 1px;
+  height: 18px;
+  flex: 0 0 auto;
+  align-self: center;
+  margin: 0 2px;
+  background: color-mix(in oklch, var(--foreground) 12%, transparent);
 }
 
 .cave-composer-settings-row {
   display: flex;
   min-width: 0;
-  width: 100%;
+  /* Grow to fill the middle of the single control row so the send button is
+     pushed to the trailing edge (was width:100% when this sat on its own row). */
+  flex: 1 1 auto;
+  width: auto;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
@@ -3255,6 +3260,16 @@ details[open] > .cave-tool-summary::before {
 
   .cave-composer-action-row {
     min-height: 48px;
+    /* Phones don't have room for attach · selectors · send on one line, so
+       let the row wrap: attach + send sit on top (spread to the edges) and
+       the selectors drop to their own full-width line below. */
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  /* The desktop vertical hairline has no place in the wrapped phone layout. */
+  .cave-composer-divider {
+    display: none;
   }
 
   .cave-composer-settings-row {
@@ -3262,6 +3277,10 @@ details[open] > .cave-tool-summary::before {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
     overflow: visible;
+    /* Force the selectors onto their own row beneath attach/send. */
+    order: 3;
+    flex-basis: 100%;
+    width: 100%;
   }
 
   .cave-composer-settings-row .cave-chat-model-control,
