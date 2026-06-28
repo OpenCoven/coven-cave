@@ -5,6 +5,25 @@ import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
 export const dynamic = "force-dynamic";
 
 /**
+ * The daemon's `/api/v1/skills/eval-loop/:id` already returns an enveloped
+ * `{ ok, state: EvalLoopState }`. Hand back just the inner EvalLoopState so the
+ * proxy isn't double-wrapped (`{ ok, state: { ok, state } }`) — consumers read
+ * `json.state` expecting the state itself, and a double wrap leaves
+ * `state.iterations` undefined. Tolerates a daemon that returns the state bare.
+ */
+function unwrapDaemonEvalState(data: unknown): unknown {
+  if (
+    data &&
+    typeof data === "object" &&
+    "state" in data &&
+    !("iterations" in data)
+  ) {
+    return (data as { state: unknown }).state;
+  }
+  return data;
+}
+
+/**
  * GET /api/skills/eval-loop/[familiarId]
  *
  * Proxies the daemon's eval-loop state for a given familiar.
@@ -32,5 +51,5 @@ export async function GET(
     );
   }
 
-  return NextResponse.json({ ok: true, state: redactSecretsDeep(res.data) });
+  return NextResponse.json({ ok: true, state: redactSecretsDeep(unwrapDaemonEvalState(res.data)) });
 }

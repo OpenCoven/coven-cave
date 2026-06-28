@@ -63,6 +63,12 @@ assert.doesNotMatch(
 );
 
 assert.match(
+  evalLoopRoute,
+  /state: redactSecretsDeep\(unwrapDaemonEvalState\(res\.data\)\)/,
+  "successful eval-loop reads should unwrap the daemon envelope so consumers get the EvalLoopState directly (not a double-wrapped { ok, state })",
+);
+
+assert.match(
   skillsRoute,
   /NextResponse\.json\([\s\S]*?ok: false,[\s\S]*?skills: \[\]/,
   "offline skills reads should return a quiet ok:false payload",
