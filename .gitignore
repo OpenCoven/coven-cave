@@ -46,7 +46,9 @@ ehthumbs.db
 .zed/
 
 # Agent / tool scratch state (local automation, not for sharing)
-.claude/
+.claude/*
+# …except the shared, version-controlled Claude Code project settings.
+!.claude/settings.json
 .cursor/
 .aider*
 .comux*
