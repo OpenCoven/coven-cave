@@ -7,6 +7,51 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.121] - 2026-06-28
+
+Patch release on top of v0.0.120. Headline: flow required-input handling,
+familiar eval loops, Windows runtime discovery, chat, onboarding, and
+group-chat follow-ups on the mobile-mode release line.
+
+### Added
+
+- **Flow** - added explicit required flow inputs, a reusable required-input
+  dialog, server-side required-input rejection, required badges, Deep Research
+  topic prompting, vertical layout / port-flip controls, and a labelled
+  Active/Inactive toolbar toggle (#1983, #1994, #1997, #1998).
+- **Familiar evals** - added eval-loop control-plane wiring plus a dedicated
+  eval surface for running and reviewing familiar evals (#1999, #2000).
+- **Vault** - added encrypted local secrets support for Cave-managed secret
+  storage (#1987).
+- **Chat / Code** - added the two-way Chat / Code toggle and merged projects
+  into the Chat surface (#1980).
+- **Group chat** - added next-path suggestion chips for click-to-send follow-up
+  prompts (#1979).
+
+### Fixed
+
+- **Windows runtime discovery** - Windows now launches `coven.cmd` npm shims
+  through Node for prompt-bearing spawn paths, fixing `spawn EINVAL` failures in
+  `/api/harnesses` and onboarding runtime discovery (#1992, closes #1993).
+- **Flow** - missing required inputs now prompt from the run path, onboarding
+  prompt actions align with the textarea, and Tidy / orientation re-layout
+  applies in place on the canvas (#1986, #1995, #1996).
+- **Onboarding** - Option A and runtime install lists now show honest empty
+  states and re-probe PATH when adapter discovery misses locally installed
+  runtimes (#1985, #1988).
+- **Chat** - newer local session status wins over stale status, mermaid syntax
+  errors no longer render as hard failures, and lightbox / expand overlays mount
+  through `document.body` (#1978, #1981, #1984).
+- **Group chat** - next-paths metadata is stripped from Coven replies before
+  display (#1976).
+- **OpenClaw integration** - launch paths now use the current session id flag
+  when forwarding into OpenClaw (#1989).
+
+### Changed
+
+- **Cave follow-ups** - bundled small follow-up fixes on the v0.0.120 line so
+  the release matches the current mainline UI and flow behavior (#1982).
+
 ## [0.0.120] - 2026-06-27
 
 Patch release on top of v0.0.119. Headline: native mobile mode can keep the
