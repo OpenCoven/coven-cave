@@ -14,8 +14,6 @@ export type FlowToolbarProps = {
   tab: FlowTab;
   saving: boolean;
   executing: boolean;
-  manualDataRedacted: boolean;
-  productionDataRedacted: boolean;
   publishStatus: "unpublished" | "published" | "changed";
   publishBlockReason?: string;
   /** A live agent-session run is in progress — show Stop instead of Execute. */
@@ -25,7 +23,6 @@ export type FlowToolbarProps = {
   onTab: (tab: FlowTab) => void;
   onUndo: () => void;
   onRedo: () => void;
-  onToggleExecutionDataRedaction: (mode: "manual" | "production") => void;
   onPublish: () => void;
   onUnpublish: () => void;
   onSave: () => void;
@@ -100,28 +97,7 @@ export function FlowToolbar(props: FlowToolbarProps) {
         >
           <Icon name="ph:arrow-clockwise" width={15} />
         </button>
-        <button
-          type="button"
-          className={`flow-toolbar-redaction${props.manualDataRedacted ? " is-on" : ""}`}
-          role="switch"
-          aria-checked={props.manualDataRedacted}
-          aria-label={props.manualDataRedacted ? "Store manual execution data" : "Redact manual execution data"}
-          title={props.manualDataRedacted ? "Manual data redacted" : "Manual data stored"}
-          onClick={() => props.onToggleExecutionDataRedaction("manual")}
-        >
-          <Icon name="ph:database-bold" width={14} />
-        </button>
-        <button
-          type="button"
-          className={`flow-toolbar-redaction${props.productionDataRedacted ? " is-on" : ""}`}
-          role="switch"
-          aria-checked={props.productionDataRedacted}
-          aria-label={props.productionDataRedacted ? "Store production execution data" : "Redact production execution data"}
-          title={props.productionDataRedacted ? "Production data redacted" : "Production data stored"}
-          onClick={() => props.onToggleExecutionDataRedaction("production")}
-        >
-          <Icon name="ph:lock-simple" width={14} />
-        </button>
+        <span className="flow-toolbar-divider" aria-hidden />
         <span className={`flow-toolbar-publish-status flow-toolbar-publish-status-${props.publishStatus}`}>
           {props.publishStatus === "unpublished"
             ? "Unpublished"

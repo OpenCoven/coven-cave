@@ -4,7 +4,7 @@ import { Handle, NodeResizer, Position, type NodeProps, type Node } from "@xyflo
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { FlowNodeType } from "@/lib/flow/flow-catalog";
-import type { FlowNode } from "@/lib/flow/flow-doc";
+import type { FlowLayoutOrientation, FlowNode } from "@/lib/flow/flow-doc";
 import type { FlowNodePhase } from "@/lib/flow/flow-progress";
 
 /** Live run phase overlaid by the canvas while an execution/preview walks. */
@@ -15,6 +15,8 @@ export type FlowNodeData = {
   def: FlowNodeType | undefined;
   phase?: FlowNodePhase;
   stale?: boolean;
+  /** Canvas layout direction — flips port handles between the side and top/bottom edges. */
+  orientation?: FlowLayoutOrientation;
   /** Sticky-only: commit inline-edited text / resized dimensions to the doc. */
   onStickyText?: (text: string) => void;
   onStickySize?: (width: number, height: number) => void;
@@ -26,17 +28,23 @@ export type FlowStickyRFNode = Node<FlowNodeData, "flowSticky">;
 export const FLOW_NODE_WIDTH = 220;
 export const FLOW_NODE_HEIGHT = 78;
 
-function handleTop(index: number, count: number): string {
+/** Even spacing for the nth of `count` ports along a node edge (0–100%). */
+function handleOffset(index: number, count: number): string {
   return `${((index + 1) / (count + 1)) * 100}%`;
 }
 
 /** The n8n-style node card: icon tile, name, type subtitle, port handles. */
 export function FlowNodeView({ data, selected }: NodeProps<FlowRFNode>) {
-  const { node, def, phase, stale } = data;
+  const { node, def, phase, stale, orientation } = data;
   const accent = def?.accent ?? "#7b7f87";
   const inputs = def?.inputs ?? [];
   const outputs = def?.outputs ?? [];
   const isTrigger = def?.isTrigger === true;
+  // Vertical layouts flow top→bottom, so ports live on the top/bottom edges and
+  // spread along the X axis; horizontal layouts keep them left/right on the Y axis.
+  const isVertical = orientation === "vertical";
+  const inputPosition = isVertical ? Position.Top : Position.Left;
+  const outputPosition = isVertical ? Position.Bottom : Position.Right;
   const displayedNote = node.displayNote ? node.notes?.trim() : "";
   const classes = [
     "flow-node",
@@ -57,9 +65,9 @@ export function FlowNodeView({ data, selected }: NodeProps<FlowRFNode>) {
           key={`in-${port.id}`}
           id={port.id}
           type="target"
-          position={Position.Left}
+          position={inputPosition}
           className="flow-handle flow-handle-in"
-          style={{ top: handleTop(index, inputs.length) }}
+          style={isVertical ? { left: handleOffset(index, inputs.length) } : { top: handleOffset(index, inputs.length) }}
         />
       ))}
 
@@ -95,12 +103,16 @@ export function FlowNodeView({ data, selected }: NodeProps<FlowRFNode>) {
       )}
 
       {outputs.map((port, index) => (
-        <span key={`out-${port.id}`} className="flow-out" style={{ top: handleTop(index, outputs.length) }}>
+        <span
+          key={`out-${port.id}`}
+          className={`flow-out${isVertical ? " flow-out-vertical" : ""}`}
+          style={isVertical ? { left: handleOffset(index, outputs.length) } : { top: handleOffset(index, outputs.length) }}
+        >
           {outputs.length > 1 && port.label && <span className="flow-out-label">{port.label}</span>}
           <Handle
             id={port.id}
             type="source"
-            position={Position.Right}
+            position={outputPosition}
             className="flow-handle flow-handle-out"
           />
         </span>

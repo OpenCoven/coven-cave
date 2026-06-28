@@ -25,7 +25,6 @@ import {
   renameFlow,
   renameNode,
   setActive,
-  setExecutionDataRedaction,
   setNodeDisplayNote,
   setNodeExecutionSettings,
   setNodeNotes,
@@ -829,13 +828,10 @@ export function FlowView() {
               tab={tab}
               saving={saving}
               executing={executing}
-              manualDataRedacted={flowRunRedactsData(doc, "manual")}
-              productionDataRedacted={flowRunRedactsData(doc, "production")}
               publishStatus={flowPublishStatus(doc)}
               publishBlockReason={publishBlock.ok ? undefined : publishBlock.reason}
               onRename={(name) => mutate((d) => renameFlow(d, name))}
               onToggleActive={() => mutate((d) => setActive(d, !d.active))}
-              onToggleExecutionDataRedaction={(mode) => mutate((d) => setExecutionDataRedaction(d, mode, !flowRunRedactsData(d, mode)))}
               onPublish={publish}
               onUnpublish={unpublish}
               onTab={setTab}

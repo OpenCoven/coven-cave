@@ -116,9 +116,7 @@
 .flow-toolbar-icon { display: inline-flex; padding: 6px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg-elevated); color: var(--text-secondary); cursor: pointer; }
 .flow-toolbar-icon:hover:not(:disabled) { color: var(--text-primary); border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border)); }
 .flow-toolbar-icon:disabled { opacity: var(--opacity-disabled); cursor: default; }
-.flow-toolbar-redaction { display: inline-grid; place-items: center; width: 29px; height: 29px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg-elevated); color: var(--text-muted); cursor: pointer; }
-.flow-toolbar-redaction:hover { color: var(--text-primary); border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border)); }
-.flow-toolbar-redaction.is-on { border-color: color-mix(in oklch, var(--color-warning) 48%, var(--border)); background: color-mix(in oklch, var(--color-warning) 12%, var(--bg-elevated)); color: var(--color-warning); }
+.flow-toolbar-divider { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--border); }
 .flow-toolbar-publish-status { display: inline-flex; align-items: center; min-height: 29px; padding: 0 8px; border: 1px solid var(--border-hairline); border-radius: var(--radius-control); background: var(--bg-base); color: var(--text-muted); font-size: var(--text-2xs); font-weight: 800; text-transform: uppercase; }
 .flow-toolbar-publish-status-published { border-color: color-mix(in oklch, var(--color-success) 42%, var(--border)); color: var(--color-success); }
 .flow-toolbar-publish-status-changed { border-color: color-mix(in oklch, var(--color-warning) 42%, var(--border)); color: var(--color-warning); }
@@ -230,6 +228,9 @@
 
 .flow-out { position: absolute; right: -6px; transform: translateY(-50%); display: inline-flex; align-items: center; }
 .flow-out-label { position: absolute; right: 14px; font-size: 9px; color: var(--text-muted); white-space: nowrap; }
+/* Vertical layout: outputs sit on the bottom edge and spread along X. */
+.flow-out-vertical { right: auto; top: auto; bottom: -6px; transform: translateX(-50%); }
+.flow-out-vertical .flow-out-label { right: auto; bottom: 14px; left: 50%; transform: translateX(-50%); }
 
 /* Handles */
 .flow-canvas .react-flow__handle.flow-handle { width: 11px; height: 11px; border: 2px solid var(--card); background: #8b90b4; }

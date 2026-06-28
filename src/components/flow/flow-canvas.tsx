@@ -117,13 +117,13 @@ function FlowCanvasInner(props: FlowCanvasProps) {
                 onStickyText: (text: string) => onStickyText(node.id, text),
                 onStickySize: (width: number, height: number) => onStickySize(node.id, width, height),
               }
-            : { node, def },
+            : { node, def, orientation: layoutOrientation },
           ...(isSticky
             ? { width: node.sticky?.width ?? 240, height: node.sticky?.height ?? 160 }
             : { width: FLOW_NODE_WIDTH, height: FLOW_NODE_HEIGHT }),
         } satisfies Node<FlowNodeData>;
       }),
-    [doc.nodes, onStickyText, onStickySize],
+    [doc.nodes, onStickyText, onStickySize, layoutOrientation],
   );
 
   useEffect(() => {

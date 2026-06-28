@@ -14,6 +14,11 @@ assert.match(canvas, /layoutOrientation: FlowLayoutOrientation/, "FlowCanvas sho
 assert.match(canvas, /onLayoutOrientation: \(orientation: FlowLayoutOrientation\) => void/, "FlowCanvas should expose an orientation switch action");
 assert.match(canvas, /aria-label="Use horizontal layout"/, "Canvas toolbar should expose a horizontal layout switch");
 assert.match(canvas, /aria-label="Use vertical layout"/, "Canvas toolbar should expose a vertical layout switch");
+assert.match(canvas, /orientation: layoutOrientation/, "FlowCanvas should pass the active orientation into node data so ports flip edges");
+assert.match(node, /orientation === "vertical"/, "Flow nodes should flip port handles for vertical layouts");
+assert.match(node, /inputPosition/, "Flow nodes should compute an orientation-aware input handle position");
+assert.match(node, /outputPosition/, "Flow nodes should compute an orientation-aware output handle position");
+assert.match(styles, /\.flow-out-vertical/, "Vertical-layout outputs need bottom-edge styling");
 assert.match(view, /tidyFlowLayout/, "FlowView should import the pure tidy layout mutation");
 assert.match(view, /useState<FlowLayoutOrientation>\("horizontal"\)/, "FlowView should default Flow layout to horizontal");
 assert.match(view, /tidyFlowLayout\(d, layoutOrientation\)/, "Tidy should use the active Flow layout orientation");
