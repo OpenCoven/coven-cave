@@ -9778,7 +9778,11 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .fa-contract-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* Reflow by the panel's own width, not the viewport — the analytics surface also
+     renders in the narrow inspector sidepanel, where a fixed 5-column grid crushed
+     each cell and broke labels mid-word. auto-fit collapses empty tracks so the
+     items still stretch edge-to-edge on the wide full-page view. */
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 8px;
 }
 .fa-contract-item {
@@ -9794,7 +9798,10 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .fa-contract-item span {
   min-width: 0;
-  overflow-wrap: anywhere;
+  /* Wrap at word boundaries; only break a single over-long word as a last resort
+     (avoids the "Name / d / Identit / y" character shredding in tight columns). */
+  overflow-wrap: break-word;
+  line-height: 1.3;
 }
 .fa-contract-item.is-pass svg { color: var(--color-success); }
 .fa-contract-item.is-fail svg { color: var(--color-danger); }
@@ -9911,7 +9918,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .fa-response-factor-grid,
   .fa-thread-score-grid,
   .fa-thread-grid { grid-template-columns: 1fr; }
-  .fa-contract-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 560px) {
@@ -9942,7 +9948,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   }
   .tsc-head { align-items: flex-start; flex-direction: column; }
   .tsc-scores { grid-template-columns: 1fr; }
-  .fa-contract-grid { grid-template-columns: 1fr; }
 }
 
 /* Recommended follow-up: the agent lists next steps best-first, so the top
