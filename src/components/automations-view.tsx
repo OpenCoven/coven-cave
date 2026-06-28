@@ -57,6 +57,12 @@ type Props = {
   onNewReminder?: () => void;
   onEdit?: (item: InboxItem) => void;
   onOpenLink?: (link: LinkRef) => void;
+  /** When provided, adds a "Calendar" tab that renders this node full-height.
+   *  Lets the Calendar surface live inside Automations as one schedule page
+   *  without coupling this view to CalendarView's prop shape. */
+  calendarSlot?: ReactNode;
+  /** Tab to open on mount (deep-link target — e.g. the Calendar nav button). */
+  initialTab?: AutomationTab;
 };
 
 function linkLabel(link: LinkRef): string {
@@ -68,8 +74,10 @@ function linkLabel(link: LinkRef): string {
 
 // The Automations surface unifies three primitives under one typed model:
 // reminders, crons (Codex automations), and flows — plus an Activity
-// feed (the full inbox). "all" shows every automation in one list.
-type AutomationTab = "all" | "reminders" | "crons" | "flows" | "activity";
+// feed (the full inbox). "all" shows every automation in one list. "calendar"
+// (only present when a calendarSlot is supplied) hosts the Calendar surface so
+// the two former top-level pages share one schedule view.
+type AutomationTab = "all" | "reminders" | "crons" | "flows" | "activity" | "calendar";
 
 // Fire a cross-surface navigation so "Open" on a flow jumps to its
 // dedicated editor surface (the Workspace owns setMode; see cave:navigate-mode).
@@ -1616,7 +1624,7 @@ function FlowList({
 }
 
 // ── Root ──────────────────────────────────────────────────────────────────────
-export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink }: Props) {
+export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const confirm = useConfirm(); // still used by "Run now" (a non-delete action)
   // Deferred + undoable deletes (reminders, automations, bulk): rows hide at
@@ -1629,7 +1637,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AutomationTab>("all");
+  const [activeTab, setActiveTab] = useState<AutomationTab>(
+    initialTab && (initialTab !== "calendar" || calendarSlot) ? initialTab : "all",
+  );
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
@@ -2124,7 +2134,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               Automations
             </h1>
             <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
-              Reminders, crons, and flows — everything that runs for you, in one place.
+              {activeTab === "calendar"
+                ? "Your reminders, crons, and deadlines on a calendar."
+                : "Reminders, crons, and flows — everything that runs for you, in one place."}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -2189,6 +2201,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             value={activeTab}
             onChange={selectTab}
             items={[
+              ...(calendarSlot ? [{ id: "calendar" as const, label: "Calendar" }] : []),
               { id: "all", label: "All", count: allEntries.length },
               { id: "reminders", label: "Reminders", count: typeCounts.reminder },
               { id: "crons", label: "Crons", count: typeCounts.cron },
@@ -2200,7 +2213,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
         {/* Text filter for the active tab. Gated on the UNfiltered presence of
             rows so filtering to zero never hides the box (you can still clear). */}
-        {initialLoadDone && !reminderSelect.selectMode && (
+        {activeTab !== "calendar" && initialLoadDone && !reminderSelect.selectMode && (
           activeTab === "all" ? typeCounts.reminder + typeCounts.cron + typeCounts.flow > 0
           : activeTab === "activity" ? items.length > 0
           : activeTab === "crons" ? codexAutos.length > 0
@@ -2241,9 +2254,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           </div>
         )}
 
-        {/* List */}
-        <div className="flex-1 overflow-y-auto px-8 pb-8">
-          {!initialLoadDone ? (
+        {/* List (or the Calendar surface when that tab is active) */}
+        <div className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto px-8 pb-8"}>
+          {activeTab === "calendar" ? (
+            calendarSlot
+          ) : !initialLoadDone ? (
             <div className="space-y-2 pt-2">
               {Array.from({ length: 5 }).map((_, index) => (
                 <div
