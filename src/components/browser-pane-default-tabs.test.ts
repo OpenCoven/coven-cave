@@ -16,3 +16,9 @@ assert.doesNotMatch(
   /vercel\.com\/dashboard|title: "Vercel"|id: "vercel"/,
   "Browser defaults should not include Vercel",
 );
+
+assert.doesNotMatch(
+  defaults,
+  /frymatic\.us|FTSArcade|id: "arcade"/,
+  "Browser defaults should not include the Frymatic arcade tab",
+);
