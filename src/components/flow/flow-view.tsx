@@ -47,6 +47,8 @@ import {
 } from "@/lib/flow/flow-doc";
 import { buildPromptFlow, flowNameFromPrompt } from "@/lib/flow/flow-prompt";
 import { flowPublishBlockReason, flowRunBlockReason } from "@/lib/flow/flow-compile";
+import { flowMissingRequiredInputs, type RequiredInput } from "@/lib/required-inputs";
+import { RequiredInputsDialog } from "@/components/required-inputs-dialog";
 import { finalizeFlowSteps, phasesFromRunSteps, selectNodeRunData } from "@/lib/flow/flow-progress";
 import {
   clearFlowRuns,
@@ -110,6 +112,11 @@ export function FlowView() {
   // The run currently overlaid on the canvas (live session, or a finished run
   // whose final state we keep painted until the user switches flows).
   const [activeRun, setActiveRun] = useState<FlowRunRecord | null>(null);
+  const [requiredInputsPrompt, setRequiredInputsPrompt] = useState<{
+    inputs: RequiredInput[];
+    nodeId?: string;
+    baseDoc: FlowDoc;
+  } | null>(null);
 
   // Live per-node phases parsed from the active run's agent-session transcript.
   const progress = useFlowRun(activeRun);
@@ -498,6 +505,11 @@ export function FlowView() {
       showNotice(block.reason ?? "this flow can't run yet");
       return;
     }
+    const missingRequired = flowMissingRequiredInputs(runDoc);
+    if (missingRequired.length > 0) {
+      setRequiredInputsPrompt({ inputs: missingRequired, nodeId, baseDoc: runDoc });
+      return;
+    }
     setExecuting(true);
     try {
       // Persist first so the run executes the latest graph.
@@ -547,6 +559,22 @@ export function FlowView() {
       setExecuting(false);
     }
   }, [dirty, dispatchDraft, doc, loadRuns, recordFlowRun, runFlow, saveFlow, showNotice]);
+
+  const submitRequiredInputs = useCallback(
+    (values: Record<string, string>) => {
+      const prompt = requiredInputsPrompt;
+      if (!prompt) return;
+      let next = prompt.baseDoc;
+      for (const input of prompt.inputs) {
+        if (!input.nodeId || !input.paramKey) continue;
+        next = setNodeParam(next, input.nodeId, input.paramKey, values[input.key] ?? "");
+      }
+      dispatchDraft({ type: "apply", next });
+      setRequiredInputsPrompt(null);
+      void execute(prompt.nodeId, next);
+    },
+    [requiredInputsPrompt, dispatchDraft, execute],
+  );
 
   const executeNode = useCallback((nodeId: string) => void execute(nodeId), [execute]);
 
@@ -814,6 +842,14 @@ export function FlowView() {
             />
           </div>
         </div>
+      )}
+
+      {requiredInputsPrompt && (
+        <RequiredInputsDialog
+          inputs={requiredInputsPrompt.inputs}
+          onSubmit={submitRequiredInputs}
+          onCancel={() => setRequiredInputsPrompt(null)}
+        />
       )}
 
       <div className="flow-main">
