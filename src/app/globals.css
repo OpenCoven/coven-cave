@@ -4053,6 +4053,7 @@ button:active > .edge-rail-chip {
    `.menu-bar` breakpoint; below that the mobile `.top-bar` carries its own.
    ──────────────────────────────────────────────── */
 .shell-top {
+  position: relative;
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
@@ -4063,6 +4064,10 @@ button:active > .edge-rail-chip {
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-hairline);
   overflow: hidden;
+}
+
+.shell-titlebar-drag-lane {
+  display: none;
 }
 
 .shell-top__bar {
@@ -4101,25 +4106,45 @@ button:active > .edge-rail-chip {
     min-height: 52px;
   }
 
+  :root[data-tauri-titlebar] .shell-titlebar-drag-lane {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 2;
+    display: block;
+    height: 10px;
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
   :root[data-tauri-titlebar] :is(
     .shell-top,
     .shell-top__bar,
     .shell-top .menu-bar,
-    .shell-top .top-bar
+    .shell-top .top-bar,
+    .shell-top .menu-bar__group,
+    .shell-top .top-bar__lead,
+    .shell-top .top-bar__actions
   ) {
     -webkit-app-region: drag;
     app-region: drag;
   }
 
-  :root[data-tauri-titlebar] .shell-top * {
-    -webkit-app-region: no-drag;
-    app-region: no-drag;
-  }
-
   :root[data-tauri-titlebar] .shell-top :is(
     button, a, input, select, textarea, kbd, label,
     [role="button"], [role="textbox"], [contenteditable], .menu-bar__search
-  ) {
+  ),
+  :root[data-tauri-titlebar] .shell-top :is(
+    button, a, input, select, textarea, kbd, label,
+    [role="button"], [role="textbox"], [contenteditable], .menu-bar__search
+  ) *,
+  :root[data-tauri-titlebar] .shell-top :is(
+    .top-bar__search,
+    .top-bar__account
+  ),
+  :root[data-tauri-titlebar] .shell-top :is(
+    .top-bar__search,
+    .top-bar__account
+  ) * {
     -webkit-app-region: no-drag;
     app-region: no-drag;
   }

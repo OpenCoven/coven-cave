@@ -116,3 +116,27 @@ assert.match(
   /historyState === "missing"[\s\S]*Chat history unavailable/,
   "ChatView should make missing history visible instead of silently opening a blank chat",
 );
+
+assert.match(
+  chatView,
+  /function isFlowBackedSession\(session: SessionRow \| null \| undefined\)/,
+  "ChatView should explicitly detect sessions created by flow execution",
+);
+
+assert.match(
+  chatView,
+  /fetch\(`\/api\/flows\/session-transcript\?\$\{params\.toString\(\)\}`/,
+  "ChatView should query the flow transcript endpoint when a flow session has no saved chat conversation",
+);
+
+assert.match(
+  chatView,
+  /const cleanedTranscript = transcript \? stripStepMarkers\(transcript\) : ""[\s\S]*setFlowTranscriptFallback\(cleanedTranscript\)/,
+  "ChatView should render scrubbed flow output instead of the generic missing-history card",
+);
+
+assert.match(
+  chatView,
+  /title=\{flowBackedSession \? "Flow output unavailable" : "Chat history unavailable"\}/,
+  "Flow-backed sessions with no transcript should show a flow-specific fallback message",
+);

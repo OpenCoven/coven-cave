@@ -82,6 +82,7 @@ import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
 import { resolveActivePath, siblingsOf, childLeaf } from "@/lib/conversation-tree";
+import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
   buildThreadReflectPrompt,
@@ -250,6 +251,26 @@ export type ChatViewHandle = {
 
 type ComposerAttachment = ChatAttachment & { id: string };
 type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error";
+
+function isFlowBackedSession(session: SessionRow | null | undefined): boolean {
+  const origin = session?.origin as string | undefined;
+  const title = session?.title?.trim() ?? "";
+  return origin === "flow" || title.startsWith("Flow: ") || title.startsWith("Flow step: ");
+}
+
+async function loadFlowSessionTranscript(sessionId: string): Promise<string | null> {
+  const params = new URLSearchParams({ sessionId });
+  try {
+    const res = await fetch(`/api/flows/session-transcript?${params.toString()}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    const json = await res.json() as { ok?: boolean; transcript?: string };
+    const transcript = typeof json.transcript === "string" ? json.transcript.trim() : "";
+    if (!json.ok || !transcript) return null;
+    return transcript;
+  } catch {
+    return null;
+  }
+}
 type FailedSend = {
   text: string;
   attachments: ChatAttachment[];
@@ -1160,6 +1181,53 @@ function ChatHistoryNotice({
   );
 }
 
+function FlowSessionTranscriptFallback({
+  transcript,
+  onRetry,
+  onBack,
+}: {
+  transcript: string;
+  onRetry?: (() => void) | null;
+  onBack?: (() => void) | null;
+}) {
+  return (
+    <div className="mx-auto flex w-full max-w-3xl flex-col rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4 text-left">
+      <div className="flex items-start gap-3">
+        <Icon name="ph:flow-arrow" width={20} className="mt-0.5 shrink-0 text-[var(--text-muted)]" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-[var(--text-primary)]">Flow session output</p>
+          <p className="mt-1 max-w-[68ch] text-[12px] leading-[1.5] text-[var(--text-muted)]">
+            This flow session has no saved chat transcript yet, so CovenCave is showing the flow output instead.
+          </p>
+        </div>
+        {(onRetry || onBack) && (
+          <div className="flex shrink-0 gap-2">
+            {onBack && (
+              <button
+                type="button"
+                className="cave-btn cave-btn--ghost cave-btn--sm"
+                onClick={onBack}
+              >
+                Back
+              </button>
+            )}
+            {onRetry && (
+              <button
+                type="button"
+                className="cave-btn cave-btn--primary cave-btn--sm"
+                onClick={onRetry}
+              >
+                Retry
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+      <pre className="mt-4 max-h-[min(58vh,640px)] overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-4 font-mono text-[12px] leading-relaxed text-[var(--text-primary)]">{transcript}</pre>
+    </div>
+  );
+}
+
 function ChatTitleEditable({
   session,
   displayTitleOverride,
@@ -1956,10 +2024,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // is what lets the first exchange branch instead of silently appending.
   const [pendingBranchParent, setPendingBranchParent] = useState<string | null | undefined>(undefined);
   const [historyState, setHistoryState] = useState<ChatHistoryState>("idle");
+  const [flowTranscriptFallback, setFlowTranscriptFallback] = useState<string | null>(null);
   const [debugModalOpen, setDebugModalOpen] = useState(false);
   const [reflecting, setReflecting] = useState(false);
   const [reflectError, setReflectError] = useState<string | null>(null);
   const [threadSignalReport, setThreadSignalReport] = useState<ThreadSelfReport | null>(null);
+  const flowBackedSession = useMemo(() => isFlowBackedSession(session ?? null), [session]);
   const autoSelfReportSessionsRef = useRef<Set<string>>(new Set());
   const autoSelfReportEligibilityRef = useRef<{ sessionId: string | null; eligible: boolean }>({
     sessionId: null,
@@ -2745,6 +2815,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     currentSessionRef.current = sessionId;
     liveSessionIdRef.current = null;
     setLinkedContext(null);
+    setFlowTranscriptFallback(null);
     if (!sessionId) {
       setTurns([]);
       setActiveLeafId("");
@@ -2756,6 +2827,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setTurns(live.turns);
       turnsRef.current = live.turns;
       setActiveLeafId(live.activeLeafId);
+      setFlowTranscriptFallback(null);
       abortRef.current = live.controller;
       setHistoryState("loaded");
       setBusy(true);
@@ -2773,13 +2845,31 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       try {
         const res = await fetch(`/api/chat/conversation/${sessionId}`, { cache: "no-store" });
         if (!res.ok) {
-          if (!cancelled) {
+          if (cancelled) return;
+          if (keepLiveSession()) {
+            setHistoryState("loaded");
+            return;
+          }
+          if (res.status === 404 && flowBackedSession) {
+            const transcript = await loadFlowSessionTranscript(sessionId);
+            if (cancelled) return;
             if (keepLiveSession()) {
               setHistoryState("loaded");
               return;
             }
+            const cleanedTranscript = transcript ? stripStepMarkers(transcript) : "";
+            if (cleanedTranscript) {
+              setTurns([]);
+              setActiveLeafId("");
+              setFlowTranscriptFallback(cleanedTranscript);
+              setHistoryState("loaded");
+              return;
+            }
+          }
+          if (!cancelled) {
             setTurns([]);
             setActiveLeafId("");
+            setFlowTranscriptFallback(null);
             setHistoryState(res.status === 404 ? "missing" : "error");
           }
           return;
@@ -2811,6 +2901,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (cancelled) return;
         setLinkedContext(json.context ?? null);
         if (json.ok && json.conversation) {
+          setFlowTranscriptFallback(null);
           setTurns(
             (json.conversation.turns ?? [])
               .filter(
@@ -2862,6 +2953,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setHistoryState("loaded");
             return;
           }
+          setFlowTranscriptFallback(null);
           setTurns([]);
           setActiveLeafId("");
           setHistoryState("loaded");
@@ -2870,6 +2962,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setHistoryState("loaded");
             return;
           }
+          setFlowTranscriptFallback(null);
           setTurns([]);
           setActiveLeafId("");
           setHistoryState("missing");
@@ -2880,6 +2973,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             setHistoryState("loaded");
             return;
           }
+          setFlowTranscriptFallback(null);
           setTurns([]);
           setActiveLeafId("");
           setHistoryState("error");
@@ -2889,7 +2983,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return () => {
       cancelled = true;
     };
-  }, [sessionId, historyRetryKey]);
+  }, [sessionId, historyRetryKey, flowBackedSession]);
 
   // Pin: while following, every turns mutation snaps the scroller to the
   // bottom INSTANTLY (scrollTop assignment inside a rAF, coalescing multiple
@@ -4112,10 +4206,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           {turns.length === 0 ? (
             historyState === "loading" ? (
               <ChatHistorySkeleton />
+            ) : flowTranscriptFallback ? (
+              <FlowSessionTranscriptFallback
+                transcript={flowTranscriptFallback}
+                onRetry={retryHistory}
+                onBack={onBack}
+              />
             ) : historyState === "missing" ? (
               <ChatHistoryNotice
-                title="Chat history unavailable"
-                body="This session exists, but CovenCave could not find a saved transcript for it yet."
+                title={flowBackedSession ? "Flow output unavailable" : "Chat history unavailable"}
+                body={flowBackedSession
+                  ? "This flow session exists, but CovenCave could not find saved chat history or flow output for it yet."
+                  : "This session exists, but CovenCave could not find a saved transcript for it yet."}
                 onRetry={retryHistory}
                 onBack={onBack}
               />

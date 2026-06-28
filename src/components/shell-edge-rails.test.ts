@@ -43,6 +43,11 @@ assert.match(
 );
 assert.match(
   shell,
+  /<div className="shell-titlebar-drag-lane" data-tauri-drag-region="" aria-hidden="true" \/>\s*\{navToggle\}/,
+  "the desktop top bar should expose a dedicated non-interactive drag lane before its controls",
+);
+assert.match(
+  shell,
   /shell-top-toggle shell-top-toggle--nav/,
   "shell renders a top-bar nav toggle for the sidebar",
 );
@@ -107,13 +112,28 @@ assert.match(
 );
 assert.match(
   css,
-  /:root\[data-tauri-titlebar\]\s+:is\(\s*\.shell-top,\s*\.shell-top__bar,\s*\.shell-top \.menu-bar,\s*\.shell-top \.top-bar\s*\)\s*\{[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?app-region:\s*drag;/,
-  "macOS Tauri titlebar mode should make the full rendered top-bar band draggable",
+  /\.shell-titlebar-drag-lane\s*\{[\s\S]*?display:\s*none;/,
+  "the drag lane should be hidden outside the macOS Tauri titlebar mode",
 );
 assert.match(
   css,
-  /:root\[data-tauri-titlebar\]\s+\.shell-top \*\s*\{[\s\S]*?-webkit-app-region:\s*no-drag;[\s\S]*?app-region:\s*no-drag;/,
-  "macOS titlebar mode should carve every header descendant out of the drag region so controls stay clickable",
+  /:root\[data-tauri-titlebar\]\s+\.shell-titlebar-drag-lane\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?height:\s*10px;[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?app-region:\s*drag;/,
+  "macOS Tauri titlebar mode should expose a fixed-height draggable lane above the controls",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\s+:is\(\s*\.shell-top,\s*\.shell-top__bar,\s*\.shell-top \.menu-bar,\s*\.shell-top \.top-bar,\s*\.shell-top \.menu-bar__group,\s*\.shell-top \.top-bar__lead,\s*\.shell-top \.top-bar__actions\s*\)\s*\{[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?app-region:\s*drag;/,
+  "macOS Tauri titlebar mode should keep the full rendered top-bar band draggable, including inert layout wrappers",
+);
+assert.doesNotMatch(
+  css,
+  /:root\[data-tauri-titlebar\]\s+\.shell-top \*\s*\{[\s\S]*?app-region:\s*no-drag;/,
+  "macOS titlebar mode must not carve every header descendant out of the drag region",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\s+\.shell-top :is\(\s*button,\s*a,\s*input,\s*select,\s*textarea,\s*kbd,\s*label,[\s\S]*?\[role="button"\],[\s\S]*?\[role="textbox"\],[\s\S]*?\[contenteditable\],[\s\S]*?\.menu-bar__search\s*\),[\s\S]*?-webkit-app-region:\s*no-drag;[\s\S]*?app-region:\s*no-drag;/,
+  "macOS titlebar mode should carve only interactive header controls out of the drag region so controls stay clickable",
 );
 assert.match(
   css,

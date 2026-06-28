@@ -432,6 +432,7 @@ function ShellInner({
     return (
       <div className="shell-frame flex h-full w-full flex-col">
         <div className="shell-top">
+          <div className="shell-titlebar-drag-lane" data-tauri-drag-region="" aria-hidden="true" />
           <div className="shell-top__bar">{renderedTopBar}</div>
         </div>
         <div className="shell-body flex flex-1 min-h-0">
@@ -621,6 +622,7 @@ function ShellInner({
           surface. Visually hidden until focused (see .skip-link in globals). */}
       <a className="skip-link" href="#shell-main-content">Skip to main content</a>
       <div className="shell-top">
+        <div className="shell-titlebar-drag-lane" data-tauri-drag-region="" aria-hidden="true" />
         {navToggle}
         <div className="shell-top__bar">{renderedTopBar}</div>
         {rightToggles}
