@@ -653,6 +653,13 @@ export const SUITES = {
     "src/components/library-mobile-command-center.test.ts",
     "src/components/chat-artifact-viewer.test.ts",
   ],
+  // Cross-environment conformance (#1990). Runs on the ubuntu/windows/macos CI
+  // matrix via `pnpm test:conformance` — the SAME assertions on every OS. Kept
+  // out of the app/api/mobile suites (the neutral Linux baseline) on purpose;
+  // the matrix is where per-OS behavior is verified.
+  conformance: [
+    "scripts/cross-environment.test.ts",
+  ],
 };
 
 // `.mjs` tests that still need the TS type-stripper (most `.mjs` tests do not).

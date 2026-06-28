@@ -53,7 +53,7 @@ prune_foreign_native_packages() {
     return 0
   fi
 
-  local platform arch libc target next_pkg sharp_pkg sharp_vips_pkg node_pty_prebuild
+  local platform arch libc target next_pkg sharp_pkg sharp_vips_pkg node_pty_prebuild SIDECAR_SUPPORTED
   platform="$(node -p "process.platform")"
   arch="$(node -p "process.arch")"
   libc=""
@@ -61,37 +61,15 @@ prune_foreign_native_packages() {
     libc="$(node -p "process.report?.getReport?.().header?.glibcVersionRuntime ? 'gnu' : 'musl'")"
   fi
 
-  case "$platform" in
-    darwin)
-      target="darwin-$arch"
-      next_pkg="@next/swc-$target"
-      sharp_pkg="@img/sharp-$target"
-      sharp_vips_pkg="@img/sharp-libvips-$target"
-      node_pty_prebuild="$target"
-      ;;
-    linux)
-      target="linux-$arch"
-      next_pkg="@next/swc-$target-$libc"
-      sharp_pkg="@img/sharp-$target"
-      sharp_vips_pkg="@img/sharp-libvips-$target"
-      if [ "$libc" = "musl" ]; then
-        sharp_pkg="@img/sharp-linuxmusl-$arch"
-        sharp_vips_pkg="@img/sharp-libvips-linuxmusl-$arch"
-      fi
-      node_pty_prebuild="$target"
-      ;;
-    win32)
-      target="win32-$arch"
-      next_pkg="@next/swc-$target-msvc"
-      sharp_pkg="@img/sharp-$target"
-      sharp_vips_pkg=""
-      node_pty_prebuild="$target"
-      ;;
-    *)
-      echo "==> sidecar native prune: unsupported platform $platform/$arch; leaving native packages intact"
-      return 0
-      ;;
-  esac
+  # Single source of truth for the native target mapping, shared with the
+  # cross-environment conformance suite (scripts/sidecar-target.mjs). Keeps the
+  # release prune from ever drifting from what the tests assert per-OS.
+  SIDECAR_SUPPORTED=0
+  eval "$(node "$ROOT/scripts/sidecar-target.mjs" --sh "$platform" "$arch" "$libc")"
+  if [ "$SIDECAR_SUPPORTED" != "1" ]; then
+    echo "==> sidecar native prune: unsupported platform $platform/$arch; leaving native packages intact"
+    return 0
+  fi
 
   echo "==> pruning sidecar native packages for $platform/$arch${libc:+/$libc}"
 

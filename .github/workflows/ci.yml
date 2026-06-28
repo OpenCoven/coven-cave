@@ -126,3 +126,31 @@ jobs:
       # and runs the three viewport projects. CI=true makes the config use
       # workers:2 + retries:1; per-test timeout is 60s for dev-server compile.
       - run: pnpm exec playwright test
+
+  # Cross-environment conformance (#1990). The SAME conformance suite runs on
+  # all three target OSes, so "it works here" is verified per-platform — not
+  # just on the neutral Linux baseline above. Anchored on the platform-divergent
+  # logic that has bitten the packaged app (coven .cmd spawn #2011, sidecar
+  # native prune #2010). fail-fast:false so one OS failing still reports the
+  # others. Neutral defaults + per-OS deltas: docs/cross-environment.md.
+  conformance:
+    name: Cross-environment (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - run: pnpm install --frozen-lockfile
+
+      # Same assertions on every OS; per-OS branches run for real on their host
+      # and are explicit skips elsewhere (see the suite). No silent no-ops.
+      - run: pnpm test:conformance

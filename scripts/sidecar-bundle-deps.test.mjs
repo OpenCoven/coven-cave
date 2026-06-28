@@ -50,4 +50,20 @@ assert.match(
   "sidecar must verify sharp loads from the bundle before declaring it ready (#2010)",
 );
 
+// The native target mapping (@img/sharp-<target>, @next/swc-<target>, …) is now
+// owned by scripts/sidecar-target.mjs and shared with the cross-environment
+// conformance suite (#1990). The prune must consume that single source of truth
+// rather than re-deriving the package names in a duplicated bash `case`, so the
+// two can never drift.
+assert.match(
+  src,
+  /sidecar-target\.mjs.*--sh/,
+  "sidecar prune must resolve native targets from scripts/sidecar-target.mjs (single source of truth, #1990)",
+);
+assert.doesNotMatch(
+  src,
+  /sharp_pkg="@img\/sharp-/,
+  "sidecar must NOT hard-code @img/sharp package names — they come from sidecar-target.mjs (#1990)",
+);
+
 console.log("sidecar-bundle-deps.test: ok");
