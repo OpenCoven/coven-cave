@@ -52,6 +52,12 @@ export function FlowRunSteps({
   onStop,
 }: FlowRunStepsProps) {
   const [collapsed, setCollapsed] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
+
+  const transcript = progress.transcript.trim();
+  // A run that's live but has emitted no `@@step-…` markers is doing nothing
+  // visible — surface that plainly instead of an endless "0/N · pending".
+  const stalled = running && !progress.markersFound;
 
   const nameById = useMemo(
     () => new Map(doc.nodes.map((node) => [node.id, node.name])),
@@ -93,6 +99,17 @@ export function FlowRunSteps({
           </button>
         )}
       </header>
+
+      {!collapsed && stalled && (
+        <p className="flow-run-steps-stall" role="status">
+          <Icon name="ph:warning-circle" width={14} />
+          <span>
+            {transcript
+              ? "Session is running but hasn't reported any step progress yet — check the output below or open the session."
+              : "Waiting for the session to start producing output…"}
+          </span>
+        </p>
+      )}
 
       {!collapsed && (
         <ol className="flow-run-steps-list">
@@ -136,6 +153,31 @@ export function FlowRunSteps({
             );
           })}
         </ol>
+      )}
+
+      {!collapsed && (run.sessionId || transcript) && (
+        <div className="flow-run-logs">
+          <button
+            type="button"
+            className="flow-run-logs-toggle"
+            onClick={() => setLogsOpen((o) => !o)}
+            aria-expanded={logsOpen}
+          >
+            <Icon name={logsOpen ? "ph:caret-down" : "ph:caret-right"} width={12} />
+            Session output
+            {transcript ? <span className="flow-run-logs-size">{transcript.length} chars</span> : null}
+          </button>
+          {logsOpen &&
+            (transcript ? (
+              <pre className="flow-run-logs-body">{transcript.slice(-6000)}</pre>
+            ) : (
+              <p className="flow-run-logs-empty">
+                {running
+                  ? "No output from the session yet."
+                  : "This run produced no session output."}
+              </p>
+            ))}
+        </div>
       )}
 
       {!collapsed && run.sessionId && (

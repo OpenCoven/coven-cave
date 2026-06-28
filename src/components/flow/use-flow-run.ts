@@ -12,6 +12,7 @@ const EMPTY: FlowRunProgress = {
   done: false,
   markersFound: false,
   steps: [],
+  transcript: "",
 };
 
 /**
