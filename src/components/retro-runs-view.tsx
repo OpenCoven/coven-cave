@@ -59,7 +59,7 @@ function downloadRetroSnapshot(snapshot: RetroRunsSnapshot) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `coven-retro-runs-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.download = `coven-eval-loops-${new Date().toISOString().slice(0, 10)}.json`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -169,24 +169,24 @@ export function RetroRunsView({
   const shellClass = `retro-surface${standalone ? " retro-surface--standalone" : ""}`;
 
   return (
-    <section className={shellClass} aria-label="Retro Runs">
+    <section className={shellClass} aria-label="Eval Loops">
       <header className="retro-hero">
         <div className="retro-hero__copy">
           <p className="retro-eyebrow">
             <Icon name="ph:arrows-clockwise-bold" aria-hidden />
-            Retro Runs
+            Eval Loops
           </p>
-          <h2>Eval-loop retros, scrubbed clean.</h2>
+          <h2>Familiar eval loops, scrubbed clean.</h2>
           <p>
-            Inspect synthesis, prompt, and memory iterations across familiars with secrets redacted before they reach the surface.
+            Inspect and operate synthesis, prompt, and memory iterations across familiars with secrets redacted before they reach the surface.
           </p>
         </div>
         <div className="retro-hero__actions">
           <button
             type="button"
             className="retro-icon-btn"
-            aria-label="Refresh retro runs"
-            title="Refresh retro runs"
+            aria-label="Refresh eval loops"
+            title="Refresh eval loops"
             onClick={() => void load({ quiet: true })}
             disabled={refreshing}
           >
@@ -241,7 +241,7 @@ export function RetroRunsView({
         <Tabs
           variant="segment"
           size="sm"
-          ariaLabel="Retro track filter"
+          ariaLabel="Eval loop track filter"
           value={track}
           onChange={setTrack}
           items={TRACKS}

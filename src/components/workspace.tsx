@@ -91,7 +91,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   roles: "Roles",
   flow: "Flow",
   submissions: "Submissions",
-  retro: "Retro Runs",
+  retro: "Eval Loops",
   capabilities: "Capabilities",
   journal: "Journal",
   docs: "Coven",
@@ -252,7 +252,19 @@ export function Workspace() {
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
-  const [addons, setAddons] = useState<{ github?: boolean; library?: boolean }>({});
+  const [addons, setAddons] = useState<{
+    github?: boolean;
+    library?: boolean;
+    code?: boolean;
+    terminal?: boolean;
+    browser?: boolean;
+    flow?: boolean;
+    roles?: boolean;
+    groupchat?: boolean;
+    journal?: boolean;
+    docs?: boolean;
+    retro?: boolean;
+  }>({});
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
   // Deep-link target captured at mount, held until the async sessions fetch
@@ -497,7 +509,7 @@ export function Workspace() {
   useEffect(() => {
     fetch("/api/config", { cache: "no-store" })
       .then((r) => r.json())
-      .then((j: { ok?: boolean; config?: { addons?: { github?: boolean; library?: boolean } } }) => {
+      .then((j: { ok?: boolean; config?: { addons?: typeof addons } }) => {
         if (j.ok && j.config?.addons) setAddons(j.config.addons);
       })
       .catch(() => {/* keep defaults */});
@@ -1459,6 +1471,10 @@ export function Workspace() {
       case "/automations":
       case "/inbox":
         setMode("inbox");
+        return true;
+      case "/evals":
+      case "/eval-loops":
+        setMode("retro");
         return true;
       case "/remind": {
         const trimmedArgs = args.trim();

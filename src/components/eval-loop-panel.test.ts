@@ -6,6 +6,7 @@ const source = readFileSync(new URL("./eval-loop-panel.tsx", import.meta.url), "
 const skillsRoute = readFileSync(new URL("../app/api/skills/route.ts", import.meta.url), "utf8");
 const evalLoopRoute = readFileSync(new URL("../app/api/skills/eval-loop/[familiarId]/route.ts", import.meta.url), "utf8");
 const evalLoopRunRoute = readFileSync(new URL("../app/api/skills/eval-loop/[familiarId]/run/route.ts", import.meta.url), "utf8");
+const evalLoopRunLockRoute = readFileSync(new URL("../app/api/skills/eval-loop/[familiarId]/run-lock/route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -29,6 +30,24 @@ assert.match(
   source,
   /if \(json\.ok\) \{[\s\S]{0,120}setState\(json\.state as EvalLoopState\);[\s\S]{0,80}setError\(null\);/,
   "successful refreshes should clear the inactive/error state",
+);
+
+assert.match(
+  source,
+  /type EvalLoopLockState = \{[\s\S]*?locked: boolean;[\s\S]*?runId\?: string \| null;[\s\S]*?stale: boolean;/,
+  "EvalLoopPanel should model daemon lock metadata",
+);
+
+assert.match(
+  source,
+  /aria-label=\{`Clear eval-loop lock for \$\{familiarName\}`\}/,
+  "locked eval-loop state should render a keyboard-accessible clear-lock button",
+);
+
+assert.match(
+  source,
+  /fetch\("\/api\/skills\/eval-loop\/" \+ familiarId \+ "\/run-lock"/,
+  "clear-lock handler should call the Cave run-lock proxy",
 );
 
 assert.match(
@@ -65,6 +84,18 @@ assert.doesNotMatch(
   evalLoopRunRoute,
   /\{\s*status:\s*503\s*\}/,
   "failed optional eval-loop runs should not create browser-console 503 noise",
+);
+
+assert.match(
+  evalLoopRunLockRoute,
+  /path: `\/api\/v1\/skills\/eval-loop\/\$\{familiarId\}\/run-lock`/,
+  "run-lock proxy should call the daemon-owned lock recovery endpoint",
+);
+
+assert.match(
+  evalLoopRunLockRoute,
+  /let body:[\s\S]{0,160}=\s*\{\}/,
+  "run-lock proxy should tolerate empty or malformed JSON bodies",
 );
 
 console.log("eval-loop-panel.test.ts: ok");

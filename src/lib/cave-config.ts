@@ -113,6 +113,7 @@ export type CaveConfig = {
     groupchat?: boolean;
     journal?: boolean;
     docs?: boolean;
+    retro?: boolean;
   };
   marketplace: {
     installed: Record<string, MarketplaceInstallEntry>;
@@ -152,6 +153,7 @@ export async function loadConfig(): Promise<CaveConfig> {
         groupchat: parsed.addons?.groupchat ?? false,
         journal: parsed.addons?.journal ?? false,
         docs: parsed.addons?.docs ?? false,
+        retro: parsed.addons?.retro ?? false,
       },
       marketplace: {
         installed: parsed.marketplace?.installed ?? {},

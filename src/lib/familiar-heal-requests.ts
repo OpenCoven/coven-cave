@@ -90,6 +90,13 @@ function sortRequests(requests: SelfHealRequest[]): SelfHealRequest[] {
   });
 }
 
+function iterationChangeSummary(iteration: {
+  change_summary?: string;
+  changeSummary?: string;
+}): string {
+  return iteration.change_summary ?? iteration.changeSummary ?? "Iteration recorded";
+}
+
 export function deriveHealRequests(args: {
   familiarId: string;
   evalLoopState: EvalLoopState | null;
@@ -100,15 +107,14 @@ export function deriveHealRequests(args: {
 
   for (const iteration of args.evalLoopState?.iterations ?? []) {
     if (iteration.outcome !== "REVERT") continue;
+    const changeSummary = iterationChangeSummary(iteration);
     requests.push({
       id: `${args.familiarId}:eval-loop:${iteration.id}`,
       familiarId: args.familiarId,
       source: "eval-loop",
       severity: "warn",
       title: `${titleCase(iteration.track)} eval reverted`,
-      detail: iteration.notes
-        ? `${iteration.change_summary} ${iteration.notes}`
-        : iteration.change_summary,
+      detail: iteration.notes ? `${changeSummary} ${iteration.notes}` : changeSummary,
       suggestedAction: `Run a follow-up ${iteration.track} eval iteration.`,
       actionKind: "run-eval",
       createdAt: iteration.timestamp || STATIC_CREATED_AT,

@@ -38,6 +38,7 @@ export type FolderMode =
   | "library"
   | "capabilities"
   | "journal"
+  | "retro"
   | "docs";
 
 export type AddonsConfig = {
@@ -51,6 +52,7 @@ export type AddonsConfig = {
   groupchat?: boolean;
   journal?: boolean;
   docs?: boolean;
+  retro?: boolean;
 };
 
 export type SidebarMinimalProps = {
@@ -110,6 +112,7 @@ const FOLDER_MODES: Array<{
   { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘8", description: "Chat with a familiar beside your files and terminal" },
   { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description: "Saved docs, links, and reading" },
   { id: "docs", label: "Coven", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven docs, feedback, and social tabs" },
+  { id: "retro", label: "Eval Loops", iconName: "ph:arrows-clockwise-bold", group: "tools", description: "Run and inspect familiar eval loops" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, skills, and the capabilities your familiars can use" },
   { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
@@ -257,6 +260,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     if (fm.id === "groupchat") return addons?.groupchat === true;
     if (fm.id === "journal") return addons?.journal === true;
     if (fm.id === "docs") return addons?.docs === true;
+    if (fm.id === "retro") return addons?.retro === true;
     return true;
   });
 
