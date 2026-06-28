@@ -1138,6 +1138,18 @@ textarea.required-inputs-control {
   line-height: 1.5;
 }
 
+.required-inputs-select {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) center, calc(100% - 11px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
 .required-inputs-help {
   font-size: 11px;
   line-height: 1.4;

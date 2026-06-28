@@ -9,5 +9,10 @@ assert.match(source, /onSubmit: \(values: Record<string, string>\) => void/, "di
 assert.match(source, /required-inputs-form/, "dialog should render a stable form class");
 assert.match(source, /required-inputs-field/, "dialog should render labelled fields");
 assert.match(source, /required-inputs-dialog/, "dialog should expose stable body class");
+// Familiar params must be picked from the valid familiar list, not typed free-hand
+// (an unknown/empty familiar makes the daemon reject the run).
+assert.match(source, /familiarOptions/, "dialog should accept the valid familiar list");
+assert.match(source, /input\.control === "familiar"/, "familiar params should render a picker, not a text field");
+assert.match(source, /<select/, "familiar control should render a select of familiars");
 
 console.log("required-inputs-dialog.test.ts: ok");

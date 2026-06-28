@@ -847,6 +847,7 @@ export function FlowView() {
       {requiredInputsPrompt && (
         <RequiredInputsDialog
           inputs={requiredInputsPrompt.inputs}
+          familiarOptions={familiarOptions}
           onSubmit={submitRequiredInputs}
           onCancel={() => setRequiredInputsPrompt(null)}
         />
