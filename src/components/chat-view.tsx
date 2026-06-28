@@ -80,7 +80,12 @@ import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
 import { resolveActivePath, siblingsOf, childLeaf } from "@/lib/conversation-tree";
-import type { ThreadSelfReport } from "@/lib/thread-self-report";
+import {
+  buildReflectTranscript,
+  buildThreadReflectPrompt,
+  type ThreadSelfReport,
+} from "@/lib/thread-self-report";
+import { streamFamiliarText } from "@/lib/familiar-stream";
 
 type ToolEvent = {
   id: string;
@@ -1911,6 +1916,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setReflecting(true);
     setReflectError(null);
     try {
+      // Generate the reflection client-side via the chat bridge — the daemon has
+      // no LLM endpoint. Run it ephemerally (embed the transcript instead of
+      // resuming the session) so it never appends a turn to the user's thread.
+      const prompt = buildThreadReflectPrompt({ sessionId, transcript: buildReflectTranscript(turns) });
+      const { text, error } = await streamFamiliarText({ familiarId: familiar.id, prompt });
+      if (error) throw new Error(error);
       const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1918,6 +1929,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           sessionId,
           trigger: "manual",
           threadTitle: session?.title ?? familiar.display_name,
+          payload: text,
         }),
       });
       const json = await res.json() as { ok: true; report: ThreadSelfReport } | { ok: false; error?: string };
@@ -1928,11 +1940,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } finally {
       setReflecting(false);
     }
-  }, [familiar.display_name, familiar.id, reflecting, session?.title, sessionId]);
+  }, [familiar.display_name, familiar.id, reflecting, session?.title, sessionId, turns]);
 
   const autoReflectOnThread = useCallback(async (targetSessionId: string) => {
     if (!familiar.autoSelfReport) return;
     try {
+      const prompt = buildThreadReflectPrompt({ sessionId: targetSessionId, transcript: buildReflectTranscript(turns) });
+      const { text, error } = await streamFamiliarText({ familiarId: familiar.id, prompt });
+      if (error || !text.trim()) return;
       const res = await fetch(`/api/familiars/${encodeURIComponent(familiar.id)}/self-report`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1940,6 +1955,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           sessionId: targetSessionId,
           trigger: "auto",
           threadTitle: session?.title ?? familiar.display_name,
+          payload: text,
         }),
       });
       const json = await res.json().catch(() => null) as
@@ -1950,7 +1966,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     } catch {
       /* Auto self-report is best-effort and intentionally silent. */
     }
-  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, session?.title]);
+  }, [familiar.autoSelfReport, familiar.display_name, familiar.id, session?.title, turns]);
 
   useEffect(() => {
     const status = session?.status?.toLowerCase();

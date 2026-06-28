@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
 import {
   appendSelfReport,
@@ -23,6 +22,10 @@ type SelfReportBody = {
   sessionId?: unknown;
   trigger?: unknown;
   threadTitle?: unknown;
+  /** Raw JSON text the familiar produced for the reflection (generated client-side
+   *  via the chat bridge; the daemon has no LLM endpoint). The route validates and
+   *  persists it. */
+  payload?: unknown;
 };
 
 const TRIGGERS = new Set(["auto", "manual", "periodic"]);
@@ -31,36 +34,6 @@ const CAPABILITY_STATES = new Set<CapabilityState>(["available", "degraded", "mi
 const BLOCKER_CATEGORIES = new Set<BlockerCategory>(["auth", "tooling", "permission", "infra", "context", "skill", "other"]);
 const BLOCKER_IMPACTS = new Set<BlockerImpact>(["low", "medium", "high", "blocking"]);
 const IMPORTANCE = new Set<CapabilityImportance>(["nice-to-have", "important", "blocking"]);
-
-function promptFor(sessionId: string): string {
-  return `Reflect on the thread just completed (session: ${sessionId}).
-Return ONLY a valid JSON object matching this exact shape - no prose, no markdown fences:
-
-{
-  "overallConfidence": <0-100>,
-  "overallConfidenceReason": "<brief explanation>",
-  "toolReliability": {
-    "score": <0-100>,
-    "failedTools": ["<tool name>", ...],
-    "unreliableTools": ["<tool name>", ...],
-    "notes": "<optional>"
-  },
-  "contextPressure": "<adequate|tight|excess|critical>",
-  "contextNotes": "<optional>",
-  "skillsUsed": ["<skill id>", ...],
-  "skillsNeedingClarity": [{ "skillId": "<id>", "reason": "<why>" }],
-  "skillsNeedingAccess": [{ "skillId": "<id>", "reason": "<why>" }],
-  "capabilitiesLacking": [{ "name": "<name>", "importance": "<nice-to-have|important|blocking>", "detail": "<detail>" }],
-  "capabilitiesVital": [{ "name": "<name>", "currentState": "<available|degraded|missing>", "notes": "<optional>" }],
-  "memoryRecallScore": <0-100>,
-  "memoryRecallNotes": "<optional>",
-  "fileLocatabilityScore": <0-100>,
-  "fileLocatabilityNotes": "<optional>",
-  "persistentBlockers": [{ "id": "<slug>", "title": "<title>", "category": "<auth|tooling|permission|infra|context|skill|other>", "impact": "<low|medium|high|blocking>", "detail": "<detail>", "suggestedResolution": "<optional>" }]
-}
-
-Be honest. Underconfidence is more useful than overconfidence. Only report what you actually experienced.`;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -92,24 +65,6 @@ function enumValue<T extends string>(value: unknown, allowed: Set<T>, field: str
 
 function objectArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
-}
-
-function extractDaemonText(data: unknown): string | null {
-  if (typeof data === "string") return data;
-  if (!isRecord(data)) return null;
-  for (const key of ["content", "text", "message", "response", "reply", "output"]) {
-    const value = data[key];
-    if (typeof value === "string") return value;
-  }
-  const messages = data.messages;
-  if (Array.isArray(messages)) {
-    for (const item of [...messages].reverse()) {
-      if (isRecord(item) && typeof item.content === "string") return item.content;
-    }
-  }
-  const turn = data.turn;
-  if (isRecord(turn) && typeof turn.text === "string") return turn.text;
-  return null;
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> {
@@ -197,25 +152,15 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ ok: false, error: "invalid trigger" }, { status: 400 });
   }
 
+  // The familiar's reflection is generated client-side through the chat bridge
+  // (the daemon has no LLM endpoint) and posted here as raw JSON text. This route
+  // validates the shape and persists it.
+  const raw = typeof body.payload === "string" ? body.payload : "";
+  if (!raw.trim()) {
+    return NextResponse.json({ ok: false, error: "missing reflection payload" }, { status: 400 });
+  }
+
   try {
-    const res = await callDaemon<unknown>({
-      method: "POST",
-      path: "/api/v1/chat/send",
-      body: {
-        familiarId: id,
-        sessionId,
-        prompt: promptFor(sessionId),
-      },
-      timeoutMs: 30000,
-    });
-
-    if (!res.ok || !res.data) {
-      return NextResponse.json({ ok: false, error: redactSecretText(extractDaemonError(res) ?? `daemon http ${res.status}`) });
-    }
-
-    const raw = extractDaemonText(res.data);
-    if (!raw) return NextResponse.json({ ok: false, error: "empty daemon response" });
-
     const report = redactSecretsDeep(normalizePayload(parseJsonObject(raw), {
       familiarId: id,
       sessionId,
