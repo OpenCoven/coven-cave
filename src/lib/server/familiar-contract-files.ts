@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { access } from "node:fs/promises";
 import path from "node:path";
-import { familiarWorkspace } from "@/lib/coven-paths";
+import { familiarWorkspace, familiarWorkspacesRoot } from "@/lib/coven-paths";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import type { ContractFiles } from "@/lib/familiar-contract";
 import {
@@ -88,15 +88,16 @@ async function fileExists(p: string): Promise<boolean> {
 export async function scaffoldFamiliarContractFiles(
   input: IdentityScaffoldInput,
 ): Promise<string[]> {
-  // Pull the id into a guarded local before it touches the filesystem. The
-  // barrier must gate the SAME value used to build the path — re-reading
-  // `input.id` after the check defeats taint-tracking (CodeQL js/path-injection)
-  // and mirrors the plain-string param the reader above uses.
-  const id = input.id;
-  if (!isValidFamiliarId(id)) {
+  if (!isValidFamiliarId(input.id)) {
     throw new Error("invalid familiar id");
   }
-  const workspace = await familiarWorkspace(id);
+  // Build the workspace path from a FIXED root plus a basename-sanitized id.
+  // `path.basename` is the recognized js/path-injection sanitizer; combined with
+  // the slug guard above it keeps the id from escaping the familiars root. A
+  // brand-new familiar (the only caller — POST 409s on a dup id) has no declared
+  // workspace, so this resolves to the same dir the reader/contract route use.
+  const safeId = path.basename(input.id);
+  const workspace = path.join(familiarWorkspacesRoot(), safeId);
   await mkdir(workspace, { recursive: true });
 
   const generated = buildFamiliarContractFiles(input);
