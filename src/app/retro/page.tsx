@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function RetroRedirectPage() {
-  redirect("/dashboard/retro");
+  redirect("/dashboard?view=evals");
 }
