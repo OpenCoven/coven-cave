@@ -99,7 +99,6 @@ function FlowCanvasInner(props: FlowCanvasProps) {
   // truth for structure, local state only owns in-flight positions.
   const [nodes, setNodes] = useState<Node<FlowNodeData>[]>([]);
   const nodesRef = useRef<Node<FlowNodeData>[]>([]);
-  const mountedKey = useRef<string | null>(null);
 
   const docNodes = useMemo<Node<FlowNodeData>[]>(
     () =>
@@ -126,20 +125,36 @@ function FlowCanvasInner(props: FlowCanvasProps) {
     [doc.nodes, onStickyText, onStickySize, layoutOrientation],
   );
 
+  // Identity for the current canvas "view": changes when the flow is switched
+  // or a relayout/reset bumps viewResetKey (Tidy, orientation flip). ReactFlow
+  // remounts on this same key to re-fit the viewport.
+  const viewKey = `${doc.id}:${viewResetKey}`;
+  const [syncedViewKey, setSyncedViewKey] = useState(viewKey);
+
+  // Adopt the doc's positions *during render* on a view change, so the
+  // remounting ReactFlow paints at the new layout immediately. A post-commit
+  // effect can't do this: the fresh canvas mounts with the previous positions
+  // and ignores the later controlled update, so a Tidy / orientation switch
+  // looked inert (the doc moved but the nodes stayed put).
+if (syncedViewKey !== viewKey) {
+  setSyncedViewKey(viewKey);
+  setNodes(docNodes);
+}
+
+  // While the view is stable, reconcile structural edits (added/removed nodes)
+  // without clobbering the live in-flight positions that keep dragging smooth.
   useEffect(() => {
+    if (syncedViewKey !== viewKey) return;
     setNodes((current) => {
-      const key = `${doc.id}:${viewResetKey}`;
-      const sameDoc = mountedKey.current === key;
-      mountedKey.current = key;
       const live = new Map(current.map((node) => [node.id, node.position]));
       const next = docNodes.map((node) => ({
         ...node,
-        position: (sameDoc ? live.get(node.id) : undefined) ?? node.position,
+        position: live.get(node.id) ?? node.position,
       }));
       nodesRef.current = next;
       return next;
     });
-  }, [docNodes, doc.id, viewResetKey]);
+  }, [docNodes, syncedViewKey, viewKey]);
 
   const renderNodes = useMemo(
     () =>
