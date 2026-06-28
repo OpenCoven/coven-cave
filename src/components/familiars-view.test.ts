@@ -50,8 +50,8 @@ assert.match(
 
 assert.match(
   source,
-  /setInterval\(loadMemory, 30_000\)/,
-  "Memory data refreshes on 30s interval",
+  /usePausablePoll\(\(\) => void loadMemory\(\), 30_000\)/,
+  "Memory data refreshes on a 30s pausable poll (pauses in a hidden tab)",
 );
 
 assert.match(

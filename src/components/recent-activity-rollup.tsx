@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { relativeTime } from "@/lib/relative-time";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 import { modelIcon } from "@/lib/model-label";
@@ -67,27 +68,22 @@ export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) 
     });
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await fetch("/api/sessions/list", { cache: "no-store" });
-        const json = await res.json();
-        if (cancelled) return;
-        const rows: SessionRow[] = Array.isArray(json?.sessions) ? json.sessions : [];
-        setSessions(rows.filter((s) => !s.archived_at).slice(0, MAX_ROWS));
-        setLoaded(true);
-      } catch {
-        if (!cancelled) setLoaded(true);
-      }
-    };
-    void load();
-    const t = setInterval(load, POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/sessions/list", { cache: "no-store" });
+      const json = await res.json();
+      const rows: SessionRow[] = Array.isArray(json?.sessions) ? json.sessions : [];
+      setSessions(rows.filter((s) => !s.archived_at).slice(0, MAX_ROWS));
+      setLoaded(true);
+    } catch {
+      setLoaded(true);
+    }
   }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  // Pauses in a hidden tab; refreshes on return.
+  usePausablePoll(() => void load(), POLL_MS);
 
   const rows = useMemo(() => sessions, [sessions]);
 

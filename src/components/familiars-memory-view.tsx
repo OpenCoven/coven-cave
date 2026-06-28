@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
@@ -209,9 +210,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 
   useEffect(() => {
     void load();
-    const t = setInterval(load, 30_000);
-    return () => clearInterval(t);
   }, [load]);
+  // Pauses in a hidden tab; refreshes on return.
+  usePausablePoll(() => void load(), 30_000);
 
   useEffect(() => {
     if (activeFamiliar?.id) setFamiliarFilter(activeFamiliar.id);

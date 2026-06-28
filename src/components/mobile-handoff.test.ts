@@ -52,7 +52,7 @@ assert.match(handoffRoute, /NODE_ENV !== "production"[\s\S]*pnpm mobile:tailscal
 assert.match(settings, /MobileModeToggle/, "Settings should render a mobile mode toggle component");
 assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mobile mode enabled state");
 assert.match(settings, /onMobileModeChange/, "Settings should expose a toggle callback for mobile mode");
-assert.match(settings, /setInterval\(\(\) => void reconcileMobileMode\(true\), 60_000\)/, "Settings should keep reconciling mobile mode while enabled");
+assert.match(settings, /usePausablePoll\(\(\) => void reconcileMobileMode\(true\), 60_000, \{\s*enabled: mobileModeEnabled,?\s*\}\)/, "Settings should keep reconciling mobile mode while enabled (pausable poll, paused in a hidden tab)");
 assert.match(settings, /Mobile mode/, "Settings should label the one-click native iOS route switch");
 assert.match(settings, /Default on/, "Settings should communicate that mobile mode is on by default");
 assert.doesNotMatch(settings, /CopyValue value="pnpm mobile:tailscale:app"/, "Settings should not require copying a terminal command for normal mobile mode");

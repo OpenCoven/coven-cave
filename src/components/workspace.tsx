@@ -36,6 +36,7 @@ import {
 } from "@/lib/familiar-memory";
 import { recordFamiliarUsed } from "@/lib/familiar-quick-switch";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
 import { FamiliarPanel } from "@/components/familiar-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
@@ -323,21 +324,13 @@ export function Workspace() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      if (cancelled) return;
-      await reconcileMobileMode(mobileModeEnabled);
-    };
-    void run();
-    if (!mobileModeEnabled) return () => {
-      cancelled = true;
-    };
-    const timer = window.setInterval(() => void run(), 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
+    void reconcileMobileMode(mobileModeEnabled);
   }, [mobileModeEnabled, reconcileMobileMode]);
+  // Recurring reconcile only while mobile mode is on; usePausablePoll pauses it
+  // in a hidden tab and refreshes on return.
+  usePausablePoll(() => void reconcileMobileMode(mobileModeEnabled), 60_000, {
+    enabled: mobileModeEnabled,
+  });
 
   const refreshDaemonStatus = useCallback(async (opts?: { trusted?: boolean }) => {
     let running = false;
@@ -523,11 +516,11 @@ export function Workspace() {
   }, []);
 
   // Daemon status poll (previously lived on DaemonBar before chrome consolidation)
+  // — pauses while the tab is hidden and refreshes on return (usePausablePoll).
   useEffect(() => {
     void refreshDaemonStatus();
-    const t = setInterval(() => { void refreshDaemonStatus(); }, 5000);
-    return () => { clearInterval(t); };
   }, [refreshDaemonStatus]);
+  usePausablePoll(() => void refreshDaemonStatus(), 5000);
 
   // Push / dismiss the daemon-offline banner into the shared shell channel so
   // it appears at the top of every surface, not just Chat.
@@ -641,9 +634,8 @@ export function Workspace() {
   useEffect(() => {
     loadFamiliars();
     loadSessions();
-    const t = setInterval(loadSessions, 4000);
-    return () => clearInterval(t);
   }, [loadFamiliars, loadSessions]);
+  usePausablePoll(() => void loadSessions(), 4000);
 
   const refreshPrefs = useCallback(async () => {
     try {
@@ -926,39 +918,33 @@ export function Workspace() {
 
   // Poll Inbox for unresolved-escalations count — drives the
   // sidebar/daemon-bar Inbox badge. Cheap GET every 30s; the route
-  // already de-dupes via reconcileEscalations().
-  useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      try {
-        const res = await fetch("/api/escalations", { cache: "no-store" });
-        const json = await res.json();
-        if (cancelled) return;
-        if (json.ok && Array.isArray(json.items)) {
-          const now = Date.now();
-          const unresolved = (json.items as Array<{
-            state: string;
-            snoozeUntil?: string;
-          }>).filter((it) => {
-            if (it.state === "resolved" || it.state === "dismissed") return false;
-            if (it.state === "snoozed" && it.snoozeUntil) {
-              return new Date(it.snoozeUntil).getTime() <= now;
-            }
-            return true;
-          }).length;
-          setEscalationsUnresolved(unresolved);
-        }
-      } catch {
-        /* keep last value on transient failure */
+  // already de-dupes via reconcileEscalations(). Pauses in a hidden tab.
+  const refreshEscalations = useCallback(async () => {
+    try {
+      const res = await fetch("/api/escalations", { cache: "no-store" });
+      const json = await res.json();
+      if (json.ok && Array.isArray(json.items)) {
+        const now = Date.now();
+        const unresolved = (json.items as Array<{
+          state: string;
+          snoozeUntil?: string;
+        }>).filter((it) => {
+          if (it.state === "resolved" || it.state === "dismissed") return false;
+          if (it.state === "snoozed" && it.snoozeUntil) {
+            return new Date(it.snoozeUntil).getTime() <= now;
+          }
+          return true;
+        }).length;
+        setEscalationsUnresolved(unresolved);
       }
-    };
-    void tick();
-    const t = setInterval(tick, 30_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
+    } catch {
+      /* keep last value on transient failure */
+    }
   }, []);
+  useEffect(() => {
+    void refreshEscalations();
+  }, [refreshEscalations]);
+  usePausablePoll(() => void refreshEscalations(), 30_000);
 
   const refreshOpenTaskCards = useCallback(async () => {
     try {
@@ -997,20 +983,12 @@ export function Workspace() {
   }, []);
 
   // Poll the board for the count of open task cards (anything not yet "done")
-  // — drives the desktop menu bar's Tasks badge. Cheap GET every 60s.
+  // — drives the desktop menu bar's Tasks badge. Cheap GET every 60s; pauses
+  // in a hidden tab.
   useEffect(() => {
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      await refreshOpenTaskCards();
-    };
-    void tick();
-    const t = setInterval(tick, 60_000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
+    void refreshOpenTaskCards();
   }, [refreshOpenTaskCards]);
+  usePausablePoll(() => void refreshOpenTaskCards(), 60_000);
 
   const handleEnrichTasks = useCallback(async () => {
     if (!activeId || enrichingTasks) return;

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
@@ -1597,10 +1598,11 @@ function MobileModeToggle() {
 
   useEffect(() => {
     void reconcileMobileMode(mobileModeEnabled);
-    if (!mobileModeEnabled) return;
-    const timer = window.setInterval(() => void reconcileMobileMode(true), 60_000);
-    return () => window.clearInterval(timer);
   }, [mobileModeEnabled, reconcileMobileMode]);
+  // Recurring reconcile only while mobile mode is on; pauses in a hidden tab.
+  usePausablePoll(() => void reconcileMobileMode(true), 60_000, {
+    enabled: mobileModeEnabled,
+  });
 
   return (
     <SettingsRow

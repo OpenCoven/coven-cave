@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Tabs } from "@/components/ui/tabs";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
@@ -136,9 +137,9 @@ export function FamiliarsView({
 
   useEffect(() => {
     void loadMemory();
-    const t = setInterval(loadMemory, 30_000);
-    return () => clearInterval(t);
   }, [loadMemory]);
+  // Pauses in a hidden tab; refreshes on return.
+  usePausablePoll(() => void loadMemory(), 30_000);
 
   const stats = useMemo(
     () => buildFamiliarCardStats({ familiars, sessions, covenEntries }),
