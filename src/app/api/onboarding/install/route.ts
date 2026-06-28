@@ -5,7 +5,7 @@ import { constants as fsConstants } from "node:fs";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { stripAnsi } from "@/lib/ansi";
-import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenBin, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
 import { callDaemon } from "@/lib/coven-daemon";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +75,7 @@ const INSTALL_TARGETS = {
 } as const;
 
 type InstallTarget = keyof typeof INSTALL_TARGETS;
+type CommandPathResult = { path: string | null; error?: string };
 
 function nodeInstallHint(): string {
   if (process.platform === "darwin") {
@@ -86,17 +87,30 @@ function nodeInstallHint(): string {
   return "Install Node.js LTS from https://nodejs.org or your package manager (e.g. `sudo apt install nodejs npm`), then click Install again.";
 }
 
-async function commandPath(binary: string): Promise<string | null> {
+async function commandPath(
+  binary: string,
+  opts: { refreshOnMiss?: boolean } = {},
+): Promise<CommandPathResult> {
   const finder = process.platform === "win32" ? "where" : "which";
-  try {
-    const { stdout } = await execFileAsync(finder, [binary], {
-      env: covenSpawnEnv(),
-      timeout: 1500,
-    });
-    return stdout.trim().split(/\r?\n/)[0] || null;
-  } catch {
-    return null;
-  }
+  const find = async (env: NodeJS.ProcessEnv) => {
+    try {
+      const { stdout } = await execFileAsync(finder, [binary], {
+        env,
+        timeout: 1500,
+      });
+      return { path: stdout.trim().split(/\r?\n/)[0] || null };
+    } catch (err) {
+      const code = (err as { code?: unknown }).code;
+      if (code === 1) return { path: null };
+      return {
+        path: null,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  };
+  const found = await find(covenSpawnEnv());
+  if (found.path || found.error || !opts.refreshOnMiss) return found;
+  return find(refreshCovenSpawnEnv());
 }
 
 function isInstallTarget(value: unknown): value is InstallTarget {
@@ -184,11 +198,20 @@ async function spawnPlanFor(
 ): Promise<
   | SpawnPlan
   | { npmMissing: true }
+  | { commandLookupFailed: true; binary: string; error: string }
   | { sudoRequired: true; packageName: string }
   | null
 > {
   if (target.kind === "npm") {
-    const npm = await commandPath("npm");
+    const npmResult = await commandPath("npm", { refreshOnMiss: true });
+    if (npmResult.error) {
+      return {
+        commandLookupFailed: true,
+        binary: "npm",
+        error: npmResult.error,
+      };
+    }
+    const npm = npmResult.path;
     if (!npm) return { npmMissing: true };
 
     // On POSIX a root-owned global prefix (system Node, /usr/local) fails
@@ -480,6 +503,17 @@ export async function POST(req: Request) {
       { status: 422 },
     );
   }
+  if (plan && "commandLookupFailed" in plan) {
+    return NextResponse.json(
+      {
+        ok: false,
+        commandLookupFailed: true,
+        error: `Cave couldn't check ${plan.binary} on PATH`,
+        hint: `Retry in a moment. If it keeps happening, quit stuck terminal/session processes and try again. Details: ${plan.error}`,
+      },
+      { status: 503 },
+    );
+  }
   if (plan && "sudoRequired" in plan) {
     return NextResponse.json(
       {
@@ -547,7 +581,8 @@ export async function POST(req: Request) {
         clearTimeout(timer);
         if (killTimer) clearTimeout(killTimer);
         void (async () => {
-          const installedPath = await commandPath(target.binary);
+          const installed = await commandPath(target.binary);
+          const installedPath = installed.path;
           const ok = code === 0 && !!installedPath && !job.error;
           job.status = "done";
           job.finishedAt = Date.now();
@@ -555,11 +590,12 @@ export async function POST(req: Request) {
           job.code = code;
           job.binaryPath = installedPath;
           if (!ok && !job.error) {
-            job.error =
-              installFailureHint(targetName, job.output) ??
-              (code === 0
-                ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
-                : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`);
+            job.error = installed.error
+              ? `Could not verify ${target.binary} on PATH after install: ${installed.error}`
+              : installFailureHint(targetName, job.output) ??
+                (code === 0
+                  ? `${target.binary} still is not on PATH after install — open a new terminal or restart Cave, then re-check.`
+                  : `installer exited with ${code === null ? `signal ${signal ?? "unknown"}` : `code ${code}`}`);
           }
         })();
       });

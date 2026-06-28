@@ -493,7 +493,10 @@ async function getMermaidPlugin(): Promise<PreviewPlugin | null> {
         // theme "dark" matches the Cave UI; securityLevel "strict" overrides the
         // plugin's default "loose" so diagrams from untrusted chat content can't
         // smuggle scripts/click handlers (postProcess output bypasses our sanitizer).
-        const plugin = mermaidPlugin({ theme: "dark", config: { securityLevel: "strict" } });
+        const plugin = mermaidPlugin({
+          theme: "dark",
+          config: { securityLevel: "strict", suppressErrorRendering: true },
+        });
         await plugin.init?.();
         return plugin;
       })

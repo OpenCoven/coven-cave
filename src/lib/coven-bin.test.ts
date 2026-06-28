@@ -32,4 +32,10 @@ assert.match(
   "spawn PATH joining uses the platform delimiter instead of hard-coded ':'",
 );
 
+assert.match(
+  source,
+  /export function refreshCovenSpawnEnv\(\)[\s\S]*cachedPath = null[\s\S]*return covenSpawnEnv\(\)/,
+  "desktop install retries can refresh Cave's cached PATH after Node/npm is installed",
+);
+
 console.log("coven-bin.test.ts: ok");

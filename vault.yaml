@@ -26,6 +26,6 @@ GOOGLE_API_KEY:
   description: "Google AI Studio key, used to mint ephemeral tokens for Gemini Live (v1.1)"
 
 GITHUB_PERSONAL_ACCESS_TOKEN:
-  ref: "op://Developer/GitHub PAT/credential"
+  ref: "op://Development/GitHub PAT/credential"
   description: "GitHub Token"
   required: true

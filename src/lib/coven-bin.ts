@@ -183,3 +183,8 @@ export function covenSpawnEnv(): NodeJS.ProcessEnv {
   }
   return env;
 }
+
+export function refreshCovenSpawnEnv(): NodeJS.ProcessEnv {
+  cachedPath = null;
+  return covenSpawnEnv();
+}

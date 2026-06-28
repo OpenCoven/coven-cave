@@ -113,6 +113,30 @@ assert.match(
   "npm-missing responses carry a platform-specific Node.js install hint",
 );
 
+assert.match(
+  source,
+  /import \{ covenBin, covenSpawnEnv, refreshCovenSpawnEnv \} from "@\/lib\/coven-bin"/,
+  "install route can refresh Cave's cached PATH before declaring npm missing",
+);
+
+assert.match(
+  source,
+  /commandPath\("npm", \{ refreshOnMiss: true \}\)/,
+  "npm discovery retries with a refreshed PATH so clicking Install again can see newly installed Node.js",
+);
+
+assert.match(
+  source,
+  /code === 1/,
+  "command lookup treats only the normal which/where not-found exit as missing npm",
+);
+
+assert.match(
+  source,
+  /commandLookupFailed/,
+  "transient command lookup failures are reported separately instead of mislabeling them as missing Node.js",
+);
+
 for (const platform of ["darwin", "win32"]) {
   assert.match(
     source,
