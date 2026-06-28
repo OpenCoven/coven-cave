@@ -156,6 +156,22 @@ function mkCase(over: Partial<EvalCase> = {}): EvalCase {
       status: "never-run",
       staleReasons: ["never-run"],
       evaluatedAt: null,
+      details: {
+        latestTurnId: "turn-1",
+        evaluatedThroughTurnId: undefined,
+        rubricVersion: undefined,
+        snapshotRubricVersion: undefined,
+        confidenceRubricVersion: undefined,
+        snapshotConfidenceRubricVersion: undefined,
+        skillsVersion: undefined,
+        snapshotSkillsVersion: undefined,
+        permissionsHash: undefined,
+        snapshotPermissionsHash: undefined,
+        responseConfidenceEventCount: 0,
+        snapshotResponseConfidenceEventCount: 0,
+        groupUpdatedAt: undefined,
+        ttlMs: undefined,
+      },
     },
     "missing snapshot is never-run",
   );
@@ -201,6 +217,26 @@ function mkCase(over: Partial<EvalCase> = {}): EvalCase {
     "confidence-events-added",
     "ttl-expired",
   ]);
+  assert.deepEqual(
+    stale.details,
+    {
+      latestTurnId: "turn-4",
+      evaluatedThroughTurnId: "turn-2",
+      rubricVersion: "rubric-v2",
+      snapshotRubricVersion: "rubric-v1",
+      confidenceRubricVersion: "confidence-v2",
+      snapshotConfidenceRubricVersion: "confidence-v1",
+      skillsVersion: "skills-v2",
+      snapshotSkillsVersion: "skills-v1",
+      permissionsHash: "perms-v2",
+      snapshotPermissionsHash: "perms-v1",
+      responseConfidenceEventCount: 2,
+      snapshotResponseConfidenceEventCount: 1,
+      groupUpdatedAt: undefined,
+      ttlMs: 60_000,
+    },
+    "stale thread eval state includes reviewable freshness evidence",
+  );
 
   assert.equal(
     deriveThreadEvalState(baseSnapshot, {
@@ -240,8 +276,22 @@ function mkCase(over: Partial<EvalCase> = {}): EvalCase {
     updatedAt: "2026-06-28T08:00:00.000Z",
   };
   const states: ThreadEvalState[] = [
-    { threadId: "thread-1", familiarId: "cody", status: "stale", staleReasons: ["new-turns"], evaluatedAt: "2026-06-28T08:00:00.000Z" },
-    { threadId: "thread-2", familiarId: "cody", status: "blocked", staleReasons: ["eval-lock-stale"], evaluatedAt: "2026-06-28T08:00:00.000Z" },
+    {
+      threadId: "thread-1",
+      familiarId: "cody",
+      status: "stale",
+      staleReasons: ["new-turns"],
+      evaluatedAt: "2026-06-28T08:00:00.000Z",
+      details: { responseConfidenceEventCount: 0, snapshotResponseConfidenceEventCount: 0 },
+    },
+    {
+      threadId: "thread-2",
+      familiarId: "cody",
+      status: "blocked",
+      staleReasons: ["eval-lock-stale"],
+      evaluatedAt: "2026-06-28T08:00:00.000Z",
+      details: { responseConfidenceEventCount: 0, snapshotResponseConfidenceEventCount: 0 },
+    },
   ];
 
   const rollup = rollupEvalGroup(group, states);

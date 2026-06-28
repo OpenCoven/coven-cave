@@ -117,6 +117,22 @@ export type ThreadEvalState = {
   status: ThreadEvalStatus;
   staleReasons: string[];
   evaluatedAt: string | null;
+  details: {
+    latestTurnId?: string;
+    evaluatedThroughTurnId?: string;
+    rubricVersion?: string;
+    snapshotRubricVersion?: string;
+    confidenceRubricVersion?: string;
+    snapshotConfidenceRubricVersion?: string;
+    skillsVersion?: string;
+    snapshotSkillsVersion?: string;
+    permissionsHash?: string;
+    snapshotPermissionsHash?: string;
+    responseConfidenceEventCount: number;
+    snapshotResponseConfidenceEventCount: number;
+    groupUpdatedAt?: string;
+    ttlMs?: number;
+  };
 };
 
 export type EvalGroupRollup = {
@@ -352,6 +368,7 @@ export function suiteRunBlockReason(suite: EvalSuite, familiarId: string | undef
 }
 
 export function deriveThreadEvalState(snapshot: ThreadEvalSnapshot | null, current: ThreadEvalCurrent): ThreadEvalState {
+  const details = buildThreadEvalDetails(snapshot, current);
   if (!snapshot) {
     return {
       threadId: current.threadId,
@@ -359,6 +376,7 @@ export function deriveThreadEvalState(snapshot: ThreadEvalSnapshot | null, curre
       status: "never-run",
       staleReasons: ["never-run"],
       evaluatedAt: null,
+      details,
     };
   }
 
@@ -369,6 +387,7 @@ export function deriveThreadEvalState(snapshot: ThreadEvalSnapshot | null, curre
       status: "blocked",
       staleReasons: ["eval-lock-stale"],
       evaluatedAt: snapshot.evaluatedAt,
+      details,
     };
   }
 
@@ -379,6 +398,7 @@ export function deriveThreadEvalState(snapshot: ThreadEvalSnapshot | null, curre
       status: "running",
       staleReasons: [],
       evaluatedAt: snapshot.evaluatedAt,
+      details,
     };
   }
 
@@ -421,6 +441,26 @@ export function deriveThreadEvalState(snapshot: ThreadEvalSnapshot | null, curre
     status: reasons.length ? "stale" : "fresh",
     staleReasons: reasons,
     evaluatedAt: snapshot.evaluatedAt,
+    details,
+  };
+}
+
+function buildThreadEvalDetails(snapshot: ThreadEvalSnapshot | null, current: ThreadEvalCurrent): ThreadEvalState["details"] {
+  return {
+    latestTurnId: current.latestTurnId,
+    evaluatedThroughTurnId: snapshot?.evaluatedThroughTurnId,
+    rubricVersion: current.rubricVersion,
+    snapshotRubricVersion: snapshot?.rubricVersion,
+    confidenceRubricVersion: current.confidenceRubricVersion,
+    snapshotConfidenceRubricVersion: snapshot?.confidenceRubricVersion,
+    skillsVersion: current.skillsVersion,
+    snapshotSkillsVersion: snapshot?.skillsVersion,
+    permissionsHash: current.permissionsHash,
+    snapshotPermissionsHash: snapshot?.permissionsHash,
+    responseConfidenceEventCount: current.responseConfidenceEventIds?.length ?? 0,
+    snapshotResponseConfidenceEventCount: snapshot?.responseConfidenceEventIds.length ?? 0,
+    groupUpdatedAt: current.groupUpdatedAt,
+    ttlMs: current.ttlMs,
   };
 }
 

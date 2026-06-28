@@ -440,13 +440,31 @@ function EvalGroupPanel({
       </div>
       <div className="evals-group-states" aria-label="Thread eval states">
         {states.map((state) => (
-          <span key={state.threadId} className={`evals-thread-state is-${state.status}`}>
-            {state.threadId}
-            <b>{state.status}</b>
-            {state.staleReasons.map((reason) => (
-              <em key={reason} className="evals-stale-reason">{reason}</em>
-            ))}
-          </span>
+          <article key={state.threadId} className={`evals-thread-state is-${state.status}`}>
+            <div className="evals-thread-state-head">
+              <span>{state.threadId}</span>
+              <b>{state.status}</b>
+            </div>
+            <div className="evals-thread-detail-grid" aria-label={`Thread eval detail for ${state.threadId}`}>
+              <ThreadEvalDetail label="Evaluated through" value={state.details.evaluatedThroughTurnId ?? "never"} />
+              <ThreadEvalDetail label="Latest turn" value={state.details.latestTurnId ?? "unknown"} />
+              <ThreadEvalDetail
+                label="Confidence events"
+                value={`${state.details.snapshotResponseConfidenceEventCount}->${state.details.responseConfidenceEventCount}`}
+              />
+              <ThreadEvalDetail
+                label="Rubric"
+                value={versionPair(state.details.snapshotRubricVersion, state.details.rubricVersion)}
+              />
+            </div>
+            {state.staleReasons.length > 0 ? (
+              <div className="evals-thread-reasons" aria-label={`Stale reasons for ${state.threadId}`}>
+                {state.staleReasons.map((reason) => (
+                  <em key={reason} className="evals-stale-reason">{reason}</em>
+                ))}
+              </div>
+            ) : null}
+          </article>
         ))}
       </div>
       <button type="button" className="evals-btn evals-btn-primary" onClick={onQueue} disabled={runnable === 0}>
@@ -454,6 +472,22 @@ function EvalGroupPanel({
       </button>
     </div>
   );
+}
+
+function ThreadEvalDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="evals-thread-detail">
+      <small>{label}</small>
+      <b>{value}</b>
+    </span>
+  );
+}
+
+function versionPair(snapshot: string | undefined, current: string | undefined): string {
+  if (!snapshot && !current) return "unknown";
+  if (!snapshot) return current ?? "unknown";
+  if (!current || current === snapshot) return snapshot;
+  return `${snapshot}->${current}`;
 }
 
 // ---- Editor ----------------------------------------------------------------

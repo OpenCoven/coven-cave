@@ -4,8 +4,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/lib/icon";
 import {
   aggregateThreadSignals,
+  buildThreadSignalReviewQueue,
   THREAD_SIGNALS_EMPTY_STATE,
-  type RankedBlocker,
   type ThreadSignalsAggregate,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
@@ -25,6 +25,11 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
       </div>
     </div>
   );
+}
+
+function latestReportDate(reports: ThreadSelfReport[]): string {
+  const latest = [...reports].sort((a, b) => new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime())[0];
+  return latest ? new Date(latest.reportedAt).toLocaleString() : "Unknown";
 }
 
 function ListBlock<T>({
@@ -61,9 +66,34 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
   }
 
   const aggregate = aggregateThreadSignals(reports);
+  const reviewQueue = buildThreadSignalReviewQueue(aggregate);
 
   return (
     <div className="fa-thread-signals" data-familiar-id={familiarId}>
+      <div className="fa-thread-review">
+        <div className="fa-thread-review-head">
+          <div>
+            <h3>Review queue</h3>
+            <p>{reports.length} reports · Latest report {latestReportDate(reports)}</p>
+          </div>
+          <span>{reviewQueue.length} items</span>
+        </div>
+        {reviewQueue.length === 0 ? (
+          <p className="fa-thread-review-empty">No urgent review items in the current summary.</p>
+        ) : (
+          <ul className="fa-thread-review-list">
+            {reviewQueue.map((item, index) => (
+              <li key={`${item.kind}-${item.title}-${index}`} className={`is-${item.severity}`}>
+                <Icon name={item.severity === "critical" ? "ph:warning-circle" : "ph:info"} aria-hidden />
+                <span>
+                  <b>{item.title}</b>
+                  {item.detail}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <div className="fa-thread-score-grid">
         <ScoreBar label="Avg confidence" value={aggregate.averageConfidence} />
         <ScoreBar label="Avg tool reliability" value={aggregate.averageToolReliability} />

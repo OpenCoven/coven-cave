@@ -81,8 +81,22 @@ describe("eval store groups and thread state", () => {
 
   it("queues manual eval group runs for runnable thread states", async () => {
     const states: ThreadEvalState[] = [
-      { threadId: "thread-1", familiarId: "cody", status: "stale", staleReasons: ["new-turns"], evaluatedAt: "2026-06-28T08:00:00.000Z" },
-      { threadId: "thread-2", familiarId: "cody", status: "blocked", staleReasons: ["eval-lock-stale"], evaluatedAt: "2026-06-28T08:00:00.000Z" },
+      {
+        threadId: "thread-1",
+        familiarId: "cody",
+        status: "stale",
+        staleReasons: ["new-turns"],
+        evaluatedAt: "2026-06-28T08:00:00.000Z",
+        details: { responseConfidenceEventCount: 0, snapshotResponseConfidenceEventCount: 0 },
+      },
+      {
+        threadId: "thread-2",
+        familiarId: "cody",
+        status: "blocked",
+        staleReasons: ["eval-lock-stale"],
+        evaluatedAt: "2026-06-28T08:00:00.000Z",
+        details: { responseConfidenceEventCount: 0, snapshotResponseConfidenceEventCount: 0 },
+      },
     ];
 
     const queued = await enqueueManualEvalGroupRun(group(), states, "2026-06-28T08:15:00.000Z");

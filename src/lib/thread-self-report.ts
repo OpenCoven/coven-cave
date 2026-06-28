@@ -221,6 +221,13 @@ export type ThreadSignalsAggregate = {
   persistentBlockers: RankedBlocker[];
 };
 
+export type ThreadSignalReviewItem = {
+  kind: "blocker" | "skill-access" | "skill-clarity" | "capability" | "context-pressure" | "low-score";
+  severity: "critical" | "warning" | "info";
+  title: string;
+  detail: string;
+};
+
 export const THREAD_SIGNALS_EMPTY_STATE = "No thread reports yet. Use 'Reflect on this thread' to generate the first one.";
 
 const IMPORTANCE_WEIGHT: Record<CapabilityImportance, number> = { "nice-to-have": 1, important: 2, blocking: 3 };
@@ -352,4 +359,81 @@ export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSigna
     capabilitiesLacking: [...capLacking.values()],
     persistentBlockers: rankedBlockers,
   };
+}
+
+export function buildThreadSignalReviewQueue(aggregate: ThreadSignalsAggregate): ThreadSignalReviewItem[] {
+  const items: (ThreadSignalReviewItem & { rank: number })[] = [];
+
+  for (const blocker of aggregate.persistentBlockers.slice(0, 5)) {
+    items.push({
+      kind: "blocker",
+      severity: blocker.crit || blocker.impact === "blocking" ? "critical" : "warning",
+      title: blocker.title,
+      detail: `${blocker.frequency}x - ${blocker.impact}${blocker.suggestedResolution ? ` - ${blocker.suggestedResolution}` : ""}`,
+      rank: blocker.crit || blocker.impact === "blocking" ? 100 + blocker.rankScore : 70 + blocker.rankScore,
+    });
+  }
+
+  for (const skill of aggregate.skillsNeedingAccess.slice(0, 4)) {
+    items.push({
+      kind: "skill-access",
+      severity: "critical",
+      title: skill.skillId,
+      detail: skill.reason,
+      rank: 85,
+    });
+  }
+
+  for (const capability of aggregate.capabilitiesLacking.filter((item) => item.importance === "blocking").slice(0, 4)) {
+    items.push({
+      kind: "capability",
+      severity: "critical",
+      title: capability.name,
+      detail: capability.detail,
+      rank: 80,
+    });
+  }
+
+  if (aggregate.contextCounts.critical > 0 || aggregate.contextCounts.tight > 0 || aggregate.contextCounts.excess > 0) {
+    items.push({
+      kind: "context-pressure",
+      severity: aggregate.contextCounts.critical > 0 ? "critical" : "warning",
+      title: "Context pressure",
+      detail: `${aggregate.contextCounts.critical} critical, ${aggregate.contextCounts.tight} tight, ${aggregate.contextCounts.excess} excess`,
+      rank: aggregate.contextCounts.critical > 0 ? 75 : 55,
+    });
+  }
+
+  for (const skill of aggregate.skillsNeedingClarity.slice(0, 4)) {
+    items.push({
+      kind: "skill-clarity",
+      severity: "warning",
+      title: skill.skillId,
+      detail: skill.reason,
+      rank: 45,
+    });
+  }
+
+  const lowScores: [ThreadSignalReviewItem["title"], number][] = [
+    ["Confidence", aggregate.averageConfidence],
+    ["Tool reliability", aggregate.averageToolReliability],
+    ["Memory recall", aggregate.averageMemoryRecall],
+    ["File locatability", aggregate.averageFileLocatability],
+  ];
+  for (const [title, score] of lowScores) {
+    if (score > 0 && score < 60) {
+      items.push({
+        kind: "low-score",
+        severity: score < 40 ? "critical" : "warning",
+        title,
+        detail: `Average ${score}/100`,
+        rank: score < 40 ? 72 : 42,
+      });
+    }
+  }
+
+  return items
+    .sort((a, b) => b.rank - a.rank || a.title.localeCompare(b.title))
+    .slice(0, 8)
+    .map(({ rank: _rank, ...item }) => item);
 }

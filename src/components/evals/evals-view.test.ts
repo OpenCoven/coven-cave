@@ -30,6 +30,10 @@ assert.match(source, /rollupEvalGroup/, "rolls grouped eval state into status co
 assert.match(source, /Run stale evals/, "exposes a manual queue action for stale group evals");
 assert.match(source, /evals-group-panel/, "renders grouped eval state");
 assert.match(source, /evals-stale-reason/, "renders stale reasons");
+assert.match(source, /evals-thread-detail-grid/, "renders detailed thread eval freshness evidence");
+assert.match(source, /Evaluated through/, "shows which turn the thread eval covers");
+assert.match(source, /Confidence events/, "shows confidence event coverage for thread eval freshness");
+assert.match(source, /Rubric/, "shows rubric version evidence for thread eval freshness");
 
 // Editor: cases + graders
 assert.match(source, /Add case/, "can add cases");
