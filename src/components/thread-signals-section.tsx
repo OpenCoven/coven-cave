@@ -5,8 +5,10 @@ import { Icon } from "@/lib/icon";
 import {
   aggregateThreadSignals,
   buildThreadSignalReviewQueue,
+  buildThreadSignalDiscussionPrompt,
   THREAD_SIGNALS_EMPTY_STATE,
   type ThreadSignalsAggregate,
+  type ThreadSignalReviewItem,
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 
@@ -55,6 +57,15 @@ function ListBlock<T>({
   );
 }
 
+/** Open a new chat with this familiar, primed to discuss the selected topic. */
+function discussReviewItem(familiarId: string, item: ThreadSignalReviewItem) {
+  window.dispatchEvent(
+    new CustomEvent("cave:agents-new-chat", {
+      detail: { familiarId, initialPrompt: buildThreadSignalDiscussionPrompt(item) },
+    }),
+  );
+}
+
 export function ThreadSignalsSection({ familiarId, reports }: { familiarId: string; reports: ThreadSelfReport[] }) {
   if (reports.length === 0) {
     return (
@@ -84,11 +95,20 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
           <ul className="fa-thread-review-list">
             {reviewQueue.map((item, index) => (
               <li key={`${item.kind}-${item.title}-${index}`} className={`is-${item.severity}`}>
-                <Icon name={item.severity === "critical" ? "ph:warning-circle" : "ph:info"} aria-hidden />
-                <span>
-                  <b>{item.title}</b>
-                  {item.detail}
-                </span>
+                <button
+                  type="button"
+                  className="fa-thread-review-item"
+                  onClick={() => discussReviewItem(familiarId, item)}
+                  title={`Discuss "${item.title}" with this familiar`}
+                  aria-label={`Discuss ${item.title}`}
+                >
+                  <Icon name={item.severity === "critical" ? "ph:warning-circle" : "ph:info"} aria-hidden />
+                  <span>
+                    <b>{item.title}</b>
+                    {item.detail}
+                  </span>
+                  <Icon name="ph:chat-circle-dots" className="fa-thread-review-discuss" aria-hidden />
+                </button>
               </li>
             ))}
           </ul>

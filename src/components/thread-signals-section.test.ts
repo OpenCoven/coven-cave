@@ -130,4 +130,11 @@ describe("aggregateThreadSignals", () => {
     assert.match(source, /fa-thread-review-list/, "component renders the review queue as a scan-first list");
     assert.match(source, /Latest report/, "component shows recency for the summary");
   });
+
+  it("lets you select a review item to unlock a discussion on the topic", () => {
+    assert.match(source, /buildThreadSignalDiscussionPrompt/, "seeds the chat with a topic-specific prompt");
+    assert.match(source, /new CustomEvent\("cave:agents-new-chat"/, "opens a new chat with the familiar");
+    assert.match(source, /initialPrompt: buildThreadSignalDiscussionPrompt\(item\)/, "primes the chat with the selected item");
+    assert.match(source, /className="fa-thread-review-item"[\s\S]*onClick=\{\(\) => discussReviewItem\(familiarId, item\)\}/, "each review item is a clickable button");
+  });
 });

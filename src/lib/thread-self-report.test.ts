@@ -4,6 +4,7 @@ import {
   aggregateResponseConfidenceEvents,
   buildReflectTranscript,
   buildThreadReflectPrompt,
+  buildThreadSignalDiscussionPrompt,
   contextPressureLabel,
   deriveThreadScore,
   normalizeResponseConfidenceEvent,
@@ -202,5 +203,23 @@ describe("buildThreadReflectPrompt", () => {
   it("falls back to a context-free instruction when no transcript is given", () => {
     const prompt = buildThreadReflectPrompt({ sessionId: "sess-2" });
     assert.ok(prompt.includes("Reflect on the thread just completed (session: sess-2)"));
+  });
+
+  it("builds a focused discussion prompt for a selected review item", () => {
+    const prompt = buildThreadSignalDiscussionPrompt({
+      kind: "skill-access",
+      severity: "critical",
+      title: "github",
+      detail: "needs push access to land PRs",
+    });
+    assert.ok(prompt.includes("skill access gap"), "names the item kind in plain language");
+    assert.ok(prompt.includes("**github**"), "highlights the topic title");
+    assert.ok(prompt.includes("needs push access to land PRs"), "carries the detail");
+    assert.ok(/root cause/i.test(prompt), "asks for a root cause + concrete fix");
+    // every review kind maps to a label (no "undefined" leaking into the prompt)
+    for (const kind of ["blocker", "skill-clarity", "capability", "context-pressure", "low-score"] as const) {
+      const p = buildThreadSignalDiscussionPrompt({ kind, severity: "info", title: "t", detail: "d" });
+      assert.doesNotMatch(p, /undefined/, `${kind} resolves to a label`);
+    }
   });
 });
