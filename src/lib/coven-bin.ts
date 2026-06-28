@@ -19,16 +19,22 @@
 //      profile (custom rc edits, asdf, mise, etc.) still works.
 //   3. Cache the result for the lifetime of the server process.
 //
-// All cave spawn sites of `coven` should use `covenBin()` for argv[0] and
-// `covenSpawnEnv()` for the env option.
+// Cave call sites that execute `coven` with dynamic argv should use
+// `covenLaunchCommand()` for argv[0] plus fixed args, and `covenSpawnEnv()`
+// for the env option.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 let cachedBin: string | null = null;
 let cachedPath: string | null = null;
+
+export type CovenLaunchCommand = {
+  command: string;
+  fixedArgs: string[];
+};
 
 const FORBIDDEN_SPAWN_ENV_KEYS = ["GITHUB_PAT"] as const;
 
@@ -151,6 +157,49 @@ export function covenBin(): string {
 
   cachedBin = "coven";
   return cachedBin;
+}
+
+function windowsShimTargetFromFile(shimPath: string): string | null {
+  const binDir = path.dirname(shimPath);
+  try {
+    const shim = readFileSync(shimPath, "utf-8");
+    const quotedTargets = shim.matchAll(/"(%(?:~?dp0)%?)[\\/]*([^"]+\.[cm]?js)"/gi);
+    for (const match of quotedTargets) {
+      const relativeTarget = match[2]?.replace(/[\\/]+/g, path.sep);
+      if (!relativeTarget) continue;
+      const candidate = path.resolve(binDir, relativeTarget);
+      if (existsSync(candidate)) return candidate;
+    }
+  } catch {
+    /* fall through to the conventional npm global layout */
+  }
+
+  const conventionalTarget = path.join(
+    binDir,
+    "node_modules",
+    "@opencoven",
+    "cli",
+    "bin",
+    "coven.js",
+  );
+  return existsSync(conventionalTarget) ? conventionalTarget : null;
+}
+
+export function covenLaunchCommandForBinary(
+  binary: string,
+  platform: NodeJS.Platform = process.platform,
+): CovenLaunchCommand {
+  if (platform !== "win32" || !/\.(cmd|bat)$/i.test(binary)) {
+    return { command: binary, fixedArgs: [] };
+  }
+
+  const script = windowsShimTargetFromFile(binary);
+  if (!script) return { command: binary, fixedArgs: [] };
+  return { command: process.execPath, fixedArgs: [script] };
+}
+
+export function covenLaunchCommand(): CovenLaunchCommand {
+  return covenLaunchCommandForBinary(covenBin());
 }
 
 /**

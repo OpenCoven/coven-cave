@@ -11,7 +11,7 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
-import { covenBin, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +57,13 @@ async function which(binary: string): Promise<string | null> {
 
 function probeVersion(binary: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
-    const child = spawn(binary, args, { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    let child;
+    try {
+      child = spawn(binary, args, { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    } catch {
+      resolve(null);
+      return;
+    }
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (out += d.toString()));
@@ -78,7 +84,8 @@ function probeVersion(binary: string, args: string[]): Promise<string | null> {
 
 function covenSupportsAdapterList(): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = spawn(covenBin(), ["--help"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    const { command, fixedArgs } = covenLaunchCommand();
+    const child = spawn(command, [...fixedArgs, "--help"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.stderr.on("data", (d) => (out += d.toString()));
@@ -99,7 +106,8 @@ function covenSupportsAdapterList(): Promise<boolean> {
 
 function loadCovenAdapterSummaries(): Promise<CovenAdapterSummary[]> {
   return new Promise((resolve) => {
-    const child = spawn(covenBin(), ["adapter", "list", "--json"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
+    const { command, fixedArgs } = covenLaunchCommand();
+    const child = spawn(command, [...fixedArgs, "adapter", "list", "--json"], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     const t = setTimeout(() => {
       child.kill("SIGTERM");

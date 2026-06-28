@@ -12,7 +12,7 @@ import {
 } from "@/lib/cave-board-types";
 import { normalizeTaskGitHubLinks } from "@/lib/task-github";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
-import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
 import { familiarWorkspace } from "@/lib/coven-paths";
 import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import { spawn } from "node:child_process";
@@ -221,7 +221,8 @@ function runCoven(
     try {
       let out = "";
       let settled = false;
-      const child = spawn(covenBin(), args, {
+      const { command, fixedArgs } = covenLaunchCommand();
+      const child = spawn(command, [...fixedArgs, ...args], {
         cwd: familiarWorkspacePath ?? process.cwd(),
         stdio: ["ignore", "pipe", "pipe"],
         env: covenSpawnEnv(),

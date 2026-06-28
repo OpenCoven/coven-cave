@@ -31,7 +31,7 @@ import {
   toPersistedTools,
   ToolCallTracker,
 } from "@/lib/chat-tool-events";
-import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenLaunchCommand, covenSpawnEnv } from "@/lib/coven-bin";
 import { buildPromptWithCovenIdentityCanon } from "@/lib/coven-identity-canon";
 import {
   buildPromptWithKnowledgeVault,
@@ -393,7 +393,8 @@ function covenRunSupportsModel(): Promise<boolean> {
         resolve(value);
       };
       try {
-        const child = spawn(covenBin(), ["run", "--help"], {
+        const { command, fixedArgs } = covenLaunchCommand();
+        const child = spawn(command, [...fixedArgs, "run", "--help"], {
           env: covenSpawnEnv(),
           stdio: ["ignore", "pipe", "pipe"],
         });
@@ -1300,16 +1301,19 @@ export async function POST(req: Request) {
                   env: covenSpawnEnv(),
                 });
               })()
-            : spawn(covenBin(), spawnArgs, {
-                // Spawn IN the familiar's workspace when no project root was
-                // supplied, so coven's project-root resolver picks that dir as
-                // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
-                // from the familiar's home. When a project root IS supplied,
-                // honor that instead.
-                cwd: familiarCwd ?? cwd,
-                stdio: ["ignore", "pipe", "pipe"],
-                env: covenSpawnEnv(),
-              });
+            : (() => {
+                const { command, fixedArgs } = covenLaunchCommand();
+                return spawn(command, [...fixedArgs, ...spawnArgs], {
+                  // Spawn IN the familiar's workspace when no project root was
+                  // supplied, so coven's project-root resolver picks that dir as
+                  // root and Codex/Claude pick up AGENTS.md / SOUL.md / IDENTITY.md
+                  // from the familiar's home. When a project root IS supplied,
+                  // honor that instead.
+                  cwd: familiarCwd ?? cwd,
+                  stdio: ["ignore", "pipe", "pipe"],
+                  env: covenSpawnEnv(),
+                });
+              })();
 
           const onAbort = () => {
             try {
