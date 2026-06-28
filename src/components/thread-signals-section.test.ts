@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
-import { aggregateThreadSignals, THREAD_SIGNALS_EMPTY_STATE } from "@/lib/thread-self-report";
+import { aggregateThreadSignals, buildThreadSignalReviewQueue, THREAD_SIGNALS_EMPTY_STATE } from "@/lib/thread-self-report";
 import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
 const source = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
@@ -93,10 +93,41 @@ describe("aggregateThreadSignals", () => {
     assert.equal(agg.skillsNeedingClarity[0].reason, "new");
   });
 
+  it("builds a prioritized human review queue for summary thread signals", () => {
+    const reports = [
+      report({
+        id: "r1",
+        contextPressure: "critical",
+        skillsNeedingAccess: [{ skillId: "github", reason: "token expired" }],
+        persistentBlockers: [
+          { id: "auth", title: "Auth expired", category: "auth", impact: "blocking", detail: "GitHub auth failed" },
+        ],
+      }),
+      report({
+        id: "r2",
+        contextPressure: "tight",
+        capabilitiesLacking: [{ name: "calendar search", importance: "blocking", detail: "cannot inspect conflicts" }],
+      }),
+    ];
+    const review = buildThreadSignalReviewQueue(aggregateThreadSignals(reports));
+    assert.equal(review[0].kind, "blocker");
+    assert.equal(review[0].severity, "critical");
+    assert.match(review[0].title, /Auth expired/);
+    assert.ok(review.some((item) => item.kind === "skill-access" && item.title === "github"));
+    assert.ok(review.some((item) => item.kind === "context-pressure" && item.detail.includes("critical")));
+  });
+
   it("renders empty state in source file when no reports", () => {
     assert.match(source, /reports\.length === 0/);
     assert.match(source, /THREAD_SIGNALS_EMPTY_STATE/);
     assert.match(THREAD_SIGNALS_EMPTY_STATE, /No thread reports yet/);
     assert.match(source, /export function ThreadSignalsSection/);
+  });
+
+  it("renders a review-first Thread Signals layout in source", () => {
+    assert.match(source, /buildThreadSignalReviewQueue/, "component derives a review queue");
+    assert.match(source, /Review queue/, "component labels the prioritized review area");
+    assert.match(source, /fa-thread-review-list/, "component renders the review queue as a scan-first list");
+    assert.match(source, /Latest report/, "component shows recency for the summary");
   });
 });

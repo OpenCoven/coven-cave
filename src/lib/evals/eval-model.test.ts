@@ -9,9 +9,15 @@ import {
   summarizeResults,
   suiteRunBlockReason,
   graderLabel,
+  deriveThreadEvalState,
+  rollupEvalGroup,
+  buildManualEvalQueueItems,
   type EvalCase,
   type EvalSuite,
   type Grader,
+  type EvalGroup,
+  type ThreadEvalSnapshot,
+  type ThreadEvalState,
 } from "./eval-model.ts";
 
 function mkCase(over: Partial<EvalCase> = {}): EvalCase {
@@ -120,6 +126,186 @@ function mkCase(over: Partial<EvalCase> = {}): EvalCase {
 {
   assert.equal(graderLabel({ kind: "contains", value: "x" }), "Contains");
   assert.equal(graderLabel({ kind: "contains", value: "x", label: "Has greeting" }), "Has greeting");
+}
+
+// ---- thread eval freshness ----
+{
+  const baseSnapshot: ThreadEvalSnapshot = {
+    threadId: "thread-1",
+    familiarId: "cody",
+    evaluatedThroughTurnId: "turn-2",
+    inputHash: "hash-a",
+    rubricVersion: "rubric-v1",
+    confidenceRubricVersion: "confidence-v1",
+    skillsVersion: "skills-v1",
+    permissionsHash: "perms-v1",
+    responseConfidenceEventIds: ["confidence-1"],
+    evaluatedAt: "2026-06-28T08:00:00.000Z",
+  };
+
+  assert.deepEqual(
+    deriveThreadEvalState(null, {
+      threadId: "thread-1",
+      familiarId: "cody",
+      latestTurnId: "turn-1",
+      now: "2026-06-28T08:10:00.000Z",
+    }),
+    {
+      threadId: "thread-1",
+      familiarId: "cody",
+      status: "never-run",
+      staleReasons: ["never-run"],
+      evaluatedAt: null,
+      details: {
+        latestTurnId: "turn-1",
+        evaluatedThroughTurnId: undefined,
+        rubricVersion: undefined,
+        snapshotRubricVersion: undefined,
+        confidenceRubricVersion: undefined,
+        snapshotConfidenceRubricVersion: undefined,
+        skillsVersion: undefined,
+        snapshotSkillsVersion: undefined,
+        permissionsHash: undefined,
+        snapshotPermissionsHash: undefined,
+        responseConfidenceEventCount: 0,
+        snapshotResponseConfidenceEventCount: 0,
+        groupUpdatedAt: undefined,
+        ttlMs: undefined,
+      },
+    },
+    "missing snapshot is never-run",
+  );
+
+  assert.equal(
+    deriveThreadEvalState(baseSnapshot, {
+      threadId: "thread-1",
+      familiarId: "cody",
+      latestTurnId: "turn-2",
+      inputHash: "hash-a",
+      rubricVersion: "rubric-v1",
+      confidenceRubricVersion: "confidence-v1",
+      skillsVersion: "skills-v1",
+      permissionsHash: "perms-v1",
+      responseConfidenceEventIds: ["confidence-1"],
+      now: "2026-06-28T08:10:00.000Z",
+    }).status,
+    "fresh",
+    "matching snapshot is fresh",
+  );
+
+  const stale = deriveThreadEvalState(baseSnapshot, {
+    threadId: "thread-1",
+    familiarId: "cody",
+    latestTurnId: "turn-4",
+    inputHash: "hash-b",
+    rubricVersion: "rubric-v2",
+    confidenceRubricVersion: "confidence-v2",
+    skillsVersion: "skills-v2",
+    permissionsHash: "perms-v2",
+    responseConfidenceEventIds: ["confidence-1", "confidence-2"],
+    ttlMs: 60_000,
+    now: "2026-06-28T08:10:00.000Z",
+  });
+  assert.equal(stale.status, "stale");
+  assert.deepEqual(stale.staleReasons, [
+    "new-turns",
+    "thread-changed",
+    "rubric-changed",
+    "confidence-rubric-changed",
+    "skills-changed",
+    "permissions-changed",
+    "confidence-events-added",
+    "ttl-expired",
+  ]);
+  assert.deepEqual(
+    stale.details,
+    {
+      latestTurnId: "turn-4",
+      evaluatedThroughTurnId: "turn-2",
+      rubricVersion: "rubric-v2",
+      snapshotRubricVersion: "rubric-v1",
+      confidenceRubricVersion: "confidence-v2",
+      snapshotConfidenceRubricVersion: "confidence-v1",
+      skillsVersion: "skills-v2",
+      snapshotSkillsVersion: "skills-v1",
+      permissionsHash: "perms-v2",
+      snapshotPermissionsHash: "perms-v1",
+      responseConfidenceEventCount: 2,
+      snapshotResponseConfidenceEventCount: 1,
+      groupUpdatedAt: undefined,
+      ttlMs: 60_000,
+    },
+    "stale thread eval state includes reviewable freshness evidence",
+  );
+
+  assert.equal(
+    deriveThreadEvalState(baseSnapshot, {
+      threadId: "thread-1",
+      familiarId: "cody",
+      evalLock: { locked: true, stale: false },
+      now: "2026-06-28T08:10:00.000Z",
+    }).status,
+    "running",
+    "fresh daemon lock reports running",
+  );
+  assert.equal(
+    deriveThreadEvalState(baseSnapshot, {
+      threadId: "thread-1",
+      familiarId: "cody",
+      evalLock: { locked: true, stale: true },
+      now: "2026-06-28T08:10:00.000Z",
+    }).status,
+    "blocked",
+    "stale daemon lock reports blocked",
+  );
+}
+
+// ---- eval groups and manual queue ----
+{
+  const group: EvalGroup = {
+    id: "group-1",
+    name: "Current thread confidence",
+    description: "Confidence eval group",
+    scope: "thread",
+    members: [{ kind: "thread", id: "thread-1", familiarId: "cody" }, { kind: "thread", id: "thread-2", familiarId: "cody" }],
+    tracks: ["confidence", "regression"],
+    rubricVersion: "rubric-v1",
+    stalePolicy: { ttlMs: 60_000 },
+    schedulePolicy: { mode: "manual" },
+    createdAt: "2026-06-28T08:00:00.000Z",
+    updatedAt: "2026-06-28T08:00:00.000Z",
+  };
+  const states: ThreadEvalState[] = [
+    {
+      threadId: "thread-1",
+      familiarId: "cody",
+      status: "stale",
+      staleReasons: ["new-turns"],
+      evaluatedAt: "2026-06-28T08:00:00.000Z",
+      details: { responseConfidenceEventCount: 0, snapshotResponseConfidenceEventCount: 0 },
+    },
+    {
+      threadId: "thread-2",
+      familiarId: "cody",
+      status: "blocked",
+      staleReasons: ["eval-lock-stale"],
+      evaluatedAt: "2026-06-28T08:00:00.000Z",
+      details: { responseConfidenceEventCount: 0, snapshotResponseConfidenceEventCount: 0 },
+    },
+  ];
+
+  const rollup = rollupEvalGroup(group, states);
+  assert.equal(rollup.totalThreads, 2);
+  assert.equal(rollup.staleThreads, 1);
+  assert.equal(rollup.blockedThreads, 1);
+  assert.deepEqual(rollup.runnableThreadIds, ["thread-1"]);
+
+  const queueItems = buildManualEvalQueueItems(group, states, "2026-06-28T08:15:00.000Z");
+  assert.equal(queueItems.length, 1, "manual queue skips blocked threads");
+  assert.equal(queueItems[0].groupId, "group-1");
+  assert.equal(queueItems[0].threadId, "thread-1");
+  assert.equal(queueItems[0].status, "queued");
+  assert.deepEqual(queueItems[0].staleReasons, ["new-turns"]);
 }
 
 console.log("eval-model.test.ts OK");

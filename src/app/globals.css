@@ -9675,6 +9675,85 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-variant-numeric: tabular-nums;
 }
 .fa-thread-empty { min-width: 0; }
+.fa-thread-review {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 36%, var(--border-hairline));
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--accent-presence) 7%, var(--bg-base));
+}
+.fa-thread-review-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+.fa-thread-review-head h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.fa-thread-review-head p {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.fa-thread-review-head > span {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.fa-thread-review-empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.fa-thread-review-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fa-thread-review-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.fa-thread-review-list li.is-critical {
+  border-color: color-mix(in oklch, var(--color-danger) 45%, var(--border-hairline));
+}
+.fa-thread-review-list li.is-critical svg {
+  color: var(--color-danger);
+}
+.fa-thread-review-list li.is-warning svg {
+  color: var(--color-warning);
+}
+.fa-thread-review-list li svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.fa-thread-review-list span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fa-thread-review-list b {
+  color: var(--text-primary);
+}
 .fa-thread-score-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -9916,6 +9995,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .growth-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .growth-signals { grid-template-columns: 1fr; }
   .fa-response-factor-grid,
+  .fa-thread-review-list,
   .fa-thread-score-grid,
   .fa-thread-grid { grid-template-columns: 1fr; }
 }

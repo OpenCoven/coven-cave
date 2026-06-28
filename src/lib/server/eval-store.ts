@@ -10,12 +10,17 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic-write.ts";
 import {
+  buildManualEvalQueueItems,
   summarizeResults,
+  type EvalGroup,
   type EvalSuite,
   type EvalCase,
   type EvalRun,
   type Grader,
   type GraderKind,
+  type ManualEvalQueueItem,
+  type ThreadEvalSnapshot,
+  type ThreadEvalState,
 } from "../evals/eval-model.ts";
 
 export const EVAL_RUNS_CAP = 200;
@@ -30,6 +35,15 @@ function suitesDir(): string {
 }
 function runsDir(): string {
   return path.join(evalsRoot(), "runs");
+}
+function groupsDir(): string {
+  return path.join(evalsRoot(), "groups");
+}
+function threadStatesDir(): string {
+  return path.join(evalsRoot(), "thread-states");
+}
+function queueDir(): string {
+  return path.join(evalsRoot(), "queue");
 }
 
 /** Traversal-proof filename for an id (suites and runs share the rule). */
@@ -92,6 +106,182 @@ function coerceSuite(value: unknown): EvalSuite | null {
     createdAt: typeof s.createdAt === "string" ? s.createdAt : now,
     updatedAt: typeof s.updatedAt === "string" ? s.updatedAt : now,
   };
+}
+
+function coerceEvalGroup(value: unknown): EvalGroup | null {
+  if (!value || typeof value !== "object") return null;
+  const g = value as Record<string, unknown>;
+  if (typeof g.id !== "string") return null;
+  const now = new Date().toISOString();
+  const members: EvalGroup["members"] = Array.isArray(g.members)
+    ? g.members
+        .map((member): EvalGroup["members"][number] | null => {
+          if (!member || typeof member !== "object") return null;
+          const m = member as Record<string, unknown>;
+          const kind = typeof m.kind === "string" ? m.kind : "";
+          if (!["thread", "familiar", "project", "filter"].includes(kind) || typeof m.id !== "string") return null;
+          const coerced: EvalGroup["members"][number] = { kind: kind as EvalGroup["members"][number]["kind"], id: m.id };
+          if (typeof m.familiarId === "string") coerced.familiarId = m.familiarId;
+          if (typeof m.latestTurnId === "string") coerced.latestTurnId = m.latestTurnId;
+          if (typeof m.inputHash === "string") coerced.inputHash = m.inputHash;
+          if (typeof m.confidenceRubricVersion === "string") coerced.confidenceRubricVersion = m.confidenceRubricVersion;
+          if (typeof m.skillsVersion === "string") coerced.skillsVersion = m.skillsVersion;
+          if (typeof m.permissionsHash === "string") coerced.permissionsHash = m.permissionsHash;
+          if (Array.isArray(m.responseConfidenceEventIds)) {
+            coerced.responseConfidenceEventIds = m.responseConfidenceEventIds.filter((id): id is string => typeof id === "string");
+          }
+          return coerced;
+        })
+        .filter((member): member is EvalGroup["members"][number] => member !== null)
+    : [];
+  const tracks = Array.isArray(g.tracks)
+    ? g.tracks.filter((track): track is EvalGroup["tracks"][number] =>
+        typeof track === "string" && ["synthesis", "prompt", "memory", "confidence", "regression"].includes(track),
+      )
+    : [];
+  return {
+    id: g.id,
+    name: typeof g.name === "string" && g.name.trim() ? g.name : g.id,
+    description: typeof g.description === "string" ? g.description : undefined,
+    scope: typeof g.scope === "string" && ["thread", "familiar", "project", "release", "custom"].includes(g.scope)
+      ? g.scope as EvalGroup["scope"]
+      : "custom",
+    members,
+    tracks,
+    rubricVersion: typeof g.rubricVersion === "string" ? g.rubricVersion : "rubric-v1",
+    stalePolicy: {
+      ttlMs: typeof (g.stalePolicy as Record<string, unknown> | undefined)?.ttlMs === "number"
+        ? (g.stalePolicy as { ttlMs: number }).ttlMs
+        : undefined,
+    },
+    schedulePolicy: {
+      mode: (g.schedulePolicy as Record<string, unknown> | undefined)?.mode === "automatic" ? "automatic" : "manual",
+    },
+    createdAt: typeof g.createdAt === "string" ? g.createdAt : now,
+    updatedAt: typeof g.updatedAt === "string" ? g.updatedAt : now,
+  };
+}
+
+function coerceThreadEvalSnapshot(value: unknown): ThreadEvalSnapshot | null {
+  if (!value || typeof value !== "object") return null;
+  const s = value as Record<string, unknown>;
+  if (typeof s.threadId !== "string" || typeof s.familiarId !== "string") return null;
+  return {
+    threadId: s.threadId,
+    familiarId: s.familiarId,
+    evalGroupId: typeof s.evalGroupId === "string" ? s.evalGroupId : undefined,
+    evaluatedThroughTurnId: typeof s.evaluatedThroughTurnId === "string" ? s.evaluatedThroughTurnId : undefined,
+    inputHash: typeof s.inputHash === "string" ? s.inputHash : undefined,
+    rubricVersion: typeof s.rubricVersion === "string" ? s.rubricVersion : undefined,
+    confidenceRubricVersion: typeof s.confidenceRubricVersion === "string" ? s.confidenceRubricVersion : undefined,
+    skillsVersion: typeof s.skillsVersion === "string" ? s.skillsVersion : undefined,
+    permissionsHash: typeof s.permissionsHash === "string" ? s.permissionsHash : undefined,
+    responseConfidenceEventIds: Array.isArray(s.responseConfidenceEventIds)
+      ? s.responseConfidenceEventIds.filter((id): id is string => typeof id === "string")
+      : [],
+    evaluatedAt: typeof s.evaluatedAt === "string" ? s.evaluatedAt : new Date().toISOString(),
+  };
+}
+
+function coerceQueueItem(value: unknown): ManualEvalQueueItem | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Record<string, unknown>;
+  if (
+    typeof item.id !== "string" ||
+    typeof item.groupId !== "string" ||
+    typeof item.threadId !== "string" ||
+    typeof item.familiarId !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: item.id,
+    groupId: item.groupId,
+    threadId: item.threadId,
+    familiarId: item.familiarId,
+    tracks: Array.isArray(item.tracks)
+      ? item.tracks.filter((track): track is ManualEvalQueueItem["tracks"][number] =>
+          typeof track === "string" && ["synthesis", "prompt", "memory", "confidence", "regression"].includes(track),
+        )
+      : [],
+    staleReasons: Array.isArray(item.staleReasons)
+      ? item.staleReasons.filter((reason): reason is string => typeof reason === "string")
+      : [],
+    priority: "normal",
+    status: "queued",
+    createdAt: typeof item.createdAt === "string" ? item.createdAt : new Date().toISOString(),
+  };
+}
+
+async function listJsonDir<T>(dir: string, coerce: (value: unknown) => T | null): Promise<T[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    return [];
+  }
+  const items: T[] = [];
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) continue;
+    try {
+      const item = coerce(JSON.parse(await readFile(path.join(dir, entry), "utf8")));
+      if (item) items.push(item);
+    } catch {
+      // Skip corrupt files so one bad record does not blank the whole view.
+    }
+  }
+  return items;
+}
+
+// ---- Groups / thread state / manual queue ----------------------------------
+
+export async function listEvalGroups(): Promise<EvalGroup[]> {
+  const groups = await listJsonDir(groupsDir(), coerceEvalGroup);
+  groups.sort((a, b) => (b.updatedAt > a.updatedAt ? 1 : b.updatedAt < a.updatedAt ? -1 : 0));
+  return groups;
+}
+
+export async function saveEvalGroup(input: unknown): Promise<EvalGroup> {
+  const group = coerceEvalGroup(input);
+  if (!group) throw new Error("invalid eval group");
+  await mkdir(groupsDir(), { recursive: true });
+  await writeJsonAtomic(path.join(groupsDir(), fileName(group.id, "group")), group);
+  return group;
+}
+
+export async function listThreadEvalSnapshots(): Promise<ThreadEvalSnapshot[]> {
+  const snapshots = await listJsonDir(threadStatesDir(), coerceThreadEvalSnapshot);
+  snapshots.sort((a, b) => (b.evaluatedAt > a.evaluatedAt ? 1 : b.evaluatedAt < a.evaluatedAt ? -1 : 0));
+  return snapshots;
+}
+
+export async function saveThreadEvalSnapshot(input: unknown): Promise<ThreadEvalSnapshot> {
+  const snapshot = coerceThreadEvalSnapshot(input);
+  if (!snapshot) throw new Error("invalid thread eval snapshot");
+  await mkdir(threadStatesDir(), { recursive: true });
+  await writeJsonAtomic(path.join(threadStatesDir(), fileName(`${snapshot.familiarId}-${snapshot.threadId}`, "thread")), snapshot);
+  return snapshot;
+}
+
+export async function listManualEvalQueue(): Promise<ManualEvalQueueItem[]> {
+  const items = await listJsonDir(queueDir(), coerceQueueItem);
+  items.sort((a, b) => (b.createdAt > a.createdAt ? 1 : b.createdAt < a.createdAt ? -1 : 0));
+  return items;
+}
+
+export async function enqueueManualEvalGroupRun(
+  group: EvalGroup,
+  states: ThreadEvalState[],
+  createdAt = new Date().toISOString(),
+): Promise<ManualEvalQueueItem[]> {
+  const sanitizedGroup = coerceEvalGroup(group);
+  if (!sanitizedGroup) throw new Error("invalid eval group");
+  const items = buildManualEvalQueueItems(sanitizedGroup, states, createdAt);
+  await mkdir(queueDir(), { recursive: true });
+  for (const item of items) {
+    await writeJsonAtomic(path.join(queueDir(), fileName(item.id, "queue")), item);
+  }
+  return items;
 }
 
 // ---- Suites ----------------------------------------------------------------

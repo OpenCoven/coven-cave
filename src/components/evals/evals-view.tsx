@@ -5,12 +5,18 @@ import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
+  deriveThreadEvalState,
+  rollupEvalGroup,
   suiteRunBlockReason,
   type EvalSuite,
   type EvalCase,
+  type EvalGroup,
   type EvalRun,
   type Grader,
   type GraderKind,
+  type ManualEvalQueueItem,
+  type ThreadEvalSnapshot,
+  type ThreadEvalState,
 } from "@/lib/evals/eval-model";
 import { runSuite, type RunProgress } from "@/lib/evals/eval-runner";
 import "@/styles/evals.css";
@@ -66,6 +72,9 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   const [draft, setDraft] = useState<EvalSuite | null>(null);
   const [savedJson, setSavedJson] = useState<string>("");
   const [runs, setRuns] = useState<EvalRun[]>([]);
+  const [groups, setGroups] = useState<EvalGroup[]>([]);
+  const [threadSnapshots, setThreadSnapshots] = useState<ThreadEvalSnapshot[]>([]);
+  const [queue, setQueue] = useState<ManualEvalQueueItem[]>([]);
   const [tab, setTab] = useState<"editor" | "runs">("editor");
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
@@ -76,17 +85,37 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   const dirty = useMemo(() => (draft ? JSON.stringify(draft) !== savedJson : false), [draft, savedJson]);
   const familiarId = draft?.familiarId || activeFamiliarId || familiars[0]?.id || "";
   const blockReason = draft ? suiteRunBlockReason({ ...draft, familiarId }, familiarId) : "Select a suite";
+  const activeGroup = groups[0] ?? null;
+  const activeGroupStates = useMemo(
+    () => activeGroup ? deriveEvalGroupStates(activeGroup, threadSnapshots) : [],
+    [activeGroup, threadSnapshots],
+  );
+  const activeGroupRollup = useMemo(
+    () => activeGroup ? rollupEvalGroup(activeGroup, activeGroupStates) : null,
+    [activeGroup, activeGroupStates],
+  );
 
-  // Load suites once.
+  // Load suites and grouped eval metadata once.
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
-        const res = await fetch("/api/evals/suites");
-        const data = (await res.json()) as { ok: boolean; suites?: EvalSuite[] };
+        const [suitesRes, groupsRes, threadStatesRes, queueRes] = await Promise.all([
+          fetch("/api/evals/suites"),
+          fetch("/api/evals/groups"),
+          fetch("/api/evals/thread-states"),
+          fetch("/api/evals/queue"),
+        ]);
+        const data = (await suitesRes.json()) as { ok: boolean; suites?: EvalSuite[] };
+        const groupsData = (await groupsRes.json()) as { ok: boolean; groups?: EvalGroup[] };
+        const threadStatesData = (await threadStatesRes.json()) as { ok: boolean; snapshots?: ThreadEvalSnapshot[] };
+        const queueData = (await queueRes.json()) as { ok: boolean; queue?: ManualEvalQueueItem[] };
         if (!alive) return;
         const list = data.suites ?? [];
         setSuites(list);
+        setGroups(groupsData.groups ?? []);
+        setThreadSnapshots(threadStatesData.snapshots ?? []);
+        setQueue(queueData.queue ?? []);
         if (list.length) selectSuite(list[0]);
       } finally {
         if (alive) setLoaded(true);
@@ -221,6 +250,17 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     abortRef.current?.abort();
   }, []);
 
+  const queueStaleGroup = useCallback(async () => {
+    if (!activeGroup || activeGroupStates.length === 0) return;
+    const res = await fetch("/api/evals/queue", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ group: activeGroup, states: activeGroupStates }),
+    });
+    const data = (await res.json()) as { ok: boolean; queued?: ManualEvalQueueItem[] };
+    if (data.ok && data.queued) setQueue((prev) => [...data.queued!, ...prev]);
+  }, [activeGroup, activeGroupStates]);
+
   if (loaded && suites.length === 0 && !draft) {
     return (
       <div className="evals evals-empty">
@@ -317,6 +357,14 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
             </div>
           </header>
 
+          <EvalGroupPanel
+            group={activeGroup}
+            states={activeGroupStates}
+            rollup={activeGroupRollup}
+            queuedCount={queue.length}
+            onQueue={queueStaleGroup}
+          />
+
           {tab === "editor" ? (
             <SuiteEditor draft={draft} patchDraft={patchDraft} patchCase={patchCase} patchGrader={patchGrader} setDraft={setDraft} />
           ) : (
@@ -332,6 +380,114 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       ) : null}
     </div>
   );
+}
+
+function deriveEvalGroupStates(group: EvalGroup, snapshots: ThreadEvalSnapshot[]): ThreadEvalState[] {
+  return group.members
+    .filter((member) => member.kind === "thread")
+    .map((member) => {
+      const snapshot = snapshots.find((item) => item.threadId === member.id && (!member.familiarId || item.familiarId === member.familiarId)) ?? null;
+      return deriveThreadEvalState(snapshot, {
+        threadId: member.id,
+        familiarId: member.familiarId ?? snapshot?.familiarId ?? "",
+        latestTurnId: member.latestTurnId,
+        inputHash: member.inputHash,
+        rubricVersion: group.rubricVersion || snapshot?.rubricVersion,
+        confidenceRubricVersion: member.confidenceRubricVersion,
+        skillsVersion: member.skillsVersion,
+        permissionsHash: member.permissionsHash,
+        responseConfidenceEventIds: member.responseConfidenceEventIds,
+        ttlMs: group.stalePolicy.ttlMs,
+        groupUpdatedAt: group.updatedAt,
+      });
+    });
+}
+
+function EvalGroupPanel({
+  group,
+  states,
+  rollup,
+  queuedCount,
+  onQueue,
+}: {
+  group: EvalGroup | null;
+  states: ThreadEvalState[];
+  rollup: ReturnType<typeof rollupEvalGroup> | null;
+  queuedCount: number;
+  onQueue: () => void;
+}) {
+  if (!group || !rollup) {
+    return (
+      <div className="evals-group-panel">
+        <div>
+          <span className="evals-group-kicker">Eval group</span>
+          <b>No groups yet</b>
+        </div>
+        <span className="evals-group-muted">Create a group to track thread freshness and queue stale evals.</span>
+      </div>
+    );
+  }
+
+  const runnable = rollup.runnableThreadIds.length;
+  return (
+    <div className="evals-group-panel">
+      <div className="evals-group-summary">
+        <span className="evals-group-kicker">Eval group</span>
+        <b>{group.name}</b>
+        <span className="evals-group-muted">
+          {rollup.freshThreads} fresh · {rollup.staleThreads} stale · {rollup.neverRunThreads} never run · {rollup.blockedThreads} blocked · {queuedCount} queued
+        </span>
+      </div>
+      <div className="evals-group-states" aria-label="Thread eval states">
+        {states.map((state) => (
+          <article key={`${state.familiarId}:${state.threadId}`} className={`evals-thread-state is-${state.status}`}>
+            <div className="evals-thread-state-head">
+              <span>{state.threadId}</span>
+              <b>{state.status}</b>
+            </div>
+            <div className="evals-thread-detail-grid" aria-label={`Thread eval detail for ${state.threadId}`}>
+              <ThreadEvalDetail label="Evaluated through" value={state.details.evaluatedThroughTurnId ?? "never"} />
+              <ThreadEvalDetail label="Latest turn" value={state.details.latestTurnId ?? "unknown"} />
+              <ThreadEvalDetail
+                label="Confidence events"
+                value={`${state.details.snapshotResponseConfidenceEventCount}->${state.details.responseConfidenceEventCount}`}
+              />
+              <ThreadEvalDetail
+                label="Rubric"
+                value={versionPair(state.details.snapshotRubricVersion, state.details.rubricVersion)}
+              />
+            </div>
+            {state.staleReasons.length > 0 ? (
+              <div className="evals-thread-reasons" aria-label={`Stale reasons for ${state.threadId}`}>
+                {state.staleReasons.map((reason) => (
+                  <em key={reason} className="evals-stale-reason">{reason}</em>
+                ))}
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </div>
+      <button type="button" className="evals-btn evals-btn-primary" onClick={onQueue} disabled={runnable === 0}>
+        <Icon name="ph:play" width={13} /> Run stale evals
+      </button>
+    </div>
+  );
+}
+
+function ThreadEvalDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="evals-thread-detail">
+      <small>{label}</small>
+      <b>{value}</b>
+    </span>
+  );
+}
+
+function versionPair(snapshot: string | undefined, current: string | undefined): string {
+  if (!snapshot && !current) return "unknown";
+  if (!snapshot) return current ?? "unknown";
+  if (!current || current === snapshot) return snapshot;
+  return `${snapshot}->${current}`;
 }
 
 // ---- Editor ----------------------------------------------------------------

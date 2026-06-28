@@ -230,6 +230,7 @@ export const SUITES = {
     "src/components/library-file-actions.test.ts",
     "src/components/eval-loop-panel.test.ts",
     "src/lib/evals/eval-model.test.ts",
+    "src/lib/server/eval-store.test.ts",
     "src/lib/evals/eval-judge.test.ts",
     "src/components/evals/evals-view.test.ts",
     "src/components/retro-runs-view.test.ts",

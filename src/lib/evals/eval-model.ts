@@ -50,6 +50,120 @@ export type EvalSuite = {
   updatedAt: string;
 };
 
+export type EvalGroupScope = "thread" | "familiar" | "project" | "release" | "custom";
+export type EvalTrack = "synthesis" | "prompt" | "memory" | "confidence" | "regression";
+export type ThreadEvalStatus = "fresh" | "stale" | "running" | "blocked" | "never-run";
+
+export type EvalGroupMember = {
+  kind: "thread" | "familiar" | "project" | "filter";
+  id: string;
+  familiarId?: string;
+  latestTurnId?: string;
+  inputHash?: string;
+  confidenceRubricVersion?: string;
+  skillsVersion?: string;
+  permissionsHash?: string;
+  responseConfidenceEventIds?: string[];
+};
+
+export type EvalGroup = {
+  id: string;
+  name: string;
+  description?: string;
+  scope: EvalGroupScope;
+  members: EvalGroupMember[];
+  tracks: EvalTrack[];
+  rubricVersion: string;
+  stalePolicy: {
+    ttlMs?: number;
+  };
+  schedulePolicy: {
+    mode: "manual" | "automatic";
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ThreadEvalSnapshot = {
+  threadId: string;
+  familiarId: string;
+  evalGroupId?: string;
+  evaluatedThroughTurnId?: string;
+  inputHash?: string;
+  rubricVersion?: string;
+  confidenceRubricVersion?: string;
+  skillsVersion?: string;
+  permissionsHash?: string;
+  responseConfidenceEventIds: string[];
+  evaluatedAt: string;
+};
+
+export type ThreadEvalCurrent = {
+  threadId: string;
+  familiarId: string;
+  latestTurnId?: string;
+  inputHash?: string;
+  rubricVersion?: string;
+  confidenceRubricVersion?: string;
+  skillsVersion?: string;
+  permissionsHash?: string;
+  responseConfidenceEventIds?: string[];
+  ttlMs?: number;
+  now?: string;
+  groupUpdatedAt?: string;
+  evalLock?: {
+    locked?: boolean;
+    stale?: boolean;
+  };
+};
+
+export type ThreadEvalState = {
+  threadId: string;
+  familiarId: string;
+  status: ThreadEvalStatus;
+  staleReasons: string[];
+  evaluatedAt: string | null;
+  details: {
+    latestTurnId?: string;
+    evaluatedThroughTurnId?: string;
+    rubricVersion?: string;
+    snapshotRubricVersion?: string;
+    confidenceRubricVersion?: string;
+    snapshotConfidenceRubricVersion?: string;
+    skillsVersion?: string;
+    snapshotSkillsVersion?: string;
+    permissionsHash?: string;
+    snapshotPermissionsHash?: string;
+    responseConfidenceEventCount: number;
+    snapshotResponseConfidenceEventCount: number;
+    groupUpdatedAt?: string;
+    ttlMs?: number;
+  };
+};
+
+export type EvalGroupRollup = {
+  groupId: string;
+  totalThreads: number;
+  freshThreads: number;
+  staleThreads: number;
+  runningThreads: number;
+  blockedThreads: number;
+  neverRunThreads: number;
+  runnableThreadIds: string[];
+};
+
+export type ManualEvalQueueItem = {
+  id: string;
+  groupId: string;
+  threadId: string;
+  familiarId: string;
+  tracks: EvalTrack[];
+  staleReasons: string[];
+  priority: "normal";
+  status: "queued";
+  createdAt: string;
+};
+
 export type GraderResult = {
   kind: GraderKind;
   label: string;
@@ -257,6 +371,158 @@ export function suiteRunBlockReason(suite: EvalSuite, familiarId: string | undef
   const noGraders = suite.cases.find((c) => c.graders.length === 0);
   if (noGraders) return `Case “${noGraders.name || "untitled"}” has no graders`;
   return null;
+}
+
+export function deriveThreadEvalState(snapshot: ThreadEvalSnapshot | null, current: ThreadEvalCurrent): ThreadEvalState {
+  const details = buildThreadEvalDetails(snapshot, current);
+  if (!snapshot) {
+    return {
+      threadId: current.threadId,
+      familiarId: current.familiarId,
+      status: "never-run",
+      staleReasons: ["never-run"],
+      evaluatedAt: null,
+      details,
+    };
+  }
+
+  if (current.evalLock?.locked && current.evalLock.stale) {
+    return {
+      threadId: current.threadId,
+      familiarId: current.familiarId,
+      status: "blocked",
+      staleReasons: ["eval-lock-stale"],
+      evaluatedAt: snapshot.evaluatedAt,
+      details,
+    };
+  }
+
+  if (current.evalLock?.locked) {
+    return {
+      threadId: current.threadId,
+      familiarId: current.familiarId,
+      status: "running",
+      staleReasons: [],
+      evaluatedAt: snapshot.evaluatedAt,
+      details,
+    };
+  }
+
+  const reasons: string[] = [];
+  if (current.latestTurnId && snapshot.evaluatedThroughTurnId && current.latestTurnId !== snapshot.evaluatedThroughTurnId) {
+    reasons.push("new-turns");
+  }
+  if (current.inputHash && snapshot.inputHash && current.inputHash !== snapshot.inputHash) {
+    reasons.push("thread-changed");
+  }
+  if (current.rubricVersion && snapshot.rubricVersion && current.rubricVersion !== snapshot.rubricVersion) {
+    reasons.push("rubric-changed");
+  }
+  if (
+    current.confidenceRubricVersion &&
+    snapshot.confidenceRubricVersion &&
+    current.confidenceRubricVersion !== snapshot.confidenceRubricVersion
+  ) {
+    reasons.push("confidence-rubric-changed");
+  }
+  if (current.skillsVersion && snapshot.skillsVersion && current.skillsVersion !== snapshot.skillsVersion) {
+    reasons.push("skills-changed");
+  }
+  if (current.permissionsHash && snapshot.permissionsHash && current.permissionsHash !== snapshot.permissionsHash) {
+    reasons.push("permissions-changed");
+  }
+  if (hasNewConfidenceEvents(snapshot.responseConfidenceEventIds, current.responseConfidenceEventIds ?? [])) {
+    reasons.push("confidence-events-added");
+  }
+  if (current.groupUpdatedAt && Date.parse(current.groupUpdatedAt) > Date.parse(snapshot.evaluatedAt)) {
+    reasons.push("group-changed");
+  }
+  if (current.ttlMs && Date.parse(current.now ?? new Date().toISOString()) - Date.parse(snapshot.evaluatedAt) > current.ttlMs) {
+    reasons.push("ttl-expired");
+  }
+
+  return {
+    threadId: current.threadId,
+    familiarId: current.familiarId,
+    status: reasons.length ? "stale" : "fresh",
+    staleReasons: reasons,
+    evaluatedAt: snapshot.evaluatedAt,
+    details,
+  };
+}
+
+function buildThreadEvalDetails(snapshot: ThreadEvalSnapshot | null, current: ThreadEvalCurrent): ThreadEvalState["details"] {
+  return {
+    latestTurnId: current.latestTurnId,
+    evaluatedThroughTurnId: snapshot?.evaluatedThroughTurnId,
+    rubricVersion: current.rubricVersion,
+    snapshotRubricVersion: snapshot?.rubricVersion,
+    confidenceRubricVersion: current.confidenceRubricVersion,
+    snapshotConfidenceRubricVersion: snapshot?.confidenceRubricVersion,
+    skillsVersion: current.skillsVersion,
+    snapshotSkillsVersion: snapshot?.skillsVersion,
+    permissionsHash: current.permissionsHash,
+    snapshotPermissionsHash: snapshot?.permissionsHash,
+    responseConfidenceEventCount: current.responseConfidenceEventIds?.length ?? 0,
+    snapshotResponseConfidenceEventCount: snapshot?.responseConfidenceEventIds.length ?? 0,
+    groupUpdatedAt: current.groupUpdatedAt,
+    ttlMs: current.ttlMs,
+  };
+}
+
+export function rollupEvalGroup(group: EvalGroup, states: readonly ThreadEvalState[]): EvalGroupRollup {
+  const groupThreadIds = new Set(
+    group.members
+      .filter((member) => member.kind === "thread")
+      .map((member) => member.id),
+  );
+  const scoped = states.filter((state) => groupThreadIds.size === 0 || groupThreadIds.has(state.threadId));
+  return {
+    groupId: group.id,
+    totalThreads: scoped.length,
+    freshThreads: scoped.filter((state) => state.status === "fresh").length,
+    staleThreads: scoped.filter((state) => state.status === "stale").length,
+    runningThreads: scoped.filter((state) => state.status === "running").length,
+    blockedThreads: scoped.filter((state) => state.status === "blocked").length,
+    neverRunThreads: scoped.filter((state) => state.status === "never-run").length,
+    runnableThreadIds: scoped
+      .filter((state) => state.status === "stale" || state.status === "never-run")
+      .map((state) => state.threadId),
+  };
+}
+
+export function buildManualEvalQueueItems(
+  group: EvalGroup,
+  states: readonly ThreadEvalState[],
+  createdAt = new Date().toISOString(),
+): ManualEvalQueueItem[] {
+  return states
+    .filter((state) => state.status === "stale" || state.status === "never-run")
+    .map((state) => ({
+      id: stableQueueId(group.id, state.threadId, createdAt),
+      groupId: group.id,
+      threadId: state.threadId,
+      familiarId: state.familiarId,
+      tracks: group.tracks,
+      staleReasons: state.staleReasons,
+      priority: "normal" as const,
+      status: "queued" as const,
+      createdAt,
+    }));
+}
+
+function hasNewConfidenceEvents(previous: string[], current: string[]): boolean {
+  if (current.length <= previous.length) return false;
+  const seen = new Set(previous);
+  return current.some((id) => !seen.has(id));
+}
+
+function stableQueueId(groupId: string, threadId: string, createdAt: string): string {
+  return `queue-${slug(groupId)}-${slug(threadId)}-${slug(createdAt)}`;
+}
+
+function slug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "item";
 }
 
 // ---- internals -------------------------------------------------------------
