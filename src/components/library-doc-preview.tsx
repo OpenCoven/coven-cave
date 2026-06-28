@@ -24,6 +24,8 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { formatDate, readDateTimePrefs } from "@/lib/datetime-format";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { LibraryChatPanel } from "@/components/library-chat-panel";
+import { formatCount, type GitHubRepoMeta } from "@/lib/github-repo";
+import type { ExtractedArticle } from "@/lib/article-extract";
 
 // ── Discriminated union ──────────────────────────────────────────
 export type SelectedItem =
@@ -499,8 +501,218 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-function BookmarkDetail({ item }: { item: LibraryBookmark }) {
+// ── Inline GitHub repository reader ──────────────────────────────
+// Fetches repo metadata + README and renders the README inline with the same
+// markdown pipeline as research docs — a real reading surface instead of a bare
+// "open external" card. Falls back to a link-out card if the API call fails.
+type RepoState =
+  | { phase: "loading" }
+  | { phase: "error"; error: string }
+  | { phase: "ready"; meta: GitHubRepoMeta; readme: string | null };
+
+function GitHubRepoViewer({ item }: { item: LibraryGitHubItem }) {
+  const [state, setState] = useState<RepoState>({ phase: "loading" });
+  const mdRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ phase: "loading" });
+    void (async () => {
+      try {
+        const res = await fetch(`/api/library/github-repo?repo=${encodeURIComponent(item.repo)}`, { cache: "no-store" });
+        const json = (await res.json()) as { ok: boolean; meta?: GitHubRepoMeta; readme?: string | null; error?: string };
+        if (cancelled) return;
+        if (!res.ok || !json.ok || !json.meta) {
+          setState({ phase: "error", error: json.error ?? "Could not load repository." });
+          return;
+        }
+        setState({ phase: "ready", meta: json.meta, readme: json.readme ?? null });
+      } catch {
+        if (!cancelled) setState({ phase: "error", error: "Could not reach GitHub." });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [item.repo]);
+
+  if (state.phase === "error") {
+    return (
+      <div className="library-preview">
+        <div className="library-preview-header">
+          <div className="library-preview-title">{item.title}</div>
+          <div className="library-preview-meta">
+            <span className="library-doclist-tag">{item.repo}</span>
+          </div>
+        </div>
+        <div className="library-preview-body">
+          <div className="library-repo-fallback">
+            <p className="library-repo-fallback__note">{state.error}</p>
+            <OpenBtn url={item.url} label="Open on GitHub" kind="github" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const meta = state.phase === "ready" ? state.meta : null;
+  const readme = state.phase === "ready" ? state.readme : null;
+
   return (
+    <div className="library-preview">
+      <div className="library-preview-header">
+        <div className="library-preview-title">
+          <Icon name="ph:github-logo" width={16} className="inline-block mr-2 align-[-2px] text-[var(--text-muted)]" />
+          {meta?.fullName ?? item.repo}
+        </div>
+        <div className="library-preview-meta library-preview-meta--with-actions">
+          <span className="library-preview-meta-left library-repo-chips">
+            {meta && (
+              <>
+                <span className="library-repo-chip"><span aria-hidden>★</span>{formatCount(meta.stars)}</span>
+                <span className="library-repo-chip"><Icon name="ph:git-fork" width={12} />{formatCount(meta.forks)}</span>
+                {meta.language && <span className="library-repo-chip">{meta.language}</span>}
+                {meta.license && <span className="library-repo-chip">{meta.license}</span>}
+                {meta.archived && <span className="library-repo-chip library-repo-chip--warn">archived</span>}
+              </>
+            )}
+            {!meta && <span className="library-preview-date">Loading repository…</span>}
+          </span>
+          <span className="library-preview-meta-actions">
+            <OpenBtn url={meta?.url ?? item.url} label="Open on GitHub" kind="github" />
+            <CopyButton text={meta?.url ?? item.url} label="Copy URL" compact />
+          </span>
+        </div>
+        {meta?.description && <div className="library-repo-desc">{meta.description}</div>}
+        {meta && meta.topics.length > 0 && (
+          <div className="library-preview-tags library-repo-topics">
+            {meta.topics.slice(0, 8).map((t) => <span key={t} className="library-doclist-tag">{t}</span>)}
+          </div>
+        )}
+      </div>
+      <div className="library-preview-body">
+        {state.phase === "loading" ? (
+          <div className="library-md-skeleton">
+            {["70%", "92%", "60%", "85%", "78%"].map((w, i) => (
+              <div key={i} className="library-md-skeleton-line" style={{ width: w }} />
+            ))}
+          </div>
+        ) : readme ? (
+          <RenderedMarkdown text={readme} containerRef={mdRef} />
+        ) : (
+          <p className="library-reading-detail__empty">This repository has no README.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Inline article reader ────────────────────────────────────────
+// Two-view surface: "Reader" extracts the article body server-side and renders
+// it as markdown; "Page"/"Details" shows the caller-supplied fallback (the
+// embedded link viewer or the structured reading detail). Reader auto-loads and
+// silently falls back when extraction is too thin.
+type ArticleState =
+  | { phase: "loading" }
+  | { phase: "error"; error: string }
+  | { phase: "ready"; article: ExtractedArticle };
+
+function ArticleReader({
+  url,
+  title,
+  fallbackLabel,
+  fallback,
+}: {
+  url: string;
+  title: string;
+  fallbackLabel: string;
+  fallback: ReactNode;
+}) {
+  const [view, setView] = useState<"reader" | "page">("reader");
+  const [state, setState] = useState<ArticleState>({ phase: "loading" });
+  const mdRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ phase: "loading" });
+    void (async () => {
+      try {
+        const res = await fetch(`/api/library/article?url=${encodeURIComponent(url)}`, { cache: "no-store" });
+        const json = (await res.json()) as { ok: boolean; article?: ExtractedArticle; error?: string };
+        if (cancelled) return;
+        if (!res.ok || !json.ok || !json.article) {
+          setState({ phase: "error", error: json.error ?? "Couldn't extract this article." });
+          setView("page");
+          return;
+        }
+        setState({ phase: "ready", article: json.article });
+      } catch {
+        if (cancelled) return;
+        setState({ phase: "error", error: "Couldn't reach the page." });
+        setView("page");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [url]);
+
+  const article = state.phase === "ready" ? state.article : null;
+
+  return (
+    <div className="library-preview">
+      <div className="library-preview-header">
+        <div className="library-preview-title">{article?.title || title}</div>
+        <div className="library-preview-meta library-preview-meta--with-actions">
+          <span className="library-preview-meta-left">
+            {article?.siteName && <span className="library-doclist-tag">{article.siteName}</span>}
+            {article?.byline && <><span className="library-preview-sep">·</span><span className="library-preview-date">{article.byline}</span></>}
+          </span>
+          <span className="library-preview-meta-actions library-reader-toggle">
+            <button
+              type="button"
+              className={`library-preview-action-btn library-preview-action-btn--compact${view === "reader" ? " is-active" : ""}`}
+              onClick={() => setView("reader")}
+              aria-pressed={view === "reader"}
+            >
+              <Icon name="ph:book-open" width={12} /><span>Reader</span>
+            </button>
+            <button
+              type="button"
+              className={`library-preview-action-btn library-preview-action-btn--compact${view === "page" ? " is-active" : ""}`}
+              onClick={() => setView("page")}
+              aria-pressed={view === "page"}
+            >
+              <Icon name="ph:globe" width={12} /><span>{fallbackLabel}</span>
+            </button>
+            <OpenBtn url={url} label="Open external" />
+          </span>
+        </div>
+      </div>
+      {view === "page" ? (
+        <div className="library-preview-body library-article-fallback">{fallback}</div>
+      ) : (
+        <div ref={mdRef} className="library-preview-body">
+          {state.phase === "loading" ? (
+            <div className="library-md-skeleton">
+              {["80%", "95%", "70%", "88%", "60%", "92%"].map((w, i) => (
+                <div key={i} className="library-md-skeleton-line" style={{ width: w }} />
+              ))}
+            </div>
+          ) : article ? (
+            <>
+              {article.excerpt && <p className="library-article-excerpt">{article.excerpt}</p>}
+              <RenderedMarkdown text={article.markdown} />
+            </>
+          ) : (
+            <p className="library-reading-detail__empty">
+              {state.phase === "error" ? state.error : "No readable content."}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BookmarkDetail({ item }: { item: LibraryBookmark }) {
+  const linkViewer = (
     <LibraryLinkViewer
       id={item.id}
       title={item.title}
@@ -508,6 +720,11 @@ function BookmarkDetail({ item }: { item: LibraryBookmark }) {
       meta={<><span className="library-doclist-tag">{item.domain}</span><span className="library-preview-sep">·</span><span className="library-preview-date">{fmtDate(item.savedAt)}</span></>}
     />
   );
+  // Articles get the inline reader (with the embedded page as the fallback view).
+  if (isSafeHttpUrl(item.url)) {
+    return <ArticleReader url={item.url} title={item.title} fallbackLabel="Page" fallback={linkViewer} />;
+  }
+  return linkViewer;
 }
 
 function statusStyle(status: ReadingStatus): React.CSSProperties {
@@ -526,7 +743,7 @@ function ReadingDetail({ item }: { item: LibraryReadingItem }) {
     return <PdfViewer localPath={item.localPath} title={item.title} />;
   }
 
-  return (
+  const structuredDetail = (
     <div className="library-preview">
       <div className="library-preview-header">
         <div className="library-preview-title">{item.title}</div>
@@ -603,9 +820,23 @@ function ReadingDetail({ item }: { item: LibraryReadingItem }) {
       </div>
     </div>
   );
+
+  // Article-like reading items get the inline reader, with the structured
+  // notes/metadata view available as the "Details" fallback. Books and videos
+  // keep the structured detail directly (there's no readable page to extract).
+  const articleLike = ["article", "paper", "thread", "other"].includes(item.sourceType);
+  if (item.url && isSafeHttpUrl(item.url) && articleLike) {
+    return <ArticleReader url={item.url} title={item.title} fallbackLabel="Details" fallback={structuredDetail} />;
+  }
+  return structuredDetail;
 }
 
 function GitHubDetail({ item }: { item: LibraryGitHubItem }) {
+  // Repositories get the inline README reader; issues/PRs/discussions keep the
+  // embedded link viewer (their content is the thread, not a README).
+  if (item.kind === "repo") {
+    return <GitHubRepoViewer item={item} />;
+  }
   const stateColor = item.state === "open" ? "var(--color-success)" : item.state === "merged" ? "var(--accent-presence)" : item.state === "closed" ? "var(--color-danger)" : "var(--text-muted)";
   return (
     <LibraryLinkViewer

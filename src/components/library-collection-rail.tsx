@@ -53,6 +53,7 @@ type Props = {
   onBack?: () => void;
   onRefresh?: () => void;
   onQuickOpen?: () => void;
+  onNewResearch?: () => void;
   refreshing?: boolean;
 };
 
@@ -71,6 +72,7 @@ export function LibraryCollectionRail({
   onBack,
   onRefresh,
   onQuickOpen,
+  onNewResearch,
   refreshing = false,
 }: Props) {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -148,6 +150,12 @@ export function LibraryCollectionRail({
           </button>
         </div>
       </div>
+      {onNewResearch && (
+        <button type="button" className="library-rail-add" onClick={() => onNewResearch()}>
+          <Icon name="ph:flask" width={13} />
+          <span>New research</span>
+        </button>
+      )}
       <div className="library-rail-list library-rail-list--collections">
         {collections.map((col) => {
           const count = docCounts[col.id] ?? 0;

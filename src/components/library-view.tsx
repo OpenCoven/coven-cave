@@ -24,6 +24,7 @@ import type {
   LibrarySectionKind,
 } from "@/lib/library-types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
+import { LibraryResearchComposer, type ResearchResult } from "@/components/library-research-composer";
 import { useProjects } from "@/lib/use-projects";
 
 type LibraryViewProps = {
@@ -90,6 +91,9 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
   const [timelineSelectedId, setTimelineSelectedId] = useState<string | null>(null);
   const [boardDraft, setBoardDraft] = useState<LibraryBookmark | null>(null);
   const { projects } = useProjects({ enabled: boardDraft !== null });
+  // Research composer ("/research" + the rail's New research action).
+  const [researchOpen, setResearchOpen] = useState(false);
+  const [researchTopic, setResearchTopic] = useState("");
   // Quick-open ("/") palette: a unified search/jump across docs + captured links.
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickItems, setQuickItems] = useState<LibraryQuickItem[]>([]);
@@ -126,6 +130,17 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
       .then((r) => r.json())
       .then((j: { ok: boolean; familiars?: Familiar[] }) => { if (j.ok) setFamiliars(j.familiars ?? []); })
       .catch(() => undefined);
+  }, []);
+
+  // `/research [topic]` (from chat or the command bar) opens the composer here.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ topic?: string }>).detail;
+      setResearchTopic(detail?.topic ?? "");
+      setResearchOpen(true);
+    };
+    window.addEventListener("cave:library:research", handler);
+    return () => window.removeEventListener("cave:library:research", handler);
   }, []);
 
   useEffect(() => {
@@ -338,6 +353,24 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
     else void loadCollections();
   }, [activeSection, activeCollection, loadDocs, loadCollections]);
 
+  // A research run just wrote a new doc — surface it: refresh the collection
+  // rail, switch to the Research collection, and open the brief.
+  const handleResearchComplete = useCallback(async (result: ResearchResult) => {
+    setResearchOpen(false);
+    setActiveSection("docs");
+    setActiveCollection(result.collection);
+    void loadCollections();
+    await loadDocs(result.collection);
+    try {
+      const res = await fetch(
+        `/api/library/doc?id=${encodeURIComponent(result.id)}&familiar=${encodeURIComponent(result.familiar)}`,
+        { cache: "no-store" },
+      );
+      const json = (await res.json()) as { ok: boolean; doc?: LibraryDocBody };
+      if (json.ok && json.doc) setSelectedItem({ kind: "doc", doc: json.doc });
+    } catch { /* doc will still appear in the list */ }
+  }, [loadCollections, loadDocs]);
+
   const docCounts: Record<string, number> = { [activeCollection]: docs.length };
   const selectedDocId =  selectedItem?.kind === "doc"      ? selectedItem.doc.id  : null;
   // Reader prev/next: position of the open doc within the current list.
@@ -453,6 +486,7 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
         onBack={goBack}
         onRefresh={reloadLibrary}
         onQuickOpen={() => void openQuickOpen()}
+        onNewResearch={() => { setResearchTopic(""); setResearchOpen(true); }}
         refreshing={loading}
       />
       <div className="library-divider" />
@@ -561,6 +595,13 @@ export function LibraryView({ sessions, onOpenSession, onNewProjectChat }: Libra
           onClose={closeQuickOpen}
         />
       )}
+      <LibraryResearchComposer
+        open={researchOpen}
+        onClose={() => setResearchOpen(false)}
+        familiars={familiars}
+        defaultTopic={researchTopic}
+        onComplete={(r) => void handleResearchComplete(r)}
+      />
     </div>
   );
 }
