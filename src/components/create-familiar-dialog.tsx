@@ -91,6 +91,11 @@ export function CreateFamiliarDialog({
   }
 
   const derivedId = slugifyFamiliarId(idOverride ?? name);
+  // Only ever render our own object URLs. createObjectURL always returns a
+  // `blob:` URL; constraining the scheme keeps a non-blob value from reaching
+  // the <img src> sink (and clears CodeQL's DOM-XSS flow on a file-derived URL).
+  const safeAvatarPreview =
+    avatarPreview && avatarPreview.startsWith("blob:") ? avatarPreview : null;
   const existing = useMemo(() => new Set(existingIds), [existingIds]);
   const idTaken = derivedId.length > 0 && existing.has(derivedId);
   const canCreate = name.trim().length > 0 && derivedId.length > 0 && !idTaken && !submitting;
@@ -213,9 +218,9 @@ export function CreateFamiliarDialog({
               title="Pick an icon or photo"
               className="focus-ring grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 hover:border-[var(--accent-presence)]"
             >
-              {avatarPreview ? (
+              {safeAvatarPreview ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarPreview} alt="" className="h-full w-full object-cover" />
+                <img src={safeAvatarPreview} alt="" className="h-full w-full object-cover" />
               ) : (
                 <FamiliarGlyph glyph={{ kind: "icon", name: glyph }} size="sm" />
               )}
