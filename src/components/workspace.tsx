@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { groupInboxFeed } from "@/lib/inbox-feed";
 import { sameSessionList } from "@/lib/session-list-equal";
+import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
@@ -964,24 +965,25 @@ export function Workspace() {
           familiarId?: string | null;
           endDate?: string | null;
         }>;
-        setOpenTaskCards(
-          cards
-            .filter((c) => c.status !== "done")
-            .map((c) => ({ familiarId: c.familiarId ?? null })),
-        );
+        // The 60s board poll rebuilds these arrays each tick; keep the previous
+        // reference when the content is unchanged so an idle board doesn't
+        // re-render the Tasks badge / calendar deadline markers for nothing.
+        const nextOpenCards = cards
+          .filter((c) => c.status !== "done")
+          .map((c) => ({ familiarId: c.familiarId ?? null }));
+        setOpenTaskCards((prev) => (arrayContentEqual(prev, nextOpenCards) ? prev : nextOpenCards));
         // Open cards with a due date become read-only calendar deadline markers
         // (a shipped/"done" task is no longer an upcoming deadline).
-        setBoardDeadlines(
-          cards
-            .filter((c) => c.id && c.endDate && c.status !== "done")
-            .map((c) => ({
-              id: c.id as string,
-              title: c.title?.trim() || "Untitled task",
-              date: c.endDate as string,
-              familiarId: c.familiarId ?? null,
-              status: c.status,
-            })),
-        );
+        const nextDeadlines = cards
+          .filter((c) => c.id && c.endDate && c.status !== "done")
+          .map((c) => ({
+            id: c.id as string,
+            title: c.title?.trim() || "Untitled task",
+            date: c.endDate as string,
+            familiarId: c.familiarId ?? null,
+            status: c.status,
+          }));
+        setBoardDeadlines((prev) => (arrayContentEqual(prev, nextDeadlines) ? prev : nextDeadlines));
       }
     } catch {
       /* keep last value on transient failure */
