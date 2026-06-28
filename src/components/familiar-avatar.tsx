@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FamiliarGlyph } from "./familiar-glyph";
 import { Modal } from "./ui/modal";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -20,28 +20,38 @@ type Props = {
 
 export function FamiliarAvatar({ familiar, size = "md", className, title, expandable }: Props) {
   const px = PX[size];
-  // Fall back to the glyph when the avatar image fails to load (e.g. a
-  // transient 404 while the avatar route compiles on a cold start, a timeout,
-  // or a decode failure) instead of leaving the browser's broken-image
-  // placeholder. The avatar route's 404 contract assumes this fallback. Reset
-  // on src change so a new familiar/version re-attempts the image.
-  const [errored, setErrored] = useState(false);
+  // Prefer the avatar image over the glyph, and try EVERY available image source
+  // before ever falling back to the glyph. The glyph is the last resort — it
+  // must only show when no avatar image loads. A failed load (transient 404 on a
+  // cold-start avatar route, a timeout, a decode failure, or a missing format)
+  // advances to the next source (e.g. the workspace avatar → a Cave-local
+  // upload) instead of dropping straight to the icon. Reset on src change so a
+  // new familiar/version re-attempts from the top.
+  const sources = useMemo(
+    () =>
+      [familiar.avatarImage, familiar.avatarImageFallback].filter(
+        (s): s is string => Boolean(s),
+      ),
+    [familiar.avatarImage, familiar.avatarImageFallback],
+  );
+  const [srcIdx, setSrcIdx] = useState(0);
   const [enlarged, setEnlarged] = useState(false);
   useEffect(() => {
-    setErrored(false);
-  }, [familiar.avatarImage]);
+    setSrcIdx(0);
+  }, [familiar.avatarImage, familiar.avatarImageFallback]);
 
-  const hasImage = Boolean(familiar.avatarImage) && !errored;
+  const currentSrc = sources[srcIdx];
+  const hasImage = Boolean(currentSrc);
 
   const imgEl = hasImage ? (
     <img
-      src={familiar.avatarImage}
+      src={currentSrc}
       alt={familiar.display_name}
       width={px}
       height={px}
       className={className ?? "inline-block rounded-sm object-cover"}
       title={title}
-      onError={() => setErrored(true)}
+      onError={() => setSrcIdx((i) => i + 1)}
     />
   ) : (
     <FamiliarGlyph
@@ -73,7 +83,7 @@ export function FamiliarAvatar({ familiar, size = "md", className, title, expand
           >
             <div className="grid aspect-square w-full max-w-[320px] place-items-center overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)]">
               <img
-                src={familiar.avatarImage}
+                src={currentSrc}
                 alt={`${familiar.display_name} avatar`}
                 className="h-full w-full object-cover"
               />

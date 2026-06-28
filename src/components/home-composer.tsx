@@ -25,6 +25,8 @@ import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
+import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
@@ -132,6 +134,13 @@ export function HomeComposer({
   const selectedFamiliar = useMemo(
     () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? null,
     [familiars, selectedFamiliarId],
+  );
+  // Resolve avatars so the selector chip shows the selected familiar's actual
+  // avatar image (falling back to its glyph) instead of a static sparkle icon.
+  const resolvedFamiliars = useResolvedFamiliars(familiars);
+  const selectedResolved = useMemo(
+    () => resolvedFamiliars.find((familiar) => familiar.id === selectedFamiliarId) ?? null,
+    [resolvedFamiliars, selectedFamiliarId],
   );
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
   const { projects } = useProjects({ familiarId: selectedFamiliarId || null });
@@ -623,7 +632,11 @@ export function HomeComposer({
           </button>
 
           <label className="hc-familiar-selector">
-            <Icon name="ph:sparkle" width={13} className="hc-familiar-glyph" aria-hidden />
+            {selectedResolved ? (
+              <FamiliarAvatar familiar={selectedResolved} size="sm" className="hc-familiar-glyph hc-familiar-avatar" />
+            ) : (
+              <Icon name="ph:sparkle" width={13} className="hc-familiar-glyph" aria-hidden />
+            )}
             <select
               aria-label="Choose chat agent"
               className="hc-familiar-select"

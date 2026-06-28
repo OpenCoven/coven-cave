@@ -51,6 +51,33 @@ const base = {
   assert.equal(r.avatarImage, "data:image/png;base64,AAA");
   // Glyph still resolved for fallback
   assert.equal(r.glyph.name, "ph:wand-fill");
+  // Upload-only: no second source to fall back through.
+  assert.equal(r.avatarImageFallback, undefined);
+}
+
+// Workspace avatar present: it's the primary image source.
+{
+  const r = resolveFamiliar(
+    { ...base, avatarUrl: "/api/familiars/x/avatar?v=1" },
+    { archived: false },
+  );
+  assert.equal(r.avatarImage, "/api/familiars/x/avatar?v=1");
+  assert.equal(r.avatarImageFallback, undefined, "no upload → no fallback source");
+}
+
+// BOTH a workspace avatar AND a Cave-local upload: the workspace avatar is the
+// primary and the upload is kept as the fallback so a failed workspace image
+// degrades to the upload (never straight to the glyph).
+{
+  const r = resolveFamiliar(
+    { ...base, avatarUrl: "/api/familiars/x/avatar?v=1" },
+    {
+      image: { dataUrl: "data:image/png;base64,AAA", mime: "image/png", updatedAt: "2026-06-08T00:00:00Z" },
+      archived: false,
+    },
+  );
+  assert.equal(r.avatarImage, "/api/familiars/x/avatar?v=1");
+  assert.equal(r.avatarImageFallback, "data:image/png;base64,AAA");
 }
 
 // Glyph override wins

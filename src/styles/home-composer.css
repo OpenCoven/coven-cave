@@ -221,6 +221,16 @@
   flex-shrink: 0;
 }
 
+/* Avatar image variant of the selector glyph: passing a className to
+   FamiliarAvatar overrides its default img styling, so restore the rounded,
+   cover-fit avatar look at the selector's icon size. */
+.hc-familiar-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
 .hc-familiar-select {
   font-size: 12px;
   font-weight: 500;
