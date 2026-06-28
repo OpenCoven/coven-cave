@@ -286,46 +286,53 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     [updateReply, recordSession],
   );
 
-  const send = useCallback(async () => {
-    const group = activeGroupRef.current;
-    const text = draft.trim();
-    if (!group || group.familiarIds.length === 0 || !text || busy) return;
-    // Tagging a subset of familiars with `@mentions` targets the message at just
-    // those participants; with no mention it broadcasts to the whole coven.
-    const mentionable: MentionableFamiliar[] = group.familiarIds.map((id) => ({
-      id,
-      name: byId.get(id)?.display_name ?? "",
-    }));
-    const mentioned = parseMentions(text, mentionable);
-    const targetIds = mentioned.length > 0 ? group.familiarIds.filter((id) => mentioned.includes(id)) : group.familiarIds;
-    const at = nowIso();
-    const userTurn: GroupUserTurn = {
-      id: newId(),
-      role: "user",
-      text,
-      targetFamiliarIds: mentioned.length > 0 ? targetIds : undefined,
-      createdAt: at,
-    };
-    const replies: GroupReply[] = targetIds.map((fid) => ({
-      id: newId(),
-      role: "assistant",
-      familiarId: fid,
-      replyTo: userTurn.id,
-      sessionId: group.sessions[fid] ?? null,
-      text: "",
-      status: "queued",
-      createdAt: at,
-    }));
-    setTranscript((prev) => [...prev, userTurn, ...replies]);
-    setDraft("");
-    setMention(null);
-    setBusy(true);
-    const controller = new AbortController();
-    abortRef.current = controller;
-    await Promise.all(replies.map((r) => streamOne(group, r, text, controller.signal)));
-    abortRef.current = null;
-    setBusy(false);
-  }, [draft, busy, streamOne, byId]);
+  const broadcast = useCallback(
+    async (rawText: string) => {
+      const group = activeGroupRef.current;
+      const text = rawText.trim();
+      if (!group || group.familiarIds.length === 0 || !text || busy) return;
+      // Tagging a subset of familiars with `@mentions` targets the message at just
+      // those participants; with no mention it broadcasts to the whole coven.
+      const mentionable: MentionableFamiliar[] = group.familiarIds.map((id) => ({
+        id,
+        name: byId.get(id)?.display_name ?? "",
+      }));
+      const mentioned = parseMentions(text, mentionable);
+      const targetIds = mentioned.length > 0 ? group.familiarIds.filter((id) => mentioned.includes(id)) : group.familiarIds;
+      const at = nowIso();
+      const userTurn: GroupUserTurn = {
+        id: newId(),
+        role: "user",
+        text,
+        targetFamiliarIds: mentioned.length > 0 ? targetIds : undefined,
+        createdAt: at,
+      };
+      const replies: GroupReply[] = targetIds.map((fid) => ({
+        id: newId(),
+        role: "assistant",
+        familiarId: fid,
+        replyTo: userTurn.id,
+        sessionId: group.sessions[fid] ?? null,
+        text: "",
+        status: "queued",
+        createdAt: at,
+      }));
+      setTranscript((prev) => [...prev, userTurn, ...replies]);
+      setDraft("");
+      setMention(null);
+      setBusy(true);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      await Promise.all(replies.map((r) => streamOne(group, r, text, controller.signal)));
+      abortRef.current = null;
+      setBusy(false);
+    },
+    [busy, streamOne, byId],
+  );
+
+  // The composer and "click a next-path suggestion to send" chips both go
+  // through broadcast — a clicked suggestion is just a one-tap next prompt.
+  const send = useCallback(() => broadcast(draft), [broadcast, draft]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -601,7 +608,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                           // block (and its streaming partial) from the visible
                           // reply, mirroring the single-chat surface; otherwise
                           // the raw control markup leaks into the coven bubble.
-                          const visibleText = extractNextPaths(r.text).visible;
+                          // The parsed lines render as click-to-send chips below.
+                          const { visible: visibleText, suggestions } = extractNextPaths(r.text);
                           return (
                             <div key={r.id} className="flex gap-2">
                               {f && (
@@ -626,6 +634,28 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                   timestamp={r.createdAt}
                                   onOpenUrl={onOpenUrl}
                                 />
+                                {r.status === "done" && suggestions.length > 0 ? (
+                                  <div className="cave-next-paths mt-1.5">
+                                    {suggestions.map((s, i) => {
+                                      // The agent lists next steps best-first, so
+                                      // flag the top one as the recommendation.
+                                      const recommended = i === 0;
+                                      return (
+                                        <button
+                                          key={i}
+                                          type="button"
+                                          className={`cave-next-path${recommended ? " cave-next-path--recommended" : ""}`}
+                                          onClick={() => void broadcast(s)}
+                                          disabled={busy}
+                                          aria-label={recommended ? `Recommended: ${s}` : undefined}
+                                          title={recommended ? "Recommended next step" : undefined}
+                                        >
+                                          {s}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                           );
