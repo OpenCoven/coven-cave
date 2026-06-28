@@ -119,6 +119,7 @@ const contracts: RouteContract[] = [
   { route: "/memory", methods: ["GET"], kind: "json" },
   { route: "/onboarding/install", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/onboarding/setup", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
+  { route: "/onboarding/codex-port-preflight", methods: ["POST"], kind: "json" },
   { route: "/onboarding/ssh-check", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/onboarding/status", methods: ["GET"], kind: "json" },
   { route: "/opencoven/executions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },

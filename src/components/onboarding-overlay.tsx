@@ -98,6 +98,19 @@ type InstallResult = {
   detail: string;
 };
 
+/** Result of the codex OAuth port preflight (POST /api/onboarding/codex-port-preflight).
+ *  The four outcomes mirror the route handler's response shape. UI consumes
+ *  `ok` for color/icon and `detail` for the user-facing message. */
+type PortPreflightResult = {
+  ok: boolean;
+  detail: string;
+  outcome:
+    | "port-free"
+    | "cleared-stale-codex"
+    | "held-by-other"
+    | "held-unknown";
+};
+
 type InstallJobView = {
   status: "running" | "done";
   elapsedMs: number;
@@ -347,6 +360,14 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [installResults, setInstallResults] = useState<
     Partial<Record<InstallTarget, InstallResult>>
   >({});
+  // Codex's `codex login` opens an OAuth callback server on port 1455 that
+  // sometimes leaks as a stale process when the auth flow is killed mid-way.
+  // The preflight POST identifies and clears the orphan; we display the
+  // result inline on the codex card.
+  const [codexPortPreflight, setCodexPortPreflight] =
+    useState<PortPreflightResult | null>(null);
+  const [codexPortPreflightBusy, setCodexPortPreflightBusy] =
+    useState(false);
   // npm installs are mutually exclusive server-side (the route 409s a second
   // concurrent one), so a user who clicks "install both" otherwise gets a
   // failure on the second. Queue npm targets here and drain them one at a time.
@@ -676,6 +697,49 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
     void postInstall(target);
   };
+
+  // Codex CLI's `codex login` opens an OAuth callback server on port 1455
+  // that sometimes leaks as an orphan process when the auth flow is killed
+  // mid-way. This handler probes the port and, if a stale `codex` process is
+  // holding it, clears it so the next sign-in attempt can bind. Conservative:
+  // the server route refuses to kill anything that doesn't clearly identify
+  // as codex.
+  const runCodexPortPreflight = useCallback(async () => {
+    setCodexPortPreflightBusy(true);
+    setCodexPortPreflight(null);
+    try {
+      const res = await fetch("/api/onboarding/codex-port-preflight", {
+        method: "POST",
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        outcome?: PortPreflightResult["outcome"];
+        message?: string;
+      };
+      const outcome: PortPreflightResult["outcome"] =
+        json.outcome === "port-free" ||
+        json.outcome === "cleared-stale-codex" ||
+        json.outcome === "held-by-other" ||
+        json.outcome === "held-unknown"
+          ? json.outcome
+          : "held-unknown";
+      setCodexPortPreflight({
+        ok: res.ok && json.ok !== false,
+        detail: json.message ?? "Codex OAuth port preflight finished.",
+        outcome,
+      });
+    } catch (err) {
+      setCodexPortPreflight({
+        ok: false,
+        outcome: "held-unknown",
+        detail: err instanceof Error
+          ? `Preflight failed: ${err.message}`
+          : "Preflight request failed.",
+      });
+    } finally {
+      setCodexPortPreflightBusy(false);
+    }
+  }, []);
 
   // Drain the npm queue one at a time as the lane frees up.
   useEffect(() => {
@@ -1383,6 +1447,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             onInstall={(target) => void runInstall(target)}
                             onCopy={copyText}
                             onRefresh={() => void loadHarnesses()}
+                            codexPortPreflight={codexPortPreflight}
+                            codexPortPreflightBusy={codexPortPreflightBusy}
+                            onCodexPortPreflight={() =>
+                              void runCodexPortPreflight()
+                            }
                           />
                         ) : step.key === "binding" ? (
                           <StepFamiliar
@@ -1871,6 +1940,9 @@ function StepRuntimes({
   onInstall,
   onCopy,
   onRefresh,
+  codexPortPreflight,
+  codexPortPreflightBusy,
+  onCodexPortPreflight,
 }: {
   chatHarnesses: HarnessReport[];
   platform: PlatformId;
@@ -1880,6 +1952,9 @@ function StepRuntimes({
   onInstall: (target: InstallTarget) => void;
   onCopy: (text: string) => Promise<boolean>;
   onRefresh: () => void;
+  codexPortPreflight: PortPreflightResult | null;
+  codexPortPreflightBusy: boolean;
+  onCodexPortPreflight: () => void;
 }) {
   const npmJobRunning = anyNpmInstallRunning(installJobs);
   return (
@@ -2037,6 +2112,48 @@ function StepRuntimes({
                         {job.tail}
                       </pre>
                     </details>
+                  ) : null}
+                </div>
+              ) : null}
+              {/*
+                Codex-only escape hatch for the "port 1455 in use" failure.
+                Codex's `codex login` opens a local OAuth callback server on
+                port 1455; if a previous attempt was killed mid-flow the
+                listener leaks and the next attempt crashes with EADDRINUSE.
+                This button preflights the port (kills only confirmed-codex
+                holders) so the user can retry. Shown whether codex is
+                installed or not — the leaked-listener case lives ON TOP of
+                a working install.
+              */}
+              {adapter.id === "codex" ? (
+                <div className="mt-2 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onCodexPortPreflight()}
+                    disabled={codexPortPreflightBusy}
+                    aria-busy={codexPortPreflightBusy}
+                    title="Frees Codex's OAuth callback port (1455) if a stuck process is holding it. Only kills processes clearly identified as codex."
+                    className="focus-ring inline-flex w-fit items-center gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-50"
+                  >
+                    {codexPortPreflightBusy ? (
+                      <Icon name="ph:circle-notch-bold" className="animate-spin" />
+                    ) : (
+                      <Icon name="ph:plug-bold" />
+                    )}
+                    {codexPortPreflightBusy
+                      ? "Checking port 1455…"
+                      : "Fix “port 1455 in use” error"}
+                  </button>
+                  {codexPortPreflight ? (
+                    <p
+                      className={`text-[11px] leading-4 ${
+                        codexPortPreflight.ok
+                          ? "text-[var(--color-success)]"
+                          : "text-[var(--color-danger)]"
+                      }`}
+                    >
+                      {codexPortPreflight.detail}
+                    </p>
                   ) : null}
                 </div>
               ) : null}
