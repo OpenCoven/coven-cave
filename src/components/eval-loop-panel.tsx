@@ -29,22 +29,44 @@ export type LoopIteration = {
   timestamp: string;
   track: Track;
   iteration: number;
-  change_summary: string;
-  metric_before: number;
-  metric_after: number;
+  change_summary?: string;
+  changeSummary?: string;
+  metric_before?: number;
+  metricBefore?: number;
+  metric_after?: number;
+  metricAfter?: number;
   delta: number;
   outcome: "ACCEPT" | "REVERT";
   notes?: string;
 };
 
+export type EvalLoopLockState = {
+  locked: boolean;
+  runId?: string | null;
+  run_id?: string | null;
+  runJsonExists?: boolean;
+  run_json_exists?: boolean;
+  requestedAt?: string | null;
+  requested_at?: string | null;
+  lockUpdatedAt?: string | null;
+  lock_updated_at?: string | null;
+  stale: boolean;
+};
+
 export type EvalLoopState = {
-  familiar_id: string;
-  last_run: string | null;
+  familiar_id?: string;
+  familiarId?: string;
+  last_run?: string | null;
+  lastRun?: string | null;
   iterations: LoopIteration[];
-  track_counts: Record<Track, number>;
-  total_accepted: number;
-  total_reverted: number;
+  track_counts?: Record<Track, number>;
+  trackCounts?: Record<Track, number>;
+  total_accepted?: number;
+  totalAccepted?: number;
+  total_reverted?: number;
+  totalReverted?: number;
   running: boolean;
+  lock?: EvalLoopLockState;
 };
 
 type Props = {
@@ -58,6 +80,46 @@ function deltaColor(delta: number): string {
   if (delta > 0) return "text-[var(--color-success)]";
   if (delta < 0) return "text-[var(--color-danger)]";
   return "text-[var(--text-muted)]";
+}
+
+function lastRun(state: EvalLoopState | null): string | null {
+  return state?.last_run ?? state?.lastRun ?? null;
+}
+
+function totalAccepted(state: EvalLoopState): number {
+  return state.total_accepted ?? state.totalAccepted ?? 0;
+}
+
+function totalReverted(state: EvalLoopState): number {
+  return state.total_reverted ?? state.totalReverted ?? 0;
+}
+
+function iterationSummary(iteration: LoopIteration): string {
+  return iteration.change_summary ?? iteration.changeSummary ?? "Iteration recorded";
+}
+
+function metricBefore(iteration: LoopIteration): number {
+  return iteration.metric_before ?? iteration.metricBefore ?? 0;
+}
+
+function metricAfter(iteration: LoopIteration): number {
+  return iteration.metric_after ?? iteration.metricAfter ?? 0;
+}
+
+function lockRunId(lock: EvalLoopLockState): string | null {
+  return lock.runId ?? lock.run_id ?? null;
+}
+
+function lockRequestedAt(lock: EvalLoopLockState): string | null {
+  return lock.requestedAt ?? lock.requested_at ?? null;
+}
+
+function lockUpdatedAt(lock: EvalLoopLockState): string | null {
+  return lock.lockUpdatedAt ?? lock.lock_updated_at ?? null;
+}
+
+function lockHasRunJson(lock: EvalLoopLockState): boolean {
+  return lock.runJsonExists ?? lock.run_json_exists ?? false;
 }
 
 const TRACK_ICON: Record<Track, IconName> = {
@@ -80,6 +142,7 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [triggering, setTriggering] = useState(false);
+  const [clearingLock, setClearingLock] = useState(false);
   const [activeTrack, setActiveTrack] = useState<Track | "all">("all");
 
   useEffect(() => {
@@ -150,9 +213,33 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
     }
   }
 
+  async function clearRunLock(force = false) {
+    setClearingLock(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/skills/eval-loop/" + familiarId + "/run-lock", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setError(json?.error ?? "failed to clear eval-loop lock");
+        return;
+      }
+      await refreshState();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "failed to clear eval-loop lock");
+    } finally {
+      setClearingLock(false);
+    }
+  }
+
   const visibleIterations = state?.iterations
     ?.filter((i) => activeTrack === "all" || i.track === activeTrack)
     .slice(0, 20) ?? [];
+  const currentLastRun = lastRun(state);
+  const currentLock = state?.lock?.locked ? state.lock : null;
 
   return (
     <div className="flex flex-col gap-4 p-3 text-xs">
@@ -169,9 +256,9 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
             </span>
           ) : null}
         </div>
-        {state?.last_run ? (
+        {currentLastRun ? (
           <span className="text-[10px] text-[var(--text-muted)]">
-            last run {age(state.last_run)}
+            last run {age(currentLastRun)}
           </span>
         ) : null}
       </div>
@@ -201,9 +288,38 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
         <>
           {state ? (
             <div className="grid grid-cols-3 gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2">
-              <Stat label="Accepted" value={state.total_accepted} accent="text-[var(--color-success)]" />
-              <Stat label="Reverted" value={state.total_reverted} accent="text-[var(--color-danger)]" />
-              <Stat label="Total" value={state.total_accepted + state.total_reverted} />
+              <Stat label="Accepted" value={totalAccepted(state)} accent="text-[var(--color-success)]" />
+              <Stat label="Reverted" value={totalReverted(state)} accent="text-[var(--color-danger)]" />
+              <Stat label="Total" value={totalAccepted(state) + totalReverted(state)} />
+            </div>
+          ) : null}
+
+          {currentLock ? (
+            <div className="rounded-md border border-[color-mix(in_oklch,var(--color-warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_8%,transparent)] px-3 py-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-widest text-[var(--color-warning)]">
+                    Run lock {currentLock.stale ? "stale" : "active"}
+                  </p>
+                  <p className="mt-1 truncate font-mono text-[10px] text-[var(--text-secondary)]">
+                    {lockRunId(currentLock) ?? "unknown run"}
+                  </p>
+                  <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+                    {lockHasRunJson(currentLock) ? "run.json present" : "run.json missing"}
+                    {lockRequestedAt(currentLock) ? ` · requested ${age(lockRequestedAt(currentLock)!)}` : ""}
+                    {lockUpdatedAt(currentLock) ? ` · lock ${age(lockUpdatedAt(currentLock)!)}` : ""}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={clearingLock}
+                  onClick={() => void clearRunLock(!currentLock.stale)}
+                  aria-label={`Clear eval-loop lock for ${familiarName}`}
+                  className="shrink-0 rounded border border-[var(--border-strong)] px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {clearingLock ? "clearing" : "clear lock"}
+                </button>
+              </div>
             </div>
           ) : null}
 
@@ -242,8 +358,8 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
                         className="mt-px shrink-0 text-[var(--text-muted)]"
                         width="0.7rem"
                       />
-                      <span className="truncate text-[var(--text-primary)]" title={it.change_summary}>
-                        {it.change_summary}
+                      <span className="truncate text-[var(--text-primary)]" title={iterationSummary(it)}>
+                        {iterationSummary(it)}
                       </span>
                     </div>
                     <span
@@ -262,7 +378,7 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
                       {it.delta > 0 ? "+" : ""}{it.delta.toFixed(1)}
                     </span>
                     <span className="text-[var(--text-muted)]">
-                      {it.metric_before.toFixed(1)} → {it.metric_after.toFixed(1)}
+                      {metricBefore(it).toFixed(1)} → {metricAfter(it).toFixed(1)}
                     </span>
                     <span className="ml-auto text-[var(--text-muted)]" title={formatTimestamp(it.timestamp, readDateTimePrefs())}>
                       {age(it.timestamp)}
