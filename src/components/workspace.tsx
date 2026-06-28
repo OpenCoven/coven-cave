@@ -47,6 +47,7 @@ import { CovenPane } from "@/components/docs-pane";
 import { PluginsView } from "@/components/plugins-view";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { FlowView } from "@/components/flow/flow-view";
+import { EvalsView } from "@/components/evals/evals-view";
 import { RetroRunsView } from "@/components/retro-runs-view";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
@@ -90,6 +91,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   github: "GitHub",
   roles: "Roles",
   flow: "Flow",
+  evals: "Evals",
   submissions: "Submissions",
   retro: "Retro Runs",
   capabilities: "Capabilities",
@@ -1945,6 +1947,8 @@ export function Workspace() {
       <OpenCovenSubmissionPage />
     ) : mode === "flow" ? (
       <FlowView />
+    ) : mode === "evals" ? (
+      <EvalsView familiars={resolvedFamiliars} activeFamiliarId={activeId} />
     ) : mode === "retro" ? (
       <RetroRunsView familiarId={retroFamiliarId} />
     ) : mode === "calendar" ? (

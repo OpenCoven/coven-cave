@@ -34,6 +34,7 @@ export type FolderMode =
   | "github"
   | "roles"
   | "flow"
+  | "evals"
   | "submissions"
   | "library"
   | "capabilities"
@@ -112,6 +113,7 @@ const FOLDER_MODES: Array<{
   { id: "docs", label: "Coven", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven docs, feedback, and social tabs" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, skills, and the capabilities your familiars can use" },
   { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
+  { id: "evals", label: "Evals", iconName: "ph:flask", group: "tools", description: "Run test-case eval suites against a familiar and track pass rates" },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
   // Add-ons (gated)
