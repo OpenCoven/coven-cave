@@ -27,6 +27,8 @@ export type FlowRunProgress = {
   done: boolean;
   markersFound: boolean;
   steps: WorkflowStepProgress[];
+  /** Raw agent-session output, surfaced as run logs so a stalled run is legible. */
+  transcript: string;
 };
 
 /**
@@ -43,6 +45,7 @@ export function parseFlowRunProgress(transcript: string, orderedNodeIds: string[
     done: result.done,
     markersFound: result.markersFound,
     steps: result.steps,
+    transcript,
   };
 }
 
