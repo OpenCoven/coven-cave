@@ -14,5 +14,25 @@ assert.match(
   "flow session spawn must not pass familiarId natively to the daemon",
 );
 assert.match(source, /recordSessionFamiliar\(sessionId, familiarId\)/, "familiar is still mirrored into cave-state");
+assert.match(
+  source,
+  /function initialFlowRunStepStatus/,
+  "flow runs should seed local trigger/input step status immediately",
+);
+assert.match(
+  source,
+  /def\?\.isTrigger[\s\S]*"succeeded"/,
+  "trigger nodes should start as succeeded so runs visibly move past Start",
+);
+assert.match(
+  source,
+  /node\?\.type\.startsWith\("input\."\)[\s\S]*"succeeded"/,
+  "input nodes should start as succeeded because required inputs were already collected",
+);
+assert.match(
+  source,
+  /seenActiveAgentStep[\s\S]*"running"/,
+  "first non-local executable node should start as running until live markers arrive",
+);
 
 console.log("flow-executor.test.ts: ok");

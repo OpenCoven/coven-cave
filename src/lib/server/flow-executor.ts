@@ -1,5 +1,6 @@
 import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
+import { catalogNode } from "@/lib/flow/flow-catalog";
 import {
   flowRunRedactsData,
   type FlowDoc,
@@ -14,7 +15,7 @@ import {
 } from "@/lib/flow/flow-compile";
 import { flowMissingRequiredInputs } from "@/lib/required-inputs";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
-import type { FlowRunRecord } from "@/lib/flows";
+import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun } from "@/lib/server/flow-store";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
 
@@ -35,6 +36,22 @@ function flowFamiliar(flow: FlowDoc): string | null {
     if (typeof familiar === "string" && familiar.trim()) return familiar.trim();
   }
   return null;
+}
+
+function initialFlowRunStepStatus(
+  flow: FlowDoc,
+  stepId: string,
+  seenActiveAgentStep: { value: boolean },
+): FlowRunStepStatus {
+  const node = flow.nodes.find((item) => item.id === stepId);
+  const def = node ? catalogNode(node.type) : undefined;
+  if (def?.isTrigger) return "succeeded";
+  if (node?.type.startsWith("input.")) return "succeeded";
+  if (!seenActiveAgentStep.value) {
+    seenActiveAgentStep.value = true;
+    return "running";
+  }
+  return "pending";
 }
 
 export async function startFlowSession(
@@ -115,6 +132,7 @@ export async function startFlowSession(
   const byId = new Map(flow.nodes.map((node) => [node.id, node]));
   const customData = extractFlowCustomData(flow);
   const redacted = flowRunRedactsData(flow, options.mode ?? "manual");
+  const seenActiveAgentStep = { value: false };
   const run = await recordFlowRun({
     flowId: flow.id,
     flowName: flow.name,
@@ -126,7 +144,7 @@ export async function startFlowSession(
     steps: order.map((stepId) => ({
       id: stepId,
       type: byId.get(stepId)?.type ?? "unknown",
-      status: "pending" as const,
+      status: initialFlowRunStepStatus(flow, stepId, seenActiveAgentStep),
     })),
     summary: `agent session ${sessionId.slice(0, 8)}`,
     source: "cave",

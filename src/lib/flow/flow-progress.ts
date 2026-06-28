@@ -33,18 +33,58 @@ export type FlowRunProgress = {
 
 /**
  * Parse the transcript into per-node phases for the canvas overlay.
- * `orderedNodeIds` is the run's step ids in execution order.
+ * `ordered` is the run's steps (preferred) or ids in execution order. Passing
+ * steps preserves seeded local progress before transcript markers arrive.
  */
-export function parseFlowRunProgress(transcript: string, orderedNodeIds: string[]): FlowRunProgress {
+export function parseFlowRunProgress(
+  transcript: string,
+  ordered: string[] | Array<Pick<FlowRunStepRecord, "id" | "status" | "type">>,
+): FlowRunProgress {
+  const orderedNodeIds = ordered.map((step) => typeof step === "string" ? step : step.id);
+  const seedById = new Map<string, FlowRunStepStatus>();
+  let seenActiveAgentStep = false;
+  for (const step of ordered) {
+    if (typeof step === "string") continue;
+    let status = step.status;
+    if (status === "pending") {
+      if (step.type.startsWith("trigger.") || step.type.startsWith("input.")) {
+        status = "succeeded";
+      } else if (!seenActiveAgentStep) {
+        status = "running";
+      }
+    }
+    if (status === "running") seenActiveAgentStep = true;
+    seedById.set(step.id, status);
+  }
   const result = parseWorkflowStepProgress(transcript, orderedNodeIds);
   const phases: Record<string, FlowNodePhase> = {};
-  for (const step of result.steps) phases[step.id] = flowPhase(step.status);
+  let activeNodeId = result.activeStepId;
+  const steps = result.steps.map((step) => {
+    const seeded = seedById.get(step.id);
+    let status = step.status;
+    if (!result.markersFound && seeded) {
+      status = seeded === "running" ? "active" : seeded === "skipped" ? "succeeded" : seeded;
+    }
+    const phase = flowPhase(status);
+    if (result.markersFound && phase === "pending" && (seeded === "succeeded" || seeded === "skipped")) {
+      phases[step.id] = seeded;
+    } else {
+      phases[step.id] = phase;
+    }
+    return { ...step, status };
+  });
+  if (!result.markersFound) {
+    activeNodeId = orderedNodeIds.find((id) => seedById.get(id) === "running") ?? null;
+  }
+  const done =
+    orderedNodeIds.length > 0 &&
+    orderedNodeIds.every((id) => phases[id] === "succeeded" || phases[id] === "failed" || phases[id] === "skipped");
   return {
     phases,
-    activeNodeId: result.activeStepId,
-    done: result.done,
+    activeNodeId,
+    done,
     markersFound: result.markersFound,
-    steps: result.steps,
+    steps,
     transcript,
   };
 }

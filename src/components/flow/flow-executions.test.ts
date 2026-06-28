@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const executions = readFileSync(new URL("./flow-executions.tsx", import.meta.url), "utf8");
 const view = readFileSync(new URL("./flow-view.tsx", import.meta.url), "utf8");
+const runSteps = readFileSync(new URL("./flow-run-steps.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../styles/flow.css", import.meta.url), "utf8");
 
 assert.match(executions, /onInspectRun: \(run: FlowRunRecord\) => void/, "Executions list should expose an inspect callback");
@@ -50,8 +51,10 @@ assert.match(styles, /\.flow-exec-custom-input/, "Custom execution data filters 
 assert.match(styles, /\.flow-exec-filter\.is-active/, "Active execution filter should be styled");
 assert.match(styles, /\.flow-exec-mode-production/, "Production execution mode badge should be styled");
 assert.match(styles, /\.flow-exec-custom-data/, "Custom execution data chips should be styled");
-assert.match(view, /phasesFromRunSteps/, "Flow view should paint stored run step statuses when transcript markers are unavailable");
+assert.match(view, /activeRun \? progress\.phases : null/, "Flow view should paint seeded progress before transcript markers arrive");
 assert.match(view, /progress\.markersFound \? progress\.steps : activeRun\.steps/, "Flow view should inspect persisted node data when transcript markers are unavailable");
+assert.match(runSteps, /progress\.phases\[id\] \?\? persisted/, "Run steps should use seeded progress before transcript markers arrive");
+assert.match(runSteps, /!progress\.markersFound && !moving/, "Run steps should not show a stall warning once seeded progress is visible");
 assert.match(view, /inspectRun/, "Flow view should have a named inspected-run handler");
 assert.match(view, /retryRun/, "Flow view should have a named retry-run handler");
 assert.match(view, /mode: "current" \| "original"/, "Flow view retry handler should model n8n retry modes");

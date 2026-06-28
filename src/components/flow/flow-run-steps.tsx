@@ -55,10 +55,6 @@ export function FlowRunSteps({
   const [logsOpen, setLogsOpen] = useState(false);
 
   const transcript = progress.transcript.trim();
-  // A run that's live but has emitted no `@@step-…` markers is doing nothing
-  // visible — surface that plainly instead of an endless "0/N · pending".
-  const stalled = running && !progress.markersFound;
-
   const nameById = useMemo(
     () => new Map(doc.nodes.map((node) => [node.id, node.name])),
     [doc.nodes],
@@ -68,12 +64,14 @@ export function FlowRunSteps({
     [progress.steps],
   );
 
-  // Prefer the live-parsed phase; fall back to the run's persisted step status
-  // (e.g. a finished run reopened, or before any markers land).
+  // Prefer parsed/seeded progress; fall back to the stored run state for older
+  // historical records that predate live progress snapshots.
   const phaseFor = (id: string, persisted: FlowRunStepRecordStatus): FlowNodePhase =>
-    (progress.markersFound ? progress.phases[id] : undefined) ?? persisted;
+    progress.phases[id] ?? persisted;
 
   const doneCount = run.steps.filter((step) => phaseFor(step.id, step.status) === "succeeded").length;
+  const moving = run.steps.some((step) => phaseFor(step.id, step.status) !== "pending");
+  const waitingForOutput = running && !progress.markersFound && !moving;
 
   return (
     <aside className={`flow-run-steps${collapsed ? " is-collapsed" : ""}`} aria-label="Flow run steps">
@@ -100,7 +98,7 @@ export function FlowRunSteps({
         )}
       </header>
 
-      {!collapsed && stalled && (
+      {!collapsed && waitingForOutput && (
         <p className="flow-run-steps-stall" role="status">
           <Icon name="ph:warning-circle" width={14} />
           <span>
