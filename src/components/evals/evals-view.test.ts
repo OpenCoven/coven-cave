@@ -65,4 +65,10 @@ assert.match(source, /PASS|FAIL/, "shows pass/fail per case");
 // Empty state
 assert.match(source, /EmptyState/, "shows an empty state when there are no suites");
 
+// Migrated eval-discuss threads surfaced here instead of the chat list.
+assert.match(source, /fetch\("\/api\/sessions\/list"\)/, "loads sessions to find eval threads");
+assert.match(source, /s\.origin === "eval"/, "filters to eval-origin threads");
+assert.match(source, /className="evals-thread-row"/, "renders a list of eval discussion threads");
+assert.match(source, /cave:agents-open-session/, "opening a thread reopens it in the chat surface");
+
 console.log("evals-view.test.ts OK");

@@ -229,4 +229,12 @@ assert.equal(
 );
 assert.equal(recoveredStatus[0].exit_code, 0, "newer Cave-local transcript exit code should win");
 
+// An eval-discuss conversation carries its origin through to the session row.
+const evalRows = localConversationSessionRows(
+  [{ ...localConversation, sessionId: "eval-9", origin: "eval" }],
+  { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} },
+  false,
+);
+assert.equal(evalRows[0].origin, "eval", "conversation origin 'eval' maps to the session origin");
+
 console.log("session-list-merge.test.ts: ok");

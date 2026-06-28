@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { RetroRunsView } from "@/components/retro-runs-view";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { SessionRow } from "@/lib/types";
 import type { RetroRun, RetroRunsSnapshot } from "@/lib/retro-runs";
 import {
   deriveThreadEvalState,
@@ -88,6 +89,16 @@ function newCase(): EvalCase {
   return { id: freshId("case"), name: "New case", input: "", graders: [{ kind: "contains", value: "" }] };
 }
 
+/** Open a migrated eval-discuss thread back in the chat surface. */
+function openEvalThread(session: SessionRow) {
+  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "chat" } }));
+  window.dispatchEvent(
+    new CustomEvent("cave:agents-open-session", {
+      detail: { sessionId: session.id, familiarId: session.familiarId },
+    }),
+  );
+}
+
 export function EvalsView({ familiars, activeFamiliarId }: Props) {
   const [suites, setSuites] = useState<EvalSuite[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -99,6 +110,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   const [groups, setGroups] = useState<EvalGroup[]>([]);
   const [threadSnapshots, setThreadSnapshots] = useState<ThreadEvalSnapshot[]>([]);
   const [queue, setQueue] = useState<ManualEvalQueueItem[]>([]);
+  const [evalThreads, setEvalThreads] = useState<SessionRow[]>([]);
   const [retroSnapshot, setRetroSnapshot] = useState<RetroRunsSnapshot>(EMPTY_RETRO_SNAPSHOT);
   const [tab, setTab] = useState<EvalsTab>("overview");
   const [saving, setSaving] = useState(false);
@@ -138,13 +150,14 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     let alive = true;
     void (async () => {
       try {
-        const [suitesRes, allRunsRes, groupsRes, threadStatesRes, queueRes, retroRes] = await Promise.all([
+        const [suitesRes, allRunsRes, groupsRes, threadStatesRes, queueRes, retroRes, sessionsRes] = await Promise.all([
           fetch("/api/evals/suites"),
           fetch("/api/evals/runs"),
           fetch("/api/evals/groups"),
           fetch("/api/evals/thread-states"),
           fetch("/api/evals/queue"),
           fetch("/api/retro-runs"),
+          fetch("/api/sessions/list"),
         ]);
         const data = (await suitesRes.json()) as { ok: boolean; suites?: EvalSuite[] };
         const allRunsData = (await allRunsRes.json()) as { ok: boolean; runs?: EvalRun[] };
@@ -152,6 +165,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
         const threadStatesData = (await threadStatesRes.json()) as { ok: boolean; snapshots?: ThreadEvalSnapshot[] };
         const queueData = (await queueRes.json()) as { ok: boolean; queue?: ManualEvalQueueItem[] };
         const retroData = (await retroRes.json()) as RetroApiResponse;
+        const sessionsData = (await sessionsRes.json()) as { ok: boolean; sessions?: SessionRow[] };
         if (!alive) return;
         const list = data.suites ?? [];
         setSuites(list);
@@ -160,6 +174,8 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
         setThreadSnapshots(threadStatesData.snapshots ?? []);
         setQueue(queueData.queue ?? []);
         setRetroSnapshot(retroData.snapshot ?? EMPTY_RETRO_SNAPSHOT);
+        // Eval-discuss chat threads, migrated out of the chat list into the Evals page.
+        setEvalThreads((sessionsData.sessions ?? []).filter((s) => s.origin === "eval"));
         if (list.length) selectSuite(list[0]);
       } finally {
         if (alive) setLoaded(true);
@@ -329,6 +345,29 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
             </li>
           ))}
         </ul>
+        {evalThreads.length > 0 && (
+          <div className="evals-threads">
+            <div className="evals-threads-head">
+              <span>Discussion threads</span>
+              <span className="evals-threads-count">{evalThreads.length}</span>
+            </div>
+            <ul className="evals-thread-list">
+              {evalThreads.map((thread) => (
+                <li key={thread.id}>
+                  <button
+                    type="button"
+                    className="evals-thread-row"
+                    onClick={() => openEvalThread(thread)}
+                    title="Open this eval discussion in chat"
+                  >
+                    <Icon name="ph:chat-circle-dots" width={13} aria-hidden />
+                    <span className="evals-thread-title">{thread.title || "Eval discussion"}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </aside>
 
       <section className="evals-main">

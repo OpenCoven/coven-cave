@@ -44,6 +44,65 @@
   flex-direction: column;
   gap: 2px;
 }
+
+/* Migrated eval-discuss threads — surfaced here instead of the chat list. */
+.evals-threads {
+  margin-top: auto;
+  border-top: 1px solid var(--border-hairline);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+}
+.evals-threads-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 7px 6px;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.evals-threads-count {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-elevated));
+  color: var(--text-secondary);
+}
+.evals-thread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.evals-thread-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.evals-thread-row:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border));
+}
+.evals-thread-row svg { flex: 0 0 auto; color: var(--accent-presence); }
+.evals-thread-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .evals-suite-row {
   display: flex;
   flex-direction: column;

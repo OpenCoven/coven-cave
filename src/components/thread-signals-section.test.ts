@@ -135,6 +135,7 @@ describe("aggregateThreadSignals", () => {
     assert.match(source, /buildThreadSignalDiscussionPrompt/, "seeds the chat with a topic-specific prompt");
     assert.match(source, /new CustomEvent\("cave:agents-new-chat"/, "opens a new chat with the familiar");
     assert.match(source, /initialPrompt: buildThreadSignalDiscussionPrompt\(item\)/, "primes the chat with the selected item");
+    assert.match(source, /origin: "eval"/, "tags the thread as an eval origin so it migrates to the Evals page");
     assert.match(source, /className="fa-thread-review-item"[\s\S]*onClick=\{\(\) => discussReviewItem\(familiarId, item\)\}/, "each review item is a clickable button");
   });
 });

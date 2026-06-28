@@ -2,7 +2,7 @@
 
 import { forwardRef, Fragment, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import type { Familiar, SessionRow } from "@/lib/types";
+import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
@@ -216,6 +216,9 @@ type Props = {
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  /** Provenance for a newly-created conversation (e.g. "eval" for eval-discuss
+   *  threads). Persisted on the conversation so it can be surfaced/hidden by origin. */
+  origin?: SessionOrigin;
   /** When set (with a changing nonce), opens the in-thread find on this query —
    *  used by the ⌘K Conversations result to jump to the matched message. */
   openFindQuery?: string;
@@ -1928,7 +1931,7 @@ function MobileChatActionStrip({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -3164,6 +3167,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           familiarId: familiar.id,
           prompt: submitPrompt,
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
+          ...(origin ? { origin } : {}),
           sessionId: liveGeneration.sessionId,
           projectRoot: activeProjectRoot,
           reasoningEffort: thinkingEffort,

@@ -66,6 +66,8 @@ export function filterVisibleChatSessions(
 ): SessionRow[] {
   return sessions
     .filter((session) => !DEAD_CHAT_STATUSES.has(session.status))
+    // Eval-discuss threads live in the Evals page, not the chat list.
+    .filter((session) => session.origin !== "eval")
     .filter((session) => familiarId === null || session.familiarId === familiarId)
     .sort((a, b) => (sessionTimestamp(a) < sessionTimestamp(b) ? 1 : -1));
 }

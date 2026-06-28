@@ -3,6 +3,7 @@ import path from "node:path";
 import { homedir } from "node:os";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
+import type { SessionOrigin } from "./types.ts";
 import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 
 const CONV_DIR = path.join(homedir(), ".coven", "cave-conversations");
@@ -71,6 +72,9 @@ export type ConversationFile = {
   modelIntent?: ConversationModelIntent;
   runtime?: string;
   title?: string;
+  /** Provenance — defaults to "chat". "eval" threads are surfaced in the Evals
+   *  page and hidden from the chat list. */
+  origin?: SessionOrigin;
   createdAt: string;
   updatedAt: string;
   turns: ChatTurn[];
@@ -164,6 +168,7 @@ export async function listConversations(): Promise<
     model?: string;
     runtime?: string;
     title?: string;
+    origin?: SessionOrigin;
     status?: string;
     exitCode?: number | null;
     createdAt?: string;
@@ -184,6 +189,7 @@ export async function listConversations(): Promise<
     model?: string;
     runtime?: string;
     title?: string;
+    origin?: SessionOrigin;
     status?: string;
     exitCode?: number | null;
     createdAt?: string;
@@ -203,6 +209,7 @@ export async function listConversations(): Promise<
           model: conv.model,
           runtime: conv.runtime,
           title: conv.title,
+          origin: conv.origin,
           status: terminal.status,
           exitCode: terminal.exitCode,
           createdAt: conv.createdAt,
