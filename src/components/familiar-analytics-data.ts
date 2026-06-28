@@ -89,21 +89,42 @@ function emptyStats(): FamiliarCardStats {
   };
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: "no-store" });
-  return (await res.json()) as T;
-}
+type ApiEnvelope = { ok: boolean; error?: string };
 
-async function getOptionalJson<T>(url: string, fallback: T): Promise<T> {
+/**
+ * Fetch a single analytics endpoint without ever rejecting. A non-2xx response
+ * or a network/parse error degrades to `fallback` (which carries `ok: false`)
+ * so one failing endpoint surfaces in the `errors` banner instead of blanking
+ * the whole view.
+ */
+async function fetchResource<T extends ApiEnvelope>(url: string, fallback: T): Promise<T> {
   try {
-    return await getJson<T>(url);
-  } catch {
-    return fallback;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      return { ...fallback, error: `HTTP ${res.status}` } as T;
+    }
+    return (await res.json()) as T;
+  } catch (err) {
+    return { ...fallback, error: err instanceof Error ? err.message : "request failed" } as T;
   }
 }
 
 function retroStateFor(snapshot: RetroRunsSnapshot, familiarId: string): RetroFamiliarState | null {
   return snapshot.familiars.find((state) => state.familiarId === familiarId) ?? null;
+}
+
+/**
+ * The daemon proxy can hand back either an EvalLoopState directly or a wrapped
+ * `{ state: EvalLoopState }` envelope (the live daemon double-wraps). Normalize
+ * to the inner state so downstream `iterations`/`track_counts` reads are safe.
+ */
+function normalizeEvalLoopState(raw: EvalLoopState | null | undefined): EvalLoopState | null {
+  if (!raw || typeof raw !== "object") return null;
+  const candidate = raw as EvalLoopState & { state?: EvalLoopState | null };
+  if (!Array.isArray(candidate.iterations) && candidate.state && typeof candidate.state === "object") {
+    return candidate.state;
+  }
+  return candidate;
 }
 
 function responseError(response: { ok: boolean; error?: string }, fallback: string): string | null {
@@ -121,13 +142,13 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     retroJson,
     selfReportsJson,
   ] = await Promise.all([
-    getJson<FamiliarsResponse>("/api/familiars"),
-    getJson<ContractResponse>(`/api/familiars/${encodedId}/contract`),
-    getJson<EvalLoopResponse>(`/api/skills/eval-loop/${encodedId}`),
-    getJson<SessionsResponse>("/api/sessions/list"),
-    getJson<CovenMemoryResponse>("/api/coven-memory"),
-    getJson<RetroApiResponse>("/api/retro-runs"),
-    getOptionalJson<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: true, reports: [], total: 0 }),
+    fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
+    fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
+    fetchResource<EvalLoopResponse>(`/api/skills/eval-loop/${encodedId}`, { ok: false, state: null }),
+    fetchResource<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
+    fetchResource<CovenMemoryResponse>("/api/coven-memory", { ok: false, entries: [] }),
+    fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
+    fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: false, reports: [], total: 0 }),
   ]);
 
   const errors = [
@@ -143,7 +164,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     familiarId,
     familiars: familiarsJson.familiars ?? [],
     contractReport: contractJson.report ?? null,
-    evalLoopState: evalLoopJson.state ?? null,
+    evalLoopState: normalizeEvalLoopState(evalLoopJson.state),
     sessions: sessionsJson.sessions ?? [],
     covenEntries: memoryJson.entries ?? [],
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
@@ -154,15 +175,19 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
 
 export function buildFamiliarAnalyticsModel(data: FamiliarAnalyticsData): FamiliarAnalyticsModel {
   const familiar = data.familiars.find((item) => item.id === data.familiarId) ?? null;
-  const statsByFamiliar = buildFamiliarCardStats({
-    familiars: data.familiars,
-    sessions: data.sessions,
-    covenEntries: data.covenEntries,
-  });
+  // Scope the stats computation to the single familiar this view renders rather
+  // than bucketing every familiar's sessions/memory just to read one entry.
+  const stats = familiar
+    ? buildFamiliarCardStats({
+        familiars: [familiar],
+        sessions: data.sessions.filter((session) => session.familiarId === familiar.id),
+        covenEntries: data.covenEntries.filter((entry) => entry.familiar_id === familiar.id),
+      }).get(familiar.id) ?? emptyStats()
+    : emptyStats();
   const growthReport = familiar
     ? deriveGrowthReport({
         familiar,
-        stats: statsByFamiliar.get(familiar.id) ?? emptyStats(),
+        stats,
         retroState: retroStateFor(data.retroSnapshot, familiar.id),
       })
     : null;

@@ -257,6 +257,8 @@ function mockFetchFor(score: "low" | "trusted") {
   ]);
 
   globalThis.fetch = (async (url: RequestInfo | URL) => ({
+    ok: true,
+    status: 200,
     json: async () => responses.get(String(url)),
   })) as typeof fetch;
 }
@@ -277,6 +279,25 @@ describe("FamiliarAnalyticsView", () => {
     const model = buildFamiliarAnalyticsModel(data);
 
     assert.equal(model.confidence.label, "Trusted");
+  });
+
+  it("degrades gracefully when an endpoint fails instead of blanking the view", async () => {
+    mockFetchFor("trusted");
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      if (String(url) === "/api/familiars/cody/contract") {
+        return { ok: false, status: 500, json: async () => ({}) } as unknown as Response;
+      }
+      return realFetch(url);
+    }) as typeof fetch;
+
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data);
+
+    // The whole load still resolves; the failure is surfaced, not thrown.
+    assert.ok(model.errors.some((message) => message.includes("HTTP 500")));
+    assert.equal(model.familiar?.id, "cody");
+    assert.equal(model.contractReport, null);
   });
 
   it("renders the heal request count and keeps EvalLoopPanel present", async () => {

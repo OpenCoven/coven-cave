@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   buildFamiliarAnalyticsModel,
   loadFamiliarAnalyticsData,
@@ -11,7 +11,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { ThreadSignalsSection } from "@/components/thread-signals-section";
-import { escalateBlockers } from "@/lib/familiar-heal-requests";
+import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requests";
+import type { ConfidenceScore } from "@/lib/familiar-confidence";
+import type { ContractReport } from "@/lib/familiar-contract";
 import { Icon } from "@/lib/icon";
 import { aggregateThreadSignals } from "@/lib/thread-self-report";
 
@@ -65,6 +67,89 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
     </main>
   );
 }
+
+/** Section shell — shared head (title + count) wrapper used by every panel. */
+function FaSection({
+  id,
+  title,
+  count,
+  children,
+}: {
+  id: string;
+  title: string;
+  count: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="fa-section" aria-labelledby={`${id}-title`}>
+      <div className="fa-section__head">
+        <h2 id={`${id}-title`} className="fa-section__title">{title}</h2>
+        <span>{count}</span>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const ConfidenceBreakdown = memo(function ConfidenceBreakdown({ confidence }: { confidence: ConfidenceScore }) {
+  return (
+    <FaSection id="fa-confidence" title="Confidence Breakdown" count={`${confidence.factors.length} factors`}>
+      <div className="fa-factor-list">
+        {confidence.factors.map((factor) => (
+          <div key={factor.label} className="fa-factor">
+            <div className="fa-factor__meta">
+              <b>{factor.label.replaceAll("_", " ")}</b>
+              <span>{Math.round(factor.value)} × {factor.weight.toFixed(2)}</span>
+            </div>
+            <div className="fa-factor-bar" aria-label={`${factor.label} contributes ${factor.contribution.toFixed(1)}`}>
+              <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, factor.value))}%` }} />
+            </div>
+            <small>{factor.contribution.toFixed(1)} points</small>
+          </div>
+        ))}
+      </div>
+    </FaSection>
+  );
+});
+
+const SelfHealList = memo(function SelfHealList({ requests }: { requests: SelfHealRequest[] }) {
+  if (requests.length === 0) {
+    return <EmptyState compact icon="ph:check-circle-bold" headline="No self-heal requests." />;
+  }
+  return (
+    <div className="fa-heal-list">
+      {requests.map((request) => (
+        <article key={request.id} className={`fa-heal-card fa-heal-card--${request.severity}`}>
+          <div>
+            <span>{request.source}</span>
+            <h3>{request.title}</h3>
+            <p>{request.detail}</p>
+          </div>
+          <b>{request.actionKind}</b>
+        </article>
+      ))}
+    </div>
+  );
+});
+
+const ContractCompliance = memo(function ContractCompliance({ report }: { report: ContractReport | null }) {
+  return (
+    <FaSection id="fa-contract" title="Contract Compliance" count={report?.pass ? "passing" : "needs review"}>
+      {report ? (
+        <div className="fa-contract-grid">
+          {report.properties.map((property) => (
+            <div key={property.property} className={`fa-contract-item${property.pass ? " is-pass" : " is-fail"}`}>
+              <Icon name={property.pass ? "ph:check-circle-bold" : "ph:warning-circle"} aria-hidden />
+              <span>{property.property}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyState compact icon="ph:file-text" headline="No contract report available." />
+      )}
+    </FaSection>
+  );
+});
 
 export function FamiliarAnalyticsContent({
   model,
@@ -138,88 +223,33 @@ export function FamiliarAnalyticsContent({
         </div>
       </header>
 
-      <section className="fa-section" aria-labelledby="fa-confidence-title">
-        <div className="fa-section__head">
-          <h2 id="fa-confidence-title" className="fa-section__title">Confidence Breakdown</h2>
-          <span>{model.confidence.factors.length} factors</span>
-        </div>
-        <div className="fa-factor-list">
-          {model.confidence.factors.map((factor) => (
-            <div key={factor.label} className="fa-factor">
-              <div className="fa-factor__meta">
-                <b>{factor.label.replaceAll("_", " ")}</b>
-                <span>{Math.round(factor.value)} × {factor.weight.toFixed(2)}</span>
-              </div>
-              <div className="fa-factor-bar" aria-label={`${factor.label} contributes ${factor.contribution.toFixed(1)}`}>
-                <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, factor.value))}%` }} />
-              </div>
-              <small>{factor.contribution.toFixed(1)} points</small>
-            </div>
-          ))}
-        </div>
-      </section>
+      <ConfidenceBreakdown confidence={model.confidence} />
 
-      <section className="fa-section" aria-labelledby="fa-heal-title">
-        <div className="fa-section__head">
-          <h2 id="fa-heal-title" className="fa-section__title">Self-Heal Requests</h2>
-          <span>{healRequests.length} {healRequests.length === 1 ? "request" : "requests"}</span>
-        </div>
-        {healRequests.length === 0 ? (
-          <EmptyState compact icon="ph:check-circle-bold" headline="No self-heal requests." />
-        ) : (
-          <div className="fa-heal-list">
-            {healRequests.map((request) => (
-              <article key={request.id} className={`fa-heal-card fa-heal-card--${request.severity}`}>
-                <div>
-                  <span>{request.source}</span>
-                  <h3>{request.title}</h3>
-                  <p>{request.detail}</p>
-                </div>
-                <b>{request.actionKind}</b>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
+      <FaSection
+        id="fa-heal"
+        title="Self-Heal Requests"
+        count={`${healRequests.length} ${healRequests.length === 1 ? "request" : "requests"}`}
+      >
+        <SelfHealList requests={healRequests} />
+      </FaSection>
 
-      <section className="fa-section" aria-labelledby="fa-thread-signals-title">
-        <div className="fa-section__head">
-          <h2 id="fa-thread-signals-title" className="fa-section__title">Thread Signals</h2>
-          <span>{model.threadReports.length} {model.threadReports.length === 1 ? "report" : "reports"}</span>
-        </div>
+      <FaSection
+        id="fa-thread-signals"
+        title="Thread Signals"
+        count={`${model.threadReports.length} ${model.threadReports.length === 1 ? "report" : "reports"}`}
+      >
         <ThreadSignalsSection familiarId={model.familiarId} reports={model.threadReports} />
-      </section>
+      </FaSection>
 
-      <section className="fa-section" aria-labelledby="fa-eval-title">
-        <div className="fa-section__head">
-          <h2 id="fa-eval-title" className="fa-section__title">Eval Loop</h2>
-          <span>{model.evalLoopState?.iterations.length ?? 0} iterations</span>
-        </div>
+      <FaSection id="fa-eval" title="Eval Loop" count={`${model.evalLoopState?.iterations?.length ?? 0} iterations`}>
         {model.familiar ? (
           <EvalLoopPanel familiarId={model.familiar.id} familiarName={familiarName} />
         ) : (
           <EmptyState compact icon="ph:arrows-clockwise-bold" headline="Eval loop unavailable." />
         )}
-      </section>
+      </FaSection>
 
-      <section className="fa-section" aria-labelledby="fa-contract-title">
-        <div className="fa-section__head">
-          <h2 id="fa-contract-title" className="fa-section__title">Contract Compliance</h2>
-          <span>{model.contractReport?.pass ? "passing" : "needs review"}</span>
-        </div>
-        {model.contractReport ? (
-          <div className="fa-contract-grid">
-            {model.contractReport.properties.map((property) => (
-              <div key={property.property} className={`fa-contract-item${property.pass ? " is-pass" : " is-fail"}`}>
-                <Icon name={property.pass ? "ph:check-circle-bold" : "ph:warning-circle"} aria-hidden />
-                <span>{property.property}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState compact icon="ph:file-text" headline="No contract report available." />
-        )}
-      </section>
+      <ContractCompliance report={model.contractReport} />
     </>
   );
 }
