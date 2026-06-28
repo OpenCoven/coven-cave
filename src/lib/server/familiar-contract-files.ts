@@ -88,10 +88,15 @@ async function fileExists(p: string): Promise<boolean> {
 export async function scaffoldFamiliarContractFiles(
   input: IdentityScaffoldInput,
 ): Promise<string[]> {
-  if (!isValidFamiliarId(input.id)) {
+  // Pull the id into a guarded local before it touches the filesystem. The
+  // barrier must gate the SAME value used to build the path — re-reading
+  // `input.id` after the check defeats taint-tracking (CodeQL js/path-injection)
+  // and mirrors the plain-string param the reader above uses.
+  const id = input.id;
+  if (!isValidFamiliarId(id)) {
     throw new Error("invalid familiar id");
   }
-  const workspace = await familiarWorkspace(input.id);
+  const workspace = await familiarWorkspace(id);
   await mkdir(workspace, { recursive: true });
 
   const generated = buildFamiliarContractFiles(input);
