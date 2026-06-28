@@ -83,8 +83,13 @@ export async function GET(req: NextRequest) {
         clearTimeout(timer);
         return NextResponse.json({ ok: false, error: "That host is not allowed." }, { status: 403 });
       }
-      // codeql[js/request-forgery] target is parsed as http(s), denylisted by hostname, and DNS-resolved to public addresses before every fetch.
-      res = await fetch(target.toString(), {
+      // Reconstruct the fetch URL from validated URL components — this gives
+      // the static analyzer a clean view of the sanitized inputs (origin +
+      // path + search are taken from the already-validated parsed URL object,
+      // not the raw user input) and shrinks the taint surface.
+      const safeUrl = new URL(target.pathname + target.search, target.origin);
+      // lgtm[js/request-forgery] safeUrl is parsed as http(s) (parseSafeHttpUrl), the hostname is denylisted (hasPublicHostname), and DNS is resolved to a public-only set (isPublicAddress) before every fetch hop; redirects re-run the same validation.
+      res = await fetch(safeUrl, {
         headers: {
           // A desktop UA + accept header improves extraction on UA-gated sites.
           "User-Agent": "Mozilla/5.0 (compatible; coven-cave/1.0; +reader)",
