@@ -20,8 +20,16 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
   assert.match(view, /recordSession\(group\.id, reply\.familiarId/, "pins each familiar's session id");
   // A Stop control aborts the in-flight broadcast.
   assert.match(view, /abortRef\.current\?\.abort\(\)/, "Stop aborts the broadcast");
-  // Strips the piggybacked next-paths block so control markup never leaks into a bubble.
-  assert.match(view, /extractNextPaths\(r\.text\)\.visible/, "strips the next-paths block from coven replies");
+  // Strips the piggybacked next-paths block (visible) and surfaces the parsed
+  // lines (suggestions) so control markup never leaks and chips can render.
+  assert.match(
+    view,
+    /const \{ visible: visibleText, suggestions \} = extractNextPaths\(r\.text\)/,
+    "strips the next-paths block and parses suggestions from coven replies",
+  );
+  // Parsed suggestions render as click-to-send chips that broadcast the line.
+  assert.match(view, /className="cave-next-paths/, "renders the next-paths chip row");
+  assert.match(view, /onClick=\{\(\) => void broadcast\(s\)\}/, "clicking a chip broadcasts the suggestion");
 });
 
 test("@mentions target a subset of the coven", () => {
