@@ -144,19 +144,13 @@ export function htmlToMarkdown(html: string): string {
     return `[${text}](${href})`;
   });
 
-  // Inline emphasis / code.
-  s = s.replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, t: string) => {
-    const text = stripTags(t);
-    return text ? `**${text}**` : "";
-  });
-  s = s.replace(/<(em|i)\b[^>]*>([\s\S]*?)<\/\1>/gi, (_m, _t, t: string) => {
-    const text = stripTags(t);
-    return text ? `*${text}*` : "";
-  });
-  s = s.replace(/<code\b[^>]*>([\s\S]*?)<\/code>/gi, (_m, t: string) => {
-    const text = stripTags(t);
-    return text ? `\`${text}\`` : "";
-  });
+  // Inline emphasis / code — substitute the open/close tags with their markdown
+  // markers rather than capturing-and-restripping the inner HTML. Any tags that
+  // remain inside are removed by the fixpoint strip below, so this avoids the
+  // "incomplete sanitizer" regex shape while staying safe.
+  s = s.replace(/<\/?(?:strong|b)\b[^>]*>/gi, "**");
+  s = s.replace(/<\/?(?:em|i)\b[^>]*>/gi, "*");
+  s = s.replace(/<\/?code\b[^>]*>/gi, "`");
 
   // Paragraph + line breaks.
   s = s.replace(/<\/p>/gi, "\n\n").replace(/<p\b[^>]*>/gi, "");
