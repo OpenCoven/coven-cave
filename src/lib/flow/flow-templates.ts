@@ -26,6 +26,72 @@ export type FlowTemplate = {
 };
 
 export const FLOW_TEMPLATES: FlowTemplate[] = [
+  // ── 0. Diagnostic — End to End ────────────────────────────────────────────
+  // The smallest flow that actually runs start→finish with no external
+  // dependencies, so it always completes and every step is observable: type a
+  // message, pick a familiar, press Execute, and watch it light up node by node
+  // with a full narrated log in "Session output".
+  {
+    id: "diagnostic",
+    name: "Diagnostic — End to End",
+    description: "The simplest runnable flow: type a message, a familiar repeats it and narrates every step, and you watch it light up node-by-node in the run log. Use it to confirm flows execute end to end.",
+    category: "automation",
+    icon: "ph:heartbeat",
+    accent: "#7c9b70",
+    graph: {
+      nodes: [
+        {
+          id: "trigger",
+          type: "trigger.manual",
+          name: "Run diagnostic",
+          position: { x: 80, y: 180 },
+          params: {},
+          notes: "Press Execute to run — no schedule or webhook needed.",
+          displayNote: true,
+        },
+        {
+          id: "message",
+          type: "input.text",
+          name: "Your message",
+          position: { x: 360, y: 180 },
+          params: { label: "Your message", value: "" },
+          requiredParams: ["value"],
+          notes: "Type anything — it flows through every step below.",
+          displayNote: true,
+        },
+        {
+          id: "respond",
+          type: "familiar",
+          name: "Transform & narrate",
+          position: { x: 660, y: 180 },
+          params: {
+            familiar: "",
+            prompt:
+              "You are a single diagnostic step in a connectivity test. Do NOT use web search, tools, or external services — work only with the text you receive.\n\nNarrate your work as short plain lines so the run log shows every step:\n- INPUT RECEIVED: <repeat the incoming message verbatim>\n- PLAN: <one sentence on what you'll do>\n- (then rewrite the message more clearly and warmly)\n- RESULT: <the rewritten message>\n- STEP COMPLETE\n\nKeep it brief. The point is to prove the flow executes and that progress and logs are visible end to end.",
+          },
+          requiredParams: ["familiar"],
+          settings: { alwaysOutputData: true },
+          notes: "Pick any familiar. It repeats the input, states a plan, rewrites it, and logs each step.",
+          displayNote: true,
+        },
+        {
+          id: "out",
+          type: "data.output",
+          name: "Done",
+          position: { x: 960, y: 180 },
+          params: { label: "diagnostic complete" },
+          notes: "Final result lands here — open “Session output” for the full step-by-step log.",
+          displayNote: true,
+        },
+      ],
+      edges: [
+        { id: "trigger:main->message:in", source: "trigger", sourceHandle: "main", target: "message", targetHandle: "in" },
+        { id: "message:main->respond:in", source: "message", sourceHandle: "main", target: "respond", targetHandle: "in" },
+        { id: "respond:main->out:in", source: "respond", sourceHandle: "main", target: "out", targetHandle: "in" },
+      ],
+    },
+  },
+
   // ── 1. Daily Briefing ─────────────────────────────────────────────────────
   {
     id: "daily-briefing",
