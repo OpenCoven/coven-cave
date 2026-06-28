@@ -125,10 +125,12 @@ assert.match(
   "Library is the last shortcut Tools surface, on ⌘0 (shortcuts ascend with sidebar order)",
 );
 
-assert.match(
+// The "Coven" surface was purged — its docs/feedback/social are now default
+// Browser tabs, so no nav entry should remain.
+assert.doesNotMatch(
   source,
-  /\{ id: "docs", label: "Coven", iconName: "ph:book-bookmark", group: "tools", description:/,
-  "Coven is a Tools surface embedding OpenCoven docs, feedback, and social tabs",
+  /id: "docs"|label: "Coven"/,
+  "the removed Coven (docs) surface should have no sidebar nav entry",
 );
 
 // Library is a gated add-on (default off): the nav filter hides it until the

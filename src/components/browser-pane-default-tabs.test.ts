@@ -11,6 +11,19 @@ assert.match(
   "Browser defaults should include the OpenCoven X profile",
 );
 
+// The "Coven" sidebar surface was folded into the browser — its docs + feedback
+// destinations now ship as default pinned tabs here.
+assert.match(
+  defaults,
+  /url: "https:\/\/docs\.opencoven\.ai"[\s\S]*title: "Docs"/,
+  "Browser defaults should include the OpenCoven docs tab (was the Coven surface)",
+);
+assert.match(
+  defaults,
+  /url: "https:\/\/feedback\.opencoven\.ai"[\s\S]*title: "Feedback"/,
+  "Browser defaults should include the OpenCoven feedback tab (was the Coven surface)",
+);
+
 assert.doesNotMatch(
   defaults,
   /vercel\.com\/dashboard|title: "Vercel"|id: "vercel"/,

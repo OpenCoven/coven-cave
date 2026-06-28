@@ -54,7 +54,6 @@ import {
 } from "@/components/lazy-surfaces";
 import { CodeView } from "@/components/code-view";
 import { LibraryView } from "@/components/library-view";
-import { CovenPane } from "@/components/docs-pane";
 import { PluginsView } from "@/components/plugins-view";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
@@ -104,7 +103,6 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   retro: "Evals",
   capabilities: "Capabilities",
   journal: "Journal",
-  docs: "Coven",
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
@@ -272,7 +270,6 @@ export function Workspace() {
     roles?: boolean;
     groupchat?: boolean;
     journal?: boolean;
-    docs?: boolean;
     retro?: boolean;
   }>({});
   const responseNeededRef = useRef(responseNeeded);
@@ -1978,8 +1975,6 @@ export function Workspace() {
       />
     ) : mode === "browser" ? (
       <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} />
-    ) : mode === "docs" ? (
-      <CovenPane />
     ) : mode === "github" ? (
       <GitHubView
         onJumpToSession={openFamiliarSession}

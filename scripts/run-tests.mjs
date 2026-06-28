@@ -160,7 +160,6 @@ export const SUITES = {
     "src/components/chat-header-row.test.ts",
     "src/components/chat-usage-plan-ui.test.ts",
     "src/components/sidebar-minimal.test.ts",
-    "src/components/docs-pane.test.ts",
     "src/components/sidepanel-badges.test.ts",
     "src/components/sidepanel-badge-dots.test.ts",
     "src/components/sidepanel-nav-peek.test.ts",

@@ -17,5 +17,4 @@ export type WorkspaceMode =
   | "submissions"
   | "retro"
   | "capabilities"
-  | "journal"
-  | "docs";
+  | "journal";

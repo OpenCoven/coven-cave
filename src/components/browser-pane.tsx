@@ -175,6 +175,10 @@ function saveRailPinned(pinned: boolean) {
 function defaultPinnedTabs(): BrowserTab[] {
   return [
     { id: "home", url: HOME_URL, title: "OpenCoven", pinned: true, kind: "pinned" },
+    // OpenCoven docs + feedback live here as default pinned tabs (they used to
+    // be a dedicated "Coven" sidebar surface — folded into the browser instead).
+    { id: "opencoven-docs", url: "https://docs.opencoven.ai", title: "Docs", pinned: true, kind: "pinned" },
+    { id: "opencoven-feedback", url: "https://feedback.opencoven.ai", title: "Feedback", pinned: true, kind: "pinned" },
     { id: "opencvn-x", url: "https://x.com/OpenCvn", title: "OpenCvn", pinned: true, kind: "pinned" },
     { id: "github", url: "https://github.com/OpenCoven", title: "GitHub", pinned: true, kind: "pinned" },
   ];

@@ -501,8 +501,7 @@ type AddonKey =
   | "flow"
   | "roles"
   | "groupchat"
-  | "journal"
-  | "docs";
+  | "journal";
 
 const ADDON_ROWS: Array<{
   key: AddonKey;
@@ -575,13 +574,6 @@ const ADDON_ROWS: Array<{
     icon: "ph:book-open",
     group: "surfaces",
     description: "Your daily journal and generated sketches.",
-  },
-  {
-    key: "docs",
-    label: "Coven",
-    icon: "ph:book-bookmark",
-    group: "surfaces",
-    description: "OpenCoven docs, feedback, and social tabs.",
   },
 ];
 

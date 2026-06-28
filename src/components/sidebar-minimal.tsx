@@ -39,8 +39,7 @@ export type FolderMode =
   | "library"
   | "capabilities"
   | "journal"
-  | "retro"
-  | "docs";
+  | "retro";
 
 export type AddonsConfig = {
   github?: boolean;
@@ -52,7 +51,6 @@ export type AddonsConfig = {
   roles?: boolean;
   groupchat?: boolean;
   journal?: boolean;
-  docs?: boolean;
 };
 
 export type SidebarMinimalProps = {
@@ -111,7 +109,6 @@ const FOLDER_MODES: Array<{
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description: "Shell session in your project" },
   { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘8", description: "Chat with a familiar beside your files and terminal" },
   { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description: "Saved docs, links, and reading" },
-  { id: "docs", label: "Coven", iconName: "ph:book-bookmark", group: "tools", description: "OpenCoven docs, feedback, and social tabs" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, skills, and the capabilities your familiars can use" },
   { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
   { id: "evals", label: "Evals", iconName: "ph:flask", group: "tools", description: "Run test-case eval suites against a familiar and track pass rates" },
@@ -259,7 +256,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     if (fm.id === "roles") return addons?.roles === true;
     if (fm.id === "groupchat") return addons?.groupchat === true;
     if (fm.id === "journal") return addons?.journal === true;
-    if (fm.id === "docs") return addons?.docs === true;
     return true;
   });
 

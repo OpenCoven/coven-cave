@@ -22,22 +22,12 @@ assert.match(
   "Default workspace mode should land on Home after removing Familiars from Work nav",
 );
 
-assert.match(
+// The "Coven" surface (docs-pane) was purged — its docs/feedback/social live as
+// default Browser tabs now. Guard that the surface stays gone.
+assert.doesNotMatch(
   workspace,
-  /import \{ CovenPane \} from "@\/components\/docs-pane"/,
-  "Workspace should import the Coven pane from the docs-pane module",
-);
-
-assert.match(
-  workspace,
-  /docs: "Coven"/,
-  "Workspace title should label the docs route as Coven",
-);
-
-assert.match(
-  workspace,
-  /mode === "docs" \? \(\s*<CovenPane \/>/,
-  "Workspace should render CovenPane for the docs route",
+  /CovenPane|docs-pane/,
+  "Workspace should no longer reference the removed Coven (docs-pane) surface",
 );
 
 assert.match(
