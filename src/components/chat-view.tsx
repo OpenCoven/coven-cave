@@ -259,7 +259,9 @@ type FailedSend = {
 type ComposerThinkingEffort = "low" | "medium" | "high";
 type ComposerResponseSpeed = "fast" | "balanced" | "careful";
 
-const COMPOSER_MAX_HEIGHT = 220;
+// Fallback cap when the computed CSS max-height can't be read; kept in sync with
+// the .cave-composer-input rule (13 lines: 13*24 + 20px padding).
+const COMPOSER_MAX_HEIGHT = 332;
 const COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
 // Persist the in-progress composer text so a page reload doesn't eat a
 // half-written message. The composer is a single shared input (it isn't

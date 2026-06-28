@@ -1641,8 +1641,11 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-composer-input {
-  min-height: 96px;
-  max-height: 220px;
+  /* Codex-style: start at a single line (line-height 24px + 12/8 padding = 44px)
+     and grow with content. The cap shows 13 lines (13*24 + 20 = 332px); the
+     14th line tips it into the scroll the JS resizer turns on. */
+  min-height: 44px;
+  max-height: 332px;
   overflow-x: hidden;
   overflow-y: hidden;
   scrollbar-width: thin;

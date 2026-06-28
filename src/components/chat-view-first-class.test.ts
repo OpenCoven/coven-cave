@@ -13,8 +13,8 @@ assert.match(
 
 assert.match(
   source,
-  /const COMPOSER_MAX_HEIGHT = 220;/,
-  "Chat composer should keep its scroll threshold aligned with the 6-8 row desktop height",
+  /const COMPOSER_MAX_HEIGHT = 332;/,
+  "Chat composer should keep its scroll threshold aligned with the 13-row desktop height",
 );
 
 assert.match(
@@ -131,8 +131,8 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-composer-input\s*\{[\s\S]*min-height:\s*96px[\s\S]*max-height:\s*220px[\s\S]*overflow-x:\s*hidden[\s\S]*overflow-y:\s*hidden/,
-  "Composer textarea should start taller without showing scroll overflow",
+  /\.cave-composer-input\s*\{[\s\S]*min-height:\s*44px[\s\S]*max-height:\s*332px[\s\S]*overflow-x:\s*hidden[\s\S]*overflow-y:\s*hidden/,
+  "Composer textarea should start compact (single line) and grow to a 13-line cap without showing scroll overflow",
 );
 
 assert.match(
