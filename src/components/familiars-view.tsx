@@ -19,6 +19,7 @@ import { HomeFeed } from "@/components/home/home-feed";
 import { Modal } from "@/components/ui/modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { CreateFamiliarDialog } from "@/components/create-familiar-dialog";
 import {
   buildFamiliarCardStats,
   type FamiliarCardStats,
@@ -49,6 +50,8 @@ type AgentsViewProps = {
   onOpenMemoryFile: (path: string) => void;
   onOpenOnboarding: () => void;
   onOpenUrl: (url: string) => void;
+  /** Refresh the roster after a familiar is created and focus the new one. */
+  onFamiliarCreated?: (id: string) => void;
 };
 
 function familiarMatches(familiar: Familiar, query: string): boolean {
@@ -73,8 +76,10 @@ export function FamiliarsView({
   onOpenMemoryFile,
   onOpenOnboarding,
   onOpenUrl,
+  onFamiliarCreated,
 }: AgentsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  const [createOpen, setCreateOpen] = useState(false);
   const [covenEntries, setCovenEntries] = useState<CovenMemoryEntry[]>([]);
   const [fileEntries, setFileEntries] = useState<FileMemoryEntry[]>([]);
   const [memoryError, setMemoryError] = useState<string | null>(null);
@@ -195,6 +200,15 @@ export function FamiliarsView({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={() => setCreateOpen(true)}
+              title="Create a new familiar"
+              className="focus-ring inline-flex h-7 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-[var(--bg-base)] hover:opacity-90"
+            >
+              <Icon name="ph:plus" width={12} />
+              New familiar
+            </button>
+            <button
+              type="button"
               onClick={() => memoryFamiliar && setViewMode("agent-memory")}
               disabled={!memoryFamiliar}
               title={memoryFamiliar ? `Memory for ${memoryFamiliar.display_name}` : "Select a familiar to view memory"}
@@ -263,7 +277,10 @@ export function FamiliarsView({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {familiars.length === 0 ? (
           <div className="p-4">
-            <FamiliarsEmptyState onOpenOnboarding={onOpenOnboarding} />
+            <FamiliarsEmptyState
+              onCreate={() => setCreateOpen(true)}
+              onOpenOnboarding={onOpenOnboarding}
+            />
           </div>
         ) : viewMode === "detail" && selectedFamiliar ? (
           <div className="familiars-view__detail flex h-full min-h-0">
@@ -334,6 +351,13 @@ export function FamiliarsView({
           onClose={() => setPreviewFamiliar(null)}
         />
       ) : null}
+      <CreateFamiliarDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        existingIds={familiars.map((f) => f.id)}
+        defaultHarness={familiars.find((f) => f.defaultHarness)?.defaultHarness}
+        onCreated={(id) => onFamiliarCreated?.(id)}
+      />
     </div>
   );
 }
@@ -348,17 +372,28 @@ function emptyStats(): FamiliarCardStats {
   };
 }
 
-function FamiliarsEmptyState({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
+function FamiliarsEmptyState({
+  onCreate,
+  onOpenOnboarding,
+}: {
+  onCreate: () => void;
+  onOpenOnboarding: () => void;
+}) {
   return (
     <EmptyState
       className="familiars-view__empty mx-auto my-16 max-w-md"
       icon="ph:sparkle"
       headline="No familiars yet"
-      subtitle="Set up your first familiar to populate the roster."
+      subtitle="Create your first familiar to populate the roster."
       actions={
-        <Button leadingIcon="ph:plus" onClick={onOpenOnboarding}>
-          Set up your first familiar
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="primary" leadingIcon="ph:plus" onClick={onCreate}>
+            Create a familiar
+          </Button>
+          <Button variant="ghost" onClick={onOpenOnboarding}>
+            Run full setup
+          </Button>
+        </div>
       }
     />
   );

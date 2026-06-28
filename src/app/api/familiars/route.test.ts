@@ -25,4 +25,55 @@ assert.match(
   "Familiars API should expose per-familiar auto self-report config with a false default",
 );
 
+// ── POST: in-app "create a familiar" write path ──────────────────────────────
+// Source-text guards (same pattern as src/app/api/onboarding/setup/route.test.ts).
+// Deep-merge semantics are covered by src/lib/cave-config.test.ts; draft
+// normalization by the onboarding-familiars helpers this route reuses.
+
+assert.match(source, /export async function POST\(/, "route should create a familiar via POST");
+
+// Reuses the shared onboarding write primitives so a UI-created familiar is
+// identical to a setup-created one.
+assert.match(
+  source,
+  /normalizeFamiliarDraft\(body\.familiar\)/,
+  "POST should normalize input through the shared onboarding helper",
+);
+assert.match(
+  source,
+  /buildFamiliarsToml\(draft\)/,
+  "POST should build the [[familiar]] block through the shared helper",
+);
+
+// Duplicate protection: never append a second block with the same id.
+assert.match(
+  source,
+  /familiarsTomlContainsId\(existingToml, draft\.id\)/,
+  "POST should detect an existing id before appending",
+);
+assert.match(source, /status:\s*409/, "POST should return 409 on a duplicate id");
+
+// CRITICAL: creating an additional familiar must NOT rewrite the global
+// defaults (that's onboarding's job for the first familiar). The route only
+// upserts this familiar's binding via saveConfig({ familiars }); deep-merge
+// leaves defaults/roles/addons/marketplace untouched.
+assert.match(
+  source,
+  /saveConfig\(\{\s*familiars:/,
+  "POST should upsert the new familiar binding via saveConfig({ familiars })",
+);
+assert.doesNotMatch(
+  source,
+  /defaults:\s*\{/,
+  "POST must NOT write a defaults object — creating a familiar must not change the user's global default harness/model",
+);
+
+// Optional-body (fallback-empty) handling, per the API contract for this route.
+assert.match(source, /let body[\s\S]{0,120}=\s*\{\}/, "POST should initialize an optional request body");
+assert.match(
+  source,
+  /try\s*\{[\s\S]{0,120}req\.json\(\)[\s\S]{0,120}\}\s*catch\s*\{/,
+  "POST should tolerate a malformed/empty JSON body",
+);
+
 console.log("familiars route.test.ts: ok");

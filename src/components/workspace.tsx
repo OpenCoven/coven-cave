@@ -463,8 +463,9 @@ export function Workspace() {
 
   // Cross-surface "create a familiar" bridge. The dock (and any deep surface
   // that can't reach openOnboarding directly) announces intent and the
-  // Workspace opens onboarding — the app's canonical create-a-familiar flow,
-  // since familiars are daemon-owned and have no cave-side create path.
+  // Workspace opens onboarding — the full first-run flow. The Familiars page
+  // also offers a lighter in-app "New familiar" dialog (POST /api/familiars)
+  // for adding to an existing roster without re-running setup.
   useEffect(() => {
     const openCreate = () => setOnboardingOpen(true);
     window.addEventListener("cave:onboarding-open", openCreate);
@@ -1808,6 +1809,10 @@ export function Workspace() {
         }}
         onOpenOnboarding={openOnboarding}
         onOpenUrl={openUrlExternally}
+        onFamiliarCreated={(id) => {
+          void loadFamiliars();
+          selectFamiliar(id);
+        }}
       />
     ) : mode === "chat" ? (
       <ChatSurface

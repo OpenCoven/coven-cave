@@ -41,7 +41,10 @@ function cleanText(value: string | null | undefined): string {
   return (value ?? "").trim();
 }
 
-function slugify(value: string): string {
+/** Derive a familiar id slug from free text. Exported so the create-familiar
+ *  dialog can show a live `id:` preview that matches what the server will
+ *  persist (the route calls this again via normalizeFamiliarDraft). */
+export function slugifyFamiliarId(value: string): string {
   const slug = value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -60,10 +63,10 @@ export function normalizeFamiliarDraft(input: OnboardingFamiliarInput): Onboardi
   const displayName = cleanText(input.displayName);
   if (!displayName) throw new Error("Familiar name is required.");
 
-  const id = slugify(cleanText(input.id) || displayName);
+  const id = slugifyFamiliarId(cleanText(input.id) || displayName);
   if (!id) throw new Error("Familiar id is required.");
 
-  const openclawAgentId = slugify(cleanText(input.openclawAgentId));
+  const openclawAgentId = slugifyFamiliarId(cleanText(input.openclawAgentId));
   const harness = cleanText(input.harness) || (openclawAgentId ? "openclaw" : "codex");
   if (!isTrustedOnboardingHarness(harness)) {
     throw new Error(`Unsupported harness: ${harness}.`);
