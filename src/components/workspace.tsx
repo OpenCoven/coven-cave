@@ -1502,6 +1502,14 @@ export function Workspace() {
       case "/library":
         setMode("library");
         return true;
+      case "/research":
+        setMode("library");
+        // Defer so LibraryView is mounted and listening before the event fires.
+        window.setTimeout(
+          () => window.dispatchEvent(new CustomEvent("cave:library:research", { detail: { topic: args.trim() } })),
+          0,
+        );
+        return true;
       case "/toggle-agent":
         toggleFamiliarPanel();
         return true;

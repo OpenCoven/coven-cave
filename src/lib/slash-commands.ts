@@ -57,6 +57,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 
   // Library
   { name: "/save", aliases: ["/bookmark", "/read"], hint: "/save <url> [bookmarks|reading|github] [#tag]", description: "Route a URL into the library (auto-classified).", section: "view" },
+  { name: "/research", hint: "research a topic", description: "Research a topic with the active familiar and save the brief to the Library. Bare /research opens the Library.", argPlaceholder: "topic…", section: "view" },
 ];
 
 /** Build a lookup that includes every name + every alias → canonical name. */
