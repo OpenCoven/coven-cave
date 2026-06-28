@@ -8,8 +8,8 @@ const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), "utf8"
 const vault = read("./vault-panel.tsx");
 assert.match(vault, /import \{ SearchInput \} from "@\/components\/ui\/search-input"/, "vault imports SearchInput");
 assert.match(vault, /<SearchInput[\s\S]*?placeholder="Filter secrets…"/, "vault renders a secrets filter");
-// Filter composes with the undo-pending hide and matches key / ref / description.
-assert.match(vault, /\[m\.key, m\.ref \?\? "", m\.description \?\? ""\]\.join\(" "\)\.toLowerCase\(\)\.includes\(q\)/, "vault filters by key/ref/description");
+// Filter composes with the undo-pending hide and matches key / ref / storage / description.
+assert.match(vault, /\[m\.key, m\.ref \?\? "", m\.storage \?\? "", m\.description \?\? ""\]\.join\(" "\)\.toLowerCase\(\)\.includes\(q\)/, "vault filters by key/ref/storage/description");
 assert.match(vault, /No secrets match/, "vault shows a no-matches message");
 
 const auto = read("./automations-view.tsx");

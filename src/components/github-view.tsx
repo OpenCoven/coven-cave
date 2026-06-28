@@ -22,6 +22,7 @@ import {
   type PopoverMode,
 } from "@/components/github-action-popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
+import { openExternalUrl } from "@/lib/open-external";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,6 +42,8 @@ type SortKey = "kind" | "repo" | "title" | "tasks" | "updatedAt";
 type SortDir = "asc" | "desc";
 
 type GroupBy = "none" | "org" | "repo";
+
+const GITHUB_PAT_URL = "https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local";
 
 /** `item.repo` is "owner/name" — the organization is the slash prefix. */
 function orgOf(repo: string): string {
@@ -286,14 +289,13 @@ function PatSetupModal({
           )}
 
           <div className="flex items-center justify-between mt-4">
-            <a
-              href="https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[11px] text-[var(--accent-presence)] hover:underline"
+            <button
+              type="button"
+              onClick={() => void openExternalUrl(GITHUB_PAT_URL)}
+              className="border-0 bg-transparent p-0 text-[11px] text-[var(--accent-presence)] hover:underline"
             >
               Generate a PAT on GitHub →
-            </a>
+            </button>
             <button
               type="submit"
               disabled={(!pat.trim() && !usernameInput.trim()) || saving}

@@ -5,18 +5,18 @@
  *         NEVER returns the PAT value itself.
  *
  * POST — body: { pat: string }
- *         Validates the PAT against GitHub, then writes it to .env.local
- *         under GITHUB_PAT. The PAT is only ever stored on this local
- *         machine in .env.local (gitignored). It is never logged, never
- *         returned to the client, never sent anywhere except api.github.com.
+ *         Validates the PAT against GitHub, then stores it in the local
+ *         encrypted Cave vault. It is never logged, never returned to the
+ *         client, never sent anywhere except api.github.com.
  *
- * DELETE — removes GITHUB_PAT from .env.local
+ * DELETE — removes GITHUB_PAT from .env.local and the local encrypted vault.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { dirname } from "path";
-import { resolveSecret } from "@/lib/vault";
+import { deleteLocalEncryptedSecret, hasLocalEncryptedSecret, setLocalEncryptedSecret } from "@/lib/local-encrypted-vault";
+import { loadVaultMap, resolveSecret, saveVaultMap } from "@/lib/vault";
 import { envLocalPath, upsertEnvContent } from "@/lib/env-file";
 
 export const dynamic = "force-dynamic";
@@ -35,13 +35,6 @@ function applyEnvUpdates(updates: Record<string, string | null>): void {
   mkdirSync(dirname(envPath), { recursive: true });
   const existing = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   writeFileSync(envPath, upsertEnvContent(existing, updates), "utf8");
-}
-
-/** True when .env.local already declares <key> (constant keys only). */
-function envFileHasKey(key: string): boolean {
-  const envPath = envLocalPath();
-  if (!existsSync(envPath)) return false;
-  return new RegExp(`^\\s*${key}\\s*=`, "m").test(readFileSync(envPath, "utf8"));
 }
 
 async function validatePat(pat: string): Promise<{ valid: boolean; login: string | null }> {
@@ -64,13 +57,19 @@ async function validatePat(pat: string): Promise<{ valid: boolean; login: string
 
 // GET — just reports presence, never exposes the value
 export async function GET() {
-  // Resolve from vault first (1Password), then fall back to .env.local
+  // Resolve from env, encrypted local vault, 1Password, or legacy .env.local.
   const patFromVault = resolveSecret("GITHUB_PAT");
   const loginFromVault = resolveSecret("GITHUB_USERNAME");
 
   const hasPat = !!(patFromVault ?? process.env.GITHUB_PAT?.trim());
   const login  = loginFromVault ?? process.env.GITHUB_USERNAME?.trim() ?? null;
-  const source: "vault" | "env" | "none" = patFromVault ? "vault" : hasPat ? "env" : "none";
+  const source: "encrypted" | "vault" | "env" | "none" = hasLocalEncryptedSecret(PAT_KEY)
+    ? "encrypted"
+    : patFromVault
+      ? "vault"
+      : hasPat
+        ? "env"
+        : "none";
 
   return NextResponse.json({ hasPat, login, source });
 }
@@ -97,13 +96,19 @@ export async function POST(req: NextRequest) {
     login = result.login ?? login;
   }
 
-  // Write to .env.local — never log the PAT value. Skip persisting the PAT as
-  // plaintext when it already matches the resolved secret (e.g. it comes from
-  // the 1Password vault), so we don't leave a dead shadow copy on disk.
-  const resolvedPat = resolveSecret(PAT_KEY);
-  const patIsVaultBacked = !!pat && pat === resolvedPat && !envFileHasKey(PAT_KEY);
   const updates: Record<string, string | null> = {};
-  if (pat && !patIsVaultBacked) updates[PAT_KEY] = pat;
+
+  if (pat) {
+    setLocalEncryptedSecret(PAT_KEY, pat);
+    const map = loadVaultMap(true);
+    map[PAT_KEY] = {
+      storage: "encrypted",
+      description: "GitHub Personal Access Token",
+      required: false,
+    };
+    saveVaultMap(map);
+    updates[PAT_KEY] = null;
+  }
   if (login) updates[LOGIN_KEY] = login;
   if (Object.keys(updates).length) applyEnvUpdates(updates);
 
@@ -111,12 +116,18 @@ export async function POST(req: NextRequest) {
   if (pat) process.env[PAT_KEY] = pat;
   if (login) process.env[LOGIN_KEY] = login;
 
-  return NextResponse.json({ ok: true, login, patStoredIn: patIsVaultBacked ? "vault" : pat ? "env" : undefined });
+  return NextResponse.json({ ok: true, login, patStoredIn: pat ? "encrypted" : undefined });
 }
 
 // DELETE — remove PAT
 export async function DELETE() {
   applyEnvUpdates({ [PAT_KEY]: null });
+  deleteLocalEncryptedSecret(PAT_KEY);
+  const map = loadVaultMap(true);
+  if (map[PAT_KEY]?.storage === "encrypted") {
+    delete map[PAT_KEY];
+    saveVaultMap(map);
+  }
   delete process.env[PAT_KEY];
   return NextResponse.json({ ok: true });
 }

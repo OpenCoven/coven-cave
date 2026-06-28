@@ -13,7 +13,7 @@ type FieldStatus = {
   sensitive: boolean;
   validatable: boolean;
   satisfied: boolean;
-  source: "env" | "vault" | "none";
+  source: "env" | "vault" | "encrypted" | "none";
   ref: string | null;
 };
 
@@ -85,18 +85,17 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
   const save = useCallback(async (field: FieldStatus) => {
     const draft = (drafts[field.key] ?? "").trim();
     if (!draft) return;
-    if (field.sensitive && !draft.startsWith("op://")) {
-      setError(`${field.title}: enter a 1Password reference (op://Vault/Item/field)`);
-      return;
-    }
     setBusyKey(field.key);
     setError(null);
     try {
+      const sensitiveBody = draft.startsWith("op://")
+        ? { key: field.env, ref: draft, required: true, description: field.title }
+        : { key: field.env, storage: "encrypted", value: draft, required: true, description: field.title };
       const res = field.sensitive
         ? await fetch("/api/vault", {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ key: field.env, ref: draft, required: true, description: field.title }),
+            body: JSON.stringify(sensitiveBody),
           })
         : await fetch("/api/marketplace/config", {
             method: "POST",
@@ -126,8 +125,8 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
     >
       <div className="flex flex-col gap-4">
         <p className="text-[12px] text-[var(--text-muted)]">
-          {displayName} needs the following before its tools can run. Secrets are stored as 1Password
-          references — Cave never keeps the raw value.
+          {displayName} needs the following before its tools can run. Secrets are saved in the
+          encrypted local vault or stored as 1Password references.
         </p>
         {error ? (
           <p className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
@@ -143,7 +142,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
                 <span className="text-[13px] font-medium text-[var(--text-primary)]">{f.title}</span>
                 <span className={`inline-flex items-center gap-1 text-[11px] ${f.satisfied ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"}`}>
                   <Icon name={f.satisfied ? "ph:check-circle" : "ph:warning"} width={12} aria-hidden />
-                  {f.satisfied ? `Set${f.source === "vault" ? " · 1Password" : ""}` : "Not set"}
+                  {f.satisfied ? `Set${f.source === "encrypted" ? " · encrypted" : f.source === "vault" ? " · 1Password" : ""}` : "Not set"}
                 </span>
               </div>
               {f.description ? <p className="text-[11px] text-[var(--text-muted)]">{f.description}</p> : null}
@@ -152,7 +151,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
                   type="text"
                   value={drafts[f.key] ?? ""}
                   onChange={(e) => setDrafts((d) => ({ ...d, [f.key]: e.target.value }))}
-                  placeholder={f.sensitive ? "op://Vault/Item/field" : "Enter a value (e.g. a directory path)"}
+                  placeholder={f.sensitive ? "Paste a secret or op://Vault/Item/field" : "Enter a value (e.g. a directory path)"}
                   aria-label={`${f.title} value`}
                   className="min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
                   style={{ height: 32 }}
@@ -184,7 +183,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
               ) : null}
               {f.sensitive ? (
                 <p className="text-[10px] text-[var(--text-muted)]">
-                  Requires the 1Password CLI (op). Manage refs in Settings → Vault.
+                  Raw values are saved encrypted on this machine. op:// refs still use 1Password.
                 </p>
               ) : null}
             </div>

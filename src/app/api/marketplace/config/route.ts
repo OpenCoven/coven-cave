@@ -5,8 +5,8 @@
  * POST { id, key, value } -> save a NON-sensitive plain config value to .env.local
  * DELETE { id, key }      -> clear a NON-sensitive plain config value
  *
- * Sensitive fields are NOT handled here — they go through /api/vault as op://
- * refs. The env key written is always taken from the trusted plugin manifest
+ * Sensitive fields are NOT handled here — they go through /api/vault as local
+ * encrypted secrets or op:// refs. The env key written is always taken from the trusted plugin manifest
  * (allowlist-selected via the user's `key`), never built from request strings.
  */
 
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
     const inEnv = readEnvLocalValue(f.env) !== undefined || !!process.env[f.env]?.trim();
     const vaultEntry = vault.find((v) => v.key === f.env) ?? null;
     const satisfied = inEnv || canResolve(f.env);
-    const source = inEnv ? "env" : satisfied ? "vault" : "none";
+    const source = inEnv ? "env" : vaultEntry?.status === "encrypted" ? "encrypted" : satisfied ? "vault" : "none";
     return {
       key: f.key,
       env: f.env,

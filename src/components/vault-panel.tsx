@@ -12,11 +12,12 @@ import { useUndoDelete } from "@/lib/use-undo-delete";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type VaultStatus = "resolved" | "env-only" | "unresolved" | "error" | "no-ref";
+type VaultStatus = "resolved" | "encrypted" | "env-only" | "unresolved" | "error" | "no-ref";
 
 type Mapping = {
   key: string;
   ref: string | null;
+  storage: "1password" | "encrypted" | null;
   description: string | null;
   required: boolean;
   status: VaultStatus;
@@ -28,6 +29,7 @@ type Mapping = {
 
 const STATUS_META: Record<VaultStatus, { label: string; color: string; icon: string }> = {
   resolved:   { label: "1Password",   color: "var(--color-success)", icon: "ph:vault" },
+  encrypted:  { label: "encrypted",   color: "var(--accent-presence)", icon: "ph:lock-key" },
   "env-only": { label: "env only",    color: "oklch(0.75 0.15 80)", icon: "ph:file-text" },
   unresolved: { label: "unresolved",  color: "var(--color-danger)", icon: "ph:warning" },
   error:      { label: "error",       color: "var(--color-danger)", icon: "ph:x-circle" },
@@ -61,6 +63,10 @@ function AddMappingForm({
 }) {
   const [key, setKey]         = useState(initial?.key ?? "");
   const [ref, setRef]         = useState(initial?.ref ?? "op://");
+  const [storage, setStorage] = useState<"1password" | "encrypted">(
+    initial?.storage === "encrypted" || initial?.status === "encrypted" ? "encrypted" : "1password",
+  );
+  const [secret, setSecret]   = useState("");
   const [desc, setDesc]       = useState(initial?.description ?? "");
   const [required, setReq]    = useState(initial?.required ?? false);
   const [busy, setBusy]       = useState(false);
@@ -73,7 +79,9 @@ function AddMappingForm({
       const res = await fetch("/api/vault", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ key, ref, description: desc || undefined, required }),
+        body: JSON.stringify(storage === "encrypted"
+          ? { key, storage: "encrypted", value: secret, description: desc || undefined, required }
+          : { key, ref, description: desc || undefined, required }),
       });
       const j = await res.json() as { ok: boolean; error?: string };
       if (!j.ok) throw new Error(j.error ?? "Failed to save");
@@ -99,7 +107,40 @@ function AddMappingForm({
             disabled={!!initial}
           />
         </label>
-        <label className="vault-add-label" style={{ flex: 2 }}>
+        <div className="vault-add-label" style={{ flex: 2 }}>
+          Storage
+          <div style={{ display: "flex", gap: 6 }}>
+            <button
+              type="button"
+              className={`vault-btn${storage === "encrypted" ? " vault-btn--primary" : ""}`}
+              onClick={() => setStorage("encrypted")}
+            >
+              Local encrypted
+            </button>
+            <button
+              type="button"
+              className={`vault-btn${storage === "1password" ? " vault-btn--primary" : ""}`}
+              onClick={() => setStorage("1password")}
+            >
+              1Password
+            </button>
+          </div>
+        </div>
+      </div>
+      {storage === "encrypted" ? (
+        <label className="vault-add-label">
+          Secret value
+          <input
+            className="vault-add-input"
+            type="password"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            placeholder={initial ? "Enter a new value" : "Paste secret value"}
+            required
+          />
+        </label>
+      ) : (
+        <label className="vault-add-label">
           1Password reference
           <input
             className="vault-add-input vault-ref-input"
@@ -109,7 +150,7 @@ function AddMappingForm({
             required
           />
         </label>
-      </div>
+      )}
       <label className="vault-add-label">
         Description (optional)
         <input
@@ -204,7 +245,7 @@ export function VaultPanel() {
     const q = query.trim().toLowerCase();
     if (!q) return afterPending;
     return afterPending.filter((m) =>
-      [m.key, m.ref ?? "", m.description ?? ""].join(" ").toLowerCase().includes(q));
+      [m.key, m.ref ?? "", m.storage ?? "", m.description ?? ""].join(" ").toLowerCase().includes(q));
   }, [mappings, deletePending, query]);
 
   return (
@@ -215,7 +256,7 @@ export function VaultPanel() {
           <Icon name="ph:vault" width={14} />
           Secret Vault
         </div>
-        <span className="vault-header-sub">env vars → 1Password references</span>
+        <span className="vault-header-sub">env vars → encrypted local secrets or 1Password references</span>
         <button
           type="button"
           className="vault-btn vault-btn--primary"
@@ -266,7 +307,7 @@ export function VaultPanel() {
           compact
           icon="ph:vault"
           headline="No mappings yet"
-          subtitle="Add one to pull secrets from 1Password automatically."
+          subtitle="Add one to store a local encrypted secret or pull from 1Password."
           actions={
             <Button
               size="xs"
@@ -303,6 +344,9 @@ export function VaultPanel() {
               </div>
               {m.ref && (
                 <div className="vault-row-ref">{m.ref}</div>
+              )}
+              {m.storage === "encrypted" && !m.ref && (
+                <div className="vault-row-ref">Local encrypted secret</div>
               )}
               {m.description && (
                 <div className="vault-row-desc">{m.description}</div>
@@ -348,8 +392,8 @@ export function VaultPanel() {
 
       {/* Footer note */}
       <div className="vault-footer-note">
-        Secrets are never stored on disk — resolved live via <code>op read</code> and
-        cached in process memory. Requires 1Password desktop app + CLI authed.
+        Local secrets are encrypted on disk with a machine-local Cave key. 1Password
+        entries are resolved live via <code>op read</code> and cached in process memory.
       </div>
 
       {deletePending ? (
