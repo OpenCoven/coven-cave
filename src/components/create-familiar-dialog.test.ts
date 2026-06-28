@@ -64,6 +64,10 @@ assert.match(
   "dialog should upload the avatar to the per-familiar avatar route after create",
 );
 assert.match(source, /if \(avatarFile\)/, "avatar upload should only run when an image was chosen");
-assert.match(source, /URL\.revokeObjectURL/, "object URLs for the preview must be revoked");
+// The selected file is confirmed by name (no <img> sink — avoids rendering a
+// file-derived object URL, which CodeQL flags as DOM-XSS; the real avatar shows
+// on the roster card after create via the server-origin GET route).
+assert.doesNotMatch(source, /<img\b/, "dialog must not render the picked file as an <img>");
+assert.match(source, /Photo attached/, "dialog should confirm an attached photo by name");
 
 console.log("create-familiar-dialog.test.ts: ok");

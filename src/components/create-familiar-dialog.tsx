@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
@@ -68,34 +68,16 @@ export function CreateFamiliarDialog({
   const [model, setModel] = useState("");
   const [description, setDescription] = useState("");
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  // Revoke the object URL when it changes or the dialog unmounts so blob URLs
-  // don't leak.
-  useEffect(() => {
-    return () => {
-      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
-    };
-  }, [avatarPreview]);
-
   function pickAvatar(file: File | null) {
-    setAvatarPreview((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return file ? URL.createObjectURL(file) : null;
-    });
     setAvatarFile(file);
   }
 
   const derivedId = slugifyFamiliarId(idOverride ?? name);
-  // Only ever render our own object URLs. createObjectURL always returns a
-  // `blob:` URL; constraining the scheme keeps a non-blob value from reaching
-  // the <img src> sink (and clears CodeQL's DOM-XSS flow on a file-derived URL).
-  const safeAvatarPreview =
-    avatarPreview && avatarPreview.startsWith("blob:") ? avatarPreview : null;
   const existing = useMemo(() => new Set(existingIds), [existingIds]);
   const idTaken = derivedId.length > 0 && existing.has(derivedId);
   const canCreate = name.trim().length > 0 && derivedId.length > 0 && !idTaken && !submitting;
@@ -218,9 +200,8 @@ export function CreateFamiliarDialog({
               title="Pick an icon or photo"
               className="focus-ring grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 hover:border-[var(--accent-presence)]"
             >
-              {safeAvatarPreview ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={safeAvatarPreview} alt="" className="h-full w-full object-cover" />
+              {avatarFile ? (
+                <Icon name="ph:camera" width={16} className="text-[var(--accent-presence)]" />
               ) : (
                 <FamiliarGlyph glyph={{ kind: "icon", name: glyph }} size="sm" />
               )}
@@ -265,8 +246,8 @@ export function CreateFamiliarDialog({
         {glyphOpen ? (
           <div className="flex flex-col gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-[var(--text-secondary)]">
-                {avatarPreview ? "Using uploaded photo" : "Pick an icon"}
+              <span className="truncate text-[11px] font-medium text-[var(--text-secondary)]">
+                {avatarFile ? `Photo attached · ${avatarFile.name}` : "Pick an icon"}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -277,7 +258,7 @@ export function CreateFamiliarDialog({
                   <Icon name="ph:camera" width={11} />
                   Upload photo
                 </button>
-                {avatarPreview ? (
+                {avatarFile ? (
                   <button
                     type="button"
                     onClick={() => pickAvatar(null)}
@@ -295,7 +276,7 @@ export function CreateFamiliarDialog({
                   key={g}
                   type="button"
                   role="option"
-                  aria-selected={!avatarPreview && glyph === g}
+                  aria-selected={!avatarFile && glyph === g}
                   onClick={() => {
                     setGlyph(g);
                     pickAvatar(null);
@@ -303,7 +284,7 @@ export function CreateFamiliarDialog({
                   }}
                   title={g.replace(/^ph:/, "").replace(/-fill$/, "")}
                   className={`focus-ring grid h-8 w-8 place-items-center rounded-md hover:bg-[var(--bg-raised)] ${
-                    !avatarPreview && glyph === g
+                    !avatarFile && glyph === g
                       ? "bg-[var(--accent-presence)]/15 ring-1 ring-[var(--accent-presence)]"
                       : ""
                   }`}
