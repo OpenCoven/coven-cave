@@ -14,7 +14,9 @@ assert.match(
 );
 assert.match(
   inbox,
-  /\{!initialLoadDone \? \([\s\S]*?animate-pulse[\s\S]*?\) : activeTab === "reminders" && remindersEmpty \? \(/,
+  // The Calendar tab branch may precede this (calendarSlot is rendered first),
+  // so the skeleton ternary need not be the very first child of the list box.
+  /!initialLoadDone \? \([\s\S]*?animate-pulse[\s\S]*?\) : activeTab === "reminders" && remindersEmpty \? \(/,
   "Schedules shows a skeleton before first load, ahead of the Reminders empty state",
 );
 

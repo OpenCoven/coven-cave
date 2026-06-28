@@ -52,7 +52,9 @@ assert.match(
 );
 assert.match(
   automations,
-  /const \[activeTab, setActiveTab\] = useState<AutomationTab>\("all"\)/,
+  // Defaults to "all"; an optional initialTab (e.g. the Calendar deep-link)
+  // may override on mount.
+  /const \[activeTab, setActiveTab\] = useState<AutomationTab>\([\s\S]*?: "all",?\s*\)/,
   "Surface defaults to the unified All tab",
 );
 assert.match(automations, /<h1[\s\S]*?>\s*Automations\s*<\/h1>/, "Surface header reads Automations");

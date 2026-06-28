@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AutomationsView } from "@/components/automations-view";
 import type { Escalation } from "@/lib/escalations-types";
 import type { Familiar } from "@/lib/types";
@@ -14,6 +15,10 @@ type Props = {
   onEditReminder?: (item: InboxItem) => void;
   onOpenLink?: (link: LinkRef) => void;
   defaultTab?: "escalations" | "schedules";
+  /** Calendar surface rendered as the leading tab (merged schedule page). */
+  calendarSlot?: ReactNode;
+  /** Tab to open on mount — "calendar" deep-links the Calendar nav button. */
+  initialTab?: "all" | "reminders" | "crons" | "flows" | "activity" | "calendar";
 };
 
 export function InboxEscalationsView({
@@ -22,6 +27,8 @@ export function InboxEscalationsView({
   onOpenSession,
   onEditReminder,
   onOpenLink,
+  calendarSlot,
+  initialTab,
 }: Props) {
   return (
     <section className="h-full bg-background text-foreground">
@@ -31,6 +38,8 @@ export function InboxEscalationsView({
         onOpenSession={onOpenSession}
         onEdit={onEditReminder}
         onOpenLink={onOpenLink}
+        calendarSlot={calendarSlot}
+        initialTab={initialTab}
       />
     </section>
   );

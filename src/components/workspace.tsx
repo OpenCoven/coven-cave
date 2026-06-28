@@ -1923,8 +1923,14 @@ export function Workspace() {
       />
     ) : mode === "journal" ? (
       <JournalView familiars={familiars} activeFamiliarId={activeId} scopeFamiliarIds={scopeIds} />
-    ) : mode === "inbox" ? (
+    ) : mode === "inbox" || mode === "calendar" ? (
+      // Calendar and Automations are one "Schedule" surface: Calendar is the
+      // leading tab of the Automations view. The "calendar" mode still resolves
+      // here (nav button / deep links) but opens that tab; keying on the mode
+      // remounts so the deep link lands on it.
       <InboxEscalationsView
+        key={mode}
+        initialTab={mode === "calendar" ? "calendar" : "all"}
         onOpenSource={(item) => {
           if (item.sourceSessionKey) {
             openFamiliarSession(item.sourceSessionKey);
@@ -1943,6 +1949,36 @@ export function Workspace() {
           setReminderModalOpen(true);
         }}
         onOpenLink={openReminderLink}
+        calendarSlot={
+          <CalendarView
+            items={inboxItems}
+            familiars={familiars}
+            activeFamiliarId={calendarFamiliarId}
+            scopeFamiliarIds={scopeIds}
+            deadlines={boardDeadlines}
+            onOpenDeadline={(id) => {
+              setMode("board");
+              window.dispatchEvent(new Event("cave:board:reload"));
+              window.location.hash = `card-${id}`;
+            }}
+            onAddEntry={(defaults) => {
+              openReminderModal(
+                defaults?.title ?? "",
+                defaults?.whenText ?? "",
+                defaults?.fireAt ?? "",
+              );
+            }}
+            onOpenItem={(item) => {
+              if (item.sessionId) {
+                openFamiliarSession(item.sessionId, item.familiarId);
+              }
+            }}
+            onComplete={completeInboxItem}
+            onDismiss={dismissInboxItem}
+            onSnooze={snoozeInboxItem}
+            onReschedule={rescheduleInboxItem}
+          />
+        }
       />
     ) : mode === "browser" ? (
       <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} />
@@ -1972,37 +2008,6 @@ export function Workspace() {
       <FlowView />
     ) : mode === "evals" || mode === "retro" ? (
       <EvalsView familiars={resolvedFamiliars} activeFamiliarId={mode === "retro" ? retroFamiliarId : activeId} />
-    ) : mode === "calendar" ? (
-      <CalendarView
-        items={inboxItems}
-        familiars={familiars}
-        activeFamiliarId={calendarFamiliarId}
-        scopeFamiliarIds={scopeIds}
-        deadlines={boardDeadlines}
-        onOpenDeadline={(id) => {
-          setMode("board");
-          window.dispatchEvent(new Event("cave:board:reload"));
-          window.location.hash = `card-${id}`;
-        }}
-        onAddEntry={(defaults) => {
-          openReminderModal(
-            defaults?.title ?? "",
-            defaults?.whenText ?? "",
-            defaults?.fireAt ?? "",
-          );
-        }}
-        onOpenItem={(item) => {
-          if (item.sessionId) {
-            openFamiliarSession(item.sessionId, item.familiarId);
-          } else {
-            setMode("inbox");
-          }
-        }}
-        onComplete={completeInboxItem}
-        onDismiss={dismissInboxItem}
-        onSnooze={snoozeInboxItem}
-        onReschedule={rescheduleInboxItem}
-      />
     ) : (
       <HomeComposer
         familiars={familiars}
