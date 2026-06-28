@@ -153,6 +153,61 @@ type Turn = {
 // value is a pure function of the turn, so sharing across instances is safe.
 const replyableTurnCache = new WeakMap<Turn, boolean>();
 
+type LiveChatGenerationSnapshot = {
+  sessionId: string;
+  turns: Turn[];
+  activeLeafId: string;
+  controller: AbortController;
+  updatedAt: number;
+};
+type LiveChatGenerationListener = (snapshot: LiveChatGenerationSnapshot | null) => void;
+
+const liveChatGenerations = new Map<string, LiveChatGenerationSnapshot>();
+const liveChatGenerationListeners = new Map<string, Set<LiveChatGenerationListener>>();
+
+function cloneLiveTurn(turn: Turn): Turn {
+  return {
+    ...turn,
+    attachments: turn.attachments ? [...turn.attachments] : undefined,
+    tools: turn.tools ? turn.tools.map((tool) => ({ ...tool })) : undefined,
+    progress: turn.progress ? turn.progress.map((progress) => ({ ...progress })) : undefined,
+  };
+}
+
+function notifyLiveChatGeneration(sessionId: string, snapshot: LiveChatGenerationSnapshot | null) {
+  const listeners = liveChatGenerationListeners.get(sessionId);
+  if (!listeners?.size) return;
+  for (const listener of listeners) listener(snapshot);
+}
+
+function readLiveChatGeneration(sessionId: string): LiveChatGenerationSnapshot | null {
+  return liveChatGenerations.get(sessionId) ?? null;
+}
+
+function recordLiveChatGeneration(snapshot: LiveChatGenerationSnapshot) {
+  const next = {
+    ...snapshot,
+    turns: snapshot.turns.map(cloneLiveTurn),
+  };
+  liveChatGenerations.set(snapshot.sessionId, next);
+  queueMicrotask(() => notifyLiveChatGeneration(snapshot.sessionId, next));
+}
+
+function clearLiveChatGeneration(sessionId: string | null | undefined) {
+  if (!sessionId || !liveChatGenerations.delete(sessionId)) return;
+  queueMicrotask(() => notifyLiveChatGeneration(sessionId, null));
+}
+
+function subscribeLiveChatGeneration(sessionId: string, listener: LiveChatGenerationListener) {
+  const listeners = liveChatGenerationListeners.get(sessionId) ?? new Set<LiveChatGenerationListener>();
+  listeners.add(listener);
+  liveChatGenerationListeners.set(sessionId, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) liveChatGenerationListeners.delete(sessionId);
+  };
+}
+
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
@@ -2187,6 +2242,54 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const initialPromptSentRef = useRef(false);
   const keys = useKeySymbols();
 
+  function persistLiveTurns(
+    nextTurns: Turn[],
+    nextActiveLeafId: string,
+    controller: AbortController | null = abortRef.current,
+    targetSessionId: string | null = currentSessionRef.current,
+  ) {
+    const liveSessionId = targetSessionId;
+    if (!liveSessionId || !controller) return;
+    recordLiveChatGeneration({
+      sessionId: liveSessionId,
+      controller,
+      turns: nextTurns,
+      activeLeafId: nextActiveLeafId,
+      updatedAt: Date.now(),
+    });
+  }
+
+  function updateLiveTurns(
+    updater: (prev: Turn[]) => Turn[],
+    nextActiveLeafId: string,
+    controller: AbortController | null = abortRef.current,
+    targetSessionId: string | null = currentSessionRef.current,
+  ) {
+    setTurns((prev) => {
+      const next = updater(prev);
+      turnsRef.current = next;
+      persistLiveTurns(next, nextActiveLeafId, controller, targetSessionId);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    if (!sessionId) return;
+    return subscribeLiveChatGeneration(sessionId, (live) => {
+      if (live) {
+        setTurns(live.turns);
+        turnsRef.current = live.turns;
+        setActiveLeafId(live.activeLeafId);
+        abortRef.current = live.controller;
+        setHistoryState("loaded");
+        setBusy(true);
+        return;
+      }
+      abortRef.current = null;
+      setBusy(false);
+    });
+  }, [sessionId]);
+
   // ── In-transcript find (CHAT-D9-04) ────────────────────────────────────
   // Turn-level find: case-insensitive substring over each turn's VISIBLE
   // text. `m` counts matching TURNS (honest scope — intra-turn highlighting
@@ -2597,6 +2700,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setHistoryState("idle");
       return;
     }
+    const live = readLiveChatGeneration(sessionId);
+    if (live) {
+      setTurns(live.turns);
+      turnsRef.current = live.turns;
+      setActiveLeafId(live.activeLeafId);
+      abortRef.current = live.controller;
+      setHistoryState("loaded");
+      setBusy(true);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       setHistoryState("loading");
@@ -2993,7 +3106,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setError(null);
     setDebugError(null);
     setLastFailedSend(null);
-    liveSessionIdRef.current = currentSessionRef.current;
+    const initialLiveSessionId = currentSessionRef.current;
+    liveSessionIdRef.current = initialLiveSessionId;
     setHistoryState("loaded");
 
     // Explicit parentTurnId (including null = root) wins; only fall back to the
@@ -3024,14 +3138,25 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         { id: "connect", label: "Connecting to chat bridge", status: "running", createdAt: now },
       ],
     };
-    appendTurn([userTurn, assistantTurn]);
-    setTurns((prev) => [...prev, userTurn, assistantTurn]);
-    setActiveLeafId(assistantTurn.id);
-
     const controller = new AbortController();
+    const liveGeneration = { sessionId: initialLiveSessionId, controller };
     abortRef.current = controller;
+    const nextTurns = [...turnsRef.current, userTurn, assistantTurn];
+    appendTurn([userTurn, assistantTurn]);
+    turnsRef.current = nextTurns;
+    setTurns(nextTurns);
+    setActiveLeafId(assistantTurn.id);
+    if (liveGeneration.sessionId) {
+      recordLiveChatGeneration({
+        sessionId: liveGeneration.sessionId,
+        controller,
+        turns: nextTurns,
+        activeLeafId: assistantTurn.id,
+        updatedAt: Date.now(),
+      });
+    }
     try {
-      setAssistantLifecycle(assistantId, "connecting");
+      setAssistantLifecycle(assistantId, "connecting", liveGeneration.sessionId);
       const res = await fetch("/api/chat/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -3039,7 +3164,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           familiarId: familiar.id,
           prompt: submitPrompt,
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
-          sessionId: currentSessionRef.current,
+          sessionId: liveGeneration.sessionId,
           projectRoot: activeProjectRoot,
           reasoningEffort: thinkingEffort,
           responseSpeed,
@@ -3080,8 +3205,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           id: "connect",
           label: "Chat bridge rejected the request",
           status: "error",
-        });
-        markAssistantError(assistantId);
+        }, liveGeneration.sessionId);
+        markAssistantError(assistantId, liveGeneration.sessionId);
         raiseDebugError({ turnId: assistantId, code: `HTTP ${res.status}` });
         return;
       }
@@ -3090,7 +3215,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         id: "connect",
         label: "Connected to chat bridge",
         status: "done",
-      });
+      }, liveGeneration.sessionId);
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -3107,7 +3232,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           if (!payload) continue;
           try {
             const ev = JSON.parse(payload) as StreamEvent;
-            handleEvent(ev, assistantId, request);
+            handleEvent(ev, assistantId, request, liveGeneration);
           } catch {
             /* skip malformed */
           }
@@ -3115,7 +3240,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       }
     } catch (err) {
       if ((err as Error)?.name === "AbortError") {
-        setTurns((prev) =>
+        updateLiveTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
               ? {
@@ -3134,14 +3259,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 }
               : t,
           ),
+          assistantId,
+          undefined,
+          liveGeneration.sessionId,
         );
       } else {
         setError(err instanceof Error ? err.message : "send failed");
         setLastFailedSend(request);
-        markAssistantError(assistantId);
+        markAssistantError(assistantId, liveGeneration.sessionId);
         raiseDebugError({ turnId: assistantId });
       }
     } finally {
+      clearLiveChatGeneration(liveGeneration.sessionId);
       abortRef.current = null;
       setBusy(false);
     }
@@ -3329,20 +3458,27 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     inputRef.current?.focus();
   };
 
-  const handleEvent = (ev: StreamEvent, assistantId: string, request: FailedSend) => {
+  const handleEvent = (
+    ev: StreamEvent,
+    assistantId: string,
+    request: FailedSend,
+    liveGeneration: { sessionId: string | null; controller: AbortController },
+  ) => {
     switch (ev.kind) {
       case "session": {
+        liveGeneration.sessionId = ev.sessionId;
         if (ev.sessionId !== currentSessionRef.current) {
           liveSessionIdRef.current = ev.sessionId;
           currentSessionRef.current = ev.sessionId;
           setHistoryState("loaded");
           onSessionStarted?.(ev.sessionId);
         }
+        persistLiveTurns(turnsRef.current, assistantId, liveGeneration.controller, liveGeneration.sessionId);
         return;
       }
       case "assistant_chunk": {
-        setAssistantLifecycle(assistantId, "streaming");
-        setTurns((prev) =>
+        setAssistantLifecycle(assistantId, "streaming", liveGeneration.sessionId);
+        updateLiveTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
               ? {
@@ -3362,15 +3498,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 }
               : t,
           ),
+          assistantId,
+          undefined,
+          liveGeneration.sessionId,
         );
         return;
       }
       case "progress": {
-        upsertTurnProgress(assistantId, ev);
+        upsertTurnProgress(assistantId, ev, liveGeneration.sessionId);
         return;
       }
       case "tool_use": {
-        setAssistantLifecycle(assistantId, "tooling");
+        setAssistantLifecycle(assistantId, "tooling", liveGeneration.sessionId);
         const incoming: ToolEvent = {
           id: ev.id ?? crypto.randomUUID(),
           name: ev.name,
@@ -3379,7 +3518,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           status: ev.status ?? "running",
           durationMs: ev.durationMs,
         };
-        setTurns((prev) =>
+        updateLiveTurns((prev) =>
           prev.map((t) => {
             if (t.id !== assistantId) return t;
             const tools = t.tools ?? [];
@@ -3425,11 +3564,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }),
             };
           }),
+          assistantId,
+          undefined,
+          liveGeneration.sessionId,
         );
         return;
       }
       case "done": {
-        setTurns((prev) =>
+        updateLiveTurns((prev) =>
           prev.map((t) =>
             t.id === assistantId
               ? {
@@ -3445,6 +3587,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 }
               : t,
           ),
+          assistantId,
+          undefined,
+          liveGeneration.sessionId,
         );
         if (ev.isError) {
           setLastFailedSend(request);
@@ -3456,17 +3601,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }
         void refreshUsagePlan(ev.responseMetadata?.confirmedModel ?? ev.responseMetadata?.model ?? null);
         if (ev.sessionId && ev.sessionId !== currentSessionRef.current) {
+          liveGeneration.sessionId = ev.sessionId;
           liveSessionIdRef.current = ev.sessionId;
           currentSessionRef.current = ev.sessionId;
           setHistoryState("loaded");
           onSessionStarted?.(ev.sessionId);
         }
+        persistLiveTurns(turnsRef.current, assistantId, liveGeneration.controller, liveGeneration.sessionId);
         return;
       }
       case "error": {
         setError(ev.message);
         setLastFailedSend(request);
-        markAssistantError(assistantId);
+        markAssistantError(assistantId, liveGeneration.sessionId);
         raiseDebugError({ turnId: assistantId, code: ev.code });
         if (ev.code === "ENOENT") onOpenOnboarding?.();
         return;
@@ -3474,19 +3621,29 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
-  const markAssistantError = (id: string) => {
-    setTurns((prev) =>
+  const markAssistantError = (id: string, targetSessionId: string | null = currentSessionRef.current) => {
+    updateLiveTurns((prev) =>
       prev.map((t) => (
         t.id === id
           ? { ...t, pending: false, error: true, lifecycle: "failed", progress: settleRunningProgress(t.progress, "error") }
           : t
       )),
+      id,
+      undefined,
+      targetSessionId,
     );
   };
 
-  function setAssistantLifecycle(id: string, lifecycle: ChatTurnLifecycle) {
-    setTurns((prev) =>
+  function setAssistantLifecycle(
+    id: string,
+    lifecycle: ChatTurnLifecycle,
+    targetSessionId: string | null = currentSessionRef.current,
+  ) {
+    updateLiveTurns((prev) =>
       prev.map((t) => (t.id === id ? { ...t, lifecycle } : t)),
+      id,
+      undefined,
+      targetSessionId,
     );
   }
 
@@ -3499,9 +3656,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       status?: "running" | "done" | "error";
       durationMs?: number;
     },
+    targetSessionId: string | null = currentSessionRef.current,
   ) {
-    setTurns((prev) =>
+    updateLiveTurns((prev) =>
       prev.map((t) => (t.id === id ? { ...t, progress: upsertProgressEvent(t.progress, event) } : t)),
+      id,
+      undefined,
+      targetSessionId,
     );
   }
 

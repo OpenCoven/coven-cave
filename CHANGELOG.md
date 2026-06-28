@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.122] - 2026-06-28
+
+Patch release on top of v0.0.121. Headline: chat generation state now survives
+leaving and returning to an in-flight conversation.
+
+### Fixed
+
+- **Chat** - navigating away from a chat while a response is streaming no
+  longer loses the live generation UI. Returning to the session restores the
+  pending assistant turn, active branch, busy state, and cancel controller while
+  continuing to follow stream updates through completion.
+
 ## [0.0.121] - 2026-06-28
 
 Patch release on top of v0.0.120. Headline: flow required-input handling,

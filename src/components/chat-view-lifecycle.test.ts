@@ -20,7 +20,7 @@ assert.match(
 
 assert.match(
   source,
-  /function setAssistantLifecycle\(id: string, lifecycle: ChatTurnLifecycle\)/,
+  /function setAssistantLifecycle\([\s\S]*id: string,[\s\S]*lifecycle: ChatTurnLifecycle,[\s\S]*targetSessionId: string \| null = currentSessionRef\.current/,
   "ChatView should centralize assistant lifecycle updates",
 );
 
@@ -56,7 +56,7 @@ assert.match(
 
 assert.match(
   source,
-  /case "progress":[\s\S]*upsertTurnProgress\(assistantId, ev\)/,
+  /case "progress":[\s\S]*upsertTurnProgress\(assistantId, ev, liveGeneration\.sessionId\)/,
   "Progress events should update the active assistant turn",
 );
 
@@ -92,13 +92,13 @@ assert.match(
 
 assert.match(
   source,
-  /case "assistant_chunk":[\s\S]*setAssistantLifecycle\(assistantId, "streaming"\)/,
+  /case "assistant_chunk":[\s\S]*setAssistantLifecycle\(assistantId, "streaming", liveGeneration\.sessionId\)/,
   "Assistant chunks should move the turn into a streaming lifecycle",
 );
 
 assert.match(
   source,
-  /case "tool_use":[\s\S]*setAssistantLifecycle\(assistantId, "tooling"\)/,
+  /case "tool_use":[\s\S]*setAssistantLifecycle\(assistantId, "tooling", liveGeneration\.sessionId\)/,
   "Tool events should move the turn into a tool-use lifecycle",
 );
 
@@ -136,6 +136,36 @@ assert.match(
   source,
   /const sendRaw = async [\s\S]*?\|\| busy\) return;/,
   "sendRaw should keep its own busy guard as the backstop behind send()'s",
+);
+
+assert.match(
+  source,
+  /const liveChatGenerations = new Map<string, LiveChatGenerationSnapshot>\(\)/,
+  "In-flight chat generations should be persisted outside the ChatView component so navigation away does not lose them",
+);
+
+assert.match(
+  source,
+  /function subscribeLiveChatGeneration\(sessionId: string, listener: LiveChatGenerationListener\)/,
+  "ChatView should subscribe to live generation snapshots when returning to a session",
+);
+
+assert.match(
+  source,
+  /const liveGeneration = \{ sessionId: initialLiveSessionId, controller \}[\s\S]*?recordLiveChatGeneration\(\{\s*sessionId: liveGeneration\.sessionId,[\s\S]*?controller,[\s\S]*?turns: nextTurns/,
+  "sendRaw should persist the active stream snapshot with its abort controller",
+);
+
+assert.match(
+  source,
+  /readLiveChatGeneration\(sessionId\)[\s\S]*?setTurns\(live\.turns\)[\s\S]*?setActiveLeafId\(live\.activeLeafId\)[\s\S]*?abortRef\.current = live\.controller[\s\S]*?setBusy\(true\)/,
+  "History loading should rehydrate a live generation snapshot for the selected session",
+);
+
+assert.match(
+  source,
+  /subscribeLiveChatGeneration\(sessionId, \(live\) => \{[\s\S]*?setTurns\(live\.turns\)[\s\S]*?setBusy\(true\)[\s\S]*?setBusy\(false\)/,
+  "A remounted ChatView should keep following live generation updates and settle when the stream finishes",
 );
 
 assert.match(
