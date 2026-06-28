@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   grantProjectToFamiliar,
   listProjectGrants,
+  listRecentPermissionAudit,
   loadHumanPermissionConfig,
   revokeProjectFromFamiliar,
 } from "@/lib/project-permissions";
@@ -41,13 +42,15 @@ function grantInput(payload: Record<string, unknown>) {
 }
 
 export async function GET() {
-  const [grants, config] = await Promise.all([
+  const [grants, config, audit] = await Promise.all([
     listProjectGrants(),
     loadHumanPermissionConfig(),
+    listRecentPermissionAudit(),
   ]);
   // `supremeFamiliarId` has access to every project regardless of grants — the
-  // Permissions UI marks it as all-access and locks its toggles on.
-  return NextResponse.json({ ok: true, grants, supremeFamiliarId: config.supremeFamiliarId });
+  // Permissions UI marks it as all-access and locks its toggles on. `audit` is a
+  // bounded recent window of access decisions for the console's audit log.
+  return NextResponse.json({ ok: true, grants, supremeFamiliarId: config.supremeFamiliarId, audit });
 }
 
 export async function POST(req: Request) {

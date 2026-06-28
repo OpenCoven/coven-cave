@@ -157,6 +157,19 @@ export async function listGrantProposals(): Promise<GrantProposal[]> {
   return (await loadProjectPermissions()).grantProposals;
 }
 
+/**
+ * Most-recent access-decision audit entries, newest first, capped to `limit`.
+ * Powers the Permissions console's audit log; the audit array is append-only and
+ * can grow without bound, so callers always read a bounded recent window.
+ */
+export async function listRecentPermissionAudit(limit = 200): Promise<PermissionAuditEntry[]> {
+  const audit = (await loadProjectPermissions()).permissionAudit;
+  return audit
+    .slice()
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, Math.max(0, limit));
+}
+
 export function canAccessProject(
   file: Pick<ProjectPermissionsFile, "projectGrants">,
   ctx: ProjectAccessContext,
