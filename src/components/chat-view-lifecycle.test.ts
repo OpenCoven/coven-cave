@@ -171,11 +171,13 @@ assert.match(
 // A live snapshot whose writing component unmounted (or whose stream died
 // without running cleanup) is never cleared from the registry; without a
 // staleness guard, every later mount on that session inherits a zombie
-// `busy = true` and shows "Streaming…" forever with nothing streaming.
+// `busy = true` and shows "Streaming…" forever with nothing streaming. The
+// liveness rule itself lives in @/lib/live-chat-snapshot (unit-tested there);
+// ChatView imports and applies it at both adoption sites.
 assert.match(
   source,
-  /function isLiveSnapshotActive\(snapshot: LiveChatGenerationSnapshot, now: number\): boolean \{[\s\S]*?signal\.aborted[\s\S]*?updatedAt < LIVE_SNAPSHOT_TTL_MS/,
-  "A live snapshot should only count as streaming while unaborted and recently updated",
+  /import \{ isLiveSnapshotActive \} from "@\/lib\/live-chat-snapshot"/,
+  "ChatView should consume the extracted, unit-tested liveness rule",
 );
 
 assert.match(

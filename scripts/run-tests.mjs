@@ -143,6 +143,7 @@ export const SUITES = {
     "src/components/chat-view-polish.test.ts",
     "src/components/run-activity-strip.test.ts",
     "src/components/chat-view-lifecycle.test.ts",
+    "src/lib/live-chat-snapshot.test.ts",
     "src/components/chat-view-render-optimization.test.ts",
     "src/components/chat-view-canvas-artifact.test.ts",
     "src/components/csv-import-modal.test.ts",

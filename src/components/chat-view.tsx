@@ -8,6 +8,7 @@ import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/compone
 import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { segmentTurn } from "@/lib/turn-segments";
+import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { slashSaveParse } from "@/lib/slash-save-parser";
@@ -208,22 +209,10 @@ function subscribeLiveChatGeneration(sessionId: string, listener: LiveChatGenera
   };
 }
 
-/** A live snapshot is treated as still streaming only while its controller is
- *  unaborted AND it has emitted an update recently. The writing component's
- *  `finally` clears the registry when a stream ends normally — but if that
- *  component unmounted mid-stream, or the stream died without running cleanup,
- *  the entry is never cleared. Without this guard any view that later mounts on
- *  the same session adopts a zombie `busy = true` from `readLiveChatGeneration`
- *  and shows "Streaming…" forever with nothing actually streaming. An
- *  actually-live stream refreshes `updatedAt` on every chunk (persistLiveTurns),
- *  so the 90s TTL is generous enough to span long tool/think gaps without
- *  tripping on a healthy generation. */
-const LIVE_SNAPSHOT_TTL_MS = 90_000;
-
-function isLiveSnapshotActive(snapshot: LiveChatGenerationSnapshot, now: number): boolean {
-  if (snapshot.controller.signal.aborted) return false;
-  return now - snapshot.updatedAt < LIVE_SNAPSHOT_TTL_MS;
-}
+// `isLiveSnapshotActive` lives in @/lib/live-chat-snapshot so the staleness rule
+// (the guard that stops a remounted view from inheriting a zombie "Streaming…"
+// state) can be unit-tested without React. The full LiveChatGenerationSnapshot
+// is structurally assignable to the helper's minimal SnapshotLiveness shape.
 
 type Props = {
   familiar: Familiar;

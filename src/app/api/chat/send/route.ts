@@ -62,10 +62,7 @@ import {
   loadConversation,
   saveConversation,
 } from "@/lib/cave-conversations";
-import {
-  buildPriorConversationBlock,
-  prependPriorConversation,
-} from "@/lib/chat-history-fallback";
+import { buildResumeRetryPrompt } from "@/lib/chat-history-fallback";
 import {
   cleanModelId,
   modelApplicationForHarness,
@@ -1415,10 +1412,10 @@ export async function POST(req: Request) {
       // otherwise the familiar answers as if the thread just started and the
       // user has to remind it of everything said so far.
       if (resumeFailed && body.sessionId) {
-        const priorBlock = buildPriorConversationBlock(existingConversation);
+        const retry = buildResumeRetryPrompt(harnessPrompt, existingConversation);
         pushProgress(
           "resume-retry",
-          priorBlock
+          retry.replayedHistory
             ? "Resume failed; replaying recent context into a fresh chat"
             : "Resume failed; starting a fresh chat",
           "running",
@@ -1432,9 +1429,7 @@ export async function POST(req: Request) {
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;
-        await runAttempt(
-          buildArgs(null, prependPriorConversation(harnessPrompt, priorBlock)),
-        );
+        await runAttempt(buildArgs(null, retry.prompt));
         pushProgress("resume-retry", "Fresh chat started", "done");
       }
 
