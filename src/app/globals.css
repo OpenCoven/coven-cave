@@ -4263,48 +4263,137 @@ button:active > .edge-rail-chip {
   --code-page-line: color-mix(in oklch, var(--foreground) 10%, transparent);
   --code-page-accent: color-mix(in oklch, var(--accent-presence) 74%, #7dd3fc);
   --code-page-warm: color-mix(in oklch, var(--color-warning, #f7c56b) 64%, #f59e0b);
+  /* Width of the right Environment rail (Changes / Files). Wide enough that the
+     file tree + preview stay usable, capped so the conversation keeps the floor. */
+  --code-env-w: clamp(360px, 42%, 660px);
   height: 100%;
   padding: 10px;
+  gap: 10px;
   background:
     linear-gradient(180deg, color-mix(in oklch, var(--code-page-pane) 42%, transparent), transparent 26%),
     var(--code-page-bg);
 }
 
-.cave-code-page__split {
-  overflow: hidden;
-  border: 1px solid var(--code-page-line);
-  border-radius: 8px;
-  background: var(--code-page-bg);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, white 6%, transparent),
-    0 18px 54px color-mix(in oklch, black 28%, transparent);
-}
-
-.cave-code-page__resizable {
-  min-height: 0;
-}
-
-.cave-code-page__pane {
+/* Center conversation column + right Environment rail each sit in their own
+   rounded, hairline-bordered card — the calm Codex chrome. */
+.cave-code-page__conversation,
+.cave-code-page__env {
   position: relative;
   min-height: 0;
   overflow: hidden;
+  border: 1px solid var(--code-page-line);
+  border-radius: 10px;
   background: var(--code-page-pane);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, white 6%, transparent),
+    0 16px 48px color-mix(in oklch, black 26%, transparent);
 }
 
-.cave-code-page__pane--chat {
-  border-right: 1px solid color-mix(in oklch, var(--code-page-line) 78%, transparent);
-}
-
-.cave-code-page__pane--workspace {
+.cave-code-page__env {
+  width: var(--code-env-w);
   background: color-mix(in oklch, var(--code-page-pane-strong) 92%, var(--code-surface));
 }
 
-.cave-code-page__separator {
-  background: color-mix(in oklch, var(--code-page-line) 72%, transparent);
+/* Environment rail header — title + Changes/Files segment + collapse. */
+.cave-code-page__env-head {
+  min-height: 40px;
+  padding: 0 8px 0 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--code-page-line);
+  background:
+    linear-gradient(90deg, color-mix(in oklch, var(--code-page-accent) 8%, transparent), transparent 60%),
+    color-mix(in oklch, var(--code-page-pane-strong) 94%, transparent);
+}
+
+.cave-code-page__env-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+.cave-code-page__env-seg {
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  border: 1px solid var(--code-page-line);
+  background: color-mix(in oklch, var(--bg-base) 50%, transparent);
+}
+
+.cave-code-page__env-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color 0.14s ease, background-color 0.14s ease;
+}
+
+.cave-code-page__env-tab:hover {
+  color: var(--text-secondary);
+}
+
+.cave-code-page__env-tab[data-active="1"] {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--bg-raised) 96%, transparent);
+  box-shadow: 0 1px 0 color-mix(in oklch, black 18%, transparent);
+}
+
+.cave-code-page__env-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  transition: color 0.14s ease, background-color 0.14s ease;
+}
+
+.cave-code-page__env-collapse:hover {
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--bg-base) 56%, transparent);
+}
+
+.cave-code-page__env-body {
+  min-height: 0;
+}
+
+/* Collapsed state — a thin vertical rail that reopens the Environment. */
+.cave-code-page__env-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-shrink: 0;
+  width: 44px;
+  border: 1px solid var(--code-page-line);
+  border-radius: 10px;
+  color: var(--text-muted);
+  background: color-mix(in oklch, var(--code-page-pane) 88%, transparent);
+  transition: color 0.14s ease, background-color 0.14s ease;
+}
+
+.cave-code-page__env-rail:hover {
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--code-page-pane-strong) 92%, transparent);
+}
+
+.cave-code-page__env-rail-label {
+  writing-mode: vertical-rl;
+  rotate: 180deg;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .cave-code-page .chat-surface,
-.cave-code-page__pane--workspace > div {
+.cave-code-page__env-body > div {
   min-height: 0;
   background: transparent;
 }
@@ -4352,26 +4441,47 @@ button:active > .edge-rail-chip {
 }
 
 @media (max-width: 1023px) {
+  /* On narrow screens the two columns can't sit side by side: the conversation
+     fills the surface and the Environment rail slides in as a full overlay. */
   .cave-code-page {
+    position: relative;
     padding: 0;
+    gap: 0;
     background: var(--code-page-bg);
   }
 
-  .cave-code-page--mobile {
-    overflow: hidden;
+  .cave-code-page__conversation {
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
   }
 
-  .cave-code-page__mobile-tabs {
-    min-height: 44px;
-    background: color-mix(in oklch, var(--code-page-pane) 94%, transparent);
+  .cave-code-page__env {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    width: auto;
+    border-radius: 0;
     backdrop-filter: blur(14px) saturate(135%);
     -webkit-backdrop-filter: blur(14px) saturate(135%);
   }
 
-  .cave-code-page__mobile-pane {
-    min-height: 0;
-    overflow: hidden;
-    background: var(--code-page-pane);
+  .cave-code-page__env-rail {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    bottom: auto;
+    z-index: 30;
+    flex-direction: row;
+    width: auto;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 16px;
+  }
+
+  .cave-code-page__env-rail-label {
+    writing-mode: horizontal-tb;
+    rotate: none;
   }
 }
 
