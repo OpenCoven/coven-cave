@@ -4702,6 +4702,28 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 >
                   <Icon name="ph:plus-bold" width={14} />
                 </button>
+                {/* Vertical separator between the attach control and the
+                    inline response selectors (was a horizontal rule when the
+                    controls stacked into two rows). */}
+                <div className="cave-composer-divider" aria-hidden />
+                <div className="cave-composer-settings-row" aria-label="Chat response controls">
+                  <ComposerControlSelect
+                    label="Thinking"
+                    icon="ph:sparkle-bold"
+                    value={thinkingEffort}
+                    options={THINKING_OPTIONS}
+                    disabled={busy}
+                    onChange={setThinkingEffort}
+                  />
+                  <ComposerControlSelect
+                    label="Speed"
+                    icon="ph:lightning-bold"
+                    value={responseSpeed}
+                    options={SPEED_OPTIONS}
+                    disabled={busy}
+                    onChange={setResponseSpeed}
+                  />
+                </div>
                 {busy ? (
                   <button
                     type="button"
@@ -4724,25 +4746,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     <Icon name="ph:arrow-up-bold" width={13} aria-hidden />
                   </button>
                 )}
-              </div>
-              <div className="cave-composer-divider" aria-hidden />
-              <div className="cave-composer-settings-row" aria-label="Chat response controls">
-                <ComposerControlSelect
-                  label="Thinking"
-                  icon="ph:sparkle-bold"
-                  value={thinkingEffort}
-                  options={THINKING_OPTIONS}
-                  disabled={busy}
-                  onChange={setThinkingEffort}
-                />
-                <ComposerControlSelect
-                  label="Speed"
-                  icon="ph:lightning-bold"
-                  value={responseSpeed}
-                  options={SPEED_OPTIONS}
-                  disabled={busy}
-                  onChange={setResponseSpeed}
-                />
               </div>
             </div>
           </div>
