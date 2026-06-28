@@ -65,6 +65,14 @@ assert.match(source, /PASS|FAIL/, "shows pass/fail per case");
 // Empty state
 assert.match(source, /EmptyState/, "shows an empty state when there are no suites");
 
+// Template gallery: clone a ready-made suite from the catalog.
+assert.match(source, /templatesByCategory/, "loads the template catalog grouped by category");
+assert.match(source, /instantiateTemplate/, "clones a template into an editable draft suite");
+assert.match(source, /createFromTemplate/, "wires a create-from-template handler");
+assert.match(source, /TemplateGallery/, "renders the template gallery");
+assert.match(source, /Start from template/, "empty state offers a template entry point");
+assert.match(source, /evals-tpl-card/, "renders selectable template cards");
+
 // Migrated eval-discuss threads surfaced here instead of the chat list.
 assert.match(source, /fetch\("\/api\/sessions\/list"\)/, "loads sessions to find eval threads");
 assert.match(source, /s\.origin === "eval"/, "filters to eval-origin threads");
