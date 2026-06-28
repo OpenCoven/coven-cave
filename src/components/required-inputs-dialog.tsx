@@ -5,13 +5,19 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import type { RequiredInput } from "@/lib/required-inputs";
 
+export type RequiredInputOption = { value: string; label: string };
+
 type RequiredInputsDialogProps = {
   inputs: RequiredInput[];
+  /** Valid familiars for `control:"familiar"` params — rendered as a picker so a
+   * step can't be handed an unknown/empty familiar (the daemon then rejects the
+   * run with "no familiar configured for this harness"). */
+  familiarOptions?: RequiredInputOption[];
   onSubmit: (values: Record<string, string>) => void;
   onCancel: () => void;
 };
 
-export function RequiredInputsDialog({ inputs, onSubmit, onCancel }: RequiredInputsDialogProps) {
+export function RequiredInputsDialog({ inputs, familiarOptions = [], onSubmit, onCancel }: RequiredInputsDialogProps) {
   const initialValues = useMemo(
     () => Object.fromEntries(inputs.map((input) => [input.key, ""])),
     [inputs],
@@ -62,7 +68,25 @@ export function RequiredInputsDialog({ inputs, onSubmit, onCancel }: RequiredInp
                     {input.nodeName}
                   </span>
                 </span>
-                {input.control === "textarea" || input.control === "code" || input.control === "json" ? (
+                {input.control === "familiar" ? (
+                  <select
+                    required
+                    className="required-inputs-control required-inputs-select"
+                    value={values[input.key] ?? ""}
+                    onChange={(event) =>
+                      setValues((current) => ({ ...current, [input.key]: event.target.value }))
+                    }
+                  >
+                    <option value="" disabled>
+                      {familiarOptions.length ? "Choose a familiar…" : "No familiars available"}
+                    </option>
+                    {familiarOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : input.control === "textarea" || input.control === "code" || input.control === "json" ? (
                   <textarea
                     required
                     className="required-inputs-control"
