@@ -7,6 +7,25 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.124] - 2026-06-28
+
+Patch release on top of v0.0.123. Headline: flow executions now show real
+startup movement instead of appearing stuck at Start.
+
+### Fixed
+
+- **Flows** - new manual runs now mark local trigger/input steps complete
+  immediately and show the first executable node as running while the daemon
+  session starts producing step markers.
+- **Flows** - live run polling now falls back to the daemon event stream when
+  Cave/OpenClaw transcripts have not been persisted yet, so canvas and sidebar
+  progress can advance during the startup window.
+
+### Changed
+
+- **Polling** - always-on API polls use the visibility gate path from the latest
+  mainline performance work.
+
 ## [0.0.123] - 2026-06-28
 
 Patch release on top of v0.0.122. Headline: desktop updates and the app header
