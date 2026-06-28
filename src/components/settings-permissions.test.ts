@@ -39,11 +39,28 @@ assert.match(perms, /role="switch"/, "each project row is a switch");
 assert.match(perms, /fam\.id === supremeFamiliarId/, "marks the supreme (all-access) familiar");
 assert.match(perms, /has access to every project/i, "explains the all-access familiar");
 
+// ── Console exposes the whole protocol: Access / Requests / Audit tabs ───────
+assert.match(perms, /id: "access"/, "has an Access (grant matrix) tab");
+assert.match(perms, /id: "requests"/, "has a Requests (grant-proposal inbox) tab");
+assert.match(perms, /id: "audit"/, "has an Audit (access-decision log) tab");
+
+// Requests tab: the human resolves a grant proposal by id (PATCH), sending only
+// the decision — never a relayed approval.
+assert.match(perms, /fetch\("\/api\/grant-proposals"/, "loads the grant-proposal inbox");
+assert.match(perms, /\/api\/grant-proposals\/\$\{id\}/, "resolves a proposal by id");
+assert.match(perms, /method: "PATCH"/, "proposal decisions are a PATCH");
+assert.match(perms, /JSON\.stringify\(\{ decision \}\)/, "sends only the accept/reject decision");
+
+// Audit tab: renders the access-decision log from the grants GET `audit` window.
+assert.match(perms, /filterAudit/, "renders the access audit log");
+
 // ── API exposes the supreme familiar so the UI can lock it on ────────────────
 assert.match(
   route,
   /supremeFamiliarId: config\.supremeFamiliarId/,
   "the grants GET returns the supreme familiar id",
 );
+// …and a bounded recent audit window for the console's Audit tab.
+assert.match(route, /listRecentPermissionAudit/, "the grants GET returns a recent audit window");
 
 console.log("settings-permissions.test.ts: ok");

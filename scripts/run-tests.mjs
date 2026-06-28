@@ -35,6 +35,7 @@ export const SUITES = {
     "src/lib/no-builtin-familiar-roster.test.ts",
     "src/lib/cave-projects.test.ts",
     "src/lib/project-permissions.test.ts",
+    "src/lib/permissions-console.test.ts",
     "src/lib/project-status.test.ts",
     "src/lib/github-checks.test.ts",
     "src/lib/gfm-autolink.test.ts",
