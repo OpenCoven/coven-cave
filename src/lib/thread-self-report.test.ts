@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  aggregateResponseConfidenceEvents,
   buildReflectTranscript,
   buildThreadReflectPrompt,
   contextPressureLabel,
   deriveThreadScore,
+  normalizeResponseConfidenceEvent,
+  type ResponseConfidenceEvent,
   type ThreadSelfReport,
 } from "./thread-self-report.ts";
 
@@ -77,6 +80,86 @@ describe("thread self-report helpers", () => {
 
     assert.equal(report.id, "report-1");
     assert.equal(report.persistentBlockers[0].impact, "medium");
+  });
+
+  it("normalizes response confidence events by clamping scores and preserving diagnostics", () => {
+    const event = normalizeResponseConfidenceEvent({
+      id: "event-1",
+      familiarId: "cody",
+      sessionId: "session-1",
+      responseId: "response-1",
+      responseAt: "2026-06-28T06:00:00.000Z",
+      reportedAt: "2026-06-28T06:00:03.000Z",
+      overallConfidence: 123,
+      factors: {
+        toolUse: { score: 0, weight: 1.5, reason: "Tool failed.", signals: ["tool-failed"] },
+        context: { score: -8, weight: 1, reason: "Context was missing.", signals: ["context-missing"] },
+        skills: { score: 88, weight: 0.8, reason: "Correct skill used.", signals: ["skill-used"] },
+        permissions: { score: 65, weight: 0.7, reason: "No permission block.", signals: [] },
+        memory: { score: 74, weight: 0.9, reason: "Memory was partial.", signals: ["memory-partial"] },
+        instructionFit: { score: 91, weight: 1.2, reason: "Matched the ask.", signals: ["on-task"] },
+        evidence: { score: 101, weight: 1.1, reason: "Tests cited.", signals: ["tests-run"] },
+      },
+      diagnosticTags: ["tool-failed", "context-missing", "tool-failed"],
+      calibrationNotes: "Low confidence was warranted.",
+      rubricVersion: "2026-06-28.v1",
+    });
+
+    assert.equal(event.overallConfidence, 100);
+    assert.equal(event.factors.toolUse.score, 1);
+    assert.equal(event.factors.context.score, 1);
+    assert.equal(event.factors.evidence.score, 100);
+    assert.deepEqual(event.diagnosticTags, ["tool-failed", "context-missing"]);
+    assert.equal(event.calibrationNotes, "Low confidence was warranted.");
+  });
+
+  it("aggregates response confidence events into weighted factor trends", () => {
+    const base: ResponseConfidenceEvent = normalizeResponseConfidenceEvent({
+      id: "event-1",
+      familiarId: "cody",
+      sessionId: "session-1",
+      responseId: "response-1",
+      responseAt: "2026-06-28T06:00:00.000Z",
+      reportedAt: "2026-06-28T06:00:05.000Z",
+      overallConfidence: 50,
+      factors: {
+        toolUse: { score: 20, weight: 2, reason: "Tool failed.", signals: ["tool-failed"] },
+        context: { score: 40, weight: 1, reason: "Context tight.", signals: ["context-tight"] },
+        skills: { score: 70, weight: 1, reason: "Skill ok.", signals: [] },
+        permissions: { score: 80, weight: 1, reason: "No block.", signals: [] },
+        memory: { score: 60, weight: 1, reason: "Partial.", signals: [] },
+        instructionFit: { score: 90, weight: 1, reason: "Fit.", signals: [] },
+        evidence: { score: 30, weight: 1, reason: "Thin evidence.", signals: ["needs-source"] },
+      },
+      diagnosticTags: ["tool-failed", "needs-source"],
+      rubricVersion: "2026-06-28.v1",
+    });
+    const newer: ResponseConfidenceEvent = normalizeResponseConfidenceEvent({
+      ...base,
+      id: "event-2",
+      responseId: "response-2",
+      reportedAt: "2026-06-28T07:00:05.000Z",
+      overallConfidence: 90,
+      factors: {
+        ...base.factors,
+        toolUse: { score: 100, weight: 1, reason: "Tool clean.", signals: [] },
+        evidence: { score: 80, weight: 1, reason: "Evidence present.", signals: [] },
+      },
+      diagnosticTags: ["needs-source", "context-tight"],
+    });
+
+    const rollup = aggregateResponseConfidenceEvents([base, newer]);
+
+    assert.equal(rollup.eventCount, 2);
+    assert.equal(rollup.averageConfidence, 70);
+    assert.equal(rollup.lowConfidenceCount, 1);
+    assert.equal(rollup.newestEvent?.id, "event-2");
+    assert.equal(rollup.factorAverages.toolUse, 47);
+    assert.equal(rollup.factorAverages.evidence, 55);
+    assert.deepEqual(rollup.topDiagnosticTags.slice(0, 2), [
+      { tag: "needs-source", count: 2 },
+      { tag: "context-tight", count: 1 },
+    ]);
   });
 });
 

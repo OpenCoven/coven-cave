@@ -3,6 +3,61 @@ export type CapabilityState = "available" | "degraded" | "missing";
 export type BlockerCategory = "auth" | "tooling" | "permission" | "infra" | "context" | "skill" | "other";
 export type BlockerImpact = "low" | "medium" | "high" | "blocking";
 export type CapabilityImportance = "nice-to-have" | "important" | "blocking";
+export type ResponseConfidenceFactorKey =
+  | "toolUse"
+  | "context"
+  | "skills"
+  | "permissions"
+  | "memory"
+  | "instructionFit"
+  | "evidence";
+
+export type ResponseConfidenceFactor = {
+  score: number;
+  weight: number;
+  reason: string;
+  signals: string[];
+};
+
+export type ResponseConfidenceEvent = {
+  id: string;
+  familiarId: string;
+  sessionId: string;
+  responseId: string;
+  turnId?: string;
+  threadTitle?: string;
+  responseAt: string;
+  reportedAt: string;
+  overallConfidence: number;
+  factors: Record<ResponseConfidenceFactorKey, ResponseConfidenceFactor>;
+  diagnosticTags: string[];
+  calibrationNotes?: string;
+  rubricVersion: string;
+};
+
+export type ResponseConfidenceRollup = {
+  eventCount: number;
+  averageConfidence: number;
+  lowConfidenceCount: number;
+  factorAverages: Record<ResponseConfidenceFactorKey, number>;
+  topDiagnosticTags: { tag: string; count: number }[];
+  newestEvent: ResponseConfidenceEvent | null;
+};
+
+export const RESPONSE_CONFIDENCE_FACTOR_KEYS: ResponseConfidenceFactorKey[] = [
+  "toolUse",
+  "context",
+  "skills",
+  "permissions",
+  "memory",
+  "instructionFit",
+  "evidence",
+];
+
+export const RESPONSE_CONFIDENCE_EMPTY_STATE =
+  "No response confidence events yet. Enable response self-reporting to build confidence trends.";
+
+const DEFAULT_RESPONSE_CONFIDENCE_RUBRIC = "2026-06-28.v1";
 
 /** One settled turn of a thread, condensed for the reflection prompt. */
 export type ReflectTranscriptTurn = { role: "user" | "assistant" | "system"; text: string };
@@ -177,6 +232,69 @@ function libAvg(values: number[]): number {
 }
 function libIncrement(map: Map<string, number>, key: string) {
   map.set(key, (map.get(key) ?? 0) + 1);
+}
+
+function clampConfidence(value: number): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(1, Math.min(100, Math.round(value)));
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+export function normalizeResponseConfidenceEvent(event: ResponseConfidenceEvent): ResponseConfidenceEvent {
+  const factors = {} as Record<ResponseConfidenceFactorKey, ResponseConfidenceFactor>;
+  for (const key of RESPONSE_CONFIDENCE_FACTOR_KEYS) {
+    const factor = event.factors[key];
+    factors[key] = {
+      score: clampConfidence(factor.score),
+      weight: Math.max(0, Number.isFinite(factor.weight) ? factor.weight : 0),
+      reason: factor.reason,
+      signals: dedupeStrings(factor.signals),
+    };
+  }
+  return {
+    ...event,
+    overallConfidence: clampConfidence(event.overallConfidence),
+    factors,
+    diagnosticTags: dedupeStrings(event.diagnosticTags),
+    rubricVersion: event.rubricVersion || DEFAULT_RESPONSE_CONFIDENCE_RUBRIC,
+  };
+}
+
+export function aggregateResponseConfidenceEvents(events: ResponseConfidenceEvent[]): ResponseConfidenceRollup {
+  const normalized = events.map(normalizeResponseConfidenceEvent);
+  const sorted = [...normalized].sort((a, b) => new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime());
+  const factorAverages = {} as Record<ResponseConfidenceFactorKey, number>;
+  const tagCounts = new Map<string, number>();
+
+  for (const key of RESPONSE_CONFIDENCE_FACTOR_KEYS) {
+    let weightedScore = 0;
+    let totalWeight = 0;
+    for (const event of normalized) {
+      const factor = event.factors[key];
+      weightedScore += factor.score * factor.weight;
+      totalWeight += factor.weight;
+    }
+    factorAverages[key] = totalWeight > 0 ? Math.round(weightedScore / totalWeight) : 0;
+  }
+
+  for (const event of normalized) {
+    for (const tag of event.diagnosticTags) libIncrement(tagCounts, tag);
+  }
+
+  return {
+    eventCount: normalized.length,
+    averageConfidence: libAvg(normalized.map((event) => event.overallConfidence)),
+    lowConfidenceCount: normalized.filter((event) => event.overallConfidence < 60).length,
+    factorAverages,
+    topDiagnosticTags: [...tagCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 8)
+      .map(([tag, count]) => ({ tag, count })),
+    newestEvent: sorted[0] ?? null,
+  };
 }
 
 export function aggregateThreadSignals(reports: ThreadSelfReport[]): ThreadSignalsAggregate {

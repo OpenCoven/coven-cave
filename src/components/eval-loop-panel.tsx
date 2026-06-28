@@ -19,6 +19,7 @@ import type { IconName } from "@/lib/icon";
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
+import type { ResponseConfidenceRollup } from "@/lib/thread-self-report";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ export type EvalLoopState = {
 type Props = {
   familiarId: string;
   familiarName: string;
+  responseConfidenceRollup?: ResponseConfidenceRollup;
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -136,7 +138,7 @@ const TRACK_LABEL: Record<Track, string> = {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function EvalLoopPanel({ familiarId, familiarName }: Props) {
+export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRollup }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [state, setState] = useState<EvalLoopState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -291,6 +293,20 @@ export function EvalLoopPanel({ familiarId, familiarName }: Props) {
               <Stat label="Accepted" value={totalAccepted(state)} accent="text-[var(--color-success)]" />
               <Stat label="Reverted" value={totalReverted(state)} accent="text-[var(--color-danger)]" />
               <Stat label="Total" value={totalAccepted(state) + totalReverted(state)} />
+            </div>
+          ) : null}
+
+          {responseConfidenceRollup && responseConfidenceRollup.eventCount > 0 ? (
+            <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
+                  response confidence
+                </span>
+                <b className="font-mono text-[var(--text-primary)]">{responseConfidenceRollup.averageConfidence}</b>
+              </div>
+              <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+                {responseConfidenceRollup.lowConfidenceCount} low-confidence turns from {responseConfidenceRollup.eventCount} events
+              </p>
             </div>
           ) : null}
 

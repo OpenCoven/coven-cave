@@ -9,7 +9,12 @@ import type { ContractReport } from "@/lib/familiar-contract";
 import { deriveGrowthReport, type FamiliarGrowthReport } from "@/lib/familiar-growth-signals";
 import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-requests";
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
-import type { ThreadSelfReport } from "@/lib/thread-self-report";
+import {
+  aggregateResponseConfidenceEvents,
+  type ResponseConfidenceEvent,
+  type ResponseConfidenceRollup,
+  type ThreadSelfReport,
+} from "@/lib/thread-self-report";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 type FamiliarsResponse =
@@ -40,6 +45,10 @@ type SelfReportsResponse =
   | { ok: true; reports: ThreadSelfReport[]; total: number }
   | { ok: false; reports?: ThreadSelfReport[]; total?: number; error?: string };
 
+type ResponseConfidenceResponse =
+  | { ok: true; events: ResponseConfidenceEvent[]; total: number }
+  | { ok: false; events?: ResponseConfidenceEvent[]; total?: number; error?: string };
+
 export type FamiliarAnalyticsData = {
   familiarId: string;
   familiars: Familiar[];
@@ -49,6 +58,7 @@ export type FamiliarAnalyticsData = {
   covenEntries: CovenMemoryEntry[];
   retroSnapshot: RetroRunsSnapshot;
   threadReports: ThreadSelfReport[];
+  responseConfidenceEvents: ResponseConfidenceEvent[];
   errors: string[];
 };
 
@@ -61,6 +71,8 @@ export type FamiliarAnalyticsModel = {
   confidence: ConfidenceScore;
   healRequests: SelfHealRequest[];
   threadReports: ThreadSelfReport[];
+  responseConfidenceEvents: ResponseConfidenceEvent[];
+  responseConfidenceRollup: ResponseConfidenceRollup;
   errors: string[];
 };
 
@@ -141,6 +153,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     memoryJson,
     retroJson,
     selfReportsJson,
+    responseConfidenceJson,
   ] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
@@ -149,6 +162,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     fetchResource<CovenMemoryResponse>("/api/coven-memory", { ok: false, entries: [] }),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
     fetchResource<SelfReportsResponse>(`/api/familiars/${encodedId}/self-reports?limit=30`, { ok: false, reports: [], total: 0 }),
+    fetchResource<ResponseConfidenceResponse>(`/api/familiars/${encodedId}/response-confidence?limit=100`, { ok: false, events: [], total: 0 }),
   ]);
 
   const errors = [
@@ -158,6 +172,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     responseError(sessionsJson, "sessions unavailable"),
     responseError(memoryJson, "memory unavailable"),
     responseError(retroJson, "retro runs unavailable"),
+    responseError(responseConfidenceJson, "response confidence unavailable"),
   ].filter((error): error is string => Boolean(error));
 
   return {
@@ -169,6 +184,7 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     covenEntries: memoryJson.entries ?? [],
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
     threadReports: selfReportsJson.ok ? selfReportsJson.reports : [],
+    responseConfidenceEvents: responseConfidenceJson.ok ? responseConfidenceJson.events : [],
     errors,
   };
 }
@@ -212,6 +228,8 @@ export function buildFamiliarAnalyticsModel(data: FamiliarAnalyticsData): Famili
     confidence,
     healRequests,
     threadReports: data.threadReports,
+    responseConfidenceEvents: data.responseConfidenceEvents,
+    responseConfidenceRollup: aggregateResponseConfidenceEvents(data.responseConfidenceEvents),
     errors: data.errors,
   };
 }

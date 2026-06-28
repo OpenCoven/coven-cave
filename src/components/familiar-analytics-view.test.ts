@@ -254,6 +254,55 @@ function mockFetchFor(score: "low" | "trusted") {
         ],
       },
     ],
+    [
+      "/api/familiars/cody/response-confidence?limit=100",
+      {
+        ok: true,
+        total: 2,
+        events: [
+          {
+            id: "confidence-2",
+            familiarId: "cody",
+            sessionId: "session-2",
+            responseId: "response-2",
+            responseAt: "2026-06-25T12:04:00.000Z",
+            reportedAt: "2026-06-25T12:04:02.000Z",
+            overallConfidence: 90,
+            factors: {
+              toolUse: { score: 100, weight: 1, reason: "Tools clean.", signals: [] },
+              context: { score: 80, weight: 1, reason: "Context enough.", signals: [] },
+              skills: { score: 75, weight: 1, reason: "Skill used.", signals: [] },
+              permissions: { score: 100, weight: 1, reason: "No block.", signals: [] },
+              memory: { score: 60, weight: 1, reason: "Memory partial.", signals: [] },
+              instructionFit: { score: 85, weight: 1, reason: "On task.", signals: [] },
+              evidence: { score: 80, weight: 1, reason: "Tests present.", signals: [] },
+            },
+            diagnosticTags: ["needs-source"],
+            rubricVersion: "2026-06-28.v1",
+          },
+          {
+            id: "confidence-1",
+            familiarId: "cody",
+            sessionId: "session-1",
+            responseId: "response-1",
+            responseAt: "2026-06-25T12:00:00.000Z",
+            reportedAt: "2026-06-25T12:00:02.000Z",
+            overallConfidence: 50,
+            factors: {
+              toolUse: { score: 20, weight: 2, reason: "Tool failed.", signals: ["tool-failed"] },
+              context: { score: 40, weight: 1, reason: "Context tight.", signals: ["context-tight"] },
+              skills: { score: 70, weight: 1, reason: "Skill ok.", signals: [] },
+              permissions: { score: 80, weight: 1, reason: "No block.", signals: [] },
+              memory: { score: 60, weight: 1, reason: "Memory partial.", signals: [] },
+              instructionFit: { score: 90, weight: 1, reason: "Fit.", signals: [] },
+              evidence: { score: 30, weight: 1, reason: "Thin evidence.", signals: ["needs-source"] },
+            },
+            diagnosticTags: ["tool-failed", "needs-source"],
+            rubricVersion: "2026-06-28.v1",
+          },
+        ],
+      },
+    ],
   ]);
 
   globalThis.fetch = (async (url: RequestInfo | URL) => ({
@@ -270,6 +319,9 @@ describe("FamiliarAnalyticsView", () => {
     const model = buildFamiliarAnalyticsModel(data);
 
     assert.equal(model.confidence.label, "Low");
+    assert.equal(model.responseConfidenceRollup.eventCount, 2);
+    assert.equal(model.responseConfidenceRollup.averageConfidence, 70);
+    assert.equal(model.responseConfidenceRollup.lowConfidenceCount, 1);
     assert.match(source, /export function FamiliarAnalyticsContent/);
   });
 
@@ -309,6 +361,8 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.threadReports.length, 1);
     assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
     assert.match(source, /healRequests\.length === 1 \? "request" : "requests"/);
+    assert.match(source, /ResponseConfidenceSection/);
+    assert.match(source, /responseConfidenceRollup=\{model\.responseConfidenceRollup\}/);
     assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{model\.threadReports\}/);
     assert.match(source, /<EvalLoopPanel[\s\S]*familiarId=\{model\.familiar\.id\}/);
   });

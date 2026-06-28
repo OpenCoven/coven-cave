@@ -15,7 +15,13 @@ import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requ
 import type { ConfidenceScore } from "@/lib/familiar-confidence";
 import type { ContractReport } from "@/lib/familiar-contract";
 import { Icon } from "@/lib/icon";
-import { aggregateThreadSignals } from "@/lib/thread-self-report";
+import {
+  RESPONSE_CONFIDENCE_EMPTY_STATE,
+  RESPONSE_CONFIDENCE_FACTOR_KEYS,
+  aggregateThreadSignals,
+  type ResponseConfidenceFactorKey,
+  type ResponseConfidenceRollup,
+} from "@/lib/thread-self-report";
 
 export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
   const [data, setData] = useState<FamiliarAnalyticsData | null>(null);
@@ -111,6 +117,66 @@ const ConfidenceBreakdown = memo(function ConfidenceBreakdown({ confidence }: { 
     </FaSection>
   );
 });
+
+const RESPONSE_CONFIDENCE_LABELS: Record<ResponseConfidenceFactorKey, string> = {
+  toolUse: "Tool use",
+  context: "Context",
+  skills: "Skills",
+  permissions: "Permissions",
+  memory: "Memory",
+  instructionFit: "Instruction fit",
+  evidence: "Evidence",
+};
+
+const ResponseConfidenceSection = memo(function ResponseConfidenceSection({
+  rollup,
+}: {
+  rollup: ResponseConfidenceRollup;
+}) {
+  if (rollup.eventCount === 0) {
+    return <EmptyState compact icon="ph:chart-bar-bold" headline={RESPONSE_CONFIDENCE_EMPTY_STATE} />;
+  }
+
+  return (
+    <div className="fa-response-confidence">
+      <div className="fa-thread-score-grid">
+        <ScoreTile label="Avg confidence" value={rollup.averageConfidence} />
+        <ScoreTile label="Low confidence" value={rollup.lowConfidenceCount} />
+        <ScoreTile label="Events" value={rollup.eventCount} />
+        <ScoreTile label="Newest" value={rollup.newestEvent?.overallConfidence ?? 0} />
+      </div>
+      <div className="fa-response-factor-grid" aria-label="Response confidence factor averages">
+        {RESPONSE_CONFIDENCE_FACTOR_KEYS.map((key) => (
+          <div key={key} className="fa-response-factor">
+            <span>{RESPONSE_CONFIDENCE_LABELS[key]}</span>
+            <b>{rollup.factorAverages[key]}</b>
+            <div className="fa-factor-bar" aria-label={`${RESPONSE_CONFIDENCE_LABELS[key]} ${rollup.factorAverages[key]}`}>
+              <span className="fa-factor-segment" style={{ width: `${Math.max(0, Math.min(100, rollup.factorAverages[key]))}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="fa-response-tags" aria-label="Top response confidence diagnostic tags">
+        {rollup.topDiagnosticTags.length === 0 ? <span>No diagnostic tags yet.</span> : rollup.topDiagnosticTags.map((item) => (
+          <span key={item.tag}>
+            {item.tag} <b>{item.count}</b>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+function ScoreTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="fa-thread-score">
+      <div>
+        <span>{label}</span>
+        <b>{value}</b>
+      </div>
+    </div>
+  );
+}
 
 const SelfHealList = memo(function SelfHealList({ requests }: { requests: SelfHealRequest[] }) {
   if (requests.length === 0) {
@@ -346,6 +412,14 @@ export function FamiliarAnalyticsContent({
       <ConfidenceBreakdown confidence={model.confidence} />
 
       <FaSection
+        id="fa-response-confidence"
+        title="Response Confidence"
+        count={`${model.responseConfidenceRollup.eventCount} ${model.responseConfidenceRollup.eventCount === 1 ? "event" : "events"}`}
+      >
+        <ResponseConfidenceSection rollup={model.responseConfidenceRollup} />
+      </FaSection>
+
+      <FaSection
         id="fa-heal"
         title="Self-Heal Requests"
         count={`${healRequests.length} ${healRequests.length === 1 ? "request" : "requests"}`}
@@ -363,7 +437,11 @@ export function FamiliarAnalyticsContent({
 
       <FaSection id="fa-eval" title="Eval Loop" count={`${model.evalLoopState?.iterations?.length ?? 0} iterations`}>
         {model.familiar ? (
-          <EvalLoopPanel familiarId={model.familiar.id} familiarName={familiarName} />
+          <EvalLoopPanel
+            familiarId={model.familiar.id}
+            familiarName={familiarName}
+            responseConfidenceRollup={model.responseConfidenceRollup}
+          />
         ) : (
           <EmptyState compact icon="ph:arrows-clockwise-bold" headline="Eval loop unavailable." />
         )}
