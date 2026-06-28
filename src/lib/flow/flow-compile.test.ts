@@ -274,6 +274,12 @@ function build(nodes: Array<[string, string]>, edges: Array<[string, string]>): 
   assert.match(prompt, /\[t\]/);
   assert.match(prompt, /\[writer\]/);
   assert.ok(prompt.indexOf("[t]") < prompt.indexOf("[writer]"), "nodes listed in execution order");
+  // Hardened marker protocol: prominent, with a concrete first-node example,
+  // and an explicit "no backticks" rule (a backticked marker fails the parser).
+  assert.match(prompt, /PROGRESS PROTOCOL/);
+  assert.match(prompt, /@@step-start t\b/, "shows a concrete example using the first node id");
+  assert.match(prompt, /own line/, "tells the agent to print each marker on its own line");
+  assert.doesNotMatch(prompt, /`@@step-(start|done|fail)/, "never wraps a marker in backticks");
 }
 
 console.log("flow-compile.test.ts OK");
