@@ -1,6 +1,6 @@
 # Content Generation Flow — Design Spec
 
-**Status:** Draft (awaiting review)
+**Status:** Resolved — ready for implementation plan
 **Owner:** Val
 **Date:** 2026-06-28
 **Surface:** `src/lib/flow/flow-templates.ts` — adds a new template to the existing Flow subsystem
@@ -165,13 +165,14 @@ If `collect-and-drop` doesn't need an LLM (just file I/O), the cost drops by 1 c
 - Users discover it via the existing Flow Template Gallery (the empty-state shown on no-flows or the "From template" button).
 - No DB migration. No config changes.
 
-## Open questions for review
+## Open questions — RESOLVED (2026-06-28 brainstorm)
 
-1. **`collect-and-drop` as a pure node?** Does the existing flow runtime support a node that runs without going through a familiar? If yes, the cost drops by 1 call per run. If no, Kitty handles the write and we accept the call.
-2. **Style guide path.** Should `style-guide.md` live at the repo root, in `~/.coven/`, or somewhere else? Val has voice/tone preferences in MEMORY.md and SOUL.md but those are agent-context, not a general voice guide.
-3. **Failure annotation.** Do we want `<!-- ERROR -->` HTML comments inline in failed surface files, OR a separate `<surface>.md.errors` sidecar like `thread.md.errors`? Spec currently says both — pick one for v1, drop the other.
-4. **Twitter format.** 280 chars per chunk is the X free-tier limit. Premium accounts can post 25k chars. Worth a config option, or hardcode 280 for v1?
-5. **Discord format.** Spec says "no markdown tables, bold for emphasis, <>-wrap links" per the agent workspace conventions. Is that right for the announcement format, or do you want a different style?
-6. **Parallel-fan-out support.** The spec assumes the flow runtime supports parallel edges out of one node. The `pr-review` template fans out, so I believe yes — but it goes through a `classify` routing node that picks ONE downstream. True parallel-all (`approved` → all three drafts simultaneously) may need a verification pass during plan.
+The following six items were flagged during brainstorm and resolved before the implementation plan was written. Implementation plan should treat these as decided unless the resolution turns out to be wrong at plan-time (in which case revise this section).
 
-These are the ones worth flagging before implementation. Most can be deferred to the implementation plan, but #6 (parallel fan-out) is structural — if it doesn't exist, the template needs a different shape and the spec needs a revise.
+1. **`collect-and-drop` as a pure node?** → **Kitty does it.** Small cost, low risk, matches existing familiar-bearing-node patterns. If plan-time discovery shows the runtime already supports pure-transform nodes cleanly, the implementation plan may switch to that — but the default is Kitty.
+2. **Style guide path.** → **Repo root `style-guide.md`**, optional. Loaded once at run start, cached on run state. Voice/tone is a repo-level concern (per-project), not a harness or coven-runtime concern.
+3. **Failure annotation.** → **Sidecar file** (`<surface>.md.errors`). Inline HTML comments would pollute drafts that may otherwise be usable. Sidecars are easy to delete and don't break preview rendering. Acceptance Criterion 7 stands; the inline-HTML alternative is dropped.
+4. **Twitter chars.** → **Hardcode 280 for v1.** Premium-only 25k is non-default and adds config surface. Easy to make a node-config field later if needed.
+5. **Discord format.** → **Yes, per `AGENTS.md` conventions** — no markdown tables (bullet lists instead), bold for emphasis, `<>`-wrap multiple links to suppress embeds.
+6. **Parallel-fan-out support.** → **Verify during plan; insert a fan-out no-op node as fallback.** If `src/lib/flow/` already supports parallel edges out of one node (true parallel-all, not pr-review-style routing), use that. If not, insert a tiny `fan-out` no-op node between the gate's approved edge and the three drafts — it just splits one input edge into three output edges with no logic. Acceptable cost (1 node, no model call, no familiar).
+
