@@ -11,6 +11,7 @@ const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url)
 const comux = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const preset = await readFile(new URL("../lib/code-layout-preset.ts", import.meta.url), "utf8");
+const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 // The Chat/Split/Review presets + companion-panel toggle now ride on the chat
 // surface's Sessions/Memory tab row, in a self-contained toolbar.
 const toolbar = await readFile(new URL("./code-inline-toolbar.tsx", import.meta.url), "utf8");
@@ -34,6 +35,12 @@ assert.match(
 );
 // Desktop keeps the two-pane resizable split under its own key.
 assert.match(codeView, /panelIds: \["code-chat", "code-comux"\]/, "desktop mounts both panels in the split");
+assert.match(codeView, /data-code-layout="codex"/, "desktop Code mode advertises the Codex-like layout for scoped styling");
+assert.match(codeView, /className="cave-code-page/, "desktop Code mode owns a full-page layout shell");
+assert.match(codeView, /cave-code-page__pane cave-code-page__pane--chat/, "chat pane gets the left conversation-column wrapper");
+assert.match(codeView, /cave-code-page__pane cave-code-page__pane--workspace/, "comux pane gets the main workspace wrapper");
+assert.match(globals, /\.cave-code-page\s*\{[\s\S]*?background:[\s\S]*?\.cave-code-page__pane--workspace/, "Code page shell defines the Codex-like desktop chrome");
+assert.match(globals, /@media \(max-width: 1023px\)[\s\S]*?\.cave-code-page/, "Code page chrome has a mobile/narrow override");
 
 // ── Layout presets (Chat / Split / Review) re-weight the desktop split ───────
 // The preset chips live on the chat surface's tab row (CodeInlineToolbar) and
