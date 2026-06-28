@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { parseWorkflowStepProgress } from "./workflow-step-progress.ts";
+import { parseWorkflowStepProgress, stripStepMarkers } from "./workflow-step-progress.ts";
 
 const ORDER = ["gather", "draft", "review", "publish"];
 
@@ -77,6 +77,48 @@ const ORDER = ["gather", "draft", "review", "publish"];
 {
   const r = parseWorkflowStepProgress("we will @@step-start gather when ready", ORDER);
   assert.equal(r.markersFound, false, "inline mention is not a marker");
+}
+
+// 8. @@step-note becomes the step's one-line headline; marker lines (start/done/
+//    note) are scrubbed out of the captured detail body.
+{
+  const t = [
+    "@@step-start gather",
+    "searching the web for sources…",
+    "@@step-note gather Collected 6 sources on AI-safety policy",
+    "@@step-done gather",
+    "@@step-start draft",
+    "writing now",
+  ].join("\n");
+  const r = parseWorkflowStepProgress(t, ORDER);
+  assert.equal(r.steps[0].note, "Collected 6 sources on AI-safety policy", "note becomes the headline");
+  assert.match(r.steps[0].detail, /searching the web for sources/, "detail keeps the narration");
+  assert.doesNotMatch(r.steps[0].detail, /@@step-/, "detail has no leftover marker lines");
+  assert.equal(r.steps[1].note, undefined, "a step with no note reports undefined");
+}
+
+// 9. Last note for a step wins; notes naming unknown ids are ignored.
+{
+  const t = [
+    "@@step-start gather",
+    "@@step-note gather first guess",
+    "@@step-note gather final summary",
+    "@@step-note bogus should be dropped",
+    "@@step-done gather",
+  ].join("\n");
+  const r = parseWorkflowStepProgress(t, ORDER);
+  assert.equal(r.steps[0].note, "final summary", "the latest note wins");
+  assert.equal(r.steps.find((s) => s.id === "bogus"), undefined, "unknown-id note never creates a step");
+}
+
+// 10. stripStepMarkers scrubs every marker line and collapses the gaps.
+{
+  const out = stripStepMarkers(
+    ["@@step-start gather", "real output line", "@@step-note gather summary", "@@step-done gather", "more output"].join("\n"),
+  );
+  assert.doesNotMatch(out, /@@step-/, "no markers survive");
+  assert.match(out, /real output line/);
+  assert.match(out, /more output/);
 }
 
 console.log("workflow-step-progress.test.ts: ok");

@@ -298,12 +298,19 @@
 }
 .flow-run-step { border-radius: var(--radius-control); }
 .flow-run-step.is-selected { background: color-mix(in oklch, var(--accent-presence) 16%, transparent); }
-.flow-run-step-row {
-  width: 100%; display: flex; align-items: center; gap: 9px;
+.flow-run-step-row { width: 100%; display: flex; align-items: stretch; }
+.flow-run-step-main {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px;
   padding: 7px 8px; border: 0; border-radius: var(--radius-control);
   background: transparent; text-align: left; cursor: pointer;
 }
-.flow-run-step-row:hover { background: var(--bg-hover); }
+.flow-run-step-main:hover { background: var(--bg-hover); }
+.flow-run-step-expand {
+  flex: none; display: grid; place-items: center; width: 26px;
+  border: 0; border-radius: var(--radius-control);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.flow-run-step-expand:hover { background: var(--bg-hover); color: var(--text-secondary); }
 .flow-run-step-icon { flex: none; display: grid; place-items: center; width: 17px; height: 17px; }
 .flow-run-step-icon-pending { color: var(--text-muted); }
 .flow-run-step-icon-running { color: var(--color-warning); }
@@ -316,7 +323,11 @@
   font-size: var(--text-sm); font-weight: 600; color: var(--text-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.flow-run-step-type { font-size: var(--text-2xs); color: var(--text-muted); }
+.flow-run-step-type {
+  font-size: var(--text-2xs); color: var(--text-muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; word-break: break-word;
+}
 .flow-run-step-phase {
   flex: none; font-size: var(--text-2xs); text-transform: uppercase;
   letter-spacing: 0.04em; color: var(--text-muted);
@@ -325,9 +336,10 @@
 .flow-run-step-failed .flow-run-step-phase { color: var(--color-danger); }
 .flow-run-step-detail {
   margin: 0 8px 7px 34px; padding: 6px 8px;
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-2xs); line-height: 1.45; color: var(--text-secondary);
   background: var(--bg-base); border-radius: var(--radius-sm);
-  max-height: 84px; overflow: hidden;
+  max-height: 200px; overflow: auto;
   white-space: pre-wrap; word-break: break-word;
 }
 .flow-run-steps-stall {

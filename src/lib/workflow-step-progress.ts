@@ -10,11 +10,13 @@
  *
  *   @@step-start <id>
  *   …the agent's work / reasoning / output for that step…
+ *   @@step-note <id> <one-line summary of what the step produced>   (optional)
  *   @@step-done <id>      (or @@step-fail <id>)
  *
  * This pure parser maps that transcript back onto the manifest's ordered steps,
  * capturing the text between a step's start marker and the next marker as that
- * step's debug detail. It's deliberately tolerant: a step that started and was
+ * step's debug detail (with marker lines scrubbed out), plus the optional
+ * one-line `@@step-note` as a clean per-step headline. It's deliberately tolerant: a step that started and was
  * superseded by a later start is treated as implicitly succeeded, and a run
  * whose agent emitted no markers at all reports `markersFound: false` so the UI
  * can fall back to showing the raw transcript.
@@ -25,8 +27,14 @@ export type WorkflowStepProgressStatus = "pending" | "active" | "succeeded" | "f
 export type WorkflowStepProgress = {
   id: string;
   status: WorkflowStepProgressStatus;
-  /** Agent narration captured while this step was active — the debug detail. */
+  /** Agent narration captured while this step was active — the debug detail.
+   *  Step-marker lines (including `@@step-note`) are stripped so it reads as
+   *  clean prose. */
   detail: string;
+  /** One-line summary the agent emitted via `@@step-note <id> <text>` — a clean
+   *  headline for the step, distinct from the fuller `detail` body. Last note
+   *  for a step wins; undefined when the agent emitted none. */
+  note?: string;
 };
 
 export type WorkflowStepProgressResult = {
@@ -42,9 +50,17 @@ export type WorkflowStepProgressResult = {
 type Marker = { kind: "start" | "done" | "fail"; id: string; at: number; end: number };
 
 const MARKER_RE = /^[ \t]*@@step-(start|done|fail)[ \t]+(\S+)[ \t]*$/gim;
+// A per-step summary line: `@@step-note <id> <free text>`. Kept separate from
+// MARKER_RE so the trailing free text doesn't break the strict start/done/fail
+// shape, and so notes never act as step boundaries.
+const NOTE_RE = /^[ \t]*@@step-note[ \t]+(\S+)[ \t]+(.+?)[ \t]*$/gim;
+// Any step-marker line (start/done/fail/note) — used to scrub markers out of the
+// human-facing detail/transcript text.
+const ANY_MARKER_LINE_RE = /^[ \t]*@@step-(?:start|done|fail|note)\b.*$/gim;
 const MAX_DETAIL = 4000;
+const MAX_NOTE = 240;
 
-/** Extract every step marker in source order. */
+/** Extract every start/done/fail marker in source order. */
 function findMarkers(transcript: string): Marker[] {
   const markers: Marker[] = [];
   MARKER_RE.lastIndex = 0;
@@ -55,8 +71,32 @@ function findMarkers(transcript: string): Marker[] {
   return markers;
 }
 
+/** Extract every `@@step-note` as {id, text} in source order. */
+function findNotes(transcript: string): Array<{ id: string; text: string }> {
+  const notes: Array<{ id: string; text: string }> = [];
+  NOTE_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = NOTE_RE.exec(transcript)) !== null) {
+    notes.push({ id: m[1], text: m[2].trim() });
+  }
+  return notes;
+}
+
+/**
+ * Remove every step-marker line from agent text so the human-facing log/output
+ * reads as clean prose. Collapses the blank lines a stripped marker leaves
+ * behind. Exported so the run UI's "Session output" pane and per-step detail
+ * share one scrubbing rule.
+ */
+export function stripStepMarkers(text: string): string {
+  return (text ?? "")
+    .replace(ANY_MARKER_LINE_RE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function clip(text: string): string {
-  const trimmed = text.trim();
+  const trimmed = stripStepMarkers(text);
   return trimmed.length > MAX_DETAIL ? `${trimmed.slice(0, MAX_DETAIL)}\n…` : trimmed;
 }
 
@@ -109,7 +149,8 @@ export function parseWorkflowStepProgress(
     }
   }
 
-  // Capture each start's detail = text up to the next marker of any step.
+  // Capture each start's detail = text up to the next marker of any step, with
+  // step-marker lines scrubbed out (clip() strips them) so the body is prose.
   for (let i = 0; i < real.length; i++) {
     const mk = real[i];
     if (mk.kind !== "start") continue;
@@ -118,10 +159,19 @@ export function parseWorkflowStepProgress(
     if (slice) detail.set(mk.id, slice);
   }
 
+  // Per-step one-line summaries (last note for a step wins). Only honour notes
+  // that name a real step, mirroring the marker-id guard above.
+  const note = new Map<string, string>();
+  for (const n of findNotes(transcript ?? "")) {
+    if (!known.has(n.id) || !n.text) continue;
+    note.set(n.id, n.text.length > MAX_NOTE ? `${n.text.slice(0, MAX_NOTE)}…` : n.text);
+  }
+
   const steps: WorkflowStepProgress[] = orderedStepIds.map((id) => ({
     id,
     status: status.get(id) ?? "pending",
     detail: detail.get(id) ?? "",
+    ...(note.has(id) ? { note: note.get(id) } : {}),
   }));
 
   const done = steps.length > 0 && steps.every((s) => s.status === "succeeded" || s.status === "failed");

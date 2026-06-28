@@ -272,8 +272,11 @@ export function compileFlowPrompt(
   lines.push("- Print each marker as plain text on its own line, with nothing else on that line.");
   lines.push("- Do NOT wrap a marker in backticks or a code block, and do NOT put it inside a sentence — a marker that isn't a bare line is ignored and the run will look stuck.");
   lines.push("- Immediately before working a node, print:  @@step-start <id>");
-  lines.push("- When that node has succeeded, print:        @@step-done <id>");
-  lines.push("- If that node fails, print:                  @@step-fail <id>  (then stop unless the node says to continue).");
+  lines.push("- While working a node, narrate what you are doing in plain language — these lines become that step's expandable log, so be clear and specific (inputs used, actions taken, what you found).");
+  lines.push("- When a node succeeds, FIRST print a one-line summary of what it produced:  @@step-note <id> <summary>");
+  lines.push("  (e.g. `@@step-note research-search Collected 6 sources on EU/US AI-safety policy`). This becomes the step's headline — keep it to one line, no backticks.");
+  lines.push("- Then print:                                 @@step-done <id>");
+  lines.push("- If that node fails, print a `@@step-note <id> <why it failed>` then:  @@step-fail <id>  (then stop unless the node says to continue).");
   lines.push("- Use the exact id shown in [brackets] below — not the node's name.");
   if (order.length > 0) {
     lines.push(`For example, the very first line of your reply should be:  @@step-start ${order[0]}`);

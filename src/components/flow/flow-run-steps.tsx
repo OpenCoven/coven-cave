@@ -6,6 +6,7 @@ import { catalogNode } from "@/lib/flow/flow-catalog";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
 import type { FlowNodePhase, FlowRunProgress } from "@/lib/flow/flow-progress";
 import type { FlowRunRecord } from "@/lib/flows";
+import { stripStepMarkers } from "@/lib/workflow-step-progress";
 
 const STATUS_LABEL: Record<FlowRunRecord["status"], string> = {
   preview: "Preview",
@@ -36,10 +37,12 @@ export type FlowRunStepsProps = {
 
 /**
  * Live step list docked beside the canvas. Walks the run's steps in execution
- * order, painting each with its live phase parsed from the agent transcript and
- * surfacing the active step's narration — so the run is legible on the page, not
- * only as coloured dots scattered across the graph. Click a step to focus its
- * node.
+ * order, painting each with its live phase parsed from the agent transcript.
+ * Each step headlines its `@@step-note` summary and expands to reveal its own
+ * cleaned log (the active step auto-opens) — so the run is legible per step, not
+ * only as coloured dots scattered across the graph. Click a step's row to focus
+ * its node; click the chevron to open its log. The "Session output" pane shows
+ * the full transcript with bookkeeping markers scrubbed out.
  */
 export function FlowRunSteps({
   doc,
@@ -53,14 +56,29 @@ export function FlowRunSteps({
 }: FlowRunStepsProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
+  // Steps the user has manually expanded to read the full per-step log.
+  const [expandedSteps, setExpandedSteps] = useState<Set<string>>(() => new Set());
+  const toggleStep = (id: string) =>
+    setExpandedSteps((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
-  const transcript = progress.transcript.trim();
+  // Marker lines (`@@step-…`) are bookkeeping, not output — scrub them so the
+  // session log reads as prose. Show the most recent window.
+  const transcript = useMemo(() => stripStepMarkers(progress.transcript), [progress.transcript]);
   const nameById = useMemo(
     () => new Map(doc.nodes.map((node) => [node.id, node.name])),
     [doc.nodes],
   );
   const detailById = useMemo(
     () => new Map(progress.steps.map((step) => [step.id, step.detail])),
+    [progress.steps],
+  );
+  const noteById = useMemo(
+    () => new Map(progress.steps.map((step) => [step.id, step.note ?? ""])),
     [progress.steps],
   );
 
@@ -116,36 +134,56 @@ export function FlowRunSteps({
             const def = catalogNode(step.type);
             const name = nameById.get(step.id) ?? def?.label ?? step.type;
             const detail = detailById.get(step.id) ?? "";
+            const note = noteById.get(step.id) ?? "";
             const isActive = phase === "running";
             const isSelected = step.id === selectedNodeId;
+            // The active step auto-opens so live narration is visible; otherwise
+            // the row's log stays collapsed until the user expands it.
+            const isExpanded = expandedSteps.has(step.id) || (isActive && detail !== "");
+            const canExpand = detail !== "";
             return (
               <li
                 key={step.id}
                 className={`flow-run-step flow-run-step-${phase}${isSelected ? " is-selected" : ""}`}
               >
-                <button
-                  type="button"
-                  className="flow-run-step-row"
-                  onClick={() => onSelectNode(step.id)}
-                  title={`Focus ${name}`}
-                >
-                  <span className={`flow-run-step-icon flow-run-step-icon-${phase}`} aria-hidden>
-                    <Icon
-                      name={PHASE_ICON[phase]}
-                      width={15}
-                      className={isActive ? "flow-run-step-spin" : undefined}
-                    />
-                  </span>
-                  <span className="flow-run-step-body">
-                    <span className="flow-run-step-name">{name}</span>
-                    <span className="flow-run-step-type">{def?.label ?? step.type}</span>
-                  </span>
-                  <span className="flow-run-step-phase" aria-label={phase}>
-                    {phase}
-                  </span>
-                </button>
-                {isActive && detail && (
-                  <p className="flow-run-step-detail">{detail.slice(0, 280)}</p>
+                <div className="flow-run-step-row">
+                  <button
+                    type="button"
+                    className="flow-run-step-main"
+                    onClick={() => onSelectNode(step.id)}
+                    title={`Focus ${name}`}
+                  >
+                    <span className={`flow-run-step-icon flow-run-step-icon-${phase}`} aria-hidden>
+                      <Icon
+                        name={PHASE_ICON[phase]}
+                        width={15}
+                        className={isActive ? "flow-run-step-spin" : undefined}
+                      />
+                    </span>
+                    <span className="flow-run-step-body">
+                      <span className="flow-run-step-name">{name}</span>
+                      {/* A `@@step-note` summary headlines what the step produced;
+                          fall back to the node type when there's no note yet. */}
+                      <span className="flow-run-step-type">{note || def?.label || step.type}</span>
+                    </span>
+                    <span className="flow-run-step-phase" aria-label={phase}>
+                      {phase}
+                    </span>
+                  </button>
+                  {canExpand && (
+                    <button
+                      type="button"
+                      className="flow-run-step-expand"
+                      onClick={() => toggleStep(step.id)}
+                      aria-expanded={isExpanded}
+                      title={isExpanded ? "Hide step log" : "Show step log"}
+                    >
+                      <Icon name={isExpanded ? "ph:caret-down" : "ph:caret-right"} width={12} />
+                    </button>
+                  )}
+                </div>
+                {isExpanded && detail && (
+                  <pre className="flow-run-step-detail">{detail}</pre>
                 )}
               </li>
             );
