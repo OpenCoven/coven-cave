@@ -17,49 +17,60 @@ const globals = await readFile(new URL("../app/globals.css", import.meta.url), "
 const toolbar = await readFile(new URL("./code-inline-toolbar.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 
-// ── CodeView is a single tabbed surface — Chat · Files · Changes ─────────────
-// One tab fills the surface at a time (Codex-style, no side-by-side split). All
-// three panes stay mounted (hidden, not unmounted) so chat/terminals/preview/
-// diff keep their state across tab taps.
-assert.match(codeView, /type CodeTab = "chat" \| "files" \| "changes"/, "CodeView models the three tabs");
-assert.match(codeView, /<Tabs[\s\S]*?ariaLabel="Code view"[\s\S]*?value=\{tab\}/, "a shared Tabs control switches Chat/Files/Changes");
-assert.match(codeView, /id: "files"[\s\S]*?id: "chat"[\s\S]*?id: "changes"/, "the tab bar lists files (leftmost), then chat and changes");
-assert.match(codeView, /useState<CodeTab>\("chat"\)/, "the Code surface opens on the Chat tab by default");
-assert.match(codeView, /cave-code-page__pane--chat[\s\S]*?tab === "chat" \? "flex" : "hidden"/, "the chat pane shows only on the Chat tab (hidden, not unmounted)");
-assert.match(codeView, /cave-code-page__pane--workspace[\s\S]*?tab !== "chat" \? "flex" : "hidden"/, "the comux pane backs both the Files and Changes tabs");
-assert.match(codeView, /\{chat\}/, "the chat pane renders the chat slot");
-// Files and Changes are two faces of ONE comux instance: it's cloned with a
-// controlled rightView tied to the active tab, so toggling Files↔Changes never
-// remounts the terminals or preview. comux routes its own diff-first / file-open
-// switches back through onRightViewChange to select the matching tab.
+// ── CodeView is the Codex split — conversation + Environment rail ────────────
+// The familiar conversation owns the center column; a right-hand Environment rail
+// hosts the working tree (Changes — the git diff — and Files — tree + preview +
+// terminal). Both columns stay mounted side by side so chat/terminals/preview/diff
+// keep their state; the rail collapses to a thin strip to give the chat full width.
+assert.match(codeView, /type EnvView = "changes" \| "files"/, "CodeView models the rail's two views");
+assert.match(codeView, /const \[envOpen, setEnvOpen\] = useState\(true\)/, "the Environment rail starts open");
+assert.match(codeView, /const \[envView, setEnvView\] = useState<EnvView>\("changes"\)/, "the rail opens on Changes by default");
+assert.match(codeView, /cave-code-page__conversation[\s\S]*?\{chat\}/, "the center column renders the chat slot");
+assert.match(codeView, /aria-label="Environment"/, "the right rail is the labelled Environment panel");
+assert.match(codeView, /cave-code-page__env-title">Environment</, "the rail header is titled Environment");
+// The Changes/Files segment drives ONE comux instance (cloned with a controlled
+// rightView), so toggling Changes↔Files never remounts the terminals or preview.
+assert.match(codeView, /cave-code-page__env-tab[\s\S]*?v === "changes" \? "ph:git-diff" : "ph:file-code"[\s\S]*?v === "changes" \? "Changes" : "Files"/, "the rail header lists the Changes and Files views");
+assert.match(codeView, /onClick=\{\(\) => setEnvView\(v\)\}/, "the rail segment switches the comux view");
 assert.match(
   codeView,
-  /cloneElement\([\s\S]*?rightView: tab === "changes" \? "changes" : "files",[\s\S]*?onRightViewChange,/,
-  "comux is cloned with a controlled rightView bound to the active tab",
+  /cloneElement\([\s\S]*?rightView: envView,[\s\S]*?onRightViewChange,/,
+  "comux is cloned with a controlled rightView bound to the active rail view",
 );
 assert.match(
   codeView,
-  /const onRightViewChange = useCallback\(\(next: "files" \| "changes"\) => setTab\(next\)/,
-  "comux's own view switches (file-open, diff-first) select the matching tab",
+  /const onRightViewChange = useCallback\(\(next: EnvView\) => \{[\s\S]*?setEnvView\(next\);[\s\S]*?setEnvOpen\(true\)/,
+  "comux's own view switches (file-open, diff-first) open the rail on the matching view",
 );
+// The rail can be collapsed (its own control, or the Chat preset) and reopened
+// from a thin rail button — both faces of the same envOpen state.
+assert.match(codeView, /aria-label="Hide Environment"[\s\S]*?onClick=\{\(\) => setEnvOpen\(false\)\}/, "the rail header collapses the Environment");
+assert.match(codeView, /cave-code-page__env-rail[\s\S]*?aria-label="Show Environment"[\s\S]*?onClick=\{\(\) => setEnvOpen\(true\)\}/, "a thin rail reopens a collapsed Environment");
+assert.match(codeView, /data-env-open=\{envOpen \? "1" : "0"\}/, "the shell advertises the rail's open state");
 assert.match(codeView, /data-code-layout="codex"/, "Code mode advertises the Codex-like layout for scoped styling");
-assert.match(codeView, /className="cave-code-page/, "Code mode owns a full-page layout shell");
-assert.match(codeView, /cave-code-page__pane cave-code-page__pane--chat/, "chat pane keeps the conversation-column wrapper");
-assert.match(codeView, /cave-code-page__pane cave-code-page__pane--workspace/, "comux pane keeps the main workspace wrapper");
-assert.match(globals, /\.cave-code-page\s*\{[\s\S]*?background:[\s\S]*?\.cave-code-page__pane--workspace/, "Code page shell defines the Codex-like chrome");
+assert.match(codeView, /className="cave-code-page cave-code-page--codex/, "Code mode owns a full-page Codex layout shell");
+assert.match(codeView, /cave-code-page__conversation flex/, "the conversation keeps the center-column wrapper");
+assert.match(codeView, /cave-code-page__env flex/, "the Environment keeps the rail wrapper");
+assert.match(globals, /\.cave-code-page\s*\{[\s\S]*?background:[\s\S]*?\.cave-code-page__env/, "Code page shell defines the Codex-like chrome");
 assert.match(globals, /@media \(max-width: 1023px\)[\s\S]*?\.cave-code-page/, "Code page chrome has a mobile/narrow override");
-// The side-by-side split is gone: no resizable Group/Panel, no panel-resize presets.
-assert.doesNotMatch(codeView, /orientation="horizontal"/, "the resizable split is replaced by tabs");
+// No resizable split: the columns are a plain flex layout, the rail a fixed width.
+assert.doesNotMatch(codeView, /orientation="horizontal"/, "no resizable Group drives the split");
 assert.doesNotMatch(codeView, /usePanelRef|panelRef=\{chatPanelRef\}|CODE_PRESET_CHAT_SIZE/, "no chat-panel resize logic remains");
 
-// ── Layout presets (Chat / Split / Review) map onto the tabs ─────────────────
+// ── Layout presets (Chat / Split / Review) map onto the Codex split ──────────
 // The preset chips live on the chat surface's tab row (CodeInlineToolbar) and
-// broadcast CODE_PRESET_EVENT; CodeView maps Chat→Chat, Split→Files, Review→Changes.
+// broadcast CODE_PRESET_EVENT; CodeView maps Chat→collapse the rail, Split→Files,
+// Review→Changes.
 assert.match(codeView, /addEventListener\(CODE_PRESET_EVENT/, "CodeView listens for the preset broadcast");
 assert.match(
   codeView,
-  /preset === "chat" \? "chat" : preset === "review" \? "changes" : "files"/,
-  "each preset selects its matching tab",
+  /if \(preset === "chat"\) \{\s*setEnvOpen\(false\);/,
+  "the Chat preset collapses the Environment rail",
+);
+assert.match(
+  codeView,
+  /setEnvView\(preset === "review" \? "changes" : "files"\)/,
+  "Review opens the diff, Split opens the files",
 );
 assert.match(toolbar, /writeCodePreset\(next\)/, "selecting a preset persists the chip");
 assert.match(toolbar, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per preset");
