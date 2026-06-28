@@ -9483,6 +9483,26 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 
 /* KPI tiles — scannable summary row. */
+/* Insight banner — one-line synthesized read of the familiar's state. */
+.fa-insight {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border-hairline);
+  border-left: 3px solid var(--fa-insight-accent, var(--text-muted));
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--fa-insight-accent, var(--text-muted)) 8%, var(--bg-surface));
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+.fa-insight svg { flex: 0 0 auto; width: 16px; height: 16px; color: var(--fa-insight-accent, var(--text-muted)); }
+.fa-insight--good { --fa-insight-accent: var(--color-success); }
+.fa-insight--warn { --fa-insight-accent: var(--color-warning); }
+.fa-insight--bad { --fa-insight-accent: var(--color-danger); }
+
 .fa-kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));

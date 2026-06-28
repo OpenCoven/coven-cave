@@ -381,6 +381,15 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /className=\{`fa-kpi\$\{kpi\.tone/, "KPI tiles tint by tone");
   });
 
+  it("synthesizes a plain-language insight banner above the KPIs", () => {
+    assert.match(source, /import \{ deriveAnalyticsInsight \} from "@\/lib\/familiar-analytics-insight"/, "view uses the insight helper");
+    assert.match(source, /<AnalyticsInsightBanner model=\{model\} healRequestCount=\{healRequests\.length\}/, "banner is rendered with the model");
+    assert.match(source, /deriveAnalyticsInsight\(model, healRequestCount\)/, "banner derives the insight from the model");
+    assert.match(source, /fa-insight--\$\{insight\.tone\}/, "banner is tinted by tone");
+    // Idle eval loop reads as "Not run", not a bare dash.
+    assert.match(source, /evals === 0 \? "Not run"/, "empty eval tile is meaningful");
+  });
+
   it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {
     const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
     const block = globals.match(/\.fa-page\s*\{[^}]*\}/);

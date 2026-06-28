@@ -265,6 +265,7 @@ export const SUITES = {
     "src/lib/familiar-growth-signals.test.ts",
     "src/lib/familiar-growth-route-wiring.test.ts",
     "src/lib/familiar-confidence.test.ts",
+    "src/lib/familiar-analytics-insight.test.ts",
     "src/lib/familiar-heal-requests.test.ts",
     "src/lib/thread-self-report.test.ts",
     "src/components/familiar-analytics-view.test.ts",

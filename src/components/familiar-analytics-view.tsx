@@ -15,6 +15,7 @@ import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requ
 import type { ConfidenceScore } from "@/lib/familiar-confidence";
 import type { ContractReport } from "@/lib/familiar-contract";
 import { Icon } from "@/lib/icon";
+import { deriveAnalyticsInsight } from "@/lib/familiar-analytics-insight";
 import {
   RESPONSE_CONFIDENCE_EMPTY_STATE,
   RESPONSE_CONFIDENCE_FACTOR_KEYS,
@@ -283,8 +284,8 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
       key: "evals",
       icon: "ph:arrows-clockwise-bold",
       label: "Eval acceptance",
-      value: acceptRate == null ? "—" : `${Math.round(acceptRate * 100)}%`,
-      sub: `${evals} iteration${evals === 1 ? "" : "s"}`,
+      value: acceptRate != null ? `${Math.round(acceptRate * 100)}%` : evals === 0 ? "Not run" : "—",
+      sub: evals === 0 && acceptRate == null ? "loop idle" : `${evals} iteration${evals === 1 ? "" : "s"}`,
       tone: acceptRate == null ? undefined : acceptRate >= 0.6 ? "good" : acceptRate >= 0.3 ? "warn" : "bad",
     },
     {
@@ -312,6 +313,29 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
     },
   ];
 }
+
+const INSIGHT_ICON: Record<"good" | "warn" | "bad", Parameters<typeof Icon>[0]["name"]> = {
+  good: "ph:check-circle-bold",
+  warn: "ph:warning-circle",
+  bad: "ph:warning-circle",
+};
+
+/** One-line plain-language read of the familiar's state — turns numbers into meaning. */
+const AnalyticsInsightBanner = memo(function AnalyticsInsightBanner({
+  model,
+  healRequestCount,
+}: {
+  model: FamiliarAnalyticsModel;
+  healRequestCount: number;
+}) {
+  const insight = deriveAnalyticsInsight(model, healRequestCount);
+  return (
+    <p className={`fa-insight fa-insight--${insight.tone}`} role="note">
+      <Icon name={INSIGHT_ICON[insight.tone]} aria-hidden />
+      <span>{insight.text}</span>
+    </p>
+  );
+});
 
 /** Scannable KPI row — surfaces growth, eval, contract, and heal signals up top. */
 const FamiliarKpis = memo(function FamiliarKpis({
@@ -406,6 +430,8 @@ export function FamiliarAnalyticsContent({
         </div>
         <ConfidenceRing confidence={model.confidence} />
       </header>
+
+      <AnalyticsInsightBanner model={model} healRequestCount={healRequests.length} />
 
       <FamiliarKpis model={model} healRequestCount={healRequests.length} />
 
