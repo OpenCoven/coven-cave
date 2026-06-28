@@ -326,4 +326,12 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /contract\.properties\.filter\(\(p\) => p\.pass\)/, "contract KPI shows the pass rate");
     assert.match(source, /className=\{`fa-kpi\$\{kpi\.tone/, "KPI tiles tint by tone");
   });
+
+  it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {
+    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    const block = globals.match(/\.fa-page\s*\{[^}]*\}/);
+    assert.ok(block, ".fa-page rule should exist");
+    assert.match(block![0], /overflow-y:\s*auto/, ".fa-page must scroll its own content on the full-page route");
+    assert.doesNotMatch(block![0], /min-height:\s*100%/, ".fa-page should fill (height:100%), not just min-height, so overflow can trigger");
+  });
 });

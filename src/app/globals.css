@@ -9364,7 +9364,13 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   display: flex;
   flex-direction: column;
   gap: 18px;
-  min-height: 100%;
+  /* Own the vertical scroll: html/body set `overflow: hidden`, so on the
+     full-page analytics route (a flex child of the h-full body) this view must
+     scroll itself or taller content is clipped with no scrollbar. height:100%
+     resolves against the definite-height parent in both the page route and the
+     inspector tab panel. */
+  height: 100%;
+  overflow-y: auto;
   padding: 24px;
   background: var(--bg-base);
   color: var(--text-primary);
