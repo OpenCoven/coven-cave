@@ -176,6 +176,7 @@ export const SUITES = {
     "src/components/familiar-studio.test.ts",
     "src/components/familiar-studio-look-tab.test.ts",
     "src/components/familiars-view.test.ts",
+    "src/components/create-familiar-dialog.test.ts",
     "src/components/workspace-familiars-landing.test.ts",
     "src/components/board-kanban-keyboard.test.ts",
     "src/components/board-inspector-a11y.test.ts",
