@@ -280,6 +280,10 @@ function build(nodes: Array<[string, string]>, edges: Array<[string, string]>): 
   assert.match(prompt, /@@step-start t\b/, "shows a concrete example using the first node id");
   assert.match(prompt, /own line/, "tells the agent to print each marker on its own line");
   assert.doesNotMatch(prompt, /`@@step-(start|done|fail)/, "never wraps a marker in backticks");
+  // Per-step logging: asks for a one-line @@step-note summary and plain-language
+  // narration so each step's log/headline is clear.
+  assert.match(prompt, /@@step-note <id>/, "asks for a one-line per-step summary note");
+  assert.match(prompt, /narrate/i, "asks the agent to narrate each step's work");
 }
 
 console.log("flow-compile.test.ts OK");
