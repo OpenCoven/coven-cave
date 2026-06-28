@@ -255,8 +255,8 @@ assert.match(
 );
 assert.match(
   source,
-  /mermaidPlugin\(\{ theme: "dark", config: \{ securityLevel: "strict" \} \}\)/,
-  "mermaid is initialized with the dark theme and a strict (safe) security level",
+  /mermaidPlugin\(\{[\s\S]{0,180}theme: "dark"[\s\S]{0,180}securityLevel: "strict", suppressErrorRendering: true/,
+  "mermaid is initialized with the dark theme, strict security, and syntax-error SVG rendering disabled",
 );
 assert.match(
   source,
