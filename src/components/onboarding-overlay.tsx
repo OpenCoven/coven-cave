@@ -1900,7 +1900,22 @@ function StepRuntimes({
         </button>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
-        {chatHarnesses.map((adapter) => {
+        {chatHarnesses.length === 0 ? (
+          <div className="rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)]/35 px-3 py-4 text-[11px] leading-5 text-[var(--text-secondary)] sm:col-span-2">
+            <p className="font-medium text-[var(--text-primary)]">
+              Couldn&rsquo;t load the runtime list.
+            </p>
+            <p className="mt-1">
+              Cave couldn&rsquo;t reach the runtime probe. Click{" "}
+              <span className="font-medium text-[var(--text-primary)]">
+                Refresh
+              </span>{" "}
+              above, or restart Cave so its PATH applies — installed runtimes
+              show up here once detected.
+            </p>
+          </div>
+        ) : (
+          chatHarnesses.map((adapter) => {
           const oneClick = HARNESS_ONE_CLICK[adapter.id];
           const result = oneClick ? installResults[oneClick.target] : undefined;
           const job = oneClick ? installJobs[oneClick.target] : undefined;
@@ -2027,7 +2042,8 @@ function StepRuntimes({
               ) : null}
             </div>
           );
-        })}
+          })
+        )}
       </div>
       {nodeHint ? (
         <p className="text-[11px] leading-4 text-[var(--color-warning)]">
