@@ -24,6 +24,12 @@ import {
   type ThreadEvalState,
 } from "@/lib/evals/eval-model";
 import { runSuite, type RunProgress } from "@/lib/evals/eval-runner";
+import {
+  instantiateTemplate,
+  templatesByCategory,
+  type EvalTemplate,
+} from "@/lib/evals/eval-templates";
+import { Modal } from "@/components/ui/modal";
 import "@/styles/evals.css";
 
 type Props = {
@@ -117,6 +123,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const dirty = useMemo(() => (draft ? JSON.stringify(draft) !== savedJson : false), [draft, savedJson]);
@@ -213,6 +220,24 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     setRuns([]);
     setTab("suites");
   }, []);
+
+  const createFromTemplate = useCallback(
+    (template: EvalTemplate) => {
+      const suite = instantiateTemplate(template, {
+        makeId: freshId,
+        now: nowIso(),
+        familiarId: activeFamiliarId || familiars[0]?.id,
+      });
+      setSuites((prev) => [suite, ...prev]);
+      setSelectedId(suite.id);
+      setDraft(suite);
+      setSavedJson(""); // unsaved until the user saves
+      setRuns([]);
+      setTab("suites");
+      setShowTemplates(false);
+    },
+    [activeFamiliarId, familiars],
+  );
 
   const patchDraft = useCallback((patch: Partial<EvalSuite>) => {
     setDraft((d) => (d ? { ...d, ...patch } : d));
@@ -327,7 +352,16 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       <aside className="evals-rail">
         <div className="evals-rail-head">
           <span className="evals-rail-title">Evals</span>
-          <button type="button" className="evals-icon-btn" onClick={createSuite} title="New eval suite" aria-label="New eval suite">
+          <button
+            type="button"
+            className="evals-icon-btn"
+            onClick={() => setShowTemplates(true)}
+            title="New suite from template"
+            aria-label="New suite from template"
+          >
+            <Icon name="ph:sparkle" width={14} />
+          </button>
+          <button type="button" className="evals-icon-btn" onClick={createSuite} title="New blank eval suite" aria-label="New blank eval suite">
             <Icon name="ph:plus" width={14} />
           </button>
         </div>
@@ -455,9 +489,14 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
               headline="Run evals on your familiars"
               subtitle="Build a suite of test cases, grade each answer with deterministic checks or an LLM judge, and track pass rates over time."
               actions={
-                <button type="button" className="evals-btn evals-btn-primary" onClick={createSuite}>
-                  <Icon name="ph:plus" width={14} /> New eval suite
-                </button>
+                <>
+                  <button type="button" className="evals-btn evals-btn-primary" onClick={() => setShowTemplates(true)}>
+                    <Icon name="ph:sparkle" width={14} /> Start from template
+                  </button>
+                  <button type="button" className="evals-btn" onClick={createSuite}>
+                    <Icon name="ph:plus" width={14} /> Blank suite
+                  </button>
+                </>
               }
             />
           )
@@ -486,7 +525,70 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
           />
         )}
       </section>
+
+      <TemplateGallery
+        open={showTemplates}
+        onClose={() => setShowTemplates(false)}
+        onPick={createFromTemplate}
+      />
     </div>
+  );
+}
+
+// ---- Template gallery ------------------------------------------------------
+
+function TemplateGallery({
+  open,
+  onClose,
+  onPick,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onPick: (template: EvalTemplate) => void;
+}) {
+  const groups = useMemo(() => templatesByCategory(), []);
+  const total = useMemo(() => groups.reduce((n, g) => n + g.templates.length, 0), [groups]);
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      wide
+      breadcrumb={["Evals", "Templates"]}
+      ariaLabel="Eval suite templates"
+    >
+      <p className="evals-tpl-intro">
+        Start from a ready-made suite, then tweak the cases and graders. {total} templates across {groups.length} categories.
+      </p>
+      <div className="evals-tpl-groups">
+        {groups.map((group) => (
+          <section key={group.category} className="evals-tpl-group" aria-label={group.label}>
+            <h3 className="evals-tpl-group-title">{group.label}</h3>
+            <div className="evals-tpl-grid">
+              {group.templates.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  className="evals-tpl-card"
+                  onClick={() => onPick(template)}
+                  title={`Use the “${template.name}” template`}
+                >
+                  <span className="evals-tpl-card-icon">
+                    <Icon name={template.icon as IconName} width={18} aria-hidden />
+                  </span>
+                  <span className="evals-tpl-card-body">
+                    <b className="evals-tpl-card-name">{template.name}</b>
+                    <small className="evals-tpl-card-desc">{template.description}</small>
+                    <span className="evals-tpl-card-meta">
+                      {template.cases.length} case{template.cases.length === 1 ? "" : "s"}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </Modal>
   );
 }
 
