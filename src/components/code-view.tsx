@@ -1,145 +1,84 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { Group, Panel, Separator, useDefaultLayout, usePanelRef } from "react-resizable-panels";
-import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { cloneElement, isValidElement, useCallback, useEffect, useState, type ReactElement, type ReactNode } from "react";
 import { Tabs } from "@/components/ui/tabs";
-import { Icon } from "@/lib/icon";
-import { useIsMobile } from "@/lib/use-viewport";
 import {
-  CODE_PRESET_CHAT_SIZE,
   CODE_PRESET_EVENT,
-  readCodePreset,
   type CodePreset,
 } from "@/lib/code-layout-preset";
 
-const CODE_GROUP_ID = "cave.code.widths.v1";
-
-const codeStorage = {
-  getItem(key: string): string | null {
-    if (typeof window === "undefined") return null;
-    try {
-      return window.localStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  },
-  setItem(key: string, value: string): void {
-    if (typeof window === "undefined") return;
-    try {
-      window.localStorage.setItem(key, value);
-    } catch {
-      /* ignore — strict privacy mode or storage quota */
-    }
-  },
-};
-
 type Props = {
-  /** Familiar conversation pane (left). */
+  /** Familiar conversation pane. */
   chat: ReactNode;
-  /** Code pane (right): the comux surface — file tree + editable preview +
-   *  terminal + project search. */
+  /** Code pane: the comux surface — file tree + editable preview + terminal +
+   *  project search + the working-tree changes review. */
   comux: ReactNode;
 };
 
 /**
- * Unified Code workspace (mode "code"): a familiar chat on the left beside the
- * full comux coding surface on the right, in one resizable two-pane split. A
- * thin layout shell — both panes are existing components (ChatSurface,
- * ComuxView) composed here, not rewritten. The split width persists under its
- * own storage key, independent of the chat surface's and shell's layouts.
+ * Unified Code workspace (mode "code"): a single tabbed surface with three
+ * tabs — Chat · Files · Changes. Instead of a side-by-side split, one tab fills
+ * the surface at a time (Codex-style). All three panes stay mounted (hidden, not
+ * unmounted) so the conversation, terminals, file preview, and diff review keep
+ * their state across tab switches.
+ *
+ * The Files and Changes tabs are two faces of the same ComuxView instance: it is
+ * rendered once and told which sub-view to show via the controlled `rightView`
+ * prop, so switching Files↔Changes never remounts the terminals or preview.
  */
-type MobileTab = "chat" | "code";
+type CodeTab = "chat" | "files" | "changes";
 
 export function CodeView({ chat, comux }: Props) {
-  const isMobile = useIsMobile();
-  const [mobileTab, setMobileTab] = useState<MobileTab>("chat");
+  // Default to Files: choosing "Code" over "Chat" is a request to see code, and
+  // the conversation is one tab away. Edits auto-surface the Changes tab.
+  const [tab, setTab] = useState<CodeTab>("files");
 
-  // Mobile: a side-by-side split is unusable on a phone, so show one pane
-  // full-screen with a Chat / Code segmented switcher. Both panes stay mounted
-  // (hidden, not unmounted) so the terminal/chat keep their state across taps.
-  if (isMobile) {
-    return (
-      <div className="cave-code-page cave-code-page--mobile flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="cave-code-page__mobile-tabs flex shrink-0 items-center justify-center gap-1 border-b border-[var(--border-hairline)] p-1.5">
-          <Tabs
-            variant="segment"
-            size="sm"
-            ariaLabel="Code view"
-            value={mobileTab}
-            onChange={setMobileTab}
-            items={[
-              { id: "chat", label: "Chat", icon: "ph:chats" },
-              { id: "code", label: "Code", icon: "ph:code" },
-            ]}
-          />
-        </div>
-        <div className={`cave-code-page__mobile-pane min-h-0 flex-1 flex-col ${mobileTab === "chat" ? "flex" : "hidden"}`}>{chat}</div>
-        <div className={`cave-code-page__mobile-pane min-h-0 flex-1 flex-col ${mobileTab === "code" ? "flex" : "hidden"}`}>{comux}</div>
-      </div>
-    );
-  }
+  // Files and Changes are the same comux surface in two states. Render it once
+  // and drive its right pane from the active tab; comux routes its own
+  // diff-first auto-switch / file-open events back through onRightViewChange so
+  // an agent edit (or a file click in chat) lands us on the right tab.
+  const onRightViewChange = useCallback((next: "files" | "changes") => setTab(next), []);
+  const comuxNode = isValidElement(comux)
+    ? cloneElement(comux as ReactElement<Record<string, unknown>>, {
+        rightView: tab === "changes" ? "changes" : "files",
+        onRightViewChange,
+      })
+    : comux;
 
-  return (
-    <DesktopCodeView chat={chat} comux={comux} />
-  );
-}
-
-function DesktopCodeView({ chat, comux }: Props) {
-  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: CODE_GROUP_ID,
-    panelIds: ["code-chat", "code-comux"],
-    storage: codeStorage,
-  });
-  const chatPanelRef = usePanelRef();
-
+  // The Chat/Split/Review preset chips (CodeInlineToolbar, on the chat tab row)
+  // map onto the tabs: Chat → Chat, Split → Files, Review → Changes. comux also
+  // nudges Files/Changes via onRightViewChange, so this only has to own the Chat
+  // case — but mapping all three keeps the behaviour explicit and self-contained.
   useEffect(() => {
-    // Apply the stored preset's width ONLY on a first-ever load (no dragged
-    // layout persisted yet), so we never clobber a manual drag on reload — the
-    // "default only when unstored" idiom. After this, useDefaultLayout restores
-    // the persisted sizes.
-    if (codeStorage.getItem(CODE_GROUP_ID) == null) {
-      chatPanelRef.current?.resize(CODE_PRESET_CHAT_SIZE[readCodePreset()]);
-    }
-    // The preset chips now live on the chat surface's tab row (CodeInlineToolbar)
-    // and broadcast CODE_PRESET_EVENT; here we own the chat-pane resize. Going
-    // through onLayoutChanged persists the size, and there's no remount so the
-    // comux terminals/file preview keep their state.
     const onPreset = (e: Event) => {
       const preset = (e as CustomEvent<{ preset?: CodePreset }>).detail?.preset;
-      if (preset) chatPanelRef.current?.resize(CODE_PRESET_CHAT_SIZE[preset]);
+      if (!preset) return;
+      setTab(preset === "chat" ? "chat" : preset === "review" ? "changes" : "files");
     };
     window.addEventListener(CODE_PRESET_EVENT, onPreset as EventListener);
     return () => window.removeEventListener(CODE_PRESET_EVENT, onPreset as EventListener);
-    // run once on mount
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="cave-code-page flex min-h-0 min-w-0 flex-1 flex-col" data-code-layout="codex">
-      <Group
-        className="cave-code-page__split flex min-h-0 min-w-0 flex-1"
-        orientation="horizontal"
-        defaultLayout={defaultLayout}
-        onLayoutChanged={onLayoutChanged}
-      >
-        <Panel
-          panelRef={chatPanelRef}
-          id="code-chat"
-          className="cave-code-page__resizable cave-code-page__resizable--chat flex min-h-0 min-w-0"
-          defaultSize="38%"
-          minSize="28%"
-          maxSize="75%"
-        >
-          <div className="cave-code-page__pane cave-code-page__pane--chat flex min-h-0 min-w-0 flex-1 flex-col">{chat}</div>
-        </Panel>
-        <Separator className="cave-code-page__separator shell-separator hidden lg:flex">
-          <SeparatorHandle orientation="col" />
-        </Separator>
-        <Panel id="code-comux" className="cave-code-page__resizable cave-code-page__resizable--workspace hidden min-h-0 min-w-0 lg:flex" minSize="35%">
-          <div className="cave-code-page__pane cave-code-page__pane--workspace flex min-h-0 min-w-0 flex-1 flex-col">{comux}</div>
-        </Panel>
-      </Group>
+    <div className="cave-code-page cave-code-page--tabbed flex min-h-0 min-w-0 flex-1 flex-col" data-code-layout="codex">
+      <div className="cave-code-page__tabs flex shrink-0 items-center justify-center gap-1 border-b border-[var(--border-hairline)] p-1.5">
+        <Tabs
+          variant="segment"
+          size="sm"
+          ariaLabel="Code view"
+          value={tab}
+          onChange={(id) => setTab(id as CodeTab)}
+          items={[
+            { id: "chat", label: "Chat", icon: "ph:chats" },
+            { id: "files", label: "Files", icon: "ph:file-code" },
+            { id: "changes", label: "Changes", icon: "ph:git-diff" },
+          ]}
+        />
+      </div>
+      {/* Inactive panes are hidden (not unmounted) so terminals/chat/preview keep
+          their state across tab taps. */}
+      <div className={`cave-code-page__pane cave-code-page__pane--chat min-h-0 flex-1 flex-col ${tab === "chat" ? "flex" : "hidden"}`}>{chat}</div>
+      <div className={`cave-code-page__pane cave-code-page__pane--workspace min-h-0 flex-1 flex-col ${tab !== "chat" ? "flex" : "hidden"}`}>{comuxNode}</div>
     </div>
   );
 }

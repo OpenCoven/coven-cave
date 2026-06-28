@@ -103,6 +103,13 @@ type Props = {
    *  from other ComuxView instances (e.g. the Code workspace keeps its own
    *  terminals separate from the standalone Terminal surface). */
   storageNamespace?: string;
+  /** Controlled right-pane view. When provided (with onRightViewChange), the
+   *  parent owns the Files↔Changes selection — the Code workspace drives it from
+   *  its top-level tabs — and comux hides its own inline Files/Changes toggle and
+   *  collapses the file-tree column while Changes is shown (so Changes is a
+   *  full-width tab). Omit both for the standalone, self-toggling behaviour. */
+  rightView?: "files" | "changes";
+  onRightViewChange?: (view: "files" | "changes") => void;
 };
 
 type ProjectFilePreview =
@@ -390,7 +397,7 @@ function SortableProjectRow({
   );
 }
 
-export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "" }: Props) {
+export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "", rightView: rightViewProp, onRightViewChange }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const layoutKey = STORAGE_LAYOUT + storageNamespace;
   const sessionsKey = STORAGE_SESSIONS + storageNamespace;
@@ -434,7 +441,20 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [projectDetailCollapsed, setProjectDetailCollapsed] = useState(false);
   const [filePreviewCollapsed, setFilePreviewCollapsed] = useState(false);
   // Right pane view: the file preview, or the project's git changes/diff review.
-  const [rightView, setRightView] = useState<"files" | "changes">("files");
+  // Controllable: when the parent passes onRightViewChange (the Code workspace's
+  // top-level Files/Changes tabs), the prop wins and every setRightView call is
+  // forwarded up; otherwise this is local, self-toggling state. The setter name
+  // stays `setRightView` so the diff-first/auto-switch logic below is unchanged.
+  const [rightViewState, setRightViewState] = useState<"files" | "changes">("files");
+  const isControlledRightView = onRightViewChange != null;
+  const rightView = isControlledRightView ? (rightViewProp ?? "files") : rightViewState;
+  const setRightView = useCallback(
+    (next: "files" | "changes") => {
+      if (onRightViewChange) onRightViewChange(next);
+      else setRightViewState(next);
+    },
+    [onRightViewChange],
+  );
   // Diff-first review: auto-switch to Changes the first time an agent run
   // produces edits — but never fight an explicit user choice. pinnedRightView
   // flips once the user clicks a toggle or opens a file; prevChangeCount tracks
@@ -1628,7 +1648,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
           <div className="flex min-w-0 min-h-0 flex-1 flex-col">
             {selectedProject ? (
               <div className="flex min-h-0 flex-1 flex-col xl:flex-row">
-                {projectDetailCollapsed ? (
+                {/* File-tree column (projects · search · sessions · tree) — the
+                    Files tab. Hidden in controlled Changes mode so the diff
+                    review fills the surface as its own tab. */}
+                {!(isControlledRightView && rightView === "changes") && (projectDetailCollapsed ? (
                   <button
                     type="button"
                     aria-label="Show project details"
@@ -2053,7 +2076,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     </div>
                     </div>
                   </div>
-                )}
+                ))}
 
                 {filePreviewCollapsed ? (
                   <button
@@ -2073,7 +2096,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 ) : (
                   <div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">
                   {/* Files / Changes toggle — review the familiar's working-tree
-                      diffs (revert + checkpoints) without leaving the surface. */}
+                      diffs (revert + checkpoints) without leaving the surface.
+                      Hidden when a parent owns the selection (Code workspace's
+                      top-level tabs); shown for the standalone surface. */}
+                  {!isControlledRightView && (
                   <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1.5">
                     <div className="flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
                       <button
@@ -2103,6 +2129,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       <Icon name="ph:sidebar-simple-fill" width={14} />
                     </button>
                   </div>
+                  )}
                   {rightView === "changes" ? (
                     <div className="min-h-0 flex-1 overflow-hidden">
                       <SessionChangesInner

@@ -17,46 +17,50 @@ const globals = await readFile(new URL("../app/globals.css", import.meta.url), "
 const toolbar = await readFile(new URL("./code-inline-toolbar.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 
-// ── CodeView is a two-pane resizable shell, chat | comux ─────────────────────
-assert.match(codeView, /orientation="horizontal"/, "CodeView lays the panes out horizontally");
-assert.match(codeView, /id="code-chat"[\s\S]*?\{chat\}/, "the left pane renders the chat slot");
-assert.match(codeView, /id="code-comux"[\s\S]*?\{comux\}/, "the right pane renders the comux slot");
-// Its own persisted layout key, independent of chat/shell.
-assert.match(codeView, /CODE_GROUP_ID = "cave\.code\.widths\.v1"/, "CodeView persists under its own storage key");
-// Mobile: a Chat / Code segmented switcher swaps which pane is full-screen
-// (a horizontal split is unusable on a phone); both panes stay mounted so
-// their state survives tab taps.
-assert.match(codeView, /if \(isMobile\) \{/, "mobile gets a dedicated layout branch");
-assert.match(codeView, /onChange=\{setMobileTab\}/, "mobile has a Chat/Code tab switcher via shared Tabs");
+// ── CodeView is a single tabbed surface — Chat · Files · Changes ─────────────
+// One tab fills the surface at a time (Codex-style, no side-by-side split). All
+// three panes stay mounted (hidden, not unmounted) so chat/terminals/preview/
+// diff keep their state across tab taps.
+assert.match(codeView, /type CodeTab = "chat" \| "files" \| "changes"/, "CodeView models the three tabs");
+assert.match(codeView, /<Tabs[\s\S]*?ariaLabel="Code view"[\s\S]*?value=\{tab\}/, "a shared Tabs control switches Chat/Files/Changes");
+assert.match(codeView, /id: "chat"[\s\S]*?id: "files"[\s\S]*?id: "changes"/, "the tab bar lists chat, files and changes");
+assert.match(codeView, /cave-code-page__pane--chat[\s\S]*?tab === "chat" \? "flex" : "hidden"/, "the chat pane shows only on the Chat tab (hidden, not unmounted)");
+assert.match(codeView, /cave-code-page__pane--workspace[\s\S]*?tab !== "chat" \? "flex" : "hidden"/, "the comux pane backs both the Files and Changes tabs");
+assert.match(codeView, /\{chat\}/, "the chat pane renders the chat slot");
+// Files and Changes are two faces of ONE comux instance: it's cloned with a
+// controlled rightView tied to the active tab, so toggling Files↔Changes never
+// remounts the terminals or preview. comux routes its own diff-first / file-open
+// switches back through onRightViewChange to select the matching tab.
 assert.match(
   codeView,
-  /mobileTab === "chat" \? "flex" : "hidden"[\s\S]*?mobileTab === "code" \? "flex" : "hidden"/,
-  "the inactive mobile pane is hidden (not unmounted) so state persists",
+  /cloneElement\([\s\S]*?rightView: tab === "changes" \? "changes" : "files",[\s\S]*?onRightViewChange,/,
+  "comux is cloned with a controlled rightView bound to the active tab",
 );
-// Desktop keeps the two-pane resizable split under its own key.
-assert.match(codeView, /panelIds: \["code-chat", "code-comux"\]/, "desktop mounts both panels in the split");
-assert.match(codeView, /data-code-layout="codex"/, "desktop Code mode advertises the Codex-like layout for scoped styling");
-assert.match(codeView, /className="cave-code-page/, "desktop Code mode owns a full-page layout shell");
-assert.match(codeView, /cave-code-page__pane cave-code-page__pane--chat/, "chat pane gets the left conversation-column wrapper");
-assert.match(codeView, /cave-code-page__pane cave-code-page__pane--workspace/, "comux pane gets the main workspace wrapper");
-assert.match(globals, /\.cave-code-page\s*\{[\s\S]*?background:[\s\S]*?\.cave-code-page__pane--workspace/, "Code page shell defines the Codex-like desktop chrome");
+assert.match(
+  codeView,
+  /const onRightViewChange = useCallback\(\(next: "files" \| "changes"\) => setTab\(next\)/,
+  "comux's own view switches (file-open, diff-first) select the matching tab",
+);
+assert.match(codeView, /data-code-layout="codex"/, "Code mode advertises the Codex-like layout for scoped styling");
+assert.match(codeView, /className="cave-code-page/, "Code mode owns a full-page layout shell");
+assert.match(codeView, /cave-code-page__pane cave-code-page__pane--chat/, "chat pane keeps the conversation-column wrapper");
+assert.match(codeView, /cave-code-page__pane cave-code-page__pane--workspace/, "comux pane keeps the main workspace wrapper");
+assert.match(globals, /\.cave-code-page\s*\{[\s\S]*?background:[\s\S]*?\.cave-code-page__pane--workspace/, "Code page shell defines the Codex-like chrome");
 assert.match(globals, /@media \(max-width: 1023px\)[\s\S]*?\.cave-code-page/, "Code page chrome has a mobile/narrow override");
+// The side-by-side split is gone: no resizable Group/Panel, no panel-resize presets.
+assert.doesNotMatch(codeView, /orientation="horizontal"/, "the resizable split is replaced by tabs");
+assert.doesNotMatch(codeView, /usePanelRef|panelRef=\{chatPanelRef\}|CODE_PRESET_CHAT_SIZE/, "no chat-panel resize logic remains");
 
-// ── Layout presets (Chat / Split / Review) re-weight the desktop split ───────
+// ── Layout presets (Chat / Split / Review) map onto the tabs ─────────────────
 // The preset chips live on the chat surface's tab row (CodeInlineToolbar) and
-// broadcast CODE_PRESET_EVENT; code-view owns the chat-panel resize via a
-// listener — no remount, so the comux terminals/preview keep their state. The
-// chip selection persists under its own key; pane sizes persist under CODE_GROUP_ID.
-assert.match(codeView, /usePanelRef/, "desktop uses a panel ref to drive presets");
-assert.match(codeView, /panelRef=\{chatPanelRef\}/, "the chat panel takes the preset handle via panelRef");
-assert.match(codeView, /addEventListener\(CODE_PRESET_EVENT/, "code-view listens for the preset broadcast");
-assert.match(codeView, /chatPanelRef\.current\?\.resize\(CODE_PRESET_CHAT_SIZE\[/, "presets resize the chat panel (comux fills the rest)");
-assert.match(toolbar, /writeCodePreset\(next\)/, "selecting a preset persists the chip");
+// broadcast CODE_PRESET_EVENT; CodeView maps Chat→Chat, Split→Files, Review→Changes.
+assert.match(codeView, /addEventListener\(CODE_PRESET_EVENT/, "CodeView listens for the preset broadcast");
 assert.match(
   codeView,
-  /codeStorage\.getItem\(CODE_GROUP_ID\) == null/,
-  "the stored preset is applied only when no dragged layout exists (no clobbering manual drags)",
+  /preset === "chat" \? "chat" : preset === "review" \? "changes" : "files"/,
+  "each preset selects its matching tab",
 );
+assert.match(toolbar, /writeCodePreset\(next\)/, "selecting a preset persists the chip");
 assert.match(toolbar, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per preset");
 // The toolbar is mounted on the Code surface's tab row + carries the panel toggle.
 // (Standalone chat shows the Power-mode toggle on that row instead of null.)

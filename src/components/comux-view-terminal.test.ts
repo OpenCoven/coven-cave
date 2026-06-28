@@ -241,7 +241,10 @@ assert.match(
 );
 assert.match(
   source,
-  /ProjectTree[\s\S]*?<\/div>\s*<\/div>\s*<\/div>\s*\)\}\s*\{filePreviewCollapsed \? \([\s\S]*?<div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">[\s\S]*?previewPath/,
+  // The file-tree column is wrapped in a `{!(isControlledRightView && rightView === "changes") && (…)}`
+  // guard (so Changes is a full-width tab when the Code workspace controls the
+  // view), hence the doubled `))}` closing the tree-column ternary.
+  /ProjectTree[\s\S]*?<\/div>\s*<\/div>\s*<\/div>\s*\)\)\}\s*\{filePreviewCollapsed \? \([\s\S]*?<div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">[\s\S]*?previewPath/,
   "Projects preview pane should be the right full-height half of the split",
 );
 assert.match(
