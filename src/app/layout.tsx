@@ -19,6 +19,8 @@ import { LiveRegionProvider } from "@/components/ui/live-region";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { PwaRegister } from "@/components/pwa-register";
 import { DevCacheResetScript } from "@/components/dev-cache-reset-script";
+import { WebVitalsReporter } from "@/components/perf/web-vitals-reporter";
+import { PerfOverlay } from "@/components/perf/perf-overlay";
 
 export const metadata: Metadata = {
   title: "CovenCave",
@@ -86,6 +88,8 @@ export default function RootLayout({
             <CornerRadiusController />
             <RemoteThemeController />
             <PwaRegister />
+            <WebVitalsReporter />
+            <PerfOverlay />
             {children}
             </ConfirmProvider>
           </LiveRegionProvider>
