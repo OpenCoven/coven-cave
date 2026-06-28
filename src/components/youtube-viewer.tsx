@@ -2,6 +2,7 @@
 
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { useTauriPlatform } from "@/lib/tauri-platform";
 
 // The playlist the panel opens on by default.
 const DEFAULT_PLAYLIST_ID = "PLp61JrZcGK7-uuXOWzezyZkz61RQb0XOG";
@@ -11,6 +12,7 @@ const ID_RE = /^[a-zA-Z0-9_-]{11}$/;
 const PLAYLIST_RE = /^[a-zA-Z0-9_-]{12,}$/;
 
 const COLLAPSED_KEY = "cave:youtube:collapsed";
+const NATIVE_FRAME_LABEL = "cave-youtube-native-frame";
 
 // Shared params: `list=...` exposes YouTube's in-player playlist list/menu so you
 // can browse and jump between entries without leaving the panel.
@@ -59,73 +61,37 @@ export function parseYoutubeEmbed(raw: string): string | null {
   return null;
 }
 
-// ── YouTube IFrame Player API ────────────────────────────────────────────────
-// The collapsed "now playing" bar needs the real video title and live volume,
-// which a bare <iframe> can't provide. Adding `enablejsapi=1` and attaching a
-// YT.Player lets us read getVideoData()/getVolume() and drive
-// play/pause/next/volume from native controls.
-
-type YTPlayer = {
-  getVolume: () => number;
-  setVolume: (v: number) => void;
-  isMuted: () => boolean;
-  mute: () => void;
-  unMute: () => void;
-  playVideo: () => void;
-  pauseVideo: () => void;
-  nextVideo: () => void;
-  previousVideo: () => void;
-  getVideoData: () => { title?: string } | undefined;
-  destroy?: () => void;
+type TauriBridge = {
+  invoke: <T = unknown>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 };
 
-type YTNamespace = {
-  Player: new (
-    el: Element,
-    opts: { events?: Record<string, (e: { target: YTPlayer; data?: number }) => void> },
-  ) => YTPlayer;
-  PlayerState: { PLAYING: number };
-};
-
-type YTWindow = Window & {
-  YT?: YTNamespace;
-  onYouTubeIframeAPIReady?: () => void;
-};
-
-let ytApiPromise: Promise<YTNamespace> | null = null;
-
-function loadYouTubeApi(): Promise<YTNamespace> {
-  if (typeof window === "undefined") return Promise.reject(new Error("no window"));
-  const w = window as YTWindow;
-  if (w.YT?.Player) return Promise.resolve(w.YT);
-  if (ytApiPromise) return ytApiPromise;
-  ytApiPromise = new Promise<YTNamespace>((resolve) => {
-    const prev = w.onYouTubeIframeAPIReady;
-    w.onYouTubeIframeAPIReady = () => {
-      prev?.();
-      if (w.YT) resolve(w.YT);
-    };
-    if (!document.querySelector("script[data-youtube-iframe-api]")) {
-      const s = document.createElement("script");
-      s.src = "https://www.youtube.com/iframe_api";
-      s.async = true;
-      s.dataset.youtubeIframeApi = "";
-      document.head.appendChild(s);
-    }
-  });
-  return ytApiPromise;
+async function loadTauriBridge(): Promise<TauriBridge | null> {
+  if (typeof window === "undefined") return null;
+  if ((window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ === undefined) return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return { invoke };
 }
 
-/** Append the params the Player API needs without mutating the logical src. */
-function withJsApi(src: string): string {
+function frameTitle(src: string): string {
   try {
     const url = new URL(src);
-    url.searchParams.set("enablejsapi", "1");
-    url.searchParams.set("playsinline", "1");
-    if (typeof window !== "undefined") url.searchParams.set("origin", window.location.origin);
-    return url.toString();
+    const list = url.searchParams.get("list");
+    const videoId = url.pathname.split("/").filter(Boolean).at(-1);
+    if (videoId && ID_RE.test(videoId)) return `YouTube ${videoId}`;
+    if (list) return "YouTube playlist";
   } catch {
-    return src;
+    // fall through
+  }
+  return "YouTube";
+}
+
+function youtubeThumbnailFromEmbed(src: string): string | null {
+  try {
+    const url = new URL(src);
+    const videoId = url.pathname.split("/").filter(Boolean).at(-1);
+    return videoId && ID_RE.test(videoId) ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null;
+  } catch {
+    return null;
   }
 }
 
@@ -134,24 +100,20 @@ function withJsApi(src: string): string {
  * rail's resizable bottom pane (the "Video" toggle). Paste any YouTube link,
  * video id, or playlist; the embed reloads when you hit Load / Enter.
  *
- * Collapses to a full-width, minimal-height "now playing" bar (transport +
- * title + volume) so it keeps playing in the background while the rest of the
- * rail reclaims the height. The iframe stays mounted across the collapse so
- * audio never stops.
+ * Desktop Tauri uses a native child webview aligned to the frame placeholder.
+ * Plain browser dev gets a non-interactive visual frame with the same footprint.
  */
 export function YoutubeViewer({ defaultSrc = DEFAULT_SRC }: { defaultSrc?: string }) {
   const [src, setSrc] = useState(defaultSrc);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-
   const [collapsed, setCollapsed] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [volume, setVolume] = useState(100);
-  const [title, setTitle] = useState("");
-
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const playerRef = useRef<YTPlayer | null>(null);
+  const [bridge, setBridge] = useState<TauriBridge | null>(null);
+  const platform = useTauriPlatform();
+  const nativeBrowserAvailable = platform === "desktop";
+  const nativeFrameRef = useRef<HTMLDivElement>(null);
+  const title = frameTitle(src);
+  const playing = false;
 
   // Restore the last collapse choice so the player reopens the way it was left.
   useEffect(() => {
@@ -171,49 +133,85 @@ export function YoutubeViewer({ defaultSrc = DEFAULT_SRC }: { defaultSrc?: strin
     }
   }, []);
 
-  const syncTitle = useCallback(() => {
-    try {
-      const data = playerRef.current?.getVideoData?.();
-      if (data?.title) setTitle(data.title);
-    } catch {
-      // getVideoData can throw before the player is ready
-    }
-  }, []);
-
-  // Attach a YT.Player to the live iframe so the controls work. Recreated when
-  // the source changes (the iframe remounts via its `key`).
   useEffect(() => {
+    if (platform === "unknown") return;
+    if (!nativeBrowserAvailable) {
+      setBridge(null);
+      return;
+    }
     let cancelled = false;
-    void loadYouTubeApi().then((YT) => {
-      if (cancelled || !iframeRef.current) return;
-      playerRef.current = new YT.Player(iframeRef.current, {
-        events: {
-          onReady: (e) => {
-            try {
-              setVolume(Math.round(e.target.getVolume()));
-              setMuted(e.target.isMuted());
-            } catch {
-              // defaults stand in until the next state change
-            }
-            syncTitle();
-          },
-          onStateChange: (e) => {
-            setPlaying(e.data === YT.PlayerState.PLAYING);
-            syncTitle();
-          },
-        },
-      });
+    void loadTauriBridge().then((next) => {
+      if (!cancelled) setBridge(next);
     });
     return () => {
       cancelled = true;
-      try {
-        playerRef.current?.destroy?.();
-      } catch {
-        // the keyed iframe may already be gone — destroy is best-effort
-      }
-      playerRef.current = null;
     };
-  }, [src, syncTitle]);
+  }, [nativeBrowserAvailable, platform]);
+
+  useEffect(() => {
+    if (!bridge || !nativeBrowserAvailable) return;
+    const surface = nativeFrameRef.current;
+    if (!surface) return;
+
+    let raf = 0;
+    let hidden = false;
+    let last = { x: 0, y: 0, w: 0, h: 0 };
+
+    const hide = () => {
+      if (!hidden) {
+        hidden = true;
+        void bridge.invoke("browser_hide", { label: NATIVE_FRAME_LABEL });
+      }
+    };
+
+    const tick = () => {
+      const rect = surface.getBoundingClientRect();
+      if (collapsed || rect.width <= 1 || rect.height <= 1) {
+        hide();
+      } else {
+        const next = {
+          x: Math.round(rect.left),
+          y: Math.round(rect.top),
+          w: Math.round(rect.width),
+          h: Math.round(rect.height),
+        };
+        if (hidden || next.x !== last.x || next.y !== last.y || next.w !== last.w || next.h !== last.h) {
+          last = next;
+          hidden = false;
+          void bridge.invoke("browser_set_bounds", { label: NATIVE_FRAME_LABEL, ...next });
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    const timer = window.setTimeout(() => {
+      const rect = surface.getBoundingClientRect();
+      if (collapsed || rect.width <= 1 || rect.height <= 1) {
+        hide();
+        return;
+      }
+      hidden = false;
+      last = {
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        w: Math.round(rect.width),
+        h: Math.round(rect.height),
+      };
+      void bridge.invoke("browser_navigate", {
+        label: NATIVE_FRAME_LABEL,
+        url: src,
+        ...last,
+        readOnlyUrl: src,
+      });
+      raf = requestAnimationFrame(tick);
+    }, 80);
+
+    return () => {
+      window.clearTimeout(timer);
+      cancelAnimationFrame(raf);
+      void bridge.invoke("browser_close", { label: NATIVE_FRAME_LABEL });
+    };
+  }, [bridge, collapsed, nativeBrowserAvailable, src]);
 
   const load = () => {
     const next = parseYoutubeEmbed(input);
@@ -225,54 +223,6 @@ export function YoutubeViewer({ defaultSrc = DEFAULT_SRC }: { defaultSrc?: strin
     setSrc(next);
     setInput("");
   };
-
-  const togglePlay = useCallback(() => {
-    const p = playerRef.current;
-    if (!p) return;
-    if (playing) p.pauseVideo();
-    else p.playVideo();
-  }, [playing]);
-
-  const toggleMute = useCallback(() => {
-    const p = playerRef.current;
-    if (!p) return;
-    if (muted) {
-      p.unMute();
-      setMuted(false);
-      if (volume === 0) {
-        p.setVolume(50);
-        setVolume(50);
-      }
-    } else {
-      p.mute();
-      setMuted(true);
-    }
-  }, [muted, volume]);
-
-  const changeVolume = useCallback(
-    (next: number) => {
-      const p = playerRef.current;
-      setVolume(next);
-      if (!p) return;
-      p.setVolume(next);
-      if (next === 0) {
-        p.mute();
-        setMuted(true);
-      } else if (muted) {
-        p.unMute();
-        setMuted(false);
-      }
-    },
-    [muted],
-  );
-
-  const effectiveVolume = muted ? 0 : volume;
-  const volumeIcon =
-    effectiveVolume === 0
-      ? "ph:speaker-slash-fill"
-      : effectiveVolume < 50
-        ? "ph:speaker-low-fill"
-        : "ph:speaker-high-fill";
 
   return (
     <div className="youtube-viewer" data-collapsed={collapsed ? "true" : undefined}>
@@ -315,63 +265,23 @@ export function YoutubeViewer({ defaultSrc = DEFAULT_SRC }: { defaultSrc?: strin
         </p>
       ) : null}
       <div className="youtube-viewer__frame">
-        <iframe
-          key={src}
-          ref={iframeRef}
-          src={withJsApi(src)}
-          title="YouTube video player"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerPolicy="strict-origin-when-cross-origin"
-          allowFullScreen
-        />
+        <div
+          ref={nativeFrameRef}
+          className="youtube-viewer__native-frame"
+          aria-label="Embedded YouTube native web frame"
+        >
+          {!bridge || !nativeBrowserAvailable ? <YoutubeDevFrame src={src} /> : null}
+        </div>
       </div>
-      {/* Mini player — shown only when collapsed (CSS). Full width, one row:
-          a primary play button, next, a now-playing equalizer + title, volume,
-          and an expand caret. */}
+      {/* Mini player — shown only when collapsed (CSS). It is a status row, not
+          a custom playback controller. */}
       <div className="youtube-viewer__mini">
-        <button
-          type="button"
-          className="youtube-viewer__mini-btn youtube-viewer__mini-btn--primary focus-ring"
-          onClick={togglePlay}
-          aria-label={playing ? "Pause" : "Play"}
-          title={playing ? "Pause" : "Play"}
-        >
-          <Icon name={playing ? "ph:pause-fill" : "ph:play-fill"} width={13} />
-        </button>
-        <button
-          type="button"
-          className="youtube-viewer__mini-btn focus-ring"
-          onClick={() => playerRef.current?.nextVideo()}
-          aria-label="Next"
-          title="Next"
-        >
-          <Icon name="ph:skip-forward-fill" width={13} />
-        </button>
         <span className="youtube-viewer__nowplaying">
           <Equalizer playing={playing} />
           <span className="youtube-viewer__mini-title" title={title || "YouTube"}>
             {title || "YouTube"}
           </span>
         </span>
-        <button
-          type="button"
-          className="youtube-viewer__mini-btn focus-ring"
-          onClick={toggleMute}
-          aria-label={effectiveVolume === 0 ? "Unmute" : "Mute"}
-          title={effectiveVolume === 0 ? "Unmute" : "Mute"}
-        >
-          <Icon name={volumeIcon} width={14} />
-        </button>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={effectiveVolume}
-          onChange={(e) => changeVolume(Number(e.target.value))}
-          className="youtube-viewer__volume"
-          aria-label="Volume"
-          style={{ "--vol": `${effectiveVolume}%` } as CSSProperties}
-        />
         <button
           type="button"
           className="youtube-viewer__chevron focus-ring"
@@ -384,12 +294,36 @@ export function YoutubeViewer({ defaultSrc = DEFAULT_SRC }: { defaultSrc?: strin
       </div>
       {/* Vertical "now playing" strip — shown only when the whole rail is
           collapsed to its peek width (CSS, under .companion-rail--video-strip).
-          The iframe keeps playing audio (hidden); this is a calm, upright
-          now-playing indicator instead of a sideways-rotated video. The rail's
-          transparent overlay handles tap-to-expand. */}
+          This is a calm, upright now-playing indicator instead of a sideways
+          video frame. The rail's transparent overlay handles tap-to-expand. */}
       <div className="youtube-viewer__strip" aria-hidden="true">
         <Equalizer playing={playing} className="youtube-viewer__eq--lg" />
         <span className="youtube-viewer__strip-title">{title || "YouTube"}</span>
+      </div>
+    </div>
+  );
+}
+
+function YoutubeDevFrame({ src }: { src: string }) {
+  const thumbnail = youtubeThumbnailFromEmbed(src);
+  return (
+    <div
+      className="youtube-viewer__dev-frame"
+      aria-hidden="true"
+      style={thumbnail ? ({ backgroundImage: `linear-gradient(rgb(0 0 0 / 0.22), rgb(0 0 0 / 0.4)), url(${thumbnail})` } as CSSProperties) : undefined}
+    >
+      <div className="youtube-viewer__dev-frame-top">
+        <span />
+        <span />
+        <span />
+      </div>
+      <div className="youtube-viewer__dev-frame-play">
+        <Icon name="ph:play-fill" width={26} />
+      </div>
+      <div className="youtube-viewer__dev-frame-bottom">
+        <span className="youtube-viewer__dev-frame-progress" />
+        <span className="youtube-viewer__dev-frame-chip" />
+        <span className="youtube-viewer__dev-frame-chip youtube-viewer__dev-frame-chip--short" />
       </div>
     </div>
   );

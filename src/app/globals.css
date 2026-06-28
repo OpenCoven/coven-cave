@@ -4645,7 +4645,8 @@ button:active > .edge-rail-chip {
   background: #000;
 }
 
-.youtube-viewer__frame iframe {
+.youtube-viewer__native-frame,
+.youtube-viewer__dev-frame {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -4653,11 +4654,107 @@ button:active > .edge-rail-chip {
   border: 0;
 }
 
+.youtube-viewer__native-frame {
+  overflow: hidden;
+  background: #000;
+}
+
+.youtube-viewer__dev-frame {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  background-color: #050505;
+  background-position: center;
+  background-size: cover;
+}
+
+.youtube-viewer__dev-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(to bottom, rgb(0 0 0 / 0.44), transparent 34%, rgb(0 0 0 / 0.66)),
+    radial-gradient(circle at center, rgb(255 255 255 / 0.08), transparent 34%);
+}
+
+.youtube-viewer__dev-frame-top,
+.youtube-viewer__dev-frame-bottom {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+}
+
+.youtube-viewer__dev-frame-top span {
+  display: block;
+  height: 7px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.72);
+}
+
+.youtube-viewer__dev-frame-top span:nth-child(1) {
+  width: 42%;
+}
+
+.youtube-viewer__dev-frame-top span:nth-child(2) {
+  width: 18px;
+  margin-left: auto;
+}
+
+.youtube-viewer__dev-frame-top span:nth-child(3) {
+  width: 18px;
+}
+
+.youtube-viewer__dev-frame-play {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  width: 64px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgb(0 0 0 / 0.72);
+  color: #fff;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.36);
+}
+
+.youtube-viewer__dev-frame-bottom {
+  gap: 9px;
+}
+
+.youtube-viewer__dev-frame-progress {
+  display: block;
+  height: 4px;
+  flex: 1;
+  border-radius: 999px;
+  background:
+    linear-gradient(to right, #ff0033 0 38%, rgb(255 255 255 / 0.35) 38% 100%);
+}
+
+.youtube-viewer__dev-frame-chip {
+  display: block;
+  width: 18px;
+  height: 8px;
+  border-radius: 2px;
+  border: 1px solid rgb(255 255 255 / 0.6);
+}
+
+.youtube-viewer__dev-frame-chip--short {
+  width: 13px;
+}
+
 /* ── Collapsed video strip ──────────────────────────────────────────────
    When the companion rail is collapsed to its peek width while the Video
    pane is on, it becomes a thin sliver showing only the video, rotated 90°
-   so it runs top→bottom. The YouTube iframe stays mounted across the
-   collapse (CSS-only restyle, no remount) so playback continues. */
+   so it runs top→bottom. The native frame is hidden in the collapsed strip
+   and the visible area becomes the now-playing indicator. */
 
 /* Re-expand affordance — hidden until the rail is a strip, where it becomes a
    full-area transparent overlay so tapping anywhere on the video expands the
@@ -4724,9 +4821,8 @@ button:active > .edge-rail-chip {
 }
 
 /* In the narrow peek strip we DON'T show the video sideways (a 16:9 frame
-   rotated into a ~55px column is a head-tilt sliver). Keep the iframe mounted
-   as an invisible sliver so audio never stops, and hand the strip to a calm,
-   upright "now playing" indicator instead. */
+   rotated into a ~55px column is a head-tilt sliver). Keep the frame as an
+   invisible sliver and hand the strip to a calm, upright indicator instead. */
 .companion-rail--video-strip .youtube-viewer__frame {
   flex: 0 0 1px;
   min-height: 0;
@@ -4778,7 +4874,7 @@ button:active > .edge-rail-chip {
    In the open (full-width) rail, the Video pane can collapse straight down to
    a single full-width row — transport + title + volume — so a playlist keeps
    playing in the background while the rest of the rail reclaims the height.
-   The iframe stays mounted (slivered, not unmounted) so audio never stops. */
+   The frame parks as a sliver while the visible area becomes a status row. */
 
 /* Caret toggle, shared by the URL bar (collapse) and the mini bar (expand). */
 .youtube-viewer__chevron {
@@ -4810,8 +4906,8 @@ button:active > .edge-rail-chip {
   display: none;
 }
 
-/* Keep the iframe rendered (a 1px, transparent sliver) so playback continues,
-   but hand the visible row to the mini bar. */
+/* Keep the frame parked as a 1px transparent sliver, but hand the visible row
+   to the mini bar. */
 .youtube-viewer[data-collapsed="true"] .youtube-viewer__frame {
   flex: 0 0 1px;
   min-height: 0;
@@ -4849,21 +4945,6 @@ button:active > .edge-rail-chip {
 
 .youtube-viewer__mini-btn:active {
   transform: scale(0.92);
-}
-
-/* The play/pause control reads as primary: a filled accent disc. */
-.youtube-viewer__mini-btn--primary {
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-contrast, #fff);
-}
-
-.youtube-viewer__mini-btn--primary:hover {
-  background: var(--accent);
-  color: var(--accent-contrast, #fff);
-  filter: brightness(1.08);
 }
 
 /* Equalizer + title share the flexible middle so the title truncates, not the
@@ -4928,44 +5009,6 @@ button:active > .edge-rail-chip {
 
 @media (prefers-reduced-motion: reduce) {
   .youtube-viewer__eq[data-playing="true"] i { animation: none; transform: scaleY(0.7); }
-}
-
-/* Slim accent volume slider — the filled portion follows --vol (set inline). */
-.youtube-viewer__volume {
-  flex-shrink: 0;
-  width: 72px;
-  height: 4px;
-  margin: 0 2px;
-  border-radius: 999px;
-  appearance: none;
-  -webkit-appearance: none;
-  cursor: pointer;
-  background: linear-gradient(
-    to right,
-    var(--accent) 0,
-    var(--accent) var(--vol, 100%),
-    var(--border-strong) var(--vol, 100%),
-    var(--border-strong) 100%
-  );
-}
-
-.youtube-viewer__volume::-webkit-slider-thumb {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 11px;
-  height: 11px;
-  border-radius: 999px;
-  background: var(--text-primary);
-  border: 0;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35);
-}
-
-.youtube-viewer__volume::-moz-range-thumb {
-  width: 11px;
-  height: 11px;
-  border-radius: 999px;
-  background: var(--text-primary);
-  border: 0;
 }
 
 /* Pull the bottom pane down to just the mini bar and let the top pane take the
