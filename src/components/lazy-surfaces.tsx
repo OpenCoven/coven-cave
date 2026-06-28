@@ -14,6 +14,7 @@
 
 import dynamic from "next/dynamic";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { markStart, markEnd } from "@/lib/perf/marks";
 
 function SurfaceFallback() {
   // Fills the surface area while the chunk loads so the layout doesn't jump.
@@ -24,27 +25,41 @@ function SurfaceFallback() {
   );
 }
 
+// Wrap a lazy loader so the chunk's fetch+parse time is recorded as a
+// `surface-load:<name>` perf measure (visible in the ?perf=1 overlay). This is
+// the runtime cost of code-splitting these surfaces — worth watching so a
+// lazy chunk doesn't grow into a noticeable open-delay.
+function timed<C>(name: string, loader: () => Promise<C>): () => Promise<C> {
+  return () => {
+    markStart(`surface-load:${name}`);
+    return loader().then((component) => {
+      markEnd(`surface-load:${name}`);
+      return component;
+    });
+  };
+}
+
 export const ComuxView = dynamic(
-  () => import("@/components/comux-view").then((m) => m.ComuxView),
+  timed("comux", () => import("@/components/comux-view").then((m) => m.ComuxView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const GitHubView = dynamic(
-  () => import("@/components/github-view").then((m) => m.GitHubView),
+  timed("github", () => import("@/components/github-view").then((m) => m.GitHubView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const FlowView = dynamic(
-  () => import("@/components/flow/flow-view").then((m) => m.FlowView),
+  timed("flow", () => import("@/components/flow/flow-view").then((m) => m.FlowView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const EvalsView = dynamic(
-  () => import("@/components/evals/evals-view").then((m) => m.EvalsView),
+  timed("evals", () => import("@/components/evals/evals-view").then((m) => m.EvalsView)),
   { ssr: false, loading: SurfaceFallback },
 );
 
 export const CalendarView = dynamic(
-  () => import("@/components/calendar-view").then((m) => m.CalendarView),
+  timed("calendar", () => import("@/components/calendar-view").then((m) => m.CalendarView)),
   { ssr: false, loading: SurfaceFallback },
 );
