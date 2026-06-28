@@ -26,6 +26,8 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
+import { SettingsTabbed } from "./settings-section-tabs";
+import type { TabItem } from "@/components/ui/tabs";
 import {
   CORNER_RADIUS_OPTIONS,
   CORNER_RADIUS_LABELS,
@@ -316,9 +318,9 @@ export function SettingsShell() {
           {section === "daemon"   && <DaemonSection />}
           {section === "familiars" && <FamiliarsSection />}
           {section === "permissions" && <PermissionsSection />}
-          {section === "addons"   && <AddonsSection />}
+          {section === "addons"   && <AddonsSection scrollTarget={scrollTarget} />}
           {section === "mobile"   && <MobileSection />}
-          {section === "appearance" && <AppearanceSection />}
+          {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
           {section === "about"    && <AboutSection />}
         </main>
       </div>
@@ -587,7 +589,17 @@ const DEFAULT_ADDONS = Object.fromEntries(
   ADDON_ROWS.map((r) => [r.key, false]),
 ) as Record<AddonKey, boolean>;
 
-function AddonsSection() {
+type AddonsTab = "surfaces" | "integrations";
+const ADDONS_TABS: ReadonlyArray<TabItem<AddonsTab>> = [
+  { id: "surfaces", label: "Surfaces" },
+  { id: "integrations", label: "Integrations" },
+];
+const ADDONS_TAB_GROUPS: Record<AddonsTab, readonly string[]> = {
+  surfaces: ["Sidebar surfaces"],
+  integrations: ["Integrations"],
+};
+
+function AddonsSection({ scrollTarget }: { scrollTarget?: string | null }) {
   const [addons, setAddons] = useState<Record<AddonKey, boolean>>(DEFAULT_ADDONS);
   const [loading, setLoading] = useState(true);
   const [toggleError, setToggleError] = useState<string | null>(null);
@@ -679,12 +691,27 @@ function AddonsSection() {
       {toggleError && (
         <p role="alert" className="mb-2 px-1 text-[12px] text-[var(--color-danger)]">{toggleError}</p>
       )}
+      <SettingsTabbed
+        ariaLabel="Add-on settings"
+        tabs={ADDONS_TABS}
+        groupsByTab={ADDONS_TAB_GROUPS}
+        scrollTarget={scrollTarget}
+      >
+        {(tab) => (
+          <>
+      {tab === "surfaces" && (
       <SettingsGroup label="Sidebar surfaces">
         {loading ? skeleton(4) : ADDON_ROWS.filter((r) => r.group === "surfaces").map(renderRow)}
       </SettingsGroup>
+      )}
+      {tab === "integrations" && (
       <SettingsGroup label="Integrations">
         {loading ? skeleton(2) : ADDON_ROWS.filter((r) => r.group === "integrations").map(renderRow)}
       </SettingsGroup>
+      )}
+          </>
+        )}
+      </SettingsTabbed>
     </SettingsPage>
   );
 }
@@ -1142,7 +1169,25 @@ function ThemeTokenOverrides({
 
 // ─── Section: Appearance ───────────────────────────────────────────────────────────────────────
 
-function AppearanceSection() {
+// Appearance stacks 7 groups — tab them so the common controls don't require a
+// long scroll. Labels in APPEARANCE_TAB_GROUPS must match each SettingsGroup
+// label so search/deep-link can switch to the right tab. Module-level (stable
+// ref) so the tab effect doesn't re-run every render.
+type AppearanceTab = "theme" | "colors" | "text" | "interface";
+const APPEARANCE_TABS: ReadonlyArray<TabItem<AppearanceTab>> = [
+  { id: "theme", label: "Theme" },
+  { id: "colors", label: "Colors" },
+  { id: "text", label: "Text" },
+  { id: "interface", label: "Interface" },
+];
+const APPEARANCE_TAB_GROUPS: Record<AppearanceTab, readonly string[]> = {
+  theme: ["Mode", "Theme", "Import from tweakcn"],
+  colors: ["Theme tokens"],
+  text: ["Reading text"],
+  interface: ["Familiar switcher", "Corners"],
+};
+
+function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   const [activeTheme, setActiveTheme] = useState<ActiveTheme>("coven");
   const [mode, setMode] = useState<ModePref>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
@@ -1317,14 +1362,25 @@ function AppearanceSection() {
 
   return (
     <SettingsPage title="Appearance" description="Colors and visual style.">
+      <SettingsTabbed
+        ariaLabel="Appearance settings"
+        tabs={APPEARANCE_TABS}
+        groupsByTab={APPEARANCE_TAB_GROUPS}
+        scrollTarget={scrollTarget}
+      >
+        {(tab) => (
+          <>
       {/* ── Mode toggle ── */}
+      {tab === "theme" && (
       <SettingsGroup label="Mode">
         <div className="px-4 py-3">
           <ModeToggle value={mode} onChange={handleSetMode} />
         </div>
       </SettingsGroup>
+      )}
 
       {/* ── Preset themes ── */}
+      {tab === "theme" && (
       <SettingsGroup label="Theme">
         {/* Custom theme chip */}
         {activeTheme === "custom" && customData && (
@@ -1396,8 +1452,10 @@ function AppearanceSection() {
           </div>
         )}
       </SettingsGroup>
+      )}
 
       {/* ── Per-token overrides + manual resync ── */}
+      {tab === "colors" && (
       <SettingsGroup label="Theme tokens">
         <ThemeTokenOverrides
           mode={resolveMode(mode)}
@@ -1423,8 +1481,10 @@ function AppearanceSection() {
           </span>
         </div>
       </SettingsGroup>
+      )}
 
       {/* ── tweakcn import ── */}
+      {tab === "theme" && (
       <SettingsGroup label="Import from tweakcn">
         <div className="flex flex-col gap-2 px-4 py-3">
           <p className="text-[12px] text-[var(--text-muted)]">
@@ -1483,11 +1543,13 @@ function AppearanceSection() {
           )}
         </div>
       </SettingsGroup>
+      )}
 
-      <FontSettings />
+      {tab === "text" && <FontSettings />}
 
       {/* ── Familiar switcher ── choose the top-bar familiar control: a row of
           quick-switch avatars, or just the switcher dropdown. */}
+      {tab === "interface" && (
       <SettingsGroup label="Familiar switcher">
         <SettingControlRow
           label="Top-bar style"
@@ -1534,9 +1596,11 @@ function AppearanceSection() {
           </>
         ) : null}
       </SettingsGroup>
+      )}
 
       {/* ── Corner radius ── a minor shape tweak (drives the shared --radius
           tokens), kept last so the primary color/theme and text controls lead. */}
+      {tab === "interface" && (
       <SettingsGroup label="Corners">
         <SettingControlRow
           label="Corner radius"
@@ -1551,6 +1615,10 @@ function AppearanceSection() {
           />
         </SettingControlRow>
       </SettingsGroup>
+      )}
+          </>
+        )}
+      </SettingsTabbed>
     </SettingsPage>
   );
 }
