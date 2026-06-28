@@ -1,10 +1,10 @@
 // @ts-nocheck
 // Power mode: the standalone chat transforms its side area into an inline
-// chat↔code split (the comux coding surface beside the conversation), now
-// selected from a three-way segmented mode switch (Convo / Projects / Code)
-// that supersedes the old Sessions/Projects scope tabs + binary Power toggle.
-// Memory is removed from the chat surface entirely — it's not part of a
-// conversation, so it lives in the Familiars surface.
+// chat↔code split (the comux coding surface beside the conversation), selected
+// from a two-way Codex-style segmented toggle (Chat / Code). Projects are
+// merged into Chat (a sub-state, not a peer segment), so the toggle is just the
+// two modes. Memory is removed from the chat surface entirely — it's not part
+// of a conversation, so it lives in the Familiars surface.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -22,21 +22,21 @@ assert.match(
   "entering/leaving code mode persists across reloads",
 );
 
-// ── Three-way mode switch (Convo / Projects / Code) ─────────────────────────
+// ── Two-way Codex toggle (Chat / Code) ──────────────────────────────────────
 assert.match(
   surface,
-  /type ChatMode = "convo" \| "projects" \| "code"/,
-  "the standalone chat has a three-way mode model",
+  /type ChatMode = "chat" \| "code"/,
+  "the standalone chat has a two-way mode model",
 );
 assert.match(
   surface,
-  /const chatMode: ChatMode = scope === "projects" \? "projects" : powerMode \? "code" : "convo"/,
-  "the switch's selection derives from scope + power-mode state",
+  /const chatMode: ChatMode = powerMode \? "code" : "chat"/,
+  "the toggle's selection derives from power-mode state; projects browse stays under Chat",
 );
 assert.match(
   surface,
   /function selectChatMode\(next: ChatMode\)/,
-  "selecting a mode locks the surface into Convo, Projects, or Code",
+  "selecting a mode toggles the surface between Chat and Code",
 );
 // ── The selection is sticky across reloads ──────────────────────────────────
 assert.match(surface, /CHAT_MODE_KEY = "cave:chat-mode:v1"/, "the chosen mode has a stable storage key");
@@ -71,8 +71,8 @@ assert.match(
 );
 assert.match(
   surface,
-  /const chatModeValue: ChatMode = isMobile && chatMode === "code" \? "convo" : chatMode/,
-  "a persisted Code session shows as Convo on mobile (saved preference untouched)",
+  /const chatModeValue: ChatMode = isMobile && chatMode === "code" \? "chat" : chatMode/,
+  "a persisted Code session shows as Chat on mobile (saved preference untouched)",
 );
 assert.match(surface, /items=\{chatModeItems\}/, "the switch renders the mobile-aware item set");
 
