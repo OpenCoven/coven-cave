@@ -60,8 +60,8 @@ export function CodeView({ chat, comux }: Props) {
   // (hidden, not unmounted) so the terminal/chat keep their state across taps.
   if (isMobile) {
     return (
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 items-center justify-center gap-1 border-b border-[var(--border-hairline)] p-1.5">
+      <div className="cave-code-page cave-code-page--mobile flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="cave-code-page__mobile-tabs flex shrink-0 items-center justify-center gap-1 border-b border-[var(--border-hairline)] p-1.5">
           <Tabs
             variant="segment"
             size="sm"
@@ -74,8 +74,8 @@ export function CodeView({ chat, comux }: Props) {
             ]}
           />
         </div>
-        <div className={`min-h-0 flex-1 flex-col ${mobileTab === "chat" ? "flex" : "hidden"}`}>{chat}</div>
-        <div className={`min-h-0 flex-1 flex-col ${mobileTab === "code" ? "flex" : "hidden"}`}>{comux}</div>
+        <div className={`cave-code-page__mobile-pane min-h-0 flex-1 flex-col ${mobileTab === "chat" ? "flex" : "hidden"}`}>{chat}</div>
+        <div className={`cave-code-page__mobile-pane min-h-0 flex-1 flex-col ${mobileTab === "code" ? "flex" : "hidden"}`}>{comux}</div>
       </div>
     );
   }
@@ -116,9 +116,9 @@ function DesktopCodeView({ chat, comux }: Props) {
   }, []);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="cave-code-page flex min-h-0 min-w-0 flex-1 flex-col" data-code-layout="codex">
       <Group
-        className="flex min-h-0 min-w-0 flex-1"
+        className="cave-code-page__split flex min-h-0 min-w-0 flex-1"
         orientation="horizontal"
         defaultLayout={defaultLayout}
         onLayoutChanged={onLayoutChanged}
@@ -126,18 +126,18 @@ function DesktopCodeView({ chat, comux }: Props) {
         <Panel
           panelRef={chatPanelRef}
           id="code-chat"
-          className="flex min-h-0 min-w-0"
+          className="cave-code-page__resizable cave-code-page__resizable--chat flex min-h-0 min-w-0"
           defaultSize="38%"
           minSize="28%"
           maxSize="75%"
         >
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{chat}</div>
+          <div className="cave-code-page__pane cave-code-page__pane--chat flex min-h-0 min-w-0 flex-1 flex-col">{chat}</div>
         </Panel>
-        <Separator className="shell-separator hidden lg:flex">
+        <Separator className="cave-code-page__separator shell-separator hidden lg:flex">
           <SeparatorHandle orientation="col" />
         </Separator>
-        <Panel id="code-comux" className="hidden min-h-0 min-w-0 lg:flex" minSize="35%">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{comux}</div>
+        <Panel id="code-comux" className="cave-code-page__resizable cave-code-page__resizable--workspace hidden min-h-0 min-w-0 lg:flex" minSize="35%">
+          <div className="cave-code-page__pane cave-code-page__pane--workspace flex min-h-0 min-w-0 flex-1 flex-col">{comux}</div>
         </Panel>
       </Group>
     </div>

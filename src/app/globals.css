@@ -4218,6 +4218,127 @@ button:active > .edge-rail-chip {
   transform: scaleX(-1);
 }
 
+/* Codex-like Code page shell. The underlying chat and comux components keep
+   their behavior; this layer gives the Code surface its own focused IDE chrome. */
+.cave-code-page {
+  --code-page-bg: color-mix(in oklch, var(--bg-base) 86%, black);
+  --code-page-pane: color-mix(in oklch, var(--bg-raised) 78%, black);
+  --code-page-pane-strong: color-mix(in oklch, var(--bg-raised) 88%, black);
+  --code-page-line: color-mix(in oklch, var(--foreground) 10%, transparent);
+  --code-page-accent: color-mix(in oklch, var(--accent-presence) 74%, #7dd3fc);
+  --code-page-warm: color-mix(in oklch, var(--color-warning, #f7c56b) 64%, #f59e0b);
+  height: 100%;
+  padding: 10px;
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--code-page-pane) 42%, transparent), transparent 26%),
+    var(--code-page-bg);
+}
+
+.cave-code-page__split {
+  overflow: hidden;
+  border: 1px solid var(--code-page-line);
+  border-radius: 8px;
+  background: var(--code-page-bg);
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, white 6%, transparent),
+    0 18px 54px color-mix(in oklch, black 28%, transparent);
+}
+
+.cave-code-page__resizable {
+  min-height: 0;
+}
+
+.cave-code-page__pane {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--code-page-pane);
+}
+
+.cave-code-page__pane--chat {
+  border-right: 1px solid color-mix(in oklch, var(--code-page-line) 78%, transparent);
+}
+
+.cave-code-page__pane--workspace {
+  background: color-mix(in oklch, var(--code-page-pane-strong) 92%, var(--code-surface));
+}
+
+.cave-code-page__separator {
+  background: color-mix(in oklch, var(--code-page-line) 72%, transparent);
+}
+
+.cave-code-page .chat-surface,
+.cave-code-page__pane--workspace > div {
+  min-height: 0;
+  background: transparent;
+}
+
+.cave-code-page .chat-scope-tabs {
+  min-height: 36px;
+  border-bottom-color: var(--code-page-line);
+  background:
+    linear-gradient(90deg, color-mix(in oklch, var(--code-page-accent) 7%, transparent), transparent 55%),
+    color-mix(in oklch, var(--code-page-pane) 92%, transparent);
+}
+
+.cave-code-page .code-panel-toggle,
+.cave-code-page :is(.comux-terminal-add-button, .comux-terminal-toolbar-button, .comux-preview-copypath) {
+  border-color: color-mix(in oklch, var(--foreground) 12%, transparent);
+  background: color-mix(in oklch, var(--bg-base) 54%, transparent);
+}
+
+.cave-code-page .comux-project-header {
+  background:
+    linear-gradient(90deg, color-mix(in oklch, var(--code-page-warm) 8%, transparent), transparent 70%),
+    color-mix(in oklch, var(--code-page-pane-strong) 94%, transparent);
+  border-bottom: 1px solid color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+
+.cave-code-page .comux-project-list {
+  background:
+    radial-gradient(90% 70% at 10% 0%, color-mix(in oklch, var(--code-page-accent) 8%, transparent), transparent 72%),
+    color-mix(in oklch, var(--bg-base) 36%, transparent);
+}
+
+.cave-code-page .comux-file-preview {
+  background: color-mix(in oklch, var(--code-surface) 82%, black);
+}
+
+.cave-code-page .comux-terminal-tab-strip,
+.cave-code-page .comux-terminal-pane-bar {
+  background: color-mix(in oklch, var(--bg-base) 62%, transparent);
+  border-color: var(--code-page-line);
+}
+
+.cave-code-page .comux-terminal-pane {
+  border-color: color-mix(in oklch, var(--foreground) 9%, transparent);
+  background: color-mix(in oklch, var(--code-surface) 76%, black);
+}
+
+@media (max-width: 1023px) {
+  .cave-code-page {
+    padding: 0;
+    background: var(--code-page-bg);
+  }
+
+  .cave-code-page--mobile {
+    overflow: hidden;
+  }
+
+  .cave-code-page__mobile-tabs {
+    min-height: 44px;
+    background: color-mix(in oklch, var(--code-page-pane) 94%, transparent);
+    backdrop-filter: blur(14px) saturate(135%);
+    -webkit-backdrop-filter: blur(14px) saturate(135%);
+  }
+
+  .cave-code-page__mobile-pane {
+    min-height: 0;
+    overflow: hidden;
+    background: var(--code-page-pane);
+  }
+}
+
 /* ────────────────────────────────────────────────
    Companion rail — right-side per-familiar pane
    (Phase 2, shell-ia-redesign)
