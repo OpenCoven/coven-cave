@@ -312,4 +312,18 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{model\.threadReports\}/);
     assert.match(source, /<EvalLoopPanel[\s\S]*familiarId=\{model\.familiar\.id\}/);
   });
+
+  it("renders a confidence ring and a scannable KPI summary row", () => {
+    // Hero confidence ring (radial progress) replaces the flat score box.
+    assert.match(source, /<ConfidenceRing confidence=\{model\.confidence\}/, "header uses the confidence ring");
+    assert.match(source, /className="fa-ring__value"/, "ring draws a progress arc");
+    assert.match(source, /strokeDasharray/, "ring arc length tracks the score");
+
+    // KPI row surfaces growth / eval / contract / heal signals up top.
+    assert.match(source, /<FamiliarKpis model=\{model\} healRequestCount=\{healRequests\.length\}/, "KPI row is wired to the model");
+    assert.match(source, /function deriveKpis/, "KPIs are derived from the model");
+    assert.match(source, /model\.growthReport/, "KPIs read the (previously unsurfaced) growth report");
+    assert.match(source, /contract\.properties\.filter\(\(p\) => p\.pass\)/, "contract KPI shows the pass rate");
+    assert.match(source, /className=\{`fa-kpi\$\{kpi\.tone/, "KPI tiles tint by tone");
+  });
 });

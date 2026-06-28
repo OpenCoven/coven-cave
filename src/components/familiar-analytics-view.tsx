@@ -151,6 +151,127 @@ const ContractCompliance = memo(function ContractCompliance({ report }: { report
   );
 });
 
+/** Map a confidence label to a tier class so the ring + KPIs read at a glance. */
+function confidenceTier(label: ConfidenceScore["label"]): "low" | "developing" | "reliable" | "trusted" {
+  switch (label) {
+    case "Trusted": return "trusted";
+    case "Reliable": return "reliable";
+    case "Developing": return "developing";
+    default: return "low";
+  }
+}
+
+/** Radial progress ring for the confidence score — a glanceable hero metric. */
+const ConfidenceRing = memo(function ConfidenceRing({ confidence }: { confidence: ConfidenceScore }) {
+  const score = Math.max(0, Math.min(100, confidence.score));
+  const r = 42;
+  const circ = 2 * Math.PI * r;
+  const dash = (score / 100) * circ;
+  const tier = confidenceTier(confidence.label);
+  return (
+    <div
+      className={`fa-ring fa-ring--${tier}`}
+      role="img"
+      aria-label={`Confidence score ${confidence.score} of 100, ${confidence.label}`}
+    >
+      <svg viewBox="0 0 100 100" aria-hidden>
+        <circle className="fa-ring__track" cx="50" cy="50" r={r} />
+        <circle
+          className="fa-ring__value"
+          cx="50"
+          cy="50"
+          r={r}
+          strokeDasharray={`${dash} ${circ}`}
+          transform="rotate(-90 50 50)"
+        />
+      </svg>
+      <div className="fa-ring__label">
+        <strong>{confidence.score}</strong>
+        <span>{confidence.label}</span>
+      </div>
+    </div>
+  );
+});
+
+type Kpi = { key: string; icon: Parameters<typeof Icon>[0]["name"]; label: string; value: string; sub: string; tone?: "good" | "warn" | "bad" };
+
+/** Derive the at-a-glance KPI tiles from the model's (otherwise buried) signals. */
+function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kpi[] {
+  const growth = model.growthReport;
+  const contract = model.contractReport;
+  const contractPass = contract ? contract.properties.filter((p) => p.pass).length : 0;
+  const contractTotal = contract ? contract.properties.length : 0;
+  const acceptRate = growth?.retroAcceptRate ?? null;
+  const evals = model.evalLoopState?.iterations?.length ?? 0;
+
+  return [
+    {
+      key: "activity",
+      icon: "ph:lightning-bold",
+      label: "Activity",
+      value: growth ? growth.healthLabel : "—",
+      sub: growth ? `${growth.sessionsLast7d} session${growth.sessionsLast7d === 1 ? "" : "s"} · 7d` : "no data",
+      tone: growth?.healthLabel === "stalled" ? "bad" : growth?.healthLabel === "quiet" ? "warn" : "good",
+    },
+    {
+      key: "evals",
+      icon: "ph:arrows-clockwise-bold",
+      label: "Eval acceptance",
+      value: acceptRate == null ? "—" : `${Math.round(acceptRate * 100)}%`,
+      sub: `${evals} iteration${evals === 1 ? "" : "s"}`,
+      tone: acceptRate == null ? undefined : acceptRate >= 0.6 ? "good" : acceptRate >= 0.3 ? "warn" : "bad",
+    },
+    {
+      key: "contract",
+      icon: "ph:check-circle-bold",
+      label: "Contract",
+      value: contractTotal ? `${contractPass}/${contractTotal}` : "—",
+      sub: contract ? (contract.pass ? "passing" : "needs review") : "no report",
+      tone: !contractTotal ? undefined : contract?.pass ? "good" : "warn",
+    },
+    {
+      key: "heal",
+      icon: "ph:wrench-bold",
+      label: "Self-heal",
+      value: String(healRequestCount),
+      sub: healRequestCount === 0 ? "all clear" : healRequestCount === 1 ? "open request" : "open requests",
+      tone: healRequestCount === 0 ? "good" : "warn",
+    },
+    {
+      key: "signals",
+      icon: "ph:waveform-bold",
+      label: "Thread signals",
+      value: String(model.threadReports.length),
+      sub: model.threadReports.length === 1 ? "report" : "reports",
+    },
+  ];
+}
+
+/** Scannable KPI row — surfaces growth, eval, contract, and heal signals up top. */
+const FamiliarKpis = memo(function FamiliarKpis({
+  model,
+  healRequestCount,
+}: {
+  model: FamiliarAnalyticsModel;
+  healRequestCount: number;
+}) {
+  const kpis = deriveKpis(model, healRequestCount);
+  return (
+    <div className="fa-kpis" role="list" aria-label="Key metrics">
+      {kpis.map((kpi) => (
+        <div key={kpi.key} className={`fa-kpi${kpi.tone ? ` fa-kpi--${kpi.tone}` : ""}`} role="listitem">
+          <div className="fa-kpi__head">
+            <Icon name={kpi.icon} aria-hidden />
+            <span className="fa-kpi__label">{kpi.label}</span>
+          </div>
+          <strong className="fa-kpi__value">{kpi.value}</strong>
+          <span className="fa-kpi__sub">{kpi.sub}</span>
+        </div>
+      ))}
+    </div>
+  );
+});
+
 export function FamiliarAnalyticsContent({
   model,
   onRefresh,
@@ -217,11 +338,10 @@ export function FamiliarAnalyticsContent({
             <p>{familiarRole}</p>
           </div>
         </div>
-        <div className="fa-score-circle" aria-label={`Confidence score ${model.confidence.score}, ${model.confidence.label}`}>
-          <strong>{model.confidence.score}</strong>
-          <span>{model.confidence.label}</span>
-        </div>
+        <ConfidenceRing confidence={model.confidence} />
       </header>
+
+      <FamiliarKpis model={model} healRequestCount={healRequests.length} />
 
       <ConfidenceBreakdown confidence={model.confidence} />
 
