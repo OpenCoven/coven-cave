@@ -59,5 +59,5 @@ export function useFlowRun(run: FlowRunRecord | null): FlowRunProgress {
   }, [sessionId, live]);
 
   if (!run) return EMPTY;
-  return parseFlowRunProgress(transcript, run.steps.map((step) => step.id));
+  return parseFlowRunProgress(transcript, run.steps);
 }

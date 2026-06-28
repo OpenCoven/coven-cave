@@ -21,6 +21,9 @@ assert.match(
   /loadConversationFromJsonl\(sessionId, familiarId\)[\s\S]*assistantTranscript\(jsonlConversation\)[\s\S]*found: true/,
   "route should fall back to OpenClaw JSONL transcripts",
 );
+assert.match(route, /callDaemon<\{ events: CovenEvent\[\] \}>/, "route should read daemon events for live flow sessions");
+assert.match(route, /eventOutputTranscript/, "route should convert daemon output events into a pollable transcript");
+assert.match(route, /stripAnsi/, "daemon PTY output should be ANSI-stripped before progress parsing");
 assert.match(
   route,
   /NextResponse\.json\(\{ ok: true, transcript: "", found: false \}\)/,

@@ -49,7 +49,7 @@ import { buildPromptFlow, flowNameFromPrompt } from "@/lib/flow/flow-prompt";
 import { flowPublishBlockReason, flowRunBlockReason } from "@/lib/flow/flow-compile";
 import { flowMissingRequiredInputs, type RequiredInput } from "@/lib/required-inputs";
 import { RequiredInputsDialog } from "@/components/required-inputs-dialog";
-import { finalizeFlowSteps, phasesFromRunSteps, selectNodeRunData } from "@/lib/flow/flow-progress";
+import { finalizeFlowSteps, selectNodeRunData } from "@/lib/flow/flow-progress";
 import {
   clearFlowRuns,
   deleteFlow,
@@ -122,8 +122,8 @@ export function FlowView() {
   const progress = useFlowRun(activeRun);
   const running = activeRun?.status === "running" && !progress.done;
   const displayedPhases = useMemo(
-    () => activeRun ? (progress.markersFound ? progress.phases : phasesFromRunSteps(activeRun.steps)) : null,
-    [activeRun, progress.markersFound, progress.phases],
+    () => activeRun ? progress.phases : null,
+    [activeRun, progress.phases],
   );
 
   // What picking a catalog node should do: drop it free, wire it to a dragged

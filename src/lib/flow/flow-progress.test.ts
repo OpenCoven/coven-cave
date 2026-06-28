@@ -55,6 +55,41 @@ const ORDER = ["t", "a", "b"];
   assert.deepEqual(Object.values(p.phases), ["pending", "pending", "pending"]);
 }
 
+// no markers yet → seeded run-step statuses still make startup movement visible
+{
+  const p = parseFlowRunProgress("session booting, no markers yet", [
+    { id: "t", type: "trigger.manual", status: "succeeded" },
+    { id: "a", type: "familiar", status: "running" },
+    { id: "b", type: "data.output", status: "pending" },
+  ]);
+  assert.equal(p.markersFound, false);
+  assert.deepEqual(p.phases, { t: "succeeded", a: "running", b: "pending" });
+  assert.equal(p.activeNodeId, "a");
+}
+
+// old running records written before startup seeding still move past local nodes
+{
+  const p = parseFlowRunProgress("session booting, no markers yet", [
+    { id: "t", type: "trigger.manual", status: "pending" },
+    { id: "topic", type: "input.text", status: "pending" },
+    { id: "a", type: "familiar", status: "pending" },
+  ]);
+  assert.deepEqual(p.phases, { t: "succeeded", topic: "succeeded", a: "running" });
+  assert.equal(p.activeNodeId, "a");
+}
+
+// once real markers arrive, terminal seeded nodes stay complete but live markers win
+{
+  const p = parseFlowRunProgress("@@step-start a\nagent is working", [
+    { id: "t", type: "trigger.manual", status: "succeeded" },
+    { id: "a", type: "familiar", status: "running" },
+    { id: "b", type: "data.output", status: "pending" },
+  ]);
+  assert.equal(p.markersFound, true);
+  assert.deepEqual(p.phases, { t: "succeeded", a: "running", b: "pending" });
+  assert.equal(p.activeNodeId, "a");
+}
+
 // finalizeFlowSteps: preserves type, maps statuses, overall verdict
 {
   const runSteps: FlowRunStepRecord[] = [
