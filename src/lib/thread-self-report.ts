@@ -4,6 +4,67 @@ export type BlockerCategory = "auth" | "tooling" | "permission" | "infra" | "con
 export type BlockerImpact = "low" | "medium" | "high" | "blocking";
 export type CapabilityImportance = "nice-to-have" | "important" | "blocking";
 
+/** One settled turn of a thread, condensed for the reflection prompt. */
+export type ReflectTranscriptTurn = { role: "user" | "assistant" | "system"; text: string };
+
+const REFLECT_MAX_TURNS = 24;
+const REFLECT_MAX_CHARS_PER_TURN = 600;
+
+/** Render a compact, size-bounded transcript for embedding in the reflect prompt. */
+export function buildReflectTranscript(turns: readonly ReflectTranscriptTurn[]): string {
+  const lines = turns
+    .filter((t) => (t.role === "user" || t.role === "assistant") && t.text.trim())
+    .slice(-REFLECT_MAX_TURNS)
+    .map((t) => {
+      const body = t.text.trim().replace(/\s+/g, " ");
+      const clipped = body.length > REFLECT_MAX_CHARS_PER_TURN
+        ? `${body.slice(0, REFLECT_MAX_CHARS_PER_TURN)}…`
+        : body;
+      return `${t.role}: ${clipped}`;
+    });
+  return lines.join("\n");
+}
+
+/**
+ * Build the thread self-report ("reflect") prompt. Generation runs client-side
+ * through the chat bridge (there is no server LLM route), so the prompt — and the
+ * exact JSON shape the route validates — lives here, shared by the caller and the
+ * persistence route. `transcript` (from {@link buildReflectTranscript}) grounds an
+ * ephemeral run that does not resume/pollute the original thread.
+ */
+export function buildThreadReflectPrompt(opts: { sessionId: string; transcript?: string }): string {
+  const context = opts.transcript?.trim()
+    ? `Here is the thread you just completed (session: ${opts.sessionId}), oldest to newest:\n\n${opts.transcript}\n\n`
+    : `Reflect on the thread just completed (session: ${opts.sessionId}).\n\n`;
+  return `${context}Reflect honestly on how that thread went for you as the familiar.
+Return ONLY a valid JSON object matching this exact shape - no prose, no markdown fences:
+
+{
+  "overallConfidence": <0-100>,
+  "overallConfidenceReason": "<brief explanation>",
+  "toolReliability": {
+    "score": <0-100>,
+    "failedTools": ["<tool name>", ...],
+    "unreliableTools": ["<tool name>", ...],
+    "notes": "<optional>"
+  },
+  "contextPressure": "<adequate|tight|excess|critical>",
+  "contextNotes": "<optional>",
+  "skillsUsed": ["<skill id>", ...],
+  "skillsNeedingClarity": [{ "skillId": "<id>", "reason": "<why>" }],
+  "skillsNeedingAccess": [{ "skillId": "<id>", "reason": "<why>" }],
+  "capabilitiesLacking": [{ "name": "<name>", "importance": "<nice-to-have|important|blocking>", "detail": "<detail>" }],
+  "capabilitiesVital": [{ "name": "<name>", "currentState": "<available|degraded|missing>", "notes": "<optional>" }],
+  "memoryRecallScore": <0-100>,
+  "memoryRecallNotes": "<optional>",
+  "fileLocatabilityScore": <0-100>,
+  "fileLocatabilityNotes": "<optional>",
+  "persistentBlockers": [{ "id": "<slug>", "title": "<title>", "category": "<auth|tooling|permission|infra|context|skill|other>", "impact": "<low|medium|high|blocking>", "detail": "<detail>", "suggestedResolution": "<optional>" }]
+}
+
+Be honest. Underconfidence is more useful than overconfidence. Only report what you actually experienced.`;
+}
+
 export type ThreadSelfReport = {
   id: string;
   familiarId: string;

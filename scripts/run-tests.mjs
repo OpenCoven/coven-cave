@@ -86,6 +86,7 @@ export const SUITES = {
     "src/lib/secret-redaction.test.ts",
     "src/lib/retro-runs.test.ts",
     "src/lib/eval-loop-daemon.test.ts",
+    "src/lib/familiar-stream.test.ts",
     "src/lib/role-manifest.test.ts",
     "src/lib/chat-cwd-root.test.ts",
     "src/lib/agent-completion-report.test.ts",
@@ -693,6 +694,7 @@ const ALIAS_LOADER = new Set([
   "src/components/thread-signal-card.test.ts",
   "src/components/thread-signals-section.test.ts",
   "src/components/chat-view.test.ts",
+  "src/lib/familiar-stream.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
