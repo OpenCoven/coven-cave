@@ -27,6 +27,10 @@ type Props = {
    * empty state (e.g. the chat surface), set this true so the rail doesn't
    * render a second redundant CTA. */
   suppressEmpty?: boolean;
+  /** True when the familiar scope is "All familiars" (vs. a genuinely empty
+   * selection). In that case the empty state must not pitch "Create familiar"
+   * — the user has explicitly scoped to everything, not asked for a new one. */
+  scopeIsAll?: boolean;
   hideChatTab?: boolean;
   /** Show a needs-attention dot on the Chat tab (e.g. the familiar needs a reply). */
   chatBadge?: boolean;
@@ -68,6 +72,7 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       onCreateFamiliar,
       onTabChange,
       suppressEmpty = false,
+      scopeIsAll = false,
       hideChatTab = false,
       chatBadge = false,
       youtubeActive,
@@ -118,11 +123,15 @@ const CompanionRailInner = forwardRef<ChatRouterHandle, Props>(
       return (
         <aside className="companion-rail companion-rail--empty">
           <div className="companion-rail__empty-body">
-            <p className="companion-rail__empty-title">No familiar yet</p>
-            <p className="companion-rail__empty-sub">
-              Pick a familiar from the sidebar selector, or create one.
+            <p className="companion-rail__empty-title">
+              {scopeIsAll ? "All familiars" : "No familiar yet"}
             </p>
-            {onCreateFamiliar ? (
+            <p className="companion-rail__empty-sub">
+              {scopeIsAll
+                ? "Pick a single familiar from the sidebar selector to see its details here."
+                : "Pick a familiar from the sidebar selector, or create one."}
+            </p>
+            {onCreateFamiliar && !scopeIsAll ? (
               <button
                 type="button"
                 className="companion-rail__empty-cta"

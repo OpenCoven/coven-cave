@@ -2130,6 +2130,9 @@ export function Workspace() {
               // Chat surface already shows a "Choose a familiar" CTA in the
               // detail panel — suppress the rail's duplicate prompt there.
               suppressEmpty={mode === "chat"}
+              // Empty scope set = "All familiars" is selected (not a missing
+              // pick) — the rail must not pitch "Create familiar" in that case.
+              scopeIsAll={scopeIds.size === 0}
               chatSlot={
                 <FamiliarPanel
                   familiar={active}
