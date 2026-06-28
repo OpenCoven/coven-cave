@@ -38,6 +38,7 @@ import {
   buildPromptWithKnowledgeVault,
   readKnowledgeVaultForPrompt,
 } from "@/lib/server/knowledge-vault";
+import { parseAgentAttachments } from "@/lib/server/agent-attachments";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
@@ -1448,6 +1449,19 @@ export async function POST(req: Request) {
         push({ kind: "assistant_chunk", text: diagnostic });
       }
 
+      // Agent-produced inline attachments: pull `coven:attachment` marker
+      // blocks out of the reply, resolve+read the referenced files (allowlist
+      // -guarded, size-capped), and strip the markers from the text. Stream the
+      // attachments so the live turn renders file chips, and reuse them on the
+      // persisted assistant turn so they survive reload. `cleanedAssistantText`
+      // is the marker-free text that gets persisted (the client also strips
+      // markers from the live-streamed text for parity — see chat-view).
+      const { text: cleanedAssistantText, attachments: agentAttachments } =
+        parseAgentAttachments(assistantText.trim());
+      for (const attachment of agentAttachments) {
+        push({ kind: "attachment", attachment });
+      }
+
       // Persist under the STABLE conversation id. The harness's per-turn id
       // is tracked on the file for the next resume but never becomes the
       // conversation's identity — keying off it created a new conversation
@@ -1499,7 +1513,8 @@ export async function POST(req: Request) {
         const assistantTurn: ChatTurn = {
           id: assistantTurnId,
           role: "assistant",
-          text: assistantText.trim(),
+          text: cleanedAssistantText,
+          ...(agentAttachments.length ? { attachments: agentAttachments } : {}),
           createdAt: new Date().toISOString(),
           durationMs: result.duration_ms,
           isError: result.is_error,

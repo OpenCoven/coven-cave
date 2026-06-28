@@ -32,6 +32,7 @@ import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { Card } from "@/lib/cave-board-types";
 import { TaskLinkPicker } from "@/components/task-link-picker";
 import {
+  extractAgentAttachmentMarkers,
   MAX_ATTACHMENT_IMAGE_BYTES,
   MAX_ATTACHMENT_TEXT_CHARS,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
@@ -3508,6 +3509,21 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         );
         return;
       }
+      case "attachment": {
+        // Agent-produced inline attachment: append to the live assistant turn
+        // so a file chip renders immediately (persisted copy arrives on reload).
+        updateLiveTurns((prev) =>
+          prev.map((t) =>
+            t.id === assistantId
+              ? { ...t, attachments: [...(t.attachments ?? []), ev.attachment] }
+              : t,
+          ),
+          assistantId,
+          undefined,
+          liveGeneration.sessionId,
+        );
+        return;
+      }
       case "progress": {
         upsertTurnProgress(assistantId, ev, liveGeneration.sessionId);
         return;
@@ -4777,7 +4793,10 @@ function TurnRowImpl({
     );
   }
 
-  const reasoningSplit = splitReasoning(turn.text);
+  // Hide raw `coven:attachment` marker blocks from the live-streamed text. The
+  // server strips them from the persisted text and streams the parsed files as
+  // `attachment` events; this keeps the in-flight turn clean before reload.
+  const reasoningSplit = splitReasoning(extractAgentAttachmentMarkers(turn.text).text);
   const inlineReasoning = reasoningSplit.reasoning;
   const { visible, suggestions: nextPaths } = extractNextPaths(reasoningSplit.visible);
   const reasoning = turn.reasoning?.trim() || inlineReasoning;
@@ -4940,6 +4959,8 @@ function TurnRowImpl({
                 )}
               </div>
             ) : null}
+            {/* Agent-produced inline attachments (file chips → lightbox). */}
+            {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
             {/* Designated "Tool activity" section: on every settled turn that

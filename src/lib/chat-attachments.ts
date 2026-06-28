@@ -23,6 +23,29 @@ export type ChatAttachment = {
   dataUrl?: string;
 };
 
+/** Fenced marker a familiar emits to attach a file it produced, e.g.
+ *   ```coven:attachment
+ *   { "path": "/abs/path/file.png", "name": "file.png" }
+ *   ``` */
+const AGENT_ATTACHMENT_BLOCK_RE = /```coven:attachment[^\n]*\n([\s\S]*?)\n```/g;
+
+/**
+ * Strip `coven:attachment` marker blocks from agent text, returning the cleaned
+ * text and the raw JSON marker bodies. Pure (no `node:fs`) so it is safe in the
+ * client bundle: the client uses only `.text` (to hide raw markers from the
+ * live-streamed turn), while the server (`lib/server/agent-attachments`) parses
+ * `.markers` to read the referenced files.
+ */
+export function extractAgentAttachmentMarkers(text: string): { text: string; markers: string[] } {
+  if (!text || !text.includes("```coven:attachment")) return { text, markers: [] };
+  const markers: string[] = [];
+  const cleaned = text.replace(AGENT_ATTACHMENT_BLOCK_RE, (_match, body: string) => {
+    markers.push(body);
+    return "";
+  });
+  return { text: cleaned.replace(/\n{3,}/g, "\n\n").trim(), markers };
+}
+
 function cleanName(name: unknown): string {
   const raw = typeof name === "string" ? name : "attachment";
   const base = raw.split(/[\\/]/).filter(Boolean).pop() ?? "attachment";

@@ -1,3 +1,4 @@
+import type { ChatAttachment } from "@/lib/chat-attachments";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type { TurnUsage } from "@/lib/usage-format";
 
@@ -10,6 +11,7 @@ export type StreamEvent =
   | { kind: "session"; sessionId: string }
   | { kind: "user"; text: string }
   | { kind: "assistant_chunk"; text: string }
+  | { kind: "attachment"; attachment: ChatAttachment }
   | {
       kind: "progress";
       id?: string;
