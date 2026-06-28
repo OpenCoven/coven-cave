@@ -60,6 +60,7 @@ export const SUITES = {
     "src/lib/flow/flow-prompt.test.ts",
     "src/lib/flow/flow-catalog.test.ts",
     "src/lib/flow/flow-compile.test.ts",
+    "src/components/flow/flow-node-required-badge.test.ts",
     "src/lib/flow/flow-webhook.test.ts",
     "src/lib/flow/flow-progress.test.ts",
     "src/lib/flow/flow-execution-data.test.ts",

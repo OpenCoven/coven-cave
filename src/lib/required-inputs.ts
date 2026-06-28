@@ -1,4 +1,4 @@
-import { catalogNode, type FlowParamControl, type FlowParamField } from "./flow/flow-catalog.ts";
+import { catalogNode, type FlowParamControl } from "./flow/flow-catalog.ts";
 import type { FlowDoc, FlowNode, FlowParamValue } from "./flow/flow-doc.ts";
 
 export type RequiredInput = {
@@ -17,34 +17,36 @@ export function flowMissingRequiredInputs(doc: FlowDoc): RequiredInput[] {
   const missing: RequiredInput[] = [];
   for (const node of doc.nodes) {
     if (node.disabled || node.sticky) continue;
+    const requiredParams = node.requiredParams ?? [];
+    if (requiredParams.length === 0) continue;
     const def = catalogNode(node.type);
-    if (!def) continue;
-    for (const field of def.params) {
-      if (!requiredFieldApplies(node, field)) continue;
-      const value = node.params[field.key];
+    for (const paramKey of requiredParams) {
+      const value = node.params[paramKey];
       if (!isMissingParam(value)) continue;
+      const field = def?.params.find((candidate) => candidate.key === paramKey);
+      const paramLabel = field?.label ?? paramKey;
       missing.push({
-        key: `${node.id}.${field.key}`,
-        label: `${node.name} ${field.label}`,
+        key: `${node.id}:${paramKey}`,
+        label: requiredInputLabel(node, paramKey, paramLabel),
         nodeId: node.id,
         nodeName: node.name,
-        paramKey: field.key,
-        paramLabel: field.label,
-        control: field.control,
-        placeholder: field.placeholder,
-        help: field.help,
+        paramKey,
+        paramLabel,
+        control: field?.control ?? "text",
+        placeholder: field?.placeholder,
+        help: field?.help,
       });
     }
   }
   return missing;
 }
 
-function requiredFieldApplies(node: FlowNode, field: FlowParamField): boolean {
-  if (field.default !== undefined) return false;
-  if (node.type === "trigger.schedule" && field.key === "cron") {
-    return node.params.mode === "cron";
+function requiredInputLabel(node: FlowNode, paramKey: string, paramLabel: string): string {
+  if (node.type === "input.text" && paramKey === "value") {
+    const label = node.params.label;
+    if (typeof label === "string" && label.trim().length > 0) return label.trim();
   }
-  return true;
+  return `${node.name} ${paramLabel}`;
 }
 
 function isMissingParam(value: FlowParamValue | undefined): boolean {

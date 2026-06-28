@@ -212,6 +212,7 @@
 .flow-node-note-text { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: var(--text-xs); line-height: 1.25; }
 .flow-node-disabled-badge { position: absolute; top: -8px; left: 10px; padding: 1px 6px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; border-radius: 999px; background: var(--bg-elevated); color: var(--text-muted); border: 1px solid var(--border); }
 .flow-node-stale-badge { position: absolute; top: -9px; right: 12px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: color-mix(in oklch, var(--color-warning) 22%, var(--bg-elevated)); color: var(--color-warning); border: 1px solid color-mix(in oklch, var(--color-warning) 58%, var(--border)); box-shadow: 0 4px 12px rgb(0 0 0 / 25%); }
+.flow-node-required-badge { position: absolute; bottom: -8px; left: 10px; padding: 1px 6px; font-size: 9px; font-weight: 700; letter-spacing: 0.04em; border-radius: 999px; background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-elevated)); color: var(--accent-presence); border: 1px solid color-mix(in oklch, var(--accent-presence) 50%, var(--border)); }
 
 .flow-node-phase-dot { position: absolute; top: 8px; right: 8px; width: 10px; height: 10px; border-radius: 50%; }
 .flow-node-phase-dot-pending { background: var(--text-muted); }

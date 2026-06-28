@@ -91,6 +91,15 @@ export function FlowNodeView({ data, selected }: NodeProps<FlowRFNode>) {
           disabled
         </span>
       )}
+      {node.requiredParams && node.requiredParams.length > 0 && (
+        <span
+          className="flow-node-required-badge"
+          aria-label="Requires input"
+          title="Requires input before running"
+        >
+          *required
+        </span>
+      )}
       {stale && (
         <span className="flow-node-stale-badge" aria-label="Stale data" title="Node data is stale">
           <Icon name="ph:warning" width={13} />

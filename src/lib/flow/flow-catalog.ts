@@ -55,6 +55,8 @@ export type FlowNodeType = {
   inputs: FlowPort[];
   outputs: FlowPort[];
   params: FlowParamField[];
+  /** Param keys seeded into a new node's `requiredParams` by createNode. */
+  requiredByDefault?: string[];
   /** Sticky notes are non-executable canvas annotations. */
   sticky?: boolean;
 };
@@ -388,6 +390,22 @@ export const FLOW_CATALOG: FlowNodeType[] = [
 
   // ---- Data --------------------------------------------------------------
   {
+    type: "input.text",
+    label: "Input",
+    category: "data",
+    group: "Data",
+    icon: "ph:file-text",
+    accent: CATEGORY_ACCENT.data,
+    description: "A named input the user must fill in before the flow runs.",
+    inputs: ONE_IN,
+    outputs: MAIN_OUT,
+    params: [
+      { key: "label", label: "Input name", control: "text", placeholder: "Research topic" },
+      { key: "value", label: "Value", control: "textarea", placeholder: "Provided when the flow runs" },
+    ],
+    requiredByDefault: ["value"],
+  },
+  {
     type: "data.set",
     label: "Edit Fields",
     category: "data",
@@ -520,6 +538,9 @@ export function createNode(doc: FlowDoc, type: string, position: FlowPosition): 
     position,
     params: defaultParams(def),
   };
+  if (def.requiredByDefault && def.requiredByDefault.length > 0) {
+    node.requiredParams = [...def.requiredByDefault];
+  }
   if (def.sticky) {
     node.sticky = { text: "I'm a note", color: STICKY_COLORS[0].key, width: 240, height: 160 };
   }

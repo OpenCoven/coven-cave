@@ -115,13 +115,20 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
           name: "Start research",
           position: { x: 80, y: 180 },
           params: {},
-          notes: "Set the research topic in the prompt below.",
+        },
+        {
+          id: "topic",
+          type: "input.text",
+          name: "Research topic",
+          position: { x: 320, y: 180 },
+          params: { label: "Research topic", value: "" },
+          requiredParams: ["value"],
         },
         {
           id: "research-plan",
           type: "familiar",
           name: "Research familiar - plan queries",
-          position: { x: 360, y: 180 },
+          position: { x: 600, y: 180 },
           params: {
             familiar: "",
             prompt:
@@ -132,7 +139,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
           id: "research-search",
           type: "familiar",
           name: "Research familiar - search & collect",
-          position: { x: 640, y: 180 },
+          position: { x: 880, y: 180 },
           params: {
             familiar: "",
             prompt:
@@ -143,7 +150,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
           id: "research-synthesize",
           type: "familiar",
           name: "Research familiar - synthesize",
-          position: { x: 920, y: 180 },
+          position: { x: 1160, y: 180 },
           params: {
             familiar: "",
             prompt:
@@ -154,14 +161,14 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
           id: "approval",
           type: "human.gate",
           name: "Review before sending",
-          position: { x: 1200, y: 180 },
+          position: { x: 1440, y: 180 },
           params: { prompt: "Review the research brief. Approve to send, or reject to discard." },
         },
         {
           id: "delivery",
           type: "familiar",
           name: "Delivery familiar - deliver",
-          position: { x: 1480, y: 120 },
+          position: { x: 1720, y: 120 },
           params: {
             familiar: "",
             prompt: "Send this research brief to Val via Telegram. Use clean formatting suitable for mobile.",
@@ -171,19 +178,20 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
           id: "out",
           type: "data.output",
           name: "Done",
-          position: { x: 1720, y: 120 },
+          position: { x: 1960, y: 120 },
           params: { label: "brief sent" },
         },
         {
           id: "discarded",
           type: "data.output",
           name: "Discarded",
-          position: { x: 1480, y: 280 },
+          position: { x: 1720, y: 280 },
           params: { label: "discarded" },
         },
       ],
       edges: [
-        { id: "trigger:main->research-plan:in", source: "trigger", sourceHandle: "main", target: "research-plan", targetHandle: "in" },
+        { id: "trigger:main->topic:in", source: "trigger", sourceHandle: "main", target: "topic", targetHandle: "in" },
+        { id: "topic:main->research-plan:in", source: "topic", sourceHandle: "main", target: "research-plan", targetHandle: "in" },
         { id: "research-plan:main->research-search:in", source: "research-plan", sourceHandle: "main", target: "research-search", targetHandle: "in" },
         { id: "research-search:main->research-synthesize:in", source: "research-search", sourceHandle: "main", target: "research-synthesize", targetHandle: "in" },
         { id: "research-synthesize:main->approval:in", source: "research-synthesize", sourceHandle: "main", target: "approval", targetHandle: "in" },

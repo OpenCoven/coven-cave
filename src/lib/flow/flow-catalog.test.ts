@@ -88,4 +88,18 @@ const NOW = "2026-01-01T00:00:00.000Z";
   assert.equal(createNode(doc, "does.not.exist", { x: 0, y: 0 }), null);
 }
 
+// input.text exists and createNode seeds requiredParams from requiredByDefault
+{
+  const def = catalogNode("input.text");
+  assert.ok(def, "input.text should be in the catalog");
+  assert.deepEqual(
+    def.params.map((p) => p.key),
+    ["label", "value"],
+  );
+  const doc = emptyFlow("f", "F", "2026-01-01T00:00:00.000Z");
+  const node = createNode(doc, "input.text", { x: 0, y: 0 });
+  assert.ok(node);
+  assert.deepEqual(node.requiredParams, ["value"]);
+}
+
 console.log("flow-catalog.test.ts OK");

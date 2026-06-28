@@ -12,6 +12,7 @@ import {
   flowRunBlockReason,
   type FlowTriggerInput,
 } from "@/lib/flow/flow-compile";
+import { flowMissingRequiredInputs } from "@/lib/required-inputs";
 import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord } from "@/lib/flows";
 import { recordFlowRun } from "@/lib/server/flow-store";
@@ -47,6 +48,15 @@ export async function startFlowSession(
 ): Promise<StartFlowSessionResult> {
   const blocked = flowRunBlockReason(flow, options.targetNodeId);
   if (!blocked.ok) return { ok: false, error: blocked.reason, status: 400 };
+
+  const missingRequired = flowMissingRequiredInputs(flow);
+  if (missingRequired.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Provide required input: ${missingRequired.map((m) => m.label).join(", ")}`,
+    };
+  }
 
   const projectRoot = normalizeProjectRoot(options.projectRoot ?? process.cwd());
   if (!projectRoot) return { ok: false, error: "invalid project root", status: 400 };

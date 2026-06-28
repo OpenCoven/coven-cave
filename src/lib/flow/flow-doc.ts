@@ -70,6 +70,8 @@ export type FlowNode = {
   disabled?: boolean;
   /** Development-only pinned output reused by manual/partial runs. */
   pinnedData?: string;
+  /** Param keys (author-marked) that must be non-empty before the flow runs. */
+  requiredParams?: string[];
   /** Generic n8n-style runtime behavior for this node. Defaults are omitted. */
   settings?: FlowNodeSettings;
   notes?: string;
