@@ -25,6 +25,47 @@ export const runtime = "nodejs";
 const MAX_BYTES = 2 * 1024 * 1024;
 const TIMEOUT_MS = 12_000;
 
+function allowedArticleOrigin(hostname: string): string | null {
+  switch (hostname.toLowerCase()) {
+    case "medium.com":
+    case "www.medium.com":
+      return "https://medium.com";
+    case "dev.to":
+    case "www.dev.to":
+      return "https://dev.to";
+    case "hashnode.dev":
+    case "www.hashnode.dev":
+      return "https://hashnode.dev";
+    case "github.blog":
+    case "www.github.blog":
+      return "https://github.blog";
+    case "blog.cloudflare.com":
+      return "https://blog.cloudflare.com";
+    case "engineering.atspotify.com":
+      return "https://engineering.atspotify.com";
+    case "netflixtechblog.com":
+    case "www.netflixtechblog.com":
+      return "https://netflixtechblog.com";
+    default:
+      return null;
+  }
+}
+
+function safeArticlePath(url: URL): string | null {
+  const parts = url.pathname.split("/");
+  const encoded = [];
+  for (const part of parts) {
+    if (part === "" || part === ".") {
+      encoded.push("");
+      continue;
+    }
+    if (part === ".." || part.length > 180) return null;
+    encoded.push(encodeURIComponent(part));
+  }
+  const path = encoded.join("/") || "/";
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
 /** Block obvious SSRF targets before DNS resolution (*.local, localhost, etc.). */
 function hasPublicHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
@@ -69,6 +110,11 @@ export async function GET(req: NextRequest) {
   if (!(await isPublicFetchTarget(parsed))) {
     return NextResponse.json({ ok: false, error: "That host is not allowed." }, { status: 403 });
   }
+  const allowedOrigin = allowedArticleOrigin(parsed.hostname);
+  const allowedPath = safeArticlePath(parsed);
+  if (!allowedOrigin || !allowedPath) {
+    return NextResponse.json({ ok: false, error: "The reader supports a curated set of article hosts." }, { status: 422 });
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -83,12 +129,13 @@ export async function GET(req: NextRequest) {
         clearTimeout(timer);
         return NextResponse.json({ ok: false, error: "That host is not allowed." }, { status: 403 });
       }
-      // Reconstruct the fetch URL from validated URL components — this gives
-      // the static analyzer a clean view of the sanitized inputs (origin +
-      // path + search are taken from the already-validated parsed URL object,
-      // not the raw user input) and shrinks the taint surface.
-      const safeUrl = new URL(target.pathname + target.search, target.origin);
-      // lgtm[js/request-forgery] safeUrl is parsed as http(s) (parseSafeHttpUrl), the hostname is denylisted (hasPublicHostname), and DNS is resolved to a public-only set (isPublicAddress) before every fetch hop; redirects re-run the same validation.
+      const fetchOrigin = allowedArticleOrigin(target.hostname);
+      const fetchPath = safeArticlePath(target);
+      if (!fetchOrigin || !fetchPath) {
+        clearTimeout(timer);
+        return NextResponse.json({ ok: false, error: "Refused to fetch an unsupported article host." }, { status: 403 });
+      }
+      const safeUrl = new URL(fetchPath, fetchOrigin);
       res = await fetch(safeUrl, {
         headers: {
           // A desktop UA + accept header improves extraction on UA-gated sites.
