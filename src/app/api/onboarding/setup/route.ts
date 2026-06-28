@@ -107,6 +107,13 @@ export async function POST(req: Request) {
 
   // Always update cave-config.json defaults so the user's chosen adapter
   // binding takes effect even if they re-run setup.
+  //
+  // IMPORTANT: nextConfig must carry over every field from `existing` that we
+  // are not explicitly changing here. Earlier versions of this route emitted a
+  // {version, defaults, familiars}-only literal, which silently wiped the
+  // user's `addons`, `roles`, and `marketplace.installed` settings every time
+  // they added a familiar. Guard against that regression with the source-test
+  // at src/app/api/onboarding/setup/route.test.ts.
   const existing = await loadConfig();
   const nextConfig = {
     version: existing.version || 1,
@@ -124,6 +131,12 @@ export async function POST(req: Request) {
           },
         }
       : (existing.familiars ?? {}),
+    // Carry over user-set fields untouched — these belong to other surfaces
+    // (Settings → Add-ons, Settings → Roles, Marketplace) and creating a
+    // familiar should not touch them.
+    roles: existing.roles,
+    addons: existing.addons,
+    marketplace: existing.marketplace,
   };
   await writeFile(configJson, JSON.stringify(nextConfig, null, 2), "utf8");
   wrote.push("cave-config.json");

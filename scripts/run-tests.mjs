@@ -524,6 +524,7 @@ export const SUITES = {
     "src/app/api/library/route-link/route.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
     "src/app/api/onboarding/install/route.test.ts",
+    "src/app/api/onboarding/setup/route.test.ts",
     "src/app/api/onboarding/ssh-check/route.test.ts",
     "src/app/api/skills/local/route.test.ts",
     "src/app/api/capabilities/route.test.ts",
