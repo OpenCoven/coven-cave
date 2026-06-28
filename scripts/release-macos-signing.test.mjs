@@ -15,6 +15,10 @@ const sidecarScript = readFileSync(
   fileURLToPath(new URL("./sidecar-bundle.sh", import.meta.url)),
   "utf8",
 );
+const sidecarTargetModule = readFileSync(
+  fileURLToPath(new URL("./sidecar-target.mjs", import.meta.url)),
+  "utf8",
+);
 
 test("macOS release signing includes node-pty spawn-helper Mach-O files", () => {
   assert.match(
@@ -85,8 +89,14 @@ test("sidecar bundle prunes foreign native packages before release bundling", ()
   assert.match(sidecarScript, /prune_foreign_native_packages\(\)/);
   assert.match(sidecarScript, /process\.platform/);
   assert.match(sidecarScript, /process\.arch/);
-  assert.match(sidecarScript, /@next\/swc-\$target-\$libc/);
-  assert.match(sidecarScript, /@img\/sharp-libvips-\$target/);
+  // The per-target native package names now live in the shared, importable
+  // single source of truth (scripts/sidecar-target.mjs), consumed by the prune
+  // via `eval "$(node … --sh …)"` and asserted per-OS by the cross-environment
+  // conformance suite (#1990). Verify the prune wires up the module and that
+  // the module still derives the @next/swc-<libc> + @img/sharp-libvips targets.
+  assert.match(sidecarScript, /sidecar-target\.mjs.*--sh/);
+  assert.match(sidecarTargetModule, /@next\/swc-linux-\$\{arch\}-\$\{libc\}/);
+  assert.match(sidecarTargetModule, /@img\/sharp-libvips-darwin-\$\{arch\}/);
   assert.match(sidecarScript, /node-pty\/prebuilds/);
   assert.match(sidecarScript, /rm -rf "\$base\/fsevents"/);
   assert(
