@@ -1049,6 +1049,100 @@ tr[role="checkbox"]:focus-visible {
   flex-shrink: 0;
 }
 
+/* ---- Flow "Required inputs" dialog -------------------------- */
+.required-inputs-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.required-inputs-copy {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.required-inputs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.required-inputs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.required-inputs-field-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.required-inputs-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.required-inputs-node {
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 55%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.required-inputs-control {
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--foreground);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.required-inputs-control::placeholder {
+  color: var(--text-muted);
+}
+
+.required-inputs-control:hover {
+  border-color: color-mix(in oklch, var(--border) 60%, var(--text-muted));
+}
+
+.required-inputs-control:focus,
+.required-inputs-control:focus-visible {
+  outline: none;
+  border-color: var(--accent-presence);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-presence) 28%, transparent);
+}
+
+textarea.required-inputs-control {
+  resize: vertical;
+  min-height: 64px;
+  line-height: 1.5;
+}
+
+.required-inputs-help {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
 /* ---- Property pill ----------------------------------------- */
 .ui-pill {
   display: inline-flex;

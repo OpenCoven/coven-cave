@@ -49,34 +49,46 @@ export function RequiredInputsDialog({ inputs, onSubmit, onCancel }: RequiredInp
       >
         <div className="required-inputs-dialog">
           <p className="required-inputs-copy">
-            Add the missing values before running this flow.
+            {inputs.length === 1
+              ? "One value is required before this flow can run."
+              : `${inputs.length} values are required before this flow can run.`}
           </p>
-          {inputs.map((input) => (
-            <label key={input.key} className="required-inputs-field">
-              <span className="required-inputs-label">{input.label}</span>
-              {input.control === "textarea" || input.control === "code" || input.control === "json" ? (
-                <textarea
-                  required
-                  value={values[input.key] ?? ""}
-                  placeholder={input.placeholder}
-                  onChange={(event) =>
-                    setValues((current) => ({ ...current, [input.key]: event.target.value }))
-                  }
-                />
-              ) : (
-                <input
-                  required
-                  type={input.control === "number" ? "number" : "text"}
-                  value={values[input.key] ?? ""}
-                  placeholder={input.placeholder}
-                  onChange={(event) =>
-                    setValues((current) => ({ ...current, [input.key]: event.target.value }))
-                  }
-                />
-              )}
-              {input.help ? <span className="required-inputs-help">{input.help}</span> : null}
-            </label>
-          ))}
+          <div className="required-inputs-list">
+            {inputs.map((input) => (
+              <label key={input.key} className="required-inputs-field">
+                <span className="required-inputs-field-head">
+                  <span className="required-inputs-label">{input.paramLabel}</span>
+                  <span className="required-inputs-node" title={`Step: ${input.nodeName}`}>
+                    {input.nodeName}
+                  </span>
+                </span>
+                {input.control === "textarea" || input.control === "code" || input.control === "json" ? (
+                  <textarea
+                    required
+                    className="required-inputs-control"
+                    rows={3}
+                    value={values[input.key] ?? ""}
+                    placeholder={input.placeholder}
+                    onChange={(event) =>
+                      setValues((current) => ({ ...current, [input.key]: event.target.value }))
+                    }
+                  />
+                ) : (
+                  <input
+                    required
+                    className="required-inputs-control"
+                    type={input.control === "number" ? "number" : "text"}
+                    value={values[input.key] ?? ""}
+                    placeholder={input.placeholder}
+                    onChange={(event) =>
+                      setValues((current) => ({ ...current, [input.key]: event.target.value }))
+                    }
+                  />
+                )}
+                {input.help ? <span className="required-inputs-help">{input.help}</span> : null}
+              </label>
+            ))}
+          </div>
         </div>
       </form>
     </Modal>
