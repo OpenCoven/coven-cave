@@ -108,6 +108,30 @@ assert.match(
 
 assert.match(
   source,
+  /async function fetchGitHubIssueStates\(github: CardGitHubLink\[\]\)/,
+  "Enrich route should autonomously fetch live GitHub issue/PR state for linked task items",
+);
+
+assert.match(
+  source,
+  /resolveSecret\("GITHUB_PAT"\)[\s\S]*https:\/\/api\.github\.com\/repos\/\$\{item\.repo\}\/issues\/\$\{item\.number\}/,
+  "GitHub issue-state refresh should use the saved PAT when present and the REST issue endpoint",
+);
+
+assert.match(
+  source,
+  /function terminalPatchFromGitHub\([\s\S]*state === "closed"[\s\S]*status: "done"[\s\S]*lifecycle: "completed"/,
+  "Closed GitHub issues should deterministically complete the linked board task",
+);
+
+assert.match(
+  source,
+  /const githubState = await fetchGitHubIssueStates\(card\.github\)[\s\S]*const normalized = applyGitHubState\(card, normalizeTaskEnrichment/,
+  "Live GitHub state should be applied after model enrichment so it can override stale model status",
+);
+
+assert.match(
+  source,
   /Simplify the description into concise task notes[\s\S]*Create or update subtasks[\s\S]*Set startDate and endDate[\s\S]*Ensure links, github, and sessionId reflect associated issues, PRs, discussions, docs, and chats/,
   "Enrich prompt should explicitly instruct the assigned familiar to clean up subtasks, dates, description, status/priority, and issue/chat links",
 );

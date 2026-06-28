@@ -18,6 +18,7 @@ import { isTrustedChatHarness } from "@/lib/harness-adapters";
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { stripAnsi } from "@/lib/ansi";
+import { resolveSecret } from "@/lib/vault";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -26,6 +27,7 @@ const ENRICH_INTENT = "board-enrich-steps";
 const STATUS_VALUES = new Set<CardStatus>(STATUSES);
 const LIFECYCLE_VALUES = new Set<CardLifecycle>(LIFECYCLES);
 const PRIORITY_VALUES = new Set<CardPriority>(PRIORITIES);
+const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 
 type TaskEnrichment = {
   steps?: string[];
@@ -398,6 +400,109 @@ function normalizeTaskEnrichment(card: Card, enrichment: TaskEnrichment, now: st
   };
 }
 
+type NormalizedTaskEnrichment = ReturnType<typeof normalizeTaskEnrichment>;
+
+function labelsFromGitHub(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(
+    value
+      .map((item) => {
+        if (typeof item === "string") return item.trim();
+        if (!item || typeof item !== "object") return "";
+        const name = (item as Record<string, unknown>).name;
+        return typeof name === "string" ? name.trim() : "";
+      })
+      .filter(Boolean),
+  )];
+}
+
+async function fetchGitHubIssueStates(github: CardGitHubLink[]): Promise<CardGitHubLink[]> {
+  if (github.length === 0) return github;
+  const token = resolveSecret("GITHUB_PAT") ?? null;
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const refreshed: CardGitHubLink[] = [];
+  for (const item of github.slice(0, 16)) {
+    if ((item.kind !== "issue" && item.kind !== "pr") || !item.number || !REPO_RE.test(item.repo)) {
+      refreshed.push(item);
+      continue;
+    }
+    try {
+      const res = await fetch(`https://api.github.com/repos/${item.repo}/issues/${item.number}`, {
+        headers,
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => null) as Record<string, unknown> | null;
+      if (!res.ok || !data) {
+        refreshed.push(item);
+        continue;
+      }
+      const pull = data.pull_request as Record<string, unknown> | undefined;
+      const merged = typeof pull?.merged_at === "string" && pull.merged_at.trim().length > 0;
+      const state = merged ? "merged" : String(data.state ?? item.state ?? "").trim();
+      refreshed.push({
+        ...item,
+        kind: pull ? "pr" : item.kind,
+        title: typeof data.title === "string" && data.title.trim() ? data.title.trim() : item.title,
+        state: state || item.state,
+        labels: labelsFromGitHub(data.labels),
+        updatedAt: typeof data.updated_at === "string" ? data.updated_at : item.updatedAt,
+        url: typeof data.html_url === "string" ? data.html_url : item.url,
+      });
+    } catch {
+      refreshed.push(item);
+    }
+  }
+  return normalizeTaskGitHubLinks(refreshed);
+}
+
+function terminalPatchFromGitHub(
+  card: Card,
+  github: CardGitHubLink[],
+  now: string,
+): Pick<NormalizedTaskEnrichment, "status" | "lifecycle" | "needsHuman" | "lifecycleReason" | "lifecycleAt"> | null {
+  const terminal = github.find(
+    (item) =>
+      (item.kind === "issue" || item.kind === "pr") &&
+      (item.state === "closed" || item.state === "merged"),
+  );
+  if (!terminal) return null;
+  const kind = terminal.kind === "pr"
+    ? (terminal.state === "merged" ? "PR merged" : "PR closed")
+    : "issue closed";
+  const target = `${terminal.repo}${terminal.number ? ` #${terminal.number}` : ""}`;
+  return {
+    status: "done",
+    lifecycle: "completed",
+    needsHuman: false,
+    lifecycleReason: `GitHub ${kind}: ${target}`.slice(0, 240),
+    lifecycleAt: card.lifecycle === "completed" ? card.lifecycleAt : now,
+  };
+}
+
+function applyGitHubState(
+  card: Card,
+  normalized: NormalizedTaskEnrichment,
+  github: CardGitHubLink[],
+  now: string,
+): NormalizedTaskEnrichment {
+  const terminal = terminalPatchFromGitHub(card, github, now);
+  return {
+    ...normalized,
+    github,
+    ...(terminal ?? {}),
+  };
+}
+
+function githubStateChanged(previous: CardGitHubLink[], next: CardGitHubLink[]): boolean {
+  return JSON.stringify(previous.map(({ url, state, title, labels, updatedAt }) => ({ url, state, title, labels, updatedAt }))) !==
+    JSON.stringify(next.map(({ url, state, title, labels, updatedAt }) => ({ url, state, title, labels, updatedAt })));
+}
+
 export async function POST(req: Request) {
   const body = await readEnrichRequestBody(req);
   if (!body) {
@@ -455,6 +560,10 @@ export async function POST(req: Request) {
         }
 
         push({ kind: "progress", cardId: card.id, title: card.title });
+        const githubState = await fetchGitHubIssueStates(card.github);
+        const cardForPrompt = githubStateChanged(card.github, githubState)
+          ? { ...card, github: githubState }
+          : card;
 
         const title = `Refresh task: ${card.title.trim().slice(0, 80) || card.id}`;
         const args: string[] = [
@@ -469,20 +578,48 @@ export async function POST(req: Request) {
         ];
         if (/^[a-z0-9_-]+$/i.test(familiarId))
           args.push("--familiar", familiarId);
-        args.push("--", enrichPrompt(card));
+        args.push("--", enrichPrompt(cardForPrompt));
 
         const workspace = await resolveFamiliarWorkspace(familiarId);
         const raw = await runCoven(args, req.signal, workspace);
         if (req.signal.aborted) break;
         const enrichment = parseTaskEnrichment(raw);
+        const now = new Date().toISOString();
 
         if (!enrichment) {
-          push({ kind: "skip", cardId: card.id, reason: "no_task_metadata_parsed" });
+          const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, {}, now), githubState, now);
+          if (
+            !githubStateChanged(card.github, normalized.github) &&
+            normalized.status === card.status &&
+            normalized.lifecycle === card.lifecycle
+          ) {
+            push({ kind: "skip", cardId: card.id, reason: "no_task_metadata_parsed" });
+            continue;
+          }
+          const updated = await updateCard(card.id, {
+            notes: normalized.notes,
+            steps: normalized.steps,
+            status: normalized.status,
+            lifecycle: normalized.lifecycle,
+            priority: normalized.priority,
+            startDate: normalized.startDate,
+            endDate: normalized.endDate,
+            links: normalized.links,
+            github: normalized.github,
+            sessionId: normalized.sessionId,
+            needsHuman: normalized.needsHuman,
+            lifecycleReason: normalized.lifecycleReason,
+            lifecycleAt: normalized.lifecycleAt,
+          });
+          if (!updated) {
+            push({ kind: "skip", cardId: card.id, reason: "card_missing" });
+            continue;
+          }
+          push({ kind: "done", cardId: card.id, count: normalized.steps.length });
           continue;
         }
 
-        const now = new Date().toISOString();
-        const normalized = normalizeTaskEnrichment(card, enrichment, now);
+        const normalized = applyGitHubState(card, normalizeTaskEnrichment(card, enrichment, now), githubState, now);
         const updated = await updateCard(card.id, {
           notes: normalized.notes,
           steps: normalized.steps,
