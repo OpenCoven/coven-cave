@@ -31,6 +31,11 @@ assert.equal(htmlToMarkdown("<blockquote>quoted</blockquote>"), "> quoted", "blo
 assert.match(htmlToMarkdown("<img src='/a.png' alt='cat'>"), /!\[cat\]\(\/a\.png\)/, "image");
 // javascript: and anchor hrefs become plain text
 assert.equal(htmlToMarkdown("<a href='javascript:void(0)'>x</a>"), "x", "drops js href");
+assert.doesNotMatch(
+  htmlToMarkdown("&lt;iframe src='https://evil.example'&gt;bad&lt;/iframe&gt;safe"),
+  /<iframe/i,
+  "encoded iframe tags do not survive entity decoding",
+);
 
 // ── extractArticle ──────────────────────────────────────────────
 const page = `<!doctype html>

@@ -7,10 +7,14 @@
  *
  * Safety:
  *   - http/https only; private / loopback / link-local hosts are blocked (SSRF).
+ *   - DNS is resolved before every fetch hop so public hostnames cannot redirect
+ *     or resolve to private addresses.
  *   - Response capped at 2MB and to text/html content types.
  *   - 12s fetch timeout.
  */
 
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { NextRequest, NextResponse } from "next/server";
 import { parseSafeHttpUrl } from "@/lib/url-safety";
 import { extractArticle } from "@/lib/article-extract";
@@ -21,10 +25,15 @@ export const runtime = "nodejs";
 const MAX_BYTES = 2 * 1024 * 1024;
 const TIMEOUT_MS = 12_000;
 
-/** Block obvious SSRF targets (loopback, private, link-local, *.local). */
-function isPublicHost(hostname: string): boolean {
+/** Block obvious SSRF targets before DNS resolution (*.local, localhost, etc.). */
+function hasPublicHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false;
+  return true;
+}
+
+function isPublicAddress(address: string): boolean {
+  const host = address.toLowerCase().replace(/^\[|\]$/g, "");
   // IPv6 loopback / link-local / unique-local.
   if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) return false;
   // IPv4 literal ranges.
@@ -39,13 +48,25 @@ function isPublicHost(hostname: string): boolean {
   return true;
 }
 
+async function isPublicFetchTarget(url: URL): Promise<boolean> {
+  if (!hasPublicHostname(url.hostname)) return false;
+  const literal = isIP(url.hostname);
+  if (literal) return isPublicAddress(url.hostname);
+  try {
+    const records = await lookup(url.hostname, { all: true, verbatim: true });
+    return records.length > 0 && records.every((record) => isPublicAddress(record.address));
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(req: NextRequest) {
   const rawUrl = req.nextUrl.searchParams.get("url");
   const parsed = parseSafeHttpUrl(rawUrl);
   if (!parsed) {
     return NextResponse.json({ ok: false, error: "A valid http(s) url is required." }, { status: 400 });
   }
-  if (!isPublicHost(parsed.hostname)) {
+  if (!(await isPublicFetchTarget(parsed))) {
     return NextResponse.json({ ok: false, error: "That host is not allowed." }, { status: 403 });
   }
 
@@ -58,6 +79,13 @@ export async function GET(req: NextRequest) {
   let res: Response;
   try {
     for (let hop = 0; ; hop++) {
+      if (!(await isPublicFetchTarget(target))) {
+        clearTimeout(timer);
+        return NextResponse.json({ ok: false, error: "That host is not allowed." }, { status: 403 });
+      }
+      // lgtm[js/request-forgery] target is parsed as http(s), denylisted by hostname,
+      // and DNS-resolved to public addresses immediately above; redirects are
+      // re-validated before every subsequent fetch.
       res = await fetch(target.toString(), {
         headers: {
           // A desktop UA + accept header improves extraction on UA-gated sites.
@@ -70,7 +98,7 @@ export async function GET(req: NextRequest) {
       if (res.status < 300 || res.status >= 400) break;
       const location = res.headers.get("location");
       const next = location ? parseSafeHttpUrl(new URL(location, target).toString()) : null;
-      if (!next || !isPublicHost(next.hostname)) {
+      if (!next || !(await isPublicFetchTarget(next))) {
         clearTimeout(timer);
         return NextResponse.json({ ok: false, error: "Refused to follow a redirect to a disallowed host." }, { status: 403 });
       }

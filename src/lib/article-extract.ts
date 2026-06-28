@@ -56,8 +56,12 @@ export function stripHtmlTags(input: string): string {
   return out;
 }
 
+function stripHtmlTagsAfterDecode(input: string): string {
+  return stripHtmlTags(decodeEntities(stripHtmlTags(input)));
+}
+
 function stripTags(html: string): string {
-  return decodeEntities(stripHtmlTags(html)).replace(/[ \t]+/g, " ").trim();
+  return stripHtmlTagsAfterDecode(html).replace(/[ \t]+/g, " ").trim();
 }
 
 function metaContent(html: string, patterns: RegExp[]): string | null {
@@ -158,7 +162,7 @@ export function htmlToMarkdown(html: string): string {
   s = s.replace(/<\/(div|section|figure|figcaption|tr)>/gi, "\n");
 
   // Drop every remaining tag (fixpoint), decode, normalize whitespace.
-  s = decodeEntities(stripHtmlTags(s));
+  s = stripHtmlTagsAfterDecode(s);
   s = s.replace(/[ \t]+/g, " ");
   s = s.replace(/ *\n */g, "\n");
   s = s.replace(/\n{3,}/g, "\n\n");
