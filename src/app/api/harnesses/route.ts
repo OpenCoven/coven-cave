@@ -11,7 +11,7 @@ import {
   type AdapterReport,
   type CovenAdapterSummary,
 } from "@/lib/harness-adapters";
-import { covenBin, covenSpawnEnv } from "@/lib/coven-bin";
+import { covenBin, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
 
 export const dynamic = "force-dynamic";
 
@@ -34,15 +34,25 @@ type HarnessReport = HarnessSpec & {
   version: string | null;
 };
 
-function which(binary: string): Promise<string | null> {
+function whichWith(binary: string, env: NodeJS.ProcessEnv): Promise<string | null> {
   return new Promise((resolve) => {
     const command = process.platform === "win32" ? "where" : "which";
-    const child = spawn(command, [binary], { env: covenSpawnEnv(), stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn(command, [binary], { env, stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     child.stdout.on("data", (d) => (out += d.toString()));
     child.on("close", (code) => resolve(code === 0 ? out.trim() || null : null));
     child.on("error", () => resolve(null));
   });
+}
+
+// covenSpawnEnv() caches PATH for the server's lifetime. A cave launched from
+// Finder/Spotlight starts with a minimal PATH (no nvm/fnm), so installed
+// runtimes go undetected and Option A renders empty. Re-probe once with a
+// freshly rebuilt PATH on a miss before reporting the runtime as absent.
+async function which(binary: string): Promise<string | null> {
+  const found = await whichWith(binary, covenSpawnEnv());
+  if (found) return found;
+  return whichWith(binary, refreshCovenSpawnEnv());
 }
 
 function probeVersion(binary: string, args: string[]): Promise<string | null> {

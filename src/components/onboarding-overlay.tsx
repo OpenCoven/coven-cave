@@ -2153,42 +2153,64 @@ function StepFamiliar(props: {
             this machine.
           </p>
           <div className="mt-2 grid gap-2">
-            {chatHarnesses.map((adapter) => {
-              const active = selectedHarnessId === adapter.id;
-              return (
-                <button
-                  key={adapter.id}
-                  onClick={() => props.onSelectHarness(adapter)}
-                  disabled={!adapter.installed}
-                  className={`focus-ring rounded-lg border p-2.5 text-left ${
-                    active
-                      ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
-                      : adapter.installed
-                        ? "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
-                        : "border-[var(--border-hairline)] bg-[var(--bg-base)]/35 text-[var(--text-muted)] opacity-70"
-                  }`}
-                  title={
-                    adapter.installed
-                      ? undefined
-                      : `Not installed yet — see step 3. ${adapter.installHint}`
-                  }
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[12px] font-medium">
-                      {adapter.label}
-                    </span>
-                    {active ? (
-                      <Icon
-                        name="ph:check-bold"
-                        className="text-[var(--accent-presence)]"
-                      />
-                    ) : !adapter.installed ? (
-                      <span className="text-[10px]">not installed</span>
-                    ) : null}
-                  </div>
-                </button>
-              );
-            })}
+            {chatHarnesses.length === 0 ? (
+              <div className="rounded-md border border-dashed border-[var(--border-hairline)] bg-[var(--bg-base)]/35 px-3 py-4 text-[11px] leading-5 text-[var(--text-secondary)]">
+                <p className="font-medium text-[var(--text-primary)]">
+                  No runtimes detected on this machine yet.
+                </p>
+                <p className="mt-1">
+                  Install one in{" "}
+                  <span className="font-medium text-[var(--text-primary)]">
+                    step 3
+                  </span>{" "}
+                  (Codex, Claude Code, …) — this list refreshes automatically. If
+                  you just installed a runtime, restart Cave so its PATH applies.
+                </p>
+                <p className="mt-1">
+                  <span className="font-medium text-[var(--text-primary)]">
+                    Option B
+                  </span>{" "}
+                  remains available to connect an existing OpenClaw agent.
+                </p>
+              </div>
+            ) : (
+              chatHarnesses.map((adapter) => {
+                const active = selectedHarnessId === adapter.id;
+                return (
+                  <button
+                    key={adapter.id}
+                    onClick={() => props.onSelectHarness(adapter)}
+                    disabled={!adapter.installed}
+                    className={`focus-ring rounded-lg border p-2.5 text-left ${
+                      active
+                        ? "border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] text-[var(--text-primary)]"
+                        : adapter.installed
+                          ? "border-[var(--border-hairline)] bg-[var(--bg-base)]/45 text-[var(--text-secondary)] hover:border-[var(--border-strong)]"
+                          : "border-[var(--border-hairline)] bg-[var(--bg-base)]/35 text-[var(--text-muted)] opacity-70"
+                    }`}
+                    title={
+                      adapter.installed
+                        ? undefined
+                        : `Not installed yet — see step 3. ${adapter.installHint}`
+                    }
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-[12px] font-medium">
+                        {adapter.label}
+                      </span>
+                      {active ? (
+                        <Icon
+                          name="ph:check-bold"
+                          className="text-[var(--accent-presence)]"
+                        />
+                      ) : !adapter.installed ? (
+                        <span className="text-[10px]">not installed</span>
+                      ) : null}
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
