@@ -84,6 +84,7 @@ export const SUITES = {
     "src/lib/automation-runs.test.ts",
     "src/lib/secret-redaction.test.ts",
     "src/lib/retro-runs.test.ts",
+    "src/lib/eval-loop-daemon.test.ts",
     "src/lib/role-manifest.test.ts",
     "src/lib/chat-cwd-root.test.ts",
     "src/lib/agent-completion-report.test.ts",
