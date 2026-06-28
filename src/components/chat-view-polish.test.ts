@@ -460,7 +460,7 @@ assert.match(
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{\s*updateFollowing\(true\);\s*\}, \[sessionId, updateFollowing\]\)/,
+  /useEffect\(\(\) => \{\s*updateFollowing\(true\);[\s\S]*?\}, \[sessionId, updateFollowing\]\)/,
   "A freshly opened chat / session switch must re-engage following by default",
 );
 

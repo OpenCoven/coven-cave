@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, Fragment, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { forwardRef, Fragment, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
@@ -278,6 +278,14 @@ const COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
 const COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
 // Persisted ↑/↓ prompt-history recall stack for the chat composer.
 const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
+// Initial render cap: while the reader is pinned to the newest content, only the
+// last N grouped turns are mounted, so opening a long transcript doesn't build
+// hundreds of DOM nodes up front (off-screen rows already get
+// content-visibility:auto, but the nodes still cost mount + memory). The moment
+// the reader scrolls up or opens find — both routed through updateFollowing /
+// the find effect — the full transcript renders, so seeking, find, and deep
+// scroll are never limited by the cap.
+const TRANSCRIPT_RENDER_CAP = 60;
 const THINKING_OPTIONS: Array<{ value: ComposerThinkingEffort; label: string }> = [
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
@@ -2151,14 +2159,41 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [following, setFollowing] = useState(true);
   const followingRef = useRef(true);
   const [newTurnsCount, setNewTurnsCount] = useState(0);
+  // Transcript render cap (see TRANSCRIPT_RENDER_CAP). Sticky for the session:
+  // once the reader leaves the bottom we mount the whole transcript and keep it
+  // mounted, so re-pinning doesn't churn rows in/out.
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const historyExpandedRef = useRef(false);
+  historyExpandedRef.current = historyExpanded;
+  // Distance-from-bottom captured at the instant of expansion so the prepended
+  // older rows don't visually shove the viewport (restored in a layout effect).
+  const expandAnchorRef = useRef<number | null>(null);
   const updateFollowing = useCallback((next: boolean) => {
     followingRef.current = next;
     setFollowing(next);
     if (next) {
       // Reset count when returning to the bottom
       setNewTurnsCount(0);
+    } else if (!historyExpandedRef.current) {
+      // Leaving the bottom (wheel/touch/keys/find-jump all funnel here) — mount
+      // the full transcript and anchor the scroll so older rows slide in above
+      // the current view instead of jumping it.
+      const el = scrollRef.current;
+      expandAnchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
+      setHistoryExpanded(true);
     }
   }, []);
+
+  // Restore the pre-expansion distance-from-bottom once the full transcript has
+  // mounted, so revealing the older rows doesn't jump the reader's viewport.
+  useLayoutEffect(() => {
+    if (!historyExpanded) return;
+    const anchor = expandAnchorRef.current;
+    expandAnchorRef.current = null;
+    if (anchor == null) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = Math.max(0, el.scrollHeight - anchor);
+  }, [historyExpanded]);
 
   const refreshModelState = useCallback(async (): Promise<ChatModelState | null> => {
     const params = new URLSearchParams({ familiarId: familiar.id });
@@ -2357,6 +2392,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       findDebouncedQuery,
     );
   }, [findOpen, findDebouncedQuery, turns]);
+
+  // Find searches the whole transcript, so opening it mounts every turn — a
+  // jump (jumpToFindMatch) resolves its target via querySelector and must find
+  // the row in the DOM regardless of the render cap.
+  useEffect(() => {
+    if (findOpen) setHistoryExpanded(true);
+  }, [findOpen]);
 
   // Keep the active pointer in bounds when the match set shrinks.
   useEffect(() => {
@@ -2882,8 +2924,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   // A freshly opened chat (or session switch) follows by default; the pin
   // effect above then handles the initial scroll-to-bottom once history lands.
+  // Reset the render cap too so a long previous transcript doesn't keep the
+  // whole DOM mounted for the next session.
   useEffect(() => {
     updateFollowing(true);
+    setHistoryExpanded(false);
+    expandAnchorRef.current = null;
   }, [sessionId, updateFollowing]);
 
   // Release on intent: only USER input events detach following. Programmatic
@@ -4111,7 +4157,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             // feeds the per-row prev-turn timestamp-gap lookup and must match
             // the same sequence used for grouping.
             const allTurns = activePath;
-            return groupedTurns.map((g) => {
+            // Render cap (TRANSCRIPT_RENDER_CAP): while pinned to the bottom, only
+            // mount the newest groups. The per-row prev-turn lookup still reads
+            // the full `allTurns`/`turnIndexMap`, so the first visible row's
+            // timestamp gap stays correct. Expands to the whole transcript the
+            // moment the reader scrolls up or opens find (see historyExpanded).
+            const renderGroups =
+              historyExpanded || groupedTurns.length <= TRANSCRIPT_RENDER_CAP
+                ? groupedTurns
+                : groupedTurns.slice(-TRANSCRIPT_RENDER_CAP);
+            return renderGroups.map((g) => {
               if (g.kind === "single") {
                 const t = g.turn;
                 const i = turnIndexMap.get(t.id) ?? -1;
