@@ -146,6 +146,9 @@ enum SlashCatalog {
                      description: "Toggle the Familiar Chat side panel on desktop.",
                      section: .view, availability: .desktopOnly,
                      action: .desktopOnly("Familiar side panel")),
+        SlashCommand(name: "/evals", aliases: ["/eval-loops"], hint: "Eval Loops",
+                     description: "Familiar eval loops live on the desktop.",
+                     section: .view, availability: .desktopOnly, action: .desktopOnly("Eval Loops")),
 
         // MARK: Launch
         SlashCommand(name: "/run", hint: "run task",
