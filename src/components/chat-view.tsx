@@ -208,6 +208,23 @@ function subscribeLiveChatGeneration(sessionId: string, listener: LiveChatGenera
   };
 }
 
+/** A live snapshot is treated as still streaming only while its controller is
+ *  unaborted AND it has emitted an update recently. The writing component's
+ *  `finally` clears the registry when a stream ends normally — but if that
+ *  component unmounted mid-stream, or the stream died without running cleanup,
+ *  the entry is never cleared. Without this guard any view that later mounts on
+ *  the same session adopts a zombie `busy = true` from `readLiveChatGeneration`
+ *  and shows "Streaming…" forever with nothing actually streaming. An
+ *  actually-live stream refreshes `updatedAt` on every chunk (persistLiveTurns),
+ *  so the 90s TTL is generous enough to span long tool/think gaps without
+ *  tripping on a healthy generation. */
+const LIVE_SNAPSHOT_TTL_MS = 90_000;
+
+function isLiveSnapshotActive(snapshot: LiveChatGenerationSnapshot, now: number): boolean {
+  if (snapshot.controller.signal.aborted) return false;
+  return now - snapshot.updatedAt < LIVE_SNAPSHOT_TTL_MS;
+}
+
 type Props = {
   familiar: Familiar;
   sessionId: string | null;
@@ -2279,7 +2296,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     if (!sessionId) return;
     return subscribeLiveChatGeneration(sessionId, (live) => {
-      if (live) {
+      if (live && isLiveSnapshotActive(live, Date.now())) {
         setTurns(live.turns);
         turnsRef.current = live.turns;
         setActiveLeafId(live.activeLeafId);
@@ -2704,7 +2721,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       return;
     }
     const live = readLiveChatGeneration(sessionId);
-    if (live) {
+    if (live && isLiveSnapshotActive(live, Date.now())) {
       setTurns(live.turns);
       turnsRef.current = live.turns;
       setActiveLeafId(live.activeLeafId);
@@ -2712,6 +2729,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setHistoryState("loaded");
       setBusy(true);
       return;
+    }
+    if (live) {
+      // Stale/aborted snapshot whose cleanup never ran — evict it so neither
+      // this view nor the subscription re-adopts a dead "Streaming…" state,
+      // then fall through to loading the conversation from disk.
+      clearLiveChatGeneration(sessionId);
     }
     let cancelled = false;
     void (async () => {

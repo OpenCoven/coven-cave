@@ -168,6 +168,28 @@ assert.match(
   "A remounted ChatView should keep following live generation updates and settle when the stream finishes",
 );
 
+// A live snapshot whose writing component unmounted (or whose stream died
+// without running cleanup) is never cleared from the registry; without a
+// staleness guard, every later mount on that session inherits a zombie
+// `busy = true` and shows "Streaming…" forever with nothing streaming.
+assert.match(
+  source,
+  /function isLiveSnapshotActive\(snapshot: LiveChatGenerationSnapshot, now: number\): boolean \{[\s\S]*?signal\.aborted[\s\S]*?updatedAt < LIVE_SNAPSHOT_TTL_MS/,
+  "A live snapshot should only count as streaming while unaborted and recently updated",
+);
+
+assert.match(
+  source,
+  /readLiveChatGeneration\(sessionId\)[\s\S]*?isLiveSnapshotActive\(live, Date\.now\(\)\)[\s\S]*?setBusy\(true\)[\s\S]*?clearLiveChatGeneration\(sessionId\)/,
+  "Mount-time adoption should ignore and evict a stale live snapshot instead of pinning busy",
+);
+
+assert.match(
+  source,
+  /subscribeLiveChatGeneration\(sessionId, \(live\) => \{\s*if \(live && isLiveSnapshotActive\(live, Date\.now\(\)\)\)/,
+  "The live-generation subscription should gate busy on snapshot liveness",
+);
+
 assert.match(
   styles,
   /\.cave-chat-meta-line\s*\{[\s\S]*min-height:/,

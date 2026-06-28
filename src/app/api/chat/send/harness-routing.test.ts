@@ -353,8 +353,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /pushProgress\("resume-retry", "Resume failed; starting a fresh chat", "running"[\s\S]*await runAttempt\(buildArgs\(null\)\)[\s\S]*pushProgress\("resume-retry", "Fresh chat started", "done"/,
+  /pushProgress\(\s*"resume-retry",[\s\S]*?"Resume failed; starting a fresh chat",\s*"running",?\s*\)[\s\S]*await runAttempt\([\s\S]*?buildArgs\(null, prependPriorConversation\(harnessPrompt, priorBlock\)\)[\s\S]*?\)[\s\S]*pushProgress\("resume-retry", "Fresh chat started", "done"/,
   "Transparent resume fallback should be visible in the progress timeline",
+);
+
+assert.match(
+  chatRoute,
+  /const priorBlock = buildPriorConversationBlock\(existingConversation\)[\s\S]*?await runAttempt\([\s\S]*?prependPriorConversation\(harnessPrompt, priorBlock\)/,
+  "Fresh-session retry should replay recent conversation history so the familiar keeps context",
 );
 
 assert.match(
@@ -371,7 +377,7 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /stderrTail\.length = 0;[\s\S]*stdoutErrTail\.length = 0;[\s\S]*await runAttempt\(buildArgs\(null\)\)/,
+  /stderrTail\.length = 0;[\s\S]*stdoutErrTail\.length = 0;[\s\S]*await runAttempt\([\s\S]*?buildArgs\(null, prependPriorConversation\(harnessPrompt, priorBlock\)\)/,
   "Fresh-chat retry should clear stale diagnostic tails before the retry attempt",
 );
 
@@ -1010,10 +1016,10 @@ assert.match(
 
 // --model is emitted before the `--` separator, never after (the prompt is a
 // variadic positional that would otherwise swallow it).
-const localArgvBlock = chatRoute.match(/const a = \["run", binding\.harness, "--stream-json"\];[\s\S]*?a\.push\("--", harnessPrompt\);/);
+const localArgvBlock = chatRoute.match(/const a = \["run", binding\.harness, "--stream-json"\];[\s\S]*?a\.push\("--", prompt\);/);
 assert.ok(localArgvBlock, "local argv builder block should be present");
 assert.ok(
-  localArgvBlock[0].indexOf('a.push("--model"') < localArgvBlock[0].indexOf('a.push("--", harnessPrompt)'),
+  localArgvBlock[0].indexOf('a.push("--model"') < localArgvBlock[0].indexOf('a.push("--", prompt)'),
   "--model must be pushed before the -- prompt separator",
 );
 

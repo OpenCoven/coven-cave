@@ -63,6 +63,10 @@ import {
   saveConversation,
 } from "@/lib/cave-conversations";
 import {
+  buildPriorConversationBlock,
+  prependPriorConversation,
+} from "@/lib/chat-history-fallback";
+import {
   cleanModelId,
   modelApplicationForHarness,
   resolveChatModelState,
@@ -1038,13 +1042,20 @@ export async function POST(req: Request) {
   // Emitted BEFORE the `--` separator for the same reason every other flag is.
   const forwardModel =
     modelForwardingEnabled && cleanModelId(desiredModel) ? desiredModel : null;
-  const buildArgs = (resumeSessionId: string | null): string[] => {
+  // `promptOverride` lets the transparent resume-retry (below) prime a fresh
+  // harness session with replayed conversation history — without it the retry
+  // forks a context-free session and the familiar loses the thread.
+  const buildArgs = (
+    resumeSessionId: string | null,
+    promptOverride?: string,
+  ): string[] => {
+    const prompt = promptOverride ?? harnessPrompt;
     if (sshRuntime) {
       return buildSshSpawnArgs({
         runtime: sshRuntime,
         harness: binding.harness,
         familiarId: body.familiarId,
-        prompt: harnessPrompt,
+        prompt,
         sessionId: resumeSessionId,
         model: forwardModel,
       });
@@ -1058,7 +1069,7 @@ export async function POST(req: Request) {
     if (/^[a-z0-9_-]+$/i.test(body.familiarId)) {
       a.push("--familiar", body.familiarId);
     }
-    a.push("--", harnessPrompt);
+    a.push("--", prompt);
     return a;
   };
   // Resume the harness's latest session id, not the stable conversation id —
@@ -1399,9 +1410,19 @@ export async function POST(req: Request) {
 
       // Transparent retry: if codex reported its rollout-resume failed and
       // we had been resuming, start a fresh thread (no --continue) so the
-      // user's prompt still gets answered.
+      // user's prompt still gets answered. A fresh harness session has no
+      // history of its own, so replay the recent conversation into the prompt —
+      // otherwise the familiar answers as if the thread just started and the
+      // user has to remind it of everything said so far.
       if (resumeFailed && body.sessionId) {
-        pushProgress("resume-retry", "Resume failed; starting a fresh chat", "running");
+        const priorBlock = buildPriorConversationBlock(existingConversation);
+        pushProgress(
+          "resume-retry",
+          priorBlock
+            ? "Resume failed; replaying recent context into a fresh chat"
+            : "Resume failed; starting a fresh chat",
+          "running",
+        );
         sessionId = null;
         assistantFilter = new AssistantFilter();
         assistantText = "";
@@ -1411,7 +1432,9 @@ export async function POST(req: Request) {
         stderrTail.length = 0;
         stdoutErrTail.length = 0;
         resumeFailed = false;
-        await runAttempt(buildArgs(null));
+        await runAttempt(
+          buildArgs(null, prependPriorConversation(harnessPrompt, priorBlock)),
+        );
         pushProgress("resume-retry", "Fresh chat started", "done");
       }
 
