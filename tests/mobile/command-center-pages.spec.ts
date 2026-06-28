@@ -63,12 +63,10 @@ test.describe("mobile command center pages", () => {
 
     await expectNoHorizontalOverflow(page, "Chat index");
 
+    // The standalone Chat page no longer renders a `.chat-scope-tabs` header
+    // strip (the Chat/Code toggle was removed) — it's just the conversation, so
+    // there's no toggle-row geometry to assert here.
     const topBar = await box(page, ".top-bar");
-    const chatTabs = await box(page, ".chat-scope-tabs");
-    const bottomTabs = await box(page, ".mobile-bottom-tabs");
-
-    expect(chatTabs.top, "Chat tabs should sit below the app top bar").toBeGreaterThanOrEqual(topBar.bottom - 1);
-    expect(chatTabs.bottom, "Chat tabs should not run into bottom tabs").toBeLessThan(bottomTabs.top);
 
     await page.locator(".chat-surface").getByRole("button", { name: "Session", exact: true }).first().click();
     await page.waitForSelector(".cave-chat-linear");

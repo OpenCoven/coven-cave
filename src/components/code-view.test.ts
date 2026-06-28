@@ -63,9 +63,10 @@ assert.match(
 );
 assert.match(toolbar, /writeCodePreset\(next\)/, "selecting a preset persists the chip");
 assert.match(toolbar, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per preset");
-// The toolbar is mounted on the Code surface's tab row + carries the panel toggle.
-// (Standalone chat shows the Power-mode toggle on that row instead of null.)
-assert.match(chatSurface, /isCodeSurface \? \(\s*<CodeInlineToolbar \/>\s*\) : \(/, "the Code tab row hosts the inline toolbar");
+// The toolbar is mounted on the Code surface's header row + carries the panel
+// toggle. The standalone chat has no header row at all now (the Chat/Code toggle
+// was removed), so the whole header is gated behind `isCodeSurface`.
+assert.match(chatSurface, /isCodeSurface \? \([\s\S]*?<CodeInlineToolbar \/>/, "the Code header row hosts the inline toolbar");
 assert.match(toolbar, /code-panel-toggle/, "the toolbar includes the companion-panel toggle");
 assert.match(toolbar, /cave:toggle-right-panel/, "the panel toggle asks the shell to toggle the companion panel");
 

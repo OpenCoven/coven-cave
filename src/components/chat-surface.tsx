@@ -5,7 +5,6 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 import { ProjectsView } from "@/components/projects-view";
-import { ComuxView } from "@/components/comux-view";
 import { InspectorPane } from "@/components/inspector-pane";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { DebugPane } from "@/components/debug-pane";
@@ -29,14 +28,6 @@ const CHAT_GROUP_ID = "cave.chat.widths.v1";
 // Power mode = the standalone chat transforms its side area into an inline
 // chat↔code split (the comux coding surface beside the conversation). Toggle
 // state and the split width persist independently of the inspector layout.
-const POWER_MODE_KEY = "cave:chat-power-mode:v1";
-const POWER_GROUP_ID = "cave.chat.power.widths.v1";
-// Persisted selection for the standalone chat's Convo/Projects/Code switch, so
-// the surface reopens in the mode you left it (the scope state isn't otherwise
-// persisted — only powerMode was, which left Projects resetting to Convo on
-// reload). Authoritative over POWER_MODE_KEY, which is kept in sync for the
-// power-split layout grouping + back-compat hydration.
-const CHAT_MODE_KEY = "cave:chat-mode:v1";
 const chatStorage = {
   getItem(key: string): string | null {
     if (typeof window === "undefined") return null;
@@ -59,21 +50,6 @@ const chatStorage = {
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type FamiliarsScope = "conversation" | "memory" | "projects";
-
-// The standalone chat's mode switch is a Codex-style two-way toggle: the
-// conversation ("chat") or the inline chat↔code split ("code"). Projects are
-// *merged into* Chat rather than being a peer tab — the conversation already
-// carries the project sidebar (ChatProjectSidebar groups every project with its
-// sessions), and the full ProjectsView browser opens as a sub-state of Chat
-// (reached via ⌘9 / the board / the /projects slash), never flipping the
-// toggle off "Chat". Text-only (no icons) so it stays a compact pill — matching
-// the slim GitHub-style filter segments elsewhere rather than a chunky toolbar.
-type ChatMode = "chat" | "code";
-
-const CHAT_MODE_ITEMS: { id: ChatMode; label: string }[] = [
-  { id: "chat", label: "Chat" },
-  { id: "code", label: "Code" },
-];
 
 export type RightPanelKind = "inspector" | "changes" | "debug";
 
@@ -317,66 +293,10 @@ export function ChatSurface({
   const isCodeSurface = surface === "code";
   const [scope, setScope] = useState<FamiliarsScope>("conversation");
   const [rightExpanded, setRightExpanded] = useState(false);
-  // Power mode applies only to the standalone chat surface (the Code workspace
-  // already *is* a chat↔code split). Hydrated from localStorage after mount to
-  // stay SSR-safe.
-  const [powerMode, setPowerMode] = useState(false);
-  // Restore the last-used mode after mount (SSR-safe). CHAT_MODE_KEY is the
-  // source of truth; fall back to the legacy POWER_MODE_KEY so users who had
-  // power mode on before this key existed still reopen in Code.
-  useEffect(() => {
-    if (isCodeSurface) return;
-    try {
-      const saved = window.localStorage.getItem(CHAT_MODE_KEY);
-      if (saved === "projects") setScope("projects");
-      else if (saved === "code" || (saved === null && window.localStorage.getItem(POWER_MODE_KEY) === "1")) {
-        setPowerMode(true);
-      }
-    } catch {
-      /* ignore — strict privacy mode */
-    }
-  }, [isCodeSurface]);
-  function persistPowerMode(next: boolean) {
-    setPowerMode(next);
-    try {
-      window.localStorage.setItem(POWER_MODE_KEY, next ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }
-  // Current selection for the standalone chat's two-way Codex toggle. Power mode
-  // means "code"; everything else — a plain conversation *or* the Projects
-  // browse sub-state — reads as "Chat", so browsing projects never lights the
-  // toggle off "Chat" (projects are merged into the Chat mode, not a peer).
-  const chatMode: ChatMode = powerMode ? "code" : "chat";
-  function selectChatMode(next: ChatMode) {
-    try {
-      window.localStorage.setItem(CHAT_MODE_KEY, next);
-    } catch {
-      /* ignore — strict privacy mode */
-    }
-    if (next === "code") {
-      // Keep whatever thread is open; just bring the code split up beside it.
-      setScope("conversation");
-      persistPowerMode(true);
-      return;
-    }
-    // Chat: drop the code split and surface the conversation. If we were in the
-    // Projects browse sub-state, selecting Chat returns to the conversation.
-    persistPowerMode(false);
-    setScope("conversation");
-  }
   // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
   // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
   // be unreachable. On mobile we render them in a right-edge sheet overlay instead.
   const isMobile = useIsMobile();
-  // Code mode is the inline chat↔code split, which needs desktop width — on a
-  // phone `showPowerPanel` is gated off, so the segment would light up with no
-  // effect. Drop it from the mobile switch and render a persisted "code" session
-  // as Convo there (the saved preference is untouched, so it restores on a wider
-  // screen). The base `chatMode` above stays the source of truth for layout.
-  const chatModeItems = isMobile ? CHAT_MODE_ITEMS.filter((m) => m.id !== "code") : CHAT_MODE_ITEMS;
-  const chatModeValue: ChatMode = isMobile && chatMode === "code" ? "chat" : chatMode;
   const consumedPendingActionNonce = useRef<number | null>(null);
 
   // Right panel — prefer new prop, fall back to legacy bool
@@ -388,22 +308,14 @@ export function ChatSurface({
     onSetInspectorOpen(next === "inspector");
   }
 
-  // Power mode owns the side area when on (standalone, desktop); otherwise the
-  // inspector/debug/changes sidebar does. They are mutually exclusive so the
-  // chat thread never has to share its row with both.
-  const showPowerPanel = powerMode && !isCodeSurface && !isMobile;
-  const showRightSidebar = !showPowerPanel && rightPanel !== null && !isMobile;
+  // The inspector/debug/changes sidebar shares the chat thread's row on desktop.
+  const showRightSidebar = rightPanel !== null && !isMobile;
 
   // Persist the chat / right-area split. panelIds tracks which panels are
-  // actually mounted so the power-split, with-sidebar, and bare layouts persist
-  // separately (the power split is much wider than the 230px inspector rail).
+  // actually mounted so the with-sidebar and bare layouts persist separately.
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: showPowerPanel ? POWER_GROUP_ID : CHAT_GROUP_ID,
-    panelIds: showPowerPanel
-      ? ["chat-main", "code-power"]
-      : showRightSidebar
-        ? ["chat-main", "right-sidebar"]
-        : ["chat-main"],
+    id: CHAT_GROUP_ID,
+    panelIds: showRightSidebar ? ["chat-main", "right-sidebar"] : ["chat-main"],
     storage: chatStorage,
   });
 
@@ -571,15 +483,16 @@ export function ChatSurface({
     <section className="chat-surface relative flex h-full min-w-0 bg-[var(--bg-base)]">
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* ── Ultra-minimalist header ────────────────────────────────────── */}
-        <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
-          <div className="flex min-w-0 items-center gap-3">
-            {/* The active familiar is selected from the global top menu bar /
-                switcher now. In Code mode the comux pane owns project/file
-                navigation, so that surface keeps a Sessions + Memory underline
-                tab pair flush left. The standalone chat instead drives its
-                Chat/Code toggle from the segmented switch on the right. */}
-            {isCodeSurface ? (
+        {/* ── Header ──────────────────────────────────────────────────────
+            Only the Code surface needs a header row: a Sessions/Memory tab pair
+            (the comux pane owns file nav) plus the layout/companion toolbar. The
+            standalone chat is just the conversation — no Chat/Code toggle, so it
+            renders no header strip. Code is reached from its own sidebar
+            surface; Projects open as a sub-state of Chat via ⌘9 / the board /
+            the /projects slash. */}
+        {isCodeSurface ? (
+          <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
+            <div className="flex min-w-0 items-center gap-3">
               <Tabs<FamiliarsScope>
                 bordered={false}
                 value={scope}
@@ -594,28 +507,10 @@ export function ChatSurface({
                   { id: "memory", label: "Memory" },
                 ]}
               />
-            ) : null}
-          </div>
-          {/* Code workspace: layout presets + companion-panel toggle ride on
-              this row so the Code surface needs no separate toolbar row.
-              Standalone chat gets the two-way toggle instead — a segmented
-              Chat/Code selector. Projects browse is merged into Chat (not a
-              peer segment): it opens as a sub-state of Chat via ⌘9 / the board /
-              the /projects slash and keeps the toggle on "Chat". */}
-          {isCodeSurface ? (
+            </div>
             <CodeInlineToolbar />
-          ) : (
-            <Tabs<ChatMode>
-              variant="segment"
-              size="sm"
-              bordered={false}
-              ariaLabel="Chat mode"
-              value={chatModeValue}
-              onChange={selectChatMode}
-              items={chatModeItems}
-            />
-          )}
-        </div>
+          </div>
+        ) : null}
 
         {scope === "memory" ? (
           <FamiliarsMemoryView
@@ -636,7 +531,7 @@ export function ChatSurface({
             defaultLayout={defaultLayout}
             onLayoutChanged={onLayoutChanged}
           >
-            <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize={showPowerPanel ? "32%" : "45%"}>
+            <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize="45%">
               <div className="min-h-0 min-w-0 flex-1" data-surface={surface}>
                 <ChatRouter
                   ref={routerRef}
@@ -645,7 +540,7 @@ export function ChatSurface({
                   sessions={sessions}
                   daemonRunning={daemonRunning}
                   sessionsLoaded={sessionsLoaded}
-                  compact={isCodeSurface || showPowerPanel}
+                  compact={isCodeSurface}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionStarted={onSessionStarted}
                   onSessionsChanged={onSessionsChanged}
@@ -658,37 +553,6 @@ export function ChatSurface({
                 />
               </div>
             </Panel>
-            {/* Power mode: the side area becomes the comux coding surface — file
-                tree + editable preview + terminal — beside the conversation, a
-                single resizable split. Same component the Code workspace uses,
-                with its own isolated terminal/layout namespace. */}
-            {showPowerPanel && (
-              <>
-                <Separator className="shell-separator hidden lg:flex">
-                  <SeparatorHandle orientation="col" />
-                </Separator>
-                <Panel
-                  id="code-power"
-                  className="hidden min-h-0 min-w-0 lg:flex"
-                  defaultSize="50%"
-                  minSize="35%"
-                >
-                  <div className="chat-power-pane flex min-h-0 min-w-0 flex-1 flex-col">
-                    <ComuxView
-                      view="projects"
-                      active={powerMode}
-                      storageNamespace=":chat-power"
-                      sessions={sessions}
-                      onOpenSession={(sessionId, familiarId) => {
-                        if (familiarId) onSetActiveFamiliar(familiarId);
-                        window.setTimeout(() => routerRef.current?.openSession(sessionId), 0);
-                      }}
-                      onNewChat={startProjectChat}
-                    />
-                  </div>
-                </Panel>
-              </>
-            )}
             {showRightSidebar && (
               <>
                 {/* Defaults to 230px (mirrors the internal left rail, chat-thread-rail

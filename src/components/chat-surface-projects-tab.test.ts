@@ -10,16 +10,16 @@ assert.match(events, /CHAT_OPEN_PROJECTS_EVENT = "cave:chat-open-projects"/, "ev
 assert.match(surface, /import \{ ProjectsView \} from "@\/components\/projects-view"/, "chat-surface imports ProjectsView");
 assert.match(surface, /CHAT_OPEN_PROJECTS_EVENT/, "chat-surface references the reroute event");
 assert.match(surface, /type FamiliarsScope = "conversation" \| "memory" \| "projects"/, "scope union still includes memory (Code surface) + projects");
-// The standalone chat's toggle is two-way (Chat / Code). Projects is merged
-// INTO Chat — it is NOT a peer segment, but the full ProjectsView browser still
-// renders as a sub-state of Chat (scope === "projects") reached via ⌘9 / board /
-// the /projects slash, keeping the toggle on "Chat".
-assert.match(surface, /\{\s*id:\s*"chat",\s*label:\s*"Chat"\s*\}/, "Chat is one of the two toggle modes");
-assert.match(surface, /\{\s*id:\s*"code",\s*label:\s*"Code"\s*\}/, "Code is the inline chat↔code split mode");
+// The standalone chat's Chat/Code toggle was removed — the chat page is just the
+// conversation; Code is its own sidebar surface. Projects still renders as a
+// sub-state of Chat (scope === "projects") reached via ⌘9 / board / the
+// /projects slash. No mode-switch segments remain.
+assert.doesNotMatch(surface, /\{\s*id:\s*"chat",\s*label:\s*"Chat"\s*\}/, "the Chat toggle segment is gone");
+assert.doesNotMatch(surface, /\{\s*id:\s*"code",\s*label:\s*"Code"\s*\}/, "the Code toggle segment is gone");
 assert.doesNotMatch(
   surface,
   /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/,
-  "Projects is no longer a peer mode-switch segment (merged into Chat)",
+  "Projects is not a mode-switch segment (merged into Chat)",
 );
 assert.match(surface, /scope === "projects" && !isCodeSurface \? \(/, "projects browse still renders ProjectsView as a sub-state of Chat (standalone chat only)");
 assert.match(surface, /<ProjectsView[\s\S]*?sessions=\{sessions\}/, "projects panel renders ProjectsView with sessions");
@@ -27,11 +27,12 @@ assert.match(surface, /onNewChat=\{startProjectChat\}/, "projects panel wires on
 assert.match(surface, /addEventListener\(CHAT_OPEN_PROJECTS_EVENT/, "listens for the reroute event");
 
 // Code surface keeps its own Sessions + Memory underline tab pair (the comux
-// pane owns project/file navigation there, so it has no Projects tab) and is
-// gated behind isCodeSurface — the standalone chat shows the mode switch instead.
+// pane owns project/file navigation there, so it has no Projects tab), gated
+// behind isCodeSurface. The standalone chat renders no header strip at all now
+// (the Chat/Code toggle was removed), so the header is `isCodeSurface ? … : null`.
 assert.match(
   surface,
-  /isCodeSurface\s*\?\s*\(\s*<Tabs<FamiliarsScope>[\s\S]*?\{\s*id:\s*"conversation",\s*label:\s*"Sessions"\s*\},\s*\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\},?\s*\][\s\S]*?\)\s*:\s*null/,
+  /isCodeSurface\s*\?\s*\([\s\S]*?<Tabs<FamiliarsScope>[\s\S]*?\{\s*id:\s*"conversation",\s*label:\s*"Sessions"\s*\},\s*\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\},?\s*\][\s\S]*?\)\s*:\s*null/,
   "Code surface tab list is Sessions + Memory only, gated on isCodeSurface",
 );
 

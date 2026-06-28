@@ -435,7 +435,6 @@ export const SUITES = {
     "src/lib/code-layout-preset.test.ts",
     "src/lib/use-changes-summary.test.ts",
     "src/components/chat-surface-projects-tab.test.ts",
-    "src/components/chat-surface-power-mode.test.ts",
     "src/components/composer-density.test.ts",
     "src/lib/memory-rows.test.ts",
     "src/lib/memory-file-scope.test.ts",
