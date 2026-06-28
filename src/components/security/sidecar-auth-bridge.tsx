@@ -69,6 +69,22 @@ export const SIDECAR_AUTH_BRIDGE = `
 })();
 `;
 
+function sidecarAuthRequired(): boolean {
+  return (
+    Boolean(process.env.COVEN_CAVE_AUTH_TOKEN) ||
+    process.env.COVEN_CAVE_BUNDLE === "1"
+  );
+}
+
 export function SidecarAuthBridge() {
-  return <script dangerouslySetInnerHTML={{ __html: SIDECAR_AUTH_BRIDGE }} />;
+  const authRequirementScript = `window.__COVEN_CAVE_SIDECAR_AUTH_REQUIRED__ = ${JSON.stringify(
+    sidecarAuthRequired(),
+  )};`;
+  return (
+    <script
+      dangerouslySetInnerHTML={{
+        __html: `${authRequirementScript}\n${SIDECAR_AUTH_BRIDGE}`,
+      }}
+    />
+  );
 }

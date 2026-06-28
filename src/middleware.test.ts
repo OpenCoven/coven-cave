@@ -6,6 +6,7 @@ const source = await readFile(new URL("./proxy.ts", import.meta.url), "utf8");
 const tauriSource = await readFile(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
 const sidecarBridgeSource = await readFile(new URL("./components/security/sidecar-auth-bridge.tsx", import.meta.url), "utf8");
 const sidecarMonitorSource = await readFile(new URL("./components/security/sidecar-auth-monitor.tsx", import.meta.url), "utf8");
+const layoutSource = await readFile(new URL("./app/layout.tsx", import.meta.url), "utf8");
 const mobileScriptSource = await readFile(new URL("../scripts/mobile-tailscale.sh", import.meta.url), "utf8");
 const mobileDocsSource = await readFile(new URL("../docs/mobile-tailscale.md", import.meta.url), "utf8");
 const nextConfigSource = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
@@ -77,8 +78,23 @@ assert.match(
 assert.match(source, /if \(queryVerification\.ok\)/, "invalid query tokens should not overwrite the access cookie");
 assert.match(source, /maxAge/, "signed mobile cookie lifetime should track token expiry");
 assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
+assert.match(
+  sidecarBridgeSource,
+  /__COVEN_CAVE_SIDECAR_AUTH_REQUIRED__/,
+  "sidecar bootstrap should expose whether this server requires a sidecar token",
+);
+assert.match(
+  layoutSource,
+  /export const dynamic = "force-dynamic"/,
+  "root layout must render sidecar auth requirement from runtime env, not build-time env",
+);
 assert.match(sidecarBridgeSource, /window\.history\.replaceState/, "sidecar token bootstrap should remove the token from the visible URL");
 assert.match(sidecarMonitorSource, /useIsTauriDesktop/, "sidecar auth warning should only run for desktop Tauri");
+assert.match(
+  sidecarMonitorSource,
+  /__COVEN_CAVE_SIDECAR_AUTH_REQUIRED__[\s\S]*dismissBanner\(BANNER_ID\)/,
+  "sidecar auth warning should stay quiet when the current server does not require a token",
+);
 assert.doesNotMatch(sidecarMonitorSource, /Boolean\(window\.__TAURI_INTERNALS__\)/, "mobile Tauri should not be treated as a sidecar host");
 assert.match(mobileScriptSource, /tailscale_cmd serve --bg "\$TAILSCALE_BACKEND"/, "mobile script should publish the exact loopback backend it started");
 assert.match(mobileScriptSource, /"authorization": `Bearer \$\{createMobileAccessToken\(accessToken\)\}`/, "mobile script should authenticate its local invite API request with a derived token");
