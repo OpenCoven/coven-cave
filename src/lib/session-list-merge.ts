@@ -16,6 +16,8 @@ export type LocalConversationSummary = {
   model?: string;
   runtime?: string;
   title?: string;
+  status?: string;
+  exitCode?: number | null;
   createdAt?: string;
   updatedAt: string;
   initiator?: SessionInitiator;
@@ -36,6 +38,7 @@ function localConversationToSession(
   const title =
     state.sessionTitles[conv.sessionId] ?? sanitizeSessionTitle(conv.title) ?? "Chat";
   const familiarId = state.sessionFamiliar[conv.sessionId] ?? conv.familiarId ?? null;
+  const status = conv.status ?? "completed";
   return {
     id: conv.sessionId,
     project_root: "",
@@ -43,8 +46,8 @@ function localConversationToSession(
     ...(conv.model ? { model: conv.model } : {}),
     ...(conv.runtime ? { runtime: conv.runtime } : {}),
     title,
-    status: "completed",
-    exit_code: 0,
+    status,
+    exit_code: conv.exitCode ?? (status === "failed" || status === "error" ? 1 : 0),
     archived_at: state.sessionArchived[conv.sessionId] ?? null,
     created_at: conv.createdAt ?? conv.updatedAt,
     updated_at: conv.updatedAt,
@@ -87,8 +90,12 @@ export function mergeSessionRows({
   // message sent or received. Prefer that message-authoritative timestamp so
   // the list orders by real activity, not by what you last looked at.
   const localUpdatedById = new Map<string, string>();
+  const localById = new Map<string, LocalConversationSummary>();
   for (const conv of localConversations) {
-    if (conv.updatedAt) localUpdatedById.set(conv.sessionId, conv.updatedAt);
+    if (conv.updatedAt) {
+      localUpdatedById.set(conv.sessionId, conv.updatedAt);
+      localById.set(conv.sessionId, conv);
+    }
   }
 
   for (const session of daemonSessions) {
@@ -100,9 +107,17 @@ export function mergeSessionRows({
     const archivedLocal = state.sessionArchived[session.id] ?? null;
     const archived_at = archivedLocal ?? session.archived_at;
     const localUpdatedAt = localUpdatedById.get(session.id);
+    const local = localById.get(session.id);
+    const localIsNewer =
+      localUpdatedAt != null &&
+      Number.isFinite(Date.parse(localUpdatedAt)) &&
+      Number.isFinite(Date.parse(session.updated_at)) &&
+      Date.parse(localUpdatedAt) > Date.parse(session.updated_at);
     const row: SessionRow = {
       ...session,
       ...(localUpdatedAt ? { updated_at: localUpdatedAt } : {}),
+      ...(localIsNewer && local?.status ? { status: local.status } : {}),
+      ...(localIsNewer && local ? { exit_code: local.exitCode ?? 0 } : {}),
       // Daemon titles derive from the harness prompt, which the chat route
       // prefixes with the identity canon — sanitize so the preamble never
       // surfaces as a session title.

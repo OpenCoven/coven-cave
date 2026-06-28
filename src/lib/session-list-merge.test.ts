@@ -191,4 +191,42 @@ assert.deepEqual(
   "the genuinely-recent chat outranks the just-reopened older chat",
 );
 
+// A stale daemon row can outlive a Cave-local chat transcript for the same id.
+// When the local transcript has newer message activity, it should own the row's
+// terminal status so a successful chat is not stuck with an old failed badge.
+const staleFailedDaemon = {
+  id: "chat-stale-failed",
+  project_root: "/repo",
+  harness: "codex",
+  title: "Runtime filesystem boundary:",
+  status: "failed",
+  exit_code: 1,
+  archived_at: null,
+  created_at: "2026-06-25T04:23:34.393Z",
+  updated_at: "2026-06-25T04:26:13.470Z",
+};
+const newerCompletedLocal = {
+  sessionId: "chat-stale-failed",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Howdy",
+  updatedAt: "2026-06-25T04:27:31.202Z",
+  status: "completed",
+  exitCode: 0,
+};
+
+const recoveredStatus = mergeSessionRows({
+  daemonSessions: [staleFailedDaemon],
+  localConversations: [newerCompletedLocal],
+  state: { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} },
+  includeArchived: false,
+});
+
+assert.equal(
+  recoveredStatus[0].status,
+  "completed",
+  "newer Cave-local transcript status should override stale daemon failure",
+);
+assert.equal(recoveredStatus[0].exit_code, 0, "newer Cave-local transcript exit code should win");
+
 console.log("session-list-merge.test.ts: ok");

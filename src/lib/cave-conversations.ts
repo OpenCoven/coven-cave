@@ -3,7 +3,7 @@ import path from "node:path";
 import { homedir } from "node:os";
 import type { ChatResponseMetadata } from "./chat-response-metadata.ts";
 import type { ModelApplicationState, ModelScope } from "./chat-model-state.ts";
-import { linearizeLegacy } from "./conversation-tree.ts";
+import { linearizeLegacy, resolveActivePath } from "./conversation-tree.ts";
 
 const CONV_DIR = path.join(homedir(), ".coven", "cave-conversations");
 
@@ -82,6 +82,15 @@ export type ConversationFile = {
   branchedFromTurnId?: string;
 };
 
+function conversationTerminalStatus(conv: ConversationFile): { status: string; exitCode: number } {
+  const turns = conv.activeLeafId
+    ? resolveActivePath(conv.turns, conv.activeLeafId)
+    : conv.turns;
+  const latestAssistant = [...turns].reverse().find((turn) => turn.role === "assistant");
+  if (latestAssistant?.isError) return { status: "failed", exitCode: 1 };
+  return { status: "completed", exitCode: 0 };
+}
+
 async function ensureDir() {
   await mkdir(CONV_DIR, { recursive: true });
 }
@@ -155,6 +164,8 @@ export async function listConversations(): Promise<
     model?: string;
     runtime?: string;
     title?: string;
+    status?: string;
+    exitCode?: number | null;
     createdAt?: string;
     updatedAt: string;
   }>
@@ -173,6 +184,8 @@ export async function listConversations(): Promise<
     model?: string;
     runtime?: string;
     title?: string;
+    status?: string;
+    exitCode?: number | null;
     createdAt?: string;
     updatedAt: string;
   }> = [];
@@ -182,6 +195,7 @@ export async function listConversations(): Promise<
       const sessionId = name.replace(/\.json$/, "");
       const conv = await loadConversation(sessionId);
       if (conv) {
+        const terminal = conversationTerminalStatus(conv);
         results.push({
           sessionId: conv.sessionId,
           familiarId: conv.familiarId,
@@ -189,6 +203,8 @@ export async function listConversations(): Promise<
           model: conv.model,
           runtime: conv.runtime,
           title: conv.title,
+          status: terminal.status,
+          exitCode: terminal.exitCode,
           createdAt: conv.createdAt,
           updatedAt: conv.updatedAt,
         });

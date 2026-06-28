@@ -11,6 +11,7 @@ process.env.HOME = home;
 const {
   deleteConversation,
   isSafeConversationSessionId,
+  listConversations,
   loadConversation,
   saveConversation,
 } = await import("./cave-conversations.ts");
@@ -131,6 +132,66 @@ const noUsageTurn = usageConv?.turns.find((turn) => turn.id === "turn-assistant-
 assert.equal(noUsageTurn?.usage, undefined, "turns without usage stay absent — never fabricated");
 assert.equal(noUsageTurn?.costUsd, undefined, "turns without cost stay absent — never fabricated");
 assert.equal(await deleteConversation("usage-turn"), true);
+
+await saveConversation({
+  sessionId: "summary-ok",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Healthy summary",
+  createdAt: "2026-06-12T00:00:00.000Z",
+  updatedAt: "2026-06-12T00:00:00.000Z",
+  activeLeafId: "summary-ok-assistant",
+  turns: [
+    {
+      id: "summary-ok-user",
+      role: "user",
+      text: "hello",
+      createdAt: "2026-06-12T00:00:00.000Z",
+    },
+    {
+      id: "summary-ok-assistant",
+      role: "assistant",
+      text: "hello",
+      createdAt: "2026-06-12T00:00:01.000Z",
+      parentId: "summary-ok-user",
+      isError: false,
+    },
+  ],
+});
+await saveConversation({
+  sessionId: "summary-failed",
+  familiarId: "charm",
+  harness: "codex",
+  title: "Failed summary",
+  createdAt: "2026-06-12T00:00:00.000Z",
+  updatedAt: "2026-06-12T00:00:00.000Z",
+  activeLeafId: "summary-failed-assistant",
+  turns: [
+    {
+      id: "summary-failed-user",
+      role: "user",
+      text: "fail",
+      createdAt: "2026-06-12T00:00:00.000Z",
+    },
+    {
+      id: "summary-failed-assistant",
+      role: "assistant",
+      text: "failed",
+      createdAt: "2026-06-12T00:00:01.000Z",
+      parentId: "summary-failed-user",
+      isError: true,
+    },
+  ],
+});
+const summaries = await listConversations();
+const okSummary = summaries.find((conv) => conv.sessionId === "summary-ok");
+const failedSummary = summaries.find((conv) => conv.sessionId === "summary-failed");
+assert.equal(okSummary?.status, "completed", "conversation summaries expose successful terminal status");
+assert.equal(okSummary?.exitCode, 0, "successful conversation summaries expose exit code 0");
+assert.equal(failedSummary?.status, "failed", "conversation summaries expose failed terminal status");
+assert.equal(failedSummary?.exitCode, 1, "failed conversation summaries expose exit code 1");
+assert.equal(await deleteConversation("summary-ok"), true);
+assert.equal(await deleteConversation("summary-failed"), true);
 
 // ── CHAT-D9-02: conversation content search ──────────────────────────────────
 // Appended section — searchConversations over fixture transcripts written
