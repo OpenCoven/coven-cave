@@ -80,6 +80,10 @@ const dependent: WorkflowSummary = {
   assert.match(prompt, /@@step-start <id>/, "prompt documents the start marker");
   assert.match(prompt, /@@step-done <id>/, "prompt documents the done marker");
   assert.match(prompt, /@@step-fail <id>/, "prompt documents the fail marker");
+  // Per-step clarity (mirrors the flow PROGRESS PROTOCOL): a one-line summary
+  // note + explicit narration ask so the run's transcript reads clearly.
+  assert.match(prompt, /@@step-note <id>/, "prompt documents the per-step summary note");
+  assert.match(prompt, /narrate/i, "prompt asks the agent to narrate each step");
 }
 
 console.log("workflow-run-prompt.test.ts ✓");

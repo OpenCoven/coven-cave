@@ -106,11 +106,11 @@ export function buildWorkflowRunPrompt(workflow: WorkflowSummary, inputs?: Recor
       "",
       "Progress markers — print these on their own line so progress can be tracked:",
       "- Before starting a step, print:  @@step-start <id>",
-      "- After a step succeeds, print:    @@step-done <id>",
-      "- If a step fails, print:          @@step-fail <id>",
-      "Use the exact id shown in parentheses for each step above. Between a step's",
-      "start and done markers, narrate what you're doing and show the step's output —",
-      "that narration is surfaced as the step's debugging detail.",
+      "- While working a step, narrate what you're doing in plain language and show the step's output — that narration is surfaced as the step's log, so be clear and specific.",
+      "- When a step succeeds, FIRST print a one-line summary of what it produced:  @@step-note <id> <summary>",
+      "- Then print:                     @@step-done <id>",
+      "- If a step fails, print a @@step-note <id> <why it failed> then:  @@step-fail <id>",
+      "Use the exact id shown in parentheses for each step above. Keep each marker on its own line and never wrap one in backticks.",
     );
   }
 
