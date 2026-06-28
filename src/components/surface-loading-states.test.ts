@@ -55,7 +55,7 @@ assert.doesNotMatch(
 );
 assert.match(
   workspace,
-  /setSessions\(baseSessions\);[\s\S]{0,220}setSessionsLoaded\(true\);[\s\S]{0,500}githubTasksPromise/,
+  /setSessions\([\s\S]{0,120}baseSessions[\s\S]{0,40}\);[\s\S]{0,260}setSessionsLoaded\(true\);[\s\S]{0,600}githubTasksPromise/,
   "Workspace renders base chat sessions before applying optional GitHub task context",
 );
 assert.match(

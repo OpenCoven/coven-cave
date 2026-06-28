@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { groupInboxFeed } from "@/lib/inbox-feed";
+import { sameSessionList } from "@/lib/session-list-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
@@ -605,19 +606,23 @@ export function Workspace() {
         if (!json.ok) return;
 
         const baseSessions = (json.sessions ?? []) as SessionRow[];
-        setSessions(baseSessions);
+        // The 4s poll rebuilds a fresh array each tick; keep the previous
+        // reference when nothing changed so an unchanged list doesn't re-render
+        // every sessions consumer (chat list, rails, badges) for nothing.
+        setSessions((prev) => (sameSessionList(prev, baseSessions) ? prev : baseSessions));
         setSessionsLoaded(true);
         baseSessionsApplied = true;
 
         const githubTasksJson = await githubTasksPromise;
         if (githubTasksJson) {
           setGithubAssignedCount(Array.isArray(githubTasksJson.tasks) ? githubTasksJson.tasks.length : 0);
-          setSessions((currentSessions) =>
-            attachGitHubTaskContext(
+          setSessions((currentSessions) => {
+            const enriched = attachGitHubTaskContext(
               currentSessions.length > 0 ? currentSessions : baseSessions,
               githubTasksJson,
-            ),
-          );
+            );
+            return sameSessionList(currentSessions, enriched) ? currentSessions : enriched;
+          });
         }
       } catch {
         /* transient */
