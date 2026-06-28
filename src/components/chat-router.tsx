@@ -15,6 +15,7 @@ import {
 } from "@/lib/chat-projects";
 import { applyProjectOverrides } from "@/lib/chat-project-overrides";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
+import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
 import {
   normalizeSelection,
@@ -113,7 +114,17 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const activeSession = view.kind === "chat" && view.sessionId
     ? sessions.find((s) => s.id === view.sessionId) ?? null
     : null;
-  const fallbackFamiliar = familiars[0] ?? null;
+  // Archived familiars stay reachable from Familiar Studio Lifecycle so users
+  // can unarchive, but they must NOT be the fallback default when the user is
+  // starting a new session — silently dropping them into an archived agent is
+  // a footgun. The active familiar ("familiar" prop) is left alone here —
+  // it's the user's explicit current selection.
+  const archivedFamiliars = useArchivedFamiliars();
+  const visibleFamiliars = useMemo(
+    () => familiars.filter((entry) => !(entry.id in archivedFamiliars)),
+    [familiars, archivedFamiliars],
+  );
+  const fallbackFamiliar = visibleFamiliars[0] ?? null;
   const selectedViewFamiliar = view.kind === "chat" && view.familiarId
     ? familiars.find((entry) => entry.id === view.familiarId) ?? null
     : null;
@@ -121,7 +132,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ? familiars.find((entry) => entry.id === activeSession.familiarId) ?? null
     : null;
   const chatFamiliar = selectedViewFamiliar ?? sessionFamiliar ?? familiar ?? null;
-  const fallbackFamiliarId = familiar?.id ?? familiars[0]?.id ?? null;
+  const fallbackFamiliarId = familiar?.id ?? visibleFamiliars[0]?.id ?? null;
   const { projects } = useProjects();
   const projectOverrides = useProjectOverrides();
 

@@ -24,6 +24,7 @@ import { readComposerHistory, writeComposerHistory } from "@/lib/composer-histor
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
+import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
@@ -108,7 +109,26 @@ export function HomeComposer({
   // so ids must be unique across simultaneously mounted composers.
   const slashListboxId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const selectedFamiliarId = activeFamiliarId ?? familiars[0]?.id ?? "";
+  const archivedFamiliars = useArchivedFamiliars();
+  // Hide archived familiars from the "new session" picker. Starting a new
+  // chat against an archived agent is a footgun — the user can't tell from
+  // the dropdown that the agent is archived, and the session lands in a
+  // confusing state. Archived familiars stay reachable from Familiar Studio
+  // Lifecycle (unarchive there) but should never appear in fresh-session
+  // surfaces.
+  const visibleFamiliars = useMemo(
+    () => familiars.filter((familiar) => !(familiar.id in archivedFamiliars)),
+    [familiars, archivedFamiliars],
+  );
+  // If the user's previously-active familiar is now archived, fall through to
+  // the first visible one so the <select>'s value matches an actual option and
+  // the new-session flow stays usable.
+  const activeIsArchived =
+    activeFamiliarId != null && activeFamiliarId in archivedFamiliars;
+  const selectedFamiliarId =
+    activeFamiliarId && !activeIsArchived
+      ? activeFamiliarId
+      : visibleFamiliars[0]?.id ?? "";
   const selectedFamiliar = useMemo(
     () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? null,
     [familiars, selectedFamiliarId],
@@ -611,12 +631,12 @@ export function HomeComposer({
               onChange={(e) => {
                 if (e.currentTarget.value) onSetActiveFamiliar(e.currentTarget.value);
               }}
-              disabled={familiars.length === 0 || sending}
+              disabled={visibleFamiliars.length === 0 || sending}
             >
-              {familiars.length === 0 ? (
+              {visibleFamiliars.length === 0 ? (
                 <option value="">No agents</option>
               ) : (
-                familiars.map((familiar) => (
+                visibleFamiliars.map((familiar) => (
                   <option key={familiar.id} value={familiar.id}>
                     {familiar.display_name}
                   </option>
