@@ -33,6 +33,7 @@ struct RootView: View {
 /// initial selection, so the app reliably reopens on the last-used tab.
 struct MainTabView: View {
     @Environment(AppModel.self) private var app
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Tab order, used to map ⌘1–5 to the right tab.
     private let tabOrder: [AppTab] = [.chats, .tasks, .calendar, .dev, .settings]
@@ -71,8 +72,12 @@ struct MainTabView: View {
         }
         // Keep the app chrome in step with desktop theme changes: re-fetch while
         // connected. `loadTheme` is best-effort and only assigns on change, so an
-        // unchanged theme is a cheap no-op.
-        .task {
+        // unchanged theme is a cheap no-op. Keyed on scenePhase so the 20s poll
+        // only runs while the app is active — backgrounding cancels the task
+        // (no needless network while the user isn't looking), and returning to
+        // the foreground restarts it with an immediate refresh.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
             while !Task.isCancelled {
                 if app.connectionState == .connected { await app.loadTheme() }
                 try? await Task.sleep(for: .seconds(20))

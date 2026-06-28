@@ -32,5 +32,9 @@ assert.match(root, /@Environment\(\\\.chrome\) private var chrome/, "RootView re
 assert.match(root, /\.background\(chrome\.bgBase\.ignoresSafeArea\(\)\)[\s\S]*\.foregroundStyle\(chrome\.textPrimary\)/, "RootView applies desktop background and foreground");
 assert.match(root, /\.glassBars\(\)/, "RootView applies the frosted, theme-tinted tab + navigation bar chrome");
 assert.match(root, /while !Task\.isCancelled[\s\S]*await app\.loadTheme\(\)[\s\S]*Task\.sleep\(for:\s*\.seconds\(20\)\)/, "MainTabView polls the desktop theme while connected");
+// The poll is scenePhase-gated: keyed on scenePhase and guarded so it only runs
+// while the app is active (backgrounding cancels it, foregrounding restarts it).
+assert.match(root, /@Environment\(\\\.scenePhase\) private var scenePhase/, "MainTabView observes scenePhase");
+assert.match(root, /\.task\(id: scenePhase\) \{\s*guard scenePhase == \.active else \{ return \}/, "the theme poll only runs while the scene is active");
 
 console.log("ios-theme-api.test.ts: ok");
