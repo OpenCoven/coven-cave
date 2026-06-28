@@ -9739,19 +9739,47 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   list-style: none;
 }
 .fa-thread-review-list li {
+  min-width: 0;
+}
+/* Each review item is a button — selecting it opens a discussion on the topic. */
+.fa-thread-review-item {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  width: 100%;
   min-width: 0;
+  text-align: left;
   padding: 9px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
   background: var(--bg-base);
   color: var(--text-secondary);
+  font: inherit;
   font-size: 12px;
   line-height: 1.4;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
 }
-.fa-thread-review-list li.is-critical {
+.fa-thread-review-item:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, var(--border-hairline));
+  background: var(--bg-hover);
+}
+.fa-thread-review-item:focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 1px;
+}
+.fa-thread-review-discuss {
+  margin-left: auto;
+  align-self: center;
+  color: var(--accent-presence) !important;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.fa-thread-review-item:hover .fa-thread-review-discuss,
+.fa-thread-review-item:focus-visible .fa-thread-review-discuss {
+  opacity: 1;
+}
+.fa-thread-review-list li.is-critical .fa-thread-review-item {
   border-color: color-mix(in oklch, var(--color-danger) 45%, var(--border-hairline));
 }
 .fa-thread-review-list li.is-critical svg {

@@ -228,6 +228,31 @@ export type ThreadSignalReviewItem = {
   detail: string;
 };
 
+const REVIEW_KIND_LABEL: Record<ThreadSignalReviewItem["kind"], string> = {
+  blocker: "persistent blocker",
+  "skill-access": "skill access gap",
+  "skill-clarity": "skill clarity gap",
+  capability: "capability gap",
+  "context-pressure": "context pressure issue",
+  "low-score": "low signal score",
+};
+
+/**
+ * Seed prompt for a focused discussion about one review-queue item. Selecting an
+ * item in the Thread Signals review queue opens a new chat with the familiar
+ * primed with this, so the topic is "unlocked" into a working conversation.
+ */
+export function buildThreadSignalDiscussionPrompt(item: ThreadSignalReviewItem): string {
+  return [
+    `Let's work through a ${REVIEW_KIND_LABEL[item.kind]} from your thread self-reports:`,
+    "",
+    `**${item.title}**`,
+    item.detail,
+    "",
+    "What's the root cause, and what concrete change — prompt, memory, skill, or access — would resolve it? Walk me through it.",
+  ].join("\n");
+}
+
 export const THREAD_SIGNALS_EMPTY_STATE = "No thread reports yet. Use 'Reflect on this thread' to generate the first one.";
 
 const IMPORTANCE_WEIGHT: Record<CapabilityImportance, number> = { "nice-to-have": 1, important: 2, blocking: 3 };
