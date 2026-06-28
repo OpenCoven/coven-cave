@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 
 const MAX_THREAD_STATE_JSON_BYTES = 1_000_000;
 
-export async function GET() {
+export async function GET(req: Request) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
   const snapshots = await listThreadEvalSnapshots();
   return NextResponse.json({ ok: true, snapshots });
 }

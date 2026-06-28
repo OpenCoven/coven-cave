@@ -122,6 +122,14 @@ function coerceEvalGroup(value: unknown): EvalGroup | null {
           if (!["thread", "familiar", "project", "filter"].includes(kind) || typeof m.id !== "string") return null;
           const coerced: EvalGroup["members"][number] = { kind: kind as EvalGroup["members"][number]["kind"], id: m.id };
           if (typeof m.familiarId === "string") coerced.familiarId = m.familiarId;
+          if (typeof m.latestTurnId === "string") coerced.latestTurnId = m.latestTurnId;
+          if (typeof m.inputHash === "string") coerced.inputHash = m.inputHash;
+          if (typeof m.confidenceRubricVersion === "string") coerced.confidenceRubricVersion = m.confidenceRubricVersion;
+          if (typeof m.skillsVersion === "string") coerced.skillsVersion = m.skillsVersion;
+          if (typeof m.permissionsHash === "string") coerced.permissionsHash = m.permissionsHash;
+          if (Array.isArray(m.responseConfidenceEventIds)) {
+            coerced.responseConfidenceEventIds = m.responseConfidenceEventIds.filter((id): id is string => typeof id === "string");
+          }
           return coerced;
         })
         .filter((member): member is EvalGroup["members"][number] => member !== null)
@@ -266,7 +274,9 @@ export async function enqueueManualEvalGroupRun(
   states: ThreadEvalState[],
   createdAt = new Date().toISOString(),
 ): Promise<ManualEvalQueueItem[]> {
-  const items = buildManualEvalQueueItems(group, states, createdAt);
+  const sanitizedGroup = coerceEvalGroup(group);
+  if (!sanitizedGroup) throw new Error("invalid eval group");
+  const items = buildManualEvalQueueItems(sanitizedGroup, states, createdAt);
   await mkdir(queueDir(), { recursive: true });
   for (const item of items) {
     await writeJsonAtomic(path.join(queueDir(), fileName(item.id, "queue")), item);

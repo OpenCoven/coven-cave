@@ -389,14 +389,14 @@ function deriveEvalGroupStates(group: EvalGroup, snapshots: ThreadEvalSnapshot[]
       const snapshot = snapshots.find((item) => item.threadId === member.id && (!member.familiarId || item.familiarId === member.familiarId)) ?? null;
       return deriveThreadEvalState(snapshot, {
         threadId: member.id,
-        familiarId: member.familiarId ?? snapshot?.familiarId ?? group.id,
-        latestTurnId: snapshot?.evaluatedThroughTurnId,
-        inputHash: snapshot?.inputHash,
+        familiarId: member.familiarId ?? snapshot?.familiarId ?? "",
+        latestTurnId: member.latestTurnId,
+        inputHash: member.inputHash,
         rubricVersion: group.rubricVersion || snapshot?.rubricVersion,
-        confidenceRubricVersion: snapshot?.confidenceRubricVersion,
-        skillsVersion: snapshot?.skillsVersion,
-        permissionsHash: snapshot?.permissionsHash,
-        responseConfidenceEventIds: snapshot?.responseConfidenceEventIds ?? [],
+        confidenceRubricVersion: member.confidenceRubricVersion,
+        skillsVersion: member.skillsVersion,
+        permissionsHash: member.permissionsHash,
+        responseConfidenceEventIds: member.responseConfidenceEventIds,
         ttlMs: group.stalePolicy.ttlMs,
         groupUpdatedAt: group.updatedAt,
       });
@@ -440,7 +440,7 @@ function EvalGroupPanel({
       </div>
       <div className="evals-group-states" aria-label="Thread eval states">
         {states.map((state) => (
-          <article key={state.threadId} className={`evals-thread-state is-${state.status}`}>
+          <article key={`${state.familiarId}:${state.threadId}`} className={`evals-thread-state is-${state.status}`}>
             <div className="evals-thread-state-head">
               <span>{state.threadId}</span>
               <b>{state.status}</b>

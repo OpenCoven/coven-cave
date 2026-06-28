@@ -56,9 +56,9 @@ const contracts: RouteContract[] = [
   { route: "/github/assigned", methods: ["GET"], kind: "json" },
   { route: "/github/repos", methods: ["GET"], kind: "json" },
   { route: "/evals/runs", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/evals/groups", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/evals/thread-states", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/evals/queue", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/evals/groups", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/evals/thread-states", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/evals/queue", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/evals/suites", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows/run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -274,8 +274,12 @@ for (const contract of contracts) {
     );
   }
   if (contract.localOriginGuard) {
-    assert.match(source, /isLocalOrigin/, `${contract.route} must preserve local-origin guard`);
-    assert.match(source, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
+    assert.match(source, /isLocalOrigin|rejectNonLocalRequest/, `${contract.route} must preserve local-origin guard`);
+    if (source.includes("rejectNonLocalRequest")) {
+      assert.match(source, /rejectNonLocalRequest\(req\)/, `${contract.route} must call the shared local-origin guard`);
+    } else {
+      assert.match(source, /status:\s*403/, `${contract.route} local-origin guard must preserve 403 response`);
+    }
   }
 }
 

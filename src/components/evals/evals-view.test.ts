@@ -34,6 +34,10 @@ assert.match(source, /evals-thread-detail-grid/, "renders detailed thread eval f
 assert.match(source, /Evaluated through/, "shows which turn the thread eval covers");
 assert.match(source, /Confidence events/, "shows confidence event coverage for thread eval freshness");
 assert.match(source, /Rubric/, "shows rubric version evidence for thread eval freshness");
+assert.match(source, /key=\{`\$\{state\.familiarId\}:\$\{state\.threadId\}`\}/, "thread eval state keys include familiar id");
+assert.doesNotMatch(source, /familiarId: member\.familiarId \?\? snapshot\?\.familiarId \?\? group\.id/, "group id should not be used as a fake familiar id");
+assert.doesNotMatch(source, /latestTurnId: snapshot\?\.evaluatedThroughTurnId/, "current thread turn should not be copied from the snapshot");
+assert.match(source, /latestTurnId: member\.latestTurnId/, "current thread turn comes from group member metadata when available");
 
 // Editor: cases + graders
 assert.match(source, /Add case/, "can add cases");

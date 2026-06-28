@@ -107,4 +107,24 @@ describe("eval store groups and thread state", () => {
     assert.equal(listed[0].threadId, "thread-1");
     assert.deepEqual(listed[0].staleReasons, ["new-turns"]);
   });
+
+  it("sanitizes eval group tracks before queueing request-derived groups", async () => {
+    const states: ThreadEvalState[] = [
+      {
+        threadId: "thread-1",
+        familiarId: "cody",
+        status: "stale",
+        staleReasons: ["confidence-events-added"],
+        evaluatedAt: "2026-06-28T08:00:00.000Z",
+        details: { responseConfidenceEventCount: 2, snapshotResponseConfidenceEventCount: 1 },
+      },
+    ];
+    const unsafeGroup = group({
+      tracks: ["confidence", "bad-track", "memory"] as unknown as EvalGroup["tracks"],
+    });
+
+    const queued = await enqueueManualEvalGroupRun(unsafeGroup, states, "2026-06-28T08:15:00.000Z");
+
+    assert.deepEqual(queued[0].tracks, ["confidence", "memory"]);
+  });
 });

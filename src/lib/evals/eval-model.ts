@@ -58,6 +58,12 @@ export type EvalGroupMember = {
   kind: "thread" | "familiar" | "project" | "filter";
   id: string;
   familiarId?: string;
+  latestTurnId?: string;
+  inputHash?: string;
+  confidenceRubricVersion?: string;
+  skillsVersion?: string;
+  permissionsHash?: string;
+  responseConfidenceEventIds?: string[];
 };
 
 export type EvalGroup = {
