@@ -290,7 +290,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     async (rawText: string) => {
       const group = activeGroupRef.current;
       const text = rawText.trim();
-      if (!group || group.familiarIds.length === 0 || !text || busy) return;
+      if (!group || group.familiarIds.length === 0 || !text || busy || abortRef.current) return;
       // Tagging a subset of familiars with `@mentions` targets the message at just
       // those participants; with no mention it broadcasts to the whole coven.
       const mentionable: MentionableFamiliar[] = group.familiarIds.map((id) => ({
