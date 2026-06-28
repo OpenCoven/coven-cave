@@ -2,8 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { Icon } from "@/lib/icon";
+import type { IconName } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
+import { EvalLoopPanel } from "@/components/eval-loop-panel";
+import { RetroRunsView } from "@/components/retro-runs-view";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import type { RetroRun, RetroRunsSnapshot } from "@/lib/retro-runs";
 import {
   deriveThreadEvalState,
   rollupEvalGroup,
@@ -27,6 +31,25 @@ type Props = {
 };
 
 type GraderKindOption = { kind: GraderKind; label: string; hint: string; valueless?: boolean };
+type EvalsTab = "overview" | "suites" | "runs" | "loops" | "threads";
+type RetroApiResponse =
+  | { ok: true; snapshot: RetroRunsSnapshot }
+  | { ok: false; snapshot?: RetroRunsSnapshot; error?: string };
+
+const EMPTY_RETRO_SNAPSHOT: RetroRunsSnapshot = {
+  generatedAt: new Date(0).toISOString(),
+  summary: {
+    totalRuns: 0,
+    accepted: 0,
+    reverted: 0,
+    runningFamiliars: 0,
+    familiarsWithData: 0,
+    trackCounts: { synthesis: 0, prompt: 0, memory: 0 },
+    lastRun: null,
+  },
+  familiars: [],
+  runs: [],
+};
 
 const GRADER_OPTIONS: GraderKindOption[] = [
   { kind: "contains", label: "Contains", hint: "substring the answer must include" },
@@ -72,10 +95,12 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   const [draft, setDraft] = useState<EvalSuite | null>(null);
   const [savedJson, setSavedJson] = useState<string>("");
   const [runs, setRuns] = useState<EvalRun[]>([]);
+  const [allRuns, setAllRuns] = useState<EvalRun[]>([]);
   const [groups, setGroups] = useState<EvalGroup[]>([]);
   const [threadSnapshots, setThreadSnapshots] = useState<ThreadEvalSnapshot[]>([]);
   const [queue, setQueue] = useState<ManualEvalQueueItem[]>([]);
-  const [tab, setTab] = useState<"editor" | "runs">("editor");
+  const [retroSnapshot, setRetroSnapshot] = useState<RetroRunsSnapshot>(EMPTY_RETRO_SNAPSHOT);
+  const [tab, setTab] = useState<EvalsTab>("overview");
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<RunProgress | null>(null);
@@ -94,28 +119,47 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     () => activeGroup ? rollupEvalGroup(activeGroup, activeGroupStates) : null,
     [activeGroup, activeGroupStates],
   );
+  const familiarName = (familiars.find((f) => f.id === familiarId)?.display_name ?? familiarId) || "Familiar";
+  const activeLoopState = retroSnapshot.familiars.find((familiar) => familiar.familiarId === familiarId) ?? null;
+  const analysis = useMemo(
+    () => deriveEvalsAnalysis({
+      suites,
+      allRuns,
+      selectedRuns: runs,
+      retroSnapshot,
+      activeGroupRollup,
+      queueCount: queue.length,
+    }),
+    [activeGroupRollup, allRuns, queue.length, retroSnapshot, runs, suites],
+  );
 
   // Load suites and grouped eval metadata once.
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
-        const [suitesRes, groupsRes, threadStatesRes, queueRes] = await Promise.all([
+        const [suitesRes, allRunsRes, groupsRes, threadStatesRes, queueRes, retroRes] = await Promise.all([
           fetch("/api/evals/suites"),
+          fetch("/api/evals/runs"),
           fetch("/api/evals/groups"),
           fetch("/api/evals/thread-states"),
           fetch("/api/evals/queue"),
+          fetch("/api/retro-runs"),
         ]);
         const data = (await suitesRes.json()) as { ok: boolean; suites?: EvalSuite[] };
+        const allRunsData = (await allRunsRes.json()) as { ok: boolean; runs?: EvalRun[] };
         const groupsData = (await groupsRes.json()) as { ok: boolean; groups?: EvalGroup[] };
         const threadStatesData = (await threadStatesRes.json()) as { ok: boolean; snapshots?: ThreadEvalSnapshot[] };
         const queueData = (await queueRes.json()) as { ok: boolean; queue?: ManualEvalQueueItem[] };
+        const retroData = (await retroRes.json()) as RetroApiResponse;
         if (!alive) return;
         const list = data.suites ?? [];
         setSuites(list);
+        setAllRuns(allRunsData.runs ?? []);
         setGroups(groupsData.groups ?? []);
         setThreadSnapshots(threadStatesData.snapshots ?? []);
         setQueue(queueData.queue ?? []);
+        setRetroSnapshot(retroData.snapshot ?? EMPTY_RETRO_SNAPSHOT);
         if (list.length) selectSuite(list[0]);
       } finally {
         if (alive) setLoaded(true);
@@ -132,7 +176,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     setDraft(structuredClone(suite));
     setSavedJson(JSON.stringify(suite));
     setExpandedRunId(null);
-    setTab("editor");
+    setTab("suites");
     void (async () => {
       try {
         const res = await fetch(`/api/evals/runs?suiteId=${encodeURIComponent(suite.id)}`);
@@ -151,7 +195,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     setDraft(suite);
     setSavedJson(""); // unsaved
     setRuns([]);
-    setTab("editor");
+    setTab("suites");
   }, []);
 
   const patchDraft = useCallback((patch: Partial<EvalSuite>) => {
@@ -232,6 +276,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
         onProgress: setProgress,
       });
       setRuns((prev) => [result, ...prev]);
+      setAllRuns((prev) => [result, ...prev.filter((run) => run.id !== result.id)]);
       setExpandedRunId(result.id);
       // Persist (best-effort; desktop-only route).
       void fetch("/api/evals/runs", {
@@ -261,25 +306,8 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     if (data.ok && data.queued) setQueue((prev) => [...data.queued!, ...prev]);
   }, [activeGroup, activeGroupStates]);
 
-  if (loaded && suites.length === 0 && !draft) {
-    return (
-      <div className="evals evals-empty">
-        <EmptyState
-          icon="ph:flask"
-          headline="Run evals on your familiars"
-          subtitle="Build a suite of test cases, grade each answer with deterministic checks or an LLM judge, and track pass rates over time."
-          actions={
-            <button type="button" className="evals-btn evals-btn-primary" onClick={createSuite}>
-              <Icon name="ph:plus" width={14} /> New eval suite
-            </button>
-          }
-        />
-      </div>
-    );
-  }
-
   return (
-    <div className="evals">
+    <div className="evals evals-unified">
       <aside className="evals-rail">
         <div className="evals-rail-head">
           <span className="evals-rail-title">Evals</span>
@@ -303,81 +331,122 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
         </ul>
       </aside>
 
-      {draft ? (
-        <section className="evals-main">
-          <header className="evals-toolbar">
-            <input
-              className="evals-name-input"
-              value={draft.name}
-              onChange={(e) => patchDraft({ name: e.target.value })}
-              aria-label="Suite name"
-            />
-            <label className="evals-familiar-pick">
-              <span className="evals-familiar-label">Familiar</span>
-              <select
-                value={familiarId}
-                onChange={(e) => patchDraft({ familiarId: e.target.value })}
-                aria-label="Familiar to evaluate"
+      <section className="evals-main">
+        <header className="evals-toolbar evals-unified-toolbar">
+          <div className="evals-title-block">
+            <span className="evals-group-kicker">Unified Evals</span>
+            {draft ? (
+              <input
+                className="evals-name-input"
+                value={draft.name}
+                onChange={(e) => patchDraft({ name: e.target.value })}
+                aria-label="Suite name"
+              />
+            ) : (
+              <h2>Evals</h2>
+            )}
+          </div>
+          <label className="evals-familiar-pick">
+            <span className="evals-familiar-label">Familiar</span>
+            <select
+              value={familiarId}
+              onChange={(e) => patchDraft({ familiarId: e.target.value })}
+              aria-label="Familiar to evaluate"
+              disabled={!draft}
+            >
+              {familiars.length === 0 && <option value="">No familiars</option>}
+              {familiars.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="evals-toolbar-actions">
+            <button type="button" className="evals-btn" onClick={save} disabled={!draft || saving || !dirty}>
+              {saving ? "Saving…" : dirty ? "Save" : "Saved"}
+            </button>
+            {running ? (
+              <button type="button" className="evals-btn evals-btn-stop" onClick={stop}>
+                <span className="evals-spinner" aria-hidden /> Stop
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="evals-btn evals-btn-primary"
+                onClick={run}
+                disabled={!draft || Boolean(blockReason)}
+                title={blockReason ?? "Run this suite against the familiar"}
               >
-                {familiars.length === 0 && <option value="">No familiars</option>}
-                {familiars.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.display_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="evals-toolbar-tabs" role="tablist" aria-label="Suite view">
-              <button type="button" role="tab" aria-selected={tab === "editor"} className={`evals-tab${tab === "editor" ? " is-active" : ""}`} onClick={() => setTab("editor")}>
-                Editor
+                <Icon name="ph:play" width={13} /> Run
               </button>
-              <button type="button" role="tab" aria-selected={tab === "runs"} className={`evals-tab${tab === "runs" ? " is-active" : ""}`} onClick={() => setTab("runs")}>
-                Runs{runs.length ? ` (${runs.length})` : ""}
-              </button>
-            </div>
-            <div className="evals-toolbar-actions">
-              <button type="button" className="evals-btn" onClick={save} disabled={saving || !dirty}>
-                {saving ? "Saving…" : dirty ? "Save" : "Saved"}
-              </button>
-              {running ? (
-                <button type="button" className="evals-btn evals-btn-stop" onClick={stop}>
-                  <span className="evals-spinner" aria-hidden /> Stop
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="evals-btn evals-btn-primary"
-                  onClick={run}
-                  disabled={Boolean(blockReason)}
-                  title={blockReason ?? "Run this suite against the familiar"}
-                >
-                  <Icon name="ph:play" width={13} /> Run
-                </button>
-              )}
-            </div>
-          </header>
+            )}
+          </div>
+        </header>
 
-          <EvalGroupPanel
+        <EvalsAnalysisSummary analysis={analysis} />
+
+        <div className="evals-toolbar-tabs evals-section-tabs" role="tablist" aria-label="Evals sections">
+          {([
+            ["overview", "Overview"],
+            ["suites", "Suites"],
+            ["runs", `Runs${runs.length ? ` (${runs.length})` : ""}`],
+            ["loops", "Loops"],
+            ["threads", "Thread freshness"],
+          ] as Array<[EvalsTab, string]>).map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={tab === id} className={`evals-tab${tab === id ? " is-active" : ""}`} onClick={() => setTab(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "overview" ? (
+          <EvalsOverview
+            analysis={analysis}
+            recentLoopRuns={retroSnapshot.runs.slice(0, 5)}
+            activeLoopState={activeLoopState}
+            activeGroupRollup={activeGroupRollup}
+          />
+        ) : tab === "suites" ? (
+          draft ? (
+            <SuiteEditor draft={draft} patchDraft={patchDraft} patchCase={patchCase} patchGrader={patchGrader} setDraft={setDraft} />
+          ) : (
+            <EmptyState
+              icon="ph:flask"
+              headline="Run evals on your familiars"
+              subtitle="Build a suite of test cases, grade each answer with deterministic checks or an LLM judge, and track pass rates over time."
+              actions={
+                <button type="button" className="evals-btn evals-btn-primary" onClick={createSuite}>
+                  <Icon name="ph:plus" width={14} /> New eval suite
+                </button>
+              }
+            />
+          )
+        ) : tab === "runs" ? (
+          <RunsPanel
+            runs={runs}
+            progress={progress}
+            running={running}
+            expandedRunId={expandedRunId}
+            onToggle={(id) => setExpandedRunId((cur) => (cur === id ? null : id))}
+          />
+        ) : tab === "loops" ? (
+          <LoopAnalysisPanel
+            familiarId={familiarId}
+            familiarName={familiarName}
+            snapshot={retroSnapshot}
+            activeLoopState={activeLoopState}
+          />
+        ) : (
+          <ThreadFreshnessPanel
             group={activeGroup}
             states={activeGroupStates}
             rollup={activeGroupRollup}
             queuedCount={queue.length}
             onQueue={queueStaleGroup}
           />
-
-          {tab === "editor" ? (
-            <SuiteEditor draft={draft} patchDraft={patchDraft} patchCase={patchCase} patchGrader={patchGrader} setDraft={setDraft} />
-          ) : (
-            <RunsPanel
-              runs={runs}
-              progress={progress}
-              running={running}
-              expandedRunId={expandedRunId}
-              onToggle={(id) => setExpandedRunId((cur) => (cur === id ? null : id))}
-            />
-          )}
-        </section>
-      ) : null}
+        )}
+      </section>
     </div>
   );
 }
@@ -401,6 +470,234 @@ function deriveEvalGroupStates(group: EvalGroup, snapshots: ThreadEvalSnapshot[]
         groupUpdatedAt: group.updatedAt,
       });
     });
+}
+
+type EvalGroupRollup = ReturnType<typeof rollupEvalGroup>;
+
+type EvalsAnalysis = {
+  suiteCount: number;
+  totalSuiteRuns: number;
+  selectedSuiteRuns: number;
+  latestPassRate: number | null;
+  passTrend: number | null;
+  loopRuns: number;
+  loopAccepted: number;
+  loopReverted: number;
+  runningFamiliars: number;
+  staleThreads: number;
+  blockedThreads: number;
+  queuedCount: number;
+};
+
+function deriveEvalsAnalysis({
+  suites,
+  allRuns,
+  selectedRuns,
+  retroSnapshot,
+  activeGroupRollup,
+  queueCount,
+}: {
+  suites: EvalSuite[];
+  allRuns: EvalRun[];
+  selectedRuns: EvalRun[];
+  retroSnapshot: RetroRunsSnapshot;
+  activeGroupRollup: EvalGroupRollup | null;
+  queueCount: number;
+}): EvalsAnalysis {
+  const sortedSelectedRuns = [...selectedRuns].sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  const latestPassRate = sortedSelectedRuns[0]?.summary.passRate ?? null;
+  const previousPassRate = sortedSelectedRuns[1]?.summary.passRate ?? null;
+  return {
+    suiteCount: suites.length,
+    totalSuiteRuns: allRuns.length,
+    selectedSuiteRuns: selectedRuns.length,
+    latestPassRate,
+    passTrend: latestPassRate != null && previousPassRate != null ? latestPassRate - previousPassRate : null,
+    loopRuns: retroSnapshot.summary.totalRuns,
+    loopAccepted: retroSnapshot.summary.accepted,
+    loopReverted: retroSnapshot.summary.reverted,
+    runningFamiliars: retroSnapshot.summary.runningFamiliars,
+    staleThreads: (activeGroupRollup?.staleThreads ?? 0) + (activeGroupRollup?.neverRunThreads ?? 0),
+    blockedThreads: activeGroupRollup?.blockedThreads ?? 0,
+    queuedCount: queueCount,
+  };
+}
+
+function passRateLabel(value: number | null): string {
+  return value == null ? "No runs" : pct(value);
+}
+
+function trendLabel(value: number | null): string {
+  if (value == null) return "No trend";
+  if (Math.abs(value) < 0.005) return "flat";
+  return `${value > 0 ? "+" : ""}${Math.round(value * 100)} pts`;
+}
+
+function downloadRetroSnapshot(snapshot: RetroRunsSnapshot) {
+  const payload = JSON.stringify(snapshot, null, 2);
+  const blob = new Blob([payload], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `coven-evals-loop-snapshot-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function EvalsAnalysisSummary({ analysis }: { analysis: EvalsAnalysis }) {
+  return (
+    <section className="evals-analysis-summary" aria-label="Evals analysis summary">
+      <AnalysisCard icon="ph:flask" label="Suites" value={String(analysis.suiteCount)} detail={`${analysis.totalSuiteRuns} recorded runs`} />
+      <AnalysisCard icon="ph:chart-bar-bold" label="Latest suite pass" value={passRateLabel(analysis.latestPassRate)} detail={trendLabel(analysis.passTrend)} />
+      <AnalysisCard icon="ph:arrows-clockwise-bold" label="Loop accept/revert" value={`${analysis.loopAccepted}/${analysis.loopReverted}`} detail={`${analysis.loopRuns} loop runs`} />
+      <AnalysisCard icon="ph:clock-countdown" label="Thread freshness" value={`${analysis.staleThreads} stale`} detail={`${analysis.blockedThreads} blocked · ${analysis.queuedCount} queued`} />
+      <AnalysisCard icon="ph:heartbeat" label="Running loops" value={String(analysis.runningFamiliars)} detail="familiar eval loops" />
+    </section>
+  );
+}
+
+function AnalysisCard({ icon, label, value, detail }: { icon: IconName; label: string; value: string; detail: string }) {
+  return (
+    <article className="evals-analysis-card">
+      <Icon name={icon} width={16} aria-hidden />
+      <span>{label}</span>
+      <b>{value}</b>
+      <small>{detail}</small>
+    </article>
+  );
+}
+
+function EvalsOverview({
+  analysis,
+  recentLoopRuns,
+  activeLoopState,
+  activeGroupRollup,
+}: {
+  analysis: EvalsAnalysis;
+  recentLoopRuns: RetroRun[];
+  activeLoopState: RetroRunsSnapshot["familiars"][number] | null;
+  activeGroupRollup: EvalGroupRollup | null;
+}) {
+  return (
+    <div className="evals-overview">
+      <section className="evals-analysis-panel">
+        <div className="evals-section-head">
+          <span className="evals-group-kicker">Analysis</span>
+          <b>What needs attention</b>
+        </div>
+        <ul className="evals-insight-list">
+          <li>{analysis.latestPassRate == null ? "No suite runs yet." : `Latest selected-suite pass rate is ${passRateLabel(analysis.latestPassRate)}.`}</li>
+          <li>{analysis.passTrend == null ? "Run the suite twice to establish trend." : `Pass-rate trend is ${trendLabel(analysis.passTrend)}.`}</li>
+          <li>{analysis.staleThreads > 0 ? `${analysis.staleThreads} thread eval snapshots need review.` : "Grouped thread eval snapshots are fresh where configured."}</li>
+          <li>{activeLoopState?.running ? `${activeLoopState.familiarName} has an eval loop running.` : "No selected familiar eval loop is currently running."}</li>
+        </ul>
+      </section>
+      <section className="evals-analysis-panel">
+        <div className="evals-section-head">
+          <span className="evals-group-kicker">Recent eval-loop runs</span>
+          <b>{recentLoopRuns.length ? `${recentLoopRuns.length} newest` : "No loop runs"}</b>
+        </div>
+        <LoopRunList runs={recentLoopRuns} />
+      </section>
+      <section className="evals-analysis-panel">
+        <div className="evals-section-head">
+          <span className="evals-group-kicker">Group health</span>
+          <b>{activeGroupRollup ? `${activeGroupRollup.totalThreads} threads` : "No group"}</b>
+        </div>
+        <p className="evals-analysis-copy">
+          {activeGroupRollup
+            ? `${activeGroupRollup.freshThreads} fresh, ${activeGroupRollup.staleThreads} stale, ${activeGroupRollup.neverRunThreads} never run, ${activeGroupRollup.blockedThreads} blocked.`
+            : "Create an eval group to connect thread freshness, stale reasons, and manual queueing."}
+        </p>
+      </section>
+    </div>
+  );
+}
+
+function LoopAnalysisPanel({
+  familiarId,
+  familiarName,
+  snapshot,
+  activeLoopState,
+}: {
+  familiarId: string;
+  familiarName: string;
+  snapshot: RetroRunsSnapshot;
+  activeLoopState: RetroRunsSnapshot["familiars"][number] | null;
+}) {
+  return (
+    <div className="evals-loop-analysis">
+      <section className="evals-analysis-panel">
+        <div className="evals-section-head">
+          <span className="evals-group-kicker">Loop analysis</span>
+          <b>{activeLoopState?.familiarName ?? familiarName}</b>
+          <button type="button" className="evals-btn" onClick={() => downloadRetroSnapshot(snapshot)} disabled={snapshot.runs.length === 0}>
+            <Icon name="ph:floppy-disk-bold" width={13} /> Export loop snapshot
+          </button>
+        </div>
+        <div className="evals-loop-metrics">
+          <ThreadEvalDetail label="Accepted" value={String(activeLoopState?.totalAccepted ?? 0)} />
+          <ThreadEvalDetail label="Reverted" value={String(activeLoopState?.totalReverted ?? 0)} />
+          <ThreadEvalDetail label="Runs" value={String(activeLoopState?.runs.length ?? 0)} />
+          <ThreadEvalDetail label="Status" value={activeLoopState?.running ? "running" : "idle"} />
+        </div>
+        <LoopRunList runs={(activeLoopState?.runs ?? []).slice(0, 8)} />
+      </section>
+      {familiarId ? (
+        <section className="evals-analysis-panel evals-loop-control">
+          <EvalLoopPanel familiarId={familiarId} familiarName={familiarName} />
+        </section>
+      ) : (
+        <EmptyState compact icon="ph:user" headline="Select a familiar to run eval loops." />
+      )}
+      {familiarId ? <RetroRunsView familiarId={familiarId} /> : null}
+    </div>
+  );
+}
+
+function ThreadFreshnessPanel({
+  group,
+  states,
+  rollup,
+  queuedCount,
+  onQueue,
+}: {
+  group: EvalGroup | null;
+  states: ThreadEvalState[];
+  rollup: EvalGroupRollup | null;
+  queuedCount: number;
+  onQueue: () => void;
+}) {
+  return (
+    <div className="evals-thread-freshness">
+      <section className="evals-analysis-panel">
+        <div className="evals-section-head">
+          <span className="evals-group-kicker">Thread freshness</span>
+          <b>{rollup ? `${rollup.runnableThreadIds.length} runnable stale evals` : "No group configured"}</b>
+        </div>
+        <p className="evals-analysis-copy">
+          Thread freshness compares evaluated-through turn, latest turn, rubric versions, confidence events, skills, permissions, and group policy.
+        </p>
+      </section>
+      <EvalGroupPanel group={group} states={states} rollup={rollup} queuedCount={queuedCount} onQueue={onQueue} />
+    </div>
+  );
+}
+
+function LoopRunList({ runs }: { runs: RetroRun[] }) {
+  if (runs.length === 0) return <p className="evals-runs-empty">No eval-loop runs recorded yet.</p>;
+  return (
+    <ul className="evals-loop-run-list">
+      {runs.map((run) => (
+        <li key={run.id} className="evals-loop-run">
+          <span className={`evals-chip${run.outcome === "ACCEPT" ? " is-pass" : " is-fail"}`}>{run.outcome === "ACCEPT" ? "ACCEPT" : "REVERT"}</span>
+          <b>{run.familiarName}</b>
+          <span>{run.track} · iteration {run.iteration}</span>
+          <small>{run.changeSummary}</small>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function EvalGroupPanel({

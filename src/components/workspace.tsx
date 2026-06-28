@@ -48,7 +48,6 @@ import { PluginsView } from "@/components/plugins-view";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { FlowView } from "@/components/flow/flow-view";
 import { EvalsView } from "@/components/evals/evals-view";
-import { RetroRunsView } from "@/components/retro-runs-view";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
@@ -93,7 +92,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   flow: "Flow",
   evals: "Evals",
   submissions: "Submissions",
-  retro: "Eval Loops",
+  retro: "Evals",
   capabilities: "Capabilities",
   journal: "Journal",
   docs: "Coven",
@@ -1476,7 +1475,7 @@ export function Workspace() {
         return true;
       case "/evals":
       case "/eval-loops":
-        setMode("retro");
+        setMode("evals");
         return true;
       case "/remind": {
         const trimmedArgs = args.trim();
@@ -1971,10 +1970,8 @@ export function Workspace() {
       <OpenCovenSubmissionPage />
     ) : mode === "flow" ? (
       <FlowView />
-    ) : mode === "evals" ? (
-      <EvalsView familiars={resolvedFamiliars} activeFamiliarId={activeId} />
-    ) : mode === "retro" ? (
-      <RetroRunsView familiarId={retroFamiliarId} />
+    ) : mode === "evals" || mode === "retro" ? (
+      <EvalsView familiars={resolvedFamiliars} activeFamiliarId={mode === "retro" ? retroFamiliarId : activeId} />
     ) : mode === "calendar" ? (
       <CalendarView
         items={inboxItems}

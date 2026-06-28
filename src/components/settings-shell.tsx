@@ -499,7 +499,6 @@ type AddonKey =
   | "roles"
   | "groupchat"
   | "journal"
-  | "retro"
   | "docs";
 
 const ADDON_ROWS: Array<{
@@ -573,13 +572,6 @@ const ADDON_ROWS: Array<{
     icon: "ph:book-open",
     group: "surfaces",
     description: "Your daily journal and generated sketches.",
-  },
-  {
-    key: "retro",
-    label: "Eval Loops",
-    icon: "ph:arrows-clockwise-bold",
-    group: "surfaces",
-    description: "Run, inspect, and recover familiar eval loops.",
   },
   {
     key: "docs",

@@ -573,7 +573,6 @@ export function CommandPalette({
           if (fm.id === "groupchat") return addons?.groupchat === true;
           if (fm.id === "journal") return addons?.journal === true;
           if (fm.id === "docs") return addons?.docs === true;
-          if (fm.id === "retro") return addons?.retro === true;
           return true;
         })
           // Fuzzy on the short label/id; substring-only on the long description
