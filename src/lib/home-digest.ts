@@ -45,6 +45,8 @@ export type DigestRssCard = {
   url: string;
   /** Compact relative age, e.g. "2h". */
   age: string;
+  /** First http(s) image pulled from the item body — the media row's thumbnail. */
+  image?: string;
 };
 
 export type DigestCard = DigestSummaryCard | DigestSessionCard | DigestRssCard;
@@ -74,6 +76,17 @@ function sameLocalDay(iso: string | null | undefined, now: Date): boolean {
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
+/**
+ * Pull the first http(s) image out of a feed item's body HTML for the media-row
+ * thumbnail. Returns undefined for protocol-relative/inline/data URIs or no img,
+ * so the card cleanly falls back to its icon. Pure — unit-tested.
+ */
+export function firstImageUrl(html: string | undefined): string | undefined {
+  if (!html) return undefined;
+  const src = html.match(/<img[^>]+\bsrc=["']([^"']+)["']/i)?.[1];
+  return src && /^https?:\/\//i.test(src) ? src : undefined;
 }
 
 function dayLabel(now: Date): string {
@@ -149,6 +162,7 @@ export function buildDigestCards(input: BuildDigestInput): DigestCard[] {
       host: hostFromUrl(r.link),
       url: r.link,
       age: relativeAge(r.isoDate, nowMs),
+      image: firstImageUrl(r.descriptionHtml),
     });
   }
 

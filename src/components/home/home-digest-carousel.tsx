@@ -3,12 +3,13 @@
 /**
  * HomeDigestCarousel — the home surface's "Daily summary" strip.
  *
- * A continuous, subtle horizontal marquee of today's activity (a summary card +
- * session cards) followed by the freshest merged RSS headlines. The marquee
- * auto-scrolls and pauses on hover/focus so a card can be read or clicked; it
- * falls back to a manual horizontal scroll under `prefers-reduced-motion`
- * (handled in CSS). Data is assembled client-side from the existing /api/inbox
- * and /api/rss endpoints — no new server route.
+ * Two stacked, subtle horizontal marquees: a CHATS row (today's summary +
+ * session cards) and, separated out beneath it, a MEDIA row of the freshest
+ * merged RSS headlines with image thumbnails. Both auto-scroll slowly and pause
+ * on hover/focus so a card can be read or clicked; they fall back to manual
+ * horizontal scroll under `prefers-reduced-motion` (handled in CSS). Data is
+ * assembled client-side from the existing /api/inbox and /api/rss endpoints —
+ * no new server route.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -17,7 +18,7 @@ import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { FeedItem } from "@/lib/rss";
 import { openExternalUrl } from "@/lib/open-external";
-import { buildDigestCards, type DigestCard } from "@/lib/home-digest";
+import { buildDigestCards, type DigestCard, type DigestRssCard } from "@/lib/home-digest";
 
 type Props = {
   sessions: SessionRow[];
@@ -60,14 +61,25 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
 
   if (!ready || cards.length === 0) return null;
 
+  // Keep chats (summary + sessions) and media (headlines) on separate rows so
+  // the media drifts alone, away from the chats.
+  const chatCards = cards.filter((c) => c.kind === "summary" || c.kind === "session");
+  const mediaCards = cards.filter((c): c is DigestRssCard => c.kind === "rss");
+
   return (
     <section className="home-digest" aria-label="Daily summary">
-      {/* The track holds two identical rows so the marquee loops seamlessly at
-          -50%. The second row is a presentational duplicate, hidden from a11y. */}
-      <div className="home-digest__track">
-        <DigestRow cards={cards} onOpenSession={onOpenSession} />
-        <DigestRow cards={cards} onOpenSession={onOpenSession} duplicate />
-      </div>
+      {chatCards.length > 0 ? (
+        <div className="home-digest__track" aria-label="Today's chats">
+          <DigestRow cards={chatCards} onOpenSession={onOpenSession} />
+          <DigestRow cards={chatCards} onOpenSession={onOpenSession} duplicate />
+        </div>
+      ) : null}
+      {mediaCards.length > 0 ? (
+        <div className="home-digest__track home-digest__track--media" aria-label="Media headlines">
+          <DigestRow cards={mediaCards} onOpenSession={onOpenSession} />
+          <DigestRow cards={mediaCards} onOpenSession={onOpenSession} duplicate />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -139,15 +151,35 @@ function DigestCardView({
     );
   }
 
+  return <MediaCardView card={card} focusable={focusable} />;
+}
+
+/**
+ * Media (headline) card — leads with the article's image thumbnail when the feed
+ * supplied one, falling back to the newspaper icon (also on image load error).
+ */
+function MediaCardView({ card, focusable }: { card: DigestRssCard; focusable: boolean }) {
+  const [imgError, setImgError] = useState(false);
+  const showImg = Boolean(card.image) && !imgError;
   return (
     <button
       type="button"
-      className="home-digest__card home-digest__card--rss"
-      tabIndex={tabIndex}
+      className="home-digest__card home-digest__card--rss home-digest__card--media"
+      tabIndex={focusable ? undefined : -1}
       onClick={() => void openExternalUrl(card.url)}
       title={card.title}
     >
-      <Icon name="ph:newspaper" width={13} className="home-digest__icon" aria-hidden />
+      {showImg ? (
+        <img
+          src={card.image}
+          alt=""
+          aria-hidden
+          className="home-digest__thumb"
+          onError={() => setImgError(true)}
+        />
+      ) : (
+        <Icon name="ph:newspaper" width={13} className="home-digest__icon" aria-hidden />
+      )}
       <span className="home-digest__body">
         <span className="home-digest__title">{card.title}</span>
         <span className="home-digest__meta">

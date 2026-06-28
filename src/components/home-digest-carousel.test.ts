@@ -23,6 +23,16 @@ assert.match(view, /tabIndex={tabIndex}/, "duplicated cards are removed from the
 // ── Empty/loading: nothing renders until ready, and nothing when no cards ──────
 assert.match(view, /if \(!ready \|\| cards\.length === 0\) return null/, "hidden until there's something to show");
 
+// ── Two rows: media (headlines) is split out onto its own track, away from chats
+assert.match(view, /home-digest__track--media/, "media headlines render on their own separate track");
+assert.match(view, /c\.kind === "summary" \|\| c\.kind === "session"/, "chats row = summary + session cards");
+assert.match(view, /c\.kind === "rss"/, "media row = the rss headline cards");
+
+// ── Media cards support an image thumbnail (with icon fallback on error) ───────
+assert.match(view, /home-digest__thumb/, "media card renders an image thumbnail when available");
+assert.match(view, /card\.image/, "media thumbnail is sourced from the card's image field");
+assert.match(view, /onError=\{\(\) => setImgError\(true\)\}/, "thumbnail falls back to the icon on load error");
+
 // ── CSS: the marquee, the subtle hover pause, and reduced-motion fallback ──────
 assert.match(css, /@keyframes home-digest-marquee/, "defines the marquee animation");
 assert.match(css, /translateX\(-50%\)/, "loops at -50% to pair with the duplicated row");
@@ -38,6 +48,9 @@ assert.match(
   "reduced-motion disables the auto-scroll",
 );
 assert.match(css, /mask-image: linear-gradient\(to right/, "soft fade edges on the strip");
+assert.match(css, /home-digest-marquee 100s/, "marquee slowed to 100s for readability");
+assert.match(css, /\.home-digest__track--media[\s\S]*?animation-direction: reverse/, "media row drifts the opposite way, separated from chats");
+assert.match(css, /\.home-digest__thumb[\s\S]*?object-fit: cover/, "media thumbnail is a cover-fit image");
 
 // ── Wired into the home composer below "Jump back in" ─────────────────────────
 assert.match(composer, /import \{ HomeDigestCarousel \}/, "home composer imports the carousel");

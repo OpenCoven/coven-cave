@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { buildDigestCards } from "./home-digest.ts";
+import { buildDigestCards, firstImageUrl } from "./home-digest.ts";
 
 // Midday UTC so the small ±hour offsets below stay on the same calendar day in
 // CI's timezone (and most others), keeping the "today" filter deterministic.
@@ -20,7 +20,7 @@ const items = [
 ];
 
 const rssItems = [
-  { id: "r1", title: "Headline one", link: "https://example.com/a", isoDate: hoursAgo(1), source: "Example" },
+  { id: "r1", title: "Headline one", link: "https://example.com/a", isoDate: hoursAgo(1), source: "Example", descriptionHtml: '<p>x</p><img src="https://img.example.com/a.jpg" alt="">' },
   { id: "r2", title: "No link skipped", link: "", isoDate: hoursAgo(1), source: "Example" },
   { id: "r3", title: "Headline two", link: "https://news.test/b", isoDate: hoursAgo(2), source: "News" },
 ];
@@ -58,6 +58,22 @@ const rssCards = cards.filter((c) => c.kind === "rss");
 assert.equal(rssCards.length, 2, "the linkless rss item is dropped");
 assert.equal(rssCards[0].url, "https://example.com/a");
 assert.equal(rssCards[0].host, "example.com", "host is derived from the link");
+
+// ── Media thumbnails: image pulled from the item body when present ─────────────
+assert.equal(
+  rssCards[0].image,
+  "https://img.example.com/a.jpg",
+  "rss card carries the first http(s) image from descriptionHtml",
+);
+assert.equal(rssCards[1].image, undefined, "rss card with no body image has no thumbnail");
+
+// firstImageUrl: only absolute http(s) images; skips data/relative/none.
+assert.equal(firstImageUrl('<img src="https://x/a.png">'), "https://x/a.png");
+assert.equal(firstImageUrl("<img src='http://x/b.gif' />"), "http://x/b.gif");
+assert.equal(firstImageUrl('<img src="//x/c.jpg">'), undefined, "protocol-relative skipped");
+assert.equal(firstImageUrl('<img src="data:image/png;base64,AAA">'), undefined, "data URI skipped");
+assert.equal(firstImageUrl("<p>no image here</p>"), undefined);
+assert.equal(firstImageUrl(undefined), undefined);
 
 // ── maxRss cap is honored ─────────────────────────────────────────────────────
 const capped = buildDigestCards({ items, sessions, rssItems, nowMs: NOW, maxRss: 1 });
