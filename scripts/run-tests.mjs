@@ -122,6 +122,7 @@ export const SUITES = {
     "src/components/home-chat-handoff.test.ts",
     "src/components/home-composer.test.ts",
     "src/components/home-feed.test.ts",
+    "src/components/home-digest-carousel.test.ts",
     "src/components/home-composer-centering.test.ts",
     "src/components/home-composer-hide-archived.test.ts",
     "src/components/ios-theme-api.test.ts",
@@ -219,6 +220,7 @@ export const SUITES = {
     "src/lib/comux-projects.test.ts",
     "src/lib/comux-project-order.test.ts",
     "src/lib/code-lang.test.ts",
+    "src/lib/home-digest.test.ts",
     "src/lib/project-search.test.ts",
     "src/lib/tool-target-file.test.ts",
     "src/lib/tool-readable.test.ts",
@@ -687,6 +689,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/home-digest.test.ts",
   "src/lib/use-refresh-on-focus.test.ts",
   "src/lib/flow/flow-progress.test.ts",
   "src/lib/familiar-card-data.test.ts",

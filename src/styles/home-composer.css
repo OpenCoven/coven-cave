@@ -754,3 +754,109 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ── Daily summary — an ambient, auto-scrolling digest of today's activity +
+   freshest headlines. A continuous marquee that pauses on hover/focus so a
+   card can be read or clicked, with soft fade edges. Under reduced-motion it
+   degrades to a plain manual horizontal scroll (the duplicate row is hidden). */
+.home-digest {
+  width: 100%;
+  max-width: min(1200px, 100%);
+  margin-inline: auto;
+  margin-top: 18px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent);
+}
+.home-digest__track {
+  display: flex;
+  width: max-content;
+  animation: home-digest-marquee 64s linear infinite;
+  will-change: transform;
+}
+.home-digest:hover .home-digest__track,
+.home-digest:focus-within .home-digest__track {
+  animation-play-state: paused;
+}
+@keyframes home-digest-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.home-digest__row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  margin: 0;
+  padding: 0 5px;
+  list-style: none;
+}
+.home-digest__cell {
+  display: flex;
+}
+.home-digest__card {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  width: 248px;
+  padding: 9px 13px;
+  border-radius: 13px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-raised);
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.82;
+  transition: border-color 0.14s, background 0.14s, transform 0.14s, opacity 0.14s;
+}
+.home-digest__card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+  transform: translateY(-2px);
+  opacity: 1;
+}
+.home-digest__card:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+  opacity: 1;
+}
+.home-digest__card--summary {
+  cursor: default;
+  opacity: 1;
+  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 35%, var(--border-hairline));
+}
+.home-digest__icon {
+  color: var(--accent-presence);
+  flex-shrink: 0;
+}
+.home-digest__body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.home-digest__title {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.home-digest__meta {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-digest {
+    overflow-x: auto;
+  }
+  .home-digest__track {
+    animation: none;
+  }
+  .home-digest__row[aria-hidden="true"] {
+    display: none;
+  }
+}

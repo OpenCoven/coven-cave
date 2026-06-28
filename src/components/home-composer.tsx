@@ -28,6 +28,7 @@ import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
+import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -780,6 +781,14 @@ export function HomeComposer({
           </div>
         </div>
       )}
+
+      {/* Daily summary — an ambient auto-scrolling digest of today's activity
+          and the freshest headlines; pauses on hover so a card can be read. */}
+      <HomeDigestCarousel
+        sessions={sessions}
+        familiarNameById={familiarNameById}
+        onOpenSession={onOpenSession}
+      />
     </div>
   );
 }
