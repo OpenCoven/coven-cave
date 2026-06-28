@@ -60,17 +60,18 @@ const chatStorage = {
 
 type FamiliarsScope = "conversation" | "memory" | "projects";
 
-// The standalone chat's mode switch locks the surface into one of three
-// layouts: the conversation alone ("convo"), the Projects browser, or the
-// inline chat↔code split ("code"). It folds the old Sessions/Projects scope
-// tabs and the binary Power toggle into a single segmented selector. Text-only
-// (no icons) so it stays a compact pill — matching the slim GitHub-style filter
-// segments elsewhere rather than reading as a chunky toolbar.
-type ChatMode = "convo" | "projects" | "code";
+// The standalone chat's mode switch is a Codex-style two-way toggle: the
+// conversation ("chat") or the inline chat↔code split ("code"). Projects are
+// *merged into* Chat rather than being a peer tab — the conversation already
+// carries the project sidebar (ChatProjectSidebar groups every project with its
+// sessions), and the full ProjectsView browser opens as a sub-state of Chat
+// (reached via ⌘9 / the board / the /projects slash), never flipping the
+// toggle off "Chat". Text-only (no icons) so it stays a compact pill — matching
+// the slim GitHub-style filter segments elsewhere rather than a chunky toolbar.
+type ChatMode = "chat" | "code";
 
 const CHAT_MODE_ITEMS: { id: ChatMode; label: string }[] = [
-  { id: "convo", label: "Convo" },
-  { id: "projects", label: "Projects" },
+  { id: "chat", label: "Chat" },
   { id: "code", label: "Code" },
 ];
 
@@ -108,9 +109,9 @@ type Props = {
   onOpenUrl?: (url: string) => void;
   /** Which surface embeds this ChatSurface. In "code" mode the chat pane is
    *  transcript-only (the comux pane owns project/file/session navigation), so
-   *  the in-chat project sidebar and the duplicate Projects tab are dropped and
-   *  the transcript gets a readable measure. Defaults to the standalone
-   *  "chat" surface, which keeps the sidebar + all three scope tabs. */
+   *  the in-chat project sidebar is dropped and the transcript gets a readable
+   *  measure. Defaults to the standalone "chat" surface, which keeps the
+   *  sidebar + the two-way Chat/Code toggle. */
   surface?: "chat" | "code";
 };
 
@@ -343,11 +344,11 @@ export function ChatSurface({
       /* ignore */
     }
   }
-  // Current selection for the standalone chat's three-way mode switch, derived
-  // from the existing scope + power-mode state so the rendering below is
-  // unchanged. Projects wins (it owns the whole surface); otherwise power mode
-  // means "code", and a plain conversation means "convo".
-  const chatMode: ChatMode = scope === "projects" ? "projects" : powerMode ? "code" : "convo";
+  // Current selection for the standalone chat's two-way Codex toggle. Power mode
+  // means "code"; everything else — a plain conversation *or* the Projects
+  // browse sub-state — reads as "Chat", so browsing projects never lights the
+  // toggle off "Chat" (projects are merged into the Chat mode, not a peer).
+  const chatMode: ChatMode = powerMode ? "code" : "chat";
   function selectChatMode(next: ChatMode) {
     try {
       window.localStorage.setItem(CHAT_MODE_KEY, next);
@@ -360,13 +361,10 @@ export function ChatSurface({
       persistPowerMode(true);
       return;
     }
+    // Chat: drop the code split and surface the conversation. If we were in the
+    // Projects browse sub-state, selecting Chat returns to the conversation.
     persistPowerMode(false);
-    if (next === "projects") {
-      setScope("projects");
-      return;
-    }
     setScope("conversation");
-    window.setTimeout(() => routerRef.current?.goToList(), 0);
   }
   // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
   // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
@@ -378,7 +376,7 @@ export function ChatSurface({
   // as Convo there (the saved preference is untouched, so it restores on a wider
   // screen). The base `chatMode` above stays the source of truth for layout.
   const chatModeItems = isMobile ? CHAT_MODE_ITEMS.filter((m) => m.id !== "code") : CHAT_MODE_ITEMS;
-  const chatModeValue: ChatMode = isMobile && chatMode === "code" ? "convo" : chatMode;
+  const chatModeValue: ChatMode = isMobile && chatMode === "code" ? "chat" : chatMode;
   const consumedPendingActionNonce = useRef<number | null>(null);
 
   // Right panel — prefer new prop, fall back to legacy bool
@@ -579,8 +577,8 @@ export function ChatSurface({
             {/* The active familiar is selected from the global top menu bar /
                 switcher now. In Code mode the comux pane owns project/file
                 navigation, so that surface keeps a Sessions + Memory underline
-                tab pair flush left. The standalone chat instead drives all three
-                of its modes from the segmented switch on the right. */}
+                tab pair flush left. The standalone chat instead drives its
+                Chat/Code toggle from the segmented switch on the right. */}
             {isCodeSurface ? (
               <Tabs<FamiliarsScope>
                 bordered={false}
@@ -600,9 +598,10 @@ export function ChatSurface({
           </div>
           {/* Code workspace: layout presets + companion-panel toggle ride on
               this row so the Code surface needs no separate toolbar row.
-              Standalone chat gets the mode switch instead — a segmented selector
-              that locks the surface into Convo, Projects, or the inline
-              chat↔code split. */}
+              Standalone chat gets the two-way toggle instead — a segmented
+              Chat/Code selector. Projects browse is merged into Chat (not a
+              peer segment): it opens as a sub-state of Chat via ⌘9 / the board /
+              the /projects slash and keeps the toggle on "Chat". */}
           {isCodeSurface ? (
             <CodeInlineToolbar />
           ) : (
