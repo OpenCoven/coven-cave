@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, Fragment, memo, useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
 import { MessageBubble, SyntaxBlock, type MessageBubbleSegment } from "@/components/message-bubble";
@@ -5040,7 +5041,12 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
   // focus to the attachment-chip trigger on close. Always active: this
   // component only mounts while the lightbox is open.
   useFocusTrap(true, dialogRef, { onEscape: onClose });
-  return (
+  // Portal to <body> so the overlay escapes the chat transcript's containing
+  // blocks (`.cave-mode-fade` sets `transform`; `.cave-linear-turn` sets
+  // `content-visibility: auto`) — both trap `position: fixed`, which would
+  // otherwise clamp this lightbox to the message's turn box instead of the
+  // full viewport. See ui/modal.tsx for the same pattern.
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
@@ -5093,7 +5099,8 @@ function AttachmentLightbox({ attachment, onClose }: { attachment: ChatAttachmen
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

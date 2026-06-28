@@ -23,6 +23,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { parse } from "@create-markdown/core";
 import type { Block } from "@create-markdown/core";
 import type { PreviewPlugin } from "@create-markdown/preview";
@@ -1177,7 +1178,14 @@ function MarkdownExpandModal({
     copyTimer.current = setTimeout(() => setCopied(false), 2000);
   }, [text]);
 
-  return (
+  // Portal to <body>: the chat transcript lives under `.cave-mode-fade` (which
+  // sets `transform`) and `.cave-linear-turn` (`content-visibility: auto`), and
+  // both establish a containing block for `position: fixed`. Rendered inline the
+  // overlay is clamped to the message's turn box instead of the viewport, so the
+  // "Expand" reading view never actually goes full-screen (it sits in a small
+  // box with a huge empty area beside/below it). Portaling escapes those
+  // ancestors so `inset-0` resolves to the real viewport. See ui/modal.tsx.
+  return createPortal(
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 backdrop-blur-sm"
       onClick={onClose}
@@ -1218,6 +1226,7 @@ function MarkdownExpandModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
