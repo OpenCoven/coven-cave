@@ -15,6 +15,9 @@ assert.match(source, /aria-label="Familiar to evaluate"/, "renders a familiar pi
 assert.match(source, /fetch\("\/api\/evals\/suites"\)/, "loads suites from the API");
 assert.match(source, /\/api\/evals\/suites/, "saves/deletes suites via the API");
 assert.match(source, /\/api\/evals\/runs/, "lists and persists runs via the API");
+assert.match(source, /\/api\/evals\/groups/, "loads eval groups from the API");
+assert.match(source, /\/api\/evals\/thread-states/, "loads thread eval state snapshots from the API");
+assert.match(source, /\/api\/evals\/queue/, "queues manual grouped eval runs via the API");
 assert.match(source, /method: "DELETE"/, "supports suite deletion");
 
 // Run engine + readiness gate
@@ -22,6 +25,11 @@ assert.match(source, /runSuite\(/, "runs the suite through the client engine");
 assert.match(source, /suiteRunBlockReason/, "gates Run on suite readiness");
 assert.match(source, /disabled=\{Boolean\(blockReason\)\}/, "Run is disabled when blocked");
 assert.match(source, /AbortController/, "a run can be stopped");
+assert.match(source, /deriveThreadEvalState/, "derives thread eval freshness");
+assert.match(source, /rollupEvalGroup/, "rolls grouped eval state into status counts");
+assert.match(source, /Run stale evals/, "exposes a manual queue action for stale group evals");
+assert.match(source, /evals-group-panel/, "renders grouped eval state");
+assert.match(source, /evals-stale-reason/, "renders stale reasons");
 
 // Editor: cases + graders
 assert.match(source, /Add case/, "can add cases");
