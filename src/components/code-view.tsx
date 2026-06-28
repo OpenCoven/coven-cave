@@ -29,9 +29,9 @@ type Props = {
 type CodeTab = "chat" | "files" | "changes";
 
 export function CodeView({ chat, comux }: Props) {
-  // Default to Files: choosing "Code" over "Chat" is a request to see code, and
-  // the conversation is one tab away. Edits auto-surface the Changes tab.
-  const [tab, setTab] = useState<CodeTab>("files");
+  // Default to Chat: entering Code lands on the conversation; Files (leftmost
+  // tab) and Changes are a click away, and edits auto-surface the Changes tab.
+  const [tab, setTab] = useState<CodeTab>("chat");
 
   // Files and Changes are the same comux surface in two states. Render it once
   // and drive its right pane from the active tab; comux routes its own
@@ -69,8 +69,8 @@ export function CodeView({ chat, comux }: Props) {
           value={tab}
           onChange={(id) => setTab(id as CodeTab)}
           items={[
-            { id: "chat", label: "Chat", icon: "ph:chats" },
             { id: "files", label: "Files", icon: "ph:file-code" },
+            { id: "chat", label: "Chat", icon: "ph:chats" },
             { id: "changes", label: "Changes", icon: "ph:git-diff" },
           ]}
         />

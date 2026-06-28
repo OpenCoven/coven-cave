@@ -23,7 +23,8 @@ const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url
 // diff keep their state across tab taps.
 assert.match(codeView, /type CodeTab = "chat" \| "files" \| "changes"/, "CodeView models the three tabs");
 assert.match(codeView, /<Tabs[\s\S]*?ariaLabel="Code view"[\s\S]*?value=\{tab\}/, "a shared Tabs control switches Chat/Files/Changes");
-assert.match(codeView, /id: "chat"[\s\S]*?id: "files"[\s\S]*?id: "changes"/, "the tab bar lists chat, files and changes");
+assert.match(codeView, /id: "files"[\s\S]*?id: "chat"[\s\S]*?id: "changes"/, "the tab bar lists files (leftmost), then chat and changes");
+assert.match(codeView, /useState<CodeTab>\("chat"\)/, "the Code surface opens on the Chat tab by default");
 assert.match(codeView, /cave-code-page__pane--chat[\s\S]*?tab === "chat" \? "flex" : "hidden"/, "the chat pane shows only on the Chat tab (hidden, not unmounted)");
 assert.match(codeView, /cave-code-page__pane--workspace[\s\S]*?tab !== "chat" \? "flex" : "hidden"/, "the comux pane backs both the Files and Changes tabs");
 assert.match(codeView, /\{chat\}/, "the chat pane renders the chat slot");
