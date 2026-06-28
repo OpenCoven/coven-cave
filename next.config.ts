@@ -20,7 +20,10 @@ const nextConfig: NextConfig = {
   // Cave does not use Next's server-side image optimizer in the packaged app;
   // icon generation happens before build via scripts/generate-pwa-icons.mjs.
   images: { unoptimized: true },
-  serverExternalPackages: ["node-pty"],
+  // node-pty: native PTY bridge. sharp: native libvips raster transcoder used
+  // by the familiar avatar route (#2010) — must stay external so Next doesn't
+  // trace/strip its platform-specific `.node` binaries out of the bundle.
+  serverExternalPackages: ["node-pty", "sharp"],
   // Next.js file tracing otherwise sucks the entire src-tauri/target/
   // (multi-GB) into the standalone bundle. Exclude noisy siblings.
   outputFileTracingExcludes: {

@@ -72,6 +72,7 @@
     "react-colorful": "5.7.0",
     "react-dom": "19.2.4",
     "react-resizable-panels": "4.11.2",
+    "sharp": "0.34.5",
     "shiki": "4.2.0",
     "sucrase": "3.35.1",
     "ws": "8.21.0",
@@ -87,7 +88,6 @@
     "@types/ws": "8.18.1",
     "esbuild": "0.28.0",
     "highlight.js": "11.11.1",
-    "sharp": "0.34.5",
     "tailwindcss": "4.3.0",
     "typescript": "5.9.3",
     "vitest": "4.1.9"

@@ -145,13 +145,16 @@ prune_sidecar_nonruntime_files() {
 
   echo "==> pruning sidecar non-runtime files"
 
+  # NOTE: do NOT prune node_modules/sharp or node_modules/@img here — sharp is a
+  # runtime dependency of the familiar avatar route, which transcodes seeded
+  # raster avatars at request time (#2010). prune_foreign_native_packages has
+  # already trimmed @img down to the single build-target sharp + libvips pair,
+  # so keeping them costs little and avatars actually render in the packaged app.
   rm -rf \
     "$dest/node_modules/@playwright" \
     "$dest/node_modules/@types" \
     "$dest/node_modules/playwright" \
-    "$dest/node_modules/playwright-core" \
-    "$dest/node_modules/sharp" \
-    "$dest/node_modules/@img"
+    "$dest/node_modules/playwright-core"
 
   find "$dest" -type f \( \
     -name '*.map' -o \
@@ -296,5 +299,16 @@ for must in node_modules/@next/env node_modules/@swc/helpers/_; do
     exit 1
   fi
 done
+
+# Sharp must actually load from the bundle, or familiar raster avatars 404 in
+# the packaged app (#2010). The prune keeps only the build-host-arch native
+# binary, and release bundles are built on the matching host (same constraint
+# as @next/swc and node-pty), so requiring it here exercises the real load
+# path and fails fast if @img/sharp-<target> or libvips went missing.
+if ! (cd "$DEST" && node -e "require('sharp')") >&2 2>&1; then
+  echo "==> ! sharp failed to load from sidecar bundle — raster avatars will 404 (#2010)" >&2
+  echo "    expected @img/sharp-<build-target> native binary under $DEST/node_modules/@img" >&2
+  exit 1
+fi
 
 echo "==> sidecar bundle ready ($(du -sh "$DEST" | cut -f1))"

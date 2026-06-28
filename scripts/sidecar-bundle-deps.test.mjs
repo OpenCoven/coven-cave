@@ -29,6 +29,25 @@ assert.match(src, /prune_sidecar_nonruntime_files\(\)/, "sidecar must prune non-
 assert.match(src, /node_modules\/playwright-core/, "sidecar must remove Playwright test runtime from the packaged app");
 assert.match(src, /node_modules\/@types/, "sidecar must remove TypeScript declaration packages from the packaged app");
 assert.match(src, /-name '\*\.map'/, "sidecar must remove source maps from the packaged app");
-assert.match(src, /node_modules\/sharp/, "sidecar must remove optional Sharp image optimizer from the packaged app");
+
+// Sharp is a RUNTIME dependency: the familiar avatar route transcodes seeded
+// raster avatars with it at request time (#2010). It must survive bundling, so
+// the non-runtime prune must NOT strip node_modules/sharp or node_modules/@img.
+assert.doesNotMatch(
+  src,
+  /"\$dest\/node_modules\/sharp"/,
+  "sidecar must KEEP node_modules/sharp — it powers raster avatar transcoding (#2010)",
+);
+assert.doesNotMatch(
+  src,
+  /"\$dest\/node_modules\/@img"/,
+  "sidecar must KEEP node_modules/@img native binaries that back sharp (#2010)",
+);
+// And the bundle must fail fast if sharp can't actually load from it.
+assert.match(
+  src,
+  /require\('sharp'\)/,
+  "sidecar must verify sharp loads from the bundle before declaring it ready (#2010)",
+);
 
 console.log("sidecar-bundle-deps.test: ok");
