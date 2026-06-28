@@ -112,6 +112,21 @@ assert.match(
 );
 assert.match(
   css,
+  /:root\[data-tauri-titlebar\]\s+\.shell-top \*\s*\{[\s\S]*?-webkit-app-region:\s*no-drag;[\s\S]*?app-region:\s*no-drag;/,
+  "macOS titlebar mode should carve every header descendant out of the drag region so controls stay clickable",
+);
+assert.match(
+  css,
+  /\.shell-top\s*\{[\s\S]*?flex-wrap:\s*nowrap;[\s\S]*?overflow:\s*hidden;/,
+  "the desktop shell header should stay one row and clip/contain crowded content instead of wrapping over controls",
+);
+assert.match(
+  css,
+  /\.menu-bar\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?width:\s*100%;[\s\S]*?overflow:\s*hidden;/,
+  "the rendered desktop menu bar should shrink inside the shell header on macOS/Windows/Linux",
+);
+assert.match(
+  css,
   /\.shell-top-toggle\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;[\s\S]*?border:\s*1px solid var\(--border-hairline\);[\s\S]*?background:\s*var\(--bg-base\);/,
   "top-bar toggles match the row's compact bordered icon buttons",
 );

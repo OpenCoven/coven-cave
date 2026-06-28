@@ -39,11 +39,16 @@ assert.match(src, /Downloading…/, "shows download progress");
 assert.match(src, /Check for updates/, "settings row offers a manual re-check");
 
 // A failed native install must not dead-end: it captures the reason and offers
-// a working manual download (the release page) plus a retry, so the update is
-// always reachable even when downloadAndInstall/relaunch throws.
+// a working manual download plus a retry, so the update is always reachable
+// even when downloadAndInstall/relaunch throws. The manual path should resolve
+// the platform installer through the same fallback route instead of hardcoding
+// the releases page.
 assert.match(src, /phase: "failed"/, "tracks a dedicated failed state for a thrown install");
 assert.match(src, /message: err instanceof Error \? err\.message/, "captures the real failure reason instead of swallowing it");
-assert.match(src, /onClick=\{\(\) => void openExternalUrl\(RELEASES_PAGE\)\}/, "failed state offers a manual download to the release page");
+assert.match(src, /async function openManualDownload/, "centralizes manual-download fallback resolution");
+assert.match(src, /fetchFallbackStatus\(\)[\s\S]*resolveDownloadUrl/, "manual download resolves a direct platform installer when release metadata is reachable");
+assert.match(src, /onClick=\{\(\) => void openManualDownload\(\)\}/, "failed state offers the same direct manual download path as fallback updates");
+assert.doesNotMatch(src, /onClick=\{\(\) => void openExternalUrl\(RELEASES_PAGE\)\}/, "failed state must not dead-end on the generic release page when a direct installer can be resolved");
 assert.match(src, />\s*Retry\s*</, "failed state offers a retry");
 
 console.log("update-available.test.ts: ok");

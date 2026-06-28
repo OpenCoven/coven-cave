@@ -106,6 +106,18 @@ async function resolveDownloadUrl(status: UpdateStatus): Promise<string> {
   }
 }
 
+/**
+ * Open the easiest reachable installer for the running desktop platform. This
+ * is used when the native updater cannot finish, so a broken install attempt
+ * still leaves the user one click from the DMG/MSI/AppImage when release
+ * metadata is available.
+ */
+async function openManualDownload(): Promise<void> {
+  const fb = await fetchFallbackStatus();
+  const url = fb ? await resolveDownloadUrl(fb) : RELEASES_PAGE;
+  await openExternalUrl(url);
+}
+
 type Resolved =
   | { kind: "current" }
   | { kind: "native"; version: string; update: TauriUpdate }
@@ -155,7 +167,7 @@ export function UpdateBannerTrigger() {
                   title: reason
                     ? `Update failed (${reason}) — download manually`
                     : "Update failed — download manually",
-                  cta: { label: "Download", onClick: () => void openExternalUrl(RELEASES_PAGE) },
+                  cta: { label: "Download", onClick: () => void openManualDownload() },
                   onDismiss: () => markDismissed(r.version),
                 });
               });
@@ -270,7 +282,7 @@ export function UpdateSettingsRow() {
         >
           Update failed
         </span>
-        <button type="button" onClick={() => void openExternalUrl(RELEASES_PAGE)} className={accentBtn}>
+        <button type="button" onClick={() => void openManualDownload()} className={accentBtn}>
           <Icon name="ph:arrow-square-out" width={12} />
           Download
         </button>

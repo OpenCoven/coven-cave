@@ -4055,20 +4055,26 @@ button:active > .edge-rail-chip {
 .shell-top {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   flex: 0 0 auto;
   min-height: 44px;
   gap: 8px;
   padding-inline: 12px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-hairline);
+  overflow: hidden;
 }
 
 .shell-top__bar {
+  display: flex;
+  align-items: center;
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .shell-top .menu-bar {
+  width: 100%;
   min-height: 44px;
   padding-inline: 0;
   border-bottom: 0;
@@ -4103,6 +4109,11 @@ button:active > .edge-rail-chip {
   ) {
     -webkit-app-region: drag;
     app-region: drag;
+  }
+
+  :root[data-tauri-titlebar] .shell-top * {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
   }
 
   :root[data-tauri-titlebar] .shell-top :is(
@@ -5154,6 +5165,8 @@ button:active > .edge-rail-chip {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
+  width: 100%;
   padding: 5px 12px;
   /* min-height (not a fixed height) so the bar grows with scaled-up content
      under screen magnification instead of clipping the search row. */
@@ -5162,6 +5175,7 @@ button:active > .edge-rail-chip {
   border-bottom: 1px solid var(--border-hairline);
   font-size: var(--text-sm);
   user-select: none;
+  overflow: hidden;
 }
 
 @media (min-width: 1024px) {

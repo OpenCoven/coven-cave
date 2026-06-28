@@ -7,6 +7,20 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.123] - 2026-06-28
+
+Patch release on top of v0.0.122. Headline: desktop updates and the app header
+are easier to use across macOS, Windows, and Linux.
+
+### Fixed
+
+- **Updates** - when the native desktop updater cannot finish installing, the
+  Download action now resolves the direct platform installer through release
+  metadata instead of dropping users on the generic releases page.
+- **Desktop header** - the app header stays contained on one row and keeps
+  controls clickable in macOS titlebar mode while shrinking cleanly on
+  macOS, Windows, and Linux.
+
 ## [0.0.122] - 2026-06-28
 
 Patch release on top of v0.0.121. Headline: chat generation state now survives
