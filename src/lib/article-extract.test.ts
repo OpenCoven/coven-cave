@@ -1,6 +1,14 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { extractArticle, htmlToMarkdown, decodeEntities } from "./article-extract.ts";
+import { extractArticle, htmlToMarkdown, decodeEntities, stripHtmlTags } from "./article-extract.ts";
+
+// ── stripHtmlTags: fixpoint defeats split/nested tags ───────────
+assert.equal(stripHtmlTags("<b>hi</b>"), "hi");
+assert.equal(stripHtmlTags("a<img src=x onerror=y>b"), "ab");
+// The fixpoint guarantee: no `<...>` tag can survive, even split/nested ones
+// that defeat a single pass (a lone `>` left as text is harmless).
+assert.doesNotMatch(stripHtmlTags("<<script>script>alert(1)<</script>/script>"), /<[^>]*>/, "no tag survives the fixpoint");
+assert.doesNotMatch(stripHtmlTags("<scr<script>ipt>x</scr</script>ipt>"), /<script/i, "split-tag evasion stripped");
 
 // ── decodeEntities ──────────────────────────────────────────────
 assert.equal(decodeEntities("a &amp; b &mdash; c"), "a & b — c");

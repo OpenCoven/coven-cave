@@ -51,17 +51,35 @@ export async function GET(req: NextRequest) {
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  // Follow redirects manually so every hop's host is re-validated — otherwise a
+  // public URL could 3xx to an internal address and defeat the pre-check above.
+  let target = parsed;
   let res: Response;
   try {
-    res = await fetch(parsed.toString(), {
-      headers: {
-        // A desktop UA + accept header improves extraction on UA-gated sites.
-        "User-Agent": "Mozilla/5.0 (compatible; coven-cave/1.0; +reader)",
-        Accept: "text/html,application/xhtml+xml",
-      },
-      redirect: "follow",
-      signal: controller.signal,
-    });
+    for (let hop = 0; ; hop++) {
+      res = await fetch(target.toString(), {
+        headers: {
+          // A desktop UA + accept header improves extraction on UA-gated sites.
+          "User-Agent": "Mozilla/5.0 (compatible; coven-cave/1.0; +reader)",
+          Accept: "text/html,application/xhtml+xml",
+        },
+        redirect: "manual",
+        signal: controller.signal,
+      });
+      if (res.status < 300 || res.status >= 400) break;
+      const location = res.headers.get("location");
+      const next = location ? parseSafeHttpUrl(new URL(location, target).toString()) : null;
+      if (!next || !isPublicHost(next.hostname)) {
+        clearTimeout(timer);
+        return NextResponse.json({ ok: false, error: "Refused to follow a redirect to a disallowed host." }, { status: 403 });
+      }
+      if (hop >= 5) {
+        clearTimeout(timer);
+        return NextResponse.json({ ok: false, error: "Too many redirects." }, { status: 502 });
+      }
+      target = next;
+    }
   } catch {
     clearTimeout(timer);
     return NextResponse.json({ ok: false, error: "Could not fetch that page." }, { status: 502 });

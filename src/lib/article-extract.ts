@@ -41,8 +41,23 @@ export function decodeEntities(input: string): string {
   });
 }
 
+/**
+ * Remove all HTML tags, iterating to a fixpoint so split/nested constructs
+ * (e.g. `<<script>script>`) can't survive a single pass. Use this everywhere a
+ * tag strip happens — a single `.replace(/<[^>]+>/g, "")` is defeatable.
+ */
+export function stripHtmlTags(input: string): string {
+  let prev: string;
+  let out = input;
+  do {
+    prev = out;
+    out = out.replace(/<[^>]*>/g, "");
+  } while (out !== prev);
+  return out;
+}
+
 function stripTags(html: string): string {
-  return decodeEntities(html.replace(/<[^>]+>/g, "")).replace(/[ \t]+/g, " ").trim();
+  return decodeEntities(stripHtmlTags(html)).replace(/[ \t]+/g, " ").trim();
 }
 
 function metaContent(html: string, patterns: RegExp[]): string | null {
@@ -88,7 +103,7 @@ export function htmlToMarkdown(html: string): string {
 
   // Block-level pre/code first (preserve interior).
   s = s.replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_m, inner: string) => {
-    const code = decodeEntities(inner.replace(/<\/?code[^>]*>/gi, "").replace(/<[^>]+>/g, ""));
+    const code = decodeEntities(stripHtmlTags(inner.replace(/<\/?code[^>]*>/gi, "")));
     return `\n\n\`\`\`\n${code.replace(/\n+$/, "")}\n\`\`\`\n\n`;
   });
 
@@ -148,8 +163,8 @@ export function htmlToMarkdown(html: string): string {
   s = s.replace(/<br\s*\/?>/gi, "\n");
   s = s.replace(/<\/(div|section|figure|figcaption|tr)>/gi, "\n");
 
-  // Drop every remaining tag, decode, normalize whitespace.
-  s = decodeEntities(s.replace(/<[^>]+>/g, ""));
+  // Drop every remaining tag (fixpoint), decode, normalize whitespace.
+  s = decodeEntities(stripHtmlTags(s));
   s = s.replace(/[ \t]+/g, " ");
   s = s.replace(/ *\n */g, "\n");
   s = s.replace(/\n{3,}/g, "\n\n");
