@@ -79,6 +79,14 @@ assert.match(
   "ToolBlock should keep individual tool payloads collapsed and format input/output with SyntaxBlock",
 );
 
+// Tool rows are color-coded by category for quick visual inspection.
+assert.match(source, /import \{ toolVisual \} from "@\/lib\/tool-visual"/, "chat view imports the tool visual map");
+assert.match(
+  source,
+  /function ToolBlock[\s\S]*const visual = toolVisual\(tool\.name\)[\s\S]*data-tool-category=\{visual\.category\}[\s\S]*<Icon name=\{visual\.icon\}/,
+  "ToolBlock should color-code by tool category (data-tool-category + per-category icon)",
+);
+
 assert.doesNotMatch(
   [
     source.match(/function ReasoningBlock[\s\S]*?function ProgressGroup/)?.[0] ?? "",
