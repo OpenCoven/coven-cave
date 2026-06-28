@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { toolArgSummary } from "../lib/tool-arg-summary.ts";
+import { toolArgDetail, toolArgSummary } from "../lib/tool-arg-summary.ts";
 import { toolInputAsDiff } from "../lib/tool-input-diff.ts";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
@@ -185,6 +185,13 @@ assert.ok(oversize.length <= 48, "summary is capped at 48 chars");
 assert.ok(oversize.endsWith("…"), "oversize summary ends with an ellipsis");
 assert.ok(!oversize.includes("\n"), "summary is never multi-line");
 
+const longSearchQuery = "multi-agent LLM workflow architectures orchestrator worker patterns 2025";
+assert.equal(
+  toolArgDetail("Web Search", JSON.stringify({ query: longSearchQuery })),
+  longSearchQuery,
+  "detail keeps the full web-search query for readable live activity context",
+);
+
 // Absent input yields an empty string.
 assert.equal(toolArgSummary("Read", undefined), "", "absent input gives empty summary");
 assert.equal(toolArgSummary("Read", "   "), "", "whitespace-only input gives empty summary");
@@ -207,6 +214,22 @@ assert.match(
   source,
   /detail: argSummary \? `\$\{incoming\.name\}\(\$\{argSummary\}\)` : incoming\.name/,
   "Tool progress detail carries Name(arg) instead of the bare tool name",
+);
+
+assert.match(
+  source,
+  /const runningToolDetail = live && runningTool \? toolArgDetail\(runningTool\.name, runningTool\.input\) : ""/,
+  "RunActivityStrip computes a full running-tool detail, separate from the capped summary",
+);
+assert.match(
+  source,
+  /cave-run-activity-context[\s\S]*?\{runningTool\.name\}\([\s\S]*?\{runningToolDetail\}[\s\S]*?\)/,
+  "RunActivityStrip renders full running-tool context where it can wrap instead of truncating",
+);
+assert.match(
+  styles,
+  /\.cave-run-activity-context[\s\S]*?white-space:\s*pre-wrap[\s\S]*?overflow-wrap:\s*anywhere/,
+  "RunActivityStrip context wraps long search/tool input instead of clipping it",
 );
 
 // ── Edit/Write tool inputs render as structured diffs (CHAT-D8-02) ──────────
@@ -290,11 +313,12 @@ const bigLines = bigDiff.split("\n");
 assert.ok(bigLines.length <= 401, "diff output is capped near 400 lines");
 assert.match(bigLines[bigLines.length - 1], /more lines truncated/, "capped diff ends with a truncation marker");
 
-// ToolBlock routes the Input section through toolInputAsDiff with diff chrome.
+// ToolBlock routes the Input section through toolInputAsDiff with diff chrome,
+// otherwise through ToolInputView (readable fields + raw-JSON toggle).
 assert.match(
   source,
-  /function ToolBlock[\s\S]*?const inputDiff = toolInputAsDiff\(tool\.name, tool\.input\)[\s\S]*?\{inputDiff \? <SyntaxBlock text=\{inputDiff\} lang="diff" \/> : <SyntaxBlock text=\{tool\.input\} \/>\}/,
-  "ToolBlock Input renders the structured diff when available, raw payload otherwise",
+  /function ToolBlock[\s\S]*?const inputDiff = toolInputAsDiff\(tool\.name, tool\.input\)[\s\S]*?inputDiff \? \([\s\S]*?<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*?<ToolInputView input=\{tool\.input\} \/>/,
+  "ToolBlock Input renders the structured diff when available, readable fields otherwise",
 );
 
 // ── Diff gutter excludes file headers; @@ rows are muted meta (CHAT-D8-03) ──

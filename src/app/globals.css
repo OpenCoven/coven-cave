@@ -10231,3 +10231,51 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   color: color-mix(in oklch, var(--text-muted) 55%, transparent);
   flex-shrink: 0;
 }
+
+/* ── Reusable confirm button: green fill-up on success ─────────────────────────
+   Layer over any button (`className="<base classes> cave-fill-btn"`) and drive
+   it with `data-state="idle|copied|failed"` (or "success"/"error"). On success a
+   green wash sweeps left→right under the label as a tactile confirmation; on
+   failure it washes red. Composes with the existing utility/`cave-btn` classes —
+   the pattern lives here so every copy/confirm action can adopt it consistently.
+   The fill sits on a -1 z-index pseudo so the label/icon stay readable. */
+.cave-fill-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.cave-fill-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: var(--color-success);
+  transition: transform 0.5s var(--ease-standard);
+}
+.cave-fill-btn[data-state="copied"]::before,
+.cave-fill-btn[data-state="success"]::before {
+  transform: scaleX(1);
+}
+.cave-fill-btn[data-state="copied"],
+.cave-fill-btn[data-state="success"] {
+  color: #fff;
+  border-color: color-mix(in oklch, var(--color-success) 75%, transparent);
+}
+.cave-fill-btn[data-state="failed"]::before,
+.cave-fill-btn[data-state="error"]::before {
+  background: var(--color-danger);
+  transform: scaleX(1);
+}
+.cave-fill-btn[data-state="failed"],
+.cave-fill-btn[data-state="error"] {
+  color: #fff;
+  border-color: color-mix(in oklch, var(--color-danger) 75%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cave-fill-btn::before { transition: none; }
+}

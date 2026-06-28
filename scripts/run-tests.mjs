@@ -221,6 +221,7 @@ export const SUITES = {
     "src/lib/code-lang.test.ts",
     "src/lib/project-search.test.ts",
     "src/lib/tool-target-file.test.ts",
+    "src/lib/tool-readable.test.ts",
     "src/lib/tool-visual.test.ts",
     "src/lib/terminal-layout.test.ts",
     "src/lib/terminal-nav.test.ts",

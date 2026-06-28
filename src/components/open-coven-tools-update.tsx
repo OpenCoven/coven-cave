@@ -276,13 +276,14 @@ export function OpenCovenToolsUpdate() {
       window.setTimeout(() => setDiagnosticsStatus("idle"), 1800);
     } catch {
       setDiagnosticsStatus("failed");
+      window.setTimeout(() => setDiagnosticsStatus("idle"), 1800);
     }
   };
 
   const accentBtn =
     "focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50";
   const ghostBtn =
-    "focus-ring rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
+    "focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
   const footerStatusText =
     diagnosticsStatus === "copied"
       ? "Diagnostics copied"
@@ -351,8 +352,29 @@ export function OpenCovenToolsUpdate() {
           {footerStatusText}
         </span>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <button type="button" onClick={() => void copyDiagnostics()} className={ghostBtn}>
-            Copy diagnostics
+          <button
+            type="button"
+            onClick={() => void copyDiagnostics()}
+            className={`${ghostBtn} cave-fill-btn`}
+            data-state={diagnosticsStatus}
+            aria-live="polite"
+          >
+            <Icon
+              name={
+                diagnosticsStatus === "copied"
+                  ? "ph:check-bold"
+                  : diagnosticsStatus === "failed"
+                    ? "ph:warning"
+                    : "ph:copy"
+              }
+              width={12}
+              aria-hidden
+            />
+            {diagnosticsStatus === "copied"
+              ? "Copied"
+              : diagnosticsStatus === "failed"
+                ? "Copy failed"
+                : "Copy diagnostics"}
           </button>
           <button type="button" onClick={() => void load()} className={ghostBtn} disabled={checking}>
             Check tools

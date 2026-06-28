@@ -729,6 +729,92 @@ function wireFilePathLinks(container: HTMLElement) {
   }
 }
 
+// Wide markdown tables are cramped in the narrow chat column. Each rendered
+// table (mdToHtml wraps every one in `.cave-table-scroll`) gets an "Expand"
+// affordance that opens it full-size in a dismissable lightbox so it can be
+// read comfortably. Wired imperatively because the markdown HTML is injected
+// via dangerouslySetInnerHTML; idempotent per table via the `_caveTableWired`
+// flag, like the copy/link wiring above.
+function wireExpandableTables(container: HTMLElement) {
+  for (const scroll of Array.from(container.querySelectorAll<HTMLElement>(".cave-table-scroll"))) {
+    const flagged = scroll as HTMLElement & { _caveTableWired?: boolean };
+    if (flagged._caveTableWired) continue;
+    if (!scroll.querySelector("table")) continue;
+    // Flag BEFORE moving the node so the wrapper insertion's own mutation
+    // observer pass skips it instead of double-wrapping.
+    flagged._caveTableWired = true;
+
+    const wrap = document.createElement("div");
+    wrap.className = "cave-table-block";
+    scroll.parentNode?.insertBefore(wrap, scroll);
+    wrap.appendChild(scroll);
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cave-table-expand-btn";
+    btn.title = "Expand table";
+    btn.setAttribute("aria-label", "Expand table");
+    btn.innerHTML = '<span class="cave-table-expand-glyph" aria-hidden="true">⤢</span> Expand';
+    btn.addEventListener("click", () => openTableLightbox(scroll));
+    wrap.appendChild(btn);
+  }
+}
+
+function openTableLightbox(scroll: HTMLElement) {
+  const table = scroll.querySelector("table");
+  if (!table) return;
+
+  const overlay = document.createElement("div");
+  overlay.className = "cave-table-lightbox";
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-label", "Expanded table");
+
+  const panel = document.createElement("div");
+  panel.className = "cave-table-lightbox__panel";
+
+  const bar = document.createElement("div");
+  bar.className = "cave-table-lightbox__bar";
+  const title = document.createElement("span");
+  title.className = "cave-table-lightbox__title";
+  title.textContent = "Table";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "cave-table-lightbox__close focus-ring";
+  close.textContent = "Close";
+  bar.append(title, close);
+
+  // cave-md scopes the table styling; the clone is detached from its turn so
+  // it carries no live listeners — purely a readable, scrollable copy.
+  const body = document.createElement("div");
+  body.className = "cave-table-lightbox__body cave-md";
+  body.appendChild(table.cloneNode(true));
+
+  panel.append(bar, body);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+
+  const prevOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  const dismiss = () => {
+    document.body.style.overflow = prevOverflow;
+    document.removeEventListener("keydown", onKey);
+    overlay.remove();
+  };
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.stopPropagation();
+      dismiss();
+    }
+  };
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) dismiss();
+  });
+  close.addEventListener("click", dismiss);
+  document.addEventListener("keydown", onKey);
+  close.focus();
+}
+
 /**
  * Shared post-render hook: wires `.cave-copy-btn` clicks inside the container
  * whenever the injected HTML changes. Every component that injects
@@ -748,6 +834,7 @@ function useWireCopyButtons(html: string | null, onOpenUrl?: (url: string) => vo
       wireCopyButtons(el);
       wireMarkdownLinks(el, onOpenUrl);
       wireMermaidDiagrams(el);
+      wireExpandableTables(el);
       if (linkifyPaths) wireFilePathLinks(el);
     };
     wireAll();

@@ -75,8 +75,10 @@ import {
 } from "@/lib/chat-projects";
 import type { CaveProject } from "@/lib/cave-projects";
 import { useProjects } from "@/lib/use-projects";
-import { toolArgSummary } from "@/lib/tool-arg-summary";
+import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolVisual } from "@/lib/tool-visual";
+import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
+import { useShowThinking } from "@/lib/reasoning-visibility";
 import { toolInputAsDiff, toolTargetFile } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
@@ -1017,6 +1019,24 @@ function SessionOverflowMenu({
         </PopoverBody>
       </Popover>
     </>
+  );
+}
+
+/** Header toggle for the global "Show thinking" preference — flips every
+ *  reasoning disclosure in the transcript open/closed at once. */
+function HeaderThinkingToggle() {
+  const [showThinking, setShowThinking] = useShowThinking();
+  return (
+    <button
+      type="button"
+      className={`focus-ring cave-chat-icon-button${showThinking ? " cave-chat-icon-button--active" : ""}`}
+      aria-label={showThinking ? "Hide thinking" : "Show thinking"}
+      aria-pressed={showThinking}
+      title={showThinking ? "Hide reasoning blocks" : "Show reasoning blocks"}
+      onClick={() => setShowThinking(!showThinking)}
+    >
+      <Icon name={showThinking ? "ph:brain-bold" : "ph:brain"} width={15} aria-hidden />
+    </button>
   );
 }
 
@@ -4167,6 +4187,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 onPrev={findPrev}
               />
             ) : null}
+            {turns.length > 0 ? <HeaderThinkingToggle /> : null}
             {sessionId && (
               <HeaderDebugButton onOpenDebug={openDebug} />
             )}
@@ -5148,15 +5169,31 @@ function TurnRowImpl({
 }
 
 function ReasoningBlock({ reasoning }: { reasoning: string }) {
+  // The global "Show thinking" toggle (header) opens every reasoning block at
+  // once; an individual block can still be collapsed/expanded locally. The
+  // disclosure stays default-collapsed in markup — `open` is driven by the
+  // shared preference so toggling it re-opens blocks that were never touched.
+  const [showThinking] = useShowThinking();
+  const wordCount = useMemo(
+    () => reasoning.split(/\s+/).filter(Boolean).length,
+    [reasoning],
+  );
   return (
-    <details className="cave-reasoning-block mt-3" data-default-collapsed="true">
+    <details
+      className="cave-reasoning-block mt-3"
+      data-default-collapsed="true"
+      open={showThinking || undefined}
+    >
       <summary className="cave-tool-summary">
         <span className="inline-flex items-center gap-1.5">
           <Icon name="ph:brain" width={12} aria-hidden />
           Thinking
         </span>
+        <span className="ml-auto font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
+          {wordCount} {wordCount === 1 ? "word" : "words"}
+        </span>
       </summary>
-      <div className="mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[12px] leading-5 text-[var(--text-secondary)]">
+      <div className="cave-reasoning-body mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[12px] leading-5 text-[var(--text-secondary)]">
         <RichText text={reasoning} />
       </div>
     </details>
@@ -5339,18 +5376,72 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
         <DurationText durationMs={tool.durationMs} />
       </summary>
       {tool.input ? (
-        <div className="mt-2">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]">Input</div>
-          {inputDiff ? <SyntaxBlock text={inputDiff} lang="diff" /> : <SyntaxBlock text={tool.input} />}
+        <div className="cave-tool-io mt-2">
+          <div className="cave-tool-io-label">Input</div>
+          {inputDiff ? (
+            <SyntaxBlock text={inputDiff} lang="diff" />
+          ) : (
+            <ToolInputView input={tool.input} />
+          )}
         </div>
       ) : null}
       {tool.output ? (
-        <div className="mt-2">
-          <div className="mb-1 text-[10px] uppercase tracking-[0.08em] text-[var(--text-muted)]">Output</div>
-          <SyntaxBlock text={tool.output} />
+        <div className="cave-tool-io mt-2">
+          <div className="cave-tool-io-label">Output</div>
+          <SyntaxBlock text={prettyToolOutput(tool.output)} />
         </div>
       ) : null}
     </details>
+  );
+}
+
+/**
+ * Readable tool input: a labelled field list (`File: …`, `Find: …`) derived
+ * from the JSON payload, with the raw JSON one toggle away for auditing. Falls
+ * back to the raw SyntaxBlock when the payload is not a JSON object (bare
+ * command lines, arrays, truncated blobs).
+ */
+function ToolInputView({ input }: { input: string }) {
+  const fields = useMemo(() => toolReadableFields(input), [input]);
+  const [showRaw, setShowRaw] = useState(false);
+  if (!fields) return <SyntaxBlock text={input} />;
+  return (
+    <div className="cave-tool-input">
+      {showRaw ? <SyntaxBlock text={input} /> : <ToolFieldList fields={fields} />}
+      <button
+        type="button"
+        className="cave-tool-raw-toggle focus-ring"
+        aria-pressed={showRaw}
+        onClick={() => setShowRaw((v) => !v)}
+      >
+        <Icon name={showRaw ? "ph:list-bullets" : "ph:code"} width={11} aria-hidden />
+        {showRaw ? "Readable" : "Raw JSON"}
+      </button>
+    </div>
+  );
+}
+
+function ToolFieldList({ fields }: { fields: ReadableField[] }) {
+  return (
+    <dl className="cave-tool-fields">
+      {fields.map((field) => (
+        <div
+          key={field.key}
+          className="cave-tool-field"
+          data-kind={field.kind}
+          data-multiline={field.multiline ? "true" : undefined}
+        >
+          <dt className="cave-tool-field-label">{field.label}</dt>
+          <dd className="cave-tool-field-value">
+            {field.multiline ? (
+              <SyntaxBlock text={field.value} lang={field.kind === "json" ? "json" : undefined} />
+            ) : (
+              <span className="cave-tool-field-inline">{field.value}</span>
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -5484,6 +5575,7 @@ function RunActivityStrip({
   if (tools.length === 0 && progress.length === 0) return null;
 
   const runningTool = [...tools].reverse().find((t) => t.status === "running");
+  const runningToolDetail = live && runningTool ? toolArgDetail(runningTool.name, runningTool.input) : "";
   const step = currentProgress(progress);
   const running =
     tools.filter((t) => t.status === "running").length +
@@ -5544,6 +5636,10 @@ function RunActivityStrip({
         <div className="mt-1.5">
           {progress.length ? <ProgressGroup progress={progress} pending={live} /> : null}
           {tools.length ? <ToolGroup tools={tools} /> : null}
+        </div>
+      ) : live && runningTool && runningToolDetail ? (
+        <div className="cave-run-activity-context" title={`${runningTool.name}(${runningToolDetail})`}>
+          <span className="cave-run-activity-context__tool">{runningTool.name}</span>({runningToolDetail})
         </div>
       ) : null}
     </div>

@@ -67,6 +67,19 @@ assert.match(
   "ReasoningBlock should render thinking in a collapsed disclosure with formatted text",
 );
 
+// Thinking is togglable: the global Show-thinking preference opens every
+// reasoning block at once via a controlled `open` (default-collapsed in markup).
+assert.match(
+  source,
+  /function ReasoningBlock[\s\S]*const \[showThinking\] = useShowThinking\(\)[\s\S]*open=\{showThinking \|\| undefined\}/,
+  "ReasoningBlock open state is driven by the global Show-thinking preference",
+);
+assert.match(
+  source,
+  /function HeaderThinkingToggle[\s\S]*useShowThinking\(\)[\s\S]*aria-pressed=\{showThinking\}/,
+  "A header toggle flips the global Show-thinking preference",
+);
+
 assert.match(
   source,
   /function ToolGroup[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*Tool activity[\s\S]*tools\.map[\s\S]*<ToolBlock/,
@@ -75,8 +88,21 @@ assert.match(
 
 assert.match(
   source,
-  /function ToolBlock[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*<summary[\s\S]*tool\.name[\s\S]*<SyntaxBlock text=\{tool\.input\}[\s\S]*<SyntaxBlock text=\{tool\.output\}/,
-  "ToolBlock should keep individual tool payloads collapsed and format input/output with SyntaxBlock",
+  /function ToolBlock[\s\S]*<details[\s\S]*data-default-collapsed="true"[\s\S]*<summary[\s\S]*tool\.name[\s\S]*<ToolInputView input=\{tool\.input\}[\s\S]*<SyntaxBlock text=\{prettyToolOutput\(tool\.output\)\}/,
+  "ToolBlock keeps payloads collapsed, renders readable input fields, and pretty-prints output",
+);
+
+// JSON tool input is converted to a human-readable labelled field list, with
+// the raw JSON available behind a toggle.
+assert.match(
+  source,
+  /function ToolInputView[\s\S]*toolReadableFields\(input\)[\s\S]*showRaw \? <SyntaxBlock text=\{input\}/,
+  "ToolInputView renders readable fields by default and raw JSON on toggle",
+);
+assert.match(
+  source,
+  /function ToolFieldList[\s\S]*field\.label[\s\S]*field\.value/,
+  "ToolFieldList renders each readable field's humanised label and value",
 );
 
 // Tool rows are color-coded by category for quick visual inspection.
@@ -87,14 +113,23 @@ assert.match(
   "ToolBlock should color-code by tool category (data-tool-category + per-category icon)",
 );
 
+// Tool-use disclosures must never default open (the transcript stays clean).
+// ReasoningBlock is the one exception — its `open` is a controlled binding to
+// the global Show-thinking preference (asserted above), not a hardcoded default.
 assert.doesNotMatch(
   [
-    source.match(/function ReasoningBlock[\s\S]*?function ProgressGroup/)?.[0] ?? "",
     source.match(/function ToolGroup[\s\S]*?function ToolBlock/)?.[0] ?? "",
-    source.match(/function ToolBlock[\s\S]*?function ThinkingIndicator/)?.[0] ?? "",
+    source.match(/function ToolBlock[\s\S]*?function ToolInputView/)?.[0] ?? "",
   ].join("\n"),
   /<details[^>]*\sopen(?:=|\s|>)/,
-  "Thinking and tool-use disclosures must not default open",
+  "Tool-use disclosures must not default open",
+);
+// A hardcoded `open` (open with no binding) on the reasoning block would defeat
+// the toggle — only the controlled `open={showThinking || undefined}` is allowed.
+assert.doesNotMatch(
+  source.match(/function ReasoningBlock[\s\S]*?function ProgressGroup/)?.[0] ?? "",
+  /<details[^>]*\sopen(?:\s|>)/,
+  "ReasoningBlock must not hardcode the disclosure open",
 );
 
 // --- Tool activity renders in a designated section on settled turns ---
