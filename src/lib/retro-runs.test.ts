@@ -4,6 +4,7 @@ import {
   buildRetroRunsSnapshot,
   normalizeRetroRunState,
 } from "./retro-runs.ts";
+import { unwrapDaemonEvalState } from "./eval-loop-daemon.ts";
 
 const daemonState = {
   familiar_id: "nova",
@@ -64,5 +65,24 @@ assert.equal(snapshot.summary.reverted, 1, "summary counts reverts");
 assert.equal(snapshot.summary.runningFamiliars, 1, "summary counts running familiars");
 assert.deepEqual(snapshot.summary.trackCounts, { synthesis: 1, prompt: 1, memory: 0 }, "track counts aggregate");
 assert.equal(snapshot.runs[0].id, "nova:iter-1", "run ids are stable across familiars");
+
+// Regression: the daemon returns an enveloped { ok, state } — the /api/retro-runs
+// route reads it as `unwrapDaemonEvalState(stateRes.data)`. Feeding the envelope
+// straight in under-counts every familiar to zero (the double-wrap bug); the
+// unwrap restores the real runs.
+const daemonEnvelope = { ok: true, state: daemonState };
+
+const fromRawEnvelope = normalizeRetroRunState({
+  familiar: { id: "nova", displayName: "Nova", role: "Guide" },
+  state: daemonEnvelope,
+});
+assert.equal(fromRawEnvelope.runs.length, 0, "the raw envelope mis-parses to zero runs (the bug)");
+
+const fromUnwrapped = normalizeRetroRunState({
+  familiar: { id: "nova", displayName: "Nova", role: "Guide" },
+  state: unwrapDaemonEvalState(daemonEnvelope),
+});
+assert.equal(fromUnwrapped.runs.length, 2, "unwrapping the envelope recovers the real runs");
+assert.equal(fromUnwrapped.running, daemonState.running, "running flag is read off the unwrapped state");
 
 console.log("retro-runs.test.ts: ok");

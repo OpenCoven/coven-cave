@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { callDaemon } from "@/lib/coven-daemon";
 import { bindingFor, loadConfig } from "@/lib/cave-config";
+import { unwrapDaemonEvalState } from "@/lib/eval-loop-daemon";
 import { buildRetroRunsSnapshot, normalizeRetroRunState } from "@/lib/retro-runs";
 import { redactSecretsDeep, redactSecretText } from "@/lib/secret-redaction";
 
@@ -59,7 +60,12 @@ export async function GET(req: Request) {
           },
         });
       }
-      return normalizeRetroRunState({ familiar, state: redactSecretsDeep(stateRes.data) });
+      return normalizeRetroRunState({
+        familiar,
+        // Unwrap the daemon's { ok, state } envelope so normalizeRetroRunState
+        // reads iterations/track_counts off the EvalLoopState, not the wrapper.
+        state: redactSecretsDeep(unwrapDaemonEvalState(stateRes.data)),
+      });
     }),
   );
 
