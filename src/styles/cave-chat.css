@@ -1581,7 +1581,23 @@ details[open] > .cave-tool-summary::before {
   border-radius: 7px;
   background: color-mix(in oklch, var(--bg-base) 58%, transparent);
   padding: 9px;
+  /* Color-coded by tool category (data-tool-category) for quick visual
+     inspection — each category drives --tool-accent below. */
+  --tool-accent: var(--text-muted);
+  border-left: 2px solid color-mix(in oklch, var(--tool-accent) 70%, transparent);
 }
+.cave-tool-icon { color: var(--tool-accent); }
+.cave-tool-name { color: color-mix(in oklch, var(--tool-accent) 80%, var(--text-secondary)); }
+
+.cave-tool-block[data-tool-category="shell"]  { --tool-accent: oklch(0.80 0.15 150); } /* green */
+.cave-tool-block[data-tool-category="read"]   { --tool-accent: oklch(0.74 0.13 235); } /* blue */
+.cave-tool-block[data-tool-category="search"] { --tool-accent: oklch(0.74 0.16 295); } /* violet */
+.cave-tool-block[data-tool-category="edit"]   { --tool-accent: oklch(0.82 0.14 75); }  /* amber */
+.cave-tool-block[data-tool-category="agent"]  { --tool-accent: oklch(0.74 0.18 350); } /* magenta */
+.cave-tool-block[data-tool-category="web"]    { --tool-accent: oklch(0.78 0.12 200); } /* teal */
+.cave-tool-block[data-tool-category="task"]   { --tool-accent: oklch(0.80 0.13 95); }  /* lime */
+.cave-tool-block[data-tool-category="mcp"]    { --tool-accent: oklch(0.72 0.14 270); } /* indigo */
+.cave-tool-block[data-tool-category="other"]  { --tool-accent: var(--text-muted); }
 
 /* CHAT-D4-07: expanded tool I/O is secondary context — clamp it tighter than
    prose code blocks (which cap at min(60vh, 520px), CHAT-D7-03). 360px sits

@@ -75,6 +75,7 @@ import {
 import type { CaveProject } from "@/lib/cave-projects";
 import { useProjects } from "@/lib/use-projects";
 import { toolArgSummary } from "@/lib/tool-arg-summary";
+import { toolVisual } from "@/lib/tool-visual";
 import { toolInputAsDiff, toolTargetFile } from "@/lib/tool-input-diff";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
@@ -4970,11 +4971,12 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
       }),
     );
   };
+  const visual = toolVisual(tool.name);
   return (
-    <details className="cave-tool-block" data-default-collapsed="true">
+    <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category}>
       <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[11px]">
-        <Icon name="ph:terminal-window" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-        <span className="min-w-0 truncate font-mono text-[var(--text-secondary)]">{tool.name}</span>
+        <Icon name={visual.icon} width={12} className="cave-tool-icon shrink-0" aria-hidden />
+        <span className="cave-tool-name min-w-0 truncate font-mono">{tool.name}</span>
         {argSummary ? (
           targetFile ? (
             <button
