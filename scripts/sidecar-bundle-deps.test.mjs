@@ -29,6 +29,22 @@ assert.match(src, /prune_sidecar_nonruntime_files\(\)/, "sidecar must prune non-
 assert.match(src, /node_modules\/playwright-core/, "sidecar must remove Playwright test runtime from the packaged app");
 assert.match(src, /node_modules\/@types/, "sidecar must remove TypeScript declaration packages from the packaged app");
 assert.match(src, /-name '\*\.map'/, "sidecar must remove source maps from the packaged app");
-assert.match(src, /node_modules\/sharp/, "sidecar must remove optional Sharp image optimizer from the packaged app");
+
+// The familiar-avatar route loads `sharp` at runtime to downscale uploaded
+// raster avatars (src/app/api/familiars/[id]/avatar/route.ts). Earlier builds
+// pruned node_modules/sharp + node_modules/@img out of the sidecar, which made
+// every raster avatar 404 in the packaged app while SVG avatars kept working
+// (issue #2010). Lock both packages in so the runtime require() can resolve
+// them; the per-target prune already trims @img/sharp-* to one platform.
+assert.doesNotMatch(
+  src,
+  /"\$dest\/node_modules\/sharp"/,
+  "sidecar must KEEP node_modules/sharp — runtime avatar downscaling needs it (#2010)",
+);
+assert.doesNotMatch(
+  src,
+  /"\$dest\/node_modules\/@img"/,
+  "sidecar must KEEP node_modules/@img — sharp loads native libvips from here at runtime (#2010)",
+);
 
 console.log("sidecar-bundle-deps.test: ok");

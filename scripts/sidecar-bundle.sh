@@ -149,9 +149,13 @@ prune_sidecar_nonruntime_files() {
     "$dest/node_modules/@playwright" \
     "$dest/node_modules/@types" \
     "$dest/node_modules/playwright" \
-    "$dest/node_modules/playwright-core" \
-    "$dest/node_modules/sharp" \
-    "$dest/node_modules/@img"
+    "$dest/node_modules/playwright-core"
+  # NOTE: Do NOT remove node_modules/sharp or node_modules/@img here. The
+  # familiar-avatar route (src/app/api/familiars/[id]/avatar/route.ts) loads
+  # `sharp` at runtime to downscale uploaded raster avatars; without it,
+  # raster avatars 404 in the packaged app while SVG avatars keep working.
+  # The per-target prune_foreign_native_packages() pass above already trims
+  # @img/sharp-* down to just the build target, so the bundle stays small.
 
   find "$dest" -type f \( \
     -name '*.map' -o \
