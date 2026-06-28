@@ -23,10 +23,38 @@ const VALID_KINDS: GraderKind[] = [
   "llm_judge",
 ];
 
+const REQUIRED_CAVE_TEMPLATE_IDS = [
+  "cave-code-review-risks",
+  "cave-tool-use-reliability",
+  "cave-project-context-fidelity",
+  "cave-action-summary-json",
+  "cave-pr-merge-readiness",
+  "cave-test-failure-triage",
+  "cave-permission-blockers",
+  "cave-memory-hygiene",
+  "cave-thread-freshness",
+  "cave-response-confidence",
+  "cave-eval-loop-recovery",
+  "cave-familiar-voice",
+] as const;
+
+const GENERIC_BENCHMARK_TEMPLATE_IDS = [
+  "factual-accuracy",
+  "math-reasoning",
+  "multilingual",
+  "latency-slo",
+] as const;
+
 // Catalog is non-trivial and ids are unique.
 assert.ok(EVAL_TEMPLATES.length >= 12, "catalog ships a comprehensive set of templates");
 const ids = EVAL_TEMPLATES.map((t) => t.id);
 assert.equal(new Set(ids).size, ids.length, "template ids are unique");
+for (const requiredId of REQUIRED_CAVE_TEMPLATE_IDS) {
+  assert.ok(ids.includes(requiredId), `catalog includes Cave-native template ${requiredId}`);
+}
+for (const genericId of GENERIC_BENCHMARK_TEMPLATE_IDS) {
+  assert.ok(!ids.includes(genericId), `catalog does not keep generic benchmark template ${genericId}`);
+}
 
 // Every category in the index has a label.
 for (const cat of EVAL_TEMPLATE_CATEGORIES) {
@@ -53,7 +81,7 @@ for (const template of EVAL_TEMPLATES) {
       assert.ok(VALID_KINDS.includes(g.kind), `${template.id} grader uses a valid kind: ${g.kind}`);
       if (g.kind === "llm_judge") {
         assert.ok((g.rubric ?? "").trim().length > 0, `${template.id} judge grader has a rubric`);
-      } else if (g.kind !== "latency_under" || true) {
+      } else {
         // value-bearing graders need a value (latency carries ms in value too).
         assert.ok(typeof g.value === "string", `${template.id} grader value is a string`);
       }
