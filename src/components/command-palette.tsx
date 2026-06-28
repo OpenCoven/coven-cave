@@ -795,14 +795,21 @@ export function CommandPalette({
 
   return (
     <div
-      onClick={onClose}
+      // Dismiss on press (pointerdown), not click, so a single press anywhere
+      // outside the dialog closes the palette immediately instead of leaving a
+      // full-viewport backdrop "armed" to swallow the next click on whatever the
+      // user actually meant to hit (e.g. a top-bar familiar avatar). Closing on
+      // click made that first click a dead no-op — it only dismissed the overlay.
+      onPointerDown={onClose}
       role="presentation"
       className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--backdrop-scrim)] backdrop-blur-sm"
       style={{ animation: "ui-modal-fade-in var(--duration-fast) var(--ease-decelerate)" }}
     >
       <div
         ref={dialogRef}
-        onClick={(e) => e.stopPropagation()}
+        // Keep presses inside the dialog from bubbling to the backdrop's
+        // pointerdown dismissal (matches the dismissal event above).
+        onPointerDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
