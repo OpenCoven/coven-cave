@@ -551,6 +551,7 @@ export const SUITES = {
     "src/lib/session-initiator.test.ts",
     "src/lib/chat-runtime-scope.test.ts",
     "src/lib/chat-history-fallback.test.ts",
+    "src/lib/familiar-identity-scaffold.test.ts",
     "src/lib/session-list-merge.test.ts",
     "src/lib/server/memory-file-sources.test.ts",
     "src/lib/server/familiar-startup-context.test.ts",

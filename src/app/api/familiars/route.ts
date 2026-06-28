@@ -12,6 +12,7 @@ import {
   type OnboardingFamiliarInput,
 } from "@/lib/onboarding-familiars";
 import { adapterManifestScaffoldForHarness } from "@/lib/harness-adapters";
+import { scaffoldFamiliarContractFiles } from "@/lib/server/familiar-contract-files";
 
 export const dynamic = "force-dynamic";
 
@@ -178,5 +179,23 @@ export async function POST(req: Request) {
     },
   });
 
-  return NextResponse.json({ ok: true, id: draft.id });
+  // Scaffold the Familiar Contract (SOUL.md / IDENTITY.md / ward.toml /
+  // MEMORY.md) so the new familiar is contract-compliant from birth instead of
+  // showing up for "rehabilitation" in the Studio Contract tab. Best-effort and
+  // additive: pre-existing files are left untouched, and a write failure must
+  // not fail creation — the familiar is already registered above.
+  let contractWrote: string[] = [];
+  try {
+    contractWrote = await scaffoldFamiliarContractFiles({
+      id: draft.id,
+      displayName: draft.displayName,
+      role: draft.role,
+      description: draft.description,
+      glyph: draft.glyph,
+    });
+  } catch {
+    /* non-fatal — identity files can be authored later via the Contract tab */
+  }
+
+  return NextResponse.json({ ok: true, id: draft.id, contractWrote });
 }
