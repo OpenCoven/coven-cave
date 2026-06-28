@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
-export type FamiliarStudioTab = "identity" | "look" | "brain" | "lifecycle" | "memory" | "contract" | "vault";
+export type FamiliarStudioTab = "identity" | "look" | "brain" | "lifecycle" | "memory" | "projects" | "contract" | "vault";
 
 const TAB_STORAGE_KEY = "cave:familiar-studio-tab:v1";
 const DEFAULT_TAB: FamiliarStudioTab = "identity";
@@ -53,6 +53,7 @@ export function FamiliarStudioProvider({ children }: { children: ReactNode }) {
       stored === "brain" ||
       stored === "lifecycle" ||
       stored === "memory" ||
+      stored === "projects" ||
       stored === "contract" ||
       stored === "vault"
     ) {

@@ -109,7 +109,7 @@ export const SUITES = {
     "src/lib/readable-text-color.test.ts",
     "src/components/settings-appearance.test.ts",
     "src/components/settings-search.test.ts",
-    "src/components/settings-permissions.test.ts",
+    "src/components/familiar-studio-projects-tab.test.ts",
     "src/components/theme-color-editor.test.ts",
     "src/lib/theme-token-hex.test.ts",
     "src/components/roles-tools-navigation.test.ts",

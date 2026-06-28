@@ -51,7 +51,12 @@ export function FamiliarStudio({ familiars }: Props) {
   );
   const drawerOpen = Boolean(activeFamiliarId || listView);
   const disableNonLifecycle = listView && !familiar;
-  const drawerActiveTab = activeTab === "brain" || activeTab === "vault" ? "identity" : activeTab;
+  // brain, vault, and projects are Settings-only tabs; the drawer falls back to
+  // identity when one of them is the persisted tab.
+  const drawerActiveTab =
+    activeTab === "brain" || activeTab === "vault" || activeTab === "projects"
+      ? "identity"
+      : activeTab;
   const openBrainStudio = useCallback(() => {
     setActiveTab("brain");
     // Carry the current familiar across the full-page navigation (the Settings

@@ -11,6 +11,8 @@ import { FamiliarStudioLookTab } from "./familiar-studio-look-tab";
 import { FamiliarStudioBrainTab } from "./familiar-studio-brain-tab";
 import { FamiliarStudioLifecycleTab } from "./familiar-studio-lifecycle-tab";
 import { FamiliarStudioMemoryTab } from "./familiar-studio-memory-tab";
+import { FamiliarStudioProjectsTab } from "./familiar-studio-projects-tab";
+import { FamiliarAvatar } from "./familiar-avatar";
 import { VaultPanel } from "./vault-panel";
 import type { Familiar } from "@/lib/types";
 
@@ -27,6 +29,7 @@ const TABS: Array<{ id: FamiliarStudioTab; label: string; icon: IconName }> = [
   { id: "brain", label: "Brain", icon: "ph:brain" },
   { id: "lifecycle", label: "Lifecycle", icon: "ph:arrows-clockwise" },
   { id: "memory", label: "Memory", icon: "ph:archive" },
+  { id: "projects", label: "Projects", icon: "ph:folder" },
   { id: "vault", label: "Vault", icon: "ph:vault" },
 ];
 
@@ -91,25 +94,37 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
       style={familiar ? ({ ["--familiar-accent"]: familiar.color } as CSSProperties) : undefined}
     >
       <div className="familiar-studio-inline__selector">
-        <label className="familiar-studio-inline__selector-label" htmlFor="settings-familiar-select">
+        <span className="familiar-studio-inline__selector-label" id="settings-familiar-picker-label">
           Familiar
-        </label>
-        <div className="familiar-studio-inline__select-wrap">
-          <select
-            id="settings-familiar-select"
-            className="familiar-studio-inline__select"
-            aria-label="Choose familiar to edit"
-            value={familiar?.id ?? ""}
-            onChange={(e) => openFamiliarStudio(e.currentTarget.value, activeTab)}
-          >
-            {resolved.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.display_name}
-                {f.role ? ` - ${f.role}` : ""}
-              </option>
-            ))}
-          </select>
-          <Icon name="ph:caret-up-down-bold" width={12} className="familiar-studio-inline__select-caret" aria-hidden />
+        </span>
+        <div
+          className="familiar-studio-inline__picker"
+          role="radiogroup"
+          aria-label="Choose familiar to edit"
+          aria-labelledby="settings-familiar-picker-label"
+        >
+          {resolved.map((f) => {
+            const active = f.id === familiar?.id;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => openFamiliarStudio(f.id, activeTab)}
+                className="familiar-studio-inline__chip"
+                data-active={active ? "true" : undefined}
+                style={{ ["--chip-accent"]: f.color } as CSSProperties}
+                title={f.role ? `${f.display_name} — ${f.role}` : f.display_name}
+              >
+                <FamiliarAvatar familiar={f} size="md" />
+                <span className="familiar-studio-inline__chip-text">
+                  <span className="familiar-studio-inline__chip-name">{f.display_name}</span>
+                  {f.role ? <span className="familiar-studio-inline__chip-role">{f.role}</span> : null}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -152,6 +167,7 @@ export function FamiliarStudioInlinePanel({ familiars, resolved }: Props) {
               {activeTab === "memory" ? (
                 <FamiliarStudioMemoryTab familiar={familiar} allFamiliars={familiars} />
               ) : null}
+              {activeTab === "projects" ? <FamiliarStudioProjectsTab familiar={familiar} /> : null}
               {activeTab === "vault" ? <VaultPanel /> : null}
             </div>
 

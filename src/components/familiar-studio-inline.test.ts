@@ -6,10 +6,12 @@ const source = readFileSync(new URL("./familiar-studio-inline.tsx", import.meta.
 
 assert.match(source, /export function FamiliarStudioInlinePanel/, "Must export the inline panel");
 
-// Master-detail shell: a compact familiar dropdown + detail pane.
-assert.doesNotMatch(source, /familiar-studio-inline__list/, "Settings should not render a familiar roster rail");
-assert.match(source, /familiar-studio-inline__selector/, "Renders the familiar dropdown selector");
-assert.match(source, /aria-label="Choose familiar to edit"/, "Settings familiar dropdown is labelled");
+// Master-detail shell: a compact horizontal avatar-chip picker + detail pane.
+assert.match(source, /familiar-studio-inline__selector/, "Renders the familiar picker header");
+assert.match(source, /familiar-studio-inline__picker/, "Renders the horizontal chip picker");
+assert.match(source, /role="radiogroup"/, "Picker is a radiogroup");
+assert.match(source, /aria-label="Choose familiar to edit"/, "Settings familiar picker is labelled");
+assert.match(source, /FamiliarAvatar/, "Each chip shows the familiar's avatar");
 assert.match(source, /familiar-studio-inline__detail/, "Renders the detail pane");
 
 // Reuses the Studio context for selection + tab persistence, NOT local state,
@@ -17,9 +19,10 @@ assert.match(source, /familiar-studio-inline__detail/, "Renders the detail pane"
 assert.match(source, /useFamiliarStudio\(\)/, "Uses the Familiar Studio context for selection");
 assert.match(
   source,
-  /openFamiliarStudio\(e\.currentTarget\.value, activeTab\)/,
-  "Selecting from the dropdown opens that familiar at the current tab",
+  /onClick=\{\(\) => openFamiliarStudio\(f\.id, activeTab\)\}/,
+  "Picking a chip opens that familiar at the current tab",
 );
+assert.match(source, /aria-checked=\{active\}/, "The active familiar chip is marked checked");
 
 // Non-modal: it must NOT render the drawer chrome (scrim / fixed drawer root).
 assert.doesNotMatch(source, /familiar-studio__scrim/, "Inline panel must not render the modal scrim");

@@ -8,7 +8,6 @@ import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import { PermissionsSection } from "@/components/settings-permissions";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { FamiliarStudioInlinePanel } from "@/components/familiar-studio-inline";
@@ -71,13 +70,12 @@ function writeMobileModeEnabled(enabled: boolean) {
   window.localStorage.setItem(MOBILE_MODE_STORAGE_KEY, enabled ? "true" : "false");
 }
 
-type Section = "general" | "daemon" | "familiars" | "permissions" | "addons" | "mobile" | "appearance" | "about";
+type Section = "general" | "daemon" | "familiars" | "addons" | "mobile" | "appearance" | "about";
 
 const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: "general",    label: "General",    icon: "ph:sliders-horizontal" },
   { id: "daemon",     label: "Daemon",     icon: "ph:terminal-window" },
   { id: "familiars",  label: "Familiars",  icon: "ph:users-three" },
-  { id: "permissions", label: "Permissions", icon: "ph:key" },
   { id: "addons",     label: "Add-ons",    icon: "ph:puzzle-piece" },
   { id: "mobile",     label: "Phone",      icon: "ph:device-mobile" },
   { id: "appearance", label: "Appearance", icon: "ph:paint-brush" },
@@ -95,8 +93,7 @@ const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
   { section: "daemon", group: "Status", keywords: "daemon status running start stop restart" },
   { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },
-  { section: "familiars", keywords: "familiars agents personas avatar name look" },
-  { section: "permissions", keywords: "permissions allow deny tools access guard security" },
+  { section: "familiars", keywords: "familiars agents personas avatar name look permissions projects access grants allow deny tool policy guard security audit requests vault memory" },
   { section: "addons", group: "Integrations", keywords: "add-ons addons integrations plugins github youtube sidebar surfaces code terminal browser flow roles journal coven group chat library" },
   { section: "mobile", group: "Steps", keywords: "phone mobile connect qr pair tailscale" },
   { section: "mobile", group: "Why there’s no password", keywords: "password security auth login" },
@@ -317,7 +314,6 @@ export function SettingsShell() {
           {section === "general" && <GeneralSection />}
           {section === "daemon"   && <DaemonSection />}
           {section === "familiars" && <FamiliarsSection />}
-          {section === "permissions" && <PermissionsSection />}
           {section === "addons"   && <AddonsSection scrollTarget={scrollTarget} />}
           {section === "mobile"   && <MobileSection />}
           {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
