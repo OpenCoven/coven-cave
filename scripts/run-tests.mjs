@@ -508,6 +508,7 @@ export const SUITES = {
     "src/app/api/opencoven-executions-route.test.ts",
     "src/app/api/opencoven-submissions-route.test.ts",
     "src/app/api/familiars/route.test.ts",
+    "src/app/api/familiars/[id]/avatar/route.test.ts",
     "src/app/api/familiars/avatar-route.test.ts",
     "src/app/api/familiars/[id]/notes/route.test.ts",
     "src/app/api/chat/model-state/route.test.ts",

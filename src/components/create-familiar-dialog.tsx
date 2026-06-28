@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
@@ -67,9 +67,28 @@ export function CreateFamiliarDialog({
   const [role, setRole] = useState("");
   const [model, setModel] = useState("");
   const [description, setDescription] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const nameRef = useRef<HTMLInputElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  // Revoke the object URL when it changes or the dialog unmounts so blob URLs
+  // don't leak.
+  useEffect(() => {
+    return () => {
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+    };
+  }, [avatarPreview]);
+
+  function pickAvatar(file: File | null) {
+    setAvatarPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+    setAvatarFile(file);
+  }
 
   const derivedId = slugifyFamiliarId(idOverride ?? name);
   const existing = useMemo(() => new Set(existingIds), [existingIds]);
@@ -90,6 +109,7 @@ export function CreateFamiliarDialog({
     setRole("");
     setModel("");
     setDescription("");
+    pickAvatar(null);
     setError(null);
     setSubmitting(false);
   }
@@ -127,6 +147,19 @@ export function CreateFamiliarDialog({
         return;
       }
       const newId = json.id ?? derivedId;
+      // Avatar is best-effort: the familiar already exists, so a failed image
+      // upload must not block creation — the user can set one later in Studio.
+      if (avatarFile) {
+        try {
+          await fetch(`/api/familiars/${encodeURIComponent(newId)}/avatar`, {
+            method: "POST",
+            headers: { "content-type": avatarFile.type || "application/octet-stream" },
+            body: avatarFile,
+          });
+        } catch {
+          /* non-blocking */
+        }
+      }
       reset();
       onCreated(newId);
       onClose();
@@ -175,13 +208,29 @@ export function CreateFamiliarDialog({
             <button
               type="button"
               onClick={() => setGlyphOpen((v) => !v)}
-              aria-label="Pick an icon"
+              aria-label="Pick an icon or photo"
               aria-expanded={glyphOpen}
-              title="Pick an icon"
-              className="focus-ring grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 hover:border-[var(--accent-presence)]"
+              title="Pick an icon or photo"
+              className="focus-ring grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 hover:border-[var(--accent-presence)]"
             >
-              <FamiliarGlyph glyph={{ kind: "icon", name: glyph }} size="sm" />
+              {avatarPreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={avatarPreview} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <FamiliarGlyph glyph={{ kind: "icon", name: glyph }} size="sm" />
+              )}
             </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                if (file) pickAvatar(file);
+                e.target.value = "";
+              }}
+            />
             <input
               id="create-familiar-name"
               ref={nameRef}
@@ -207,33 +256,57 @@ export function CreateFamiliarDialog({
           </p>
         </div>
 
-        {/* Curated glyph grid */}
+        {/* Icon / photo picker */}
         {glyphOpen ? (
-          <div
-            role="listbox"
-            aria-label="Starter icons"
-            className="grid grid-cols-8 gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-2"
-          >
-            {STARTER_GLYPHS.map((g) => (
-              <button
-                key={g}
-                type="button"
-                role="option"
-                aria-selected={glyph === g}
-                onClick={() => {
-                  setGlyph(g);
-                  setGlyphOpen(false);
-                }}
-                title={g.replace(/^ph:/, "").replace(/-fill$/, "")}
-                className={`focus-ring grid h-8 w-8 place-items-center rounded-md hover:bg-[var(--bg-raised)] ${
-                  glyph === g
-                    ? "bg-[var(--accent-presence)]/15 ring-1 ring-[var(--accent-presence)]"
-                    : ""
-                }`}
-              >
-                <FamiliarGlyph glyph={{ kind: "icon", name: g }} size="sm" />
-              </button>
-            ))}
+          <div className="flex flex-col gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-medium text-[var(--text-secondary)]">
+                {avatarPreview ? "Using uploaded photo" : "Pick an icon"}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="focus-ring inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                >
+                  <Icon name="ph:camera" width={11} />
+                  Upload photo
+                </button>
+                {avatarPreview ? (
+                  <button
+                    type="button"
+                    onClick={() => pickAvatar(null)}
+                    className="focus-ring inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  >
+                    <Icon name="ph:x" width={11} />
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            <div role="listbox" aria-label="Starter icons" className="grid grid-cols-8 gap-1">
+              {STARTER_GLYPHS.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  role="option"
+                  aria-selected={!avatarPreview && glyph === g}
+                  onClick={() => {
+                    setGlyph(g);
+                    pickAvatar(null);
+                    setGlyphOpen(false);
+                  }}
+                  title={g.replace(/^ph:/, "").replace(/-fill$/, "")}
+                  className={`focus-ring grid h-8 w-8 place-items-center rounded-md hover:bg-[var(--bg-raised)] ${
+                    !avatarPreview && glyph === g
+                      ? "bg-[var(--accent-presence)]/15 ring-1 ring-[var(--accent-presence)]"
+                      : ""
+                  }`}
+                >
+                  <FamiliarGlyph glyph={{ kind: "icon", name: g }} size="sm" />
+                </button>
+              ))}
+            </div>
           </div>
         ) : null}
 

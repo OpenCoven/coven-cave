@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { mkdir, open, writeFile } from "node:fs/promises";
+import path from "node:path";
 import sharp from "sharp";
+import { familiarWorkspace } from "@/lib/coven-paths";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
 import { resolveFamiliarAvatar } from "@/lib/server/familiar-avatar";
 
@@ -112,6 +114,48 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   cacheSet(cacheKey, rendered);
   return imageResponse(rendered);
+}
+
+/**
+ * Upload (or replace) a familiar's avatar. The request body is the raw image
+ * bytes (the client POSTs the File directly). We decode + normalize through
+ * sharp and write the canonical `<id>.png` into the familiar's avatars dir, so
+ * `resolveFamiliarAvatar` (which prefers an exact `<id>` match, PNG first)
+ * always picks the freshly uploaded file. The `id` segment is the only user
+ * input and is slug-guarded before it touches the filesystem.
+ */
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+  if (!id || !isValidFamiliarId(id)) {
+    return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
+  }
+
+  const raw = Buffer.from(await req.arrayBuffer());
+  if (raw.byteLength === 0) {
+    return NextResponse.json({ ok: false, error: "empty upload" }, { status: 400 });
+  }
+  if (raw.byteLength > MAX_AVATAR_BYTES) {
+    return NextResponse.json({ ok: false, error: "image too large" }, { status: 413 });
+  }
+
+  // Decode + normalize. A non-image payload throws here → 400 rather than
+  // persisting garbage. Store at 512px (crisp source); GET downscales to 256.
+  let png: Buffer;
+  try {
+    png = await sharp(raw)
+      .rotate() // honor EXIF orientation
+      .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+      .png({ compressionLevel: 9, adaptiveFiltering: true })
+      .toBuffer();
+  } catch {
+    return NextResponse.json({ ok: false, error: "not a decodable image" }, { status: 400 });
+  }
+
+  const avatarsDir = path.join(await familiarWorkspace(id), "avatars");
+  await mkdir(avatarsDir, { recursive: true });
+  await writeFile(path.join(avatarsDir, `${id}.png`), png);
+
+  return NextResponse.json({ ok: true });
 }
 
 function imageResponse({ body, contentType }: RenderedAvatar): NextResponse {

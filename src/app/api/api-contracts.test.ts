@@ -43,7 +43,7 @@ const contracts: RouteContract[] = [
   { route: "/daemon/status", methods: ["GET"], kind: "json" },
   { route: "/escalations/[id]", methods: ["PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/escalations", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/familiars/[id]/avatar", methods: ["GET"], kind: "stream", pathGuard: true },
+  { route: "/familiars/[id]/avatar", methods: ["GET", "POST"], kind: "stream", pathGuard: true },
   { route: "/familiars/[id]/contract", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/familiars/[id]/icon", methods: ["PUT"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/familiars/[id]/notes", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
