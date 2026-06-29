@@ -819,3 +819,27 @@
   font-weight: 600;
   color: var(--accent-presence);
 }
+
+/* Insights tab — trend + failure analysis. */
+.evals-insights { display: flex; flex-direction: column; gap: 18px; }
+.evals-insights__card {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control, 10px);
+  background: var(--bg-raised);
+  padding: 14px 16px;
+}
+.evals-insights__head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+}
+.evals-insights__title { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.evals-insights__breach {
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in oklch, var(--color-danger) 18%, transparent); color: var(--color-danger);
+}
+.evals-insights__ok {
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in oklch, var(--color-success) 16%, transparent); color: var(--color-success);
+}
+.evals-insights__flaky { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.evals-insights__flaky li { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); }
+.evals-insights__flaky b { color: var(--text-primary); font-weight: 500; }
