@@ -110,6 +110,12 @@ type Props = {
    *  full-width tab). Omit both for the standalone, self-toggling behaviour. */
   rightView?: "files" | "changes";
   onRightViewChange?: (view: "files" | "changes") => void;
+  /** Center column slot — the familiar conversation. When provided (the Code
+   *  workspace), the projects view lays out three columns in the Codex position:
+   *  the file-tree explorer (left), this chat (center), and the preview / Changes
+   *  review (right). Omitted elsewhere (e.g. the Library projects browser), where
+   *  comux stays two-column (tree | preview/changes). */
+  centerSlot?: ReactNode;
 };
 
 type ProjectFilePreview =
@@ -397,7 +403,7 @@ function SortableProjectRow({
   );
 }
 
-export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "", rightView: rightViewProp, onRightViewChange }: Props) {
+export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "", rightView: rightViewProp, onRightViewChange, centerSlot }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const layoutKey = STORAGE_LAYOUT + storageNamespace;
   const sessionsKey = STORAGE_SESSIONS + storageNamespace;
@@ -2077,6 +2083,16 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     </div>
                   </div>
                 ))}
+
+                {/* Center column — the familiar conversation (Codex position:
+                    file tree on the left, chat in the middle, preview/Changes on
+                    the right). Only the Code workspace passes a centerSlot; the
+                    Library projects browser stays two-column. */}
+                {centerSlot ? (
+                  <div className="comux-center-column flex min-w-0 min-h-0 flex-[2.4] flex-col overflow-hidden border-b border-[var(--border-hairline)] xl:border-b-0 xl:border-r">
+                    {centerSlot}
+                  </div>
+                ) : null}
 
                 {filePreviewCollapsed ? (
                   <button

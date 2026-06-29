@@ -56,6 +56,8 @@ assert.match(css, /mask-image: linear-gradient\(to right/, "soft fade edges on t
 assert.match(css, /home-digest-marquee 100s/, "marquee slowed to 100s for readability");
 assert.match(css, /\.home-digest__track--media[\s\S]*?animation-direction: reverse/, "media row drifts the opposite way, separated from chats");
 assert.match(css, /\.home-digest__thumb[\s\S]*?object-fit: cover/, "media thumbnail is a cover-fit image");
+assert.match(css, /\.home-digest__thumb[\s\S]*?width: 46px/, "media thumbnail is enlarged for the image-forward row");
+assert.match(css, /\.home-digest__card--media[\s\S]*?padding-left/, "media cards are image-forward (thumbnail hugs the leading edge)");
 
 // ── Wired into the home composer below "Jump back in" ─────────────────────────
 assert.match(composer, /import \{ HomeDigestCarousel \}/, "home composer imports the carousel");

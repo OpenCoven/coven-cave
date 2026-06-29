@@ -7,6 +7,35 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.126] - 2026-06-28
+
+Patch release on top of v0.0.125. Headline: Cave now ships inline
+agent-produced chat attachments, Cave-native eval templates, the latest Code
+surface rebuild, and settings/home polish from the release-ready main line.
+
+### Added
+
+- **Chat attachments** - familiar replies can now surface files they produced as
+  inline assistant-turn attachments, with allowlist-guarded file reads,
+  sanitized names, bounded previews, live streaming, and reload persistence
+  (#2035).
+- **Evals** - added Cave-native starter eval templates for review risks, tool
+  reliability, project context, merge readiness, permission blockers, memory
+  hygiene, thread freshness, response confidence, eval-loop recovery, fast
+  status updates, and familiar voice (#2049).
+- **Code surface** - rebuilt the Code workspace around a Codex-style
+  conversation and environment split, following the tab/order cleanup that
+  landed on the same release line (#2077, #2081, #2084).
+- **Settings** - section pages now include a compact overview header with icons
+  and highlights so long settings areas are easier to scan (#2088).
+- **Design specs** - added analysis-grade Evals and world-class Dashboard design
+  specs for the next polish pass (#2087).
+
+### Fixed
+
+- **Home digest** - touch and coarse-pointer devices now use manual momentum
+  scrolling instead of an unpausable auto-marquee (#2086).
+
 ## [0.0.124] - 2026-06-28
 
 Patch release on top of v0.0.123. Headline: flow executions now show real

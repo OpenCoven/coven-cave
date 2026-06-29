@@ -847,14 +847,31 @@
 }
 /* Media-row thumbnail: the article image leads the card; the newspaper icon is
    the fallback when the feed had no usable image (or it fails to load). */
+/* Media cards are image-forward: a larger thumbnail hugs the card's left edge so
+   the row reads as a media strip rather than another lane of chat chips. */
+.home-digest__card--media {
+  gap: 11px;
+  padding-left: 7px;
+}
 .home-digest__thumb {
-  width: 38px;
-  height: 38px;
-  margin: -3px 0;
-  border-radius: 9px;
+  width: 46px;
+  height: 46px;
+  margin: -4px 0;
+  border-radius: 10px;
   object-fit: cover;
   flex-shrink: 0;
   background: var(--bg-base);
+}
+/* Keep the fallback newspaper icon visually centered in the same footprint the
+   thumbnail would occupy, so imaged and icon-only media cards align. */
+.home-digest__card--media .home-digest__icon {
+  width: 46px;
+  height: 46px;
+  margin: -4px 0;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
 }
 .home-digest__body {
   display: flex;
