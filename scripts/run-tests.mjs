@@ -462,6 +462,7 @@ export const SUITES = {
     "src/lib/env-local-bundle.test.ts",
     "src/lib/cave-board-schedule.test.ts",
     "src/components/ui/tabs.test.ts",
+    "src/components/ui/charts/charts.test.ts",
     "src/components/security/sidecar-auth-bridge.test.ts",
     "src/components/familiar-switcher.test.ts",
     "src/components/familiar-menu-bar.test.ts",

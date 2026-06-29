@@ -1,0 +1,40 @@
+/* Shared styles for the reusable chart primitives (src/components/ui/charts/).
+   Charts are theme-aware: callers pass colors as CSS custom properties, and
+   structural chrome (empty state, threshold rule, axis text) uses our tokens. */
+.cave-chart {
+  width: 100%;
+  position: relative;
+}
+.cave-chart svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+.cave-chart__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 64px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.cave-chart__threshold {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.cave-chart__bar {
+  transition: opacity 0.12s;
+}
+.cave-chart__bar:hover {
+  opacity: 0.85;
+}
+.cave-chart__cell {
+  stroke: var(--bg-base);
+  stroke-width: 1;
+}
+.cave-chart__label {
+  fill: var(--text-muted);
+  font-size: 10px;
+}
