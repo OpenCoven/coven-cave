@@ -350,6 +350,7 @@ export const SUITES = {
     "src/components/salem/salem.test.ts",
     "src/components/settings-shell-polish.test.ts",
     "src/components/settings-section-tabs.test.ts",
+    "src/components/settings-overview.test.ts",
     "src/components/theme-script.test.ts",
     "src/components/ui/error-state.test.ts",
     "src/components/ui/live-region.test.ts",
