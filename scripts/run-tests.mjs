@@ -241,6 +241,7 @@ export const SUITES = {
     "src/components/library-file-actions.test.ts",
     "src/components/eval-loop-panel.test.ts",
     "src/lib/evals/eval-model.test.ts",
+    "src/lib/evals/eval-analytics.test.ts",
     "src/lib/evals/eval-templates.test.ts",
     "src/lib/server/eval-store.test.ts",
     "src/lib/evals/eval-judge.test.ts",
@@ -691,6 +692,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/evals/eval-analytics.test.ts",
   "src/lib/home-digest.test.ts",
   "src/lib/use-refresh-on-focus.test.ts",
   "src/lib/flow/flow-progress.test.ts",

@@ -43,6 +43,9 @@ export type EvalSuite = {
   id: string;
   name: string;
   description?: string;
+  /** Optional pass-rate SLA floor (0..1). The Insights trend draws it as a
+   *  threshold line and flags a breach when the latest run dips below it. */
+  slaMinPassRate?: number;
   /** Default familiar to run against; the run UI may override. */
   familiarId?: string;
   cases: EvalCase[];

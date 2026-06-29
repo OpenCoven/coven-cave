@@ -30,6 +30,8 @@ import {
   type EvalTemplate,
 } from "@/lib/evals/eval-templates";
 import { Modal } from "@/components/ui/modal";
+import { EvalsInsightsPanel } from "@/components/evals/evals-insights-panel";
+import { RunCompare } from "@/components/evals/run-compare";
 import "@/styles/evals.css";
 
 type Props = {
@@ -38,7 +40,7 @@ type Props = {
 };
 
 type GraderKindOption = { kind: GraderKind; label: string; hint: string; valueless?: boolean };
-type EvalsTab = "overview" | "suites" | "runs" | "loops" | "threads";
+type EvalsTab = "overview" | "insights" | "suites" | "runs" | "compare" | "loops" | "threads";
 type RetroApiResponse =
   | { ok: true; snapshot: RetroRunsSnapshot }
   | { ok: false; snapshot?: RetroRunsSnapshot; error?: string };
@@ -462,8 +464,10 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
         <div className="evals-toolbar-tabs evals-section-tabs" role="tablist" aria-label="Evals sections">
           {([
             ["overview", "Overview"],
+            ["insights", "Insights"],
             ["suites", "Suites"],
             ["runs", `Runs${runs.length ? ` (${runs.length})` : ""}`],
+            ["compare", "Compare"],
             ["loops", "Loops"],
             ["threads", "Thread freshness"],
           ] as Array<[EvalsTab, string]>).map(([id, label]) => (
@@ -480,6 +484,8 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
             activeLoopState={activeLoopState}
             activeGroupRollup={activeGroupRollup}
           />
+        ) : tab === "insights" ? (
+          <EvalsInsightsPanel suite={draft} runs={allRuns} />
         ) : tab === "suites" ? (
           draft ? (
             <SuiteEditor draft={draft} patchDraft={patchDraft} patchCase={patchCase} patchGrader={patchGrader} setDraft={setDraft} />
@@ -508,6 +514,8 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
             expandedRunId={expandedRunId}
             onToggle={(id) => setExpandedRunId((cur) => (cur === id ? null : id))}
           />
+        ) : tab === "compare" ? (
+          <RunCompare runs={draft ? allRuns.filter((r) => r.suiteId === draft.id) : allRuns} />
         ) : tab === "loops" ? (
           <LoopAnalysisPanel
             familiarId={familiarId}
@@ -965,6 +973,22 @@ function SuiteEditor({
         rows={2}
         aria-label="Suite description"
       />
+      <label className="evals-field">
+        <span>Pass-rate SLA (%)</span>
+        <input
+          type="number"
+          min={0}
+          max={100}
+          value={draft.slaMinPassRate != null ? Math.round(draft.slaMinPassRate * 100) : ""}
+          onChange={(e) => {
+            const pct = e.target.value === "" ? undefined : Number(e.target.value);
+            patchDraft({
+              slaMinPassRate: pct == null || Number.isNaN(pct) ? undefined : Math.min(1, Math.max(0, pct / 100)),
+            });
+          }}
+          aria-label="Pass-rate SLA percent"
+        />
+      </label>
       <div className="evals-cases">
         {draft.cases.map((c, ci) => (
           <article className="evals-case" key={c.id}>

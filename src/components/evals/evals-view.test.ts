@@ -33,7 +33,7 @@ assert.match(source, /EvalsAnalysisSummary/, "renders a rich analysis summary");
 assert.match(source, /LoopAnalysisPanel/, "renders eval-loop analysis inside Evals");
 assert.match(source, /ThreadFreshnessPanel/, "renders grouped thread freshness analysis inside Evals");
 assert.match(source, /downloadRetroSnapshot/, "keeps sanitized eval-loop export available inside Evals");
-assert.match(source, /"overview" \| "suites" \| "runs" \| "loops" \| "threads"/, "unified surface has analysis-first tabs");
+assert.match(source, /"overview" \| "insights" \| "suites" \| "runs" \| "compare" \| "loops" \| "threads"/, "unified surface has analysis-first tabs");
 assert.match(source, /Overview/, "includes an Overview tab");
 assert.match(source, /Suites/, "includes a Suites tab");
 assert.match(source, /Loops/, "includes a Loops tab");
@@ -78,5 +78,12 @@ assert.match(source, /fetch\("\/api\/sessions\/list"\)/, "loads sessions to find
 assert.match(source, /s\.origin === "eval"/, "filters to eval-origin threads");
 assert.match(source, /className="evals-thread-row"/, "renders a list of eval discussion threads");
 assert.match(source, /cave:agents-open-session/, "opening a thread reopens it in the chat surface");
+
+// Insights + Compare additions
+assert.match(source, /EvalsInsightsPanel/, "renders the Insights panel");
+assert.match(source, /RunCompare/, "renders the run Compare view");
+assert.match(source, /"insights"/, "has an insights tab");
+assert.match(source, /"compare"/, "has a compare tab");
+assert.match(source, /slaMinPassRate/, "suite editor wires the SLA field");
 
 console.log("evals-view.test.ts OK");
