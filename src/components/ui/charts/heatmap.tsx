@@ -62,7 +62,7 @@ function HeatInner({
   const yScale = scaleBand({ domain: rows, range: [0, ih], padding: 0.06 });
 
   return (
-    <svg width={width} height={height} role="img" aria-hidden>
+    <svg width={width} height={height} aria-hidden>
       <Group left={margin.left} top={margin.top}>
         {cells.map((c) => {
           const cx = xScale(c.col);

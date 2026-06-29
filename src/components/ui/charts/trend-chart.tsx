@@ -65,7 +65,7 @@ function TrendInner({
   const yScale = scaleLinear({ domain: [0, yMax], range: [ih, 0], nice: true });
 
   return (
-    <svg width={width} height={height} role="img" aria-hidden>
+    <svg width={width} height={height} aria-hidden>
       <Group left={margin.left} top={margin.top}>
         {threshold != null ? (
           <line className="cave-chart__threshold" x1={0} x2={iw} y1={yScale(threshold)} y2={yScale(threshold)} />

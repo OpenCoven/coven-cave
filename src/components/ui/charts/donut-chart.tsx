@@ -49,7 +49,7 @@ function DonutInner({
   const innerRadius = Math.max(0, radius - thickness);
 
   return (
-    <svg width={width} height={size} role="img" aria-hidden>
+    <svg width={width} height={size} aria-hidden>
       <Group top={size / 2} left={width / 2}>
         <Pie
           data={data}

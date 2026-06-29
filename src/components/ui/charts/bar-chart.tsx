@@ -55,7 +55,7 @@ function BarInner({
   const yScale = scaleLinear({ domain: [0, yMax], range: [ih, 0], nice: true });
 
   return (
-    <svg width={width} height={height} role="img" aria-hidden>
+    <svg width={width} height={height} aria-hidden>
       <Group left={margin.left} top={margin.top}>
         {data.map((d) => {
           const bw = xScale.bandwidth();
