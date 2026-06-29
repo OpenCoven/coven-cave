@@ -877,9 +877,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-@media (prefers-reduced-motion: reduce) {
+/* Touch / coarse-pointer devices have no hover to pause the marquee, so give
+   them a plain manual horizontal scroll instead of an unpausable auto-scroll
+   (mirrors the reduced-motion path). */
+@media (prefers-reduced-motion: reduce), (hover: none), (pointer: coarse) {
   .home-digest {
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
   .home-digest__track {
     animation: none;
