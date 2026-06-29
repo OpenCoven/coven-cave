@@ -47,6 +47,11 @@ assert.match(
   /@media \(prefers-reduced-motion: reduce\)[\s\S]*?animation: none/,
   "reduced-motion disables the auto-scroll",
 );
+assert.match(
+  css,
+  /@media[^{]*\((?:hover: none|pointer: coarse)\)[\s\S]*?overflow-x: auto/,
+  "touch/coarse-pointer devices fall back to manual horizontal scroll (no hover to pause)",
+);
 assert.match(css, /mask-image: linear-gradient\(to right/, "soft fade edges on the strip");
 assert.match(css, /home-digest-marquee 100s/, "marquee slowed to 100s for readability");
 assert.match(css, /\.home-digest__track--media[\s\S]*?animation-direction: reverse/, "media row drifts the opposite way, separated from chats");
