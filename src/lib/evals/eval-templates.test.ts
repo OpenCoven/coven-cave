@@ -35,6 +35,7 @@ const REQUIRED_CAVE_TEMPLATE_IDS = [
   "cave-thread-freshness",
   "cave-response-confidence",
   "cave-eval-loop-recovery",
+  "cave-fast-status-update",
   "cave-familiar-voice",
 ] as const;
 
