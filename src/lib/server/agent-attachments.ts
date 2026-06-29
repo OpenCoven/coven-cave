@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   cleanImageDataUrl,
   extractAgentAttachmentMarkers,
+  MAX_ATTACHMENT_IMAGE_BYTES,
   MAX_ATTACHMENT_TEXT_CHARS,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
@@ -32,7 +33,8 @@ import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
 
 const MAX_AGENT_ATTACHMENTS = 10;
 /** Matches the decoded-image cap in chat-attachments so previews stay bounded. */
-const MAX_AGENT_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+/** Re-uses the shared cap from chat-attachments so image previews stay consistently bounded. */
+const MAX_AGENT_ATTACHMENT_BYTES = MAX_ATTACHMENT_IMAGE_BYTES;
 
 const IMAGE_EXT_MIME: Record<string, string> = {
   ".png": "image/png",
@@ -50,6 +52,12 @@ const TEXT_EXTS = new Set([
 
 type AttachmentMarker = { path: string; name?: string };
 
+/** Strip control characters and cap length — mirrors the `cleanName` guard in chat-attachments.ts. */
+function sanitizeAttachmentName(name: string): string {
+  const base = name.split(/[\\/]/).filter(Boolean).pop() ?? "attachment";
+  return base.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 180) || "attachment";
+}
+
 function parseMarker(body: string): AttachmentMarker | null {
   let parsed: unknown;
   try {
@@ -62,7 +70,9 @@ function parseMarker(body: string): AttachmentMarker | null {
   if (typeof raw.path !== "string" || !raw.path.trim()) return null;
   return {
     path: raw.path.trim(),
-    name: typeof raw.name === "string" && raw.name.trim() ? raw.name.trim() : undefined,
+    name: typeof raw.name === "string" && raw.name.trim()
+      ? sanitizeAttachmentName(raw.name)
+      : undefined,
   };
 }
 
@@ -79,7 +89,7 @@ function buildAttachment(marker: AttachmentMarker): ChatAttachment | null {
   }
   if (!stat.isFile() || stat.size > MAX_AGENT_ATTACHMENT_BYTES) return null;
 
-  const name = marker.name ?? path.basename(resolved);
+  const name = marker.name ?? sanitizeAttachmentName(path.basename(resolved));
   const ext = path.extname(resolved).toLowerCase();
   const size = stat.size;
 
