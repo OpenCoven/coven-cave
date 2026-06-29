@@ -41,4 +41,15 @@ assert.match(heat, /cave-chart__empty/, "Heatmap renders an empty state");
 assert.match(heat, /export function Heatmap/, "exports Heatmap");
 assert.match(heat, /export type HeatCell/, "exports the HeatCell type");
 
+// ── DonutChart ────────────────────────────────────────────────────────────────
+const donut = read("./donut-chart.tsx");
+assert.match(donut, /"use client"/, "DonutChart is a client component");
+assert.match(donut, /ParentSize/, "DonutChart measures width via ParentSize");
+assert.match(donut, /<Pie\b/, "DonutChart renders a visx Pie");
+assert.match(donut, /innerRadius/, "Pie has an inner radius (donut hole)");
+assert.match(donut, /pieValue/, "Pie maps datum to a value");
+assert.match(donut, /cave-chart__empty/, "DonutChart renders an empty state");
+assert.match(donut, /export function DonutChart/, "exports DonutChart");
+assert.match(donut, /export type DonutDatum/, "exports the DonutDatum type");
+
 console.log("charts.test.ts: ok");
