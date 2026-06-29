@@ -27,6 +27,8 @@ import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
 import { SettingsTabbed } from "./settings-section-tabs";
 import type { TabItem } from "@/components/ui/tabs";
+import { SettingsOverview } from "./settings-overview";
+import { SECTIONS, settingsSectionLabel, type Section } from "./settings-sections";
 import {
   CORNER_RADIUS_OPTIONS,
   CORNER_RADIUS_LABELS,
@@ -70,17 +72,9 @@ function writeMobileModeEnabled(enabled: boolean) {
   window.localStorage.setItem(MOBILE_MODE_STORAGE_KEY, enabled ? "true" : "false");
 }
 
-type Section = "general" | "daemon" | "familiars" | "addons" | "mobile" | "appearance" | "about";
-
-const SECTIONS: { id: Section; label: string; icon: string }[] = [
-  { id: "general",    label: "General",    icon: "ph:sliders-horizontal" },
-  { id: "daemon",     label: "Daemon",     icon: "ph:terminal-window" },
-  { id: "familiars",  label: "Familiars",  icon: "ph:users-three" },
-  { id: "addons",     label: "Add-ons",    icon: "ph:puzzle-piece" },
-  { id: "mobile",     label: "Phone",      icon: "ph:device-mobile" },
-  { id: "appearance", label: "Appearance", icon: "ph:paint-brush" },
-  { id: "about",      label: "About",      icon: "ph:info" },
-];
+// `Section` + the navigable `SECTIONS` (with overview metadata) live in
+// ./settings-sections so the nav and the SettingsOverview header share one
+// source of truth. The search index below stays here, next to its search box.
 
 // ─── Search index ───────────────────────────────────────────────────────────
 // One entry per searchable settings group. `group` matches the SettingsGroup
@@ -332,7 +326,7 @@ export function SettingsShell() {
 
 function GeneralSection() {
   return (
-    <SettingsPage title="General" description="App-wide preferences.">
+    <SettingsPage section="general" title="General" description="App-wide preferences.">
       <SettingsGroup label="Workspace">
         <SettingsRow label="Workspace path" description="Where Coven stores familiar workspaces.">
           <WorkspacePathField />
@@ -421,7 +415,7 @@ function DaemonSection() {
   };
 
   return (
-    <SettingsPage title="Daemon" description="The coven daemon manages familiar sessions and the workspace.">
+    <SettingsPage section="daemon" title="Daemon" description="The coven daemon manages familiar sessions and the workspace.">
       <SettingsGroup label="Status">
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3">
           <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
@@ -675,7 +669,7 @@ function AddonsSection({ scrollTarget }: { scrollTarget?: string | null }) {
   );
 
   return (
-    <SettingsPage title="Add-ons" description="Optional surfaces and integrations. Anything disabled here is hidden from the sidebar — turn on what you need.">
+    <SettingsPage section="addons" title="Add-ons" description="Optional surfaces and integrations. Anything disabled here is hidden from the sidebar — turn on what you need.">
       {toggleError && (
         <p role="alert" className="mb-2 px-1 text-[12px] text-[var(--color-danger)]">{toggleError}</p>
       )}
@@ -1349,7 +1343,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   };
 
   return (
-    <SettingsPage title="Appearance" description="Colors and visual style.">
+    <SettingsPage section="appearance" title="Appearance" description="Colors and visual style.">
       <SettingsTabbed
         ariaLabel="Appearance settings"
         tabs={APPEARANCE_TABS}
@@ -1690,6 +1684,7 @@ function MobileModeToggle() {
 function MobileSection() {
   return (
     <SettingsPage
+      section="mobile"
       title="Connect on your phone"
       description="Run the native Coven Cave app on your iPhone or iPad and reach this desktop over your Tailscale network — no token, no password."
     >
@@ -1747,7 +1742,7 @@ function AboutSection() {
   }, []);
 
   return (
-    <SettingsPage title="About" description="Version and build information.">
+    <SettingsPage section="about" title="About" description="Version and build information.">
       <SettingsGroup label="CovenCave">
         <SettingsKV label="App version" value={APP_VERSION} />
         <UpdateSettingsRow />
@@ -1786,13 +1781,17 @@ function AboutSection() {
 
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
-function SettingsPage({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+function SettingsPage({ title, description, section, children }: { title: string; description?: string; section?: Section; children: React.ReactNode }) {
   return (
     <div className="max-w-none space-y-6">
-      <div>
-        <h1 className="text-[18px] font-semibold text-[var(--text-primary)]">{title}</h1>
-        {description && <p className="mt-1 text-[12px] text-[var(--text-muted)]">{description}</p>}
-      </div>
+      {section ? (
+        <SettingsOverview section={section} />
+      ) : (
+        <div>
+          <h1 className="text-[18px] font-semibold text-[var(--text-primary)]">{title}</h1>
+          {description && <p className="mt-1 text-[12px] text-[var(--text-muted)]">{description}</p>}
+        </div>
+      )}
       {children}
     </div>
   );
