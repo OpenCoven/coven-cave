@@ -150,6 +150,234 @@
   .dr-quicklinks.dash-launcher--compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
+/* Settings shell: desktop-native control surface for /settings. */
+.settings-shell {
+  background:
+    linear-gradient(135deg, color-mix(in oklch, var(--accent-presence) 9%, transparent), transparent 32%),
+    var(--bg-base);
+}
+
+.settings-shell__header {
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 88%, transparent), var(--bg-base));
+  -webkit-app-region: drag;
+}
+
+.settings-shell__header :is(button, a, input, select, textarea) {
+  -webkit-app-region: no-drag;
+}
+
+.settings-shell__native-badge {
+  background: color-mix(in oklch, var(--bg-raised) 82%, transparent);
+}
+
+.settings-shell__sidebar {
+  width: 248px;
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 96%, transparent), color-mix(in oklch, var(--bg-base) 96%, transparent));
+}
+
+.settings-shell__sidebar-head {
+  margin-bottom: 10px;
+}
+
+.settings-nav__item {
+  min-height: 48px;
+}
+
+.settings-nav__item[aria-current="page"] .settings-nav__description {
+  color: var(--accent-presence-foreground);
+  opacity: 0.78;
+}
+
+.settings-nav__description {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 1px;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.settings-shell__content {
+  scroll-padding-top: 18px;
+}
+
+.settings-overview {
+  margin-bottom: 24px;
+  padding: 18px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  background:
+    radial-gradient(circle at top right, color-mix(in oklch, var(--accent-presence) 15%, transparent), transparent 34%),
+    color-mix(in oklch, var(--bg-raised) 88%, transparent);
+}
+
+.settings-overview__title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.settings-overview__mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  color: #111;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 38%, transparent);
+}
+
+.settings-overview__kicker {
+  margin: 0 0 1px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.settings-overview__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 22px;
+  font-weight: 680;
+  line-height: 1.15;
+}
+
+.settings-overview__description {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.settings-overview-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.settings-overview-strip__item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-base) 68%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.settings-overview-strip__item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-overview-strip__icon {
+  flex-shrink: 0;
+  color: var(--accent-presence);
+}
+
+.settings-touch-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target);
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.settings-mobile-switch {
+  min-width: 64px;
+  min-height: var(--touch-target);
+}
+
+.settings-addon-switch {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+}
+
+.settings-addon-switch__track {
+  position: relative;
+  display: inline-flex;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.settings-addon-switch[aria-checked="true"] .settings-addon-switch__track {
+  background: var(--accent-presence);
+}
+
+.settings-addon-switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.28);
+  transform: translateX(2px);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.settings-addon-switch[aria-checked="true"] .settings-addon-switch__thumb {
+  transform: translateX(18px);
+}
+
+@media (max-width: 767px) {
+  .settings-shell__sidebar {
+    width: 100%;
+    background: var(--bg-base);
+  }
+
+  .settings-shell__sidebar-head {
+    margin-bottom: 12px;
+  }
+
+  .settings-overview {
+    padding: 14px;
+    border-radius: 14px;
+  }
+
+  .settings-overview__title-row {
+    align-items: flex-start;
+  }
+
+  .settings-overview__mark {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+
+  .settings-overview__title {
+    font-size: 19px;
+  }
+
+  .settings-overview-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-overview-strip__item span {
+    white-space: normal;
+  }
+}
+
 /* ── Unified dashboard: today's daily summary, folded inline ───────────────
    The narrative panel sits beside its generated illustration on wide screens
    and stacks on narrow ones. Reuses the shared .dr-panel / .dr-cardimg look. */

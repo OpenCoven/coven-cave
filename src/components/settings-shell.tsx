@@ -27,6 +27,14 @@ import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
 import { SettingsTabbed } from "./settings-section-tabs";
 import type { TabItem } from "@/components/ui/tabs";
+import { SettingsOverview } from "./settings-overview";
+import {
+  SECTIONS,
+  SETTINGS_INDEX,
+  settingsSectionLabel,
+  type Section,
+  type SettingsIndexEntry,
+} from "./settings-sections";
 import {
   CORNER_RADIUS_OPTIONS,
   CORNER_RADIUS_LABELS,
@@ -48,8 +56,6 @@ import {
 } from "@/lib/familiar-strip-scope";
 import { readableTextColor } from "@/lib/readable-text-color";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type DaemonStatus = {
   running: boolean;
   covenVersion?: string;
@@ -70,46 +76,6 @@ function writeMobileModeEnabled(enabled: boolean) {
   window.localStorage.setItem(MOBILE_MODE_STORAGE_KEY, enabled ? "true" : "false");
 }
 
-type Section = "general" | "daemon" | "familiars" | "addons" | "mobile" | "appearance" | "about";
-
-const SECTIONS: { id: Section; label: string; icon: string }[] = [
-  { id: "general",    label: "General",    icon: "ph:sliders-horizontal" },
-  { id: "daemon",     label: "Daemon",     icon: "ph:terminal-window" },
-  { id: "familiars",  label: "Familiars",  icon: "ph:users-three" },
-  { id: "addons",     label: "Add-ons",    icon: "ph:puzzle-piece" },
-  { id: "mobile",     label: "Phone",      icon: "ph:device-mobile" },
-  { id: "appearance", label: "Appearance", icon: "ph:paint-brush" },
-  { id: "about",      label: "About",      icon: "ph:info" },
-];
-
-// ─── Search index ───────────────────────────────────────────────────────────
-// One entry per searchable settings group. `group` matches the SettingsGroup
-// label (so settingsGroupId() resolves the scroll target); omit it for sections
-// without boxed groups (open the section, no in-page scroll). `keywords` carry
-// the synonyms a user is likely to type.
-type SettingsIndexEntry = { section: Section; group?: string; keywords: string };
-const SETTINGS_INDEX: SettingsIndexEntry[] = [
-  { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
-  { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
-  { section: "daemon", group: "Status", keywords: "daemon status running start stop restart" },
-  { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },
-  { section: "familiars", keywords: "familiars agents personas avatar name look permissions projects access grants allow deny tool policy guard security audit requests vault memory" },
-  { section: "addons", group: "Integrations", keywords: "add-ons addons integrations plugins github youtube sidebar surfaces code terminal browser flow roles journal coven group chat library" },
-  { section: "mobile", group: "Steps", keywords: "phone mobile connect qr pair tailscale" },
-  { section: "mobile", group: "Why there’s no password", keywords: "password security auth login" },
-  { section: "mobile", group: "Get the app", keywords: "app download ios testflight install" },
-  { section: "appearance", group: "Mode", keywords: "mode dark light system appearance scheme" },
-  { section: "appearance", group: "Theme", keywords: "theme color palette swatch preset" },
-  { section: "appearance", group: "Theme tokens", keywords: "theme tokens colors hex custom background accent border" },
-  { section: "appearance", group: "Import from tweakcn", keywords: "import tweakcn css variables theme" },
-  { section: "appearance", group: "Familiar switcher", keywords: "familiar switcher style strip scope" },
-  { section: "appearance", group: "Corners", keywords: "corners radius rounded sharp square" },
-  { section: "appearance", group: "Reading text", keywords: "font typeface family size reading text density relative time chat library" },
-  { section: "about", group: "CovenCave", keywords: "about version covencave build" },
-  { section: "about", group: "OpenCoven tools", keywords: "tools update cli opencoven" },
-  { section: "about", group: "Links", keywords: "links docs help github support" },
-];
-
 // ─── Shell ────────────────────────────────────────────────────────────────────
 
 export function SettingsShell() {
@@ -128,12 +94,11 @@ export function SettingsShell() {
   // ── Search across settings ────────────────────────────────────────────────
   const [query, setQuery] = useState("");
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
-  const sectionLabel = (s: Section) => SECTIONS.find((x) => x.id === s)?.label ?? s;
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
     return SETTINGS_INDEX.filter((e) =>
-      `${sectionLabel(e.section)} ${e.group ?? ""} ${e.keywords}`.toLowerCase().includes(q));
+      `${settingsSectionLabel(e.section)} ${e.group ?? ""} ${e.keywords}`.toLowerCase().includes(q));
   }, [query]);
 
   function goToSetting(entry: SettingsIndexEntry) {
@@ -158,13 +123,13 @@ export function SettingsShell() {
     return () => cancelAnimationFrame(raf);
   }, [scrollTarget, section]);
 
-  function openSection(id: Section) {
+  const openSection = useCallback((id: Section) => {
     setSection(id);
     setPickerView(false);
     if (typeof window !== "undefined") {
       window.history.replaceState(null, "", `#${id}`);
     }
-  }
+  }, []);
   function backToPicker() {
     setPickerView(true);
     if (typeof window !== "undefined") {
@@ -172,9 +137,7 @@ export function SettingsShell() {
     }
   }
 
-  // Support hash-based deep-linking, e.g. /settings#familiars. Read it after
-  // hydration so SSR and the first client render both start on General.
-  useEffect(() => {
+  const applyHashSection = useCallback(() => {
     const hash = window.location.hash.replace("#", "") as Section;
     if (SECTIONS.some((s) => s.id === hash)) {
       setSection(hash);
@@ -183,6 +146,14 @@ export function SettingsShell() {
     }
     setPickerView(true);
   }, []);
+
+  // Support hash-based deep-linking, e.g. /settings#familiars. Read it after
+  // hydration so SSR and the first client render both start on General.
+  useEffect(() => {
+    applyHashSection();
+    window.addEventListener("hashchange", applyHashSection);
+    return () => window.removeEventListener("hashchange", applyHashSection);
+  }, [applyHashSection]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -200,21 +171,21 @@ export function SettingsShell() {
         const idx = SECTIONS.findIndex((s) => s.id === section);
         const delta = e.key === "ArrowDown" ? 1 : -1;
         const next = (idx + delta + SECTIONS.length) % SECTIONS.length;
-        setSection(SECTIONS[next].id);
+        openSection(SECTIONS[next].id);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [router, section]);
+  }, [openSection, router, section]);
 
   return (
     <FamiliarStudioProvider>
-    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
+    <div className="settings-shell flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--bg-base)] text-[var(--text-primary)]">
       {/* Header. On mobile the back button has two roles: from a section
           page it drops back to the picker; from the picker it pops the
           route. Desktop always pops the route. */}
       <header
-        className="flex shrink-0 items-center gap-3 border-b border-[var(--border-hairline)] px-4 py-2.5"
+        className="settings-shell__header flex shrink-0 items-center gap-3 border-b border-[var(--border-hairline)] px-4 py-2.5"
         style={{ paddingTop: "calc(0.625rem + var(--sai-top))" }}
       >
         <button
@@ -228,8 +199,17 @@ export function SettingsShell() {
           <Icon name="ph:arrow-left" width={13} />
           {isMobile && !pickerView ? "Settings" : "Back"}
         </button>
-        <span className="text-[13px] font-semibold text-[var(--text-primary)]">
-          {isMobile && !pickerView ? (activeSection?.label ?? "Settings") : "Settings"}
+        <div className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold text-[var(--text-primary)]">
+            {isMobile && !pickerView ? (activeSection?.label ?? "Settings") : "Settings"}
+          </span>
+          <span className="hidden truncate text-[11px] text-[var(--text-muted)] sm:block">
+            CovenCave control room
+          </span>
+        </div>
+        <span className="settings-shell__native-badge hidden shrink-0 items-center gap-1.5 rounded-full border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] md:inline-flex">
+          <Icon name="ph:sidebar-simple" width={12} />
+          Tauri desktop
         </span>
       </header>
 
@@ -239,13 +219,18 @@ export function SettingsShell() {
             view (iOS-Settings drill-down). Once a section is picked the
             picker hides and the content fills the screen. */}
         <nav
-          className={`shrink-0 py-3 md:w-[200px] md:border-r md:border-[var(--border-hairline)] ${
+          className={`settings-shell__sidebar shrink-0 py-3 md:border-r md:border-[var(--border-hairline)] ${
             showPicker ? "flex-1 w-full" : isMobile ? "hidden" : "w-[200px]"
           }`}
         >
-          <p className="mb-1 px-4 text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
-            Settings
-          </p>
+          <div className="settings-shell__sidebar-head px-4">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">
+              Settings
+            </p>
+            <p className="mt-1 text-[12px] leading-snug text-[var(--text-secondary)]">
+              Tune the local app, daemon, and native handoff from one place.
+            </p>
+          </div>
           <div className={`mb-2 ${showPicker ? "px-3" : "px-2"}`}>
             <SearchInput
               value={query}
@@ -256,19 +241,22 @@ export function SettingsShell() {
             />
           </div>
           {query.trim() ? (
-            <div className={`space-y-px ${showPicker ? "px-3" : "px-2"}`} role="listbox" aria-label="Settings search results">
+            <div className={`space-y-px ${showPicker ? "px-3" : "px-2"}`} role="list" aria-label="Settings search results">
               {results.length === 0 ? (
-                <p className="px-2.5 py-2 text-[11px] text-[var(--text-muted)]">No settings match “{query.trim()}”.</p>
+                <div role="listitem">
+                  <p className="px-2.5 py-2 text-[11px] text-[var(--text-muted)]">No settings match “{query.trim()}”.</p>
+                </div>
               ) : results.map((e) => (
-                <button
-                  key={`${e.section}:${e.group ?? ""}`}
-                  type="button"
-                  onClick={() => goToSetting(e)}
-                  className="focus-ring flex w-full flex-col items-start rounded-[5px] px-2.5 py-[5px] text-left text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
-                >
-                  <span className="text-[12px] font-medium">{e.group ?? sectionLabel(e.section)}</span>
-                  <span className="text-[10px] text-[var(--text-muted)]">{sectionLabel(e.section)}</span>
-                </button>
+                <div key={`${e.section}:${e.group ?? ""}`} role="listitem">
+                  <button
+                    type="button"
+                    onClick={() => goToSetting(e)}
+                    className="focus-ring flex w-full flex-col items-start rounded-[5px] px-2.5 py-[5px] text-left text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
+                  >
+                    <span className="text-[12px] font-medium">{e.group ?? settingsSectionLabel(e.section)}</span>
+                    <span className="text-[10px] text-[var(--text-muted)]">{settingsSectionLabel(e.section)}</span>
+                  </button>
+                </div>
               ))}
             </div>
           ) : (
@@ -279,10 +267,10 @@ export function SettingsShell() {
                 type="button"
                 onClick={() => openSection(s.id)}
                 aria-current={section === s.id && !showPicker ? "page" : undefined}
-                className={`focus-ring flex w-full items-center rounded-[5px] px-2.5 text-left transition-colors ${
+                className={`settings-nav__item focus-ring flex w-full items-center rounded-[5px] px-2.5 text-left transition-colors ${
                   showPicker
                     ? "min-h-[var(--touch-target)] gap-3 py-3 text-[14px]"
-                    : "gap-2 py-[6px] text-[12px]"
+                    : "gap-2 py-2 text-[12px]"
                 } ${
                   section === s.id && !showPicker
                     ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
@@ -294,7 +282,12 @@ export function SettingsShell() {
                   width={showPicker ? 18 : 13}
                   className={section === s.id && !showPicker ? "text-[var(--accent-presence-foreground)] opacity-70" : "text-[var(--text-muted)]"}
                 />
-                <span className="flex-1">{s.label}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{s.label}</span>
+                  <span className="settings-nav__description block text-[10px] font-normal opacity-70">
+                    {s.description}
+                  </span>
+                </span>
                 {showPicker ? (
                   <Icon name="ph:caret-right" width={14} className="text-[var(--text-muted)]" />
                 ) : null}
@@ -306,11 +299,12 @@ export function SettingsShell() {
 
         {/* Content */}
         <main
-          className={`min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 ${
+          className={`settings-shell__content min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-8 ${
             showPicker ? "hidden md:block" : ""
           }`}
           style={{ paddingBottom: "calc(1.5rem + var(--sai-bottom))" }}
         >
+          <SettingsOverview section={section} />
           {section === "general" && <GeneralSection />}
           {section === "daemon"   && <DaemonSection />}
           {section === "familiars" && <FamiliarsSection />}
@@ -321,7 +315,7 @@ export function SettingsShell() {
         </main>
       </div>
       <footer className="shrink-0 border-t border-[var(--border-hairline)] px-4 py-1.5 text-center text-[10px] text-[var(--text-muted)]">
-        Esc back · ↑↓ navigate sections
+        {isMobile ? (pickerView ? "Tap a section to open" : "Back returns to Settings") : "Esc back · ↑↓ navigate sections"}
       </footer>
     </div>
     </FamiliarStudioProvider>
@@ -442,7 +436,7 @@ function DaemonSection() {
               type="button"
               onClick={startDaemon}
               disabled={starting}
-              className="focus-ring ml-auto inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
+              className="settings-touch-action focus-ring ml-auto gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
               title="coven daemon start"
             >
               <Icon name="ph:rocket-launch-bold" width={12} />
@@ -454,7 +448,7 @@ function DaemonSection() {
               type="button"
               onClick={restartDaemon}
               disabled={restarting}
-              className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
+              className="settings-touch-action focus-ring gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
               title="coven daemon start"
             >
               <Icon name="ph:arrow-clockwise" width={12} />
@@ -464,7 +458,7 @@ function DaemonSection() {
           <button
             type="button"
             onClick={refresh}
-            className="focus-ring flex items-center gap-1 rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="settings-touch-action focus-ring gap-1 rounded px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:arrow-clockwise" width={11} />
             Refresh
@@ -646,19 +640,14 @@ function AddonsSection({ scrollTarget }: { scrollTarget?: string | null }) {
       <button
         type="button"
         role="switch"
+        aria-label={`${row.label} add-on`}
         aria-checked={addons[row.key]}
         onClick={() => void toggle(row.key)}
-        className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-150 ${
-          addons[row.key]
-            ? "bg-[var(--accent-presence)]"
-            : "bg-[var(--bg-elevated)]"
-        }`}
+        className="settings-addon-switch focus-ring relative inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors duration-150 hover:bg-[var(--bg-raised)]"
       >
-        <span
-          className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-150 ${
-            addons[row.key] ? "translate-x-4" : "translate-x-0.5"
-          } mt-0.5`}
-        />
+        <span className="settings-addon-switch__track">
+          <span className="settings-addon-switch__thumb" />
+        </span>
       </button>
     </div>
   );
@@ -1672,7 +1661,7 @@ function MobileModeToggle() {
           aria-checked={mobileModeEnabled}
           onClick={() => void onMobileModeChange(!mobileModeEnabled)}
           disabled={busy}
-          className={`rounded-full border px-3 py-1.5 text-[12px] transition-colors ${
+          className={`settings-mobile-switch focus-ring rounded-full border px-3 text-[12px] transition-colors ${
             mobileModeEnabled
               ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-contrast)]"
               : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
@@ -1724,7 +1713,7 @@ function MobileSection() {
             href="https://github.com/OpenCoven/coven-cave/blob/main/docs/ios-native-rebuild.md"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="settings-touch-action gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:file-text" width={12} />
             Setup guide
@@ -1772,7 +1761,7 @@ function AboutSection() {
               href={l.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+              className="settings-touch-action gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
             >
               <Icon name={l.icon} width={12} />
               {l.label}
@@ -1787,14 +1776,15 @@ function AboutSection() {
 // ─── Primitives ───────────────────────────────────────────────────────────────
 
 function SettingsPage({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+  const pageTitleId = `settings-page-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
   return (
-    <div className="max-w-none space-y-6">
-      <div>
-        <h1 className="text-[18px] font-semibold text-[var(--text-primary)]">{title}</h1>
-        {description && <p className="mt-1 text-[12px] text-[var(--text-muted)]">{description}</p>}
+    <section className="max-w-none space-y-6" aria-labelledby={pageTitleId}>
+      <div className="sr-only">
+        <h2 id={pageTitleId} className="sr-only">{title}</h2>
+        {description ? <p>{description}</p> : null}
       </div>
       {children}
-    </div>
+    </section>
   );
 }
 

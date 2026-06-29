@@ -281,9 +281,9 @@ export function OpenCovenToolsUpdate() {
   };
 
   const accentBtn =
-    "focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50";
+    "settings-touch-action focus-ring gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50";
   const ghostBtn =
-    "focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
+    "settings-touch-action focus-ring gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
   const footerStatusText =
     diagnosticsStatus === "copied"
       ? "Diagnostics copied"

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+const sections = readFileSync(new URL("./settings-sections.ts", import.meta.url), "utf8");
 const group = readFileSync(new URL("./ui/settings-group.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -12,10 +13,14 @@ assert.match(group, /id=\{settingsGroupId\(label\)\} data-settings-group/, "Sett
 
 // The shell builds a search index and a SearchInput over it.
 assert.match(shell, /import \{ SearchInput \}/, "settings-shell imports SearchInput");
-assert.match(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/, "settings-shell defines a search index");
+assert.match(sections, /export const SETTINGS_INDEX: SettingsIndexEntry\[\]/, "settings-sections defines a search index");
+assert.match(shell, /SETTINGS_INDEX/, "settings-shell consumes the search index");
 assert.match(shell, /placeholder="Search settings…"/, "settings-shell renders the search box");
+assert.doesNotMatch(shell, /role="listbox"/, "settings search results should not pretend command buttons are a listbox");
+assert.match(shell, /role="list" aria-label="Settings search results"/, "settings search results render as a labelled list");
+assert.match(shell, /role="listitem"/, "each settings search result is wrapped as a list item");
 // Results filter the index by section label + group + keywords.
-assert.match(shell, /\$\{sectionLabel\(e\.section\)\} \$\{e\.group \?\? ""\} \$\{e\.keywords\}/, "search matches section/group/keywords");
+assert.match(shell, /\$\{settingsSectionLabel\(e\.section\)\} \$\{e\.group \?\? ""\} \$\{e\.keywords\}/, "search matches section/group/keywords");
 // Picking a result opens the section and scrolls/highlights the group.
 assert.match(shell, /function goToSetting\(entry: SettingsIndexEntry\)/, "search results route through goToSetting");
 assert.match(shell, /settingsGroupId\(entry\.group\)/, "goToSetting resolves the group scroll target");
