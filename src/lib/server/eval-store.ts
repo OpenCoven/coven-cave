@@ -99,6 +99,10 @@ function coerceSuite(value: unknown): EvalSuite | null {
     id: s.id,
     name: typeof s.name === "string" && s.name.trim() ? s.name : s.id,
     description: typeof s.description === "string" ? s.description : undefined,
+    slaMinPassRate:
+      typeof s.slaMinPassRate === "number" && Number.isFinite(s.slaMinPassRate)
+        ? Math.min(1, Math.max(0, s.slaMinPassRate))
+        : undefined,
     familiarId: typeof s.familiarId === "string" ? s.familiarId : undefined,
     cases: Array.isArray(s.cases)
       ? s.cases.map(coerceCase).filter((c): c is EvalCase => c !== null)
