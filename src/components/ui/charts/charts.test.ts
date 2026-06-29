@@ -18,4 +18,16 @@ assert.match(trend, /import "@\/styles\/charts\.css"/, "TrendChart imports the s
 assert.match(trend, /export function TrendChart/, "exports TrendChart");
 assert.match(trend, /export type TrendSeries/, "exports the TrendSeries type");
 
+// ── BarChart ──────────────────────────────────────────────────────────────────
+const bar = read("./bar-chart.tsx");
+assert.match(bar, /"use client"/, "BarChart is a client component");
+assert.match(bar, /ParentSize/, "BarChart measures width via ParentSize");
+assert.match(bar, /scaleBand/, "BarChart uses a band scale for categories");
+assert.match(bar, /from "@visx\/shape"/, "BarChart imports visx shapes");
+assert.match(bar, /<Bar\b/, "BarChart renders Bar shapes");
+assert.match(bar, /cave-chart__bar/, "bars carry the themed class");
+assert.match(bar, /cave-chart__empty/, "BarChart renders an empty state");
+assert.match(bar, /export function BarChart/, "exports BarChart");
+assert.match(bar, /export type BarDatum/, "exports the BarDatum type");
+
 console.log("charts.test.ts: ok");
