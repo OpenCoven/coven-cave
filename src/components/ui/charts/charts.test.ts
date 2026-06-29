@@ -30,4 +30,15 @@ assert.match(bar, /cave-chart__empty/, "BarChart renders an empty state");
 assert.match(bar, /export function BarChart/, "exports BarChart");
 assert.match(bar, /export type BarDatum/, "exports the BarDatum type");
 
+// ── Heatmap ───────────────────────────────────────────────────────────────────
+const heat = read("./heatmap.tsx");
+assert.match(heat, /"use client"/, "Heatmap is a client component");
+assert.match(heat, /ParentSize/, "Heatmap measures width via ParentSize");
+assert.match(heat, /scaleBand/, "Heatmap uses band scales for rows and columns");
+assert.match(heat, /cave-chart__cell/, "cells carry the themed class");
+assert.match(heat, /colorFor/, "Heatmap colors each cell via a caller-supplied function");
+assert.match(heat, /cave-chart__empty/, "Heatmap renders an empty state");
+assert.match(heat, /export function Heatmap/, "exports Heatmap");
+assert.match(heat, /export type HeatCell/, "exports the HeatCell type");
+
 console.log("charts.test.ts: ok");
