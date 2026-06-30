@@ -16,6 +16,9 @@ that diverge. It pairs with the conformance suite that enforces them.
   `macos-latest` from one matrix spec, so the *same* definition of "works" is
   executed on every target. `fail-fast: false`, so one OS failing still reports
   the others.
+- **Stable required check** — `Cross-environment required` depends on the
+  matrix and fails unless every OS leg succeeds. Use that stable job name for
+  branch protection instead of requiring each dynamic matrix leg directly.
 - **The conformance suite** — [`scripts/cross-environment.test.ts`](../scripts/cross-environment.test.ts).
   Identical assertions on every OS; branches that can only run on one platform
   run there for real and are **explicit, reasoned skips** elsewhere (printed as
