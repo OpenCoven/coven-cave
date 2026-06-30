@@ -9,6 +9,7 @@ import { copyText } from "@/lib/clipboard";
 import { useCopy } from "@/lib/use-copy";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { wireDiffBlocks } from "@/lib/gh-diff";
+import { gfmAutolink } from "@/lib/gfm-autolink";
 import { parseLeadingMetadata, type MetaEntry } from "@/lib/library-metadata";
 import { isSafeGitHubUrl, isSafeHttpUrl, isSafeVscodeFileUrl } from "@/lib/url-safety";
 import { useTauriPlatform } from "@/lib/tauri-platform";
@@ -419,28 +420,35 @@ async function getMdFn(): Promise<MdFn> {
 
 interface RenderedMarkdownProps {
   text: string;
+  html?: string | null;
+  repo?: string | null;
   containerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-function RenderedMarkdown({ text, containerRef }: RenderedMarkdownProps) {
+function RenderedMarkdown({ text, html: renderedHtml, repo, containerRef }: RenderedMarkdownProps) {
   const [html, setHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const internalRef = useRef<HTMLDivElement | null>(null);
   const ref = containerRef ?? internalRef;
 
   useEffect(() => {
+    if (renderedHtml?.trim()) {
+      setHtml(sanitizeHtml(renderedHtml));
+      setLoading(false);
+      return;
+    }
     if (!text) { setHtml(null); setLoading(false); return; }
     setLoading(true);
     let cancelled = false;
     void (async () => {
       const fn = await getMdFn();
-      const raw = await fn(text);
+      const raw = await fn(gfmAutolink(text, { repo }));
       if (cancelled) return;
       setHtml(sanitizeHtml(raw));
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [text]);
+  }, [text, renderedHtml, repo]);
 
   // Colorize any ```diff fenced blocks (e.g. a README's changelog) into a real
   // diff once the markdown lands. Idempotent + observed so a late syntax
@@ -528,7 +536,7 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 type RepoState =
   | { phase: "loading" }
   | { phase: "error"; error: string }
-  | { phase: "ready"; meta: GitHubRepoMeta; readme: string | null };
+  | { phase: "ready"; meta: GitHubRepoMeta; readme: string | null; readmeHtml: string | null };
 
 function GitHubRepoViewer({ item }: { item: LibraryGitHubItem }) {
   const [state, setState] = useState<RepoState>({ phase: "loading" });
@@ -540,13 +548,13 @@ function GitHubRepoViewer({ item }: { item: LibraryGitHubItem }) {
     void (async () => {
       try {
         const res = await fetch(`/api/library/github-repo?repo=${encodeURIComponent(item.repo)}`, { cache: "no-store" });
-        const json = (await res.json()) as { ok: boolean; meta?: GitHubRepoMeta; readme?: string | null; error?: string };
+        const json = (await res.json()) as { ok: boolean; meta?: GitHubRepoMeta; readme?: string | null; readmeHtml?: string | null; error?: string };
         if (cancelled) return;
         if (!res.ok || !json.ok || !json.meta) {
           setState({ phase: "error", error: json.error ?? "Could not load repository." });
           return;
         }
-        setState({ phase: "ready", meta: json.meta, readme: json.readme ?? null });
+        setState({ phase: "ready", meta: json.meta, readme: json.readme ?? null, readmeHtml: json.readmeHtml ?? null });
       } catch {
         if (!cancelled) setState({ phase: "error", error: "Could not reach GitHub." });
       }
@@ -575,6 +583,7 @@ function GitHubRepoViewer({ item }: { item: LibraryGitHubItem }) {
 
   const meta = state.phase === "ready" ? state.meta : null;
   const readme = state.phase === "ready" ? state.readme : null;
+  const readmeHtml = state.phase === "ready" ? state.readmeHtml : null;
 
   return (
     <div className="library-preview">
@@ -615,8 +624,8 @@ function GitHubRepoViewer({ item }: { item: LibraryGitHubItem }) {
               <div key={i} className="library-md-skeleton-line" style={{ width: w }} />
             ))}
           </div>
-        ) : readme ? (
-          <RenderedMarkdown text={readme} containerRef={mdRef} />
+        ) : readme || readmeHtml ? (
+          <RenderedMarkdown text={readme ?? ""} html={readmeHtml} repo={item.repo} containerRef={mdRef} />
         ) : (
           <p className="library-reading-detail__empty">This repository has no README.</p>
         )}

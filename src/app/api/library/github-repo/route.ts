@@ -25,5 +25,5 @@ export async function GET(req: NextRequest) {
   if ("error" in result) {
     return NextResponse.json({ ok: false, error: result.error }, { status: result.status });
   }
-  return NextResponse.json({ ok: true, meta: result.meta, readme: result.readme });
+  return NextResponse.json({ ok: true, meta: result.meta, readme: result.readme, readmeHtml: result.readmeHtml });
 }

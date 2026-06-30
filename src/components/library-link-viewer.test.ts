@@ -102,6 +102,18 @@ assert.match(
   "GitHub selections should render the embedded Library link viewer",
 );
 
+assert.match(
+  preview,
+  /readmeHtml\?: string \| null/,
+  "Library GitHub repo payload should include GitHub-rendered README HTML",
+);
+
+assert.match(
+  preview,
+  /<RenderedMarkdown text=\{readme \?\? ""\} html=\{readmeHtml\} repo=\{item\.repo\} containerRef=\{mdRef\} \/>/,
+  "Library GitHub repo viewer should render sanitized GitHub HTML and keep raw markdown as fallback",
+);
+
 assert.doesNotMatch(
   view,
   /if \(onOpenUrl && item\.url\) \{ onOpenUrl\(item\.url\); return; \}/,
