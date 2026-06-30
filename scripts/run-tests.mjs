@@ -318,6 +318,7 @@ export const SUITES = {
     "src/components/board-table-familiar-select.test.ts",
     "src/components/board-table-keyboard.test.ts",
     "src/components/board-view-familiar-scope.test.ts",
+    "src/components/code-surface-familiar-scope.test.ts",
     "src/components/browser-pane-default-tabs.test.ts",
     "src/components/browser-pane-hooks.test.ts",
     "src/components/browser-pane-save.test.ts",
