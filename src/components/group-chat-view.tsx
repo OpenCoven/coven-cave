@@ -26,6 +26,8 @@ import { Popover } from "@/components/ui/popover";
 import { MessageBubble } from "@/components/message-bubble";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { UserChatAvatar } from "@/components/user-chat-avatar";
+import { formatChatRecency, useDateTimePrefs } from "@/lib/datetime-format";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   applyGroupEvent,
@@ -83,6 +85,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // @mention autocomplete in the composer.
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const dtPrefs = useDateTimePrefs();
 
   const addBtnRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -446,9 +449,9 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
 
   // --- render --------------------------------------------------------------
   return (
-    <div className="flex h-full min-h-0">
+    <div className="cave-group-chat-shell flex h-full min-h-0">
       {/* Coven list rail */}
-      <aside className="flex w-56 shrink-0 flex-col border-r" style={{ borderColor: "var(--border-hairline)" }}>
+      <aside className="cave-group-chat-rail flex w-56 shrink-0 flex-col border-r" style={{ borderColor: "var(--border-hairline)" }}>
         <div className="flex items-center justify-between gap-2 px-3 py-2.5">
           <span className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
             Covens
@@ -514,7 +517,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       </aside>
 
       {/* Active coven */}
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="cave-group-chat-main flex min-w-0 flex-1 flex-col">
         {!activeGroup ? (
           <div className="grid flex-1 place-items-center">
             <EmptyState
@@ -656,7 +659,19 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                           </span>
                         </div>
                       )}
-                      <MessageBubble role="user" content={user.text} timestamp={user.createdAt} onOpenUrl={onOpenUrl} />
+                      <div className="cave-group-chat-turn cave-group-chat-turn--user">
+                        <UserChatAvatar className="cave-group-chat-avatar cave-group-chat-avatar--human" />
+                        <div className="cave-group-chat-message">
+                          <div className="cave-group-chat-meta">
+                            <span className="cave-group-chat-name">You</span>
+                            <span className="cave-group-chat-badge cave-group-chat-badge--op">OP</span>
+                            <time className="cave-group-chat-recency" dateTime={user.createdAt}>
+                              {formatChatRecency(user.createdAt, dtPrefs)}
+                            </time>
+                          </div>
+                          <MessageBubble role="user" content={user.text} timestamp={user.createdAt} showTimestamp={false} onOpenUrl={onOpenUrl} />
+                        </div>
+                      </div>
                       <div className="flex flex-col gap-3 pl-1">
                         {replies.map((r) => {
                           const f = byId.get(r.familiarId);
@@ -667,13 +682,25 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                           // The parsed lines render as click-to-send chips below.
                           const { visible: visibleText, suggestions } = extractNextPaths(r.text);
                           return (
-                            <div key={r.id} className="flex gap-2">
-                              {f && (
-                                <div className="mt-1 shrink-0">
-                                  <FamiliarAvatar familiar={f} size="md" className="rounded-full object-cover" title={f.display_name} />
+                            <div key={r.id} className="cave-group-chat-turn cave-group-chat-turn--assistant">
+                              <div className="cave-group-chat-avatar">
+                                {f ? (
+                                  <FamiliarAvatar familiar={f} size="xl" className="cave-group-chat-avatar__image" title={f.display_name} />
+                                ) : (
+                                  <Icon name="ph:sparkle" width={24} height={24} />
+                                )}
+                              </div>
+                              <div className="cave-group-chat-message">
+                                <div className="cave-group-chat-meta">
+                                  <span className="cave-group-chat-name">{f?.display_name ?? r.familiarId}</span>
+                                  <span className="cave-group-chat-crest" aria-hidden="true">
+                                    <Icon name="ph:sparkle" width={13} height={13} />
+                                  </span>
+                                  {f?.role ? <span className="cave-group-chat-badge">{f.role}</span> : null}
+                                  <time className="cave-group-chat-recency" dateTime={r.createdAt}>
+                                    {formatChatRecency(r.createdAt, dtPrefs)}
+                                  </time>
                                 </div>
-                              )}
-                              <div className="min-w-0 flex-1">
                                 <MessageBubble
                                   role="assistant"
                                   label={f?.display_name ?? r.familiarId}
@@ -689,6 +716,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                   isError={r.status === "error"}
                                   timestamp={r.createdAt}
                                   onOpenUrl={onOpenUrl}
+                                  showTimestamp={false}
                                 />
                                 {r.status === "done" && suggestions.length > 0 ? (
                                   <div className="cave-next-paths mt-1.5">

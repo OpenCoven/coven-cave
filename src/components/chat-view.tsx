@@ -58,6 +58,7 @@ import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } fro
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { CsvImportModal } from "./csv-import-modal";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
+import { UserChatAvatar } from "@/components/user-chat-avatar";
 import { looksLikeCsv } from "@/lib/csv-import";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
 import {
@@ -65,7 +66,7 @@ import {
   formatChatUsagePlanSummary,
   type ChatUsagePlanSnapshot,
 } from "@/lib/chat-usage-plan";
-import { formatTimestamp, useDateTimePrefs } from "@/lib/datetime-format";
+import { formatChatRecency, formatTimestamp, useDateTimePrefs } from "@/lib/datetime-format";
 import { computeContextMeter } from "@/lib/context-meter";
 import {
   formatRuntime,
@@ -4978,7 +4979,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
 // ── TurnRow ────────────────────────────────────────────────────────────────────
 
-function FamiliarIcon({ familiar, size = "sm" }: { familiar: Familiar; size?: "sm" | "md" | "lg" }) {
+function FamiliarIcon({ familiar, size = "sm" }: { familiar: Familiar; size?: "sm" | "md" | "lg" | "xl" }) {
   const overrides = useGlyphOverrides();
   const images = useFamiliarImages();
   const familiarOverrides = useFamiliarOverrides();
@@ -5109,33 +5110,49 @@ function TurnRowImpl({
   }, [expanded]);
 
   if (turn.role === "system" || turn.role === "user") {
+    const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
+    const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
     return (
       <div
         data-turn-id={turn.id}
         className={`cave-linear-turn cave-linear-turn--${turn.role}${found ? " cave-turn-found" : ""}`}
       >
-        <div className="cave-linear-turn-content">
-          <div className="cave-linear-turn-meta">
-            {turn.role === "system" ? (
-              <span className="font-medium text-[var(--text-secondary)]">System</span>
-            ) : null}
-            {showTimestamp && turn.createdAt ? (
-              <span className="opacity-60">{formatTimestamp(turn.createdAt, dtPrefs)}</span>
-            ) : null}
-            {turn.attachments?.length ? <span className="opacity-60">{turn.attachments.length} file{turn.attachments.length === 1 ? "" : "s"}</span> : null}
+        <div className="cave-linear-turn-content cave-linear-turn-content--with-avatar">
+          {turn.role === "user" ? (
+            <UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" />
+          ) : (
+            <div className="cave-linear-turn-avatar cave-linear-turn-avatar--system" aria-hidden="true">
+              <Icon name="ph:terminal-window" width={24} height={24} />
+            </div>
+          )}
+          <div className="cave-linear-turn-right">
+            <div className="cave-linear-turn-meta cave-linear-turn-meta--identity">
+              <span className="cave-linear-turn-name">{turn.role === "user" ? "You" : "System"}</span>
+              {turn.role === "user" ? (
+                <span className="cave-linear-turn-badge cave-linear-turn-badge--op">OP</span>
+              ) : null}
+              {recency ? (
+                <time className="cave-linear-turn-recency" dateTime={turn.createdAt} title={exactTime}>
+                  {recency}
+                </time>
+              ) : null}
+              {turn.attachments?.length ? <span className="cave-linear-turn-recency">{turn.attachments.length} file{turn.attachments.length === 1 ? "" : "s"}</span> : null}
+            </div>
+            <div className="cave-linear-turn-body">
+              <MessageBubble
+                role={turn.role}
+                content={turn.text || (turn.attachments?.length ? "Attached files" : "")}
+                timestamp={turn.createdAt}
+                showTimestamp={false}
+                pending={turn.pending}
+                onEdit={onEdit}
+                onReply={onReply}
+                onOpenUrl={onOpenUrl}
+                branchNav={branchNav}
+              />
+              {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
+            </div>
           </div>
-          <MessageBubble
-            role={turn.role}
-            content={turn.text || (turn.attachments?.length ? "Attached files" : "")}
-            timestamp={turn.createdAt}
-            showTimestamp={false}
-            pending={turn.pending}
-            onEdit={onEdit}
-            onReply={onReply}
-            onOpenUrl={onOpenUrl}
-            branchNav={branchNav}
-          />
-          {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
         </div>
       </div>
     );
@@ -5205,6 +5222,9 @@ function TurnRowImpl({
   // streaming (the header MetaLine already narrates the live turn).
   const metaPeek = turn.pending ? null : turnMetaPeekTitle(turn);
 
+  const recency = showTimestamp && turn.createdAt ? formatChatRecency(turn.createdAt, dtPrefs) : "";
+  const exactTime = turn.createdAt ? formatTimestamp(turn.createdAt, dtPrefs) : "";
+
   return (
     <div
       data-turn-id={turn.id}
@@ -5222,7 +5242,7 @@ function TurnRowImpl({
             aria-label={`Show ${familiar.display_name}'s details`}
             onClick={onToggleAvatar}
           >
-            <FamiliarIcon familiar={familiar} size="lg" />
+            <FamiliarIcon familiar={familiar} size="xl" />
           </button>
           {expanded ? (
             <FamiliarInlineCard
@@ -5235,6 +5255,12 @@ function TurnRowImpl({
         <div className="cave-linear-turn-right">
           <div className="cave-linear-turn-meta">
             <span className="cave-linear-turn-name">{familiar.display_name}</span>
+            <span className="cave-linear-turn-crest" aria-hidden="true">
+              <Icon name="ph:sparkle" width={13} height={13} />
+            </span>
+            {familiar.role ? (
+              <span className="cave-linear-turn-badge">{familiar.role}</span>
+            ) : null}
             {turnStatus !== "complete" && !indicatorVisible && (
               <span className={`cave-turn-status cave-turn-status--${turnStatus}`}>
                 {lifecycleLabel(turnStatus)}
@@ -5256,8 +5282,10 @@ function TurnRowImpl({
                 Retry
               </button>
             ) : null}
-            {showTimestamp && turn.createdAt ? (
-              <span className="opacity-60">{formatTimestamp(turn.createdAt, dtPrefs)}</span>
+            {recency ? (
+              <time className="cave-linear-turn-recency" dateTime={turn.createdAt} title={exactTime}>
+                {recency}
+              </time>
             ) : null}
             <UsageText usage={turn.usage} costUsd={turn.costUsd} />
             {metaPeek ? (

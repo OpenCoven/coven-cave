@@ -307,6 +307,17 @@ export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRoll
     .slice(0, 20) ?? [];
   const currentLastRun = lastRun(state);
   const currentLock = state?.lock?.locked ? state.lock : null;
+  const runControlsBlocked = triggering || (state?.running ?? false);
+  const runBlockedReason = triggering
+    ? "Starting eval-loop iteration."
+    : state?.running
+      ? currentLock
+        ? `Run controls are paused by the ${currentLock.stale ? "stale" : "active"} eval-loop lock. Clear the lock only after confirming no runner is still working.`
+        : "Run controls are paused while an eval-loop iteration is already running."
+      : null;
+  const emptyIterationMessage = state?.running
+    ? `Waiting for ${activeTrack !== "all" ? TRACK_LABEL[activeTrack as Track] : "eval-loop"} results from the active run.`
+    : `No iterations yet${activeTrack !== "all" ? " for " + TRACK_LABEL[activeTrack as Track] : ""}.`;
 
   // Anchor the live elapsed timer to the run's lock timestamp when present
   // (survives remounts/refreshes); otherwise to the moment we first saw it run.
@@ -415,6 +426,11 @@ export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRoll
                     {lockRequestedAt(currentLock) ? ` · requested ${age(lockRequestedAt(currentLock)!)}` : ""}
                     {lockUpdatedAt(currentLock) ? ` · lock ${age(lockUpdatedAt(currentLock)!)}` : ""}
                   </p>
+                  <p className="mt-2 text-[10px] leading-relaxed text-[var(--text-secondary)]">
+                    {currentLock.stale
+                      ? "This lock is stale; clearing it lets the next iteration start without deleting run history."
+                      : "A runner appears active; new iterations stay disabled until the run finishes or the lock is force-cleared."}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -423,7 +439,7 @@ export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRoll
                   aria-label={`Clear eval-loop lock for ${familiarName}`}
                   className="shrink-0 rounded border border-[var(--border-strong)] px-2 py-1 text-[10px] uppercase tracking-widest text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {clearingLock ? "clearing" : "clear lock"}
+                  {clearingLock ? "clearing" : currentLock.stale ? "clear stale" : "force clear"}
                 </button>
               </div>
             </div>
@@ -448,7 +464,7 @@ export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRoll
 
           {visibleIterations.length === 0 ? (
             <div className="rounded-md border border-dashed border-[var(--border-hairline)] px-3 py-4 text-center text-[var(--text-muted)]">
-              No iterations yet{activeTrack !== "all" ? " for " + TRACK_LABEL[activeTrack as Track] : ""}.
+              {emptyIterationMessage}
             </div>
           ) : (
             <ul className="space-y-1.5">
@@ -502,12 +518,19 @@ export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRoll
             <p className="mb-1.5 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
               Run iteration
             </p>
+            {runBlockedReason ? (
+              <p id="eval-loop-run-blocked-reason" className="mb-2 text-[10px] leading-relaxed text-[var(--text-muted)]">
+                {runBlockedReason}
+              </p>
+            ) : null}
             <div className="flex flex-wrap gap-1.5">
               {(["synthesis", "prompt", "memory"] as const).map((track) => (
                 <button
                   key={track}
-                  disabled={triggering || (state?.running ?? false)}
+                  disabled={runControlsBlocked}
                   onClick={() => void triggerRun(track)}
+                  aria-describedby={runBlockedReason ? "eval-loop-run-blocked-reason" : undefined}
+                  title={runBlockedReason ?? `Run ${TRACK_LABEL[track]} eval-loop iteration`}
                   className="flex items-center gap-1 rounded border border-[var(--border-strong)] px-2 py-1 text-[10px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Icon name={TRACK_ICON[track]} width="0.7rem" />
