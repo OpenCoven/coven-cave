@@ -68,6 +68,12 @@ assert.match(
 
 assert.match(
   workspace,
+  /<HomeComposer[\s\S]*?onStartChat=\{\(prompt, fid, projectRoot, opts\) =>\s*startFamiliarChat\(fid, projectRoot, prompt, opts\?\.initialControls \?\? null\)\s*\}/,
+  "Workspace HomeComposer handoff should forward initial controls into startFamiliarChat",
+);
+
+assert.match(
+  workspace,
   /const openFamiliarSession = useCallback\([\s\S]*setPendingChatAction\(\{[\s\S]*kind: "open"[\s\S]*sessionId[\s\S]*familiarId[\s\S]*nonce: Date\.now\(\)[\s\S]*\}\)[\s\S]*setMode\("chat"\)/,
   "Opening a session should enqueue a pending chat action before entering chat mode",
 );
