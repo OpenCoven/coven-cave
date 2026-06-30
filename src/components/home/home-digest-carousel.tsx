@@ -12,12 +12,13 @@
  * no new server route.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { FeedItem } from "@/lib/rss";
 import { openExternalUrl } from "@/lib/open-external";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { buildDigestCards, type DigestCard, type DigestRssCard } from "@/lib/home-digest";
 
 type Props = {
@@ -32,27 +33,33 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [ready, setReady] = useState(false);
 
+  // Re-derives the digest from the latest inbox + RSS and re-stamps `nowMs` so
+  // the count chips and "Nm ago" labels stay current instead of freezing at
+  // the value they had on first paint. allSettled keeps a failing endpoint from
+  // wiping the other; a transient failure simply leaves the last-good state.
+  const loadDigest = useCallback(async () => {
+    const [inboxRes, rssRes] = await Promise.allSettled([
+      fetch("/api/inbox", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/rss", { cache: "no-store" }).then((r) => r.json()),
+    ]);
+    if (inboxRes.status === "fulfilled" && Array.isArray(inboxRes.value?.items)) {
+      setItems(inboxRes.value.items as InboxItem[]);
+    }
+    if (rssRes.status === "fulfilled" && Array.isArray(rssRes.value?.items)) {
+      setRss(rssRes.value.items as FeedItem[]);
+    }
+    setNowMs(Date.now());
+  }, []);
+
   useEffect(() => {
     let alive = true;
-    void (async () => {
-      const [inboxRes, rssRes] = await Promise.allSettled([
-        fetch("/api/inbox", { cache: "no-store" }).then((r) => r.json()),
-        fetch("/api/rss", { cache: "no-store" }).then((r) => r.json()),
-      ]);
-      if (!alive) return;
-      if (inboxRes.status === "fulfilled" && Array.isArray(inboxRes.value?.items)) {
-        setItems(inboxRes.value.items as InboxItem[]);
-      }
-      if (rssRes.status === "fulfilled" && Array.isArray(rssRes.value?.items)) {
-        setRss(rssRes.value.items as FeedItem[]);
-      }
-      setNowMs(Date.now());
-      setReady(true);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
+    void loadDigest().finally(() => { if (alive) setReady(true); });
+    return () => { alive = false; };
+  }, [loadDigest]);
+
+  // Ambient "Daily summary" — refresh once a minute so reminder/session counts
+  // and relative ages advance. Suspends on hidden tabs and refreshes on focus.
+  usePausablePoll(() => { void loadDigest(); }, 60_000);
 
   const cards = useMemo(
     () => buildDigestCards({ items, sessions, rssItems: rss, familiarNameById, nowMs }),
