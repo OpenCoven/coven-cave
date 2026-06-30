@@ -336,6 +336,20 @@ export function Workspace() {
     shellRef.current?.dismissNavMobile();
   }, [lastNonCodeMode]);
 
+  const [codeScheduledCount, setCodeScheduledCount] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (mode !== "code") return;
+    let alive = true;
+    fetch("/api/codex-automations")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list = Array.isArray(d) ? d : d?.automations;
+        if (alive && Array.isArray(list)) setCodeScheduledCount(list.length);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [mode]);
+
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
     setMobileModeEnabledState(enabled);
@@ -1896,6 +1910,8 @@ export function Workspace() {
         await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
         await loadSessions();
       }}
+      scheduledCount={codeScheduledCount}
+      userPlan="Pro"
     />
   );
 

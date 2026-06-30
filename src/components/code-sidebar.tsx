@@ -16,7 +16,18 @@ type Props = {
   onOpenSession: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
+  userName?: string;
+  userPlan?: string;
+  scheduledCount?: number;
 };
+
+function navigateMode(mode: string) {
+  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
+}
+
+// Deep-link targets for the Code-nav shortcuts: Scheduled → Automations,
+// Plugins → the Plugins/Marketplace surface.
+const NAV_TARGETS = { scheduled: { mode: "inbox" }, plugins: { mode: "marketplace" } } as const;
 
 function compactTime(iso: string): string {
   return relativeTime(iso, Date.now(), "compact");
@@ -48,8 +59,12 @@ export function CodeSidebar({
   onOpenSession,
   onNewChat,
   onDeleteSession,
+  userName,
+  userPlan = "Pro",
+  scheduledCount,
 }: Props) {
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [expandedRoots, setExpandedRoots] = useState<Set<string>>(() => new Set());
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
@@ -122,10 +137,33 @@ export function CodeSidebar({
         </div>
       </header>
 
+      <nav aria-label="Code navigation" className="shrink-0 border-b border-[var(--border-hairline)] px-1.5 py-1.5">
+        {[
+          { key: "new", label: "New chat", icon: "ph:pencil-simple" as IconName, count: undefined as number | undefined, onClick: () => onNewChat(null) },
+          { key: "search", label: "Search", icon: "ph:magnifying-glass" as IconName, count: undefined as number | undefined, onClick: () => searchRef.current?.focus() },
+          { key: "scheduled", label: "Scheduled", icon: "ph:clock" as IconName, count: scheduledCount, onClick: () => navigateMode(NAV_TARGETS.scheduled.mode) },
+          { key: "plugins", label: "Plugins", icon: "ph:plugs" as IconName, count: undefined as number | undefined, onClick: () => navigateMode(NAV_TARGETS.plugins.mode) },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={item.onClick}
+            className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name={item.icon} width={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            {typeof item.count === "number" && item.count > 0 ? (
+              <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-1.5 text-[10px] font-mono text-[var(--text-muted)]">{item.count}</span>
+            ) : null}
+          </button>
+        ))}
+      </nav>
+
       <div className="shrink-0 border-b border-[var(--border-hairline)] px-2 py-2">
         <label className="flex h-7 items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/55 px-2 focus-within:border-[var(--border-strong)]">
           <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
           <input
+            ref={searchRef}
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -330,6 +368,16 @@ export function CodeSidebar({
           </ul>
         )}
       </nav>
+
+      <footer className="code-sidebar__footer code-sidebar__user mt-auto flex shrink-0 items-center gap-2 border-t border-[var(--border-hairline)] px-3 py-2">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--bg-raised)] text-[11px] font-semibold text-[var(--text-primary)]" aria-hidden>
+          {(userName ?? "You").split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase()}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[12px] font-medium text-[var(--text-primary)]">{userName ?? "You"}</span>
+          <span className="block truncate text-[10px] text-[var(--text-muted)]">{userPlan}</span>
+        </span>
+      </footer>
       </div>
     </div>
   );
