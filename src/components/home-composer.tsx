@@ -19,6 +19,12 @@ import {
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
 import { modelSlashOptions, resolveModelArg } from "@/lib/slash-model";
+import {
+  skillSlashOptions,
+  resolveSkillArg,
+  buildSkillPrompt,
+  type SkillOption,
+} from "@/lib/slash-skill";
 import type { ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
@@ -326,9 +332,42 @@ export function HomeComposer({
     modelState?.harness ?? selectedFamiliar?.harness ?? "claude";
   const modelOptions = useMemo(() => modelSlashOptions(text, modelHarness), [text, modelHarness]);
   const modelMenuActive = (modelOptions?.length ?? 0) > 0;
-  // Either inline listbox (slash commands or the /model picker) shares the same
-  // listbox id, so the textarea's combobox ARIA tracks whichever is open.
-  const menuOpen = modelMenuActive || slashSuggestions.length > 0;
+  // Inline skill picker: "/skill <partial>" / "/skills" shows skill options.
+  const [skills, setSkills] = useState<SkillOption[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/skills/local", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (alive && j?.ok && Array.isArray(j.skills)) setSkills(j.skills as SkillOption[]);
+      })
+      .catch(() => {
+        /* offline → no inline skill picker */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const skillOptions = useMemo(() => skillSlashOptions(text, skills), [text, skills]);
+  const skillMenuActive = (skillOptions?.length ?? 0) > 0;
+  // The inline listboxes (slash commands, /model, /skill) share the same listbox
+  // id, so the textarea's combobox ARIA tracks whichever is open.
+  const menuOpen = modelMenuActive || skillMenuActive || slashSuggestions.length > 0;
+
+  // Invoke a skill from home = open a new chat that asks the familiar to run it.
+  const invokeSkill = useCallback(
+    (skill: SkillOption) => {
+      if (!selectedFamiliarId) {
+        onToast("No familiar selected — add one in Settings.");
+        return;
+      }
+      setText("");
+      onStartChat(buildSkillPrompt(skill), selectedFamiliarId, selectedProject?.root ?? null, {
+        initialControls: { thinkingEffort, responseSpeed },
+      });
+    },
+    [selectedFamiliarId, selectedProject, thinkingEffort, responseSpeed, onStartChat, onToast],
+  );
 
   useEffect(() => {
     setSlashIdx(0);
@@ -430,6 +469,23 @@ export function HomeComposer({
         onToast(`Model set to ${id}.`);
         return;
       }
+      if (command === "/skill" || command === "/skills") {
+        setHistory((prev) => [...prev, prompt]);
+        setHistoryIdx(-1);
+        if (!args.trim()) {
+          setText("");
+          onToast("Type /skill <name>, or pick one from the menu.");
+          return;
+        }
+        const skill = resolveSkillArg(args, skills);
+        if (!skill) {
+          setText("");
+          onToast(`Unknown skill "${args.trim()}".`);
+          return;
+        }
+        invokeSkill(skill);
+        return;
+      }
       if (onSlash) {
         setHistory((prev) => [...prev, prompt]);
         setHistoryIdx(-1);
@@ -494,6 +550,8 @@ export function HomeComposer({
     onStartChat,
     onNavigateToBoard,
     onToast,
+    skills,
+    invokeSkill,
   ]);
 
   const handleKeyDown = useCallback(
@@ -508,6 +566,19 @@ export function HomeComposer({
           e.preventDefault();
           const m = opts[slashIdx];
           if (m) { handleSelectModel(m.id); onToast(`Model set to ${m.id}.`); setText(""); }
+          return;
+        }
+      }
+      // Inline skill picker ("/skill <partial>" or "/skills").
+      if (skillMenuActive && skillOptions) {
+        const opts = skillOptions;
+        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return; }
+        if (e.key === "Tab") { e.preventDefault(); const s = opts[slashIdx]; if (s) setText(`/skill ${s.id}`); return; }
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          const s = opts[slashIdx];
+          if (s) invokeSkill(s);
           return;
         }
       }
@@ -575,6 +646,9 @@ export function HomeComposer({
       historyIdx,
       modelMenuActive,
       modelOptions,
+      skillMenuActive,
+      skillOptions,
+      invokeSkill,
       onToast,
       slashIdx,
       slashSuggestions,
@@ -653,6 +727,29 @@ export function HomeComposer({
               })}
             </ul>
             <div className="hc-slash-footer">↑↓ navigate · Enter switch · Esc cancel</div>
+          </div>
+        ) : skillMenuActive && skillOptions ? (
+          <div className="hc-slash-menu">
+            <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Skills">
+              {skillOptions.map((s, i) => {
+                const active = i === slashIdx;
+                return (
+                  <li key={s.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
+                    <button
+                      type="button"
+                      tabIndex={-1}
+                      onMouseEnter={() => setSlashIdx(i)}
+                      onClick={() => invokeSkill(s)}
+                      className={`hc-slash-row${active ? " active" : ""}`}
+                    >
+                      <span className="hc-slash-name">{s.name}</span>
+                      <span className="hc-slash-desc">{s.description || s.id}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="hc-slash-footer">↑↓ navigate · Enter run · Tab complete · Esc cancel</div>
           </div>
         ) : slashSuggestions.length > 0 ? (
           <div className="hc-slash-menu">
