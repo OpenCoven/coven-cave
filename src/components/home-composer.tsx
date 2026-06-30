@@ -31,6 +31,13 @@ import { useProjects } from "@/lib/use-projects";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
+import {
+  COMMAND_CONTROL_DEFAULTS,
+  COMMAND_RESPONSE_SPEED_OPTIONS,
+  COMMAND_THINKING_OPTIONS,
+  type CommandResponseSpeed,
+  type CommandThinkingEffort,
+} from "@/lib/command-controls";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,7 +61,12 @@ type Props = {
   /** Open a new chat that sends `prompt` through ChatView's streaming path.
    *  Home never talks to the chat API itself — a fire-and-cancel send here
    *  aborts the request, which kills the harness before the transcript saves. */
-  onStartChat: (prompt: string, familiarId: string, projectRoot: string | null) => void;
+  onStartChat: (
+    prompt: string,
+    familiarId: string,
+    projectRoot: string | null,
+    opts?: { initialControls?: { thinkingEffort: CommandThinkingEffort; responseSpeed: CommandResponseSpeed } },
+  ) => void;
   onNavigateToBoard: () => void;
   onToast: (msg: string) => void;
   /** Submit a slash command. Mirrors the chat composer's escape hatch so
@@ -147,6 +159,12 @@ export function HomeComposer({
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
   const { projects } = useProjects({ familiarId: selectedFamiliarId || null });
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
+    COMMAND_CONTROL_DEFAULTS.thinkingEffort,
+  );
+  const [responseSpeed, setResponseSpeed] = useState<CommandResponseSpeed>(
+    COMMAND_CONTROL_DEFAULTS.responseSpeed,
+  );
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null,
     [projects, selectedProjectId],
@@ -492,7 +510,9 @@ export function HomeComposer({
           // request server-side — the harness is killed mid-run and the
           // transcript never saves, so the opened chat 404s.
           setText("");
-          onStartChat(prompt, selectedFamiliarId, selectedProject?.root ?? null);
+          onStartChat(prompt, selectedFamiliarId, selectedProject?.root ?? null, {
+            initialControls: { thinkingEffort, responseSpeed },
+          });
           break;
         }
         case "board": {
@@ -516,7 +536,46 @@ export function HomeComposer({
       setSending(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, destination, activeFamiliarId, selectedFamiliarId, selectedProject, sending, onSlash, onStartChat]);
+  }, [
+    text,
+    destination,
+    activeFamiliarId,
+    selectedFamiliarId,
+    selectedProject,
+    thinkingEffort,
+    responseSpeed,
+    sending,
+    onSlash,
+    onStartChat,
+  ]);
+
+  const renderCompactSelect = (
+    label: string,
+    icon: IconName,
+    value: string,
+    onChange: (value: string) => void,
+    options: Array<{ value: string; label: string }>,
+    ariaLabel: string,
+  ) => (
+    <label className="hc-familiar-selector hc-command-select">
+      <Icon name={icon} width={13} className="hc-familiar-glyph" aria-hidden />
+      <span className="hc-command-select-label">{label}</span>
+      <select
+        aria-label={ariaLabel}
+        className="hc-familiar-select"
+        value={value}
+        onChange={(e) => onChange(e.currentTarget.value)}
+        disabled={sending}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+    </label>
+  );
 
   return (
     <div className="home-composer-root">
@@ -626,144 +685,167 @@ export function HomeComposer({
 
         {/* Action bar */}
         <div className="hc-action-bar">
-          <button
-            type="button"
-            className="hc-add-btn"
-            onClick={openCommands}
-            aria-label="Commands"
-            title="Slash commands"
-          >
-            <Icon name="ph:plus" width={15} aria-hidden />
-          </button>
-
-          <label className="hc-familiar-selector">
-            {selectedResolved ? (
-              <FamiliarAvatar familiar={selectedResolved} size="sm" className="hc-familiar-glyph hc-familiar-avatar" />
-            ) : (
-              <Icon name="ph:sparkle" width={13} className="hc-familiar-glyph" aria-hidden />
-            )}
-            <select
-              aria-label="Choose chat agent"
-              className="hc-familiar-select"
-              value={selectedFamiliarId}
-              onChange={(e) => {
-                if (e.currentTarget.value) onSetActiveFamiliar(e.currentTarget.value);
-              }}
-              disabled={visibleFamiliars.length === 0 || sending}
+          <div className="hc-control-group hc-control-group--who">
+            <button
+              type="button"
+              className="hc-add-btn"
+              onClick={openCommands}
+              aria-label="Commands"
+              title="Slash commands"
             >
-              {visibleFamiliars.length === 0 ? (
-                <option value="">No agents</option>
-              ) : (
-                visibleFamiliars.map((familiar) => (
-                  <option key={familiar.id} value={familiar.id}>
-                    {familiar.display_name}
-                  </option>
-                ))
-              )}
-            </select>
-            <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-          </label>
+              <Icon name="ph:plus" width={15} aria-hidden />
+            </button>
 
-          <label className="hc-familiar-selector hc-project-selector">
-            <Icon name="ph:folder" width={13} className="hc-familiar-glyph" aria-hidden />
-            <select
-              aria-label="Choose project"
-              className="hc-familiar-select"
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.currentTarget.value)}
-              disabled={projects.length === 0 || sending}
-            >
-              {projects.length === 0 ? (
-                <option value="">No projects</option>
+            <label className="hc-familiar-selector">
+              {selectedResolved ? (
+                <FamiliarAvatar familiar={selectedResolved} size="sm" className="hc-familiar-glyph hc-familiar-avatar" />
               ) : (
-                projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))
+                <Icon name="ph:sparkle" width={13} className="hc-familiar-glyph" aria-hidden />
               )}
-            </select>
-            <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-          </label>
-
-          {/* Destination pills */}
-          <div
-            className="hc-dest-pills"
-            role="radiogroup"
-            aria-label="Send to"
-            ref={destGroupRef}
-            onKeyDown={handleDestKeyDown}
-          >
-            {DESTINATIONS.map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                role="radio"
-                aria-checked={destination === d.id}
-                tabIndex={destination === d.id ? 0 : -1}
-                className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
-                onClick={() => setDestination(d.id)}
-                title={d.label}
+              <select
+                aria-label="Choose chat agent"
+                className="hc-familiar-select"
+                value={selectedFamiliarId}
+                onChange={(e) => {
+                  if (e.currentTarget.value) onSetActiveFamiliar(e.currentTarget.value);
+                }}
+                disabled={visibleFamiliars.length === 0 || sending}
               >
-                <Icon name={d.icon} width={12} aria-hidden />
-                <span className="hc-dest-label">{d.label}</span>
-              </button>
-            ))}
+                {visibleFamiliars.length === 0 ? (
+                  <option value="">No agents</option>
+                ) : (
+                  visibleFamiliars.map((familiar) => (
+                    <option key={familiar.id} value={familiar.id}>
+                      {familiar.display_name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+            </label>
+
+            <label className="hc-familiar-selector hc-project-selector">
+              <Icon name="ph:folder" width={13} className="hc-familiar-glyph" aria-hidden />
+              <select
+                aria-label="Choose project"
+                className="hc-familiar-select"
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.currentTarget.value)}
+                disabled={projects.length === 0 || sending}
+              >
+                {projects.length === 0 ? (
+                  <option value="">No projects</option>
+                ) : (
+                  projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+            </label>
           </div>
 
-          <label className="hc-familiar-selector hc-runtime-selector">
-            <Icon name="ph:terminal-window" width={13} className="hc-familiar-glyph" aria-hidden />
-            <select
-              aria-label="Choose runtime"
-              className="hc-familiar-select"
-              value={selectedRuntime}
-              onChange={(e) => handleSelectRuntime(e.currentTarget.value)}
-              disabled={!selectedFamiliarId || sending}
+          <div className="hc-control-group hc-control-group--intent">
+            <div
+              className="hc-dest-pills"
+              role="radiogroup"
+              aria-label="Send to"
+              ref={destGroupRef}
+              onKeyDown={handleDestKeyDown}
             >
-              {COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => (
-                <option key={adapter.id} value={adapter.id}>
-                  {adapter.label}
-                </option>
+              {DESTINATIONS.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={destination === d.id}
+                  tabIndex={destination === d.id ? 0 : -1}
+                  className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
+                  onClick={() => setDestination(d.id)}
+                  title={d.label}
+                >
+                  <Icon name={d.icon} width={12} aria-hidden />
+                  <span className="hc-dest-label">{d.label}</span>
+                </button>
               ))}
-            </select>
-            <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-          </label>
+            </div>
+          </div>
 
-          <label className="hc-familiar-selector hc-model-selector">
-            <Icon name="ph:lightning-fill" width={13} className="hc-familiar-glyph hc-model-bolt" aria-hidden />
-            <select
-              aria-label="Choose model"
-              className="hc-familiar-select"
-              value={selectedModelId}
-              onChange={(e) => handleSelectModel(e.currentTarget.value)}
-              disabled={!selectedFamiliarId || runtimeModelOptions.length === 0 || sending}
-            >
-              {runtimeModelOptions.length === 0 ? (
-                <option value="">Runtime managed</option>
-              ) : (
-                runtimeModelOptions.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.label}
+          <div className="hc-control-group hc-control-group--run">
+            <label className="hc-familiar-selector hc-runtime-selector">
+              <Icon name="ph:terminal-window" width={13} className="hc-familiar-glyph" aria-hidden />
+              <select
+                aria-label="Choose runtime"
+                className="hc-familiar-select"
+                value={selectedRuntime}
+                onChange={(e) => handleSelectRuntime(e.currentTarget.value)}
+                disabled={!selectedFamiliarId || sending}
+              >
+                {COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => (
+                  <option key={adapter.id} value={adapter.id}>
+                    {adapter.label}
                   </option>
-                ))
-              )}
-            </select>
-            <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-          </label>
+                ))}
+              </select>
+              <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+            </label>
 
-          <button
-            type="button"
-            className={`hc-send-btn${sending ? " sending" : ""}${!text.trim() ? " empty" : ""}`}
-            onClick={() => void handleSubmit()}
-            disabled={!text.trim() || sending}
-            aria-label="Send"
-          >
-            {sending ? (
-              <span className="hc-spinner" />
-            ) : (
-              <Icon name="ph:arrow-up-bold" width={14} aria-hidden />
+            <label className="hc-familiar-selector hc-model-selector">
+              <Icon name="ph:lightning-fill" width={13} className="hc-familiar-glyph hc-model-bolt" aria-hidden />
+              <select
+                aria-label="Choose model"
+                className="hc-familiar-select"
+                value={selectedModelId}
+                onChange={(e) => handleSelectModel(e.currentTarget.value)}
+                disabled={!selectedFamiliarId || runtimeModelOptions.length === 0 || sending}
+              >
+                {runtimeModelOptions.length === 0 ? (
+                  <option value="">Runtime managed</option>
+                ) : (
+                  runtimeModelOptions.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))
+                )}
+              </select>
+              <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+            </label>
+
+            {renderCompactSelect(
+              "Think",
+              "ph:sparkle-bold",
+              thinkingEffort,
+              (value) => setThinkingEffort(value as CommandThinkingEffort),
+              COMMAND_THINKING_OPTIONS,
+              "Choose thinking effort",
             )}
-          </button>
+
+            {renderCompactSelect(
+              "Speed",
+              "ph:lightning-bold",
+              responseSpeed,
+              (value) => setResponseSpeed(value as CommandResponseSpeed),
+              COMMAND_RESPONSE_SPEED_OPTIONS,
+              "Choose response speed",
+            )}
+
+            <button
+              type="button"
+              className={`hc-send-btn${sending ? " sending" : ""}${!text.trim() ? " empty" : ""}`}
+              onClick={() => void handleSubmit()}
+              disabled={!text.trim() || sending}
+              aria-label="Send"
+            >
+              {sending ? (
+                <span className="hc-spinner" />
+              ) : (
+                <Icon name="ph:arrow-up-bold" width={14} aria-hidden />
+              )}
+            </button>
+          </div>
         </div>
         </div>
       </div>

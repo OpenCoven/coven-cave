@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 const destinations = source.match(/const DESTINATIONS:[\s\S]*?\n\];/)?.[0] ?? "";
 
 assert.match(
@@ -43,8 +44,8 @@ assert.match(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null\)/,
-  "HomeComposer should hand the selected project root to chat start",
+  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null, \{\s*initialControls: \{ thinkingEffort, responseSpeed \},\s*\}\)/,
+  "HomeComposer should hand the selected project root and initial command controls to chat start",
 );
 
 assert.match(
@@ -97,8 +98,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null\)/,
-  "HomeComposer should hand the selected agent chat prompt to the workspace, which opens a new chat that auto-sends it",
+  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null, \{\s*initialControls: \{ thinkingEffort, responseSpeed \},\s*\}\)/,
+  "HomeComposer should hand the selected agent chat prompt and command controls to the workspace, which opens a new chat that auto-sends it",
 );
 
 assert.match(
@@ -111,6 +112,66 @@ assert.match(
   source,
   /aria-label="Choose chat agent"[\s\S]*value=\{selectedFamiliarId\}/,
   "HomeComposer should include an agent selector when starting chat from home",
+);
+
+assert.match(
+  source,
+  /COMMAND_THINKING_OPTIONS/,
+  "HomeComposer should use shared thinking effort options",
+);
+
+assert.match(
+  source,
+  /COMMAND_RESPONSE_SPEED_OPTIONS/,
+  "HomeComposer should use shared response speed options",
+);
+
+assert.match(
+  source,
+  /const \[thinkingEffort, setThinkingEffort\] = useState<CommandThinkingEffort>\(\s*COMMAND_CONTROL_DEFAULTS\.thinkingEffort,\s*\)/,
+  "HomeComposer should initialise thinking effort from shared command control defaults",
+);
+
+assert.match(
+  source,
+  /const \[responseSpeed, setResponseSpeed\] = useState<CommandResponseSpeed>\(\s*COMMAND_CONTROL_DEFAULTS\.responseSpeed,\s*\)/,
+  "HomeComposer should initialise response speed from shared command control defaults",
+);
+
+assert.match(
+  source,
+  /aria-label=\{ariaLabel\}[\s\S]*?value=\{value\}/,
+  "HomeComposer compact command select should render the supplied aria label and selected value",
+);
+
+assert.match(
+  source,
+  /"Choose thinking effort"/,
+  "HomeComposer should render a thinking effort select with an accessible label",
+);
+
+assert.match(
+  source,
+  /"Choose response speed"/,
+  "HomeComposer should render a response speed select with an accessible label",
+);
+
+assert.match(
+  css,
+  /\.hc-control-group\b/,
+  "HomeComposer CSS should define grouped command controls",
+);
+
+assert.match(
+  css,
+  /\.home-composer-card-wrap\s*\{[\s\S]*?container-type: inline-size;/,
+  "HomeComposer card wrapper should establish an inline-size container",
+);
+
+assert.doesNotMatch(
+  css,
+  /\.home-composer-card[\s\S]{0,120}\.home-composer-card/,
+  "HomeComposer CSS should not introduce nested home-composer-card styling",
 );
 
 assert.doesNotMatch(

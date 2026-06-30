@@ -84,6 +84,7 @@
   width: 100%;
   max-width: min(1200px, 100%);
   margin-inline: auto;
+  container-type: inline-size;
 }
 
 /* ── Composer card ───────────────────────────────────────────────────────── */
@@ -144,6 +145,29 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 10px 14px 14px;
+}
+
+.hc-control-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hc-control-group--who {
+  flex: 1 1 320px;
+}
+
+.hc-control-group--intent {
+  flex: 1 1 160px;
+  justify-content: center;
+}
+
+.hc-control-group--run {
+  flex: 1 1 420px;
+  justify-content: flex-end;
+  margin-left: auto;
 }
 
 /* ── "＋" command launcher ───────────────────────────────────────────────── */
@@ -214,6 +238,17 @@
   min-width: 0;
 }
 
+.hc-command-select {
+  gap: 6px;
+}
+
+.hc-command-select .hc-command-select-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 550;
+  color: var(--text-muted);
+}
+
 .hc-familiar-glyph {
   display: flex;
   align-items: center;
@@ -259,6 +294,7 @@
   gap: 3px;
   flex: 1 1 140px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .hc-dest-pill {
@@ -351,6 +387,74 @@
   }
 }
 
+@container (max-width: 620px) {
+  .hc-action-bar {
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .hc-control-group {
+    flex: 1 0 100%;
+    width: 100%;
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .hc-control-group--who,
+  .hc-control-group--run {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .hc-control-group--intent {
+    order: 3;
+  }
+
+  .hc-control-group--run {
+    order: 4;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) var(--touch-target);
+    margin-left: 0;
+  }
+
+  .hc-familiar-selector {
+    min-height: var(--touch-target);
+    padding: 0 30px 0 10px;
+  }
+
+  .hc-command-select .hc-command-select-label {
+    display: none;
+  }
+
+  .hc-familiar-select {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    min-height: var(--touch-target);
+    font-size: 13px;
+  }
+
+  .hc-dest-pills {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+
+  .hc-dest-pill {
+    min-height: var(--touch-target);
+    justify-content: center;
+    border-color: var(--border-hairline);
+    background: color-mix(in oklch, var(--bg-base) 72%, transparent);
+  }
+
+  .hc-send-btn {
+    min-height: var(--touch-target);
+    width: var(--touch-target);
+    height: var(--touch-target);
+  }
+}
+
 /* ── Send button (circular, icon-only — matches the Codex-style composer) ──── */
 .hc-send-btn {
   display: inline-flex;
@@ -368,6 +472,10 @@
   margin-left: auto;
   flex-shrink: 0;
   transition: background 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
+}
+
+.hc-control-group--run .hc-send-btn {
+  margin-left: 0;
 }
 
 .hc-send-btn:hover:not(:disabled) {
