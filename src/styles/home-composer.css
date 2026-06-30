@@ -327,20 +327,31 @@
   min-height: 28px;
   box-sizing: border-box;
   font-size: 12px;
-  font-weight: 500;
+  /* Inactive tabs recede: lighter weight + faded label so the solid-accent
+   * active tab is unmistakably the selected one. Hover/active brighten. */
+  font-weight: 450;
   padding: 4px 14px;
   border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--text-muted);
+  color: color-mix(in oklch, var(--text-muted) 68%, transparent);
   cursor: pointer;
   transition: all 0.12s ease;
   white-space: nowrap;
 }
 
+/* The inactive icon fades further than its label so the tab reads as dormant. */
+.hc-dest-pill svg {
+  opacity: 0.55;
+}
+
 .hc-dest-pill:hover {
   background: var(--bg-raised);
   color: var(--text-secondary);
+}
+
+.hc-dest-pill:hover svg {
+  opacity: 0.9;
 }
 
 .hc-dest-pill.active {
@@ -352,9 +363,10 @@
 }
 
 /* Label and icon sit on the solid accent fill, so both take the on-accent
- * foreground colour for legibility. */
+ * foreground colour at full strength for legibility. */
 .hc-dest-pill.active svg {
   color: var(--accent-foreground);
+  opacity: 1;
 }
 
 @media (max-width: 520px) {
