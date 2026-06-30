@@ -19,8 +19,23 @@ assert.match(
 );
 assert.match(
   component,
-  /streamFamiliarText\(\{ familiarId: target\.familiarId, prompt: target\.prompt/,
+  /streamFamiliarText\(\{[\s\S]*familiarId: target\.familiarId,[\s\S]*prompt: target\.prompt/,
   "quick chat sends through the sanctioned familiar chat bridge",
+);
+assert.match(
+  component,
+  /COMMAND_THINKING_OPTIONS/,
+  "quick chat uses the shared thinking effort options",
+);
+assert.match(
+  component,
+  /COMMAND_RESPONSE_SPEED_OPTIONS/,
+  "quick chat uses the shared response speed options",
+);
+assert.match(
+  component,
+  /streamFamiliarText\(\{[\s\S]*reasoningEffort: thinkingEffort,[\s\S]*responseSpeed,[\s\S]*\}\)/,
+  "quick chat forwards compact command controls to the familiar stream helper",
 );
 assert.match(
   component,

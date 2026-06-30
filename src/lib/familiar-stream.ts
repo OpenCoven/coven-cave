@@ -14,6 +14,10 @@ export async function streamFamiliarText(opts: {
   familiarId: string;
   prompt: string;
   sessionId?: string;
+  reasoningEffort?: string;
+  responseSpeed?: string;
+  modelOverride?: string;
+  modelOverrideScope?: "next-message" | "session";
   signal?: AbortSignal;
 }): Promise<{ text: string; error: string | null; sessionId?: string }> {
   let res: Response;
@@ -25,6 +29,10 @@ export async function streamFamiliarText(opts: {
         familiarId: opts.familiarId,
         prompt: opts.prompt,
         ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
+        ...(opts.reasoningEffort ? { reasoningEffort: opts.reasoningEffort } : {}),
+        ...(opts.responseSpeed ? { responseSpeed: opts.responseSpeed } : {}),
+        ...(opts.modelOverride ? { modelOverride: opts.modelOverride } : {}),
+        ...(opts.modelOverrideScope ? { modelOverrideScope: opts.modelOverrideScope } : {}),
       }),
       signal: opts.signal,
     });

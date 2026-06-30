@@ -49,6 +49,36 @@ describe("streamFamiliarText", () => {
     assert.equal(JSON.parse(bodies[1]).sessionId, "sess-9", "resume run includes sessionId");
   });
 
+  it("forwards command controls and model override fields when provided", async () => {
+    let body = "";
+    globalThis.fetch = (async (_url: unknown, init: { body?: string }) => {
+      body = init.body ?? "";
+      return sseResponse([frame({ kind: "done" })]);
+    }) as typeof fetch;
+
+    await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "p",
+      reasoningEffort: "low",
+      responseSpeed: "careful",
+      modelOverride: "gpt-test",
+      modelOverrideScope: "next-message",
+    });
+
+    assert.deepEqual(
+      JSON.parse(body),
+      {
+        familiarId: "nova",
+        prompt: "p",
+        reasoningEffort: "low",
+        responseSpeed: "careful",
+        modelOverride: "gpt-test",
+        modelOverrideScope: "next-message",
+      },
+      "provided compact controls and model override fields are forwarded",
+    );
+  });
+
   it("returns the created session id from stream frames", async () => {
     globalThis.fetch = (async () => sseResponse([
       frame({ kind: "session", sessionId: "sess-created" }),

@@ -1,6 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  COMMAND_CONTROL_DEFAULTS,
+  COMMAND_RESPONSE_SPEED_OPTIONS,
+  COMMAND_THINKING_OPTIONS,
+  type CommandResponseSpeed,
+  type CommandThinkingEffort,
+} from "@/lib/command-controls";
 import { Icon } from "@/lib/icon";
 import { resolveQuickChatTarget } from "@/lib/quick-chat";
 import { streamFamiliarText } from "@/lib/familiar-stream";
@@ -28,6 +35,12 @@ export function TrayQuickChat() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sendState, setSendState] = useState<SendState>("idle");
   const [loading, setLoading] = useState(true);
+  const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
+    COMMAND_CONTROL_DEFAULTS.thinkingEffort,
+  );
+  const [responseSpeed, setResponseSpeed] = useState<CommandResponseSpeed>(
+    COMMAND_CONTROL_DEFAULTS.responseSpeed,
+  );
 
   useEffect(() => {
     let alive = true;
@@ -73,12 +86,17 @@ export function TrayQuickChat() {
     setSendState("sending");
     setSelectedFamiliarId(target.familiarId);
     window.localStorage.setItem(LAST_FAMILIAR_KEY, target.familiarId);
-    const result = await streamFamiliarText({ familiarId: target.familiarId, prompt: target.prompt });
+    const result = await streamFamiliarText({
+      familiarId: target.familiarId,
+      prompt: target.prompt,
+      reasoningEffort: thinkingEffort,
+      responseSpeed,
+    });
     setAnswer(result.text);
     setError(result.error);
     setSessionId(result.sessionId ?? null);
     setSendState("done");
-  }, [draft, familiars, selectedFamiliarId]);
+  }, [draft, familiars, responseSpeed, selectedFamiliarId, thinkingEffort]);
 
   const openFullSession = useCallback(async () => {
     if (!sessionId) return;
@@ -127,6 +145,35 @@ export function TrayQuickChat() {
             {familiars.map((familiar) => (
               <option key={familiar.id} value={familiar.id}>
                 {familiar.display_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 border-b border-[var(--border-hairline)] px-4 py-2">
+          <select
+            value={thinkingEffort}
+            onChange={(event) => setThinkingEffort(event.target.value as CommandThinkingEffort)}
+            disabled={sendState === "sending"}
+            className="min-w-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none"
+            aria-label="Choose thinking effort"
+          >
+            {COMMAND_THINKING_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={responseSpeed}
+            onChange={(event) => setResponseSpeed(event.target.value as CommandResponseSpeed)}
+            disabled={sendState === "sending"}
+            className="min-w-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none"
+            aria-label="Choose response speed"
+          >
+            {COMMAND_RESPONSE_SPEED_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
