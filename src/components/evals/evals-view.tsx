@@ -24,6 +24,8 @@ import {
   type ThreadEvalState,
 } from "@/lib/evals/eval-model";
 import { runSuite, type RunProgress } from "@/lib/evals/eval-runner";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useMinuteTick } from "@/lib/use-minute-tick";
 import {
   instantiateTemplate,
   templatesByCategory,
@@ -128,6 +130,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  useMinuteTick(); // keep relative-time labels (last run, freshness) current between polls
 
   const dirty = useMemo(() => (draft ? JSON.stringify(draft) !== savedJson : false), [draft, savedJson]);
   const familiarId = draft?.familiarId || activeFamiliarId || familiars[0]?.id || "";
@@ -215,6 +218,48 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       }
     })();
   }, []);
+
+  // Live snapshot refresh for the time-sensitive slices only — run history,
+  // groups, thread freshness, the manual queue, the eval-loop snapshot, and
+  // eval chat threads. Deliberately excludes suites/draft/selection so a
+  // background poll never clobbers an unsaved suite the user is editing.
+  // Each slice updates independently (allSettled) so one failing endpoint
+  // doesn't wipe the others, and a transient failure leaves state untouched.
+  const refreshSnapshot = useCallback(async () => {
+    const [runsR, groupsR, threadsR, queueR, retroR, sessionsR] = await Promise.allSettled([
+      fetch("/api/evals/runs"),
+      fetch("/api/evals/groups"),
+      fetch("/api/evals/thread-states"),
+      fetch("/api/evals/queue"),
+      fetch("/api/retro-runs"),
+      fetch("/api/sessions/list"),
+    ]);
+    const readJson = async (r: PromiseSettledResult<Response>): Promise<unknown> => {
+      if (r.status !== "fulfilled") return null;
+      try { return await r.value.json(); } catch { return null; }
+    };
+    const runsData = (await readJson(runsR)) as { ok?: boolean; runs?: EvalRun[] } | null;
+    if (runsData?.ok && Array.isArray(runsData.runs)) setAllRuns(runsData.runs);
+    const groupsData = (await readJson(groupsR)) as { ok?: boolean; groups?: EvalGroup[] } | null;
+    if (groupsData?.ok && Array.isArray(groupsData.groups)) setGroups(groupsData.groups);
+    const threadsData = (await readJson(threadsR)) as { ok?: boolean; snapshots?: ThreadEvalSnapshot[] } | null;
+    if (threadsData?.ok && Array.isArray(threadsData.snapshots)) setThreadSnapshots(threadsData.snapshots);
+    const queueData = (await readJson(queueR)) as { ok?: boolean; queue?: ManualEvalQueueItem[] } | null;
+    if (queueData?.ok && Array.isArray(queueData.queue)) setQueue(queueData.queue);
+    const retroData = (await readJson(retroR)) as RetroApiResponse | null;
+    if (retroData?.ok && retroData.snapshot) setRetroSnapshot(retroData.snapshot);
+    const sessionsData = (await readJson(sessionsR)) as { ok?: boolean; sessions?: SessionRow[] } | null;
+    if (sessionsData?.ok && Array.isArray(sessionsData.sessions)) {
+      setEvalThreads(sessionsData.sessions.filter((s) => s.origin === "eval"));
+    }
+  }, []);
+
+  // Poll the live snapshot so running-loop counts, thread freshness, and queue
+  // depth stay current without a reload: fast while something is actively
+  // running or queued, slower when idle. Pauses on hidden tabs; refreshes on
+  // focus. The initial hydrate (and suite/selection state) stays untouched.
+  const liveActivity = running || retroSnapshot.summary.runningFamiliars > 0 || queue.length > 0;
+  usePausablePoll(() => { void refreshSnapshot(); }, liveActivity ? 5000 : 30_000);
 
   const selectSuite = useCallback((suite: EvalSuite) => {
     setSelectedId(suite.id);
