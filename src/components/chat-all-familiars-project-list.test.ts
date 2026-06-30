@@ -34,7 +34,7 @@ assert.match(
 
 assert.match(
   chatRouter,
-  /newChat: \(projectRoot\?: string, initialPrompt\?: string, familiarId\?: string \| null, origin\?: SessionOrigin\)/,
+  /newChat: \(projectRoot\?: string, initialPrompt\?: string, familiarId\?: string \| null, origin\?: SessionOrigin, initialControls\?: InitialCommandControls\)/,
   "Imperative new-chat launches should carry a familiar id with the project root",
 );
 

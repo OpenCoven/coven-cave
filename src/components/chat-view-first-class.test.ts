@@ -125,7 +125,7 @@ assert.match(
 
 assert.match(
   source,
-  /reasoningEffort: thinkingEffort,[\s\S]*responseSpeed,/,
+  /reasoningEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed,/,
   "Send payload should include thinking and speed control values",
 );
 
