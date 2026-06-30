@@ -10608,3 +10608,61 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 @media (prefers-reduced-motion: reduce) {
   .cave-fill-btn::before { transition: none; }
 }
+
+/* Codex inline file-edit card: a mutation tool call rendered in the chat
+   transcript as `[icon] Edited <file>  +N −M  [Review]` instead of the
+   collapsed tool block. Horizontal flex row, hairline border. */
+.cave-edit-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-hairline);
+  border-radius: 0.625rem;
+  background: var(--bg-raised);
+  font-size: 12px;
+}
+.cave-edit-card__icon {
+  flex: none;
+  color: var(--text-muted);
+}
+.cave-edit-card__body {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cave-edit-card__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.cave-edit-card__stat {
+  flex: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+.cave-edit-card__ins {
+  color: var(--color-success);
+}
+.cave-edit-card__del {
+  color: var(--color-danger);
+}
+.cave-edit-card__review {
+  flex: none;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border-hairline);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--text-secondary, var(--text-primary));
+  font-size: 11px;
+  cursor: pointer;
+}
+.cave-edit-card__review:hover {
+  background: color-mix(in oklch, var(--text-primary) 8%, transparent);
+  color: var(--text-primary);
+}

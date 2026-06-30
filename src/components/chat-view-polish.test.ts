@@ -917,3 +917,10 @@ assert.ok(
   source.includes('e.currentTarget.value = "";') && !source.includes('fileInputRef.current.value = ""'),
   "file input resets value synchronously in onChange, not after the async attach",
 );
+
+// Codex inline file-edit card: Edit/Write/MultiEdit/NotebookEdit tool calls
+// render as a compact `Edited <file>  +N −M  Review` card in the transcript.
+assert.match(source, /cave-edit-card/, "mutation tools render as an inline Codex edit card");
+assert.match(source, /diffStat/, "edit card derives a +/- stat");
+assert.match(source, /Review/, "edit card has a Review action");
+assert.match(globalsSrc, /\.cave-edit-card/, "edit card styling exists");

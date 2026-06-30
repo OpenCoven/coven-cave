@@ -96,6 +96,7 @@ import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
 import { toolInputAsDiff, toolTargetFile } from "@/lib/tool-input-diff";
+import { diffStat } from "@/lib/tool-edit-stat";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
@@ -5546,6 +5547,38 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
     );
   };
   const visual = toolVisual(tool.name);
+  // Codex-style inline edit card: a mutation tool (Edit/Write/MultiEdit/
+  // NotebookEdit, i.e. `isEditTool`) with a known target file renders as a
+  // compact `[icon] Edited <basename>  +N −M  [Review]` row instead of the
+  // collapsed tool block. Review opens the comux diff via the same
+  // `cave:open-file-diff` event the default block dispatches.
+  if (isEditTool && targetFile) {
+    const stat = diffStat(inputDiff ?? "");
+    const base = targetFile.split("/").pop() || targetFile;
+    return (
+      <div className="cave-edit-card">
+        <Icon name="ph:pencil-simple" width={16} className="cave-edit-card__icon" aria-hidden />
+        <span className="cave-edit-card__body">
+          <span className="cave-edit-card__title">Edited {base}</span>
+          <span className="cave-edit-card__stat">
+            <span className="cave-edit-card__ins">+{stat.insertions}</span>{" "}
+            <span className="cave-edit-card__del">−{stat.deletions}</span>
+          </span>
+        </span>
+        <button
+          type="button"
+          className="cave-edit-card__review focus-ring"
+          onClick={() =>
+            window.dispatchEvent(
+              new CustomEvent("cave:open-file-diff", { detail: { path: targetFile } }),
+            )
+          }
+        >
+          Review
+        </button>
+      </div>
+    );
+  }
   return (
     <details className="cave-tool-block" data-default-collapsed="true" data-tool-category={visual.category}>
       <summary className="flex min-w-0 cursor-pointer select-none flex-wrap items-center gap-2 text-[11px]">
