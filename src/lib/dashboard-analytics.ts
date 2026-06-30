@@ -5,6 +5,7 @@
  */
 
 import type { Familiar, SessionRow } from "@/lib/types";
+import type { GitHubItem } from "@/lib/github-tasks";
 import type { SparkPoint } from "@/components/ui/sparkline";
 import type { TrendSeries } from "@/components/ui/charts/trend-chart";
 
@@ -81,6 +82,86 @@ export function familiarMiniProfiles(
       trend: counts.map((value, i) => ({ label: `${days - 1 - i}d`, value })),
     };
   });
+}
+
+// ─── Predictive signals ──────────────────────────────────────────────────────────
+
+export type DashboardSignal = {
+  id: string;
+  severity: "warn" | "info";
+  text: string;
+};
+
+const STALE_PR_DAYS = 7;
+const READING_QUEUE_LARGE = 8;
+
+/** Cheap, pure, clock-injected "things drifting" detector for the cockpit's
+ *  Signals strip. Reads only what the cockpit already fetches — no extra calls.
+ *
+ *  - PR stalled: an open PR / review request untouched for > 7 days.
+ *  - Reading queue large: the reading list has grown past a comfortable size.
+ *  - Familiar trending down: had sessions in the prior 4-day window (days 3–7
+ *    ago) but none in the last 3 days. */
+export function dashboardSignals(input: {
+  github: GitHubItem[];
+  reading: { status?: string }[];
+  sessions: SessionRow[];
+  familiars: Familiar[];
+  nowMs: number;
+}): DashboardSignal[] {
+  const { github, reading, sessions, familiars, nowMs } = input;
+  const out: DashboardSignal[] = [];
+
+  // PR stalled > 7 days (open PRs / review requests with a stale updatedAt).
+  for (const g of github) {
+    if (g.kind !== "pr" && g.kind !== "review_request") continue;
+    if (g.state === "closed") continue;
+    const t = Date.parse(g.updatedAt);
+    if (!Number.isFinite(t)) continue;
+    const days = Math.floor((nowMs - t) / DAY_MS);
+    if (days > STALE_PR_DAYS) {
+      out.push({
+        id: `pr-stalled-${g.id}`,
+        severity: "warn",
+        text: `PR stalled ${days}d: ${g.title}`,
+      });
+    }
+  }
+
+  // Reading queue grown large.
+  if (reading.length > READING_QUEUE_LARGE) {
+    out.push({
+      id: "reading-large",
+      severity: "info",
+      text: `Reading queue is large (${reading.length} items)`,
+    });
+  }
+
+  // Familiar trending down: active in the prior window, quiet in the last 3 days.
+  const last3Start = startOfDay(nowMs) - 2 * DAY_MS; // today + previous 2 days
+  const priorStart = startOfDay(nowMs) - (STALE_PR_DAYS - 1) * DAY_MS; // 7-day window start
+  for (const f of familiars) {
+    let recent = 0;
+    let prior = 0;
+    for (const s of sessions) {
+      if (s.archived_at || s.familiarId !== f.id) continue;
+      const t = sessionDayMs(s);
+      if (t === null) continue;
+      const dayStart = startOfDay(t);
+      if (dayStart >= last3Start) recent += 1;
+      else if (dayStart >= priorStart) prior += 1;
+    }
+    if (recent === 0 && prior > 0) {
+      out.push({
+        id: `familiar-down-${f.id}`,
+        severity: "warn",
+        text: `${f.display_name} is trending down — no sessions in 3 days`,
+      });
+    }
+  }
+
+  // Surface warnings ahead of info.
+  return out.sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "warn" ? -1 : 1));
 }
 
 /** Multi-series session-load over time for the top-N busiest familiars (by

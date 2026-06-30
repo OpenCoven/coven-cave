@@ -33,6 +33,16 @@ assert.match(cockpit, /familiarLoadSeries/, "renders a familiar-load trend panel
 assert.match(cockpit, /usePausablePoll/, "cockpit polls for live updates");
 assert.doesNotMatch(cockpit, /\?view=evals/, "dead ?view=evals link removed");
 
+// Predictive signals strip + confidence heatmap (deferred from #2098).
+assert.match(cockpit, /dashboardSignals/, "cockpit derives predictive signals");
+assert.match(cockpit, /case "signals"/, "a Signals panel is wired into the layout switch");
+assert.match(cockpit, /case "confidence"/, "a Confidence panel is wired into the layout switch");
+assert.match(cockpit, /Heatmap/, "confidence renders the visx heatmap primitive");
+assert.match(cockpit, /deriveConfidenceScore/, "confidence reuses the shared scoring helper");
+assert.match(cockpit, /deriveGrowthReport/, "confidence composes the growth report for scoring");
+assert.match(cockpit, /\/api\/retro-runs/, "confidence pulls the shared retro-runs snapshot");
+assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(f\.id\)\}\/contract/, "confidence pulls each familiar's contract");
+
 // Action inbox supports bulk triage: select several items → done/dismiss/snooze together.
 const inboxUrl = new URL("../components/dashboard/action-inbox.tsx", import.meta.url);
 const inbox = readFileSync(inboxUrl, "utf8");
