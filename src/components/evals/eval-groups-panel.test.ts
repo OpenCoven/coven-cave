@@ -20,6 +20,12 @@ assert.match(source, /rollupEvalGroup\(/, "rolls each group's state into status 
 assert.match(source, /freshThreads/, "shows fresh thread count");
 assert.match(source, /staleThreads/, "shows stale thread count");
 assert.match(source, /neverRunThreads/, "shows never-run thread count");
+assert.match(source, /aria-label="Toggle group debug details"/, "each group exposes a debug details toggle");
+assert.match(source, /Group debug details/, "labels the inline debug payload");
+assert.match(source, /statesById\.get\(group\.id\)/, "debug payload uses the exact derived states for the group");
+assert.match(source, /JSON\.stringify\(\s*\{\s*group:/, "renders copyable JSON debug data");
+assert.match(source, /rollup:/, "includes rollup status counts in debug data");
+assert.match(source, /states:/, "includes thread state diagnostics in debug data");
 
 // CRUD wiring against the API.
 assert.match(source, /fetch\("\/api\/evals\/groups"/, "saves a group via POST /api/evals/groups");

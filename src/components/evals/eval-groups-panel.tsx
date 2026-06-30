@@ -65,6 +65,7 @@ export function EvalGroupsPanel({ groups, statesById, familiars, onChanged }: Pr
   const [isNew, setIsNew] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugGroupIds, setDebugGroupIds] = useState<Set<string>>(() => new Set());
 
   const familiarName = useCallback(
     (id: string) => familiars.find((f) => f.id === id)?.display_name ?? id,
@@ -93,6 +94,18 @@ export function EvalGroupsPanel({ groups, statesById, familiars, onChanged }: Pr
   const cancel = useCallback(() => {
     setDraft(null);
     setError(null);
+  }, []);
+
+  const toggleGroupDebug = useCallback((groupId: string) => {
+    setDebugGroupIds((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
   }, []);
 
   const patch = useCallback((p: Partial<EvalGroup>) => {
@@ -296,6 +309,9 @@ export function EvalGroupsPanel({ groups, statesById, familiars, onChanged }: Pr
       <ul className="evals-group-list">
         {groups.map((group) => {
           const rollup = rollups.get(group.id);
+          const states = statesById.get(group.id) ?? [];
+          const debugOpen = debugGroupIds.has(group.id);
+          const debugPanelId = `eval-group-debug-${group.id}`;
           const memberFamiliars = group.members.filter((m) => m.kind === "familiar");
           return (
             <li key={group.id} className="evals-group-card">
@@ -307,6 +323,17 @@ export function EvalGroupsPanel({ groups, statesById, familiars, onChanged }: Pr
                   </span>
                 </div>
                 <div className="evals-group-card-actions">
+                  <button
+                    type="button"
+                    className="evals-icon-btn"
+                    onClick={() => toggleGroupDebug(group.id)}
+                    title="Debug group"
+                    aria-label="Toggle group debug details"
+                    aria-expanded={debugOpen}
+                    aria-controls={debugPanelId}
+                  >
+                    <Icon name="ph:bug-bold" width={13} />
+                  </button>
                   <button type="button" className="evals-icon-btn" onClick={() => startEdit(group)} title="Edit group" aria-label="Edit group">
                     <Icon name="ph:pencil-simple" width={13} />
                   </button>
@@ -331,6 +358,43 @@ export function EvalGroupsPanel({ groups, statesById, familiars, onChanged }: Pr
                       {familiarName(m.familiarId ?? m.id)}
                     </span>
                   ))}
+                </div>
+              ) : null}
+              {debugOpen ? (
+                <div id={debugPanelId} className="evals-group-debug" aria-label="Group debug details">
+                  <div className="evals-group-debug-title">Group debug details</div>
+                  <pre>
+                    {JSON.stringify(
+                      {
+                        group: {
+                          id: group.id,
+                          name: group.name,
+                          scope: group.scope,
+                          tracks: group.tracks,
+                          rubricVersion: group.rubricVersion,
+                          stalePolicy: group.stalePolicy,
+                          schedulePolicy: group.schedulePolicy,
+                          createdAt: group.createdAt,
+                          updatedAt: group.updatedAt,
+                          members: group.members.map((member) => ({
+                            ...member,
+                            label: member.kind === "familiar" ? familiarName(member.familiarId ?? member.id) : member.id,
+                          })),
+                        },
+                        rollup: rollup ?? null,
+                        states: states.map((state) => ({
+                          threadId: state.threadId,
+                          familiarId: state.familiarId,
+                          status: state.status,
+                          staleReasons: state.staleReasons,
+                          evaluatedAt: state.evaluatedAt,
+                          details: state.details,
+                        })),
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
                 </div>
               ) : null}
             </li>
