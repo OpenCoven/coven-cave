@@ -141,6 +141,57 @@ prune_sidecar_nonruntime_files() {
   \) -delete
 }
 
+copy_node_shared_runtime() {
+  local node_bin="$1"
+  local dest_dir="$2"
+  local lib_ref=""
+
+  case "$(uname -s)" in
+    Darwin)
+      if command -v otool >/dev/null 2>&1; then
+        lib_ref="$(otool -L "$node_bin" | awk '/libnode.*\.dylib/ {print $1; exit}')"
+      fi
+      ;;
+    Linux)
+      if command -v ldd >/dev/null 2>&1; then
+        lib_ref="$(ldd "$node_bin" | awk '/libnode.*\.so/ {print $3; exit}')"
+      fi
+      ;;
+  esac
+
+  if [ -z "$lib_ref" ]; then
+    return 0
+  fi
+
+  local lib_name="${lib_ref##*/}"
+  local lib_path=""
+  if [ -f "$lib_ref" ]; then
+    lib_path="$lib_ref"
+  else
+    local dir
+    for dir in \
+      "$(dirname "$node_bin")" \
+      "$(dirname "$node_bin")/../lib" \
+      "$(dirname "$node_bin")/../../lib" \
+      "$(dirname "$node_bin")/../../../lib"; do
+      if [ -f "$dir/$lib_name" ]; then
+        lib_path="$(cd "$dir" && pwd -P)/$lib_name"
+        break
+      fi
+    done
+  fi
+
+  if [ -z "$lib_path" ]; then
+    echo "ERROR: node runtime depends on $lib_ref, but the library could not be found" >&2
+    exit 1
+  fi
+
+  mkdir -p "$dest_dir/lib"
+  cp "$lib_path" "$dest_dir/lib/$lib_name"
+  chmod +r "$dest_dir/lib/$lib_name" 2>/dev/null || true
+  echo "==> bundled Node shared runtime $lib_name"
+}
+
 echo "==> next build"
 (cd "$ROOT" && pnpm build) >&2
 
@@ -166,6 +217,8 @@ rm -rf "$BUNDLED_NODE_DIR"
 mkdir -p "$BUNDLED_NODE_DIR/bin"
 cp "$NODE_BIN" "$BUNDLED_NODE_DIR/bin/$NODE_NAME"
 chmod +x "$BUNDLED_NODE_DIR/bin/$NODE_NAME" 2>/dev/null || true
+copy_node_shared_runtime "$NODE_BIN" "$BUNDLED_NODE_DIR"
+"$BUNDLED_NODE_DIR/bin/$NODE_NAME" -e "process.exit(0)" >/dev/null
 printf "generated at release build time\n" > "$BUNDLED_NODE_DIR/placeholder.txt"
 
 # Next.js + pnpm leaves a node_modules full of pnpm-style symlinks

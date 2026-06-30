@@ -50,6 +50,22 @@ assert.match(
   "sidecar must verify sharp loads from the bundle before declaring it ready (#2010)",
 );
 
+// Some Node distributions (notably Homebrew macOS builds) ship `node` as a
+// small executable that depends on a sibling libnode shared library. The
+// packaged sidecar must copy that shared runtime and verify the bundled Node
+// actually starts, otherwise release builds can assemble a server that aborts
+// before Next boots.
+assert.match(
+  src,
+  /copy_node_shared_runtime\(\)/,
+  "sidecar must copy Node's shared runtime library when the host node depends on one",
+);
+assert.match(
+  src,
+  /\$BUNDLED_NODE_DIR\/bin\/\$NODE_NAME" -e "process\.exit\(0\)"/,
+  "sidecar must verify the bundled Node runtime starts before declaring the bundle ready",
+);
+
 // The native target mapping (@img/sharp-<target>, @next/swc-<target>, …) is now
 // owned by scripts/sidecar-target.mjs and shared with the cross-environment
 // conformance suite (#1990). The prune must consume that single source of truth

@@ -168,3 +168,46 @@ jobs:
             exit 1
           fi
           echo "Cross-environment matrix passed on ubuntu-latest, windows-latest, and macos-latest."
+
+  sidecar-runtime:
+    name: Sidecar runtime (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - run: pnpm install --frozen-lockfile
+
+      # Slice B runtime proof for #1990: build the OS-specific packaged Node
+      # sidecar on each target, boot the bundled server with sidecar auth, and
+      # prove a seeded raster familiar avatar transcodes through the real HTTP
+      # route. This catches native sharp/libvips prune and packaged-server boot
+      # regressions that pure conformance assertions cannot.
+      - name: Build packaged sidecar bundle
+        shell: bash
+        run: bash scripts/sidecar-bundle.sh
+
+      - run: pnpm test:sidecar-runtime
+
+  sidecar-runtime-required:
+    name: Sidecar runtime required
+    runs-on: ubuntu-latest
+    needs: sidecar-runtime
+    if: always()
+    steps:
+      - name: Require every sidecar runtime matrix leg
+        run: |
+          if [ "${{ needs.sidecar-runtime.result }}" != "success" ]; then
+            echo "::error::Sidecar runtime matrix result: ${{ needs.sidecar-runtime.result }}"
+            exit 1
+          fi
+          echo "Sidecar runtime matrix passed on ubuntu-latest, windows-latest, and macos-latest."
