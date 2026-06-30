@@ -2166,6 +2166,23 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     [items, codexAutos, flows],
   );
 
+  // At-a-glance operational summary for the header: how many automations are
+  // live vs paused, and when the soonest known fire is (reminders carry
+  // nextFireAt; crons/flows fire server-side so they don't contribute a time).
+  const summary = useMemo(() => {
+    let active = 0;
+    let paused = 0;
+    let soonest: string | undefined;
+    for (const entry of allEntries) {
+      if (entry.state === "paused") paused += 1;
+      else active += 1;
+      if (entry.state === "active" && entry.nextFireAt && (!soonest || entry.nextFireAt < soonest)) {
+        soonest = entry.nextFireAt;
+      }
+    }
+    return { active, paused, soonest };
+  }, [allEntries]);
+
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
     setQuery(""); // the filter is scoped to one tab at a time
@@ -2197,6 +2214,18 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                 ? "Your reminders, crons, and deadlines on a calendar."
                 : "Reminders, crons, and flows — everything that runs for you, in one place."}
             </p>
+            {activeTab !== "calendar" && initialLoadDone && summary.active + summary.paused > 0 && (
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent-presence)" }} />
+                  {summary.active} active
+                </span>
+                {summary.paused > 0 && <span>· {summary.paused} paused</span>}
+                {summary.soonest && (
+                  <span title={`Next fire: ${summary.soonest}`}>· next fire {relTime(summary.soonest)}</span>
+                )}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             {activeTab === "reminders" && !remindersEmpty && !reminderSelect.selectMode && (
