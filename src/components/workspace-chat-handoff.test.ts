@@ -62,6 +62,12 @@ assert.match(
 
 assert.match(
   workspace,
+  /CustomEvent<\{[\s\S]*?initialControls\?: InitialCommandControls \| null[\s\S]*?\}>[\s\S]*?startFamiliarChat\([\s\S]*?d\?\.initialControls \?\? null[\s\S]*?\)/,
+  "Workspace non-chat bridge should carry initial controls from cave:agents-new-chat into startFamiliarChat",
+);
+
+assert.match(
+  workspace,
   /const openFamiliarSession = useCallback\([\s\S]*setPendingChatAction\(\{[\s\S]*kind: "open"[\s\S]*sessionId[\s\S]*familiarId[\s\S]*nonce: Date\.now\(\)[\s\S]*\}\)[\s\S]*setMode\("chat"\)/,
   "Opening a session should enqueue a pending chat action before entering chat mode",
 );
