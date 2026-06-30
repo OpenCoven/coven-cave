@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useMinuteTick } from "@/lib/use-minute-tick";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { KIND_ICON, KIND_LABEL, itemHasTarget, itemHref, relativeTime } from "@/lib/daily-report";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
@@ -28,6 +29,8 @@ function minutesUntilTomorrowMorning(): number {
 
 export function ActionInbox({ initialItems }: { initialItems: InboxItem[] }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  useMinuteTick();    // keep the per-item "Nm ago" labels current; the parent
+                      // cockpit re-fetches the list itself every 30s.
   const [items, setItems] = useState<InboxItem[]>(initialItems);
   const [error, setError] = useState<string | null>(null);
   const [snoozeOpenId, setSnoozeOpenId] = useState<string | null>(null);
