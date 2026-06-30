@@ -75,6 +75,15 @@ import {
   chatProjectById,
   projectIdForRoot,
 } from "@/lib/chat-projects";
+import {
+  COMMAND_CONTROL_DEFAULTS,
+  COMMAND_RESPONSE_SPEED_OPTIONS,
+  COMMAND_THINKING_OPTIONS,
+  normalizeCommandControls,
+  type CommandResponseSpeed,
+  type CommandThinkingEffort,
+  type InitialCommandControls,
+} from "@/lib/command-controls";
 import type { CaveProject } from "@/lib/cave-projects";
 import { useProjects } from "@/lib/use-projects";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
@@ -227,6 +236,7 @@ type Props = {
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  initialControls?: InitialCommandControls;
   /** Provenance for a newly-created conversation (e.g. "eval" for eval-discuss
    *  threads). Persisted on the conversation so it can be surfaced/hidden by origin. */
   origin?: SessionOrigin;
@@ -281,8 +291,8 @@ type FailedSend = {
   mentionedFiles?: string[];
   promptOverride?: string;
 };
-type ComposerThinkingEffort = "low" | "medium" | "high";
-type ComposerResponseSpeed = "fast" | "balanced" | "careful";
+type ComposerThinkingEffort = CommandThinkingEffort;
+type ComposerResponseSpeed = CommandResponseSpeed;
 
 // Fallback cap when the computed CSS max-height can't be read; kept in sync with
 // the .cave-composer-input rule (13 lines: 13*24 + 20px padding).
@@ -303,16 +313,8 @@ const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
 // the find effect — the full transcript renders, so seeking, find, and deep
 // scroll are never limited by the cap.
 const TRANSCRIPT_RENDER_CAP = 60;
-const THINKING_OPTIONS: Array<{ value: ComposerThinkingEffort; label: string }> = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-];
-const SPEED_OPTIONS: Array<{ value: ComposerResponseSpeed; label: string }> = [
-  { value: "fast", label: "Fast" },
-  { value: "balanced", label: "Balanced" },
-  { value: "careful", label: "Careful" },
-];
+const THINKING_OPTIONS = COMMAND_THINKING_OPTIONS;
+const SPEED_OPTIONS = COMMAND_RESPONSE_SPEED_OPTIONS;
 const CHAT_ATTACHMENT_ACCEPT = [
   "image/*",
   "video/*",
@@ -353,19 +355,19 @@ function readComposerPrefs(): {
   thinkingEffort: ComposerThinkingEffort;
   responseSpeed: ComposerResponseSpeed;
 } {
-  if (typeof window === "undefined") return { thinkingEffort: "high", responseSpeed: "fast" };
+  if (typeof window === "undefined") return COMMAND_CONTROL_DEFAULTS;
   try {
     const raw = window.localStorage.getItem(COMPOSER_PREFS_KEY);
     const parsed = raw ? JSON.parse(raw) as Partial<{ thinkingEffort: string; responseSpeed: string }> : {};
     const thinkingEffort = THINKING_OPTIONS.some((option) => option.value === parsed.thinkingEffort)
       ? parsed.thinkingEffort as ComposerThinkingEffort
-      : "high";
+      : COMMAND_CONTROL_DEFAULTS.thinkingEffort;
     const responseSpeed = SPEED_OPTIONS.some((option) => option.value === parsed.responseSpeed)
       ? parsed.responseSpeed as ComposerResponseSpeed
-      : "fast";
+      : COMMAND_CONTROL_DEFAULTS.responseSpeed;
     return { thinkingEffort, responseSpeed };
   } catch {
-    return { thinkingEffort: "high", responseSpeed: "fast" };
+    return COMMAND_CONTROL_DEFAULTS;
   }
 }
 
@@ -2042,7 +2044,7 @@ function MobileChatActionStrip({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -3278,6 +3280,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     outgoingAttachments: ChatAttachment[] = [],
     outgoingMentions: string[] = [],
     opts?: { promptOverride?: string; parentTurnId?: string | null },
+    controlsOverride?: { thinkingEffort: ComposerThinkingEffort; responseSpeed: ComposerResponseSpeed },
   ) => {
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
@@ -3353,8 +3356,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(origin ? { origin } : {}),
           sessionId: liveGeneration.sessionId,
           projectRoot: activeProjectRoot,
-          reasoningEffort: thinkingEffort,
-          responseSpeed,
+          reasoningEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
+          responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
           // Forward the picked model explicitly so it reaches `coven run
           // --model` for THIS turn — don't rely on the PATCH to model-state
           // having persisted to the conversation file before this send (a
@@ -3656,7 +3659,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const timer = window.setTimeout(() => {
       if (initialPromptSentRef.current) return;
       initialPromptSentRef.current = true;
-      void sendRaw(initialPrompt);
+      const normalized = initialControls ? normalizeCommandControls(initialControls) : null;
+      if (normalized) {
+        setThinkingEffort(normalized.thinkingEffort);
+        setResponseSpeed(normalized.responseSpeed);
+      }
+      void sendRaw(initialPrompt, [], [], undefined, normalized ?? undefined);
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps

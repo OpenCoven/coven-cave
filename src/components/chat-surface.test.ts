@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url), "utf8");
 const agentsMemoryView = await readFile(new URL("./familiars-memory-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 
@@ -241,8 +242,20 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /newChat\(d\?\.projectRoot \?\? undefined, d\?\.initialPrompt \?\? undefined, d\?\.familiarId, d\?\.origin\)/,
+  /newChat\([\s\S]*d\?\.projectRoot \?\? undefined,[\s\S]*d\?\.initialPrompt \?\? undefined,[\s\S]*d\?\.familiarId,[\s\S]*d\?\.origin,[\s\S]*d\?\.initialControls \?\? undefined/,
   "ChatSurface should forward the seeded initialPrompt into newChat",
+);
+
+assert.match(
+  chatRouter,
+  /newChat: \([\s\S]*?initialControls\?: InitialCommandControls[\s\S]*?\) => void/,
+  "ChatRouterHandle.newChat should accept initial command controls",
+);
+
+assert.match(
+  chatRouter,
+  /<ChatView[\s\S]*initialControls=\{view\.kind === "chat" \? view\.initialControls : undefined\}/,
+  "ChatRouter should pass initial command controls into ChatView",
 );
 
 // ChatSurface only mounts in chat mode, so the Workspace must bridge

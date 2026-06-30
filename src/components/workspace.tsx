@@ -71,6 +71,7 @@ import {
   ensureDailySummaryNotification,
 } from "@/lib/daily-summary-notifications";
 import type { Familiar, SessionRow } from "@/lib/types";
+import type { InitialCommandControls } from "@/lib/command-controls";
 import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
@@ -1206,6 +1207,7 @@ export function Workspace() {
     familiarId?: string | null,
     projectRoot?: string | null,
     initialPrompt?: string | null,
+    initialControls?: InitialCommandControls | null,
   ) => {
     if (familiarId) setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
@@ -1214,6 +1216,7 @@ export function Workspace() {
       familiarId,
       projectRoot,
       initialPrompt,
+      initialControls,
       nonce: Date.now(),
     });
     setMode("chat");
@@ -1228,8 +1231,8 @@ export function Workspace() {
   useEffect(() => {
     const onAgentsNewChat = (e: Event) => {
       if (modeRef.current === "chat") return;
-      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null; initialPrompt?: string | null }>).detail;
-      startFamiliarChat(d?.familiarId ?? null, d?.projectRoot ?? null, d?.initialPrompt ?? null);
+      const d = (e as CustomEvent<{ familiarId?: string | null; projectRoot?: string | null; initialPrompt?: string | null; initialControls?: InitialCommandControls | null }>).detail;
+      startFamiliarChat(d?.familiarId ?? null, d?.projectRoot ?? null, d?.initialPrompt ?? null, d?.initialControls ?? null);
     };
     window.addEventListener("cave:agents-new-chat", onAgentsNewChat);
     return () => window.removeEventListener("cave:agents-new-chat", onAgentsNewChat);
