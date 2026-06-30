@@ -8,8 +8,8 @@ const boardInspector = await readFile(new URL("./board-inspector.tsx", import.me
 
 assert.match(
   workspace,
-  /<BoardView[\s\S]*onOpenUrl=\{openUrlExternally\}/,
-  "Workspace should route board task links to the system browser via openUrlExternally",
+  /<BoardView[\s\S]*onOpenUrl=\{openUrlInAppBrowser\}/,
+  "Workspace should route board task links to the in-app browser",
 );
 
 assert.match(

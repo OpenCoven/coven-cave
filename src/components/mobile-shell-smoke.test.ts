@@ -205,23 +205,23 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const openUrlExternally = useCallback\(\(url: string\) => \{/,
-  "Workspace should provide an external-link opener for chat/feed/board links",
+  /const openUrlInAppBrowser = useCallback\(\(url: string\) => \{/,
+  "Workspace should provide an in-app browser opener for chat/feed/board links",
 );
 assert.match(
   workspace,
-  /window\.open\(url, "_blank", "noopener,noreferrer"\)/,
-  "Link opens should fall back to window.open for the system browser outside Tauri",
+  /browserPaneRef\.current\?\.navigateTo\(url\)/,
+  "Link opens should navigate the embedded Browser pane",
 );
 assert.match(
   workspace,
-  /invoke\("shell_open", \{ url \}\)/,
-  "Link opens should hand the URL to the system browser via the Tauri shell_open command on desktop",
+  /setMode\("browser"\)/,
+  "Link opens should switch the main detail surface to Browser mode",
 );
 assert.match(
   workspace,
-  /onOpenUrl=\{openUrlExternally\}/,
-  "Workspace should thread the external-link opener into ChatSurface",
+  /onOpenUrl=\{openUrlInAppBrowser\}/,
+  "Workspace should thread the in-app browser opener into ChatSurface",
 );
 assert.match(
   workspace,

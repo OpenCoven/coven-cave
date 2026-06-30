@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { copyText } from "@/lib/clipboard";
+import { openExternalUrl } from "@/lib/open-external";
 
 type HandoffReady = {
   ok: true;
@@ -217,8 +218,10 @@ export function MobileHandoffModal({
                 <a
                   className="mobile-handoff__url mobile-handoff__link"
                   href={handoff.inviteUrl || handoff.url}
-                  target="_blank"
-                  rel="noreferrer"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    openExternalUrl(handoff.inviteUrl || handoff.url || "");
+                  }}
                 >
                   {handoff.inviteUrl || handoff.url}
                 </a>

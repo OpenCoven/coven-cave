@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { LibraryBookmark } from "@/lib/library-types";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { openExternalUrl } from "@/lib/open-external";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -527,10 +528,12 @@ export function LibraryBookmarksList({ selectedId, onSelect, onDelete, onAddToBo
                           <ItemFavicon url={item.url} title={item.title} />
                           <a
                             href={item.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
                             className="library-bookmark-link"
-                            onClick={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openExternalUrl(item.url);
+                            }}
                           >
                             {item.title}
                           </a>

@@ -23,6 +23,11 @@ assert.match(src, /navigator\.clipboard\.writeText/, "component can copy tool di
 assert.match(src, /Copy diagnostics/, "About tools exposes a copy diagnostics action");
 assert.match(src, /sidecarTokenPresent/, "diagnostics include whether the sidecar auth bridge captured a token");
 assert.match(src, /Check tools/, "component offers a manual re-check");
+assert.match(
+  src,
+  /const ghostBtn =[\s\S]*settings-touch-action/,
+  "About tools footer buttons should use the shared Settings action touch target",
+);
 assert.match(settings, /import \{ OpenCovenToolsUpdate \}/, "Settings imports the OpenCoven tools update component");
 assert.match(settings, /<SettingsGroup label="OpenCoven tools">[\s\S]*<OpenCovenToolsUpdate \/>/, "About settings renders the OpenCoven tools group");
 assert.match(runner, /src\/components\/open-coven-tools-update\.test\.ts/, "OpenCoven tools update test is wired into the test:app suite (scripts/run-tests.mjs)");

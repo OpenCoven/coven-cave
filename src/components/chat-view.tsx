@@ -32,6 +32,7 @@ import {
 import type { ChatLinkedContext } from "@/lib/chat-linked-context";
 import type { Card } from "@/lib/cave-board-types";
 import { TaskLinkPicker } from "@/components/task-link-picker";
+import { openExternalUrl } from "@/lib/open-external";
 import {
   extractAgentAttachmentMarkers,
   MAX_ATTACHMENT_IMAGE_BYTES,
@@ -1851,10 +1852,12 @@ function LinkedContextRow({
         <a
           key={item.id}
           href={item.url}
-          target="_blank"
-          rel="noreferrer"
           title={`Open on GitHub: ${item.title}`}
           className="cave-chat-linked-chip cave-chat-linked-chip--github inline-flex min-w-0 max-w-[18rem] items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+          onClick={(event) => {
+            event.preventDefault();
+            openExternalUrl(item.url);
+          }}
         >
           <Icon name={githubIcon(item.kind)} width={12} className="shrink-0 text-[var(--text-muted)]" />
           <span className="shrink-0">{githubLabel(item.kind)}</span>
@@ -1965,9 +1968,11 @@ function MobileChatContextMenu({
               <a
                 key={item.id}
                 href={item.url}
-                target="_blank"
-                rel="noreferrer"
                 className="cave-mobile-context-link"
+                onClick={(event) => {
+                  event.preventDefault();
+                  openExternalUrl(item.url);
+                }}
               >
                 <Icon name={githubIcon(item.kind)} width={13} aria-hidden />
                 <span className="min-w-0 flex-1 truncate">{githubLabel(item.kind)} · {item.repo}{item.number ? ` #${item.number}` : ""}</span>

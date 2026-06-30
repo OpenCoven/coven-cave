@@ -3,9 +3,6 @@
 // "what's in here" highlight strip). Kept in its own module so the shell nav and
 // the SettingsOverview header share one source of truth.
 //
-// NOTE: the search index (SETTINGS_INDEX) intentionally stays in settings-shell
-// next to the search box it drives.
-
 export type Section =
   | "general"
   | "daemon"
@@ -15,15 +12,9 @@ export type Section =
   | "appearance"
   | "about";
 
-export type SectionMeta = {
-  id: Section;
-  label: string;
-  icon: string;
-  /** One-line summary shown under the section title in the overview header. */
-  description: string;
-  /** Accent colour for the section mark (kept subtle; section identity cue). */
-  accent: string;
-};
+export type SectionMeta = { id: Section; label: string; icon: string; description: string; accent: string };
+
+export type SettingsIndexEntry = { section: Section; group?: string; keywords: string };
 
 export const SECTIONS: SectionMeta[] = [
   { id: "general", label: "General", icon: "ph:sliders-horizontal", description: "Workspace, startup, and app-wide defaults.", accent: "#9a8ecd" },
@@ -44,6 +35,28 @@ export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
   appearance: ["Theme & colors", "Typography", "Reading comfort"],
   about: ["App version", "Tool updates", "Project links"],
 };
+
+export const SETTINGS_INDEX: SettingsIndexEntry[] = [
+  { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
+  { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
+  { section: "daemon", group: "Status", keywords: "daemon status running start stop restart" },
+  { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },
+  { section: "familiars", keywords: "familiars agents personas avatar name look permissions projects access grants allow deny tool policy guard security audit requests vault memory" },
+  { section: "addons", group: "Integrations", keywords: "add-ons addons integrations plugins github youtube sidebar surfaces code terminal browser flow roles journal coven group chat library" },
+  { section: "mobile", group: "Steps", keywords: "phone mobile connect qr pair tailscale" },
+  { section: "mobile", group: "Why there’s no password", keywords: "password security auth login" },
+  { section: "mobile", group: "Get the app", keywords: "app download ios testflight install" },
+  { section: "appearance", group: "Mode", keywords: "mode dark light system appearance scheme" },
+  { section: "appearance", group: "Theme", keywords: "theme color palette swatch preset" },
+  { section: "appearance", group: "Theme tokens", keywords: "theme tokens colors hex custom background accent border" },
+  { section: "appearance", group: "Import from tweakcn", keywords: "import tweakcn css variables theme" },
+  { section: "appearance", group: "Familiar switcher", keywords: "familiar switcher style strip scope" },
+  { section: "appearance", group: "Corners", keywords: "corners radius rounded sharp square" },
+  { section: "appearance", group: "Reading text", keywords: "font typeface family size reading text density relative time chat library" },
+  { section: "about", group: "CovenCave", keywords: "about version covencave build" },
+  { section: "about", group: "OpenCoven tools", keywords: "tools update cli opencoven" },
+  { section: "about", group: "Links", keywords: "links docs help github support" },
+];
 
 export function getSectionMeta(section: Section): SectionMeta {
   return SECTIONS.find((s) => s.id === section) ?? SECTIONS[0];

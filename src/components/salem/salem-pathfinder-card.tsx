@@ -6,6 +6,7 @@ import { copyText } from "@/lib/clipboard";
 import type { IconName } from "@/lib/icon";
 import { sanitizeCard } from "@/lib/salem/pathfinder-card";
 import type { SalemPathfinderAction, SalemPathfinderCard } from "@/lib/salem/pathfinder-types";
+import { openExternalUrl } from "@/lib/open-external";
 
 // Renders a deterministic Salem pathfinder card in Cave's operational UI
 // language: a compact card with a why-line, a numbered checklist (copyable
@@ -107,7 +108,7 @@ export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoct
         if (a.target) void copyText(a.target);
         return;
       case "external-link":
-        if (a.target) window.open(a.target, "_blank", "noopener,noreferrer");
+        if (a.target) openExternalUrl(a.target);
         return;
       case "cave-route":
         if (!a.target) return;
@@ -198,10 +199,10 @@ export function SalemPathfinderCard({ card, density = "full", onRoute, onRunDoct
       {!slim && safe.links.length > 0 ? (
         <div className="salem-pf__links">
           {safe.links.map((l, i) => (
-            <a key={i} className="salem-pf__link" href={l.url} target="_blank" rel="noopener noreferrer">
+            <button key={i} type="button" className="salem-pf__link" onClick={() => openExternalUrl(l.url)}>
               <Icon name="ph:arrow-square-out" width={11} aria-hidden />
               <span>{l.label}</span>
-            </a>
+            </button>
           ))}
         </div>
       ) : null}

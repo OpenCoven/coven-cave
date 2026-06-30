@@ -16,7 +16,7 @@ export function SettingsOverview({ section }: { section: Section }) {
   const meta = getSectionMeta(section);
   return (
     <header className="settings-overview" aria-label={`${meta.label} settings`}>
-      <div className="settings-overview__heading">
+      <div className="settings-overview__title-row">
         <span
           className="settings-overview__mark"
           style={{
@@ -33,10 +33,10 @@ export function SettingsOverview({ section }: { section: Section }) {
           <p className="settings-overview__description">{meta.description}</p>
         </div>
       </div>
-      <ul className="settings-overview__strip" aria-label="In this section">
+      <ul className="settings-overview-strip" aria-label="In this section">
         {SECTION_HIGHLIGHTS[section].map((label) => (
-          <li key={label} className="settings-overview__chip">
-            <Icon name="ph:check-circle" width={12} className="settings-overview__chip-dot" />
+          <li key={label} className="settings-overview-strip__item">
+            <Icon name="ph:check-circle" width={12} className="settings-overview-strip__icon" />
             <span>{label}</span>
           </li>
         ))}

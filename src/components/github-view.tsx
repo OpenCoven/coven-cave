@@ -794,12 +794,14 @@ function CommentHeader({ comment }: { comment: GhComment }) {
       {comment.url && (
         <a
           href={comment.url}
-          target="_blank"
-          rel="noreferrer"
           className="gh-comment-link"
           title="Open this comment on GitHub"
           aria-label="Open this comment on GitHub"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (comment.url) openExternalUrl(comment.url);
+          }}
         >
           <Icon name="ph:arrow-square-out" width={11} />
         </a>
@@ -1314,9 +1316,11 @@ function GitHubItemGlassPanel({
           />
           <a
             href={item.url}
-            target="_blank"
-            rel="noreferrer"
             className="gh-action-btn"
+            onClick={(e) => {
+              e.preventDefault();
+              openExternalUrl(item.url);
+            }}
           >
             <Icon name="ph:arrow-square-out" width={12} />
             <span className="gh-action-btn-label">GitHub</span>
@@ -1619,7 +1623,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
         case "End": e.preventDefault(); focusRow(list.length - 1); break;
         case "Enter": {
           const url = cur?.dataset.url;
-          if (url) { e.preventDefault(); window.open(url, "_blank", "noopener,noreferrer"); }
+          if (url) { e.preventDefault(); openExternalUrl(url); }
           break;
         }
       }
@@ -1939,10 +1943,12 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                       <td>
                         <a
                           href={item.url}
-                          target="_blank"
-                          rel="noreferrer"
                           className="gh-title"
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openExternalUrl(item.url);
+                          }}
                           title={item.title}
                         >
                           {item.title}
@@ -2031,12 +2037,14 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                           />
                           <a
                             href={item.url}
-                            target="_blank"
-                            rel="noreferrer"
                             title="Open on GitHub"
                             aria-label="Open on GitHub"
                             className="gh-action-btn gh-action-btn--icon"
-                            onClick={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openExternalUrl(item.url);
+                            }}
                           >
                             <Icon name="ph:arrow-square-out" width={11} />
                           </a>

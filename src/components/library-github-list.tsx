@@ -19,6 +19,7 @@ import {
 } from "@/lib/task-github";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
+import { openExternalUrl } from "@/lib/open-external";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -246,7 +247,14 @@ function AttachTaskModal({
           <form className="gh-modal-body" onSubmit={handleSubmit}>
             {/* Source item */}
             <div className="gh-modal-source">
-              <a href={item.url} target="_blank" rel="noopener noreferrer" className="gh-modal-source-link">
+              <a
+                href={item.url}
+                className="gh-modal-source-link"
+                onClick={(event) => {
+                  event.preventDefault();
+                  openExternalUrl(item.url);
+                }}
+              >
                 {item.title}
               </a>
               <span className="gh-modal-source-meta">{item.repo}{item.number ? ` #${item.number}` : ""}</span>
@@ -463,7 +471,14 @@ function HandoffModal({
           <form className="gh-modal-body" onSubmit={handleLaunch}>
             {/* Source item */}
             <div className="gh-modal-source">
-              <a href={item.url} target="_blank" rel="noopener noreferrer" className="gh-modal-source-link">
+              <a
+                href={item.url}
+                className="gh-modal-source-link"
+                onClick={(event) => {
+                  event.preventDefault();
+                  openExternalUrl(item.url);
+                }}
+              >
                 {item.title}
               </a>
               <span className="gh-modal-source-meta">{item.repo}{item.number ? ` #${item.number}` : ""} · {item.kind}</span>
@@ -878,10 +893,12 @@ export function LibraryGitHubList({ selectedId, onSelect, onDelete, onOpenSessio
                               <span className="board-table-title gh-title-text">{item.title}</span>
                               <a
                                 href={item.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
                                 className="gh-open-link"
-                                onClick={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  openExternalUrl(item.url);
+                                }}
                                 aria-label={`Open ${item.title} on GitHub`}
                               >
                                 <Icon name="ph:arrow-square-out" width={12} />

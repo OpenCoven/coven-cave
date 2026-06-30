@@ -367,6 +367,11 @@ assert.match(projectsView, /Delete project…/, "project menu offers delete (rou
 assert.match(projectsView, /setExpanded\(true\); setConfirmDelete\(true\)/, "menu delete expands the card and shows the two-step confirm");
 assert.match(projectsView, /Actions for \$\{title\}/, "each session row has a context menu");
 assert.match(projectsView, /Delete chat…/, "session menu offers delete (routes through the inline confirm)");
+assert.match(
+  projectsView,
+  /aria-label=\{`Delete thread \$\{title\}`\}[\s\S]{0,520}?<Icon name="ph:x-bold"/,
+  "each thread row exposes a close-button delete affordance inline",
+);
 // The header actions stay visible while a delete confirm is pending, so a
 // menu-triggered delete's Cancel/Delete buttons aren't hidden behind hover.
 assert.match(projectsView, /confirmDelete\s*\?\s*"opacity-100"/, "the action cluster stays visible while confirming a delete");

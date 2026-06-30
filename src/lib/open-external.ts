@@ -1,16 +1,13 @@
-// Open a URL in the user's *system* browser (not the embedded browser pane).
-// In the Tauri desktop shell this uses the built-in `shell_open` command; on the
-// web it falls back to window.open. Mirrors the pattern in library-doc-preview.
-export async function openExternalUrl(url: string): Promise<void> {
+export const OPEN_IN_APP_BROWSER_EVENT = "cave:open-url-in-browser";
+export const PENDING_IN_APP_BROWSER_URL_KEY = "cave:pending-in-app-browser-url";
+
+// Historical name kept for existing call sites. External destinations should
+// open inside Cave's Browser surface instead of the system browser/new tab.
+export function openExternalUrl(url: string): void {
   if (typeof window === "undefined") return;
-  if ("__TAURI_INTERNALS__" in window) {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("shell_open", { url });
-      return;
-    } catch {
-      // fall through to window.open
-    }
+  window.sessionStorage.setItem(PENDING_IN_APP_BROWSER_URL_KEY, url);
+  window.dispatchEvent(new CustomEvent(OPEN_IN_APP_BROWSER_EVENT, { detail: { url } }));
+  if (window.location.pathname !== "/") {
+    window.location.assign("/#browser");
   }
-  window.open(url, "_blank", "noopener,noreferrer");
 }

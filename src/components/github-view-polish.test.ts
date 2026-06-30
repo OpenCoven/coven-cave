@@ -255,14 +255,14 @@ assert.match(
 );
 
 // Rows are keyboard-navigable: ↑/↓ + Home/End rove a tab stop tied to the
-// selected row, selection follows focus, and Enter opens the item on GitHub.
+// selected row, selection follows focus, and Enter opens the item in Cave's Browser.
 assert.match(source, /case "ArrowDown": e\.preventDefault\(\); focusRow/, "ArrowDown roves to the next row");
 assert.match(source, /case "ArrowUp": e\.preventDefault\(\); focusRow/, "ArrowUp roves to the previous row");
 assert.match(source, /data-gh-row="true"[\s\S]{0,160}?data-item-id=\{item\.id\}/, "item rows carry the roving + id hooks");
 assert.match(source, /tabIndex=\{selectedItem\?\.id === item\.id \? 0 : -1\}/, "the selected row is the roving tab stop");
 assert.match(source, /role="grid" aria-label="GitHub activity/, "the table is a labelled grid");
 assert.match(source, /setSelectedItemId\(row\.dataset\.itemId\)/, "selection follows keyboard focus");
-assert.match(source, /window\.open\(url, "_blank", "noopener,noreferrer"\)/, "Enter opens the focused row on GitHub");
+assert.match(source, /openExternalUrl\(url\)/, "Enter opens the focused row through the in-app Browser handoff");
 assert.match(source, /\}, \[sorted\.length\]\);/, "row-nav listeners rebind when the table mounts after the async fetch");
 
 // Polling pauses while the tab is hidden (saves the visible rate limit) and

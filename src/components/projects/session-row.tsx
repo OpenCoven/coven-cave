@@ -187,11 +187,11 @@ export function ProjectChatRow({
               e.stopPropagation();
               setConfirmDelete(true);
             }}
-            title="Delete chat"
-            aria-label={`Delete ${title}`}
-            className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-hover)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/pc:opacity-100 [@media(pointer:coarse)]:opacity-100"
+            title="Delete thread"
+            aria-label={`Delete thread ${title}`}
+            className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-55 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/pc:opacity-100 [@media(pointer:coarse)]:opacity-100"
           >
-            <Icon name="ph:trash-bold" width={11} aria-hidden />
+            <Icon name="ph:x-bold" width={10} aria-hidden />
           </button>
         )}
       </div>

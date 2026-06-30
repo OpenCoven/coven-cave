@@ -13,8 +13,8 @@ const comux = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const preset = await readFile(new URL("../lib/code-layout-preset.ts", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-// The Chat/Split/Review presets + companion-panel toggle now ride on the chat
-// surface's Sessions/Memory tab row, in a self-contained toolbar.
+// The Code/Changes segmented toggle now rides on the chat surface's
+// Sessions/Memory tab row, in a self-contained toolbar.
 const toolbar = await readFile(new URL("./code-inline-toolbar.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 
@@ -46,18 +46,16 @@ assert.match(
   "the conversation renders as the center column between the tree and the preview/Changes column",
 );
 
-// ── Layout presets (Chat / Split / Review) drive comux's right column ────────
-// The preset chips live on the chat surface's header row (CodeInlineToolbar) and
-// broadcast CODE_PRESET_EVENT; comux switches its preview/Changes column to match
-// (Split → Files, Review → Changes).
+// ── Code / Changes segmented toggle drives comux's right column ──────────────
+// The two toggle buttons live on the chat surface's header row
+// (CodeInlineToolbar) and broadcast CODE_PRESET_EVENT; comux switches its
+// preview/Changes column and column weighting to match.
 assert.match(toolbar, /writeCodePreset\(next\)/, "selecting a preset persists the chip");
 assert.match(toolbar, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per preset");
 // The toolbar is mounted on the Code surface's header row + carries the panel
-// toggle. The standalone chat has no header row at all now (the Chat/Code toggle
-// was removed), so the whole header is gated behind `isCodeSurface`.
+// toggle. The standalone chat has no header row at all now (the old Chat/Code
+// toggle was removed), so the whole header is gated behind `isCodeSurface`.
 assert.match(chatSurface, /isCodeSurface \? \([\s\S]*?<CodeInlineToolbar \/>/, "the Code header row hosts the inline toolbar");
-assert.match(toolbar, /code-panel-toggle/, "the toolbar includes the companion-panel toggle");
-assert.match(toolbar, /cave:toggle-right-panel/, "the panel toggle asks the shell to toggle the companion panel");
 
 // ── Code mode owns project/thread nav in the primary sidebar ─────────────────
 // The app shell swaps the far-left application menu for CodeSidebar when
@@ -94,9 +92,29 @@ assert.match(codeSidebar, /aria-label="Code projects and threads"/, "CodeSidebar
 assert.match(codeSidebar, /cave:code-select-project/, "CodeSidebar announces project selection to the Code surface");
 assert.match(codeSidebar, /onOpenSession\(session\)/, "CodeSidebar opens thread rows through the workspace/session bridge");
 assert.match(
+  codeSidebar,
+  /aria-label=\{`Delete thread \$\{title\}`\}[\s\S]{0,520}?<Icon name="ph:x-bold"/,
+  "CodeSidebar exposes an inline close-button delete affordance on thread rows",
+);
+assert.match(
+  workspace,
+  /onDeleteSession=\{async \(session\) => \{[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(session\.id\)\}`,[\s\S]*?method: "DELETE"[\s\S]*?loadSessions\(\)/,
+  "Workspace wires CodeSidebar thread delete through the authoritative conversation DELETE route and refreshes sessions",
+);
+assert.match(
   workspace,
   /<ComuxView[\s\S]*?view="projects"[\s\S]*?hideProjectNavigator/,
   "Code-mode ComuxView hides duplicate project/thread navigation",
+);
+assert.match(
+  workspace,
+  /const \[codeRightView, setCodeRightView\] = useState<"files" \| "changes">\("files"\)/,
+  "Workspace owns the Code surface's right-pane selection",
+);
+assert.match(
+  workspace,
+  /<ComuxView[\s\S]*?view="projects"[\s\S]*?rightView=\{codeRightView\}[\s\S]*?onRightViewChange=\{setCodeRightView\}/,
+  "Code-mode ComuxView is controlled so its duplicate Files/Changes toggle stays hidden",
 );
 assert.match(comux, /hideProjectNavigator\?: boolean/, "ComuxView accepts hideProjectNavigator");
 assert.match(comux, /if \(hideProjectNavigator\) return;/, "Comux project-list shortcuts are disabled when hidden");
@@ -153,37 +171,21 @@ assert.doesNotMatch(
   "the code/comux Panel is never collapsed — only the projects list is",
 );
 
-// Presets are task setups, not just widths: each broadcasts a context preset
-// and shows/hides the projects list (Chat focuses the conversation).
+// Presets are task setups, not just labels: each broadcasts a context preset
+// and Comux applies the matching right pane.
 assert.match(
   toolbar,
   /new CustomEvent\(CODE_PRESET_EVENT, \{ detail: \{ preset: next \} \}\)/,
   "selecting a preset broadcasts the context preset",
 );
-assert.match(
-  toolbar,
-  /new CustomEvent\(CODE_PROJECT_LIST_EVENT, \{ detail: \{ collapsed \} \}\)/,
-  "a preset shows/hides the projects list over CODE_PROJECT_LIST_EVENT",
-);
-assert.match(
-  toolbar,
-  /CODE_PRESET_HIDES_PROJECT_LIST\[next\]/,
-  "the preset's list visibility comes from its definition",
-);
 
-// ── comux reacts: hides the projects list + switches the right pane per preset ─
-assert.match(comux, /addEventListener\(CODE_PROJECT_LIST_EVENT/, "comux listens for the projects-list toggle");
+// ── comux reacts: switches the right pane per preset ─────────────────────────
 assert.match(comux, /addEventListener\(CODE_PRESET_EVENT/, "comux listens for the layout preset");
 assert.match(
   comux,
   /CODE_PRESET_RIGHT_VIEW\[preset\][\s\S]*?setRightView\(nextRight\)/,
-  "a preset switches comux's right pane (Review → Changes, Split → Files)",
+  "a preset switches comux's right pane (Code → Files, Changes → Changes)",
 );
-
-// The Review preset must target the git diff, and Split the files view —
-// otherwise the chips are just width tweaks.
-assert.match(preset, /review: "changes"/, "Review opens the git changes/diff");
-assert.match(preset, /split: "files"/, "Split shows the file tree & preview");
 
 // ── ComuxView accepts a storage namespace so Code-mode terminals are isolated ─
 assert.match(comux, /storageNamespace\?: string/, "ComuxView accepts a storageNamespace prop");

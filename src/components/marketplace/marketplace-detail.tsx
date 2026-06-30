@@ -6,6 +6,7 @@ import { Icon } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { pluginBadgeState, type MarketplacePlugin } from "@/lib/marketplace-catalog";
+import { openExternalUrl } from "@/lib/open-external";
 
 const TRUST_LABEL: Record<string, string> = {
   "official-remote": "Official remote",
@@ -143,8 +144,30 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
         {plugin.homepage || plugin.repository ? (
           <Section title="Links">
             <div className="flex flex-col gap-1 text-[12px]">
-              {plugin.homepage ? <a className="text-[var(--text-primary)] underline" href={plugin.homepage} target="_blank" rel="noreferrer">Homepage</a> : null}
-              {plugin.repository ? <a className="text-[var(--text-primary)] underline" href={plugin.repository} target="_blank" rel="noreferrer">Repository</a> : null}
+              {plugin.homepage ? (
+                <a
+                  className="text-[var(--text-primary)] underline"
+                  href={plugin.homepage}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    openExternalUrl(plugin.homepage || "");
+                  }}
+                >
+                  Homepage
+                </a>
+              ) : null}
+              {plugin.repository ? (
+                <a
+                  className="text-[var(--text-primary)] underline"
+                  href={plugin.repository}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    openExternalUrl(plugin.repository || "");
+                  }}
+                >
+                  Repository
+                </a>
+              ) : null}
             </div>
           </Section>
         ) : null}

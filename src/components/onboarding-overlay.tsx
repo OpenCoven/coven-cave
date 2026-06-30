@@ -15,6 +15,7 @@ import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
+import { openExternalUrl } from "@/lib/open-external";
 
 // Guided onboarding: one numbered path from "nothing installed" to "chatting
 // with a familiar". Every step carries its own instructions, a one-click
@@ -2550,9 +2551,11 @@ function StepFamiliar(props: {
                   Must start with <code className="font-mono">ph:</code> — see{" "}
                   <a
                     href="https://phosphoricons.com"
-                    target="_blank"
-                    rel="noreferrer"
                     className="underline"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      openExternalUrl("https://phosphoricons.com");
+                    }}
                   >
                     phosphoricons.com
                   </a>

@@ -27,6 +27,7 @@ import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { LibraryChatPanel } from "@/components/library-chat-panel";
 import { formatCount, type GitHubRepoMeta } from "@/lib/github-repo";
 import type { ExtractedArticle } from "@/lib/article-extract";
+import { openExternalUrl } from "@/lib/open-external";
 
 // ── Discriminated union ──────────────────────────────────────────
 export type SelectedItem =
@@ -88,6 +89,10 @@ function canOpenUrl(url: string, kind: UrlOpenKind): boolean {
 
 async function openUrl(url: string, kind: UrlOpenKind = "web") {
   if (!canOpenUrl(url, kind)) return;
+  if (kind !== "vscode-file") {
+    openExternalUrl(url);
+    return;
+  }
   // Use Tauri shell_open when running as desktop app
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
     try {
@@ -372,9 +377,11 @@ function LibraryLinkViewer({
               </p>
               <a
                 href={url}
-                target="_blank"
-                rel="noreferrer"
                 className="library-link-viewer-fallback__url"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openExternalUrl(url);
+                }}
               >
                 {url}
               </a>
@@ -790,7 +797,14 @@ function ReadingDetail({ item }: { item: LibraryReadingItem }) {
             )}
             {item.url && (
               <FieldRow label="Source">
-                <a className="library-preview-link library-reading-detail__url" href={item.url} target="_blank" rel="noreferrer">
+                <a
+                  className="library-preview-link library-reading-detail__url"
+                  href={item.url}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    openExternalUrl(item.url!);
+                  }}
+                >
                   {item.url}
                 </a>
               </FieldRow>

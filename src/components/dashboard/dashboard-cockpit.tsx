@@ -33,6 +33,7 @@ import {
   SortableContext, useSortable, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { openExternalUrl } from "@/lib/open-external";
 
 // ─── Data shapes (client-fetched) ──────────────────────────────────────────────
 
@@ -570,7 +571,14 @@ function GithubPanel({ items, loaded }: { items: GitHubItem[]; loaded: boolean }
     <ul className="cockpit-gh">
       {items.slice(0, 6).map((g) => (
         <li key={g.id}>
-          <a className="cockpit-ghrow" href={g.url} target="_blank" rel="noreferrer">
+          <a
+            className="cockpit-ghrow"
+            href={g.url}
+            onClick={(event) => {
+              event.preventDefault();
+              openExternalUrl(g.url);
+            }}
+          >
             <Icon name={GH_ICON[g.kind]} className="cockpit-ghrow__icon" aria-hidden />
             <span className="cockpit-ghrow__title" title={g.title}>{g.title}</span>
             <span className="cockpit-ghrow__meta">

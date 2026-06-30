@@ -47,11 +47,14 @@ const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "ut
 
 test("the shell sources sections from settings-sections and renders the overview", () => {
   assert.match(shell, /import \{ SettingsOverview \} from "\.\/settings-overview"/);
-  assert.match(shell, /import \{ SECTIONS, settingsSectionLabel, type Section \} from "\.\/settings-sections"/);
+  assert.match(shell, /SETTINGS_INDEX/);
+  assert.match(shell, /SECTIONS/);
+  assert.match(shell, /settingsSectionLabel/);
+  assert.match(shell, /type Section/);
   // SettingsPage swaps the plain <h1> for the overview when a section is given.
   assert.match(shell, /section \? \(\s*<SettingsOverview section=\{section\} \/>/);
-  // The search index stays in the shell (next to its search box).
-  assert.match(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/);
+  // The shared search index is sourced from settings-sections.
+  assert.doesNotMatch(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/);
   // Each SettingsPage-based section opts into its overview header.
   for (const id of ["general", "daemon", "addons", "mobile", "appearance", "about"]) {
     assert.match(shell, new RegExp(`section="${id}"`), `${id} page passes its section`);

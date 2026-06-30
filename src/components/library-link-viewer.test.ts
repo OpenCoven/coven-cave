@@ -50,12 +50,18 @@ assert.match(
 
 // The link viewer redesign (#797a1507) replaced the sandboxed browser-fallback
 // iframe with a native read-only webview surface plus, where that is unavailable,
-// a non-embedding fallback card that links out externally. The native path stays
-// read-only (asserted above + in browser.rs); the web fallback embeds nothing.
+// a non-embedding fallback card. External inspection still routes through Cave's
+// shared in-app Browser handoff instead of a new system tab.
 assert.match(
   preview,
-  /library-link-viewer-fallback__card[\s\S]{0,500}href=\{url\}[\s\S]{0,160}rel="noreferrer"/,
-  "When the native webview is unavailable, the link viewer falls back to a safe external link (no embedded iframe)",
+  /library-link-viewer-fallback__card[\s\S]{0,500}href=\{url\}[\s\S]{0,220}openExternalUrl\(url\)/,
+  "When the native webview is unavailable, the link viewer falls back to a safe in-app Browser handoff (no embedded iframe)",
+);
+
+assert.doesNotMatch(
+  preview,
+  /library-link-viewer-fallback__card[\s\S]{0,500}target="_blank"/,
+  "Library link viewer fallback must not bypass Cave with a new external tab",
 );
 
 assert.doesNotMatch(
@@ -74,8 +80,8 @@ assert.match(
 // link), not the embedded viewer; bookmarks and GitHub items keep <LibraryLinkViewer>.
 assert.match(
   preview,
-  /function ReadingDetail[\s\S]*library-reading-detail__url" href=\{item\.url\}/,
-  "Reading items render a structured detail view exposing the source URL as a link",
+  /function ReadingDetail[\s\S]*library-reading-detail__url[\s\S]{0,120}href=\{item\.url\}[\s\S]{0,220}openExternalUrl\(item\.url!\)/,
+  "Reading items render a structured detail view exposing the source URL through the in-app Browser handoff",
 );
 
 assert.match(

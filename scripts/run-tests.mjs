@@ -29,6 +29,7 @@ export const SUITES = {
     "src/lib/endpoint-validators.test.ts",
     "src/lib/familiar-avatar-src.test.ts",
     "src/lib/app-update.test.ts",
+    "src/lib/open-external.test.ts",
     "src/lib/coven-version.test.ts",
     "src/components/update-available.test.ts",
     "src/components/open-coven-tools-update.test.ts",

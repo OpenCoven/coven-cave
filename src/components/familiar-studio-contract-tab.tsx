@@ -5,6 +5,7 @@ import { Icon } from "@/lib/icon";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { ContractReport, ContractFile } from "@/lib/familiar-contract";
 import { buildRehabilitationBrief } from "@/lib/familiar-rehabilitation";
+import { openExternalUrl } from "@/lib/open-external";
 
 type Props = { familiar: ResolvedFamiliar };
 
@@ -63,9 +64,11 @@ export function FamiliarStudioContractTab({ familiar }: Props) {
           Tests this familiar against the{" "}
           <a
             href="https://github.com/OpenCoven/familiar-contract"
-            target="_blank"
-            rel="noreferrer"
             className="familiar-studio-contract__link"
+            onClick={(event) => {
+              event.preventDefault();
+              openExternalUrl("https://github.com/OpenCoven/familiar-contract");
+            }}
           >
             Familiar Contract
           </a>{" "}
