@@ -15,7 +15,16 @@ assert.match(src, /relaunch\(\)/, "relaunches the app after install");
 
 // Graceful fallback when no updater-enabled release exists yet.
 assert.match(src, /\/api\/app\/latest-release/, "falls back to the server release check");
-assert.match(src, /openExternalUrl/, "fallback opens the download in the system browser");
+assert.match(
+  src,
+  /import \{ openInAppBrowserUrl \} from "@\/lib\/open-external"/,
+  "update fallback should use the explicit Cave Browser URL handoff",
+);
+assert.doesNotMatch(
+  src,
+  /openExternalUrl/,
+  "update fallback must not use the legacy external-browser name",
+);
 
 // Fallback "Download" resolves a direct platform installer (DMG/MSI/AppImage)
 // via the OS plugin instead of dead-ending on the release page.
@@ -32,23 +41,31 @@ assert.match(src, /async function resolveUpdate/, "resolves native-first, then f
 assert.match(src, /pushBanner\(/, "pushes a shell banner when an update is available");
 assert.match(src, /cave:update:dismissed:/, "persists dismissal keyed by version");
 assert.match(src, /onDismiss:\s*\(\)\s*=>\s*markDismissed/, "dismissing the banner records it for that version");
+assert.match(
+  src,
+  /installNativeUpdate\(r\.update,\s*\(pct\) => \{[\s\S]*Downloading update v\$\{r\.version\}… \$\{pct\}%/,
+  "banner native install should surface download progress instead of a static loading state",
+);
 
-// Settings row exposes install / download / progress / manual recheck.
+// Settings row exposes install / in-app fallback / progress / manual recheck.
 assert.match(src, /Install &amp; restart/, "native path offers install + restart");
 assert.match(src, /Downloading…/, "shows download progress");
 assert.match(src, /Check for updates/, "settings row offers a manual re-check");
+assert.match(src, /Open installer in Browser/, "fallback keeps installer recovery inside Cave's Browser surface");
 
 // A failed native install must not dead-end: it captures the reason and offers
-// a working manual download plus a retry, so the update is always reachable
-// even when downloadAndInstall/relaunch throws. The manual path should resolve
-// the platform installer through the same fallback route instead of hardcoding
-// the releases page.
+// in-app recovery plus a retry, so the update is always reachable even when
+// downloadAndInstall/relaunch throws. The recovery path should resolve the
+// platform installer through the same fallback route instead of hardcoding the
+// releases page or sending the user outside Cave.
 assert.match(src, /phase: "failed"/, "tracks a dedicated failed state for a thrown install");
 assert.match(src, /message: err instanceof Error \? err\.message/, "captures the real failure reason instead of swallowing it");
-assert.match(src, /async function openManualDownload/, "centralizes manual-download fallback resolution");
-assert.match(src, /fetchFallbackStatus\(\)[\s\S]*resolveDownloadUrl/, "manual download resolves a direct platform installer when release metadata is reachable");
-assert.match(src, /onClick=\{\(\) => void openManualDownload\(\)\}/, "failed state offers the same direct manual download path as fallback updates");
-assert.doesNotMatch(src, /onClick=\{\(\) => void openExternalUrl\(RELEASES_PAGE\)\}/, "failed state must not dead-end on the generic release page when a direct installer can be resolved");
+assert.match(src, /async function openFallbackUpdateInBrowser/, "centralizes in-app fallback recovery resolution");
+assert.match(src, /fetchFallbackStatus\(\)[\s\S]*resolveDownloadUrl/, "in-app recovery resolves a direct platform installer when release metadata is reachable");
+assert.match(src, /onClick=\{\(\) => void openFallbackUpdateInBrowser\(\)\}/, "failed state offers the same in-app installer path as fallback updates");
+assert.match(src, /openInAppBrowserUrl\(url\)/, "fallback recovery opens in Cave's Browser surface");
+assert.doesNotMatch(src, /download manually/i, "failed updater copy should not imply leaving the app for manual recovery");
+assert.doesNotMatch(src, /onClick=\{\(\) => void openInAppBrowserUrl\(RELEASES_PAGE\)\}/, "failed state must not dead-end on the generic release page when a direct installer can be resolved");
 assert.match(src, />\s*Retry\s*</, "failed state offers a retry");
 
 console.log("update-available.test.ts: ok");

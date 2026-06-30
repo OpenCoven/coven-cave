@@ -12,6 +12,11 @@ assert.match(
 );
 assert.match(
   helper,
+  /export function openInAppBrowserUrl\(url: string\): void/,
+  "shared URL helper should expose an explicitly named in-app browser opener",
+);
+assert.match(
+  helper,
   /export function openExternalUrl\(url: string\): void/,
   "legacy openExternalUrl callers should be preserved behind the in-app browser handoff",
 );

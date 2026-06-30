@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Icon } from "@/lib/icon";
 import { isTauri, useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useShellBanners } from "@/lib/shell-banners";
-import { openExternalUrl } from "@/lib/open-external";
+import { openInAppBrowserUrl } from "@/lib/open-external";
 import { pickDownloadUrl, type UpdateStatus } from "@/lib/app-update";
 
 const BANNER_ID = "update-available";
@@ -107,15 +107,15 @@ async function resolveDownloadUrl(status: UpdateStatus): Promise<string> {
 }
 
 /**
- * Open the easiest reachable installer for the running desktop platform. This
- * is used when the native updater cannot finish, so a broken install attempt
- * still leaves the user one click from the DMG/MSI/AppImage when release
- * metadata is available.
+ * Open the easiest reachable installer for the running desktop platform in
+ * Cave's Browser surface. This is used when the native updater cannot finish,
+ * so a broken install attempt still leaves the user one click from the
+ * DMG/MSI/AppImage when release metadata is available.
  */
-async function openManualDownload(): Promise<void> {
+async function openFallbackUpdateInBrowser(): Promise<void> {
   const fb = await fetchFallbackStatus();
   const url = fb ? await resolveDownloadUrl(fb) : RELEASES_PAGE;
-  await openExternalUrl(url);
+  openInAppBrowserUrl(url);
 }
 
 type Resolved =
@@ -155,24 +155,30 @@ export function UpdateBannerTrigger() {
         severity: "info",
         title: `Update available — v${r.version}`,
         cta: {
-          label: r.kind === "native" ? "Install & restart" : "Download",
+          label: r.kind === "native" ? "Install & restart" : "Open installer in Browser",
           onClick: () => {
             if (r.kind === "native") {
-              pushBanner({ id: BANNER_ID, severity: "info", title: `Downloading update v${r.version}…` });
-              void installNativeUpdate(r.update, () => {}).catch((err) => {
+              pushBanner({ id: BANNER_ID, severity: "info", title: `Preparing update v${r.version}…` });
+              void installNativeUpdate(r.update, (pct) => {
+                pushBanner({
+                  id: BANNER_ID,
+                  severity: "info",
+                  title: `Downloading update v${r.version}… ${pct}%`,
+                });
+              }).catch((err) => {
                 const reason = err instanceof Error ? err.message : "";
                 pushBanner({
                   id: BANNER_ID,
                   severity: "warning",
                   title: reason
-                    ? `Update failed (${reason}) — download manually`
-                    : "Update failed — download manually",
-                  cta: { label: "Download", onClick: () => void openManualDownload() },
+                    ? `Update failed (${reason})`
+                    : "Update failed",
+                  cta: { label: "Open installer in Browser", onClick: () => void openFallbackUpdateInBrowser() },
                   onDismiss: () => markDismissed(r.version),
                 });
               });
             } else {
-              void openExternalUrl(r.url);
+              openInAppBrowserUrl(r.url);
             }
           },
         },
@@ -198,7 +204,8 @@ type RowState =
 
 /**
  * Desktop-only row for Settings ▸ About. Native updater when available
- * (Install & restart with progress), else a Download link to the release page.
+ * (Install & restart with progress), else opens the release installer in Cave's
+ * Browser surface.
  */
 export function UpdateSettingsRow() {
   const isDesktop = useIsTauriDesktop();
@@ -263,17 +270,17 @@ export function UpdateSettingsRow() {
             Install &amp; restart
           </button>
         ) : (
-          <button type="button" onClick={() => void openExternalUrl(r.url)} className={accentBtn}>
+          <button type="button" onClick={() => openInAppBrowserUrl(r.url)} className={accentBtn}>
             <Icon name="ph:arrow-square-out" width={12} />
-            Download
+            Open installer in Browser
           </button>
         )}
       </>
     );
   } else if (state.phase === "failed") {
     // The native install threw (e.g. unsigned/dev build, app translocation, or
-    // a network/verification error). Don't dead-end: surface the reason and a
-    // working manual download so the update is always reachable.
+    // a network/verification error). Don't dead-end: surface the reason and
+    // keep recovery inside Cave.
     control = (
       <>
         <span
@@ -282,9 +289,9 @@ export function UpdateSettingsRow() {
         >
           Update failed
         </span>
-        <button type="button" onClick={() => void openManualDownload()} className={accentBtn}>
+        <button type="button" onClick={() => void openFallbackUpdateInBrowser()} className={accentBtn}>
           <Icon name="ph:arrow-square-out" width={12} />
-          Download
+          Open installer in Browser
         </button>
         <button
           type="button"
