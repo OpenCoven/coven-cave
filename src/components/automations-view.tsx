@@ -44,6 +44,7 @@ import {
   type AutomationEntry,
 } from "@/lib/automations/automation-entry";
 import { listInput, commaInput, parseListInput } from "@/lib/automations/list-input";
+import { runStatusColor } from "@/lib/automations/run-status";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -914,8 +915,7 @@ function CodexDetailPanel({
                     aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
                     className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[12px] hover:bg-white/5"
                   >
-                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background:
-                      r.status === "succeeded" ? "var(--accent-presence)" : r.status === "failed" ? "var(--color-danger)" : r.status === "queued" ? "var(--color-warning)" : "var(--text-muted)" }} />
+                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: runStatusColor(r.status) }} />
                     <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
                     {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
                     <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
@@ -1038,11 +1038,7 @@ function AutomationScheduleRow({
           </span>
         )}
         {lastRun && (
-          <span className="shrink-0 text-[11px]" title={lastRun.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined} style={{ color:
-            lastRun.status === "failed" ? "var(--color-danger)"
-            : lastRun.status === "running" ? "var(--accent-presence)"
-            : lastRun.status === "queued" ? "var(--color-warning)"
-            : "var(--text-muted)" }}>
+          <span className="shrink-0 text-[11px]" title={lastRun.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined} style={{ color: runStatusColor(lastRun.status, { quietSuccess: true }) }}>
             Run {relTime(lastRun.startedAt)}
           </span>
         )}
