@@ -89,6 +89,14 @@ enum SlashCatalog {
                      description: "Pick or set the model for this chat. Pass an id/name or open the picker.",
                      argPlaceholder: "model", section: .chat,
                      availability: .native, action: .switchModel),
+        SlashCommand(name: "/skill", hint: "run a skill",
+                     description: "Invoke a skill — pass a name or pick from the menu as you type.",
+                     argPlaceholder: "name", section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Skills")),
+        SlashCommand(name: "/skills", hint: "browse skills",
+                     description: "Show every available skill to pick from.",
+                     section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Skills")),
 
         // MARK: Familiar
         SlashCommand(name: "/familiar", aliases: ["/agent"], hint: "switch",
