@@ -84,6 +84,10 @@ assert.equal(byType.reminder.key, "reminder:r1");
 assert.equal(byType.reminder.trigger, "Daily at 09:00");
 assert.equal(byType.reminder.scheduled, true);
 assert.equal(byType.reminder.familiarId, "fam-a");
+// Active reminders expose their daemon-maintained next fire (fireAt); crons/flows
+// compute next-fire server-side so they leave it undefined.
+assert.equal(byType.reminder.nextFireAt, "2026-06-25T09:00:00.000Z");
+assert.equal(byType.cron.nextFireAt, undefined);
 
 assert.equal(byType.cron.key, "cron:c1");
 assert.equal(byType.cron.state, "paused");
