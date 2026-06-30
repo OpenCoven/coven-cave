@@ -15,6 +15,7 @@ import type { GitHubItem } from "@/lib/github-tasks";
 import { githubItemMatchesQuery } from "@/lib/github-search";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { DiffHunk } from "@/components/gh-diff-view";
 import { gfmAutolink } from "@/lib/gfm-autolink";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
@@ -1027,9 +1028,7 @@ function GitHubComments({
                     )}
                   </div>
                   {thread.diffHunk && (
-                    <pre className="gh-thread-diff">
-                      {thread.diffHunk.split("\n").slice(-4).join("\n")}
-                    </pre>
+                    <DiffHunk hunk={thread.diffHunk} previewLines={4} className="gh-thread-diff" />
                   )}
                   {thread.comments.map((c) => (
                     <div key={c.id} className="gh-comment gh-comment--inline">

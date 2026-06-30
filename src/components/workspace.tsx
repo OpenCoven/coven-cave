@@ -129,6 +129,35 @@ function clearChatHash() {
   window.history.replaceState(null, "", window.location.pathname + window.location.search);
 }
 
+// Mode deep links (e.g. `/?mode=evals`): the Evals surface (and the other
+// workspace modes) live inside this SPA shell and aren't URL-addressable on
+// their own. A `?mode=<WorkspaceMode>` query param lets external links
+// (redirects from /retro, dashboard buttons) land directly on a surface.
+// Only modes the shell can actually render are honoured — validated against
+// WORKSPACE_MODE_TITLES, which is keyed by every WorkspaceMode — so unknown
+// values are ignored silently.
+function readModeParam(): WorkspaceMode | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("mode");
+  if (raw && Object.prototype.hasOwnProperty.call(WORKSPACE_MODE_TITLES, raw)) {
+    return raw as WorkspaceMode;
+  }
+  return null;
+}
+
+function clearModeParam() {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("mode")) return;
+  params.delete("mode");
+  const query = params.toString();
+  window.history.replaceState(
+    null,
+    "",
+    window.location.pathname + (query ? `?${query}` : "") + window.location.hash,
+  );
+}
+
 function readMobileModeEnabled() {
   if (typeof window === "undefined") return true;
   return window.localStorage.getItem(MOBILE_MODE_STORAGE_KEY) !== "false";
@@ -491,6 +520,18 @@ export function Workspace() {
     };
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
     return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
+  }, []);
+
+  // `?mode=<WorkspaceMode>` deep link: external links (e.g. /retro redirects,
+  // dashboard buttons) can land directly on a surface. Runs once on mount,
+  // mirrors the hash deep-link idiom — switch then strip the param so reloads
+  // and back/forward stay clean.
+  useEffect(() => {
+    const target = readModeParam();
+    if (!target) return;
+    setMode(target);
+    clearModeParam();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Click-to-open a file from chat: the comux pane (Code/Terminal) handles

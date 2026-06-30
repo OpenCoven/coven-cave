@@ -17,8 +17,10 @@ const retroRedirectPage = readFileSync(new URL("../app/retro/page.tsx", import.m
 const retroPageUrl = new URL("../app/dashboard/retro/page.tsx", import.meta.url);
 
 assert.equal(existsSync(retroPageUrl), true, "legacy /dashboard/retro page still exists as a redirect");
-assert.match(dashboardRetroPage, /redirect\("\/dashboard\?view=evals"\)/, "legacy /dashboard/retro redirects to unified Evals");
-assert.match(retroRedirectPage, /redirect\("\/dashboard\?view=evals"\)/, "legacy /retro redirects to unified Evals");
+assert.match(dashboardRetroPage, /redirect\("\/\?mode=evals"\)/, "legacy /dashboard/retro redirects to the Evals deep link");
+assert.match(retroRedirectPage, /redirect\("\/\?mode=evals"\)/, "legacy /retro redirects to the Evals deep link");
+assert.match(workspace, /readModeParam\(\)/, "workspace reads the ?mode= deep-link param on mount");
+assert.match(workspace, /clearModeParam\(\)/, "workspace strips the ?mode= param after navigating");
 assert.match(
   component,
   /familiarId \? `\/api\/retro-runs\?familiarId=\$\{encodeURIComponent\(familiarId\)\}` : "\/api\/retro-runs"/,

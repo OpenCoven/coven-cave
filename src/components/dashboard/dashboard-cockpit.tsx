@@ -322,7 +322,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
           <QuickLink href="/" icon="ph:house-bold" label="Home" sub="Your cave" />
           <QuickLink href="/#card-" icon="ph:kanban-bold" label="Board" sub="Cards & tasks" />
           <QuickLink href="/dashboard/familiars/growth" icon="ph:chart-bar-bold" label="Growth" sub="Familiar performance" />
-          <QuickLink href="/" icon="ph:flask" label="Evals" sub="Suites, loops, freshness" />
+          <QuickLink href="/?mode=evals" icon="ph:flask" label="Evals" sub="Suites, loops, freshness" />
           <QuickLink href="/" icon="ph:calendar-bold" label="Calendar" sub="Reminders & agenda" />
           <QuickLink href="/" icon="ph:books-bold" label="Library" sub="Saved knowledge" />
           <QuickLink href="/settings" icon="ph:gear-six" label="Settings" sub="Preferences" />
