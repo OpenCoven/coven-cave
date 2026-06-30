@@ -4,9 +4,8 @@ import QRCode from "qrcode";
 import { stripAnsi } from "@/lib/ansi";
 import {
   createMobileInvite,
-  findServeUrl,
-  magicDnsServeUrl,
   MOBILE_INVITE_TTL_MS,
+  tailnetDiscoveryProof,
   tailscaleBin,
   tailscaleSpawnEnv,
 } from "@/lib/mobile-handoff";
@@ -98,14 +97,6 @@ function backendUrl(req: Request) {
   return `http://127.0.0.1:${port}`;
 }
 
-function nativeHostFromUrl(value: string) {
-  try {
-    return new URL(value).host;
-  } catch {
-    return null;
-  }
-}
-
 async function ensureNativeAppServe(req: Request) {
   const self = await runTailscale(["status", "--self", "--json"]);
   if (!self.ok) {
@@ -123,19 +114,19 @@ async function ensureNativeAppServe(req: Request) {
     ? null
     : serve.stderr || "Tailscale Serve could not be (re)started.";
 
-  let serveUrl: string | null = null;
+  let serveStatus: unknown = {};
   const status = await runTailscale(["serve", "status", "--json"]);
   if (status.ok) {
     const parsed = parseServeStatus(status.stdout);
-    if (!("error" in parsed)) serveUrl = findServeUrl(parsed.value, backend);
+    if (!("error" in parsed)) serveStatus = parsed.value;
   }
-  if (!serveUrl) serveUrl = magicDnsServeUrl(selfStatus);
+  const discovery = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
 
-  if (!serveUrl) {
+  if (!discovery.ok) {
     return NextResponse.json(
       {
         ok: false,
-        error: serveWarning ?? "tailscale serve URL not found",
+        error: serveWarning ?? discovery.reason,
         stderr: serveWarning ?? status.stderr,
         backendUrl: backend,
       },
@@ -143,7 +134,7 @@ async function ensureNativeAppServe(req: Request) {
     );
   }
 
-  const qrSvg = await QRCode.toString(serveUrl, {
+  const qrSvg = await QRCode.toString(discovery.serveUrl, {
     type: "svg",
     margin: 1,
     width: 256,
@@ -153,9 +144,10 @@ async function ensureNativeAppServe(req: Request) {
   return NextResponse.json({
     ok: true,
     backendUrl: backend,
-    serveUrl,
-    nativeUrl: serveUrl,
-    nativeHost: nativeHostFromUrl(serveUrl),
+    serveUrl: discovery.serveUrl,
+    nativeUrl: discovery.serveUrl,
+    nativeHost: discovery.host,
+    discoverySource: discovery.source,
     qrSvg,
     warning: serveWarning ?? undefined,
   });
@@ -202,23 +194,21 @@ async function mobileHandoff(req: Request) {
     : serve.stderr || "Tailscale Serve could not be (re)started.";
 
   // Prefer the real serve config when it's readable.
-  let serveUrl: string | null = null;
+  let serveStatus: unknown = {};
   const status = await runTailscale(["serve", "status", "--json"]);
   if (status.ok) {
     const parsed = parseServeStatus(status.stdout);
-    if (!("error" in parsed)) serveUrl = findServeUrl(parsed.value, backend);
+    if (!("error" in parsed)) serveStatus = parsed.value;
   }
 
-  // Fallback to the device's MagicDNS host so the invite link + QR still work
-  // when the serve config can't be read (the case the user hit).
-  if (!serveUrl) serveUrl = magicDnsServeUrl(selfStatus);
+  const discovery = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
 
-  if (!serveUrl) {
+  if (!discovery.ok) {
     // Nothing usable — surface the most actionable error we have.
     return NextResponse.json(
       {
         ok: false,
-        error: serveWarning ?? "tailscale serve URL not found",
+        error: serveWarning ?? discovery.reason,
         stderr: serveWarning ?? status.stderr,
         backendUrl: backend,
       },
@@ -227,7 +217,7 @@ async function mobileHandoff(req: Request) {
   }
 
   const invite = await createMobileInvite({
-    baseUrl: serveUrl,
+    baseUrl: discovery.serveUrl,
     accessSecret,
     sidecarToken: process.env.COVEN_CAVE_AUTH_TOKEN,
     ttlMs: MOBILE_INVITE_TTL_MS,
@@ -242,10 +232,11 @@ async function mobileHandoff(req: Request) {
   return NextResponse.json({
     ok: true,
     backendUrl: backend,
-    serveUrl,
+    serveUrl: discovery.serveUrl,
     inviteUrl: invite.url,
     url: invite.url,
     appUrl: invite.url,
+    discoverySource: discovery.source,
     expiresAt: invite.expiresAt,
     expiresAtIso: invite.expiresAtIso,
     qrSvg,

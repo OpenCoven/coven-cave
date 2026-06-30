@@ -158,6 +158,54 @@ export function magicDnsServeUrl(selfStatus: unknown): string | null {
   return host ? `https://${host}/` : null;
 }
 
+export type TailnetDiscoveryProof =
+  | {
+      ok: true;
+      host: string;
+      serveUrl: string;
+      source: "serve-status" | "magicdns-self-status";
+    }
+  | {
+      ok: false;
+      reason: string;
+    };
+
+export function tailnetDiscoveryProof({
+  selfStatus,
+  serveStatus,
+  backendUrl,
+}: {
+  selfStatus: unknown;
+  serveStatus: unknown;
+  backendUrl: string;
+}): TailnetDiscoveryProof {
+  const fromServe = findServeUrl(serveStatus, backendUrl);
+  const host = magicDnsHost(selfStatus);
+  if (fromServe) {
+    return {
+      ok: true,
+      host: host ?? new URL(fromServe).host,
+      serveUrl: fromServe,
+      source: "serve-status",
+    };
+  }
+
+  const fromMagicDns = magicDnsServeUrl(selfStatus);
+  if (fromMagicDns && host) {
+    return {
+      ok: true,
+      host,
+      serveUrl: fromMagicDns,
+      source: "magicdns-self-status",
+    };
+  }
+
+  return {
+    ok: false,
+    reason: "tailscale serve URL not found and status --self had no MagicDNS DNSName",
+  };
+}
+
 export function findServeUrl(status: unknown, backendUrl: string) {
   const web = (status as TailscaleServeStatus | null)?.Web;
   if (!web || typeof web !== "object") return null;

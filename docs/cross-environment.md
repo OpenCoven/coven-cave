@@ -33,11 +33,13 @@ that diverge. It pairs with the conformance suite that enforces them.
 - **The sidecar runtime smoke** — [`scripts/sidecar-runtime-smoke.mjs`](../scripts/sidecar-runtime-smoke.mjs).
   Run it after `bash scripts/sidecar-bundle.sh` with
   `pnpm test:sidecar-runtime`.
-
-What is **not** yet covered (tracked as the remaining Slice B network gap in
-#1990, surfaced as an explicit skip): mDNS / Tailscale host discovery. That
-needs the platform's real networking stack and tailnet/mDNS preconditions rather
-than a pure unit matrix.
+- **Tailscale/MagicDNS discovery** — the conformance suite checks live
+  `tailscale status --self --json` when a runner has a connected Tailscale
+  daemon, then proves the MagicDNS host and derived Serve URL through the same
+  [`tailnetDiscoveryProof`](../src/lib/mobile-handoff.ts) helper used by the
+  mobile handoff API. GitHub-hosted runners are not joined to the private
+  tailnet, so they print an explicit skip for the missing Tailscale precondition
+  rather than a silent pass.
 
 ## Neutral defaults
 

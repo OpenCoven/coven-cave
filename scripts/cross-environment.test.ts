@@ -16,12 +16,14 @@
 // Neutral defaults and per-OS deltas are documented in docs/cross-environment.md.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 import { resolveSidecarTarget } from "./sidecar-target.mjs";
 import { covenLaunchCommandForBinary } from "../src/lib/coven-bin.ts";
+import { tailnetDiscoveryProof } from "../src/lib/mobile-handoff.ts";
 
 const skips: string[] = [];
 function skip(reason: string): void {
@@ -174,11 +176,42 @@ function skip(reason: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Contract D — explicit, reasoned remaining network gap. Packaged sidecar boot
-// + raster-avatar transcode is covered by the Sidecar runtime matrix; mDNS /
-// Tailscale discovery still needs real network-stack preconditions rather than
-// a pure conformance assertion.
+// Contract D — live Tailscale/MagicDNS host discovery when the runner has a
+// connected Tailscale daemon. CI runners are not joined to a private tailnet, so
+// they print an explicit skip; developer/release hosts that have Tailscale
+// available prove the real platform network stack instead of silently no-oping.
 // ---------------------------------------------------------------------------
-skip("mDNS / Tailscale host discovery: requires the platform's networking stack (Slice B)");
+{
+  const tailscale = spawnSync(
+    process.env.TAILSCALE_BIN || "tailscale",
+    ["status", "--self", "--json"],
+    { encoding: "utf8", timeout: 8000 },
+  );
+
+  if (tailscale.error) {
+    skip(`Tailscale/MagicDNS host discovery: tailscale CLI unavailable (${tailscale.error.message})`);
+  } else if (tailscale.status !== 0) {
+    const detail = (tailscale.stderr || tailscale.stdout || `exit ${tailscale.status}`).trim().split(/\r?\n/)[0];
+    skip(`Tailscale/MagicDNS host discovery: tailscale status unavailable (${detail || `exit ${tailscale.status}`})`);
+  } else {
+    let selfStatus: unknown;
+    try {
+      selfStatus = JSON.parse(tailscale.stdout);
+    } catch (err) {
+      assert.fail(`tailscale status --self --json returned invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    const proof = tailnetDiscoveryProof({
+      selfStatus,
+      serveStatus: {},
+      backendUrl: "http://127.0.0.1:3000",
+    });
+    assert.equal(proof.ok, true, proof.ok ? undefined : proof.reason);
+    assert.equal(proof.source, "magicdns-self-status", "live Tailscale proof should derive from status --self MagicDNS");
+    assert.match(proof.host, /\.ts\.net$/i, "live MagicDNS host must be a Tailscale .ts.net name");
+    assert.equal(proof.serveUrl, `https://${proof.host}/`, "MagicDNS serve URL is derived from the live host");
+    console.log("  ✓ Tailscale/MagicDNS host discovery: live status --self proof");
+  }
+}
 
 console.log(`cross-environment.test.ts: ok on ${process.platform}/${process.arch} (${skips.length} explicit skip(s))`);
