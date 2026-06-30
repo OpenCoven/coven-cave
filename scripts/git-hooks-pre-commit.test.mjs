@@ -64,4 +64,15 @@ function runHook(repo) {
   assert.match(result.stderr, /GitHub PAT/i);
 }
 
+{
+  const token = "sk-" + "or-v1-" + "a".repeat(64);
+  const repo = stagedRepo({
+    filePath: "src/lib/secrets.test.ts",
+    content: `const token = "${token}";\n`,
+  });
+  const result = runHook(repo);
+  assert.notEqual(result.status, 0, "OpenRouter key-shaped strings should be blocked");
+  assert.match(result.stderr, /OpenRouter/i);
+}
+
 console.log("git-hooks-pre-commit.test.mjs: ok");

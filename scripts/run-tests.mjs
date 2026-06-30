@@ -518,6 +518,7 @@ export const SUITES = {
     "scripts/dependency-policy.test.mjs",
     "scripts/build-sandbox-runtime.test.mjs",
     "scripts/git-hooks-pre-commit.test.mjs",
+    "scripts/secret-preflight.test.mjs",
     "scripts/uninstall-app.test.mjs",
     "src/lib/coven-paths.test.ts",
     "src/lib/server/agent-attachments.test.ts",
