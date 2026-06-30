@@ -5,7 +5,7 @@ import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import type { DashboardModel } from "@/lib/dashboard-model";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
-import type { Familiar } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { relativeTime } from "@/lib/daily-report";
@@ -13,6 +13,7 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { SectionHead, EmptyState, QuickLink } from "@/components/daily-report-ui";
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { DonutChart } from "@/components/ui/charts/donut-chart";
+import { familiarMiniProfiles, familiarLoadSeries } from "@/lib/dashboard-analytics";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
 import { TodaySummary } from "@/components/dashboard/today-summary";
 import { RecentReports } from "@/components/dashboard/recent-reports";
@@ -27,7 +28,6 @@ import { CSS } from "@dnd-kit/utilities";
 
 // ─── Data shapes (client-fetched) ──────────────────────────────────────────────
 
-type SessionRow = { id: string; title?: string; status?: string; model?: string | null; updatedAt?: string | null };
 type ReadingItem = { id: string; title: string; url?: string; sourceType?: string; status?: string };
 
 type CockpitData = {
@@ -231,7 +231,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       case "today": return <TodaySummary summary={model.todaySummary} featured={model.featuredReport} now={now} />;
       case "agents": return (
         <Panel title="Agents" icon="ph:sparkle" count={data.familiars.length || undefined}>
-          <AgentsPanel familiars={data.familiars} loaded={ready.has("familiars")} />
+          <AgentsPanel familiars={data.familiars} sessions={data.sessions} loaded={ready.has("familiars")} />
         </Panel>);
       case "github": return (
         <Panel title="GitHub" icon="ph:github-logo" count={data.github.length || undefined} hint={prsToReview.length ? `${prsToReview.length} to review` : undefined}>
@@ -432,13 +432,15 @@ function BoardSnapshot({ byStatus, total, active, loaded, familiars }: {
 
 // ─── Agents ──────────────────────────────────────────────────────────────────────
 
-function AgentsPanel({ familiars, loaded }: { familiars: Familiar[]; loaded: boolean }) {
+function AgentsPanel({ familiars, sessions, loaded }: { familiars: Familiar[]; sessions: SessionRow[]; loaded: boolean }) {
+  const profiles = useMemo(() => familiarMiniProfiles(familiars, sessions, Date.now()), [familiars, sessions]);
   if (!loaded) return <PanelSkeleton rows={3} />;
   if (familiars.length === 0) return <EmptyState icon="ph:sparkle">No familiars configured.</EmptyState>;
   return (
     <ul className="cockpit-agents">
       {familiars.slice(0, 6).map((f) => {
         const active = (f.active_sessions ?? 0) > 0;
+        const p = profiles.find((x) => x.id === f.id);
         return (
           <li key={f.id} className="cockpit-agent">
             <span className="cockpit-agent__avatar" style={{ background: f.color || "var(--accent-presence)" }}>
@@ -449,6 +451,8 @@ function AgentsPanel({ familiars, loaded }: { familiars: Familiar[]; loaded: boo
               <span className="cockpit-agent__name" title={f.display_name}>{f.display_name}</span>
               <span className="cockpit-agent__role" title={f.role || f.model || "familiar"}>{f.role || f.model || "familiar"}</span>
             </span>
+            {p ? <span className="cockpit-agent__count">{p.sessionsLast7d}/7d</span> : null}
+            {p ? <span className="cockpit-agent__trend"><Sparkline points={p.trend} color={f.color || "var(--accent-presence)"} height={20} /></span> : null}
             {active ? <span className="cockpit-agent__busy">{f.active_sessions} active</span> : null}
           </li>
         );
