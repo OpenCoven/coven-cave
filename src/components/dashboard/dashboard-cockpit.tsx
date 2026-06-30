@@ -1,17 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import type { DashboardModel } from "@/lib/dashboard-model";
 import type { Card, CardStatus } from "@/lib/cave-board-types";
-import type { Familiar } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { relativeTime } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { SectionHead, EmptyState, QuickLink } from "@/components/daily-report-ui";
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
+import { DonutChart } from "@/components/ui/charts/donut-chart";
+import { TrendChart } from "@/components/ui/charts/trend-chart";
+import { familiarMiniProfiles, familiarLoadSeries } from "@/lib/dashboard-analytics";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
 import { TodaySummary } from "@/components/dashboard/today-summary";
 import { RecentReports } from "@/components/dashboard/recent-reports";
@@ -26,7 +30,6 @@ import { CSS } from "@dnd-kit/utilities";
 
 // ─── Data shapes (client-fetched) ──────────────────────────────────────────────
 
-type SessionRow = { id: string; title?: string; status?: string; model?: string | null; updatedAt?: string | null };
 type ReadingItem = { id: string; title: string; url?: string; sourceType?: string; status?: string };
 
 type CockpitData = {
@@ -43,7 +46,7 @@ const EMPTY: CockpitData = { cards: [], familiars: [], github: [], reading: [], 
 // Draggable panel layout — order per column, persisted to localStorage.
 const LAYOUT_KEY = "cave:cockpit:layout";
 type Layout = { main: string[]; rail: string[] };
-const DEFAULT_LAYOUT: Layout = { main: ["needs", "board", "today"], rail: ["agents", "github", "agenda", "reading"] };
+const DEFAULT_LAYOUT: Layout = { main: ["needs", "board", "today"], rail: ["agents", "load", "github", "agenda", "reading"] };
 
 /** Merge a saved order with the defaults: keep known ids in saved order, append
  *  any new defaults, drop anything unknown (survives version changes). */
@@ -114,10 +117,20 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   // lands — the slow ones (sessions) never block the fast ones (board, agents).
   const [ready, setReady] = useState<ReadonlySet<keyof CockpitData>>(new Set());
 
+  // Keep setState off an unmounted tree: the polled `load` may resolve after
+  // unmount. A ref survives across the stable `load` identity (a plain `let`
+  // would be recreated every render and never flip to false on cleanup).
+  const aliveRef = useRef(true);
   useEffect(() => {
-    let alive = true;
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
+
+  // Each source populates independently so a panel renders the moment its data
+  // lands. Stable identity so the poll interval isn't torn down each render.
+  const load = useCallback(() => {
     const put = <K extends keyof CockpitData>(key: K, value: CockpitData[K]) => {
-      if (!alive) return;
+      if (!aliveRef.current) return;
       setData((d) => ({ ...d, [key]: value }));
       setReady((r) => new Set(r).add(key));
     };
@@ -134,8 +147,11 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       for (const it of [...(ghAct?.items ?? []), ...(ghAssigned?.items ?? [])]) ghMap.set(it.id, it);
       put("github", [...ghMap.values()]);
     });
-    return () => { alive = false; };
   }, []);
+
+  // Initial mount load, then refresh on a paused-when-backgrounded interval.
+  useEffect(() => { load(); }, [load]);
+  usePausablePoll(load, 30_000);
 
   const now = model.date;
 
@@ -163,9 +179,9 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
 
   const kpis: KpiSpec[] = [
     { icon: "ph:warning-circle", value: model.needsAttention.length, label: "Needs you", accent: "rose", metric: "needs" },
-    { icon: "ph:kanban-bold", value: open.length, label: "Active tasks", accent: "lavender", src: "cards", metric: "tasks" },
-    { icon: "ph:lightning-bold", value: (byStatus.get("running") ?? 0) + runningSessions.length, label: "In progress", accent: "green", src: "cards", metric: "progress" },
-    { icon: "ph:git-merge", value: byStatus.get("review") ?? 0, label: "In review", accent: "blue", src: "cards", metric: "review" },
+    { icon: "ph:kanban-bold", value: open.length, label: "Active tasks", accent: "lavender", src: "cards", metric: "tasks", href: "/#card-" },
+    { icon: "ph:lightning-bold", value: (byStatus.get("running") ?? 0) + runningSessions.length, label: "In progress", accent: "green", src: "cards", metric: "progress", href: "/#card-" },
+    { icon: "ph:git-merge", value: byStatus.get("review") ?? 0, label: "In review", accent: "blue", src: "cards", metric: "review", href: "/#card-" },
     { icon: "ph:git-pull-request", value: prsToReview.length, label: "PRs to review", accent: "amber", src: "github", metric: "prs" },
     { icon: "ph:books-bold", value: readingQueue.length, label: "To read", accent: "blue", src: "reading", metric: "reading" },
   ];
@@ -230,8 +246,19 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       case "today": return <TodaySummary summary={model.todaySummary} featured={model.featuredReport} now={now} />;
       case "agents": return (
         <Panel title="Agents" icon="ph:sparkle" count={data.familiars.length || undefined}>
-          <AgentsPanel familiars={data.familiars} loaded={ready.has("familiars")} />
+          <AgentsPanel familiars={data.familiars} sessions={data.sessions} loaded={ready.has("familiars")} />
         </Panel>);
+      case "load": {
+        const series = familiarLoadSeries(data.familiars, data.sessions, Date.now(), 7, 4);
+        return (
+          <Panel title="Familiar load" icon="ph:chart-bar-bold">
+            {series.length > 0 ? (
+              <div className="cockpit-load"><TrendChart series={series} height={150} fill={false} /></div>
+            ) : (
+              <EmptyState icon="ph:chart-bar-bold">No sessions in the last 7 days.</EmptyState>
+            )}
+          </Panel>);
+      }
       case "github": return (
         <Panel title="GitHub" icon="ph:github-logo" count={data.github.length || undefined} hint={prsToReview.length ? `${prsToReview.length} to review` : undefined}>
           <GithubPanel items={data.github} loaded={ready.has("github")} />
@@ -295,7 +322,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
           <QuickLink href="/" icon="ph:house-bold" label="Home" sub="Your cave" />
           <QuickLink href="/#card-" icon="ph:kanban-bold" label="Board" sub="Cards & tasks" />
           <QuickLink href="/dashboard/familiars/growth" icon="ph:chart-bar-bold" label="Growth" sub="Familiar performance" />
-          <QuickLink href="/dashboard?view=evals" icon="ph:flask" label="Evals" sub="Suites, loops, freshness" />
+          <QuickLink href="/" icon="ph:flask" label="Evals" sub="Suites, loops, freshness" />
           <QuickLink href="/" icon="ph:calendar-bold" label="Calendar" sub="Reminders & agenda" />
           <QuickLink href="/" icon="ph:books-bold" label="Library" sub="Saved knowledge" />
           <QuickLink href="/settings" icon="ph:gear-six" label="Settings" sub="Preferences" />
@@ -399,12 +426,11 @@ function BoardSnapshot({ byStatus, total, active, loaded, familiars }: {
   const famName = (id: string | null) => familiars.find((f) => f.id === id)?.display_name;
   return (
     <>
-      <div className="cockpit-bar" role="img" aria-label="Board status distribution">
-        {segs.map(({ s, n }) => (
-          <span key={s} className="cockpit-bar__seg" title={`${STATUS_META[s].label}: ${n}`}
-            style={{ flexGrow: n, background: STATUS_META[s].color }} />
-        ))}
-      </div>
+      <DonutChart
+        data={segs.map(({ s, n }) => ({ label: STATUS_META[s].label, value: n, color: STATUS_META[s].color }))}
+        size={132}
+        thickness={18}
+      />
       <div className="cockpit-bar__legend">
         {segs.map(({ s, n }) => (
           <span key={s} className="cockpit-legend">
@@ -432,13 +458,15 @@ function BoardSnapshot({ byStatus, total, active, loaded, familiars }: {
 
 // ─── Agents ──────────────────────────────────────────────────────────────────────
 
-function AgentsPanel({ familiars, loaded }: { familiars: Familiar[]; loaded: boolean }) {
+function AgentsPanel({ familiars, sessions, loaded }: { familiars: Familiar[]; sessions: SessionRow[]; loaded: boolean }) {
+  const profiles = useMemo(() => familiarMiniProfiles(familiars, sessions, Date.now()), [familiars, sessions]);
   if (!loaded) return <PanelSkeleton rows={3} />;
   if (familiars.length === 0) return <EmptyState icon="ph:sparkle">No familiars configured.</EmptyState>;
   return (
     <ul className="cockpit-agents">
       {familiars.slice(0, 6).map((f) => {
         const active = (f.active_sessions ?? 0) > 0;
+        const p = profiles.find((x) => x.id === f.id);
         return (
           <li key={f.id} className="cockpit-agent">
             <span className="cockpit-agent__avatar" style={{ background: f.color || "var(--accent-presence)" }}>
@@ -449,6 +477,8 @@ function AgentsPanel({ familiars, loaded }: { familiars: Familiar[]; loaded: boo
               <span className="cockpit-agent__name" title={f.display_name}>{f.display_name}</span>
               <span className="cockpit-agent__role" title={f.role || f.model || "familiar"}>{f.role || f.model || "familiar"}</span>
             </span>
+            {p ? <span className="cockpit-agent__count">{p.sessionsLast7d}/7d</span> : null}
+            {p ? <span className="cockpit-agent__trend"><Sparkline points={p.trend} color={f.color || "var(--accent-presence)"} height={20} /></span> : null}
             {active ? <span className="cockpit-agent__busy">{f.active_sessions} active</span> : null}
           </li>
         );

@@ -26,6 +26,13 @@ assert.match(cockpit, /\/api\/github/, "cockpit pulls GitHub activity");
 assert.match(cockpit, /\/api\/library\/reading/, "cockpit pulls the reading queue");
 assert.match(cockpit, /cockpit-kpis/, "cockpit renders the KPI rail");
 
+// World-class additions
+assert.match(cockpit, /DonutChart/, "board status uses a donut chart");
+assert.match(cockpit, /familiarMiniProfiles/, "agents panel shows per-familiar trends");
+assert.match(cockpit, /familiarLoadSeries/, "renders a familiar-load trend panel");
+assert.match(cockpit, /usePausablePoll/, "cockpit polls for live updates");
+assert.doesNotMatch(cockpit, /\?view=evals/, "dead ?view=evals link removed");
+
 // Action inbox supports bulk triage: select several items → done/dismiss/snooze together.
 const inboxUrl = new URL("../components/dashboard/action-inbox.tsx", import.meta.url);
 const inbox = readFileSync(inboxUrl, "utf8");

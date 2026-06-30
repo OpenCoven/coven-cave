@@ -332,3 +332,8 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 .cockpit-sortable:hover .cockpit-grip, .cockpit-grip:focus-visible { opacity: 1; }
 .cockpit-grip:hover { background: var(--bg-hover); color: var(--text-secondary); }
 .cockpit-grip:active { cursor: grabbing; }
+
+.cockpit-agent__trend { margin-left: auto; width: 64px; flex-shrink: 0; }
+.cockpit-agent__count { font-size: 10.5px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; }
+
+.cockpit-load { padding-top: 4px; }
