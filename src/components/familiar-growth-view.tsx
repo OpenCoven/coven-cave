@@ -205,7 +205,7 @@ export function FamiliarGrowthView({
           >
             <Icon name="ph:arrows-clockwise-bold" aria-hidden />
           </button>
-          <a className="retro-btn" href="/dashboard?view=evals">
+          <a className="retro-btn" href="/?mode=evals">
             <Icon name="ph:arrows-clockwise-bold" aria-hidden />
             Evals
           </a>

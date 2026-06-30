@@ -8,6 +8,7 @@ import { Skeleton, SkeletonGroup } from "@/components/ui/skeleton";
 import { copyText } from "@/lib/clipboard";
 import { useCopy } from "@/lib/use-copy";
 import { sanitizeHtml } from "@/lib/html-sanitize";
+import { wireDiffBlocks } from "@/lib/gh-diff";
 import { parseLeadingMetadata, type MetaEntry } from "@/lib/library-metadata";
 import { isSafeGitHubUrl, isSafeHttpUrl, isSafeVscodeFileUrl } from "@/lib/url-safety";
 import { useTauriPlatform } from "@/lib/tauri-platform";
@@ -433,6 +434,18 @@ function RenderedMarkdown({ text, containerRef }: RenderedMarkdownProps) {
     })();
     return () => { cancelled = true; };
   }, [text]);
+
+  // Colorize any ```diff fenced blocks (e.g. a README's changelog) into a real
+  // diff once the markdown lands. Idempotent + observed so a late syntax
+  // highlighter pass is caught too.
+  useEffect(() => {
+    const el = ref.current;
+    if (!html || !el) return;
+    wireDiffBlocks(el);
+    const observer = new MutationObserver(() => wireDiffBlocks(el));
+    observer.observe(el, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [html, ref]);
 
   if (loading) return (
     <div className="library-md-skeleton">
