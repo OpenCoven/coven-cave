@@ -16,12 +16,14 @@ function rawSet(key: string, value: string): void {
 const listeners = new Set<() => void>();
 function notify() { for (const fn of listeners) fn(); }
 
-export function subscribeSessionPins(fn: () => void): () => void {
-  listeners.add(fn);
-  return () => { listeners.delete(fn); };
-}
+// Snapshot cache. `useSyncExternalStore` requires getSnapshot to return a
+// STABLE reference when the underlying data is unchanged — otherwise React
+// throws "The result of getSnapshot should be cached to avoid an infinite
+// loop". We parse localStorage once and reuse the array until a mutation (or a
+// cross-tab `storage` event) invalidates it. Mirrors `familiar-quick-switch`.
+let cachedPins: string[] | null = null;
 
-export function getPinnedSessionIds(): string[] {
+function readPins(): string[] {
   const raw = rawGet(PINS_KEY);
   if (!raw) return [];
   try {
@@ -30,12 +32,24 @@ export function getPinnedSessionIds(): string[] {
   } catch { return []; }
 }
 
+export function subscribeSessionPins(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => { listeners.delete(fn); };
+}
+
+/** Current pinned-session ids (cached; stable reference until a mutation). */
+export function getPinnedSessionIds(): string[] {
+  if (cachedPins === null) cachedPins = readPins();
+  return cachedPins;
+}
+
 export function isSessionPinned(id: string): boolean {
   return getPinnedSessionIds().includes(id);
 }
 
 export function setPinnedSessionIds(ids: string[]): void {
   const unique = Array.from(new Set(ids.filter((x) => typeof x === "string" && x.length > 0)));
+  cachedPins = unique;
   rawSet(PINS_KEY, JSON.stringify(unique));
   notify();
 }
@@ -47,6 +61,9 @@ export function toggleSessionPin(id: string): void {
 
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (e) => {
-    if (e.key === PINS_KEY) notify();
+    if (e.key === PINS_KEY) {
+      cachedPins = null; // another tab mutated pins — drop the cache before notifying
+      notify();
+    }
   });
 }

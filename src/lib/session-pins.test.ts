@@ -32,6 +32,15 @@ assert.deepEqual(getPinnedSessionIds(), ["s1", "s2"], "second pin appended in or
 
 toggleSessionPin("s1");
 assert.deepEqual(getPinnedSessionIds(), ["s2"], "toggle removes existing id");
+
+// Snapshot stability: useSyncExternalStore requires getSnapshot to return the
+// SAME reference until a mutation, else React throws "getSnapshot should be
+// cached to avoid an infinite loop". Two reads with no mutation between must be
+// identical (===), and a mutation must produce a fresh reference.
+const snapA = getPinnedSessionIds();
+assert.equal(getPinnedSessionIds(), snapA, "repeated reads return the same reference (cached snapshot)");
+toggleSessionPin("s3");
+assert.notEqual(getPinnedSessionIds(), snapA, "a mutation yields a new reference");
 unsub();
 
 console.log("session-pins ok");
