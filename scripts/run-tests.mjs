@@ -548,6 +548,7 @@ export const SUITES = {
     "src/app/api/board/enrich-steps/route.test.ts",
     "src/app/api/board/[id]/chat/route.test.ts",
     "src/app/api/chat/send/harness-routing.test.ts",
+    "src/app/api/chat/send/offline-queue.test.ts",
     "src/app/api/library/route-link/route.test.ts",
     "src/app/api/onboarding/status/route.test.ts",
     "src/app/api/onboarding/install/route.test.ts",
