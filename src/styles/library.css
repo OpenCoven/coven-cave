@@ -3634,12 +3634,14 @@ h3:hover .library-heading-anchor,
 /* ── Reduced motion: reader transitions become instant ──────────── */
 @media (prefers-reduced-motion: reduce) {
   .library-reader-backdrop,
-  .library-reader-modal,
-  .library-research-modal {
+  .library-reader-modal {
     animation: none;
   }
   .library-heading--active {
     transition: none;
+  }
+  .library-research-modal {
+    animation: none;
   }
   /* The research step spinner is informational; keep one quiet tick instead of
      a fast spin so motion-sensitive users still see "in progress". */
