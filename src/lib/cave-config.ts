@@ -37,6 +37,15 @@ const DEFAULT_STATE: CaveState = {
   sessionArchived: {},
   sessionSacrificed: {},
   sessionOwned: {},
+  travel: {
+    manualOffline: false,
+    hubUnreachableSince: null,
+    lastHubReachableAt: null,
+    staleCache: false,
+    localSubdaemonWakeRequestedAt: null,
+    localBindHost: "127.0.0.1",
+    offlineQueue: [],
+  },
 };
 
 function defaultConfig(): CaveConfig {
@@ -58,6 +67,7 @@ function defaultState(): CaveState {
     sessionArchived: {},
     sessionSacrificed: {},
     sessionOwned: {},
+    travel: defaultTravelState(),
   };
 }
 
@@ -106,6 +116,26 @@ export type CaveMultiHostConfig = {
   executorUrls: string[];
 };
 
+export type CaveTravelQueueItem = {
+  id: string;
+  kind: "chat" | "workflow" | "job";
+  summary: string;
+  createdAt: string;
+  status: "pending" | "syncing" | "failed" | "synced";
+  payload?: unknown;
+  lastError?: string;
+};
+
+export type CaveTravelState = {
+  manualOffline: boolean;
+  hubUnreachableSince: string | null;
+  lastHubReachableAt: string | null;
+  staleCache: boolean;
+  localSubdaemonWakeRequestedAt: string | null;
+  localBindHost: "127.0.0.1";
+  offlineQueue: CaveTravelQueueItem[];
+};
+
 export type CaveConfig = {
   version: number;
   defaults: FamiliarBinding;
@@ -141,6 +171,8 @@ export type CaveState = {
   sessionSacrificed: Record<string, string>;
   /** Sessions created through Cave's browser-facing session API. */
   sessionOwned: Record<string, string>;
+  /** Travel/offline authority state for laptop Cave when the server hub drops. */
+  travel: CaveTravelState;
 };
 
 export async function loadConfig(): Promise<CaveConfig> {
@@ -187,6 +219,61 @@ export function normalizeMultiHostConfig(input: Partial<CaveMultiHostConfig> | u
     ),
   );
   return { mode, hubUrl, executorUrls };
+}
+
+export function defaultTravelState(): CaveTravelState {
+  return {
+    manualOffline: false,
+    hubUnreachableSince: null,
+    lastHubReachableAt: null,
+    staleCache: false,
+    localSubdaemonWakeRequestedAt: null,
+    localBindHost: "127.0.0.1",
+    offlineQueue: [],
+  };
+}
+
+function isoOrNull(value: unknown): string | null {
+  return typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+function normalizeTravelQueue(input: unknown): CaveTravelQueueItem[] {
+  if (!Array.isArray(input)) return [];
+  return input.flatMap((item): CaveTravelQueueItem[] => {
+    if (!item || typeof item !== "object") return [];
+    const entry = item as Partial<CaveTravelQueueItem>;
+    const id = typeof entry.id === "string" && entry.id.trim() ? entry.id.trim() : "";
+    const summary = typeof entry.summary === "string" && entry.summary.trim() ? entry.summary.trim() : "";
+    const createdAt = isoOrNull(entry.createdAt);
+    if (!id || !summary || !createdAt) return [];
+    const status =
+      entry.status === "syncing" ||
+      entry.status === "failed" ||
+      entry.status === "synced"
+        ? entry.status
+        : "pending";
+    return [{
+      id,
+      kind: entry.kind === "workflow" || entry.kind === "job" ? entry.kind : "chat",
+      summary,
+      createdAt,
+      status,
+      payload: entry.payload,
+      lastError: typeof entry.lastError === "string" && entry.lastError.trim() ? entry.lastError.trim() : undefined,
+    }];
+  });
+}
+
+export function normalizeTravelState(input: Partial<CaveTravelState> | undefined): CaveTravelState {
+  return {
+    manualOffline: input?.manualOffline === true,
+    hubUnreachableSince: isoOrNull(input?.hubUnreachableSince),
+    lastHubReachableAt: isoOrNull(input?.lastHubReachableAt),
+    staleCache: input?.staleCache === true,
+    localSubdaemonWakeRequestedAt: isoOrNull(input?.localSubdaemonWakeRequestedAt),
+    localBindHost: "127.0.0.1",
+    offlineQueue: normalizeTravelQueue(input?.offlineQueue),
+  };
 }
 
 function mergeFamiliarConfigs(
@@ -314,6 +401,7 @@ export async function loadState(): Promise<CaveState> {
       sessionArchived: parsed.sessionArchived ?? {},
       sessionSacrificed: parsed.sessionSacrificed ?? {},
       sessionOwned: parsed.sessionOwned ?? {},
+      travel: normalizeTravelState(parsed.travel),
     };
   } catch {
     return defaultState();
@@ -355,6 +443,90 @@ export async function recordOwnedSession(sessionId: string): Promise<void> {
   } catch {
     /* best effort */
   }
+}
+
+function nowIso(now: Date = new Date()): string {
+  return now.toISOString();
+}
+
+function hasPendingTravelQueue(state: CaveTravelState): boolean {
+  return state.offlineQueue.some((item) => item.status === "pending" || item.status === "syncing" || item.status === "failed");
+}
+
+export async function setManualTravelMode(enabled: boolean, now = new Date()): Promise<string | null> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    if (enabled) {
+      const iso = nowIso(now);
+      state.travel.manualOffline = true;
+      state.travel.staleCache = true;
+      state.travel.localSubdaemonWakeRequestedAt = iso;
+      state.travel.localBindHost = "127.0.0.1";
+      return iso;
+    }
+    state.travel.manualOffline = false;
+    if (!state.travel.hubUnreachableSince && !hasPendingTravelQueue(state.travel)) {
+      state.travel.staleCache = false;
+      state.travel.localSubdaemonWakeRequestedAt = null;
+    }
+    return null;
+  });
+}
+
+export async function recordTravelHubReachability(reachable: boolean, now = new Date()): Promise<CaveTravelState> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    const iso = nowIso(now);
+    if (reachable) {
+      state.travel.lastHubReachableAt = iso;
+      state.travel.hubUnreachableSince = null;
+      if (!state.travel.manualOffline && !hasPendingTravelQueue(state.travel)) {
+        state.travel.staleCache = false;
+        state.travel.localSubdaemonWakeRequestedAt = null;
+      }
+      return state.travel;
+    }
+    state.travel.hubUnreachableSince ??= iso;
+    state.travel.staleCache = true;
+    return state.travel;
+  });
+}
+
+export async function enqueueOfflineTravelItem(
+  item: {
+    kind: CaveTravelQueueItem["kind"];
+    summary: string;
+    payload?: unknown;
+  },
+  now = new Date(),
+): Promise<CaveTravelQueueItem> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    const createdAt = nowIso(now);
+    const queued: CaveTravelQueueItem = {
+      id: `travel-${createdAt.replace(/[^0-9]/g, "")}-${Math.random().toString(36).slice(2, 8)}`,
+      kind: item.kind,
+      summary: item.summary.trim() || "Offline work",
+      createdAt,
+      status: "pending",
+      payload: item.payload,
+    };
+    state.travel.offlineQueue.push(queued);
+    state.travel.staleCache = true;
+    return queued;
+  });
+}
+
+export async function completeOfflineTravelItem(itemId: string): Promise<void> {
+  await updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    state.travel.offlineQueue = state.travel.offlineQueue.map((item) =>
+      item.id === itemId ? { ...item, status: "synced", lastError: undefined } : item,
+    );
+    if (!state.travel.manualOffline && !state.travel.hubUnreachableSince && !hasPendingTravelQueue(state.travel)) {
+      state.travel.staleCache = false;
+    }
+  });
 }
 
 export async function isOwnedSession(sessionId: string): Promise<boolean> {

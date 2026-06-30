@@ -79,6 +79,19 @@ type DaemonStatus = {
     url?: string;
     error?: string;
   };
+  travel?: {
+    mode: "home" | "hub" | "watching-hub" | "travel" | "handoff-pending";
+    authority: "local" | "hub" | "travel-local";
+    reason: string;
+    manualOffline: boolean;
+    staleCache: boolean;
+    wakeLocalSubdaemon: boolean;
+    localBindHost: "127.0.0.1";
+    hubUnreachableSince: string | null;
+    hubUnreachableForMs: number;
+    pendingQueueCount: number;
+    handoffPending: boolean;
+  };
 };
 
 type MultiHostMode = "local" | "hub";
@@ -382,6 +395,8 @@ function DaemonSection() {
   const [executorText, setExecutorText] = useState("");
   const [savingConnection, setSavingConnection] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [savingTravel, setSavingTravel] = useState(false);
+  const [travelError, setTravelError] = useState<string | null>(null);
 
   const refresh = () => {
     setLoading(true);
@@ -467,6 +482,27 @@ function DaemonSection() {
       setStartError(err instanceof Error ? err.message : "daemon did not restart");
     } finally {
       setRestarting(false);
+    }
+  };
+
+  const setManualOffline = async (manualOffline: boolean) => {
+    setSavingTravel(true);
+    setTravelError(null);
+    try {
+      const res = await fetch("/api/travel/client", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ manualOffline }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || `travel mode save failed (${res.status})`);
+      }
+      refresh();
+    } catch (err) {
+      setTravelError(err instanceof Error ? err.message : "could not save travel mode");
+    } finally {
+      setSavingTravel(false);
     }
   };
 
@@ -595,6 +631,35 @@ function DaemonSection() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          {status?.travel && (
+            <div className="basis-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Icon name="ph:device-mobile" width={13} />
+                <span className="text-[11px] font-medium text-[var(--text-secondary)]">Travel mode</span>
+                <span className="rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                  {status.travel.mode}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void setManualOffline(!status.travel?.manualOffline)}
+                  disabled={savingTravel}
+                  className="focus-ring ml-auto inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-1 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-60"
+                >
+                  <Icon name={status.travel.manualOffline ? "ph:plug-bold" : "ph:plug"} width={12} />
+                  {status.travel.manualOffline ? "Return online" : "Manual offline"}
+                </button>
+              </div>
+              <div className="grid gap-2 text-[11px] text-[var(--text-muted)] sm:grid-cols-3">
+                <span>Reason: <strong className="font-medium text-[var(--text-primary)]">{status.travel.reason}</strong></span>
+                <span>Pending queue: <strong className="font-medium text-[var(--text-primary)]">{status?.travel?.pendingQueueCount ?? 0}</strong></span>
+                <span>Local bind: <strong className="font-mono font-medium text-[var(--text-primary)]">127.0.0.1</strong></span>
+                <span>Stale cache: <strong className="font-medium text-[var(--text-primary)]">{status.travel.staleCache ? "yes" : "no"}</strong></span>
+                <span>Wake local: <strong className="font-medium text-[var(--text-primary)]">{status.travel.wakeLocalSubdaemon ? "requested" : "standby"}</strong></span>
+                <span>Handoff: <strong className="font-medium text-[var(--text-primary)]">{status.travel.handoffPending ? "pending sync" : "clear"}</strong></span>
+              </div>
+              {travelError && <p className="mt-2 text-[11px] text-[var(--color-danger)]">{travelError}</p>}
             </div>
           )}
         </div>

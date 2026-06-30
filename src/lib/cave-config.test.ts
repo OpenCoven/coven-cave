@@ -17,6 +17,15 @@ try {
     sessionArchived: {},
     sessionSacrificed: {},
     sessionOwned: {},
+    travel: {
+      manualOffline: false,
+      hubUnreachableSince: null,
+      lastHubReachableAt: null,
+      staleCache: false,
+      localSubdaemonWakeRequestedAt: null,
+      localBindHost: "127.0.0.1",
+      offlineQueue: [],
+    },
   });
 
   await config.recordSessionFamiliar("session-1", "cody");
@@ -49,6 +58,15 @@ try {
     sessionArchived: {},
     sessionSacrificed: { "session-1": sacrificedAt },
     sessionOwned: {},
+    travel: {
+      manualOffline: false,
+      hubUnreachableSince: null,
+      lastHubReachableAt: null,
+      staleCache: false,
+      localSubdaemonWakeRequestedAt: null,
+      localBindHost: "127.0.0.1",
+      offlineQueue: [],
+    },
   });
 
   const installedAt = await config.installMarketplacePlugin("github", "0.1.0", "catalog");

@@ -54,6 +54,30 @@ assert.match(
 );
 
 assert.match(
+  shell,
+  /Travel mode/,
+  "Daemon settings should expose the travel/offline state beside hub status",
+);
+
+assert.match(
+  shell,
+  /status\?\.travel\?\.pendingQueueCount/,
+  "Daemon settings should show queued offline work as a visible pending state",
+);
+
+assert.match(
+  shell,
+  /\/api\/travel\/client/,
+  "Daemon settings should let the user toggle manual offline mode through the travel-client API",
+);
+
+assert.match(
+  shell,
+  /127\.0\.0\.1/,
+  "Travel mode UI should make the localhost-only sub-daemon bind explicit",
+);
+
+assert.match(
   sections,
   /daemon: \["Runtime health", "Local\/hub routing", "Socket & version"\]/,
   "Daemon settings overview should advertise local/hub routing",
