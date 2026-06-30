@@ -34,4 +34,21 @@ toggleSessionPin("s1");
 assert.deepEqual(getPinnedSessionIds(), ["s2"], "toggle removes existing id");
 unsub();
 
+// ── Snapshot stability (useSyncExternalStore contract) ───────────────────────
+// getPinnedSessionIds is the getSnapshot for useSessionPins. It MUST return a
+// referentially-identical array between calls when nothing changed — otherwise
+// React loops forever ("Maximum update depth exceeded") and crashes the Code
+// surface. It may only return a new reference after the value actually changes.
+assert.equal(getPinnedSessionIds(), getPinnedSessionIds(), "repeated reads return the SAME array reference");
+const before = getPinnedSessionIds();
+toggleSessionPin("s3");
+assert.notEqual(getPinnedSessionIds(), before, "a new reference appears after a real change");
+assert.equal(getPinnedSessionIds(), getPinnedSessionIds(), "stable again once settled");
+
+// The empty case must be stable too (the all-no-pins default path).
+toggleSessionPin("s2");
+toggleSessionPin("s3");
+assert.deepEqual(getPinnedSessionIds(), [], "back to empty");
+assert.equal(getPinnedSessionIds(), getPinnedSessionIds(), "empty snapshot is a stable reference");
+
 console.log("session-pins ok");

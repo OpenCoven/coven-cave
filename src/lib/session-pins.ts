@@ -21,13 +21,30 @@ export function subscribeSessionPins(fn: () => void): () => void {
   return () => { listeners.delete(fn); };
 }
 
+// useSyncExternalStore requires a referentially-stable snapshot: getSnapshot
+// must return the SAME array when the underlying value hasn't changed, or React
+// re-renders every commit and throws "Maximum update depth exceeded" (this
+// crashed the whole Code surface). Cache the parsed list keyed on the raw stored
+// string, so repeated reads return one array until it actually changes.
+const EMPTY_IDS: string[] = Object.freeze([]) as unknown as string[];
+let cachedRaw: string | null | undefined;
+let cachedIds: string[] = EMPTY_IDS;
+
 export function getPinnedSessionIds(): string[] {
   const raw = rawGet(PINS_KEY);
-  if (!raw) return [];
+  if (raw === cachedRaw) return cachedIds;
+  cachedRaw = raw;
+  if (!raw) {
+    cachedIds = EMPTY_IDS;
+    return cachedIds;
+  }
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
-  } catch { return []; }
+    cachedIds = Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : EMPTY_IDS;
+  } catch {
+    cachedIds = EMPTY_IDS;
+  }
+  return cachedIds;
 }
 
 export function isSessionPinned(id: string): boolean {
