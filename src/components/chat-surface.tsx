@@ -561,6 +561,7 @@ export function ChatSurface({
               <div className="min-h-0 min-w-0 flex-1" data-surface={surface}>
                 <ChatRouter
                   ref={routerRef}
+                  surface={surface}
                   familiar={activeFamiliar}
                   familiars={familiars}
                   sessions={sessions}

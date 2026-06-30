@@ -210,8 +210,19 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /placeholder=\{busy \? "Streaming… \(esc to cancel\)" : `Message \$\{familiar\.display_name\}…  ↵ to send`\}/,
-  "Composer placeholder should include ↵ to send hint in steady state",
+  /placeholder=\{busy \? "Streaming… \(esc to cancel\)" : surface === "code" \? "Ask for follow-up changes" : `Message \$\{familiar\.display_name\}…  ↵ to send`\}/,
+  "Composer placeholder should include ↵ to send hint in steady state (code surface uses the Codex follow-up copy)",
+);
+
+assert.match(
+  source,
+  /Worked for/,
+  "settled reasoning shows a 'Worked for Xs' summary",
+);
+assert.match(
+  source,
+  /Ask for follow-up changes/,
+  "code-surface composer uses the Codex follow-up placeholder",
 );
 
 assert.match(

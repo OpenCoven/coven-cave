@@ -257,6 +257,9 @@ type Props = {
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
   onProjectRootChange?: (projectRoot: string | null) => void;
+  /** Which surface embeds this ChatView ("code" for the Codex coding split).
+   *  Surface-aware composer copy and styling key off it. */
+  surface?: string;
 };
 
 export type ChatViewHandle = {
@@ -2045,7 +2048,7 @@ function MobileChatActionStrip({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange, surface },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -4753,7 +4756,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 const text = e.clipboardData.getData("text/plain");
                 if (looksLikeCsv(text)) { setCsvRaw(text); }
               }}
-              placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…  ↵ to send`}
+              placeholder={busy ? "Streaming… (esc to cancel)" : surface === "code" ? "Ask for follow-up changes" : `Message ${familiar.display_name}…  ↵ to send`}
               rows={1}
               inputMode="text"
               enterKeyHint="send"
@@ -5233,6 +5236,14 @@ function TurnRowImpl({
                   pending={turn.pending}
                   isError={turn.error}
                   label={familiar.display_name}
+                  messageId={turn.id}
+                  onShare={() => {
+                    try {
+                      void navigator.clipboard?.writeText(typeof visible === "string" ? visible : "");
+                    } catch {
+                      /* clipboard unavailable */
+                    }
+                  }}
                   onRegenerate={onRegenerate}
                   onReply={onReply}
                   onOpenUrl={onOpenUrl}
@@ -5259,7 +5270,7 @@ function TurnRowImpl({
             {/* Agent-produced inline attachments (file chips → lightbox). */}
             {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
-            {reasoning ? <ReasoningBlock reasoning={reasoning} /> : null}
+            {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} /> : null}
             {/* Designated "Tool activity" section: on every settled turn that
                 used tools, collect them into one collapsed group below the prose
                 (which renders uninterrupted above). Streaming turns show tools
@@ -5307,7 +5318,7 @@ function TurnRowImpl({
   );
 }
 
-function ReasoningBlock({ reasoning }: { reasoning: string }) {
+function ReasoningBlock({ reasoning, durationMs }: { reasoning: string; durationMs?: number }) {
   // The global "Show thinking" toggle (header) opens every reasoning block at
   // once; an individual block can still be collapsed/expanded locally. The
   // disclosure stays default-collapsed in markup — `open` is driven by the
@@ -5329,7 +5340,9 @@ function ReasoningBlock({ reasoning }: { reasoning: string }) {
           Thinking
         </span>
         <span className="ml-auto font-mono text-[10px] normal-case tracking-normal text-[var(--text-muted)]">
-          {wordCount} {wordCount === 1 ? "word" : "words"}
+          {typeof durationMs === "number" && durationMs > 0
+            ? `Worked for ${fmtDuration(durationMs)}`
+            : `${wordCount} ${wordCount === 1 ? "word" : "words"}`}
         </span>
       </summary>
       <div className="cave-reasoning-body mt-2 border-t border-[var(--border-hairline)]/70 pt-2 text-[12px] leading-5 text-[var(--text-secondary)]">

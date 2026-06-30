@@ -58,6 +58,9 @@ type Props = {
   compact?: boolean;
   /** Jump from the in-chat project rail to the dedicated Projects tab. */
   onOpenProjectsTab?: () => void;
+  /** Which surface embeds this router ("code" for the Codex coding split).
+   *  Forwarded to ChatView so its composer copy/styling can be surface-aware. */
+  surface?: string;
 };
 
 export type ChatRouterHandle = {
@@ -100,6 +103,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     syncUrlHash,
     compact = false,
     onOpenProjectsTab,
+    surface,
   },
   ref,
 ) {
@@ -424,6 +428,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
         ) : (
           <ChatView
             ref={viewHandle}
+            surface={surface}
             familiar={chatFamiliar}
             sessionId={view.sessionId}
             session={activeSession}
