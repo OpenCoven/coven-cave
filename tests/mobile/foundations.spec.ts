@@ -253,4 +253,49 @@ test.describe("mobile foundations", () => {
     const toggles = page.locator(".top-bar__mobile-toggle");
     await expect(toggles.first()).toBeVisible();
   });
+
+  // EVERY workspace surface must mount without a render crash. The
+  // "desktop shell is headerless…" test above guards the 7 primary surfaces,
+  // but a render loop / thrown effect / hook violation on any of the other
+  // surfaces (familiars, group chat, automations, github, roles, marketplace,
+  // flow, evals, retro, capabilities, journal, …) would never be seen — nothing
+  // navigates to them, and CI's build doesn't render. This sweeps ALL of
+  // WorkspaceMode and fails on any crash, daemon-less. It does NOT assert
+  // layout (some surfaces legitimately scroll); it only asserts "didn't crash".
+  test("no workspace surface crashes on navigation", async ({ page }) => {
+    // The complete WorkspaceMode set (src/lib/workspace-mode.ts). Keep in sync
+    // when a new surface is added — a new mode with a render crash should turn
+    // this red.
+    const ALL_SURFACES = [
+      "home", "agents", "chat", "groupchat", "board", "calendar", "inbox",
+      "library", "browser", "terminal", "code", "github", "roles", "marketplace",
+      "flow", "evals", "submissions", "retro", "capabilities", "journal",
+    ];
+
+    const FATAL_RENDER = /maximum update depth|too many re-?renders|minified react error|getsnapshot should be cached|rendered (more|fewer) hooks|hooks can only be called/i;
+    const errors: string[] = [];
+    let current = "(initial)";
+    page.on("pageerror", (err) => errors.push(`[${current}] pageerror: ${err.message}`));
+    page.on("console", (msg) => {
+      if (msg.type() === "error" && FATAL_RENDER.test(msg.text())) errors.push(`[${current}] ${msg.text()}`);
+    });
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto("/");
+    await page.waitForSelector(".shell-frame");
+
+    for (const surface of ALL_SURFACES) {
+      current = surface;
+      await page.evaluate(
+        (mode) => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } })),
+        surface,
+      );
+      await page.waitForTimeout(250);
+      // The shell frame must survive every navigation (a render crash unmounts
+      // the app to the top-level error boundary, removing it).
+      await expect(page.locator(".shell-frame"), `${surface} must keep the app shell mounted (no crash)`).toBeVisible();
+    }
+
+    expect(errors, `render crashes while sweeping surfaces:\n${errors.join("\n")}`).toEqual([]);
+  });
 });
