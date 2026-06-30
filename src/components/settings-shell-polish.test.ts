@@ -289,10 +289,10 @@ assert.match(
   "Settings header should identify the desktop control-room context",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /Tauri desktop/,
-  "Settings header should explicitly frame the native Tauri app surface",
+  /Tauri desktop|settings-shell__native-badge/,
+  "Settings header should stay single-line and omit the old native Tauri badge",
 );
 
 assert.match(

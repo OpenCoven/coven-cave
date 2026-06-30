@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { loadConfig, loadState, recordLocalSubdaemonWakeRequest, recordTravelHubReachability } from "@/lib/cave-config";
-import { callDaemon, daemonTargetForConfig, type DaemonTarget } from "@/lib/coven-daemon";
+import {
+  callDaemon,
+  daemonTargetForConfig,
+  extractDaemonError,
+  type DaemonResponse,
+  type DaemonTarget,
+} from "@/lib/coven-daemon";
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 import { startLocalDaemon } from "@/lib/daemon-start";
@@ -26,6 +32,18 @@ function targetSummary(target: DaemonTarget) {
     return { mode: target.mode, label: target.label, url: target.url };
   }
   return { mode: target.mode, label: target.label, error: target.error };
+}
+
+function hubAnswered(res: DaemonResponse<unknown>) {
+  return res.status > 0;
+}
+
+function failureReason(target: DaemonTarget, res: DaemonResponse<unknown>) {
+  const detail = extractDaemonError(res) ?? `http ${res.status}`;
+  if (target.mode !== "hub") return detail;
+  if (res.status === 401 || res.status === 403) return `hub unauthorized: ${detail}`;
+  if (hubAnswered(res)) return `hub unhealthy: ${detail}`;
+  return `hub unreachable: ${detail}`;
 }
 
 export async function GET() {
@@ -55,8 +73,8 @@ export async function GET() {
   const res = await callDaemon<Health>({ path: "/api/v1/health", timeoutMs: 1500 });
   let travelReplay: TravelOfflineReplayResult | null = null;
   if (target.mode === "hub") {
-    hubReachable = res.ok;
-    travelState = await recordTravelHubReachability(res.ok);
+    hubReachable = hubAnswered(res);
+    travelState = await recordTravelHubReachability(hubReachable);
     if (res.ok && !travelState.manualOffline) {
       travelReplay = await syncOfflineTravelQueue(config);
       if (travelReplay.attempted > 0) {
@@ -82,7 +100,7 @@ export async function GET() {
   if (!res.ok || !res.data) {
     return NextResponse.json({
       running: false,
-      reason: target.mode === "hub" ? `hub unreachable: ${res.error ?? `http ${res.status}`}` : res.error ?? `http ${res.status}`,
+      reason: failureReason(target, res),
       target: targetSummary(target),
       executors: executorStatuses,
       travel: travelStatus,

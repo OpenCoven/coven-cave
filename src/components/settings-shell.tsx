@@ -231,10 +231,9 @@ export function SettingsShell() {
           {isMobile && !pickerView ? "Settings" : "Back"}
         </button>
         <div className="min-w-0">
-          <span className="block text-[13px] font-semibold text-[var(--text-primary)]">
+          <span className="truncate text-[13px] font-semibold text-[var(--text-primary)]">
             {isMobile && !pickerView ? (activeSection?.label ?? "CovenCave control room") : "CovenCave control room"}
           </span>
-          <span className="settings-shell__native-badge">Tauri desktop</span>
         </div>
       </header>
 

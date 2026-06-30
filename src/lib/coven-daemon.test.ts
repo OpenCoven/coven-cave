@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 
 const {
   normalizeDaemonError,
@@ -8,6 +9,7 @@ const {
   normalizeWindowsDaemonSocket,
   resolveDaemonSocketPath,
   daemonTargetForConfig,
+  callDaemonTarget,
   normalizeHubUrl,
 } = await import("./coven-daemon.ts");
 
@@ -201,6 +203,60 @@ const {
   assert.equal(target.mode, "hub");
   assert.equal(target.url, "http://server.tailnet:8787");
   assert.equal(target.label, "Server hub");
+}
+
+// Hub mode accepts an invite URL but redacts the access token from the target URL.
+{
+  const target = daemonTargetForConfig({
+    version: 1,
+    defaults: { harness: "codex", model: "openai/gpt-5.5" },
+    familiars: {},
+    roles: [],
+    addons: {},
+    marketplace: { installed: {} },
+    multiHost: {
+      mode: "hub",
+      hubUrl: "https://cave.tailnet.example.ts.net/?coven_access_token=v1.signed&covenCaveToken=sidecar",
+      executorUrls: [],
+    },
+  });
+  assert.equal(target.mode, "hub");
+  assert.equal(target.url, "https://cave.tailnet.example.ts.net");
+  assert.equal(target.accessToken, "v1.signed");
+  assert.doesNotMatch(target.url, /coven_access_token|v1\.signed/);
+}
+
+// Hub requests authenticate with the extracted mobile access token.
+{
+  let authorization = "";
+  let requestedUrl = "";
+  const server = createServer((req, res) => {
+    authorization = req.headers.authorization ?? "";
+    requestedUrl = req.url ?? "";
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+
+  try {
+    const res = await callDaemonTarget(
+      {
+        mode: "hub",
+        label: "Server hub",
+        url: `http://127.0.0.1:${address.port}`,
+        accessToken: "v1.signed",
+      },
+      { path: "/api/v1/health", timeoutMs: 500 },
+    );
+
+    assert.equal(res.ok, true);
+    assert.equal(authorization, "Bearer v1.signed");
+    assert.equal(requestedUrl, "/api/v1/health");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 // Hub mode without a URL is explicit config failure, never a silent local fallback.

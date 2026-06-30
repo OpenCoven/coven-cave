@@ -36,8 +36,8 @@ assert.match(
 
 assert.match(
   source,
-  /recordTravelHubReachability\(res\.ok/,
-  "daemon status should persist hub reachability transitions for the 10s travel switch threshold",
+  /recordTravelHubReachability\(hubReachable\)/,
+  "daemon status should persist network reachability transitions, not auth/health failures",
 );
 
 assert.match(
@@ -90,8 +90,8 @@ assert.match(
 
 assert.match(
   source,
-  /target\.mode === "hub" \? `hub unreachable: \$\{res\.error \?\? `http \$\{res\.status\}`\}`/,
-  "hub connection failures should be labelled as hub failures instead of daemon-local failures",
+  /res\.status === 401 \|\| res\.status === 403[\s\S]*hub unauthorized/,
+  "hub auth failures should be labelled separately instead of treated as offline",
 );
 
 console.log("daemon status route.test.ts: ok");

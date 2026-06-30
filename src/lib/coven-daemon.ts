@@ -19,7 +19,7 @@ const DEFAULT_HUB_PROTOCOL = "http://";
 
 export type DaemonTarget =
   | { mode: "local"; label: "Local daemon"; socketPath: string }
-  | { mode: "hub"; label: "Server hub"; url: string }
+  | { mode: "hub"; label: "Server hub"; url: string; accessToken?: string }
   | { mode: "unconfigured-hub"; label: "Server hub"; error: string };
 
 export function normalizeWindowsDaemonSocket(socket: string): string {
@@ -93,19 +93,34 @@ export function normalizeHubUrl(rawUrl: string): string {
   return `${DEFAULT_HUB_PROTOCOL}${trimmed}`;
 }
 
+function hubTargetFromUrl(rawUrl: string): Extract<DaemonTarget, { mode: "hub" }> | null {
+  const normalized = normalizeHubUrl(rawUrl);
+  if (!normalized) return null;
+  const url = new URL(normalized);
+  const accessToken = url.searchParams.get("coven_access_token")?.trim() || undefined;
+  url.search = "";
+  url.hash = "";
+  return {
+    mode: "hub",
+    label: "Server hub",
+    url: url.toString().replace(/\/+$/, ""),
+    ...(accessToken ? { accessToken } : {}),
+  };
+}
+
 export function daemonTargetForConfig(config: Pick<CaveConfig, "multiHost">): DaemonTarget {
   if (config.multiHost?.mode !== "hub") {
     return localDaemonTarget();
   }
-  const url = normalizeHubUrl(config.multiHost.hubUrl ?? "");
-  if (!url) {
+  const target = hubTargetFromUrl(config.multiHost.hubUrl ?? "");
+  if (!target) {
     return {
       mode: "unconfigured-hub",
       label: "Server hub",
       error: "server hub URL is not configured",
     };
   }
-  return { mode: "hub", label: "Server hub", url };
+  return target;
 }
 
 export function localDaemonTarget(): Extract<DaemonTarget, { mode: "local" }> {
@@ -175,6 +190,14 @@ export async function callDaemonTarget<T = unknown>(
 
   return new Promise((resolve) => {
     const payload = body !== undefined ? JSON.stringify(body) : undefined;
+    const headers: Record<string, string> = {};
+    if (payload) {
+      headers["content-type"] = "application/json";
+      headers["content-length"] = Buffer.byteLength(payload).toString();
+    }
+    if (target.mode === "hub" && target.accessToken) {
+      headers.authorization = `Bearer ${target.accessToken}`;
+    }
     const requestOptions =
       target.mode === "hub"
         ? (() => {
@@ -186,12 +209,7 @@ export async function callDaemonTarget<T = unknown>(
               path: `${url.pathname}${url.search}`,
               method,
               timeout: timeoutMs,
-              headers: payload
-                ? {
-                    "content-type": "application/json",
-                    "content-length": Buffer.byteLength(payload).toString(),
-                  }
-                : undefined,
+              headers: Object.keys(headers).length ? headers : undefined,
             };
           })()
         : {
@@ -199,12 +217,7 @@ export async function callDaemonTarget<T = unknown>(
             method,
             path: reqPath,
             timeout: timeoutMs,
-            headers: payload
-              ? {
-                  "content-type": "application/json",
-                  "content-length": Buffer.byteLength(payload).toString(),
-                }
-              : undefined,
+            headers: Object.keys(headers).length ? headers : undefined,
           };
     const requestFn =
       target.mode === "hub" &&
