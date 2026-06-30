@@ -4,6 +4,13 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+
+assert.match(
+  globalsSrc,
+  /\.cave-code-page[\s\S]*?cave-composer/,
+  "Codex composer card styling is scoped to the code page",
+);
 const turnRow = source.match(/function TurnRowImpl[\s\S]*?\n}\n\ntype TurnRowProps/)?.[0] ?? "";
 const splitReasoning = source.match(/function splitReasoning[\s\S]*?\n}\n\n\/\/ ── ChatEmptyState/)?.[0] ?? "";
 
