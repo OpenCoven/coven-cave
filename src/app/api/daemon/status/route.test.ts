@@ -24,6 +24,18 @@ assert.match(
 
 assert.match(
   source,
+  /executorStatusesForConfig\(config\)/,
+  "daemon status should check configured executor node availability from Cave config",
+);
+
+assert.match(
+  source,
+  /executors: executorStatuses/,
+  "daemon status response should include executor node availability",
+);
+
+assert.match(
+  source,
   /reason: target\.error/,
   "an unconfigured hub should be reported as an explicit status failure",
 );

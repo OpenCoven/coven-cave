@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
-import { loadConfig } from "@/lib/cave-config";
+import {
+  loadConfig,
+  normalizeMultiHostConfig,
+  type CaveMultiHostConfig,
+} from "@/lib/cave-config";
 import {
   buildFamiliarsToml,
   familiarsTomlContainsId,
@@ -23,6 +27,7 @@ type SetupBody = {
   harness?: string;
   model?: string;
   familiar?: OnboardingFamiliarInput;
+  multiHost?: Partial<CaveMultiHostConfig>;
 };
 
 async function pathExists(p: string): Promise<boolean> {
@@ -137,6 +142,10 @@ export async function POST(req: Request) {
     roles: existing.roles,
     addons: existing.addons,
     marketplace: existing.marketplace,
+    multiHost: normalizeMultiHostConfig({
+      ...existing.multiHost,
+      ...(body.multiHost ?? {}),
+    }),
   };
   await writeFile(configJson, JSON.stringify(nextConfig, null, 2), "utf8");
   wrote.push("cave-config.json");

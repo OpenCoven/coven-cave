@@ -532,6 +532,7 @@ export const SUITES = {
     "src/app/api/app/latest-release/route.test.ts",
     "src/app/api/opencoven-tools/status/route.test.ts",
     "src/app/api/daemon/status/route.test.ts",
+    "src/lib/executor-status.test.ts",
     "src/app/api/projects/route.test.ts",
     "src/app/api/coven/exec/route.test.ts",
     "src/lib/coven-daemon.test.ts",

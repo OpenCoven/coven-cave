@@ -42,6 +42,18 @@ assert.match(
 );
 
 assert.match(
+  shell,
+  /Executor nodes/,
+  "Daemon status UI should label configured executor node availability",
+);
+
+assert.match(
+  shell,
+  /status\?\.executors\?\.map/,
+  "Daemon status UI should render every executor availability row returned by /api/daemon/status",
+);
+
+assert.match(
   sections,
   /daemon: \["Runtime health", "Local\/hub routing", "Socket & version"\]/,
   "Daemon settings overview should advertise local/hub routing",

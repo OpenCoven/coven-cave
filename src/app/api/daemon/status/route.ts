@@ -3,6 +3,7 @@ import { loadConfig } from "@/lib/cave-config";
 import { callDaemon, daemonTargetForConfig, type DaemonTarget } from "@/lib/coven-daemon";
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
+import { executorStatusesForConfig } from "@/lib/executor-status";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,12 +28,14 @@ function targetSummary(target: DaemonTarget) {
 export async function GET() {
   const config = await loadConfig();
   const target = daemonTargetForConfig(config);
+  const executorStatuses = await executorStatusesForConfig(config);
   if (target.mode === "unconfigured-hub") {
     const root = covenWorkspaceRoot();
     return NextResponse.json({
       running: false,
       reason: target.error,
       target: targetSummary(target),
+      executors: executorStatuses,
       workspacePath: root,
       projectRoot: root,
     });
@@ -45,6 +48,7 @@ export async function GET() {
       running: false,
       reason: target.mode === "hub" ? `hub unreachable: ${res.error ?? `http ${res.status}`}` : res.error ?? `http ${res.status}`,
       target: targetSummary(target),
+      executors: executorStatuses,
       workspacePath: root,
       projectRoot: root,
     });
@@ -62,6 +66,7 @@ export async function GET() {
     }),
     daemon: res.data.daemon,
     target: targetSummary(target),
+    executors: executorStatuses,
     workspacePath: root,
     projectRoot: root,
   });

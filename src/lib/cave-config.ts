@@ -175,7 +175,7 @@ export async function loadConfig(): Promise<CaveConfig> {
   }
 }
 
-function normalizeMultiHostConfig(input: Partial<CaveMultiHostConfig> | undefined): CaveMultiHostConfig {
+export function normalizeMultiHostConfig(input: Partial<CaveMultiHostConfig> | undefined): CaveMultiHostConfig {
   const mode = input?.mode === "hub" ? "hub" : "local";
   const hubUrl = typeof input?.hubUrl === "string" ? input.hubUrl.trim() : "";
   const executorUrls = Array.from(

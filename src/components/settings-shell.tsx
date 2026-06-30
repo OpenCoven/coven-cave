@@ -65,6 +65,13 @@ type DaemonStatus = {
   apiVersion?: string;
   workspacePath?: string;
   daemon?: { pid: number; startedAt: string; socket: string };
+  executors?: Array<{
+    url: string;
+    healthUrl: string;
+    ok: boolean;
+    state: "available" | "unreachable";
+    detail: string;
+  }>;
   target?: {
     mode: "local" | "hub" | "unconfigured-hub";
     label: string;
@@ -570,6 +577,25 @@ function DaemonSection() {
             <p className="basis-full text-[11px] text-[var(--color-danger)]">
               {status.target.url} is not reachable from this Cave.
             </p>
+          )}
+          {mode === "hub" && (status?.executors?.length ?? 0) > 0 && (
+            <div className="basis-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2">
+              <div className="mb-1 flex items-center gap-2 text-[11px] font-medium text-[var(--text-secondary)]">
+                <Icon name="ph:terminal-window" width={12} />
+                Executor nodes
+              </div>
+              <div className="space-y-1">
+                {status?.executors?.map((executor) => (
+                  <div key={executor.url} className="flex min-w-0 flex-wrap items-center gap-2 text-[11px]">
+                    <span className={`h-2 w-2 rounded-full ${executor.ok ? "bg-[var(--color-success)]" : "bg-red-400"}`} />
+                    <span className="min-w-0 truncate font-mono text-[var(--text-primary)]">{executor.url}</span>
+                    <span className={executor.ok ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"}>
+                      {executor.detail}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       </SettingsGroup>

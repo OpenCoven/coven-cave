@@ -329,6 +329,19 @@ type GuidedStep = {
   icon: IconName;
 };
 
+type MultiHostMode = "local" | "hub";
+
+function parseOnboardingExecutorUrls(text: string): string[] {
+  return Array.from(
+    new Set(
+      text
+        .split(/\r?\n|,/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
 export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [platform, setPlatform] = useState<PlatformId>("unknown");
@@ -383,6 +396,12 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [sshCwd, setSshCwd] = useState("");
   const [sshCommand, setSshCommand] = useState("");
   const [sshCheck, setSshCheck] = useState<SshCheckState>({ state: "idle" });
+  const [onboardingMultiHostMode, setOnboardingMultiHostMode] =
+    useState<MultiHostMode>("local");
+  const [onboardingHubUrl, setOnboardingHubUrl] = useState("");
+  const [onboardingExecutorText, setOnboardingExecutorText] = useState("");
+  const [savingOnboardingConnection, setSavingOnboardingConnection] =
+    useState(false);
   // Created familiars (final step lists them with Edit affordances)
   const [familiarsList, setFamiliarsList] = useState<CaveFamiliar[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -409,6 +428,20 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   }, []);
 
   useEffect(() => setPlatform(detectPlatform()), []);
+
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/config", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((json: { ok?: boolean; config?: { multiHost?: { mode?: MultiHostMode; hubUrl?: string; executorUrls?: string[] } } }) => {
+        const multiHost = json.config?.multiHost;
+        if (!json.ok || !multiHost) return;
+        setOnboardingMultiHostMode(multiHost.mode === "hub" ? "hub" : "local");
+        setOnboardingHubUrl(multiHost.hubUrl ?? "");
+        setOnboardingExecutorText((multiHost.executorUrls ?? []).join("\n"));
+      })
+      .catch(() => {});
+  }, [open]);
 
   const loadOpenClawAgents = useCallback(async () => {
     setAgentsLoading(true);
@@ -1094,6 +1127,25 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     }
   };
 
+  const saveOnboardingConnection = async () => {
+    setSavingOnboardingConnection(true);
+    setSetupError(null);
+    try {
+      const res = await fetch("/api/onboarding/setup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ multiHost: { mode: onboardingMultiHostMode, hubUrl: onboardingHubUrl, executorUrls: parseOnboardingExecutorUrls(onboardingExecutorText) } }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.ok === false) throw new Error(json.error ?? "connection setup failed");
+      await refresh();
+    } catch (err) {
+      setSetupError(err instanceof Error ? err.message : "connection setup failed");
+    } finally {
+      setSavingOnboardingConnection(false);
+    }
+  };
+
   const editFamiliar = (id: string) => {
     // The studio renders under this overlay, so close the overlay first.
     onDismiss();
@@ -1520,6 +1572,63 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                           />
                         ) : step.key === "daemon" ? (
                           <div className="flex flex-col gap-3">
+                            <div className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/45 p-3">
+                              <div className="mb-2 flex flex-wrap items-center gap-2">
+                                <span className="text-[12px] font-medium text-[var(--text-primary)]">Daemon connection</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setOnboardingMultiHostMode("local")}
+                                  className={`focus-ring rounded-md border px-2 py-1 text-[11px] ${
+                                    onboardingMultiHostMode === "local"
+                                      ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-white"
+                                      : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                                  }`}
+                                >
+                                  Local
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setOnboardingMultiHostMode("hub")}
+                                  className={`focus-ring rounded-md border px-2 py-1 text-[11px] ${
+                                    onboardingMultiHostMode === "hub"
+                                      ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-white"
+                                      : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                                  }`}
+                                >
+                                  Server hub
+                                </button>
+                              </div>
+                              <label className="grid gap-1 text-[11px] text-[var(--text-secondary)]">
+                                Server hub URL
+                                <input
+                                  value={onboardingHubUrl}
+                                  onChange={(event) => setOnboardingHubUrl(event.target.value)}
+                                  placeholder="http://server.tailnet:8787"
+                                  disabled={onboardingMultiHostMode !== "hub"}
+                                  className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+                                />
+                              </label>
+                              <label className="mt-2 grid gap-1 text-[11px] text-[var(--text-secondary)]">
+                                Executor addresses
+                                <textarea
+                                  value={onboardingExecutorText}
+                                  onChange={(event) => setOnboardingExecutorText(event.target.value)}
+                                  placeholder={"executor-1.tailnet:8787\nexecutor-2.tailnet:8787"}
+                                  disabled={onboardingMultiHostMode !== "hub"}
+                                  rows={2}
+                                  className="resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => void saveOnboardingConnection()}
+                                disabled={savingOnboardingConnection}
+                                className="focus-ring mt-2 inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-60"
+                              >
+                                <Icon name="ph:floppy-disk-bold" width={12} />
+                                {savingOnboardingConnection ? "Saving..." : "Save connection"}
+                              </button>
+                            </div>
                             <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
                               The coven daemon runs your familiars in the
                               background. Cave starts it for you — or run{" "}

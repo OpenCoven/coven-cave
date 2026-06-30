@@ -204,6 +204,24 @@ assert.match(
 
 assert.match(
   source,
+  /saveOnboardingConnection/,
+  "onboarding should provide a setup-time save path for local/server hub routing",
+);
+
+assert.match(
+  source,
+  /body: JSON\.stringify\(\{ multiHost: \{ mode: onboardingMultiHostMode, hubUrl: onboardingHubUrl, executorUrls: parseOnboardingExecutorUrls\(onboardingExecutorText\) \} \}\)/,
+  "onboarding should persist hub URL and executor addresses through /api/onboarding/setup",
+);
+
+assert.match(
+  source,
+  /Server hub URL/,
+  "onboarding daemon step should expose the server hub URL field",
+);
+
+assert.match(
+  source,
   /Start the daemon first\. Familiar creation unlocks once Cave can reach it\./,
   "the familiar step explains why creation is unavailable while the daemon is offline",
 );

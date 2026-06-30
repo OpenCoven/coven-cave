@@ -49,6 +49,27 @@ assert.match(
   "setup route should preserve existing.marketplace (installed plugins) when writing the next config",
 );
 
+// 5. Multi-host daemon routing is part of onboarding now: setup may receive
+//    hub/executor config, and rerunning setup must preserve the existing value
+//    when the user does not provide one.
+assert.match(
+  source,
+  /multiHost\?:\s*Partial<CaveMultiHostConfig>/,
+  "setup route should accept optional multi-host config from onboarding",
+);
+
+assert.match(
+  source,
+  /multiHost:\s*normalizeMultiHostConfig\(\{/,
+  "setup route should normalize onboarding multi-host config before writing it",
+);
+
+assert.match(
+  source,
+  /\.\.\.\(body\.multiHost \?\? \{\}\)/,
+  "setup route should preserve existing multi-host config when onboarding does not send an update",
+);
+
 // 5. Defensive guard: ensure nextConfig is NOT a literal that only enumerates
 //    {version, defaults, familiars} — i.e. block the regression. We assert
 //    the pre-fix shape doesn't appear verbatim.
