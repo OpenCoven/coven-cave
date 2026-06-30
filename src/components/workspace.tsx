@@ -93,7 +93,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   chat: "Familiars",
   groupchat: "Group Chat",
   board: "Tasks",
-  calendar: "Calendar",
+  calendar: "Automations",
   inbox: "Automations",
   library: "Library",
   browser: "Browser",
@@ -1209,11 +1209,11 @@ export function Workspace() {
   }, [startFamiliarChat]);
 
   useEffect(() => {
-    // ⌘1..⌘8 in the order surfaces appear top-to-bottom in the left sidebar
+    // ⌘1..⌘7 in the order surfaces appear top-to-bottom in the left sidebar
     // (Work group, then Tools group). ⌘9 is Projects and ⌘0 is Library (handled
     // below); Journal/Roles/Workflows are unshortcut.
     const SURFACE_ORDER: WorkspaceMode[] = [
-      "home", "chat", "board", "calendar", "inbox", "browser", "terminal", "code",
+      "home", "chat", "board", "inbox", "browser", "terminal", "code",
     ];
 
     const onKey = (e: KeyboardEvent) => {
@@ -2022,7 +2022,7 @@ export function Workspace() {
     ) : mode === "journal" ? (
       <JournalView familiars={familiars} activeFamiliarId={activeId} scopeFamiliarIds={scopeIds} />
     ) : mode === "inbox" || mode === "calendar" ? (
-      // Calendar and Automations are one "Schedule" surface: Calendar is the
+      // Calendar and Automations are one Automations surface: Calendar is the
       // leading tab of the Automations view. The "calendar" mode still resolves
       // here (nav button / deep links) but opens that tab; keying on the mode
       // remounts so the deep link lands on it.

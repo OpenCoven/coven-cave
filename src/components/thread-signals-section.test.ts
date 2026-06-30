@@ -131,6 +131,16 @@ describe("aggregateThreadSignals", () => {
     assert.match(source, /Latest report/, "component shows recency for the summary");
   });
 
+  it("renders thread signal categories as a task-style grouped table", () => {
+    assert.match(source, /tableSections\(aggregate\)/, "component normalizes signal categories into table sections");
+    assert.match(source, /className="board-table board-table--grid fa-thread-table"/, "component reuses the task table class stack");
+    assert.match(source, /aria-label="Thread signal summary"/, "table has a stable accessible label");
+    assert.match(source, /className="board-table-group-row fa-thread-table__group"/, "sections render as task-style grouped rows");
+    assert.match(source, /className="fa-thread-table__col-detail"/, "column sizing classes stay separate from cell content classes");
+    assert.match(source, /No access gaps\./, "empty category states remain visible inside the table");
+    assert.match(source, /<th>Signal<\/th>[\s\S]*<th>Type<\/th>[\s\S]*<th>Status<\/th>[\s\S]*<th>Detail<\/th>[\s\S]*<th>Reports<\/th>/, "table exposes scan-friendly columns");
+  });
+
   it("lets you select a review item to unlock a discussion on the topic", () => {
     assert.match(source, /buildThreadSignalDiscussionPrompt/, "seeds the chat with a topic-specific prompt");
     assert.match(source, /new CustomEvent\("cave:agents-new-chat"/, "opens a new chat with the familiar");

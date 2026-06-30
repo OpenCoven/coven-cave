@@ -1,78 +1,59 @@
 /**
- * Layout presets for the Code workspace (mode "code"): quick re-weightings of
- * the chat | comux split so the user can jump between conversation-heavy,
- * balanced, and review-heavy layouts without dragging the separator.
+ * Layout modes for the Code workspace (mode "code"): a two-option switch
+ * between the code/files pane and the git changes pane. The selected mode also
+ * re-weights the chat | worktree columns to keep the active task at 2/3 width.
  *
  * Mirrors src/lib/reading-width.ts: a small enum persisted in localStorage. The
- * preset only records *which chip is selected*; the actual pane sizes live in
- * react-resizable-panels' own persisted layout ("cave.code.widths.v1"), applied
- * by resizing the chat panel to CODE_PRESET_CHAT_SIZE. Values stay inside the
- * code-chat panel's min/max band (the comux pane fills the remainder, clamped to
- * its own minSize), so a preset never produces an impossible layout.
+ * preset records which chip is selected; Comux maps that to the visible
+ * right-pane and column flex weights.
  */
 import type { IconName } from "@/lib/icon";
 
 export const CODE_PRESET_KEY = "cave.code.preset.v1";
 
-export const CODE_PRESETS = ["chat", "split", "review"] as const;
+export const CODE_PRESETS = ["code", "changes"] as const;
 
 export type CodePreset = (typeof CODE_PRESETS)[number];
 
-export const DEFAULT_CODE_PRESET: CodePreset = "split";
+export const DEFAULT_CODE_PRESET: CodePreset = "code";
 
-/** Chat-pane width per preset; the comux pane fills what's left. */
-export const CODE_PRESET_CHAT_SIZE: Record<CodePreset, string> = {
-  chat: "65%", // conversation-forward (comux at its 35% min)
-  split: "45%", // balanced
-  review: "30%", // comux-forward for diff review
+/** Two-pane Code workspace weights: chat column | worktree column. */
+export const CODE_PRESET_COLUMN_FLEX: Record<CodePreset, { chat: number; worktree: number }> = {
+  code: { chat: 2, worktree: 1 },
+  changes: { chat: 1, worktree: 2 },
 };
 
 export const CODE_PRESET_LABELS: Record<CodePreset, string> = {
-  chat: "Chat",
-  split: "Split",
-  review: "Review",
+  code: "Code",
+  changes: "Changes",
 };
 
 export const CODE_PRESET_ICONS: Record<CodePreset, IconName> = {
-  chat: "ph:chats",
-  split: "ph:columns",
-  review: "ph:git-diff",
+  code: "ph:code",
+  changes: "ph:git-diff",
 };
 
 /** One-line hint shown in each preset chip's tooltip — what the mode is *for*. */
 export const CODE_PRESET_HINTS: Record<CodePreset, string> = {
-  chat: "Focus the conversation — widen chat, hide the projects list",
-  split: "Balanced — chat beside the file tree & preview",
-  review: "Review changes — widen code and open the git diff",
+  code: "Focus the chat with the code preview available",
+  changes: "Focus the git diff and uncommitted changes",
 };
 
 /**
  * A preset is more than a width: it sets up the whole Code workspace for a task.
- * These maps let the chat-pane toolbar (code-view) and the coding surface
+ * These maps let the chat-pane toolbar (CodeInlineToolbar) and the coding surface
  * (comux-view) agree on the *context* each preset implies, dispatched over the
  * events below so neither component has to reach into the other.
  */
 
-/** Whether a preset hides the comux projects list (Chat focuses the chat). */
-export const CODE_PRESET_HIDES_PROJECT_LIST: Record<CodePreset, boolean> = {
-  chat: true,
-  split: false,
-  review: false,
-};
-
 /** Which comux right-pane a preset switches to, or null to leave it untouched. */
-export const CODE_PRESET_RIGHT_VIEW: Record<CodePreset, "files" | "changes" | null> = {
-  chat: null, // conversation-forward: don't disturb whatever's open
-  split: "files", // balanced working layout → file tree & preview
-  review: "changes", // review-forward → the git diff
+export const CODE_PRESET_RIGHT_VIEW: Record<CodePreset, "files" | "changes"> = {
+  code: "files",
+  changes: "changes",
 };
 
 /** localStorage key for whether the comux projects list is collapsed. */
 export const CODE_PROJECT_LIST_KEY = "cave.code.projectListCollapsed.v1";
-
-/** Fired by the Code toolbar (code-view) → consumed by comux-view to show/hide
- *  the projects list. `detail.collapsed: boolean`. */
-export const CODE_PROJECT_LIST_EVENT = "cave:code-project-list";
 
 /** Fired when a preset is chosen → comux-view switches its right pane to match.
  *  `detail.preset: CodePreset`. */

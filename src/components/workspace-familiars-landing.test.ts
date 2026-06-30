@@ -68,8 +68,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "calendar", "inbox", "browser", "terminal", "code",/,
-  "SURFACE_ORDER ascends with the sidebar top-to-bottom order (⌘1..⌘8)",
+  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "inbox", "browser", "terminal", "code",/,
+  "SURFACE_ORDER ascends with the merged sidebar top-to-bottom order (⌘1..⌘7)",
 );
 
 // ⌘[ / ⌘] cycle to the previous / next surface through SURFACE_ORDER (wraps).
@@ -157,14 +157,14 @@ assert.match(
 
 assert.match(
   sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘6", description:/,
-  "Sidebar Browser is the first Tools shortcut, on ⌘6",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘5", description:/,
+  "Sidebar Browser is the first Tools shortcut, on ⌘5",
 );
 
 assert.match(
   sidebar,
-  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description:/,
-  "Sidebar Terminal follows Browser on ⌘7",
+  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘6", description:/,
+  "Sidebar Terminal follows Browser on ⌘6",
 );
 
 console.log("workspace-familiars-landing: all assertions passed");

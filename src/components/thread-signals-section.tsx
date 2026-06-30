@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/lib/icon";
 import {
@@ -14,6 +15,22 @@ import {
 
 const CONTEXTS = ["adequate", "tight", "excess", "critical"] as const;
 
+type ThreadSignalTableRow = {
+  id: string;
+  signal: string;
+  type: string;
+  state: string;
+  detail: string;
+  count?: number;
+  severity?: "critical" | "warning" | "info";
+};
+
+type ThreadSignalTableSection = {
+  id: string;
+  title: string;
+  empty: string;
+  rows: ThreadSignalTableRow[];
+};
 
 function ScoreBar({ label, value }: { label: string; value: number }) {
   return (
@@ -34,27 +51,89 @@ function latestReportDate(reports: ThreadSelfReport[]): string {
   return latest ? new Date(latest.reportedAt).toLocaleString() : "Unknown";
 }
 
-function ListBlock<T>({
-  title,
-  items,
-  empty,
-  render,
-}: {
-  title: string;
-  items: T[];
-  empty: string;
-  render: (item: T) => string;
-}) {
-  return (
-    <div className="fa-thread-panel">
-      <h3>{title}</h3>
-      {items.length === 0 ? <p>{empty}</p> : (
-        <ul>
-          {items.map((item, index) => <li key={`${title}-${index}`}>{render(item)}</li>)}
-        </ul>
-      )}
-    </div>
-  );
+function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSection[] {
+  return [
+    {
+      id: "skills-used",
+      title: "Skills used most",
+      empty: "No skills reported.",
+      rows: aggregate.skillsUsedMost.map((item) => ({
+        id: `skill-used-${item.skillId}`,
+        signal: item.skillId,
+        type: "Used most",
+        state: "reported",
+        detail: "Appeared in thread self-reports.",
+        count: item.count,
+        severity: "info",
+      })),
+    },
+    {
+      id: "skills-clarity",
+      title: "Skills needing clarity",
+      empty: "No clarity gaps.",
+      rows: aggregate.skillsNeedingClarity.map((item) => ({
+        id: `skill-clarity-${item.skillId}`,
+        signal: item.skillId,
+        type: "Clarity gap",
+        state: "needs definition",
+        detail: item.reason,
+        severity: "warning",
+      })),
+    },
+    {
+      id: "skills-access",
+      title: "Skills needing access",
+      empty: "No access gaps.",
+      rows: aggregate.skillsNeedingAccess.map((item) => ({
+        id: `skill-access-${item.skillId}`,
+        signal: item.skillId,
+        type: "Access gap",
+        state: "blocked",
+        detail: item.reason,
+        severity: "critical",
+      })),
+    },
+    {
+      id: "capabilities-vital",
+      title: "Capabilities vital",
+      empty: "No vital capabilities reported.",
+      rows: aggregate.capabilitiesVital.map((item) => ({
+        id: `capability-vital-${item.name}`,
+        signal: item.name,
+        type: "Vital capability",
+        state: item.currentState,
+        detail: item.notes || "Reported as necessary for successful work.",
+        severity: item.currentState === "missing" ? "critical" : item.currentState === "degraded" ? "warning" : "info",
+      })),
+    },
+    {
+      id: "capabilities-lacking",
+      title: "Capabilities lacking",
+      empty: "No lacking capabilities reported.",
+      rows: aggregate.capabilitiesLacking.map((item) => ({
+        id: `capability-lacking-${item.name}`,
+        signal: item.name,
+        type: "Lacking capability",
+        state: item.importance,
+        detail: item.detail,
+        severity: item.importance === "blocking" ? "critical" : "warning",
+      })),
+    },
+    {
+      id: "persistent-blockers",
+      title: "Persistent blockers",
+      empty: "No persistent blockers.",
+      rows: aggregate.persistentBlockers.map((blocker) => ({
+        id: `blocker-${blocker.id}`,
+        signal: blocker.title,
+        type: blocker.category,
+        state: blocker.impact,
+        detail: blocker.detail || "Reported as a repeated blocker.",
+        count: blocker.frequency,
+        severity: blocker.crit || blocker.impact === "blocking" ? "critical" : blocker.impact === "high" ? "warning" : "info",
+      })),
+    },
+  ];
 }
 
 /** Open a new chat with this familiar, primed to discuss the selected topic. */
@@ -79,6 +158,7 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
 
   const aggregate = aggregateThreadSignals(reports);
   const reviewQueue = buildThreadSignalReviewQueue(aggregate);
+  const sections = tableSections(aggregate);
 
   return (
     <div className="fa-thread-signals" data-familiar-id={familiarId}>
@@ -128,25 +208,57 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
           </span>
         ))}
       </div>
-      <div className="fa-thread-grid">
-        <ListBlock title="Skills used most" items={aggregate.skillsUsedMost} empty="No skills reported." render={(item) => `${item.skillId} (${item.count})`} />
-        <ListBlock title="Skills needing clarity" items={aggregate.skillsNeedingClarity} empty="No clarity gaps." render={(item) => `${item.skillId}: ${item.reason}`} />
-        <ListBlock title="Skills needing access" items={aggregate.skillsNeedingAccess} empty="No access gaps." render={(item) => `${item.skillId}: ${item.reason}`} />
-        <ListBlock title="Capabilities vital" items={aggregate.capabilitiesVital} empty="No vital capabilities reported." render={(item) => `${item.name}: ${item.currentState}${item.notes ? ` - ${item.notes}` : ""}`} />
-        <ListBlock title="Capabilities lacking" items={aggregate.capabilitiesLacking} empty="No lacking capabilities reported." render={(item) => `${item.name}: ${item.importance} - ${item.detail}`} />
-        <div className="fa-thread-panel">
-          <h3>Persistent blockers</h3>
-          {aggregate.persistentBlockers.length === 0 ? <p>No persistent blockers.</p> : (
-            <ul>
-              {aggregate.persistentBlockers.map((blocker) => (
-                <li key={blocker.id}>
-                  <span>{blocker.title}: {blocker.frequency}x - {blocker.impact}</span>
-                  {blocker.crit ? <b className="fa-thread-badge"><Icon name="ph:warning-circle" aria-hidden />crit</b> : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+      <div className="fa-thread-table-wrap">
+        <table className="board-table board-table--grid fa-thread-table" aria-label="Thread signal summary">
+          <colgroup>
+            <col className="fa-thread-table__col-signal" />
+            <col className="fa-thread-table__col-type" />
+            <col className="fa-thread-table__col-state" />
+            <col className="fa-thread-table__col-detail" />
+            <col className="fa-thread-table__col-count" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Signal</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Detail</th>
+              <th>Reports</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sections.map((section) => (
+              <Fragment key={section.id}>
+                <tr className="board-table-group-row fa-thread-table__group">
+                  <td colSpan={5}>
+                    {section.title}
+                    <span className="board-table-group-badge">{section.rows.length}</span>
+                  </td>
+                </tr>
+                {section.rows.length === 0 ? (
+                  <tr className="fa-thread-table__empty">
+                    <td colSpan={5}>{section.empty}</td>
+                  </tr>
+                ) : (
+                  section.rows.map((row, index) => (
+                    <tr key={row.id} className={index % 2 === 1 ? "board-table-row--alt" : undefined}>
+                      <td>
+                        <span className="fa-thread-table__signal-cell">
+                          <span className={`fa-thread-table__severity fa-thread-table__severity--${row.severity ?? "info"}`} aria-hidden />
+                          <span className="board-table-title" title={row.signal}>{row.signal}</span>
+                        </span>
+                      </td>
+                      <td><span className="board-table-muted">{row.type}</span></td>
+                      <td><span className={`fa-thread-table__state fa-thread-table__state--${row.severity ?? "info"}`}>{row.state}</span></td>
+                      <td><span className="fa-thread-table__detail">{row.detail}</span></td>
+                      <td><span className="board-table-cell-time">{row.count ? `${row.count}x` : "-"}</span></td>
+                    </tr>
+                  ))
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

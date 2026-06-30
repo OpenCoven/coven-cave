@@ -245,7 +245,7 @@ assert.match(
   // guard, hence the doubled `))}` closing the tree-column ternary; the optional
   // centerSlot (the Code workspace's conversation column) then sits between the
   // tree and the preview/Changes column, before `{filePreviewCollapsed`.
-  /ProjectTree[\s\S]*?<\/div>\s*<\/div>\s*<\/div>\s*\)\)\}[\s\S]*?\{filePreviewCollapsed \? \([\s\S]*?<div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">[\s\S]*?previewPath/,
+  /ProjectTree[\s\S]*?<\/div>\s*<\/div>\s*<\/div>\s*\)\)\}[\s\S]*?\{filePreviewCollapsed \? \([\s\S]*?<div[\s\S]{0,180}className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden"[\s\S]*?previewPath/,
   "Projects preview pane should be the right full-height half of the layout",
 );
 assert.match(
