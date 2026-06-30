@@ -38,8 +38,18 @@ assert.match(
 );
 assert.match(
   shell,
-  /<div className="shell-top">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar">\{renderedTopBar\}<\/div>[\s\S]*?\{rightToggles\}/,
+  /<div className="shell-top" data-tauri-drag-region="">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="">\{renderedTopBar\}<\/div>[\s\S]*?\{rightToggles\}/,
   "the top bar row flanks the rendered top bar with the nav (left) and side-panel (right) toggles",
+);
+assert.equal(
+  shell.match(/<div className="shell-top" data-tauri-drag-region="">/g)?.length,
+  2,
+  "both shell top bars should expose the Tauri drag region on the titlebar container",
+);
+assert.equal(
+  shell.match(/<div className="shell-top__bar" data-tauri-drag-region="">/g)?.length,
+  2,
+  "both rendered top-bar wrappers should remain draggable when their empty chrome is clicked",
 );
 assert.match(
   shell,

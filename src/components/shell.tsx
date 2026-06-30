@@ -432,9 +432,9 @@ function ShellInner({
   if (!mounted) {
     return (
       <div className="shell-frame flex h-full w-full flex-col">
-        <div className="shell-top">
+        <div className="shell-top" data-tauri-drag-region="">
           <div className="shell-titlebar-drag-lane" data-tauri-drag-region="" aria-hidden="true" />
-          <div className="shell-top__bar">{renderedTopBar}</div>
+          <div className="shell-top__bar" data-tauri-drag-region="">{renderedTopBar}</div>
         </div>
         <div className="shell-body flex flex-1 min-h-0">
           <div className="shell-root flex-1 min-h-0" />
@@ -623,10 +623,10 @@ function ShellInner({
       {/* Keyboard/SR users can jump straight past the chrome to the active
           surface. Visually hidden until focused (see .skip-link in globals). */}
       <a className="skip-link" href="#shell-main-content">Skip to main content</a>
-      <div className="shell-top">
+      <div className="shell-top" data-tauri-drag-region="">
         <div className="shell-titlebar-drag-lane" data-tauri-drag-region="" aria-hidden="true" />
         {navToggle}
-        <div className="shell-top__bar">{renderedTopBar}</div>
+        <div className="shell-top__bar" data-tauri-drag-region="">{renderedTopBar}</div>
         {rightToggles}
       </div>
       <div className="shell-body flex flex-1 min-h-0">
