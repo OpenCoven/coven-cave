@@ -23,6 +23,7 @@ import { useFamiliarOverrides } from "@/lib/cave-familiar-overrides";
 import { resolveFamiliar } from "@/lib/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
+import { ArtifactComments } from "@/components/artifact-comments";
 import { ChatArchiveNudge } from "@/components/chat-archive-nudge";
 import {
   isChatArchiveNudgeDismissed,
@@ -5221,23 +5222,27 @@ function TurnRowImpl({
             {indicatorVisible ? (
               <ThinkingIndicator label="Thinking" startedAt={turn.createdAt ? new Date(turn.createdAt).getTime() : undefined} />
             ) : (
-              <MessageBubble
-                role="assistant"
-                content={visible || (turn.pending ? "…" : "")}
-                timestamp={turn.createdAt}
-                showTimestamp={false}
-                pending={turn.pending}
-                isError={turn.error}
-                label={familiar.display_name}
-                onRegenerate={onRegenerate}
-                onReply={onReply}
-                onOpenUrl={onOpenUrl}
-                // CHAT-D13-01: with tools hidden, fall back to plain content —
-                // the text segments concatenate to `visible` anyway, so prose
-                // renders identically with the tool blocks omitted.
-                segments={renderSegments}
-                branchNav={branchNav}
-              />
+              // `cave-artifact-content` scopes the comment-on-artifact text
+              // selection to this turn's rendered markdown (see ArtifactComments).
+              <div className="cave-artifact-content">
+                <MessageBubble
+                  role="assistant"
+                  content={visible || (turn.pending ? "…" : "")}
+                  timestamp={turn.createdAt}
+                  showTimestamp={false}
+                  pending={turn.pending}
+                  isError={turn.error}
+                  label={familiar.display_name}
+                  onRegenerate={onRegenerate}
+                  onReply={onReply}
+                  onOpenUrl={onOpenUrl}
+                  // CHAT-D13-01: with tools hidden, fall back to plain content —
+                  // the text segments concatenate to `visible` anyway, so prose
+                  // renders identically with the tool blocks omitted.
+                  segments={renderSegments}
+                  branchNav={branchNav}
+                />
+              </div>
             )}
             {/* CHAT-D4-01: tools often run BEFORE the first prose chunk
                 (research-style turns) — show them inline immediately so
@@ -5283,6 +5288,17 @@ function TurnRowImpl({
                   );
                 })}
               </div>
+            ) : null}
+            {/* Comment on the markdown artifact this turn produced: select any
+                passage above to leave a comment, then request a revision that
+                sends every comment back to the agent. Settled, substantial
+                assistant turns only (skip tiny replies and errors). */}
+            {!turn.pending && !turn.error && visible.trim().length > 80 ? (
+              <ArtifactComments
+                turnId={turn.id}
+                familiarName={familiar.display_name}
+                onRequest={(prompt) => onSuggestion?.(prompt)}
+              />
             ) : null}
           </div>
         </div>
