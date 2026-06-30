@@ -14,7 +14,13 @@ import { SectionHead, EmptyState, QuickLink } from "@/components/daily-report-ui
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { DonutChart } from "@/components/ui/charts/donut-chart";
 import { TrendChart } from "@/components/ui/charts/trend-chart";
-import { familiarMiniProfiles, familiarLoadSeries } from "@/lib/dashboard-analytics";
+import { familiarMiniProfiles, familiarLoadSeries, dashboardSignals, type DashboardSignal } from "@/lib/dashboard-analytics";
+import { Heatmap } from "@/components/ui/charts/heatmap";
+import { deriveConfidenceScore, type ConfidenceFactor } from "@/lib/familiar-confidence";
+import { deriveGrowthReport } from "@/lib/familiar-growth-signals";
+import { buildFamiliarCardStats, type FamiliarCardStats } from "@/components/familiars-view-stats";
+import type { ContractReport } from "@/lib/familiar-contract";
+import type { RetroRunsSnapshot } from "@/lib/retro-runs";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
 import { TodaySummary } from "@/components/dashboard/today-summary";
@@ -43,10 +49,13 @@ type CockpitData = {
 
 const EMPTY: CockpitData = { cards: [], familiars: [], github: [], reading: [], upcoming: [], sessions: [] };
 
+type ConfidenceRow = { id: string; name: string; score: number; factors: ConfidenceFactor[] };
+const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsLast7d: 0, hasActiveSession: false };
+
 // Draggable panel layout — order per column, persisted to localStorage.
 const LAYOUT_KEY = "cave:cockpit:layout";
 type Layout = { main: string[]; rail: string[] };
-const DEFAULT_LAYOUT: Layout = { main: ["needs", "board", "today"], rail: ["agents", "load", "github", "agenda", "reading"] };
+const DEFAULT_LAYOUT: Layout = { main: ["needs", "signals", "board", "today"], rail: ["agents", "confidence", "load", "github", "agenda", "reading"] };
 
 /** Merge a saved order with the defaults: keep known ids in saved order, append
  *  any new defaults, drop anything unknown (survives version changes). */
@@ -177,6 +186,55 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     .sort((a, b) => new Date(a.fireAt!).getTime() - new Date(b.fireAt!).getTime())
     .slice(0, 5);
 
+  // Predictive signals — pure + cheap over already-fetched data.
+  const signals = useMemo(
+    () => dashboardSignals({ github: data.github, reading: data.reading, sessions: data.sessions, familiars: data.familiars, nowMs: now.getTime() }),
+    [data.github, data.reading, data.sessions, data.familiars, now],
+  );
+
+  // ── Confidence heatmap: bounded per-familiar contract fetch (≤6) + one shared
+  //    retro-runs call. Fetch is keyed on the visible familiar set; the heatmap
+  //    rows recompute from live sessions without re-fetching. ──
+  const [confidenceRaw, setConfidenceRaw] = useState<{
+    fams: Familiar[]; contracts: (ContractReport | null)[]; snapshot: RetroRunsSnapshot | null;
+  } | null>(null);
+  const confidenceFams = data.familiars.slice(0, 6);
+  const confidenceKey = confidenceFams.map((f) => f.id).join(",");
+  useEffect(() => {
+    if (!confidenceKey) { setConfidenceRaw(null); return; }
+    let alive = true;
+    const fams = confidenceKey.split(",").map((id) => confidenceFams.find((f) => f.id === id)!).filter(Boolean);
+    void Promise.all([
+      getJson<{ snapshot?: RetroRunsSnapshot }>("/api/retro-runs"),
+      ...fams.map((f) => getJson<{ report?: ContractReport }>(`/api/familiars/${encodeURIComponent(f.id)}/contract`)),
+    ]).then(([retro, ...contracts]) => {
+      if (!alive || !aliveRef.current) return;
+      setConfidenceRaw({
+        fams,
+        contracts: contracts.map((c) => c?.report ?? null),
+        snapshot: retro?.snapshot ?? null,
+      });
+    });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confidenceKey]);
+
+  const confidence = useMemo<ConfidenceRow[]>(() => {
+    if (!confidenceRaw) return [];
+    const snapshot = confidenceRaw.snapshot;
+    return confidenceRaw.fams.map((f, i) => {
+      const stats = buildFamiliarCardStats({
+        familiars: [f],
+        sessions: data.sessions.filter((s) => s.familiarId === f.id),
+        covenEntries: [],
+      }).get(f.id) ?? EMPTY_STATS;
+      const retroState = snapshot?.familiars.find((r) => r.familiarId === f.id) ?? null;
+      const growthReport = deriveGrowthReport({ familiar: f, stats, retroState });
+      const c = deriveConfidenceScore({ contractReport: confidenceRaw.contracts[i] ?? null, growthReport, familiar: f });
+      return { id: f.id, name: f.display_name, score: c.score, factors: c.factors };
+    });
+  }, [confidenceRaw, data.sessions]);
+
   const kpis: KpiSpec[] = [
     { icon: "ph:warning-circle", value: model.needsAttention.length, label: "Needs you", accent: "rose", metric: "needs" },
     { icon: "ph:kanban-bold", value: open.length, label: "Active tasks", accent: "lavender", src: "cards", metric: "tasks", href: "/#card-" },
@@ -232,9 +290,22 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     }
   };
 
-  const isVisible = (id: string) => id !== "needs" || !model.caughtUp;
+  const isVisible = (id: string) => {
+    if (id === "needs") return !model.caughtUp;
+    if (id === "signals") return signals.length > 0;
+    if (id === "confidence") return confidence.length > 0;
+    return true;
+  };
   const widget = (id: string): ReactNode => {
     switch (id) {
+      case "signals": return signals.length === 0 ? null : (
+        <Panel title="Signals" icon="ph:waveform-bold" count={signals.length}>
+          <SignalsPanel signals={signals} />
+        </Panel>);
+      case "confidence": return confidence.length === 0 ? null : (
+        <Panel title="Confidence" icon="ph:seal-check">
+          <ConfidencePanel rows={confidence} />
+        </Panel>);
       case "needs": return model.caughtUp ? null : (
         <Panel title="Needs attention" icon="ph:warning-circle" count={model.needsAttention.length}>
           <ActionInbox initialItems={model.needsAttention} />
@@ -573,6 +644,59 @@ function ReadingPanel({ items, loaded }: { items: ReadingItem[]; loaded: boolean
 function host(url?: string): string | null {
   if (!url) return null;
   try { return new URL(url).host.replace(/^www\./, ""); } catch { return null; }
+}
+
+// ─── Signals ─────────────────────────────────────────────────────────────────────
+
+const SIGNAL_ICON: Record<DashboardSignal["severity"], IconName> = { warn: "ph:warning", info: "ph:info" };
+function SignalsPanel({ signals }: { signals: DashboardSignal[] }) {
+  return (
+    <ul className="cockpit-signals">
+      {signals.map((s) => (
+        <li key={s.id} className={`cockpit-signal cockpit-signal--${s.severity}`}>
+          <Icon name={SIGNAL_ICON[s.severity]} className="cockpit-signal__icon" aria-hidden />
+          <span className="cockpit-signal__text">{s.text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// ─── Confidence heatmap ──────────────────────────────────────────────────────────
+
+/** Pretty label for a confidence factor key (e.g. "accept_rate" → "Accept"). */
+function prettyFactor(label: string): string {
+  const base = label.replace(/_score$/, "").replace(/_rate$/, "");
+  return base.split("_").map((w) => w.slice(0, 1).toUpperCase() + w.slice(1)).join(" ");
+}
+
+/** 0 → danger, 1 → success, ramped through color-mix in oklch. */
+function confidenceColor(value: number): string {
+  const pct = Math.round(Math.max(0, Math.min(1, value)) * 100);
+  return `color-mix(in oklch, var(--color-success) ${pct}%, var(--color-danger))`;
+}
+
+function ConfidencePanel({ rows }: { rows: ConfidenceRow[] }) {
+  const cols = rows[0]?.factors.map((f) => prettyFactor(f.label)) ?? [];
+  // Cell value = the factor's normalized 0..1 strength (raw score ÷ 100).
+  const cells = rows.flatMap((r) =>
+    r.factors.map((f) => ({ row: r.name, col: prettyFactor(f.label), value: f.value / 100 })),
+  );
+  return (
+    <div className="cockpit-confidence">
+      <div className="cockpit-confidence__cols" style={{ ["--cols" as string]: cols.length }}>
+        {cols.map((c) => <span key={c}>{c}</span>)}
+      </div>
+      <div className="cockpit-confidence__grid">
+        <div className="cockpit-confidence__rows">
+          {rows.map((r) => (
+            <span key={r.id} title={`${r.name}: confidence ${r.score}`}>{r.name}</span>
+          ))}
+        </div>
+        <Heatmap rows={rows.map((r) => r.name)} cols={cols} cells={cells} colorFor={confidenceColor} height={Math.max(72, rows.length * 26)} />
+      </div>
+    </div>
+  );
 }
 
 // ─── Bits ────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { sessionsPerDay, familiarMiniProfiles, familiarLoadSeries } from "./dashboard-analytics.ts";
+import { sessionsPerDay, familiarMiniProfiles, familiarLoadSeries, dashboardSignals } from "./dashboard-analytics.ts";
 
 const NOW = Date.parse("2026-06-29T12:00:00Z");
 const day = (offset) => new Date(NOW - offset * 86400_000).toISOString();
@@ -45,5 +45,38 @@ assert.equal(series.length, 2, "top 2 familiars by load (f3 has 0, dropped)");
 assert.equal(series[0].id, "f1", "f1 leads (3 sessions)");
 assert.equal(series[0].points.length, 7, "each series has 7 points");
 assert.ok(series[0].points.every((p) => typeof p.x === "number" && typeof p.y === "number"), "points are {x,y}");
+
+// ── dashboardSignals: stalled PR + large reading queue + trending-down familiar ─
+const ghItem = (id, kind, updatedOffset, state, title) => ({
+  id, kind, title, repo: "o/r", url: "#", state, updatedAt: day(updatedOffset),
+});
+const sigGithub = [
+  ghItem("p1", "pr", 9, "open", "Old PR"),          // stalled (>7d)
+  ghItem("p2", "pr", 2, "open", "Fresh PR"),        // not stalled
+  ghItem("p3", "pr", 20, "closed", "Closed PR"),    // closed → ignored
+  ghItem("p4", "issue", 30, "open", "Old issue"),   // not a PR → ignored
+];
+// f1: sessions only in the prior window (offset 5) → trending down.
+// f2: a session today (offset 0) → not trending down.
+const sigSessions = [sess("s1", "f1", 5), sess("s2", "f2", 0)];
+const sigFamiliars = [
+  { id: "f1", display_name: "Sage" },
+  { id: "f2", display_name: "Nova" },
+];
+const sigReading = Array.from({ length: 9 }, (_, i) => ({ status: "want-to-read" }));
+
+const signals = dashboardSignals({
+  github: sigGithub, reading: sigReading, sessions: sigSessions, familiars: sigFamiliars, nowMs: NOW,
+});
+const sigIds = signals.map((s) => s.id);
+assert.ok(sigIds.includes("pr-stalled-p1"), "stalled open PR surfaces a warn signal");
+assert.ok(!sigIds.some((id) => id.startsWith("pr-stalled-p2")), "fresh PR is not flagged");
+assert.ok(!sigIds.some((id) => id.startsWith("pr-stalled-p3")), "closed PR is not flagged");
+assert.ok(!sigIds.some((id) => id.startsWith("pr-stalled-p4")), "issues are not flagged as stalled PRs");
+assert.ok(sigIds.includes("reading-large"), "large reading queue (>8) surfaces an info signal");
+assert.ok(sigIds.includes("familiar-down-f1"), "familiar quiet for 3d after prior activity is flagged");
+assert.ok(!sigIds.includes("familiar-down-f2"), "recently-active familiar is not flagged");
+assert.equal(signals[0].severity, "warn", "warnings sort ahead of info");
+assert.equal(dashboardSignals({ github: [], reading: [], sessions: [], familiars: [], nowMs: NOW }).length, 0, "no signals when nothing is drifting");
 
 console.log("dashboard-analytics.test.ts passed");
