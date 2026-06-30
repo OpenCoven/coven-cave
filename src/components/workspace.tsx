@@ -50,6 +50,7 @@ import {
   EvalsView,
   FlowView,
   GitHubView,
+  MarketplaceView,
 } from "@/components/lazy-surfaces";
 import { CodeSidebar } from "@/components/code-sidebar";
 import { CodeView } from "@/components/code-view";
@@ -102,6 +103,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   code: "Code",
   github: "GitHub",
   roles: "Roles",
+  marketplace: "Marketplace",
   flow: "Flow",
   evals: "Evals",
   submissions: "Submissions",
@@ -2121,13 +2123,15 @@ export function Workspace() {
       // tab; keying on the mode remounts so the deep link lands on it.
       <PluginsView
         key={mode}
-        tabs={["roles", "skills", "marketplace", "capabilities"]}
+        tabs={["roles", "skills", "capabilities"]}
         initialTab={mode === "capabilities" ? "capabilities" : "roles"}
         activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
         onCreateSkill={() => setMode("capabilities")}
       />
+    ) : mode === "marketplace" ? (
+      <MarketplaceView />
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
     ) : mode === "flow" ? (

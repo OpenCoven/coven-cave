@@ -63,3 +63,8 @@ export const CalendarView = dynamic(
   timed("calendar", () => import("@/components/calendar-view").then((m) => m.CalendarView)),
   { ssr: false, loading: SurfaceFallback },
 );
+
+export const MarketplaceView = dynamic(
+  timed("marketplace", () => import("@/components/marketplace-view").then((m) => m.MarketplaceViewSurface)),
+  { ssr: false, loading: SurfaceFallback },
+);

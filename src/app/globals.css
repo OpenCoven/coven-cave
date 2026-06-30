@@ -7820,6 +7820,8 @@ a.mobile-handoff__link:hover {
 
   .plugins-view button,
   .plugins-view [role="button"],
+  .marketplace-view button,
+  .marketplace-view [role="button"],
   .capabilities-view button,
   .capabilities-view select,
   .capabilities-view label:has(input) {
@@ -7828,6 +7830,8 @@ a.mobile-handoff__link:hover {
   }
 
   .plugins-view input,
+  .marketplace-view input,
+  .marketplace-view select,
   .capabilities-view input {
     min-height: var(--touch-target);
     font-size: 16px;

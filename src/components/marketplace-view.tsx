@@ -67,6 +67,11 @@ export function MarketplaceViewSurface() {
   }, [load]);
 
   const categories = useMemo(() => categoriesFrom(plugins), [plugins]);
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of plugins) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+    return counts;
+  }, [plugins]);
   const kindCounts = useMemo(() => countByKind(plugins), [plugins]);
   const installedCount = useMemo(() => plugins.filter((p) => p.installed).length, [plugins]);
 
@@ -94,6 +99,11 @@ export function MarketplaceViewSurface() {
 
   // The featured strip only makes sense on the unfiltered default landing.
   const showFeatured = !activeCollection && !query && category === "All" && kind === "all";
+
+  const selectCategory = useCallback((cat: string) => {
+    setCategory(cat);
+    setCollectionId(null);
+  }, []);
 
   const setInstalled = useCallback((id: string, installed: boolean) => {
     setPlugins((prev) => prev.map((p) => (p.id === id ? { ...p, installed } : p)));
@@ -139,32 +149,34 @@ export function MarketplaceViewSurface() {
 
   return (
     <section className="marketplace-view flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
-      <div className="border-b border-[var(--border-hairline)] px-4 py-3 sm:px-6">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">Marketplace</p>
-            <h2 className="text-[20px] font-semibold text-[var(--text-primary)]">Add tools to your familiars</h2>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-[var(--text-muted)]">
-              <span>{plugins.length} plugins</span>
-              <span aria-hidden>·</span>
-              <span>{kindCounts.mcp} MCP servers</span>
-              <span aria-hidden>·</span>
-              <span>{kindCounts.skill} skills</span>
-              {installedCount > 0 ? (
-                <>
-                  <span aria-hidden>·</span>
-                  <span className="text-[var(--text-primary)]">{installedCount} added</span>
-                </>
-              ) : null}
+      {/* Hero header — title, stats, search, and the kind/sort controls. */}
+      <header className="border-b border-[var(--border-hairline)] px-4 py-4 sm:px-6 sm:py-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
+              Marketplace
             </p>
+            <h2 className="mt-0.5 text-[24px] font-semibold leading-tight text-[var(--text-primary)]">
+              Add tools to your familiars
+            </h2>
+            <p className="mt-1 max-w-prose text-[13px] text-[var(--text-muted)]">
+              Browse MCP servers and skills, then add them to give your familiars new capabilities.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <StatPill icon="ph:plug-bold" label={`${kindCounts.mcp} MCP servers`} />
+              <StatPill icon="ph:sparkle-bold" label={`${kindCounts.skill} skills`} />
+              {installedCount > 0 ? (
+                <StatPill icon="ph:check-circle" label={`${installedCount} added`} accent />
+              ) : null}
+            </div>
           </div>
           <SearchInput
             value={query}
             onValueChange={setQuery}
             onClear={() => setQuery("")}
-            placeholder="Search plugins"
-            containerClassName="lg:w-80"
-            aria-label="Search plugins"
+            placeholder="Search the marketplace"
+            containerClassName="lg:w-96"
+            aria-label="Search the marketplace"
           />
         </div>
 
@@ -194,90 +206,145 @@ export function MarketplaceViewSurface() {
           </label>
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-1">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => {
-                setCategory(cat);
-                setCollectionId(null);
-              }}
-              className={`focus-ring rounded-md px-3 py-1.5 text-[12px] transition-colors ${
-                !activeCollection && category === cat
-                  ? "bg-[var(--text-primary)] text-[var(--bg-base)]"
-                  : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
         {error ? (
           <p className="mt-3 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
             {error}
           </p>
         ) : null}
-      </div>
+      </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-        {showFeatured && plugins.length > 0 ? (
-          <CollectionStrip
-            collections={COLLECTIONS}
-            plugins={plugins}
-            onOpen={(id) => {
-              setCollectionId(id);
-              setCategory("All");
-              setKind("all");
-            }}
-          />
-        ) : null}
+      {/* Body — vertical category rail (desktop) beside the results column. */}
+      <div className="flex min-h-0 flex-1">
+        <aside
+          className="hidden w-56 shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] px-3 py-4 lg:block"
+          aria-label="Browse by category"
+        >
+          <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
+            Browse
+          </p>
+          <nav className="flex flex-col gap-0.5">
+            {categories.map((cat) => {
+              const active = !activeCollection && category === cat;
+              const count = cat === "All" ? plugins.length : categoryCounts.get(cat) ?? 0;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => selectCategory(cat)}
+                  aria-current={active ? "true" : undefined}
+                  className={`focus-ring flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${
+                    active
+                      ? "bg-[var(--bg-raised)] font-medium text-[var(--text-primary)]"
+                      : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  <span className="truncate">{cat}</span>
+                  <span
+                    className={`shrink-0 text-[11px] tabular-nums ${
+                      active ? "text-[var(--text-secondary)]" : "text-[var(--text-muted)]"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
 
-        {activeCollection ? (
-          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4 py-3">
-            <div className="flex items-start gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-                <Icon name={activeCollection.icon} width={18} className="text-[var(--text-primary)]" />
-              </span>
-              <div>
-                <p className="text-[14px] font-semibold text-[var(--text-primary)]">{activeCollection.title}</p>
-                <p className="text-[12px] text-[var(--text-muted)]">{activeCollection.description}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setCollectionId(null)}
-              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            >
-              <Icon name="ph:arrow-left" width={12} aria-hidden /> All plugins
-            </button>
-          </div>
-        ) : null}
-
-        {!loaded ? (
-          <p className="text-[12px] text-[var(--text-muted)]">Loading…</p>
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            icon="ph:puzzle-piece-bold"
-            headline={query || category !== "All" || kind !== "all" || activeCollection ? "No matching plugins" : "No plugins available"}
-            subtitle={query || category !== "All" || kind !== "all" || activeCollection ? "Try a different search, type, or category." : "The catalog is empty."}
-          />
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((plugin) => (
-              <MarketplaceCard
-                key={plugin.id}
-                plugin={plugin}
-                busy={busyId === plugin.id}
-                onOpen={() => setSelected(plugin.id)}
-                onAdd={() => void add(plugin.id)}
-                onRemove={() => void remove(plugin.id)}
-                onConfigure={() => setConfiguringId(plugin.id)}
-              />
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+          {/* Category chips — the mobile stand-in for the desktop rail. */}
+          <div className="-mx-4 mb-4 flex gap-1 overflow-x-auto px-4 pb-1 lg:hidden">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => selectCategory(cat)}
+                className={`focus-ring shrink-0 rounded-md px-3 py-1.5 text-[12px] transition-colors ${
+                  !activeCollection && category === cat
+                    ? "bg-[var(--text-primary)] text-[var(--bg-base)]"
+                    : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                }`}
+              >
+                {cat}
+              </button>
             ))}
           </div>
-        )}
+
+          {showFeatured && plugins.length > 0 ? (
+            <CollectionStrip
+              collections={COLLECTIONS}
+              plugins={plugins}
+              onOpen={(id) => {
+                setCollectionId(id);
+                setCategory("All");
+                setKind("all");
+              }}
+            />
+          ) : null}
+
+          {activeCollection ? (
+            <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-4 py-3">
+              <div className="flex items-start gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
+                  <Icon name={activeCollection.icon} width={18} className="text-[var(--text-primary)]" />
+                </span>
+                <div>
+                  <p className="text-[14px] font-semibold text-[var(--text-primary)]">{activeCollection.title}</p>
+                  <p className="text-[12px] text-[var(--text-muted)]">{activeCollection.description}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCollectionId(null)}
+                className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:arrow-left" width={12} aria-hidden /> All plugins
+              </button>
+            </div>
+          ) : (
+            <div className="mb-3 flex items-baseline justify-between gap-3">
+              <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">
+                {query
+                  ? "Search results"
+                  : category === "All" && kind === "all"
+                    ? "All plugins"
+                    : category !== "All"
+                      ? category
+                      : KIND_TABS.find((k) => k.id === kind)?.label ?? "Plugins"}
+              </h3>
+              {loaded ? (
+                <span className="text-[12px] text-[var(--text-muted)] tabular-nums">
+                  {filtered.length} {filtered.length === 1 ? "result" : "results"}
+                </span>
+              ) : null}
+            </div>
+          )}
+
+          {!loaded ? (
+            <p className="text-[12px] text-[var(--text-muted)]">Loading…</p>
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon="ph:puzzle-piece-bold"
+              headline={query || category !== "All" || kind !== "all" || activeCollection ? "No matching plugins" : "No plugins available"}
+              subtitle={query || category !== "All" || kind !== "all" || activeCollection ? "Try a different search, type, or category." : "The catalog is empty."}
+            />
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+              {filtered.map((plugin) => (
+                <MarketplaceCard
+                  key={plugin.id}
+                  plugin={plugin}
+                  busy={busyId === plugin.id}
+                  onOpen={() => setSelected(plugin.id)}
+                  onAdd={() => void add(plugin.id)}
+                  onRemove={() => void remove(plugin.id)}
+                  onConfigure={() => setConfiguringId(plugin.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {selectedPlugin ? (
@@ -300,5 +367,20 @@ export function MarketplaceViewSurface() {
         />
       ) : null}
     </section>
+  );
+}
+
+function StatPill({ icon, label, accent }: { icon: Parameters<typeof Icon>[0]["name"]; label: string; accent?: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] ${
+        accent
+          ? "border-[var(--accent-faint)] bg-[var(--accent-faint)] text-[var(--accent)]"
+          : "border-[var(--border-hairline)] bg-[var(--bg-panel)] text-[var(--text-secondary)]"
+      }`}
+    >
+      <Icon name={icon} width={12} aria-hidden />
+      {label}
+    </span>
   );
 }

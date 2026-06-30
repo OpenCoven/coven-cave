@@ -12,6 +12,7 @@ export type WorkspaceMode =
   | "code"
   | "github"
   | "roles"
+  | "marketplace"
   | "flow"
   | "evals"
   | "submissions"
