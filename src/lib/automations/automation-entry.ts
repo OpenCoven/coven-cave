@@ -41,6 +41,13 @@ export type AutomationEntry = {
   familiarId?: string | null;
   /** ISO timestamp used for recency sorting; best-effort per type. */
   sortAt: string;
+  /**
+   * ISO timestamp of the next scheduled fire, when known client-side. Reminders
+   * carry a daemon-maintained `fireAt` (the next occurrence); crons/flows compute
+   * their next fire server-side, so this stays undefined for them. The UI shows a
+   * friendly "next" relative time when present.
+   */
+  nextFireAt?: string;
 };
 
 export const AUTOMATION_TYPES: AutomationType[] = ["reminder", "cron", "workflow", "flow"];
@@ -145,6 +152,9 @@ export function reminderToEntry(item: InboxItem): AutomationEntry {
     scheduled: recurring || !!item.fireAt,
     familiarId: item.familiarId ?? null,
     sortAt: item.fireAt || item.updatedAt || item.createdAt || "",
+    // `fireAt` is the daemon-maintained next occurrence; surface it as the next
+    // fire for active reminders only (a dismissed/paused reminder won't fire).
+    nextFireAt: item.status === "dismissed" ? undefined : item.fireAt || undefined,
   };
 }
 
