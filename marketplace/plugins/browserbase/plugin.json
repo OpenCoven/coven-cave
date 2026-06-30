@@ -1,0 +1,85 @@
+{
+  "name": "browserbase",
+  "version": "0.1.0",
+  "description": "Drive cloud headless browsers for automation, scraping, and end-to-end checks.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "browserbase",
+    "browser",
+    "automation",
+    "scraping",
+    "headless"
+  ],
+  "capabilities": [
+    "network",
+    "shell",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/browserbase",
+  "x-coven": {
+    "displayName": "Browserbase",
+    "category": "Browser & Web",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/browserbase/mcp-server-browserbase"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "browserbase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@browserbasehq/mcp-server-browserbase"
+      ],
+      "type": "stdio",
+      "env": {
+        "BROWSERBASE_API_KEY": "${BROWSERBASE_API_KEY}",
+        "BROWSERBASE_PROJECT_ID": "${BROWSERBASE_PROJECT_ID}"
+      }
+    }
+  },
+  "userConfig": {
+    "browserbase_api_key": {
+      "type": "string",
+      "title": "Browserbase API Key",
+      "description": "API key for Browserbase sessions.",
+      "required": true,
+      "sensitive": true,
+      "env": "BROWSERBASE_API_KEY"
+    },
+    "browserbase_project_id": {
+      "type": "string",
+      "title": "Browserbase Project ID",
+      "description": "Project ID for Browserbase sessions.",
+      "required": true,
+      "sensitive": false,
+      "env": "BROWSERBASE_PROJECT_ID"
+    }
+  }
+}

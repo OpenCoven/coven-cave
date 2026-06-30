@@ -1449,6 +1449,452 @@
           ]
         }
       ]
+    },
+    {
+      "name": "coven-familiars",
+      "displayName": "Coven Familiars",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-familiars"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "coven-flows",
+      "displayName": "Coven Flows",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-flows"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "coven-memory",
+      "displayName": "Coven Memory & Knowledge",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-memory"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist",
+            "retrospector"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "coven-evals",
+      "displayName": "Coven Evals",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-evals"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "echo",
+          "roles": [
+            "retrospector"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "coven-canvas",
+      "displayName": "Coven Canvas",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-canvas"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "coven-automations",
+      "displayName": "Coven Automations",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-automations"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "slack",
+      "displayName": "Slack",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/slack"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": [
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "postgres",
+      "displayName": "PostgreSQL",
+      "category": "Databases",
+      "source": {
+        "source": "local",
+        "path": "./plugins/postgres"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger",
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sentry",
+      "displayName": "Sentry",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/sentry"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "retrospector"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cloudflare-docs",
+      "displayName": "Cloudflare Docs",
+      "category": "Cloud & Infrastructure",
+      "source": {
+        "source": "local",
+        "path": "./plugins/cloudflare-docs"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "huggingface",
+      "displayName": "Hugging Face",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/huggingface"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "exa",
+      "displayName": "Exa Search",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/exa"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-remote",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "e2b",
+      "displayName": "E2B Code Sandbox",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/e2b"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "browserbase",
+      "displayName": "Browserbase",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/browserbase"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "elevenlabs",
+      "displayName": "ElevenLabs",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/elevenlabs"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": [
+        {
+          "familiar": "charm",
+          "roles": [
+            "social-voice",
+            "devrel-liaison"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "sqlite",
+      "displayName": "SQLite",
+      "category": "Databases",
+      "source": {
+        "source": "local",
+        "path": "./plugins/sqlite"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
     }
   ]
 }

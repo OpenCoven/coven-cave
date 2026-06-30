@@ -1,0 +1,24 @@
+{
+  "name": "coven-flows",
+  "version": "0.1.0",
+  "description": "Author and run multi-step Coven flows and workflows with live per-step progress and run logs.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Coven Flows",
+    "shortDescription": "Author and run multi-step Coven flows and workflows with live per-step progress and run logs.",
+    "longDescription": "Design flows and trigger runs, then read step-by-step progress and surface failures clearly.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "coven",
+      "flows",
+      "workflows",
+      "automation",
+      "orchestration"
+    ],
+    "defaultPrompt": "Help me use Coven Flows safely."
+  }
+}

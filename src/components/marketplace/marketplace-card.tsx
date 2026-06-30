@@ -62,6 +62,10 @@ export function MarketplaceCard({ plugin, busy, onOpen, onAdd, onRemove, onConfi
       <p className="line-clamp-2 text-[12px] text-[var(--text-muted)]">{plugin.description}</p>
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]">
         <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
+          <Icon name={plugin.kind === "mcp" ? "ph:plug-bold" : "ph:sparkle-bold"} width={11} aria-hidden />{" "}
+          {plugin.kind === "mcp" ? "MCP" : "Skill"}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
           <Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}
         </span>
         <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5">{plugin.category}</span>

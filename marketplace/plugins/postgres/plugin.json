@@ -1,0 +1,74 @@
+{
+  "name": "postgres",
+  "version": "0.1.0",
+  "description": "Read-only SQL introspection and queries against a PostgreSQL database for analysis and debugging.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "postgres",
+    "postgresql",
+    "sql",
+    "database",
+    "query"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/postgres",
+  "x-coven": {
+    "displayName": "PostgreSQL",
+    "category": "Databases",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/modelcontextprotocol/servers"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "debugger",
+          "implementer"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "${POSTGRES_CONNECTION_STRING}"
+      ],
+      "type": "stdio"
+    }
+  },
+  "userConfig": {
+    "postgres_connection_string": {
+      "type": "string",
+      "title": "Connection String",
+      "description": "postgresql://user:pass@host:5432/db connection string.",
+      "required": true,
+      "sensitive": true,
+      "env": "POSTGRES_CONNECTION_STRING"
+    }
+  }
+}

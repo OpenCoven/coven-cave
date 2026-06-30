@@ -1,0 +1,69 @@
+{
+  "name": "elevenlabs",
+  "version": "0.1.0",
+  "description": "Text-to-speech, voice synthesis, and audio transcription via ElevenLabs.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "elevenlabs",
+    "tts",
+    "voice",
+    "audio",
+    "speech"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/elevenlabs",
+  "x-coven": {
+    "displayName": "ElevenLabs",
+    "category": "Media & Creative",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/elevenlabs/elevenlabs-mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "charm",
+        "roles": [
+          "social-voice",
+          "devrel-liaison"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "elevenlabs": {
+      "command": "uvx",
+      "args": [
+        "elevenlabs-mcp"
+      ],
+      "type": "stdio",
+      "env": {
+        "ELEVENLABS_API_KEY": "${ELEVENLABS_API_KEY}"
+      }
+    }
+  },
+  "userConfig": {
+    "elevenlabs_api_key": {
+      "type": "string",
+      "title": "ElevenLabs API Key",
+      "description": "API key for the ElevenLabs MCP server.",
+      "required": true,
+      "sensitive": true,
+      "env": "ELEVENLABS_API_KEY"
+    }
+  }
+}

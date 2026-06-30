@@ -1,0 +1,24 @@
+{
+  "name": "coven-canvas",
+  "version": "0.1.0",
+  "description": "Plan visually on the Coven canvas \u2014 triage incoming work and sketch ideas before building.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Coven Canvas",
+    "shortDescription": "Plan visually on the Coven canvas \u2014 triage incoming work and sketch ideas before building.",
+    "longDescription": "Use the canvas to triage and sketch, turning loose ideas into structured plans.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "coven",
+      "canvas",
+      "triage",
+      "sketch",
+      "planning"
+    ],
+    "defaultPrompt": "Help me use Coven Canvas safely."
+  }
+}

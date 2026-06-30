@@ -1,0 +1,58 @@
+{
+  "name": "sentry",
+  "version": "0.1.0",
+  "description": "Query Sentry issues, events, and traces to triage and debug production errors.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "sentry",
+    "errors",
+    "observability",
+    "debugging",
+    "traces"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/sentry",
+  "x-coven": {
+    "displayName": "Sentry",
+    "category": "Developer Tools",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://docs.sentry.io/product/sentry-mcp/"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "echo",
+        "roles": [
+          "retrospector"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "sentry": {
+      "url": "https://mcp.sentry.dev/mcp",
+      "type": "http"
+    }
+  }
+}

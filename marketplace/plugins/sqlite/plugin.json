@@ -1,0 +1,73 @@
+{
+  "name": "sqlite",
+  "version": "0.1.0",
+  "description": "Query and introspect local SQLite databases for lightweight analysis.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "sqlite",
+    "sql",
+    "database",
+    "local",
+    "query"
+  ],
+  "capabilities": [
+    "read_files",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/sqlite",
+  "x-coven": {
+    "displayName": "SQLite",
+    "category": "Databases",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/modelcontextprotocol/servers"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "debugger"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "sqlite": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-sqlite",
+        "--db-path",
+        "${SQLITE_DB_PATH}"
+      ],
+      "type": "stdio"
+    }
+  },
+  "userConfig": {
+    "sqlite_db_path": {
+      "type": "string",
+      "title": "Database Path",
+      "description": "Filesystem path to the SQLite .db file.",
+      "required": true,
+      "sensitive": false,
+      "env": "SQLITE_DB_PATH"
+    }
+  }
+}

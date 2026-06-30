@@ -1,0 +1,59 @@
+{
+  "name": "cloudflare-docs",
+  "version": "0.1.0",
+  "description": "Search and read Cloudflare's developer documentation directly from the agent.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "cloudflare",
+    "docs",
+    "workers",
+    "edge",
+    "reference"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/cloudflare-docs",
+  "x-coven": {
+    "displayName": "Cloudflare Docs",
+    "category": "Cloud & Infrastructure",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://developers.cloudflare.com/agents/model-context-protocol/"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      },
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "cloudflare-docs": {
+      "url": "https://docs.mcp.cloudflare.com/sse",
+      "type": "sse"
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "name": "coven-flows",
+  "version": "0.1.0",
+  "description": "Author and run multi-step Coven flows and workflows with live per-step progress and run logs.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "coven",
+    "flows",
+    "workflows",
+    "automation",
+    "orchestration"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/coven-flows",
+  "x-coven": {
+    "displayName": "Coven Flows",
+    "category": "Coven",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven-cave"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator",
+          "coordination-layer"
+        ]
+      },
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

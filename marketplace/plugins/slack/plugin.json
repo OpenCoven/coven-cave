@@ -1,0 +1,84 @@
+{
+  "name": "slack",
+  "version": "0.1.0",
+  "description": "Read channels, search history, and post approved messages to Slack workspaces.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "slack",
+    "chat",
+    "messaging",
+    "notifications",
+    "team"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/slack",
+  "x-coven": {
+    "displayName": "Slack",
+    "category": "Productivity",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/modelcontextprotocol/servers"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "charm",
+        "roles": [
+          "devrel-liaison"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "coordination-layer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "slack": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-slack"
+      ],
+      "type": "stdio",
+      "env": {
+        "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",
+        "SLACK_TEAM_ID": "${SLACK_TEAM_ID}"
+      }
+    }
+  },
+  "userConfig": {
+    "slack_bot_token": {
+      "type": "string",
+      "title": "Slack Bot Token",
+      "description": "Bot user OAuth token (xoxb-\u2026) for the Slack MCP server.",
+      "required": true,
+      "sensitive": true,
+      "env": "SLACK_BOT_TOKEN"
+    },
+    "slack_team_id": {
+      "type": "string",
+      "title": "Slack Team ID",
+      "description": "Workspace/team ID the bot is installed in.",
+      "required": true,
+      "sensitive": false,
+      "env": "SLACK_TEAM_ID"
+    }
+  }
+}

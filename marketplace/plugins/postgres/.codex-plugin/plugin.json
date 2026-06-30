@@ -1,0 +1,24 @@
+{
+  "name": "postgres",
+  "version": "0.1.0",
+  "description": "Read-only SQL introspection and queries against a PostgreSQL database for analysis and debugging.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "PostgreSQL",
+    "shortDescription": "Read-only SQL introspection and queries against a PostgreSQL database for analysis and debugging.",
+    "longDescription": "Query Postgres read-only for analysis; never mutate data without explicit approval.",
+    "developerName": "OpenCoven",
+    "category": "Databases",
+    "capabilities": [
+      "postgres",
+      "postgresql",
+      "sql",
+      "database",
+      "query"
+    ],
+    "defaultPrompt": "Help me use PostgreSQL safely."
+  }
+}

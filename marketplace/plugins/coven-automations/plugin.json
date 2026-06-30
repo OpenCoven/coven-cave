@@ -1,0 +1,52 @@
+{
+  "name": "coven-automations",
+  "version": "0.1.0",
+  "description": "Schedule reminders, crons, and flows; review next-fire times and run history from one surface.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "coven",
+    "automations",
+    "schedules",
+    "cron",
+    "reminders"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/coven-automations",
+  "x-coven": {
+    "displayName": "Coven Automations",
+    "category": "Coven",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven-cave"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "astra",
+        "roles": [
+          "coordination-layer"
+        ]
+      },
+      {
+        "familiar": "echo",
+        "roles": [
+          "archivist"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

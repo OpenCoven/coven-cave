@@ -1,0 +1,24 @@
+{
+  "name": "browserbase",
+  "version": "0.1.0",
+  "description": "Drive cloud headless browsers for automation, scraping, and end-to-end checks.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Browserbase",
+    "shortDescription": "Drive cloud headless browsers for automation, scraping, and end-to-end checks.",
+    "longDescription": "Automate cloud browsers carefully; never submit forms or auth without approval.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "browserbase",
+      "browser",
+      "automation",
+      "scraping",
+      "headless"
+    ],
+    "defaultPrompt": "Help me use Browserbase safely."
+  }
+}

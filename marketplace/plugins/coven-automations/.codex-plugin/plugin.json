@@ -1,0 +1,24 @@
+{
+  "name": "coven-automations",
+  "version": "0.1.0",
+  "description": "Schedule reminders, crons, and flows; review next-fire times and run history from one surface.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Coven Automations",
+    "shortDescription": "Schedule reminders, crons, and flows; review next-fire times and run history from one surface.",
+    "longDescription": "Create and tend scheduled automations and read their run logs without surprise side effects.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "coven",
+      "automations",
+      "schedules",
+      "cron",
+      "reminders"
+    ],
+    "defaultPrompt": "Help me use Coven Automations safely."
+  }
+}

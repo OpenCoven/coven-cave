@@ -1,0 +1,24 @@
+{
+  "name": "sqlite",
+  "version": "0.1.0",
+  "description": "Query and introspect local SQLite databases for lightweight analysis.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "SQLite",
+    "shortDescription": "Query and introspect local SQLite databases for lightweight analysis.",
+    "longDescription": "Query a local SQLite file read-first; confirm before schema or data changes.",
+    "developerName": "OpenCoven",
+    "category": "Databases",
+    "capabilities": [
+      "sqlite",
+      "sql",
+      "database",
+      "local",
+      "query"
+    ],
+    "defaultPrompt": "Help me use SQLite safely."
+  }
+}

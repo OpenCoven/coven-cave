@@ -1,0 +1,69 @@
+{
+  "name": "exa",
+  "version": "0.1.0",
+  "description": "Neural and keyword web search with content retrieval for grounded research.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "exa",
+    "search",
+    "web",
+    "research",
+    "retrieval"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/exa",
+  "x-coven": {
+    "displayName": "Exa Search",
+    "category": "Browser & Web",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://docs.exa.ai/reference/exa-mcp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      },
+      {
+        "familiar": "charm",
+        "roles": [
+          "devrel-liaison"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "exa": {
+      "url": "https://mcp.exa.ai/mcp",
+      "type": "http"
+    }
+  },
+  "userConfig": {
+    "exa_api_key": {
+      "type": "string",
+      "title": "Exa API Key",
+      "description": "API key for the Exa search MCP server.",
+      "required": true,
+      "sensitive": true,
+      "env": "EXA_API_KEY"
+    }
+  }
+}

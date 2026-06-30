@@ -1,0 +1,24 @@
+{
+  "name": "sentry",
+  "version": "0.1.0",
+  "description": "Query Sentry issues, events, and traces to triage and debug production errors.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Sentry",
+    "shortDescription": "Query Sentry issues, events, and traces to triage and debug production errors.",
+    "longDescription": "Use Sentry to triage and explain errors; never resolve or mutate issues without approval.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "sentry",
+      "errors",
+      "observability",
+      "debugging",
+      "traces"
+    ],
+    "defaultPrompt": "Help me use Sentry safely."
+  }
+}

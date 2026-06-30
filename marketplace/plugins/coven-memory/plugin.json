@@ -1,0 +1,54 @@
+{
+  "name": "coven-memory",
+  "version": "0.1.0",
+  "description": "Persist and recall cross-session memory and curated knowledge-vault references for your familiars.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "coven",
+    "memory",
+    "knowledge",
+    "recall",
+    "vault"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/coven-memory",
+  "x-coven": {
+    "displayName": "Coven Memory & Knowledge",
+    "category": "Coven",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven-cave"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "echo",
+        "roles": [
+          "archivist",
+          "retrospector"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

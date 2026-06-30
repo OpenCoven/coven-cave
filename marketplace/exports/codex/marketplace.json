@@ -531,6 +531,198 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Developer Tools"
+    },
+    {
+      "name": "coven-familiars",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-familiars"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "coven-flows",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-flows"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "coven-memory",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-memory"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "coven-evals",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-evals"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "coven-canvas",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-canvas"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "coven-automations",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-automations"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "slack",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/slack"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "postgres",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/postgres"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Databases"
+    },
+    {
+      "name": "sentry",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/sentry"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "cloudflare-docs",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/cloudflare-docs"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Cloud & Infrastructure"
+    },
+    {
+      "name": "huggingface",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/huggingface"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Agents & Harnesses"
+    },
+    {
+      "name": "exa",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/exa"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Browser & Web"
+    },
+    {
+      "name": "e2b",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/e2b"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "browserbase",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/browserbase"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Browser & Web"
+    },
+    {
+      "name": "elevenlabs",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/elevenlabs"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Media & Creative"
+    },
+    {
+      "name": "sqlite",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/sqlite"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Databases"
     }
   ]
 }

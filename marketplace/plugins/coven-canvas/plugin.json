@@ -1,0 +1,52 @@
+{
+  "name": "coven-canvas",
+  "version": "0.1.0",
+  "description": "Plan visually on the Coven canvas \u2014 triage incoming work and sketch ideas before building.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "coven",
+    "canvas",
+    "triage",
+    "sketch",
+    "planning"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/coven-canvas",
+  "x-coven": {
+    "displayName": "Coven Canvas",
+    "category": "Coven",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven-cave"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator"
+        ]
+      },
+      {
+        "familiar": "kitty",
+        "roles": [
+          "general-helper"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

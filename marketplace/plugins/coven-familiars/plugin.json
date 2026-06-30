@@ -1,0 +1,53 @@
+{
+  "name": "coven-familiars",
+  "version": "0.1.0",
+  "description": "Spawn, configure, and roster-manage Coven familiars \u2014 identities, roles, glyphs, and lifecycle.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "coven",
+    "familiars",
+    "agents",
+    "roster",
+    "identity"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/coven-familiars",
+  "x-coven": {
+    "displayName": "Coven Familiars",
+    "category": "Coven",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven-cave"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator",
+          "coordination-layer"
+        ]
+      },
+      {
+        "familiar": "kitty",
+        "roles": [
+          "general-helper"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

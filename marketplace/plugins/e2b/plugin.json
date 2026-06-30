@@ -1,0 +1,71 @@
+{
+  "name": "e2b",
+  "version": "0.1.0",
+  "description": "Run code in secure, ephemeral E2B cloud sandboxes for execution and testing.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "e2b",
+    "sandbox",
+    "code-execution",
+    "runtime",
+    "testing"
+  ],
+  "capabilities": [
+    "network",
+    "shell",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/e2b",
+  "x-coven": {
+    "displayName": "E2B Code Sandbox",
+    "category": "Developer Tools",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/e2b-dev/mcp-server"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "debugger"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "e2b": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@e2b/mcp-server"
+      ],
+      "type": "stdio",
+      "env": {
+        "E2B_API_KEY": "${E2B_API_KEY}"
+      }
+    }
+  },
+  "userConfig": {
+    "e2b_api_key": {
+      "type": "string",
+      "title": "E2B API Key",
+      "description": "API key for E2B sandbox provisioning.",
+      "required": true,
+      "sensitive": true,
+      "env": "E2B_API_KEY"
+    }
+  }
+}

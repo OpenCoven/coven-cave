@@ -1,0 +1,24 @@
+{
+  "name": "elevenlabs",
+  "version": "0.1.0",
+  "description": "Text-to-speech, voice synthesis, and audio transcription via ElevenLabs.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ElevenLabs",
+    "shortDescription": "Text-to-speech, voice synthesis, and audio transcription via ElevenLabs.",
+    "longDescription": "Generate speech and transcribe audio; confirm voice and cost before large jobs.",
+    "developerName": "OpenCoven",
+    "category": "Media & Creative",
+    "capabilities": [
+      "elevenlabs",
+      "tts",
+      "voice",
+      "audio",
+      "speech"
+    ],
+    "defaultPrompt": "Help me use ElevenLabs safely."
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "name": "huggingface",
+  "version": "0.1.0",
+  "description": "Search models, datasets, papers, and Spaces on the Hugging Face Hub.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "huggingface",
+    "models",
+    "datasets",
+    "papers",
+    "ml"
+  ],
+  "capabilities": [
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/huggingface",
+  "x-coven": {
+    "displayName": "Hugging Face",
+    "category": "Agents & Harnesses",
+    "trust": "official-remote",
+    "sourceRefs": [
+      "https://hf.co/settings/mcp/"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher",
+          "librarian"
+        ]
+      },
+      {
+        "familiar": "echo",
+        "roles": [
+          "archivist"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": true,
+      "rolePatch": true
+    }
+  },
+  "mcpServers": {
+    "huggingface": {
+      "url": "https://huggingface.co/mcp",
+      "type": "http"
+    }
+  },
+  "userConfig": {
+    "hf_token": {
+      "type": "string",
+      "title": "Hugging Face Token",
+      "description": "Optional token for higher rate limits and gated repos.",
+      "required": false,
+      "sensitive": true,
+      "env": "HF_TOKEN"
+    }
+  }
+}

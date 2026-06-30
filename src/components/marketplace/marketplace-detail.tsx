@@ -61,7 +61,7 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-              <Icon name="ph:plug-bold" width={18} className="text-[var(--text-muted)]" />
+              <Icon name={plugin.kind === "mcp" ? "ph:plug-bold" : "ph:sparkle-bold"} width={18} className="text-[var(--text-muted)]" />
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-[16px] font-semibold text-[var(--text-primary)]">{plugin.displayName}</h2>
@@ -76,6 +76,10 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
         {plugin.description ? <p className="text-[13px] text-[var(--text-primary)]">{plugin.description}</p> : null}
 
         <div className="flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]">
+          <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
+            <Icon name={plugin.kind === "mcp" ? "ph:plug-bold" : "ph:sparkle-bold"} width={11} aria-hidden />{" "}
+            {plugin.kind === "mcp" ? "MCP server" : "Skill"}
+          </span>
           <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
             <Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}
           </span>

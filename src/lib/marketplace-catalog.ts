@@ -4,6 +4,8 @@
  * passes already-parsed inputs here so this stays unit-testable.
  */
 
+import type { IconName } from "@/lib/icon";
+
 export type RoleAffinity = { familiar: string; roles: string[] };
 
 export type MarketplaceJsonPlugin = {
@@ -69,6 +71,8 @@ export function remoteUrlFromManifest(manifest: PluginManifest): string | undefi
 
 export type InstalledMap = Record<string, { version: string; source: string; installedAt: string }>;
 
+export type PluginKind = "mcp" | "skill";
+
 export type MarketplacePlugin = {
   id: string;
   displayName: string;
@@ -82,7 +86,7 @@ export type MarketplacePlugin = {
   homepage?: string;
   repository?: string;
   roleAffinity: RoleAffinity[];
-  kind: "mcp";
+  kind: PluginKind;
   version: string;
   installed: boolean;
   requiresSetup: boolean;
@@ -91,6 +95,16 @@ export type MarketplacePlugin = {
   configured: boolean;
   remoteUrl?: string;
 };
+
+/**
+ * "mcp" when the manifest declares any MCP server (stdio command or remote
+ * url); otherwise "skill" — a first-party capability that runs inside Coven
+ * Cave without an external server.
+ */
+export function deriveKind(manifest: PluginManifest): PluginKind {
+  const servers = manifest.mcpServers ?? {};
+  return Object.keys(servers).length > 0 ? "mcp" : "skill";
+}
 
 export function deriveRequiresSetup(userConfig: PluginManifest["userConfig"]): boolean {
   if (!userConfig) return false;
@@ -129,7 +143,7 @@ export function mergeCatalog(
         homepage: manifest.homepage,
         repository: manifest.repository,
         roleAffinity: p.roleAffinity ?? [],
-        kind: "mcp" as const,
+        kind: deriveKind(manifest),
         version: manifest.version ?? "0.0.0",
         installed: Boolean(installed[p.name]),
         requiresSetup: requiredConfig.length > 0,
@@ -153,20 +167,148 @@ export function pluginBadgeState(
   return "add";
 }
 
+export type KindFilter = "all" | PluginKind;
+
 export function filterPlugins(
   plugins: MarketplacePlugin[],
-  opts: { query?: string; category?: string },
+  opts: { query?: string; category?: string; kind?: KindFilter; ids?: readonly string[] },
 ): MarketplacePlugin[] {
   const q = (opts.query ?? "").trim().toLowerCase();
   const category = opts.category ?? "All";
+  const kind = opts.kind ?? "all";
+  const idSet = opts.ids ? new Set(opts.ids) : null;
   return plugins.filter((p) => {
+    if (idSet && !idSet.has(p.id)) return false;
     if (category !== "All" && p.category !== category) return false;
+    if (kind !== "all" && p.kind !== kind) return false;
     if (!q) return true;
     const haystack = [p.displayName, p.description, p.author, p.category, ...p.keywords]
       .join(" ")
       .toLowerCase();
     return haystack.includes(q);
   });
+}
+
+export type SortKey = "recommended" | "name" | "installed";
+
+const TRUST_RANK: Record<string, number> = {
+  "official-remote": 0,
+  "official-local": 1,
+  "reference-local": 2,
+  "preview-local": 3,
+  "local-tool": 4,
+};
+
+function trustRank(trust: string): number {
+  return TRUST_RANK[trust] ?? 9;
+}
+
+/** Returns a new, sorted array — never mutates the input. */
+export function sortPlugins(plugins: MarketplacePlugin[], sort: SortKey): MarketplacePlugin[] {
+  const byName = (a: MarketplacePlugin, b: MarketplacePlugin) =>
+    a.displayName.localeCompare(b.displayName);
+  const copy = [...plugins];
+  if (sort === "name") return copy.sort(byName);
+  if (sort === "installed") {
+    return copy.sort(
+      (a, b) => Number(b.installed) - Number(a.installed) || byName(a, b),
+    );
+  }
+  // recommended: official trust first, then needs-setup demoted, then name
+  return copy.sort(
+    (a, b) =>
+      trustRank(a.trust) - trustRank(b.trust) ||
+      Number(a.requiresSetup && !a.configured) - Number(b.requiresSetup && !b.configured) ||
+      byName(a, b),
+  );
+}
+
+export function countByKind(plugins: MarketplacePlugin[]): { mcp: number; skill: number } {
+  let mcp = 0;
+  let skill = 0;
+  for (const p of plugins) {
+    if (p.kind === "mcp") mcp += 1;
+    else skill += 1;
+  }
+  return { mcp, skill };
+}
+
+export type Collection = {
+  id: string;
+  title: string;
+  description: string;
+  icon: IconName;
+  /** Explicit member ids; resolved against the live catalog (missing ids skipped). */
+  ids?: readonly string[];
+  /** When set, members are every plugin in this category (ids ignored). */
+  category?: string;
+};
+
+/**
+ * Curated bundles surfaced as a "Featured collections" strip. Order matters —
+ * it is the on-screen order. Coven-native uses a category match so it always
+ * reflects every first-party plugin; the rest are hand-picked id lists.
+ */
+export const COLLECTIONS: readonly Collection[] = [
+  {
+    id: "coven-native",
+    title: "Coven native",
+    description: "First-party capabilities that run inside Coven Cave.",
+    icon: "ph:sparkle-bold",
+    category: "Coven",
+  },
+  {
+    id: "essentials",
+    title: "Essentials",
+    description: "The core toolkit every familiar should start with.",
+    icon: "ph:cube-bold",
+    ids: ["filesystem", "git", "github", "fetch", "memory", "time", "sequential-thinking"],
+  },
+  {
+    id: "research",
+    title: "Research stack",
+    description: "Search, retrieve, and ground answers in real sources.",
+    icon: "ph:magnifying-glass-bold",
+    ids: ["exa", "tavily", "firecrawl", "context7", "huggingface", "fetch"],
+  },
+  {
+    id: "web-automation",
+    title: "Web & browser",
+    description: "Drive browsers and crawl the live web.",
+    icon: "ph:globe-bold",
+    ids: ["playwright", "browserbase", "chrome-devtools", "firecrawl", "searxng"],
+  },
+  {
+    id: "data",
+    title: "Data & databases",
+    description: "Query and inspect your data sources.",
+    icon: "ph:database-bold",
+    ids: ["postgres", "sqlite", "supabase", "mongodb", "dbhub"],
+  },
+  {
+    id: "devops",
+    title: "Ship & operate",
+    description: "Deploy, observe, and manage infrastructure.",
+    icon: "ph:rocket-launch-bold",
+    ids: ["vercel", "azure", "terraform", "cloudflare-docs", "sentry"],
+  },
+];
+
+/** Member plugins of a collection, in collection order, present in the catalog. */
+export function resolveCollection(
+  plugins: MarketplacePlugin[],
+  collection: Collection,
+): MarketplacePlugin[] {
+  if (collection.category) {
+    return plugins.filter((p) => p.category === collection.category);
+  }
+  const byId = new Map(plugins.map((p) => [p.id, p]));
+  const out: MarketplacePlugin[] = [];
+  for (const id of collection.ids ?? []) {
+    const p = byId.get(id);
+    if (p) out.push(p);
+  }
+  return out;
 }
 
 export function categoriesFrom(plugins: MarketplacePlugin[]): string[] {

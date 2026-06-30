@@ -3,11 +3,16 @@ import assert from "node:assert/strict";
 import {
   mergeCatalog,
   deriveRequiresSetup,
+  deriveKind,
   pluginBadgeState,
   filterPlugins,
+  sortPlugins,
+  countByKind,
   categoriesFrom,
   requiredConfigFromManifest,
   remoteUrlFromManifest,
+  resolveCollection,
+  COLLECTIONS,
 } from "./marketplace-catalog.ts";
 
 const marketplacePlugins = [
@@ -16,9 +21,9 @@ const marketplacePlugins = [
   { name: "legacy", displayName: "Legacy", category: "Other", trust: "preview-local", policy: { installation: "UNAVAILABLE", authentication: "NONE" } },
 ];
 const manifests = {
-  github: { version: "0.1.0", description: "Repos, issues, PRs.", author: { name: "OpenCoven" }, keywords: ["git", "pull-requests"], capabilities: ["network", "mcp"], homepage: "https://opencoven.ai", userConfig: { github_token: { required: true, sensitive: true, env: "GITHUB_PERSONAL_ACCESS_TOKEN" } } },
-  fetch: { version: "0.2.0", description: "HTTP fetch.", author: "Anthropic", keywords: ["http"], capabilities: ["network"] },
-  // legacy: intentionally no manifest -> degraded card
+  github: { version: "0.1.0", description: "Repos, issues, PRs.", author: { name: "OpenCoven" }, keywords: ["git", "pull-requests"], capabilities: ["network", "mcp"], homepage: "https://opencoven.ai", mcpServers: { github: { command: "npx", type: "stdio" } }, userConfig: { github_token: { required: true, sensitive: true, env: "GITHUB_PERSONAL_ACCESS_TOKEN" } } },
+  fetch: { version: "0.2.0", description: "HTTP fetch.", author: "Anthropic", keywords: ["http"], capabilities: ["network"], mcpServers: { fetch: { command: "npx", type: "stdio" } } },
+  // legacy: intentionally no manifest -> degraded card, no mcpServers -> kind "skill"
 };
 const installed = { fetch: { version: "0.2.0", source: "catalog", installedAt: "2026-06-24T00:00:00.000Z" } };
 
@@ -124,6 +129,48 @@ const remoteMerged = mergeCatalog(
 assert.equal(remoteMerged[0].remoteUrl, "https://mcp.linear.app/mcp");
 
 const ghRow = merged.find((p) => p.id === "github");
-assert.equal(ghRow.remoteUrl, undefined); // github fixture has no mcpServers -> undefined
+assert.equal(ghRow.remoteUrl, undefined); // command-only mcpServer (no url) -> undefined
+
+// --- deriveKind ---
+assert.equal(deriveKind({ mcpServers: { x: { command: "npx" } } }), "mcp");
+assert.equal(deriveKind({ mcpServers: { x: { url: "https://e.x/mcp" } } }), "mcp");
+assert.equal(deriveKind({ mcpServers: {} }), "skill");
+assert.equal(deriveKind({}), "skill");
+assert.equal(merged.find((p) => p.id === "legacy").kind, "skill"); // no manifest -> skill
+
+// --- filterPlugins: kind + ids ---
+assert.deepEqual(filterPlugins(merged, { kind: "mcp" }).map((p) => p.id), ["fetch", "github"]);
+assert.deepEqual(filterPlugins(merged, { kind: "skill" }).map((p) => p.id), ["legacy"]);
+assert.deepEqual(filterPlugins(merged, { ids: ["github", "legacy"] }).map((p) => p.id), ["github", "legacy"]);
+assert.deepEqual(filterPlugins(merged, { ids: ["github"], kind: "skill" }).map((p) => p.id), []);
+
+// --- countByKind ---
+assert.deepEqual(countByKind(merged), { mcp: 2, skill: 1 });
+
+// --- sortPlugins (returns a new array, never mutates) ---
+const before = merged.map((p) => p.id);
+const byName = sortPlugins(merged, "name");
+assert.deepEqual(byName.map((p) => p.id), ["fetch", "github", "legacy"]);
+assert.deepEqual(merged.map((p) => p.id), before); // input untouched
+// installed: fetch is installed -> first
+assert.equal(sortPlugins(merged, "installed")[0].id, "fetch");
+// recommended: trust rank reference-local(2) < preview-local(3) -> legacy last
+assert.equal(sortPlugins(merged, "recommended").at(-1).id, "legacy");
+
+// --- collections ---
+const essentials = COLLECTIONS.find((c) => c.id === "essentials");
+assert.ok(essentials);
+// resolve keeps collection id order and skips ids absent from the catalog
+assert.deepEqual(
+  resolveCollection(merged, { id: "t", title: "t", description: "", icon: "", ids: ["legacy", "missing", "github"] }).map((p) => p.id),
+  ["legacy", "github"],
+);
+// category-based collection returns every plugin in the category
+assert.deepEqual(
+  resolveCollection(merged, { id: "t", title: "t", description: "", icon: "", category: "Other" }).map((p) => p.id),
+  ["legacy"],
+);
+// coven-native collection is category-driven so it always tracks first-party plugins
+assert.equal(COLLECTIONS.find((c) => c.id === "coven-native").category, "Coven");
 
 console.log("marketplace-catalog.test.ts: ok");

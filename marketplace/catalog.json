@@ -1412,6 +1412,986 @@
         "useCases": ["Read build and runtime errors", "Inspect routes and server actions", "Trace logs from the dev server"],
         "guardrails": ["Requires a running Next.js 16+ dev server", "Treat the endpoint as local-only", "Confirm the target project before acting"]
       }
+    },
+    {
+      "name": "coven-familiars",
+      "displayName": "Coven Familiars",
+      "version": "0.1.0",
+      "description": "Spawn, configure, and roster-manage Coven familiars — identities, roles, glyphs, and lifecycle.",
+      "category": "Coven",
+      "keywords": [
+        "coven",
+        "familiars",
+        "agents",
+        "roster",
+        "identity"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven-cave"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Create and tend familiars from inside Coven Cave without overwriting other familiars' config.",
+        "useCases": [
+          "Draft a new familiar with role, glyph, and SOUL scaffold",
+          "Adjust an existing familiar's roles or pins",
+          "Archive or reorder the roster from Settings → Familiars"
+        ],
+        "guardrails": [
+          "Never write default familiars over a user's saved config",
+          "Confirm before archiving or deleting a familiar",
+          "Keep glyph names within the familiar glyph catalog"
+        ]
+      }
+    },
+    {
+      "name": "coven-flows",
+      "displayName": "Coven Flows",
+      "version": "0.1.0",
+      "description": "Author and run multi-step Coven flows and workflows with live per-step progress and run logs.",
+      "category": "Coven",
+      "keywords": [
+        "coven",
+        "flows",
+        "workflows",
+        "automation",
+        "orchestration"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven-cave"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Design flows and trigger runs, then read step-by-step progress and surface failures clearly.",
+        "useCases": [
+          "Compose a flow from a goal description",
+          "Run a flow and watch per-step progress",
+          "Inspect a failed step's log and propose a fix"
+        ],
+        "guardrails": [
+          "Validate the flow manifest before saving",
+          "Stop for approval before running state-changing steps",
+          "Summarize each run with outcome and step IDs"
+        ]
+      }
+    },
+    {
+      "name": "coven-memory",
+      "displayName": "Coven Memory & Knowledge",
+      "version": "0.1.0",
+      "description": "Persist and recall cross-session memory and curated knowledge-vault references for your familiars.",
+      "category": "Coven",
+      "keywords": [
+        "coven",
+        "memory",
+        "knowledge",
+        "recall",
+        "vault"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven-cave"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist",
+            "retrospector"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Capture durable facts to memory and reference the knowledge vault without leaking secrets.",
+        "useCases": [
+          "Save a non-obvious project fact as a memory",
+          "Recall relevant memories before acting",
+          "Add a curated reference to the knowledge vault"
+        ],
+        "guardrails": [
+          "Never store secrets or credentials in memory or knowledge",
+          "One fact per memory; update rather than duplicate",
+          "Verify a referenced file still exists before recommending it"
+        ]
+      }
+    },
+    {
+      "name": "coven-evals",
+      "displayName": "Coven Evals",
+      "version": "0.1.0",
+      "description": "Build, run, and read eval suites and scorecards to measure familiar quality over time.",
+      "category": "Coven",
+      "keywords": [
+        "coven",
+        "evals",
+        "scorecards",
+        "quality",
+        "testing"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven-cave"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "echo",
+          "roles": [
+            "retrospector"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Assemble evals from templates and interpret scorecards honestly, including regressions.",
+        "useCases": [
+          "Start an eval from the template gallery",
+          "Run an eval and read the scorecard",
+          "Compare runs to spot regressions"
+        ],
+        "guardrails": [
+          "Report failing scores plainly, never inflate results",
+          "Keep eval datasets free of secrets",
+          "Cite the run ID when summarizing a scorecard"
+        ]
+      }
+    },
+    {
+      "name": "coven-canvas",
+      "displayName": "Coven Canvas",
+      "version": "0.1.0",
+      "description": "Plan visually on the Coven canvas — triage incoming work and sketch ideas before building.",
+      "category": "Coven",
+      "keywords": [
+        "coven",
+        "canvas",
+        "triage",
+        "sketch",
+        "planning"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven-cave"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Use the canvas to triage and sketch, turning loose ideas into structured plans.",
+        "useCases": [
+          "Triage incoming items into lanes",
+          "Sketch an idea before committing to code",
+          "Promote a sketch into a board task"
+        ],
+        "guardrails": [
+          "Confirm before deleting canvas content you did not create",
+          "Keep triage decisions reversible",
+          "Summarize what moved and why"
+        ]
+      }
+    },
+    {
+      "name": "coven-automations",
+      "displayName": "Coven Automations",
+      "version": "0.1.0",
+      "description": "Schedule reminders, crons, and flows; review next-fire times and run history from one surface.",
+      "category": "Coven",
+      "keywords": [
+        "coven",
+        "automations",
+        "schedules",
+        "cron",
+        "reminders"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven-cave"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Create and tend scheduled automations and read their run logs without surprise side effects.",
+        "useCases": [
+          "Schedule a recurring cron or reminder",
+          "Check the next-fire summary for active automations",
+          "Read a run log and diagnose a failed automation"
+        ],
+        "guardrails": [
+          "Confirm cadence and target before enabling a schedule",
+          "Use UPPERCASE cron status (ACTIVE/PAUSED)",
+          "Stop for approval before deleting an automation"
+        ]
+      }
+    },
+    {
+      "name": "slack",
+      "displayName": "Slack",
+      "version": "0.1.0",
+      "description": "Read channels, search history, and post approved messages to Slack workspaces.",
+      "category": "Productivity",
+      "keywords": [
+        "slack",
+        "chat",
+        "messaging",
+        "notifications",
+        "team"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/modelcontextprotocol/servers"
+      ],
+      "trust": "reference-local",
+      "mcpServers": {
+        "slack": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-slack"
+          ],
+          "type": "stdio",
+          "env": {
+            "SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}",
+            "SLACK_TEAM_ID": "${SLACK_TEAM_ID}"
+          }
+        }
+      },
+      "userConfig": {
+        "slack_bot_token": {
+          "type": "string",
+          "title": "Slack Bot Token",
+          "description": "Bot user OAuth token (xoxb-…) for the Slack MCP server.",
+          "required": true,
+          "sensitive": true,
+          "env": "SLACK_BOT_TOKEN"
+        },
+        "slack_team_id": {
+          "type": "string",
+          "title": "Slack Team ID",
+          "description": "Workspace/team ID the bot is installed in.",
+          "required": true,
+          "sensitive": false,
+          "env": "SLACK_TEAM_ID"
+        }
+      },
+      "roleAffinity": [
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Use Slack read-first; never post, react, or DM without explicit approval.",
+        "useCases": [
+          "Search channel history for context",
+          "Summarize a thread",
+          "Post an approved status update"
+        ],
+        "guardrails": [
+          "Do not post, react, or DM without approval",
+          "Preserve exact approved text when posting",
+          "Record message timestamps/permalinks"
+        ]
+      }
+    },
+    {
+      "name": "postgres",
+      "displayName": "PostgreSQL",
+      "version": "0.1.0",
+      "description": "Read-only SQL introspection and queries against a PostgreSQL database for analysis and debugging.",
+      "category": "Databases",
+      "keywords": [
+        "postgres",
+        "postgresql",
+        "sql",
+        "database",
+        "query"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/modelcontextprotocol/servers"
+      ],
+      "trust": "reference-local",
+      "mcpServers": {
+        "postgres": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-postgres",
+            "${POSTGRES_CONNECTION_STRING}"
+          ],
+          "type": "stdio"
+        }
+      },
+      "userConfig": {
+        "postgres_connection_string": {
+          "type": "string",
+          "title": "Connection String",
+          "description": "postgresql://user:pass@host:5432/db connection string.",
+          "required": true,
+          "sensitive": true,
+          "env": "POSTGRES_CONNECTION_STRING"
+        }
+      },
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger",
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Query Postgres read-only for analysis; never mutate data without explicit approval.",
+        "useCases": [
+          "Inspect schema and table shapes",
+          "Run read-only analytical queries",
+          "Explain a slow query plan"
+        ],
+        "guardrails": [
+          "Prefer read-only queries; no writes without approval",
+          "Never expose connection credentials",
+          "Bound result sets with LIMIT"
+        ]
+      }
+    },
+    {
+      "name": "sentry",
+      "displayName": "Sentry",
+      "version": "0.1.0",
+      "description": "Query Sentry issues, events, and traces to triage and debug production errors.",
+      "category": "Developer Tools",
+      "keywords": [
+        "sentry",
+        "errors",
+        "observability",
+        "debugging",
+        "traces"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://docs.sentry.io/product/sentry-mcp/"
+      ],
+      "trust": "official-remote",
+      "mcpServers": {
+        "sentry": {
+          "url": "https://mcp.sentry.dev/mcp",
+          "type": "http"
+        }
+      },
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "retrospector"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Use Sentry to triage and explain errors; never resolve or mutate issues without approval.",
+        "useCases": [
+          "Find the most frequent unresolved issues",
+          "Read an event's stack trace and breadcrumbs",
+          "Correlate an error spike with a release"
+        ],
+        "guardrails": [
+          "Do not resolve, ignore, or assign issues without approval",
+          "Avoid leaking PII from event payloads",
+          "Cite issue IDs and permalinks"
+        ]
+      }
+    },
+    {
+      "name": "cloudflare-docs",
+      "displayName": "Cloudflare Docs",
+      "version": "0.1.0",
+      "description": "Search and read Cloudflare's developer documentation directly from the agent.",
+      "category": "Cloud & Infrastructure",
+      "keywords": [
+        "cloudflare",
+        "docs",
+        "workers",
+        "edge",
+        "reference"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://developers.cloudflare.com/agents/model-context-protocol/"
+      ],
+      "trust": "official-remote",
+      "mcpServers": {
+        "cloudflare-docs": {
+          "url": "https://docs.mcp.cloudflare.com/sse",
+          "type": "sse"
+        }
+      },
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Look up Cloudflare docs to ground answers in current product behavior.",
+        "useCases": [
+          "Find the docs for a Workers API",
+          "Confirm a configuration option exists",
+          "Quote canonical guidance with a link"
+        ],
+        "guardrails": [
+          "Quote docs accurately and link the source",
+          "Flag when docs are version-specific",
+          "Do not guess beyond what the docs state"
+        ]
+      }
+    },
+    {
+      "name": "huggingface",
+      "displayName": "Hugging Face",
+      "version": "0.1.0",
+      "description": "Search models, datasets, papers, and Spaces on the Hugging Face Hub.",
+      "category": "Agents & Harnesses",
+      "keywords": [
+        "huggingface",
+        "models",
+        "datasets",
+        "papers",
+        "ml"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://hf.co/settings/mcp/"
+      ],
+      "trust": "official-remote",
+      "mcpServers": {
+        "huggingface": {
+          "url": "https://huggingface.co/mcp",
+          "type": "http"
+        }
+      },
+      "userConfig": {
+        "hf_token": {
+          "type": "string",
+          "title": "Hugging Face Token",
+          "description": "Optional token for higher rate limits and gated repos.",
+          "required": false,
+          "sensitive": true,
+          "env": "HF_TOKEN"
+        }
+      },
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Search the Hub for models, datasets, and papers; cite repo IDs and arXiv references.",
+        "useCases": [
+          "Find a model for a task",
+          "Look up a dataset's card",
+          "Locate the paper behind a model"
+        ],
+        "guardrails": [
+          "Cite repo IDs and links",
+          "Note license and gating before recommending",
+          "Do not download large artifacts without approval"
+        ]
+      }
+    },
+    {
+      "name": "exa",
+      "displayName": "Exa Search",
+      "version": "0.1.0",
+      "description": "Neural and keyword web search with content retrieval for grounded research.",
+      "category": "Browser & Web",
+      "keywords": [
+        "exa",
+        "search",
+        "web",
+        "research",
+        "retrieval"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://docs.exa.ai/reference/exa-mcp"
+      ],
+      "trust": "official-remote",
+      "mcpServers": {
+        "exa": {
+          "url": "https://mcp.exa.ai/mcp",
+          "type": "http"
+        }
+      },
+      "userConfig": {
+        "exa_api_key": {
+          "type": "string",
+          "title": "Exa API Key",
+          "description": "API key for the Exa search MCP server.",
+          "required": true,
+          "sensitive": true,
+          "env": "EXA_API_KEY"
+        }
+      },
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Use Exa to find and read sources for grounded, cited research.",
+        "useCases": [
+          "Find recent sources on a topic",
+          "Retrieve and summarize an article",
+          "Gather citations for a claim"
+        ],
+        "guardrails": [
+          "Cite every source with a link",
+          "Verify claims across more than one source",
+          "Note publish dates for time-sensitive facts"
+        ]
+      }
+    },
+    {
+      "name": "e2b",
+      "displayName": "E2B Code Sandbox",
+      "version": "0.1.0",
+      "description": "Run code in secure, ephemeral E2B cloud sandboxes for execution and testing.",
+      "category": "Developer Tools",
+      "keywords": [
+        "e2b",
+        "sandbox",
+        "code-execution",
+        "runtime",
+        "testing"
+      ],
+      "capabilities": [
+        "network",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/e2b-dev/mcp-server"
+      ],
+      "trust": "reference-local",
+      "mcpServers": {
+        "e2b": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@e2b/mcp-server"
+          ],
+          "type": "stdio",
+          "env": {
+            "E2B_API_KEY": "${E2B_API_KEY}"
+          }
+        }
+      },
+      "userConfig": {
+        "e2b_api_key": {
+          "type": "string",
+          "title": "E2B API Key",
+          "description": "API key for E2B sandbox provisioning.",
+          "required": true,
+          "sensitive": true,
+          "env": "E2B_API_KEY"
+        }
+      },
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Execute code in an isolated sandbox; treat sandbox output as untrusted.",
+        "useCases": [
+          "Run a snippet to verify behavior",
+          "Reproduce a bug in isolation",
+          "Test a fix before applying it locally"
+        ],
+        "guardrails": [
+          "Never run untrusted code against local credentials",
+          "Keep sandboxes ephemeral",
+          "Summarize stdout/stderr and exit codes"
+        ]
+      }
+    },
+    {
+      "name": "browserbase",
+      "displayName": "Browserbase",
+      "version": "0.1.0",
+      "description": "Drive cloud headless browsers for automation, scraping, and end-to-end checks.",
+      "category": "Browser & Web",
+      "keywords": [
+        "browserbase",
+        "browser",
+        "automation",
+        "scraping",
+        "headless"
+      ],
+      "capabilities": [
+        "network",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/browserbase/mcp-server-browserbase"
+      ],
+      "trust": "reference-local",
+      "mcpServers": {
+        "browserbase": {
+          "command": "npx",
+          "args": [
+            "-y",
+            "@browserbasehq/mcp-server-browserbase"
+          ],
+          "type": "stdio",
+          "env": {
+            "BROWSERBASE_API_KEY": "${BROWSERBASE_API_KEY}",
+            "BROWSERBASE_PROJECT_ID": "${BROWSERBASE_PROJECT_ID}"
+          }
+        }
+      },
+      "userConfig": {
+        "browserbase_api_key": {
+          "type": "string",
+          "title": "Browserbase API Key",
+          "description": "API key for Browserbase sessions.",
+          "required": true,
+          "sensitive": true,
+          "env": "BROWSERBASE_API_KEY"
+        },
+        "browserbase_project_id": {
+          "type": "string",
+          "title": "Browserbase Project ID",
+          "description": "Project ID for Browserbase sessions.",
+          "required": true,
+          "sensitive": false,
+          "env": "BROWSERBASE_PROJECT_ID"
+        }
+      },
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Automate cloud browsers carefully; never submit forms or auth without approval.",
+        "useCases": [
+          "Navigate and extract page content",
+          "Run an end-to-end flow check",
+          "Capture a screenshot of a rendered page"
+        ],
+        "guardrails": [
+          "Do not submit forms or log in without approval",
+          "Respect robots and site terms",
+          "Report URLs visited and actions taken"
+        ]
+      }
+    },
+    {
+      "name": "elevenlabs",
+      "displayName": "ElevenLabs",
+      "version": "0.1.0",
+      "description": "Text-to-speech, voice synthesis, and audio transcription via ElevenLabs.",
+      "category": "Media & Creative",
+      "keywords": [
+        "elevenlabs",
+        "tts",
+        "voice",
+        "audio",
+        "speech"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/elevenlabs/elevenlabs-mcp"
+      ],
+      "trust": "reference-local",
+      "mcpServers": {
+        "elevenlabs": {
+          "command": "uvx",
+          "args": [
+            "elevenlabs-mcp"
+          ],
+          "type": "stdio",
+          "env": {
+            "ELEVENLABS_API_KEY": "${ELEVENLABS_API_KEY}"
+          }
+        }
+      },
+      "userConfig": {
+        "elevenlabs_api_key": {
+          "type": "string",
+          "title": "ElevenLabs API Key",
+          "description": "API key for the ElevenLabs MCP server.",
+          "required": true,
+          "sensitive": true,
+          "env": "ELEVENLABS_API_KEY"
+        }
+      },
+      "roleAffinity": [
+        {
+          "familiar": "charm",
+          "roles": [
+            "social-voice",
+            "devrel-liaison"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Generate speech and transcribe audio; confirm voice and cost before large jobs.",
+        "useCases": [
+          "Synthesize a short voice clip",
+          "Transcribe an audio file",
+          "Pick a voice for a narration"
+        ],
+        "guardrails": [
+          "Confirm voice, language, and length before generating",
+          "Do not clone voices without consent",
+          "Report output file paths and durations"
+        ]
+      }
+    },
+    {
+      "name": "sqlite",
+      "displayName": "SQLite",
+      "version": "0.1.0",
+      "description": "Query and introspect local SQLite databases for lightweight analysis.",
+      "category": "Databases",
+      "keywords": [
+        "sqlite",
+        "sql",
+        "database",
+        "local",
+        "query"
+      ],
+      "capabilities": [
+        "read_files",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/modelcontextprotocol/servers"
+      ],
+      "trust": "reference-local",
+      "mcpServers": {
+        "sqlite": {
+          "command": "uvx",
+          "args": [
+            "mcp-server-sqlite",
+            "--db-path",
+            "${SQLITE_DB_PATH}"
+          ],
+          "type": "stdio"
+        }
+      },
+      "userConfig": {
+        "sqlite_db_path": {
+          "type": "string",
+          "title": "Database Path",
+          "description": "Filesystem path to the SQLite .db file.",
+          "required": true,
+          "sensitive": false,
+          "env": "SQLITE_DB_PATH"
+        }
+      },
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Query a local SQLite file read-first; confirm before schema or data changes.",
+        "useCases": [
+          "List tables and inspect schema",
+          "Run a read-only query",
+          "Summarize row counts and shapes"
+        ],
+        "guardrails": [
+          "Prefer read-only queries; no writes without approval",
+          "Back up before any schema change",
+          "Bound result sets with LIMIT"
+        ]
+      }
     }
   ]
 }
