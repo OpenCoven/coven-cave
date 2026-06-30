@@ -38,6 +38,7 @@ import {
   setGroupParticipants,
   parseMentions,
   renderCovenRoster,
+  renderCovenContext,
   findActiveMention,
   matchMentions,
   applyMention,
@@ -238,7 +239,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
 
   // --- broadcast send ------------------------------------------------------
   const streamOne = useCallback(
-    async (group: CovenGroup, reply: GroupReply, prompt: string, signal: AbortSignal) => {
+    async (group: CovenGroup, reply: GroupReply, prompt: string, signal: AbortSignal): Promise<GroupReply> => {
+      // `settled` mirrors the live React state so relay can read the final reply
+      // synchronously (transcriptRef only refreshes on re-render, which doesn't
+      // happen between sequential iterations). Apply every update to both.
+      let settled = reply;
+      const apply = (fn: (r: GroupReply) => GroupReply) => {
+        settled = fn(settled);
+        updateReply(reply.id, fn);
+      };
       try {
         const res = await fetch("/api/chat/send", {
           method: "POST",
@@ -251,10 +260,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
           signal,
         });
         if (!res.ok || !res.body) {
-          updateReply(reply.id, (r) =>
-            applyGroupEvent(r, { kind: "error", message: `request failed (${res.status})` }),
-          );
-          return;
+          apply((r) => applyGroupEvent(r, { kind: "error", message: `request failed (${res.status})` }));
+          return settled;
         }
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -269,21 +276,22 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
             if (ev.kind === "session") recordSession(group.id, reply.familiarId, ev.sessionId);
             if (ev.kind === "done" && ev.sessionId)
               recordSession(group.id, reply.familiarId, ev.sessionId);
-            updateReply(reply.id, (r) => applyGroupEvent(r, ev));
+            apply((r) => applyGroupEvent(r, ev));
           }
         }
         // Stream closed without an explicit `done` — settle anything still live.
-        updateReply(reply.id, (r) =>
+        apply((r) =>
           r.status === "streaming" || r.status === "queued" ? { ...r, status: "done", activity: undefined } : r,
         );
       } catch (err) {
         const aborted = (err as Error)?.name === "AbortError";
-        updateReply(reply.id, (r) =>
+        apply((r) =>
           aborted
             ? { ...r, status: "error", error: "cancelled", activity: undefined }
             : applyGroupEvent(r, { kind: "error", message: (err as Error)?.message ?? "send failed" }),
         );
       }
+      return settled;
     },
     [updateReply, recordSession],
   );
@@ -331,23 +339,51 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         status: "queued",
         createdAt: at,
       }));
+      // Prior rounds (before this turn) — the relay reads peers' replies from
+      // here plus the in-round accumulator. Captured before setTranscript, which
+      // flushes async (transcriptRef only refreshes on re-render).
+      const prior = transcriptRef.current;
       setTranscript((prev) => [...prev, userTurn, ...replies]);
       setDraft("");
       setMention(null);
       setBusy(true);
       const controller = new AbortController();
       abortRef.current = controller;
-      await Promise.all(
-        replies.map((r) => {
+      // Full-coven broadcasts relay SEQUENTIALLY so each familiar sees the
+      // others' fresh replies this round; targeted/@mention sends stay parallel
+      // (a lone target has no peers to relay, and parallel keeps latency at 1×).
+      const shouldRelay = mentioned.length === 0 && replies.length > 1;
+      if (shouldRelay) {
+        const relayed: GroupReply[] = [];
+        for (const r of replies) {
+          if (controller.signal.aborted) {
+            updateReply(r.id, (x) => ({ ...x, status: "error", error: "cancelled", activity: undefined }));
+            continue;
+          }
+          // Strip the piggybacked next-paths block from peers' text before
+          // quoting it, so control markup never leaks into the next prompt.
+          const contextTurns = [...prior, userTurn, ...relayed].map((t) =>
+            t.role === "assistant" ? { ...t, text: extractNextPaths(t.text).visible } : t,
+          );
           const roster = renderCovenRoster(rosterParticipants, r.familiarId);
-          const prompt = roster ? `${roster}\n\n${text}` : text;
-          return streamOne(group, r, prompt, controller.signal);
-        }),
-      );
+          const transcript = renderCovenContext(contextTurns, r.familiarId, mentionable);
+          const prompt = [roster, transcript, text].filter(Boolean).join("\n\n");
+          const done = await streamOne(group, r, prompt, controller.signal);
+          if (done.status === "done" && done.text.trim()) relayed.push(done);
+        }
+      } else {
+        await Promise.all(
+          replies.map((r) => {
+            const roster = renderCovenRoster(rosterParticipants, r.familiarId);
+            const prompt = roster ? `${roster}\n\n${text}` : text;
+            return streamOne(group, r, prompt, controller.signal);
+          }),
+        );
+      }
       abortRef.current = null;
       setBusy(false);
     },
-    [busy, streamOne, byId],
+    [busy, streamOne, byId, updateReply],
   );
 
   // The composer and "click a next-path suggestion to send" chips both go
