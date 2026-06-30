@@ -27,6 +27,12 @@ function statusClass(status: string): string {
   return "bg-[var(--text-muted)]";
 }
 
+function threadLeadingIcon(title: string): string | null {
+  if (/^\s*resolve\s+pr\b|\bpr\s*#?\d+/i.test(title)) return "ph:git-pull-request";
+  if (/\bbranch\b|\bmerge\b|\brebase\b/i.test(title)) return "ph:git-branch";
+  return null;
+}
+
 function sessionsForProject(sessions: SessionRow[], project: ComuxProject): SessionRow[] {
   return sessions
     .filter((session) => session.project_root?.replace(/\\/g, "/").replace(/\/+$/, "") === project.root)
@@ -201,7 +207,14 @@ export function CodeSidebar({
                                   }}
                                   className="focus-ring flex min-h-[34px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-4 pr-1 text-left text-[12px]"
                                 >
-                                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusClass(session.status)}`} aria-hidden />
+                                  {(() => {
+                                    const glyph = threadLeadingIcon(title);
+                                    return glyph ? (
+                                      <Icon name={glyph} width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                                    ) : (
+                                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusClass(session.status)}`} aria-hidden />
+                                    );
+                                  })()}
                                   <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
                                   {confirming ? null : (
                                     <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">

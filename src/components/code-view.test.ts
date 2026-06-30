@@ -97,6 +97,8 @@ assert.match(
   /aria-label=\{`Delete thread \$\{title\}`\}[\s\S]{0,520}?<Icon name="ph:x-bold"/,
   "CodeSidebar exposes an inline close-button delete affordance on thread rows",
 );
+// Codex sidebar: PR/branch threads get a distinct leading glyph.
+assert.match(codeSidebar, /ph:git-pull-request|ph:git-branch/, "thread rows show a PR/branch glyph for PR-like titles");
 assert.match(
   workspace,
   /onDeleteSession=\{async \(session\) => \{[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(session\.id\)\}`,[\s\S]*?method: "DELETE"[\s\S]*?loadSessions\(\)/,
