@@ -12,6 +12,8 @@ export const OPEN_COVEN_TOOLS = [
     packageName: "@opencoven/cli",
     binary: "coven",
     versionArgs: ["--version"],
+    minimumVersion: "0.0.49",
+    installCommand: "npm i -g @opencoven/cli@latest",
   },
   {
     id: "coven-code",
@@ -19,6 +21,8 @@ export const OPEN_COVEN_TOOLS = [
     packageName: "coven-code",
     binary: "coven-code",
     versionArgs: ["--version"],
+    minimumVersion: "0.0.22",
+    installCommand: "npm i -g coven-code@latest",
   },
 ] as const;
 
@@ -40,6 +44,9 @@ export type OpenCovenToolStatus = {
   current: string | null;
   latest: string | null;
   outdated: boolean;
+  compatible: boolean;
+  minimumVersion: string;
+  installCommand: string;
   checkedAt: string;
 };
 
@@ -104,6 +111,8 @@ async function toolStatus(tool: ToolSpec): Promise<OpenCovenToolStatus> {
   ]);
   const outdated =
     !!installed?.version && !!latest && compareSemver(latest, installed.version) > 0;
+  const compatible =
+    !!installed?.version && compareSemver(installed.version, tool.minimumVersion) >= 0;
 
   return {
     id: tool.id,
@@ -115,6 +124,9 @@ async function toolStatus(tool: ToolSpec): Promise<OpenCovenToolStatus> {
     current: installed?.version ?? null,
     latest,
     outdated,
+    compatible,
+    minimumVersion: tool.minimumVersion,
+    installCommand: tool.installCommand,
     checkedAt: new Date().toISOString(),
   };
 }

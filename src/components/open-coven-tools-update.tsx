@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { useShellBanners } from "@/lib/shell-banners";
 
 type InstallTarget = "coven-cli" | "coven-code";
 
@@ -15,6 +16,9 @@ type ToolStatus = {
   current: string | null;
   latest: string | null;
   outdated: boolean;
+  compatible: boolean;
+  minimumVersion: string;
+  installCommand: string;
 };
 
 type InstallJobView = {
@@ -32,6 +36,12 @@ type InstallResult = {
 };
 
 const SIDECAR_TOKEN_STORAGE_KEY = "coven-cave:sidecar-auth-token";
+const TOOL_UPDATE_BANNER_ID = "opencoven-tools-update";
+const TOOL_DISMISS_KEY = (tools: ToolStatus[]) =>
+  `coven-cave:tool-update:dismissed:${tools
+    .map((tool) => `${tool.id}:${tool.latest ?? tool.current ?? tool.minimumVersion}`)
+    .sort()
+    .join("|")}`;
 
 function formatElapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
@@ -53,7 +63,31 @@ function toolVersionText(tool: ToolStatus): string {
 function toolStatusText(tool: ToolStatus): string {
   if (!tool.installed) return "Not found";
   if (!tool.current) return "Version unknown";
+  if (!tool.compatible) return "Needs update";
   return "Up to date";
+}
+
+function toolCompatibilityText(tool: ToolStatus): string | null {
+  if (tool.compatible) return null;
+  return `Requires >= ${tool.minimumVersion}`;
+}
+
+function dismissedToolBanner(tools: ToolStatus[]): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(TOOL_DISMISS_KEY(tools)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function dismissToolBanner(tools: ToolStatus[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(TOOL_DISMISS_KEY(tools), "1");
+  } catch {
+    /* private mode */
+  }
 }
 
 function buildDiagnosticsText({
@@ -96,6 +130,53 @@ function buildDiagnosticsText({
   );
 }
 
+export function OpenCovenToolsBannerTrigger() {
+  const { pushBanner, dismissBanner } = useShellBanners();
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/opencoven-tools/status", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) return null;
+        return (await res.json()) as { ok?: boolean; tools?: ToolStatus[] };
+      })
+      .then((json) => {
+        if (cancelled || !json?.ok) return;
+        const tools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
+        const incompatibleTools = tools.filter((tool) => !tool.compatible);
+        const outdatedTools = tools.filter((tool) => tool.compatible && tool.outdated);
+        const bannerTools = incompatibleTools.length > 0 ? incompatibleTools : outdatedTools;
+        if (bannerTools.length === 0 || dismissedToolBanner(bannerTools)) return;
+        const label = bannerTools.map((tool) => tool.label).join(", ");
+        const detail =
+          incompatibleTools.length > 0
+            ? `${label} must be updated for this Cave build.`
+            : `New ${label} release available.`;
+        pushBanner({
+          id: TOOL_UPDATE_BANNER_ID,
+          severity: incompatibleTools.length > 0 ? "warning" : "info",
+          title: detail,
+          cta: {
+            label: "Review tools",
+            onClick: () => {
+              window.location.assign("/settings#about");
+            },
+          },
+          onDismiss: () => dismissToolBanner(bannerTools),
+        });
+      })
+      .catch(() => {
+        /* Update checks are best-effort. */
+      });
+    return () => {
+      cancelled = true;
+      dismissBanner(TOOL_UPDATE_BANNER_ID);
+    };
+  }, [pushBanner, dismissBanner]);
+
+  return null;
+}
+
 export function OpenCovenToolsUpdate() {
   const [tools, setTools] = useState<ToolStatus[]>([]);
   const [checking, setChecking] = useState(true);
@@ -103,6 +184,7 @@ export function OpenCovenToolsUpdate() {
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<
     "idle" | "copied" | "failed"
   >("idle");
+  const [copiedCommand, setCopiedCommand] = useState<InstallTarget | null>(null);
   const [installJobs, setInstallJobs] = useState<
     Partial<Record<InstallTarget, InstallJobView>>
   >({});
@@ -256,6 +338,19 @@ export function OpenCovenToolsUpdate() {
     }
   };
 
+  const copyCommand = async (tool: ToolStatus) => {
+    try {
+      await navigator.clipboard.writeText(tool.installCommand);
+      setCopiedCommand(tool.id);
+      window.setTimeout(() => setCopiedCommand(null), 1800);
+    } catch {
+      setInstallResults((prev) => ({
+        ...prev,
+        [tool.id]: { ok: false, detail: "command copy failed" },
+      }));
+    }
+  };
+
   const copyDiagnostics = async () => {
     try {
       const text = buildDiagnosticsText({
@@ -308,6 +403,11 @@ export function OpenCovenToolsUpdate() {
               <p className="truncate font-mono text-[11px] text-[var(--text-muted)]">
                 {toolVersionText(tool)}
               </p>
+              {toolCompatibilityText(tool) ? (
+                <p className="mt-1 text-[11px] text-[var(--color-warning)]">
+                  {toolCompatibilityText(tool)}
+                </p>
+              ) : null}
               {result ? (
                 <p
                   className={`mt-1 text-[11px] ${
@@ -343,6 +443,17 @@ export function OpenCovenToolsUpdate() {
                   {toolStatusText(tool)}
                 </span>
               )}
+              {!busy ? (
+                <button
+                  type="button"
+                  onClick={() => void copyCommand(tool)}
+                  className={ghostBtn}
+                  aria-live="polite"
+                >
+                  <Icon name={copiedCommand === tool.id ? "ph:check-bold" : "ph:terminal-window"} width={12} />
+                  {copiedCommand === tool.id ? "Copied" : "Copy command"}
+                </button>
+              ) : null}
             </div>
           </div>
         );
