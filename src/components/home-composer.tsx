@@ -80,6 +80,7 @@ const HOME_DRAFT_KEY = "cave:home-composer-draft:v1";
 const HOME_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the home composer.
 const HOME_HISTORY_KEY = "cave:home-composer-history:v1";
+const RUNTIME_MODEL_SEPARATOR = "::";
 
 function readHomeDraft(): string {
   if (typeof window === "undefined") return "";
@@ -98,6 +99,15 @@ function writeHomeDraft(text: string) {
   } catch {
     /* best effort */
   }
+}
+
+function runtimeModelValue(runtime: string, model: string): string {
+  return `${runtime}${RUNTIME_MODEL_SEPARATOR}${model}`;
+}
+
+function parseRuntimeModelValue(value: string): { runtime: string; model: string } {
+  const [runtime = "", model = ""] = value.split(RUNTIME_MODEL_SEPARATOR);
+  return { runtime, model };
 }
 
 // ─── HomeComposer ─────────────────────────────────────────────────────────────
@@ -169,10 +179,18 @@ export function HomeComposer({
   );
   const selectedRuntime =
     modelState?.harness ?? selectedFamiliar?.harness ?? selectedFamiliar?.defaultHarness ?? "claude";
-  const runtimeModelOptions = useMemo(() => catalogForRuntime(selectedRuntime)?.models ?? [], [selectedRuntime]);
-  const selectedModelId = runtimeModelOptions.some((model) => model.id === modelState?.effectiveModel)
-    ? modelState!.effectiveModel
-    : runtimeModelOptions[0]?.id ?? "";
+  const runtimeModelOptionsFor = useCallback(
+    (runtime: string) => catalogForRuntime(runtime)?.models ?? [],
+    [],
+  );
+  const runtimeModelOptions = runtimeModelOptionsFor(selectedRuntime);
+  const selectedModelId =
+    runtimeModelOptions.length === 0
+      ? ""
+      : runtimeModelOptions.some((model) => model.id === modelState?.effectiveModel)
+        ? modelState!.effectiveModel
+        : runtimeModelOptions[0]?.id ?? "";
+  const selectedRuntimeModelValue = runtimeModelValue(selectedRuntime, selectedModelId);
 
   useEffect(() => {
     if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) return;
@@ -249,9 +267,9 @@ export function HomeComposer({
   }, [selectedFamiliarId]);
 
   const handleSelectRuntime = useCallback(
-    (runtime: string) => {
+    (runtime: string, selectedModel?: string) => {
       if (!selectedFamiliarId) return;
-      const nextModel = defaultModelForRuntime(runtime);
+      const nextModel = selectedModel || defaultModelForRuntime(runtime);
       setModelState((current) => ({
         familiarId: selectedFamiliarId,
         runtime: current?.runtime ?? null,
@@ -280,6 +298,19 @@ export function HomeComposer({
       })();
     },
     [refetchModelState, selectedFamiliarId],
+  );
+
+  const handleSelectRuntimeModel = useCallback(
+    (value: string) => {
+      const { runtime, model } = parseRuntimeModelValue(value);
+      if (!runtime) return;
+      if (runtime === selectedRuntime) {
+        handleSelectModel(model || defaultModelForRuntime(runtime));
+        return;
+      }
+      handleSelectRuntime(runtime, model);
+    },
+    [handleSelectModel, handleSelectRuntime, selectedRuntime],
   );
 
   // Mirror the chat composer's matching rule: surface only while the user is
@@ -776,42 +807,30 @@ export function HomeComposer({
           </div>
 
           <div className="hc-control-group hc-control-group--run">
-            <label className="hc-familiar-selector hc-runtime-selector">
+            <label className="hc-familiar-selector hc-runtime-model-selector">
               <Icon name="ph:terminal-window" width={13} className="hc-familiar-glyph" aria-hidden />
               <select
-                aria-label="Choose runtime"
+                aria-label="Choose runtime and model"
                 className="hc-familiar-select"
-                value={selectedRuntime}
-                onChange={(e) => handleSelectRuntime(e.currentTarget.value)}
+                value={selectedRuntimeModelValue}
+                onChange={(e) => handleSelectRuntimeModel(e.currentTarget.value)}
                 disabled={!selectedFamiliarId || sending}
               >
                 {COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => (
-                  <option key={adapter.id} value={adapter.id}>
-                    {adapter.label}
-                  </option>
+                  <optgroup key={adapter.id} label={adapter.label}>
+                    {runtimeModelOptionsFor(adapter.id).length === 0 ? (
+                      <option value={runtimeModelValue(adapter.id, "")}>
+                        Runtime managed
+                      </option>
+                    ) : (
+                      runtimeModelOptionsFor(adapter.id).map((model) => (
+                        <option key={model.id} value={runtimeModelValue(adapter.id, model.id)}>
+                          {model.label}
+                        </option>
+                      ))
+                    )}
+                  </optgroup>
                 ))}
-              </select>
-              <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-            </label>
-
-            <label className="hc-familiar-selector hc-model-selector">
-              <Icon name="ph:lightning-fill" width={13} className="hc-familiar-glyph hc-model-bolt" aria-hidden />
-              <select
-                aria-label="Choose model"
-                className="hc-familiar-select"
-                value={selectedModelId}
-                onChange={(e) => handleSelectModel(e.currentTarget.value)}
-                disabled={!selectedFamiliarId || runtimeModelOptions.length === 0 || sending}
-              >
-                {runtimeModelOptions.length === 0 ? (
-                  <option value="">Runtime managed</option>
-                ) : (
-                  runtimeModelOptions.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.label}
-                    </option>
-                  ))
-                )}
               </select>
               <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
             </label>

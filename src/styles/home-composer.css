@@ -254,6 +254,10 @@
   gap: 6px;
 }
 
+.hc-runtime-model-selector .hc-familiar-select {
+  max-width: 172px;
+}
+
 .hc-command-select .hc-command-select-label {
   flex-shrink: 0;
   font-size: 11px;
@@ -426,7 +430,7 @@
 
   .hc-control-group--run {
     order: 4;
-    grid-template-columns: repeat(4, minmax(0, 1fr)) var(--touch-target);
+    grid-template-columns: repeat(3, minmax(0, 1fr)) var(--touch-target);
     margin-left: 0;
   }
 

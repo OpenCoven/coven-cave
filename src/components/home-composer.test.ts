@@ -57,20 +57,44 @@ assert.match(
 
 assert.match(
   source,
-  /aria-label="Choose runtime"[\s\S]*value=\{selectedRuntime\}/,
-  "HomeComposer should expose a runtime selector for the selected familiar",
+  /aria-label="Choose runtime and model"[\s\S]*value=\{selectedRuntimeModelValue\}/,
+  "HomeComposer should expose one combined runtime/model selector for the selected familiar",
 );
 
 assert.match(
+  source,
+  /<optgroup key=\{adapter\.id\} label=\{adapter\.label\}>[\s\S]*?runtimeModelOptionsFor\(adapter\.id\)\.map/,
+  "HomeComposer should group model choices under their runtime",
+);
+
+assert.match(
+  source,
+  /const runtimeModelOptionsFor = useCallback\(\s*\(runtime: string\) => catalogForRuntime\(runtime\)\?\.models \?\? \[\],\s*\[\],\s*\)/,
+  "HomeComposer model options should be derived strictly from each runtime catalog",
+);
+
+assert.match(
+  source,
+  /runtimeModelOptions\.length === 0\s*\?\s*""[\s\S]*?runtimeModelOptions\.some/,
+  "HomeComposer should keep runtime-managed runtimes selected when their catalog has no model options",
+);
+
+assert.doesNotMatch(
+  source,
+  /aria-label="Choose runtime"[\s\S]*value=\{selectedRuntime\}/,
+  "HomeComposer should not render a separate runtime selector",
+);
+
+assert.doesNotMatch(
   source,
   /aria-label="Choose model"[\s\S]*value=\{selectedModelId\}/,
-  "HomeComposer should expose a model selector for the selected familiar",
+  "HomeComposer should not render a separate model selector",
 );
 
 assert.match(
   source,
-  /const runtimeModelOptions = useMemo\(\(\) => catalogForRuntime\(selectedRuntime\)\?\.models \?\? \[\], \[selectedRuntime\]\)/,
-  "HomeComposer model options should be derived strictly from the selected runtime catalog",
+  /body: JSON\.stringify\(\{[\s\S]*?\[selectedFamiliarId\]: \{ harness: runtime, model: nextModel \},[\s\S]*?\}\)/,
+  "HomeComposer should persist runtime and model together when the combined selector changes runtime",
 );
 
 assert.doesNotMatch(
