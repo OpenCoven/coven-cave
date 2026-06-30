@@ -52,6 +52,7 @@ import {
   FlowView,
   GitHubView,
 } from "@/components/lazy-surfaces";
+import { CodeSidebar } from "@/components/code-sidebar";
 import { CodeView } from "@/components/code-view";
 import { LibraryView } from "@/components/library-view";
 import { PluginsView } from "@/components/plugins-view";
@@ -200,6 +201,7 @@ export function Workspace() {
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
+  const [lastNonCodeMode, setLastNonCodeMode] = useState<WorkspaceMode>("home");
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
@@ -288,6 +290,15 @@ export function Workspace() {
   modeRef.current = mode;
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
+
+  useEffect(() => {
+    if (mode !== "code") setLastNonCodeMode(mode);
+  }, [mode]);
+
+  const exitCodeMode = useCallback(() => {
+    setMode(lastNonCodeMode === "code" ? "home" : lastNonCodeMode);
+    shellRef.current?.dismissNavMobile();
+  }, [lastNonCodeMode]);
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
@@ -1717,6 +1728,17 @@ export function Workspace() {
     startFamiliarChat(activeId, projectRoot);
   }, [activeId, startFamiliarChat]);
 
+  const openCodeProjectChat = useCallback((projectRoot: string | null) => {
+    setPendingProjectChatRoot(projectRoot ?? null);
+    setPendingChatAction({
+      kind: "new",
+      familiarId: activeId,
+      projectRoot,
+      nonce: Date.now(),
+    });
+    setMode("code");
+  }, [activeId]);
+
   const sidebar = (
     <SidebarMinimal
       mode={mode}
@@ -1763,6 +1785,26 @@ export function Workspace() {
       boardOpenCount={boardTaskCount}
       scheduleNeedsCount={scheduleNeedsCount}
       githubAssignedCount={githubAssignedCount}
+    />
+  );
+
+  const codeSidebar = (
+    <CodeSidebar
+      sessions={sessions}
+      activeSessionId={routerRef.current?.currentSessionId() ?? null}
+      onBack={exitCodeMode}
+      onOpenSession={(session) => {
+        if (session.familiarId) setActiveId(session.familiarId);
+        setPendingChatAction({
+          kind: "open",
+          sessionId: session.id,
+          familiarId: session.familiarId,
+          nonce: Date.now(),
+        });
+        setMode("code");
+        shellRef.current?.dismissNavMobile();
+      }}
+      onNewChat={openCodeProjectChat}
     />
   );
 
@@ -1888,11 +1930,12 @@ export function Workspace() {
             view="projects"
             active={mode === "code"}
             storageNamespace=":code"
+            hideProjectNavigator
             sessions={sessions}
             onOpenSession={(sessionId, familiarId) => {
               openFamiliarSession(sessionId, familiarId);
             }}
-            onNewChat={openProjectChat}
+            onNewChat={openCodeProjectChat}
           />
         }
       />
@@ -2102,7 +2145,7 @@ export function Workspace() {
           />
           </>
         )}
-        nav={sidebar}
+        nav={mode === "code" ? codeSidebar : sidebar}
         list={list}
         detail={detail}
         agent={

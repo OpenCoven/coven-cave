@@ -116,6 +116,10 @@ type Props = {
    *  review (right). Omitted elsewhere (e.g. the Library projects browser), where
    *  comux stays two-column (tree | preview/changes). */
   centerSlot?: ReactNode;
+  /** Code mode moves project/thread navigation into the primary shell sidebar.
+   *  When this is true, keep this column focused on the selected project's
+   *  details, search, files, terminals, preview, and diff state. */
+  hideProjectNavigator?: boolean;
 };
 
 type ProjectFilePreview =
@@ -403,7 +407,7 @@ function SortableProjectRow({
   );
 }
 
-export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "", rightView: rightViewProp, onRightViewChange, centerSlot }: Props) {
+export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "", rightView: rightViewProp, onRightViewChange, centerSlot, hideProjectNavigator = false }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const layoutKey = STORAGE_LAYOUT + storageNamespace;
   const sessionsKey = STORAGE_SESSIONS + storageNamespace;
@@ -591,6 +595,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // GitHub-style "/" focuses the project filter while the Code surface is shown,
   // unless the user is already typing or holding a modifier.
   useEffect(() => {
+    if (hideProjectNavigator) return;
     if (!active) return;
     function onKey(e: KeyboardEvent) {
       if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -603,7 +608,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [active]);
+  }, [active, hideProjectNavigator]);
 
   // Keep the selected project on screen — when the list is long, or after a
   // filter changes which rows are rendered. block:"nearest" is a no-op if it's
@@ -1031,6 +1036,18 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       window.removeEventListener("cave:open-file-diff", onOpenDiff as EventListener);
     };
   }, [active, openFilePreview, selectedRoot, projects, selectedProjectRoot]);
+
+  useEffect(() => {
+    if (view !== "projects" || !active) return;
+    const onSelectProject = (event: Event) => {
+      const root = (event as CustomEvent<{ root?: string }>).detail?.root;
+      if (!root) return;
+      setSelectedProjectRoot(root);
+      setProjectDetailCollapsed(false);
+    };
+    window.addEventListener("cave:code-select-project", onSelectProject as EventListener);
+    return () => window.removeEventListener("cave:code-select-project", onSelectProject as EventListener);
+  }, [active, view]);
 
   // Code workspace toolbar wiring (projects view only): the Projects toggle
   // shows/hides this column, and a layout preset additionally switches the
@@ -1726,6 +1743,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         scrolling up bleed into the gap above it. Top breathing
                         room lives inside the header instead (its own padding). */}
                     <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+                    {!hideProjectNavigator && (
+                      <>
                     {/* Projects — merged into this column above the file tree so
                         the project switcher and the file browser share one
                         explorer. Collapsible; the Code toolbar's Projects toggle
@@ -1886,6 +1905,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         </>
                       )}
                     </ContextMenu>
+                      </>
+                    )}
                     {/* Project-wide code search (CODE-SEARCH-01) */}
                     <div className="mb-3">
                       <div className="relative">
@@ -2005,6 +2026,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       )}
                     </div>
 
+                    {!hideProjectNavigator && (
+                      <>
                     {/* Recent sessions — collapsible */}
                     <div className="mb-2">
                       <button
@@ -2056,6 +2079,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         )
                       )}
                     </div>
+                      </>
+                    )}
 
                     {/* Files — native tree */}
                     <div>
