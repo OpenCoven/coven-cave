@@ -19,6 +19,9 @@ export async function streamFamiliarText(opts: {
   modelOverride?: string;
   modelOverrideScope?: "next-message" | "session";
   signal?: AbortSignal;
+  /** Called with the accumulated assistant text after each streamed chunk,
+   *  so callers can render the reply incrementally as it arrives. */
+  onText?: (text: string) => void;
 }): Promise<{ text: string; error: string | null; sessionId?: string }> {
   let res: Response;
   try {
@@ -57,7 +60,10 @@ export async function streamFamiliarText(opts: {
       buffer = buffer.slice(idx + 2);
       const ev = parseSseFrame(frame);
       if (!ev) continue;
-      if (ev.kind === "assistant_chunk") text += ev.text ?? "";
+      if (ev.kind === "assistant_chunk") {
+        text += ev.text ?? "";
+        opts.onText?.(text);
+      }
       else if (ev.kind === "session") sessionId = ev.sessionId;
       else if (ev.kind === "done") {
         if (ev.sessionId) sessionId = ev.sessionId;
