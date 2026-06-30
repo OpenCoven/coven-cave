@@ -14,6 +14,7 @@ const flowRunSteps = await readFile(new URL("../../../components/flow/flow-run-s
 const flowFilters = await readFile(new URL("../../../lib/flow/flow-execution-filters.ts", import.meta.url), "utf8");
 const automationRuns = await readFile(new URL("../../../lib/automation-runs.ts", import.meta.url), "utf8");
 const automationsView = await readFile(new URL("../../../components/automations-view.tsx", import.meta.url), "utf8");
+const runStatusColorHelper = await readFile(new URL("../../../lib/automations/run-status.ts", import.meta.url), "utf8");
 
 assert.match(
   travelHelper,
@@ -62,6 +63,7 @@ assert.match(flowExecutions, /queued: 0/, "Flow executions list should count que
 assert.match(flowRunSteps, /queued: "Queued"/, "Flow run detail should label queued runs");
 assert.match(flowFilters, /\{ value: "queued", label: "Queued" \}/, "Flow execution filters should expose queued runs");
 assert.match(automationRuns, /AutomationRunStatus = "queued" \| "running"/, "Automation run type should include queued");
-assert.match(automationsView, /r\.status === "queued" \? "var\(--color-warning\)"/, "Automation run rows should tint queued jobs");
+assert.match(automationsView, /runStatusColor\(r\.status\)/, "Automation run rows should tint runs via the shared runStatusColor helper");
+assert.match(runStatusColorHelper, /case "queued":\s*\n\s*return "var\(--color-warning\)"/, "runStatusColor should tint queued jobs with the warning color");
 
 console.log("offline-work-queue.test.ts: ok");
