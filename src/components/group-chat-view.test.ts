@@ -13,13 +13,15 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
   // Fan-out: one /api/chat/send per participant carrying the per-familiar id.
   assert.match(view, /fetch\("\/api\/chat\/send"/, "sends through the chat bridge");
   assert.match(view, /familiarId: reply\.familiarId/, "each stream targets one familiar");
-  assert.match(view, /Promise\.all\(replies\.map/, "fans out to every participant in parallel");
+  assert.match(view, /Promise\.all\(\s*replies\.map/, "fans out to every participant in parallel");
   // Reuses the tested pure reducers rather than re-parsing inline.
   assert.match(view, /applyGroupEvent|parseSseBuffer/, "uses the pure stream reducers");
   // Per-familiar session pinning so each thread resumes.
   assert.match(view, /recordSession\(group\.id, reply\.familiarId/, "pins each familiar's session id");
   // A Stop control aborts the in-flight broadcast.
   assert.match(view, /abortRef\.current\?\.abort\(\)/, "Stop aborts the broadcast");
+  // Injects the coven roster into each send so a familiar knows who else is present.
+  assert.match(view, /renderCovenRoster\(rosterParticipants, r\.familiarId\)/, "injects the per-familiar coven roster");
   // Strips the piggybacked next-paths block (visible) and surfaces the parsed
   // lines (suggestions) so control markup never leaks and chips can render.
   assert.match(

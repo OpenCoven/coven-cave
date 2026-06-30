@@ -305,6 +305,55 @@ function dedupe(ids: string[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Coven roster (pure) — who is present in the group
+// ---------------------------------------------------------------------------
+
+/** One coven participant for {@link renderCovenRoster}. Framework-free shape so
+ *  the helper stays DOM-/React-free; the view maps its resolved familiars into
+ *  this before calling. */
+export type RosterParticipant = {
+  id: string;
+  name: string;
+  /** Familiar role/lane; ignored for the human. */
+  role: string;
+  kind: "human" | "familiar";
+};
+
+/**
+ * Render the coven roster a familiar needs to know who else is in the room.
+ *
+ * Without this, each familiar resumes a private 1:1 session and cannot see its
+ * co-participants — so it answers "how many are here?" with "two: you and me"
+ * even in a 3-way coven. The block names every participant (with role), marks
+ * the human `(human)` and the receiving familiar `(you)`, and instructs the
+ * model to count everyone present.
+ *
+ * Third-person and framework-free. Composed into the `prompt` (after the
+ * harness-loaded identity, before the user text), so it is task context that
+ * never overrides the familiar's own declared identity. Returns "" for a
+ * degenerate roster (≤1 participant) so 1:1 sends are byte-identical to before.
+ */
+export function renderCovenRoster(
+  participants: RosterParticipant[],
+  receivingFamiliarId: string,
+): string {
+  if (participants.length <= 1) return "";
+  const lines = participants.map((p) => {
+    if (p.kind === "human") return `- ${p.name} (human)`;
+    const role = p.role.trim() ? ` — ${p.role.trim()}` : "";
+    const you = p.id === receivingFamiliarId ? " (you)" : "";
+    return `- ${p.name}${role}${you}`;
+  });
+  return [
+    "<coven_roster>",
+    'You are in a group chat ("coven") with these participants:',
+    ...lines,
+    "When asked who is present or how many are in this chat, count everyone listed above (including yourself and the human).",
+    "</coven_roster>",
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Persistence (thin localStorage wrappers — safe to call client-side only)
 // ---------------------------------------------------------------------------
 

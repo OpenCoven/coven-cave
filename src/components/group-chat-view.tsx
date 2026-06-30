@@ -37,6 +37,7 @@ import {
   setGroupSession,
   setGroupParticipants,
   parseMentions,
+  renderCovenRoster,
   findActiveMention,
   matchMentions,
   applyMention,
@@ -49,6 +50,7 @@ import {
   type GroupUserTurn,
   type GroupReply,
   type MentionableFamiliar,
+  type RosterParticipant,
 } from "@/lib/group-chat";
 
 type Props = {
@@ -299,6 +301,18 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       }));
       const mentioned = parseMentions(text, mentionable);
       const targetIds = mentioned.length > 0 ? group.familiarIds.filter((id) => mentioned.includes(id)) : group.familiarIds;
+      // Roster reflects the FULL coven (not just @mention targets) — a familiar
+      // should know who else is in the room even when addressed alone. Composed
+      // per-familiar so each sees itself marked "(you)".
+      const rosterParticipants: RosterParticipant[] = [
+        ...group.familiarIds.map((id) => ({
+          id,
+          name: byId.get(id)?.display_name ?? id,
+          role: byId.get(id)?.role ?? "",
+          kind: "familiar" as const,
+        })),
+        { id: "__human__", name: "You", role: "", kind: "human" as const },
+      ];
       const at = nowIso();
       const userTurn: GroupUserTurn = {
         id: newId(),
@@ -323,7 +337,13 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       setBusy(true);
       const controller = new AbortController();
       abortRef.current = controller;
-      await Promise.all(replies.map((r) => streamOne(group, r, text, controller.signal)));
+      await Promise.all(
+        replies.map((r) => {
+          const roster = renderCovenRoster(rosterParticipants, r.familiarId);
+          const prompt = roster ? `${roster}\n\n${text}` : text;
+          return streamOne(group, r, prompt, controller.signal);
+        }),
+      );
       abortRef.current = null;
       setBusy(false);
     },

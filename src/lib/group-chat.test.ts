@@ -10,11 +10,13 @@ import {
   setGroupSession,
   setGroupParticipants,
   parseMentions,
+  renderCovenRoster,
   findActiveMention,
   matchMentions,
   applyMention,
   type GroupReply,
   type MentionableFamiliar,
+  type RosterParticipant,
 } from "./group-chat.ts";
 
 const ROSTER: MentionableFamiliar[] = [
@@ -226,4 +228,42 @@ test("applyMention: replaces the token with '@name ' and moves caret after", () 
   const out = applyMention("hey @Nov rest", 4, "Nov", "Nova");
   assert.equal(out.text, "hey @Nova  rest");
   assert.equal(out.caret, "hey @Nova ".length);
+});
+
+const COVEN: RosterParticipant[] = [
+  { id: "nova", name: "Nova", role: "Lead orchestrator", kind: "familiar" },
+  { id: "charm", name: "Charm", role: "Comms familiar", kind: "familiar" },
+  { id: "__human__", name: "You", role: "", kind: "human" },
+];
+
+test("renderCovenRoster: names every participant with roles", () => {
+  const out = renderCovenRoster(COVEN, "nova");
+  assert.match(out, /- Nova — Lead orchestrator/);
+  assert.match(out, /- Charm — Comms familiar/);
+  assert.match(out, /- You \(human\)/);
+});
+
+test("renderCovenRoster: marks only the receiving familiar (you)", () => {
+  const out = renderCovenRoster(COVEN, "charm");
+  assert.match(out, /- Charm — Comms familiar \(you\)/);
+  assert.doesNotMatch(out, /Nova — Lead orchestrator \(you\)/);
+});
+
+test("renderCovenRoster: instructs the model to count everyone present", () => {
+  const out = renderCovenRoster(COVEN, "nova");
+  assert.match(out, /count everyone/i);
+  assert.match(out, /<coven_roster>[\s\S]*<\/coven_roster>/);
+});
+
+test("renderCovenRoster: human line carries no dangling role separator", () => {
+  const out = renderCovenRoster(COVEN, "nova");
+  assert.doesNotMatch(out, /You — /);
+});
+
+test("renderCovenRoster: returns '' for a degenerate roster (<= 1 participant)", () => {
+  assert.equal(renderCovenRoster([], "nova"), "");
+  assert.equal(
+    renderCovenRoster([{ id: "nova", name: "Nova", role: "Lead", kind: "familiar" }], "nova"),
+    "",
+  );
 });
