@@ -22,121 +22,101 @@ type Props = {
 
 export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
   const archived = useArchivedFamiliars();
-  const { openFamiliarStudio, listView } = useFamiliarStudio();
+  const { openFamiliarStudio } = useFamiliarStudio();
   const [confirmReset, setConfirmReset] = useState(false);
 
-  if (listView) {
-    const active = allResolved.filter((f) => !(f.id in archived));
-    const archivedList = allResolved.filter((f) => f.id in archived);
+  // The full roster (active + archived) with reorder + archive — this is the
+  // manager that used to live in the standalone "Manage familiars" page. It now
+  // renders here so Settings → Familiars is the single source of truth, with the
+  // selected familiar's per-familiar controls (reset) below it.
+  const active = allResolved.filter((f) => !(f.id in archived));
+  const archivedList = allResolved.filter((f) => f.id in archived);
 
-    function move(id: string, direction: "up" | "down") {
-      const ids = allResolved.map((f) => f.id);
-      const idx = ids.indexOf(id);
-      if (idx < 0) return;
-      const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= ids.length) return;
-      // Only swap within the active group — refuse to move past an archived neighbor.
-      const swapId = ids[swapIdx];
-      if (swapId in archived) return;
-      [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
-      setFamiliarOrder(ids);
-    }
-
-    return (
-      <div className="familiar-studio-lifecycle">
-        <section>
-          <h3 className="familiar-studio-lifecycle__heading">Active</h3>
-          {active.map((f, i) => (
-            <FamiliarRow
-              key={f.id}
-              familiar={f}
-              isArchived={false}
-              canMoveUp={i > 0}
-              canMoveDown={i < active.length - 1}
-              onSelect={() => openFamiliarStudio(f.id, "identity")}
-              onArchive={() => archiveFamiliar(f.id)}
-              onUnarchive={() => unarchiveFamiliar(f.id)}
-              onMoveUp={() => move(f.id, "up")}
-              onMoveDown={() => move(f.id, "down")}
-            />
-          ))}
-        </section>
-        {archivedList.length > 0 ? (
-          <section>
-            <h3 className="familiar-studio-lifecycle__heading">Archived</h3>
-            {archivedList.map((f) => (
-              <FamiliarRow
-                key={f.id}
-                familiar={f}
-                isArchived={true}
-                canMoveUp={false}
-                canMoveDown={false}
-                onSelect={() => openFamiliarStudio(f.id, "identity")}
-                onArchive={() => archiveFamiliar(f.id)}
-                onUnarchive={() => unarchiveFamiliar(f.id)}
-                onMoveUp={() => { /* no-op */ }}
-                onMoveDown={() => { /* no-op */ }}
-              />
-            ))}
-          </section>
-        ) : null}
-      </div>
-    );
+  function move(id: string, direction: "up" | "down") {
+    const ids = allResolved.map((f) => f.id);
+    const idx = ids.indexOf(id);
+    if (idx < 0) return;
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= ids.length) return;
+    // Only swap within the active group — refuse to move past an archived neighbor.
+    const swapId = ids[swapIdx];
+    if (swapId in archived) return;
+    [ids[idx], ids[swapIdx]] = [ids[swapIdx], ids[idx]];
+    setFamiliarOrder(ids);
   }
 
-  if (!familiar) return null;
-
-  const isArchived = familiar.id in archived;
-
   function resetAll() {
+    if (!familiar) return;
     if (!confirmReset) {
       setConfirmReset(true);
       return;
     }
-    clearAllFamiliarOverrides(familiar!.id);
-    clearGlyphOverride(familiar!.id);
-    clearFamiliarImage(familiar!.id);
+    clearAllFamiliarOverrides(familiar.id);
+    clearGlyphOverride(familiar.id);
+    clearFamiliarImage(familiar.id);
     void fetch("/api/config", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ familiars: { [familiar!.id]: null } }),
+      body: JSON.stringify({ familiars: { [familiar.id]: null } }),
     });
     setConfirmReset(false);
   }
 
   return (
     <div className="familiar-studio-lifecycle">
-      <section className="familiar-studio-lifecycle__section">
-        <h3 className="familiar-studio-lifecycle__heading">Archive</h3>
-        <p className="familiar-studio-lifecycle__hint">
-          Archived familiars are hidden from the sidebar selector and switchers but remain
-          in this Studio&apos;s list view.
-        </p>
-        {isArchived ? (
-          <button onClick={() => unarchiveFamiliar(familiar.id)} className="familiar-studio-lifecycle__btn">
-            <Icon name="ph:arrow-counter-clockwise" width={14} /> Unarchive
-          </button>
-        ) : (
-          <button onClick={() => archiveFamiliar(familiar.id)} className="familiar-studio-lifecycle__btn">
-            <Icon name="ph:archive" width={14} /> Archive
-          </button>
-        )}
+      <section>
+        <h3 className="familiar-studio-lifecycle__heading">Active</h3>
+        {active.map((f, i) => (
+          <FamiliarRow
+            key={f.id}
+            familiar={f}
+            isArchived={false}
+            canMoveUp={i > 0}
+            canMoveDown={i < active.length - 1}
+            onSelect={() => openFamiliarStudio(f.id, "identity")}
+            onArchive={() => archiveFamiliar(f.id)}
+            onUnarchive={() => unarchiveFamiliar(f.id)}
+            onMoveUp={() => move(f.id, "up")}
+            onMoveDown={() => move(f.id, "down")}
+          />
+        ))}
       </section>
+      {archivedList.length > 0 ? (
+        <section>
+          <h3 className="familiar-studio-lifecycle__heading">Archived</h3>
+          {archivedList.map((f) => (
+            <FamiliarRow
+              key={f.id}
+              familiar={f}
+              isArchived={true}
+              canMoveUp={false}
+              canMoveDown={false}
+              onSelect={() => openFamiliarStudio(f.id, "identity")}
+              onArchive={() => archiveFamiliar(f.id)}
+              onUnarchive={() => unarchiveFamiliar(f.id)}
+              onMoveUp={() => { /* no-op */ }}
+              onMoveDown={() => { /* no-op */ }}
+            />
+          ))}
+        </section>
+      ) : null}
 
-      <section className="familiar-studio-lifecycle__section">
-        <h3 className="familiar-studio-lifecycle__heading">Reset overrides</h3>
-        <p className="familiar-studio-lifecycle__hint">
-          Clears identity / look / brain customizations and reverts this
-          familiar to its daemon defaults.
-        </p>
-        <button
-          onClick={resetAll}
-          className={`familiar-studio-lifecycle__btn familiar-studio-lifecycle__btn--danger${confirmReset ? " familiar-studio-lifecycle__btn--confirm" : ""}`}
-        >
-          <Icon name="ph:trash" width={14} />
-          {confirmReset ? "Click again to confirm" : "Reset all overrides"}
-        </button>
-      </section>
+      {familiar ? (
+        <section className="familiar-studio-lifecycle__section">
+          <h3 className="familiar-studio-lifecycle__heading">Reset overrides</h3>
+          <p className="familiar-studio-lifecycle__hint">
+            Clears {familiar.display_name}&apos;s identity / look / brain customizations and
+            reverts it to its daemon defaults.
+          </p>
+          <button
+            onClick={resetAll}
+            className={`familiar-studio-lifecycle__btn familiar-studio-lifecycle__btn--danger${confirmReset ? " familiar-studio-lifecycle__btn--confirm" : ""}`}
+          >
+            <Icon name="ph:trash" width={14} />
+            {confirmReset ? "Click again to confirm" : "Reset all overrides"}
+          </button>
+        </section>
+      ) : null}
     </div>
   );
 }

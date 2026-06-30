@@ -38,7 +38,21 @@ type Ctx = {
 
 const StudioContext = createContext<Ctx | null>(null);
 
-export function FamiliarStudioProvider({ children }: { children: ReactNode }) {
+export function FamiliarStudioProvider({
+  children,
+  redirectToSettings = false,
+}: {
+  children: ReactNode;
+  /**
+   * When true (the workspace-level provider), opening a familiar no longer
+   * pops a drawer — there is no drawer. Instead it hands the familiar/tab off
+   * to Settings → Familiars (the single source of truth) and navigates there,
+   * reusing the same `BRAIN_STUDIO_FAMILIAR_KEY` / tab handoff the Settings
+   * inline panel already reads. The Settings provider leaves this false so the
+   * inline panel keeps its in-place tab/familiar navigation.
+   */
+  redirectToSettings?: boolean;
+}) {
   const [activeFamiliarId, setActiveFamiliarId] = useState<string | null>(null);
   const [listView, setListView] = useState(false);
   const [activeTab, setActiveTabState] = useState<FamiliarStudioTab>(DEFAULT_TAB);
@@ -70,18 +84,33 @@ export function FamiliarStudioProvider({ children }: { children: ReactNode }) {
 
   const openFamiliarStudio = useCallback(
     (id: string, tab?: FamiliarStudioTab) => {
+      if (redirectToSettings) {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(BRAIN_STUDIO_FAMILIAR_KEY, id);
+          if (tab) window.localStorage.setItem(TAB_STORAGE_KEY, tab);
+          window.location.assign("/settings#familiars");
+        }
+        return;
+      }
       setActiveFamiliarId(id);
       setListView(false);
       if (tab) setActiveTab(tab);
     },
-    [setActiveTab],
+    [setActiveTab, redirectToSettings],
   );
 
   const openFamiliarStudioListView = useCallback(() => {
+    if (redirectToSettings) {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(TAB_STORAGE_KEY, "lifecycle");
+        window.location.assign("/settings#familiars");
+      }
+      return;
+    }
     setActiveFamiliarId(null);
     setListView(true);
     setActiveTab("lifecycle");
-  }, [setActiveTab]);
+  }, [setActiveTab, redirectToSettings]);
 
   const closeFamiliarStudio = useCallback(() => {
     setActiveFamiliarId(null);

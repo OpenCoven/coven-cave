@@ -7,8 +7,6 @@ import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { computePresence, REMOTE_HARNESSES } from "@/lib/presence";
 import { Popover } from "@/components/ui/popover";
 import { setFamiliarOrder } from "@/lib/cave-familiar-order";
-import { togglePin } from "@/lib/familiar-quick-switch";
-import { useFamiliarPins } from "@/lib/use-familiar-quick-switch";
 import {
   DndContext, PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
   type DragEndEvent,
@@ -59,8 +57,6 @@ export function FamiliarSwitcher({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [reordering, setReordering] = useState(false);
-  const pins = useFamiliarPins();
-  const pinnedSet = useMemo(() => new Set(pins), [pins]);
 
   const active = useMemo(
     () => familiars.find((f) => f.id === activeFamiliarId) ?? null,
@@ -245,16 +241,6 @@ export function FamiliarSwitcher({
                       {f.role ? <span className="familiar-switcher__option-meta">{f.role}</span> : null}
                       {needsReply ? <span className="familiar-switcher__option-unread" aria-hidden /> : null}
                       {isActive ? <Icon name="ph:check" width={12} aria-hidden /> : null}
-                    </button>
-                    <button
-                      type="button"
-                      className={`familiar-switcher__pin${pinnedSet.has(f.id) ? " is-pinned" : ""}`}
-                      aria-label={pinnedSet.has(f.id) ? `Unpin ${f.display_name} from quick switch` : `Pin ${f.display_name} to quick switch`}
-                      aria-pressed={pinnedSet.has(f.id)}
-                      title={pinnedSet.has(f.id) ? "Unpin from quick switch" : "Pin to quick switch"}
-                      onClick={() => togglePin(f.id)}
-                    >
-                      <Icon name={pinnedSet.has(f.id) ? "ph:push-pin-fill" : "ph:push-pin"} width={12} aria-hidden />
                     </button>
                     <button
                       type="button"

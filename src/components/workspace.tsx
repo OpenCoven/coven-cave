@@ -23,7 +23,6 @@ import { Shell, type ShellHandle } from "@/components/shell";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
-import { FamiliarStudio } from "@/components/familiar-studio";
 import { CompanionRail, type CompanionTab } from "@/components/companion-rail";
 import { RailInspector } from "@/components/inspector-pane";
 import { FamiliarsView } from "@/components/familiars-view";
@@ -2065,8 +2064,11 @@ export function Workspace() {
       inboxBadgeCount={inboxBadgeCount}
     />
   );
+  // The standalone "Manage familiars" drawer is gone — Settings → Familiars is
+  // the single source of truth. `redirectToSettings` routes every
+  // openFamiliarStudio(...) trigger (cards, switcher, onboarding) there.
   return (
-    <FamiliarStudioProvider>
+    <FamiliarStudioProvider redirectToSettings>
       <Shell
         ref={shellRef}
         mobileTabs={mobileTabs}
@@ -2316,7 +2318,6 @@ export function Workspace() {
         }}
       />
 
-      <FamiliarStudio familiars={familiars} />
       <MobileHandoffModal
         open={mobileHandoffOpen}
         onClose={() => setMobileHandoffOpen(false)}

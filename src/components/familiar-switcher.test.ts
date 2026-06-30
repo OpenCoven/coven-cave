@@ -75,18 +75,10 @@ assert.match(
   "each row has a gear that opens that familiar's Studio",
 );
 
-// Per-row pin toggle → quick-switch strip membership.
-assert.match(
-  source,
-  /onClick=\{\(\) => togglePin\(f\.id\)\}/,
-  "each row has a pin toggle that pins/unpins the familiar",
-);
-assert.match(
-  source,
-  /name=\{pinnedSet\.has\(f\.id\) \? "ph:push-pin-fill" : "ph:push-pin"\}/,
-  "the pin button reflects pinned state with a filled/outline glyph",
-);
-assert.match(globals, /\.familiar-switcher__pin\.is-pinned \{/, "pinned rows keep the pin visible");
+// Pinning now lives only in Settings → Appearance (Familiar switcher → pin
+// order), the single source of truth. The dropdown rows no longer carry a
+// per-row pin toggle.
+assert.doesNotMatch(source, /togglePin|familiar-switcher__pin|useFamiliarPins/, "the dropdown has no per-row pin toggle (pinning moved to Settings)");
 
 // Footer: create (onboarding), manage (Studio list view), reorder.
 assert.match(
