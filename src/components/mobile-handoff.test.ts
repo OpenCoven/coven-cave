@@ -77,8 +77,8 @@ assert.doesNotMatch(
 );
 assert.match(
   handoffRoute,
-  /magicDnsServeUrl\(selfStatus\)/,
-  "route falls back to the MagicDNS host when the serve config can't be read",
+  /tailnetDiscoveryProof\(\{\s*selfStatus,\s*serveStatus,\s*backendUrl: backend\s*\}\)/,
+  "route falls back through the shared Tailscale discovery proof when the serve config can't be read",
 );
 assert.match(
   handoffRoute,

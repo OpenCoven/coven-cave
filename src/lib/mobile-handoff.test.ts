@@ -7,6 +7,7 @@ import {
   magicDnsHost,
   magicDnsServeUrl,
   resolveTailscaleBin,
+  tailnetDiscoveryProof,
 } from "./mobile-handoff.ts";
 import { verifyMobileAccessToken } from "./mobile-access-token.ts";
 
@@ -128,6 +129,35 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   // The fallback host matches what findServeUrl would have produced, so the
   // invite link is well-formed either way.
   assert.equal(magicDnsServeUrl(self), findServeUrl(status, "http://127.0.0.1:3000"));
+}
+
+{
+  const self = { Self: { DNSName: "cave.tailnet.example.ts.net." } };
+  assert.deepEqual(
+    tailnetDiscoveryProof({ selfStatus: self, serveStatus: status, backendUrl: "http://127.0.0.1:3000" }),
+    {
+      ok: true,
+      host: "cave.tailnet.example.ts.net",
+      serveUrl,
+      source: "serve-status",
+    },
+  );
+  assert.deepEqual(
+    tailnetDiscoveryProof({ selfStatus: self, serveStatus: {}, backendUrl: "http://127.0.0.1:3000" }),
+    {
+      ok: true,
+      host: "cave.tailnet.example.ts.net",
+      serveUrl,
+      source: "magicdns-self-status",
+    },
+  );
+  assert.deepEqual(
+    tailnetDiscoveryProof({ selfStatus: {}, serveStatus: {}, backendUrl: "http://127.0.0.1:3000" }),
+    {
+      ok: false,
+      reason: "tailscale serve URL not found and status --self had no MagicDNS DNSName",
+    },
+  );
 }
 
 {
