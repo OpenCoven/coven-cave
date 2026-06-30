@@ -111,6 +111,19 @@ assert.match(
   /\{!hideProjectNavigator && \([\s\S]*?Recent sessions/,
   "Comux wraps duplicate recent sessions in the hideProjectNavigator guard",
 );
+// Code surface drops the whole left file-tree explorer column (#removed): the
+// surface is chat + preview/Changes only. The Library projects browser keeps it.
+assert.match(
+  workspace,
+  /<ComuxView[\s\S]*?view="projects"[\s\S]*?hideFileTree/,
+  "Code-mode ComuxView removes the left file-tree explorer column",
+);
+assert.match(comux, /hideFileTree\?: boolean/, "ComuxView accepts hideFileTree");
+assert.match(
+  comux,
+  /\{!hideFileTree && !\(isControlledRightView && rightView === "changes"\) && \(projectDetailCollapsed \? \(/,
+  "Comux gates the entire file-tree column behind hideFileTree",
+);
 assert.doesNotMatch(codeView, /toggleProjects|aria-label=\{?"?(Hide|Show) projects/i, "the collapse toggle is not in the Code toolbar anymore");
 // Right-click a project row → a context menu with cwd-scoped actions. The row
 // is an extracted SortableProjectRow; the wiring lives in the onRowContextMenu

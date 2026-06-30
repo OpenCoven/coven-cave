@@ -1931,6 +1931,7 @@ export function Workspace() {
             active={mode === "code"}
             storageNamespace=":code"
             hideProjectNavigator
+            hideFileTree
             sessions={sessions}
             onOpenSession={(sessionId, familiarId) => {
               openFamiliarSession(sessionId, familiarId);

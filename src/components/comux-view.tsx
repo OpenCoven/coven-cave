@@ -120,6 +120,11 @@ type Props = {
    *  When this is true, keep this column focused on the selected project's
    *  details, search, files, terminals, preview, and diff state. */
   hideProjectNavigator?: boolean;
+  /** Remove the left file-tree explorer column entirely (project header,
+   *  Terminal/New chat, in-project search, sessions, and the FILES tree), so the
+   *  surface is just the conversation + preview/Changes. The Code surface sets
+   *  this; the Library projects browser keeps its tree. */
+  hideFileTree?: boolean;
 };
 
 type ProjectFilePreview =
@@ -407,7 +412,7 @@ function SortableProjectRow({
   );
 }
 
-export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "", rightView: rightViewProp, onRightViewChange, centerSlot, hideProjectNavigator = false }: Props) {
+export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNewChat, active = true, storageNamespace = "", rightView: rightViewProp, onRightViewChange, centerSlot, hideProjectNavigator = false, hideFileTree = false }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const layoutKey = STORAGE_LAYOUT + storageNamespace;
   const sessionsKey = STORAGE_SESSIONS + storageNamespace;
@@ -1674,7 +1679,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                 {/* File-tree column (projects · search · sessions · tree) — the
                     Files tab. Hidden in controlled Changes mode so the diff
                     review fills the surface as its own tab. */}
-                {!(isControlledRightView && rightView === "changes") && (projectDetailCollapsed ? (
+                {!hideFileTree && !(isControlledRightView && rightView === "changes") && (projectDetailCollapsed ? (
                   <button
                     type="button"
                     aria-label="Show project details"
