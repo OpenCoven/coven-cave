@@ -7,6 +7,8 @@ const {
   extractDaemonError,
   normalizeWindowsDaemonSocket,
   resolveDaemonSocketPath,
+  daemonTargetForConfig,
+  normalizeHubUrl,
 } = await import("./coven-daemon.ts");
 
 // ENOENT (socket missing) → "daemon offline"
@@ -157,6 +159,63 @@ const {
 {
   const res = { ok: false, status: 400, data: { error: { code: "x" /* no message */ } } };
   assert.equal(extractDaemonError(res), null);
+}
+
+// Hub URLs accept private-network host:port shorthand and normalize to HTTP.
+{
+  assert.equal(normalizeHubUrl(" server.tailnet:8787 "), "http://server.tailnet:8787");
+  assert.equal(normalizeHubUrl("https://server.tailnet:8787/"), "https://server.tailnet:8787");
+}
+
+// Default config keeps the daemon target on the local socket.
+{
+  const target = daemonTargetForConfig({
+    version: 1,
+    defaults: { harness: "codex", model: "openai/gpt-5.5" },
+    familiars: {},
+    roles: [],
+    addons: {},
+    marketplace: { installed: {} },
+    multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
+  });
+  assert.equal(target.mode, "local");
+  assert.match(target.socketPath, /\.coven\/coven\.sock$/);
+  assert.equal(target.label, "Local daemon");
+}
+
+// Hub mode routes daemon calls to the configured private-network HTTP target.
+{
+  const target = daemonTargetForConfig({
+    version: 1,
+    defaults: { harness: "codex", model: "openai/gpt-5.5" },
+    familiars: {},
+    roles: [],
+    addons: {},
+    marketplace: { installed: {} },
+    multiHost: {
+      mode: "hub",
+      hubUrl: "server.tailnet:8787",
+      executorUrls: ["executor.tailnet:8787"],
+    },
+  });
+  assert.equal(target.mode, "hub");
+  assert.equal(target.url, "http://server.tailnet:8787");
+  assert.equal(target.label, "Server hub");
+}
+
+// Hub mode without a URL is explicit config failure, never a silent local fallback.
+{
+  const target = daemonTargetForConfig({
+    version: 1,
+    defaults: { harness: "codex", model: "openai/gpt-5.5" },
+    familiars: {},
+    roles: [],
+    addons: {},
+    marketplace: { installed: {} },
+    multiHost: { mode: "hub", hubUrl: "", executorUrls: [] },
+  });
+  assert.equal(target.mode, "unconfigured-hub");
+  assert.equal(target.error, "server hub URL is not configured");
 }
 
 console.log("coven-daemon.test.ts: ok");

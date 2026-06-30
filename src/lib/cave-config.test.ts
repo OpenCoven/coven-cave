@@ -55,6 +55,11 @@ try {
   assert.ok(Number.isFinite(Date.parse(installedAt)));
 
   let cfg = await config.loadConfig();
+  assert.deepEqual(cfg.multiHost, {
+    mode: "local",
+    hubUrl: "",
+    executorUrls: [],
+  });
   assert.equal(cfg.marketplace.installed.github.version, "0.1.0");
   assert.equal(cfg.marketplace.installed.github.source, "catalog");
   assert.equal(cfg.marketplace.installed.github.installedAt, installedAt);
@@ -62,6 +67,20 @@ try {
   await config.uninstallMarketplacePlugin("github");
   cfg = await config.loadConfig();
   assert.deepEqual(cfg.marketplace.installed, {});
+
+  await config.saveConfig({
+    multiHost: {
+      mode: "hub",
+      hubUrl: "  server.tailnet:8787  ",
+      executorUrls: ["  macbook.tailnet:8787  ", "", "macbook.tailnet:8787", "linux.tailnet:8787"],
+    },
+  });
+  cfg = await config.loadConfig();
+  assert.deepEqual(cfg.multiHost, {
+    mode: "hub",
+    hubUrl: "server.tailnet:8787",
+    executorUrls: ["macbook.tailnet:8787", "linux.tailnet:8787"],
+  });
 
   await config.saveConfig({
     familiars: {

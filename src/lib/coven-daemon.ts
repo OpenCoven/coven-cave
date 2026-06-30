@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
-import { request } from "node:http";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { homedir } from "node:os";
 import path from "node:path";
+import type { CaveConfig } from "./cave-config.ts";
 
 type SocketPathResolverOptions = {
   platform?: NodeJS.Platform;
@@ -13,6 +15,12 @@ type SocketPathResolverOptions = {
 type ReadTextFile = (filePath: string, encoding: BufferEncoding) => string;
 
 const WINDOWS_PIPE_PREFIX = "\\\\.\\pipe\\";
+const DEFAULT_HUB_PROTOCOL = "http://";
+
+export type DaemonTarget =
+  | { mode: "local"; label: "Local daemon"; socketPath: string }
+  | { mode: "hub"; label: "Server hub"; url: string }
+  | { mode: "unconfigured-hub"; label: "Server hub"; error: string };
 
 export function normalizeWindowsDaemonSocket(socket: string): string {
   const trimmed = socket.trim();
@@ -78,6 +86,33 @@ export function socketPath(): string {
   return resolveDaemonSocketPath();
 }
 
+export function normalizeHubUrl(rawUrl: string): string {
+  const trimmed = rawUrl.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `${DEFAULT_HUB_PROTOCOL}${trimmed}`;
+}
+
+export function daemonTargetForConfig(config: Pick<CaveConfig, "multiHost">): DaemonTarget {
+  if (config.multiHost?.mode !== "hub") {
+    return { mode: "local", label: "Local daemon", socketPath: socketPath() };
+  }
+  const url = normalizeHubUrl(config.multiHost.hubUrl ?? "");
+  if (!url) {
+    return {
+      mode: "unconfigured-hub",
+      label: "Server hub",
+      error: "server hub URL is not configured",
+    };
+  }
+  return { mode: "hub", label: "Server hub", url };
+}
+
+async function loadDaemonTarget(): Promise<DaemonTarget> {
+  const { loadConfig } = await import("./cave-config.ts");
+  return daemonTargetForConfig(await loadConfig());
+}
+
 /**
  * Map a Node socket / HTTP error to a short, user-facing string. Strips
  * absolute paths so we never leak `/Users/<name>/...` into the UI; collapses
@@ -112,22 +147,58 @@ export async function callDaemon<T = unknown>({
   body,
   timeoutMs = 4000,
 }: DaemonRequest): Promise<DaemonResponse<T>> {
+  const target = await loadDaemonTarget();
+  if (target.mode === "unconfigured-hub") {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: target.error,
+    };
+  }
+
   return new Promise((resolve) => {
     const payload = body !== undefined ? JSON.stringify(body) : undefined;
+    const requestOptions =
+      target.mode === "hub"
+        ? (() => {
+            const url = new URL(reqPath, `${target.url}/`);
+            return {
+              protocol: url.protocol,
+              hostname: url.hostname,
+              port: url.port,
+              path: `${url.pathname}${url.search}`,
+              method,
+              timeout: timeoutMs,
+              headers: payload
+                ? {
+                    "content-type": "application/json",
+                    "content-length": Buffer.byteLength(payload).toString(),
+                  }
+                : undefined,
+            };
+          })()
+        : {
+            socketPath: target.socketPath,
+            method,
+            path: reqPath,
+            timeout: timeoutMs,
+            headers: payload
+              ? {
+                  "content-type": "application/json",
+                  "content-length": Buffer.byteLength(payload).toString(),
+                }
+              : undefined,
+          };
+    const requestFn =
+      target.mode === "hub" &&
+      "protocol" in requestOptions &&
+      requestOptions.protocol === "https:"
+        ? httpsRequest
+        : httpRequest;
 
-    const req = request(
-      {
-        socketPath: socketPath(),
-        method,
-        path: reqPath,
-        timeout: timeoutMs,
-        headers: payload
-          ? {
-              "content-type": "application/json",
-              "content-length": Buffer.byteLength(payload).toString(),
-            }
-          : undefined,
-      },
+    const req = requestFn(
+      requestOptions,
       (res) => {
         const chunks: Buffer[] = [];
         res.on("data", (c) => chunks.push(c));

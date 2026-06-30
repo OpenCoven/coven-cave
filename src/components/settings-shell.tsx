@@ -65,7 +65,16 @@ type DaemonStatus = {
   apiVersion?: string;
   workspacePath?: string;
   daemon?: { pid: number; startedAt: string; socket: string };
+  target?: {
+    mode: "local" | "hub" | "unconfigured-hub";
+    label: string;
+    socket?: string;
+    url?: string;
+    error?: string;
+  };
 };
+
+type MultiHostMode = "local" | "hub";
 
 const MOBILE_MODE_STORAGE_KEY = "cave:mobile-mode-enabled";
 
@@ -344,12 +353,28 @@ function WorkspacePathField() {
 
 // ─── Section: Daemon ──────────────────────────────────────────────────────────
 
+function parseExecutorUrls(text: string): string[] {
+  return Array.from(
+    new Set(
+      text
+        .split(/\r?\n|,/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
 function DaemonSection() {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [mode, setMode] = useState<MultiHostMode>("local");
+  const [hubUrl, setHubUrl] = useState("");
+  const [executorText, setExecutorText] = useState("");
+  const [savingConnection, setSavingConnection] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const refresh = () => {
     setLoading(true);
@@ -360,6 +385,45 @@ function DaemonSection() {
   };
 
   useEffect(refresh, []);
+
+  useEffect(() => {
+    fetch("/api/config", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; config?: { multiHost?: { mode?: MultiHostMode; hubUrl?: string; executorUrls?: string[] } } }) => {
+        const multiHost = j.config?.multiHost;
+        if (!j.ok || !multiHost) return;
+        setMode(multiHost.mode === "hub" ? "hub" : "local");
+        setHubUrl(multiHost.hubUrl ?? "");
+        setExecutorText((multiHost.executorUrls ?? []).join("\n"));
+      })
+      .catch(() => {});
+  }, []);
+
+  const saveConnection = async (nextMode = mode) => {
+    setSavingConnection(true);
+    setConnectionError(null);
+    try {
+      const res = await fetch("/api/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ multiHost: { mode: nextMode, hubUrl, executorUrls: parseExecutorUrls(executorText) } }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || `save failed (${res.status})`);
+      }
+      setMode(nextMode);
+      refresh();
+    } catch (err) {
+      setConnectionError(err instanceof Error ? err.message : "could not save daemon connection");
+    } finally {
+      setSavingConnection(false);
+    }
+  };
+
+  const chooseMode = (nextMode: MultiHostMode) => {
+    void saveConnection(nextMode);
+  };
 
   const startDaemon = async () => {
     setStarting(true);
@@ -401,6 +465,54 @@ function DaemonSection() {
 
   return (
     <SettingsPage section="daemon" title="Daemon" description="The coven daemon manages familiar sessions and the workspace.">
+      <SettingsGroup label="Connection">
+        <SettingControlRow
+          label="Runtime target"
+          hint={status?.target?.mode === "hub" ? `Connected through ${status.target.url ?? "server hub"}` : "Use the local sidecar daemon or a server hub on your private network."}
+        >
+          <Segmented
+            options={["local", "hub"] as const}
+            value={mode}
+            onChange={chooseMode}
+            getLabel={(option) => option === "local" ? "Local" : "Server hub"}
+            ariaLabel="Daemon runtime target"
+          />
+        </SettingControlRow>
+        <SettingControlRow label="Server hub URL" hint="HTTP endpoint for the Linux/server hub on your private network.">
+          <input
+            value={hubUrl}
+            onChange={(event) => setHubUrl(event.target.value)}
+            onBlur={() => void saveConnection()}
+            placeholder="http://server.tailnet:8787"
+            disabled={mode !== "hub"}
+            className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+          />
+        </SettingControlRow>
+        <SettingControlRow label="Executor addresses" hint="Optional executor nodes, one per line.">
+          <textarea
+            value={executorText}
+            onChange={(event) => setExecutorText(event.target.value)}
+            onBlur={() => void saveConnection()}
+            placeholder={"executor-1.tailnet:8787\nexecutor-2.tailnet:8787"}
+            disabled={mode !== "hub"}
+            rows={3}
+            className="w-full min-w-[260px] max-w-md resize-y rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
+          />
+        </SettingControlRow>
+        <div className="flex flex-wrap items-center gap-2 px-4 pb-3">
+          <button
+            type="button"
+            onClick={() => void saveConnection()}
+            disabled={savingConnection}
+            className="settings-touch-action focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-60"
+          >
+            <Icon name="ph:floppy-disk-bold" width={12} />
+            {savingConnection ? "Saving..." : "Save connection"}
+          </button>
+          {connectionError && <span className="text-[11px] text-[var(--color-danger)]">{connectionError}</span>}
+        </div>
+      </SettingsGroup>
+
       <SettingsGroup label="Status">
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-3">
           <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${
@@ -416,7 +528,7 @@ function DaemonSection() {
               pid {status.daemon.pid}
             </span>
           )}
-          {!loading && !status?.running && (
+          {!loading && !status?.running && mode === "local" && (
             <button
               type="button"
               onClick={startDaemon}
@@ -448,7 +560,17 @@ function DaemonSection() {
             <Icon name="ph:arrow-clockwise" width={11} />
             Refresh
           </button>
+          {status?.target?.mode === "hub" && (
+            <span className="font-mono text-[11px] text-[var(--text-muted)]">
+              hub {status.target.url}
+            </span>
+          )}
           {startError && <p className="basis-full text-[11px] text-[var(--color-danger)]">{startError}</p>}
+          {!loading && !status?.running && mode === "hub" && status?.target?.mode === "hub" && (
+            <p className="basis-full text-[11px] text-[var(--color-danger)]">
+              {status.target.url} is not reachable from this Cave.
+            </p>
+          )}
         </div>
       </SettingsGroup>
 

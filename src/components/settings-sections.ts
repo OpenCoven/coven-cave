@@ -28,7 +28,7 @@ export const SECTIONS: SectionMeta[] = [
 
 export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
   general: ["Workspace path", "Launch behavior", "Default start view"],
-  daemon: ["Runtime health", "Restart action", "Socket & version"],
+  daemon: ["Runtime health", "Local/hub routing", "Socket & version"],
   familiars: ["Roster & identity", "Per-familiar permissions", "Pinned strip order"],
   addons: ["Sidebar surfaces", "Integrations", "Hidden when disabled"],
   mobile: ["Mobile mode", "Tailscale handoff", "Native iOS guide"],
@@ -39,7 +39,8 @@ export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
 export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
   { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
-  { section: "daemon", group: "Status", keywords: "daemon status running start stop restart" },
+  { section: "daemon", group: "Status", keywords: "daemon status running start stop restart hub server executor private network tailscale" },
+  { section: "daemon", group: "Connection", keywords: "daemon hub server executor private network tailscale remote multihost multi host" },
   { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },
   { section: "familiars", keywords: "familiars agents personas avatar name look permissions projects access grants allow deny tool policy guard security audit requests vault memory" },
   { section: "addons", group: "Integrations", keywords: "add-ons addons integrations plugins github youtube sidebar surfaces code terminal browser flow roles journal coven group chat library" },

@@ -28,6 +28,7 @@ const DEFAULT_CONFIG: CaveConfig = {
     docs: false,
   },
   marketplace: { installed: {} },
+  multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
 };
 
 const DEFAULT_STATE: CaveState = {
@@ -46,6 +47,7 @@ function defaultConfig(): CaveConfig {
     roles: [],
     addons: { ...DEFAULT_CONFIG.addons },
     marketplace: { installed: {} },
+    multiHost: { ...DEFAULT_CONFIG.multiHost, executorUrls: [] },
   };
 }
 
@@ -82,6 +84,7 @@ type FamiliarBindingPatch = {
 type CaveConfigPatch = Omit<Partial<CaveConfig>, "defaults" | "familiars"> & {
   defaults?: Partial<FamiliarBinding>;
   familiars?: Record<string, FamiliarBindingPatch | null>;
+  multiHost?: Partial<CaveMultiHostConfig>;
 };
 
 export type RoleConfigEntry = {
@@ -95,6 +98,12 @@ export type MarketplaceInstallEntry = {
   version: string;
   source: string;
   installedAt: string;
+};
+
+export type CaveMultiHostConfig = {
+  mode: "local" | "hub";
+  hubUrl: string;
+  executorUrls: string[];
 };
 
 export type CaveConfig = {
@@ -118,6 +127,7 @@ export type CaveConfig = {
   marketplace: {
     installed: Record<string, MarketplaceInstallEntry>;
   };
+  multiHost: CaveMultiHostConfig;
 };
 
 export type CaveState = {
@@ -158,10 +168,25 @@ export async function loadConfig(): Promise<CaveConfig> {
       marketplace: {
         installed: parsed.marketplace?.installed ?? {},
       },
+      multiHost: normalizeMultiHostConfig(parsed.multiHost),
     };
   } catch {
     return defaultConfig();
   }
+}
+
+function normalizeMultiHostConfig(input: Partial<CaveMultiHostConfig> | undefined): CaveMultiHostConfig {
+  const mode = input?.mode === "hub" ? "hub" : "local";
+  const hubUrl = typeof input?.hubUrl === "string" ? input.hubUrl.trim() : "";
+  const executorUrls = Array.from(
+    new Set(
+      (Array.isArray(input?.executorUrls) ? input.executorUrls : [])
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
+  return { mode, hubUrl, executorUrls };
 }
 
 function mergeFamiliarConfigs(
@@ -209,6 +234,10 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
         ...(patch.marketplace?.installed ?? {}),
       },
     },
+    multiHost: normalizeMultiHostConfig({
+      ...current.multiHost,
+      ...(patch.multiHost ?? {}),
+    }),
     // Deep-merge defaults
     defaults: {
       ...current.defaults,
