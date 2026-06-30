@@ -97,6 +97,7 @@ export const SUITES = {
     "src/lib/familiar-stream.test.ts",
     "src/lib/quick-chat.test.ts",
     "src/lib/travel-client-state.test.ts",
+    "src/lib/travel-offline-replay.test.ts",
     "src/lib/role-manifest.test.ts",
     "src/lib/chat-cwd-root.test.ts",
     "src/lib/agent-completion-report.test.ts",

@@ -527,6 +527,36 @@ export async function enqueueOfflineTravelItem(
   });
 }
 
+export async function offlineTravelItemsNeedingSync(): Promise<CaveTravelQueueItem[]> {
+  const state = await loadState();
+  return normalizeTravelState(state.travel).offlineQueue.filter((item) => item.status !== "synced");
+}
+
+export async function markOfflineTravelItemSyncing(itemId: string): Promise<CaveTravelQueueItem | null> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    let marked: CaveTravelQueueItem | null = null;
+    state.travel.offlineQueue = state.travel.offlineQueue.map((item) => {
+      if (item.id !== itemId || item.status === "synced") return item;
+      marked = { ...item, status: "syncing", lastError: undefined };
+      return marked;
+    });
+    return marked;
+  });
+}
+
+export async function failOfflineTravelItem(itemId: string, error: string): Promise<void> {
+  await updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    state.travel.offlineQueue = state.travel.offlineQueue.map((item) =>
+      item.id === itemId
+        ? { ...item, status: "failed", lastError: error.trim() || "sync failed" }
+        : item,
+    );
+    state.travel.staleCache = true;
+  });
+}
+
 export async function completeOfflineTravelItem(itemId: string): Promise<void> {
   await updateState((state) => {
     state.travel = normalizeTravelState(state.travel);

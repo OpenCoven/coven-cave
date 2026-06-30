@@ -6,6 +6,7 @@ import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version"
 import { startLocalDaemon } from "@/lib/daemon-start";
 import { executorStatusesForConfig } from "@/lib/executor-status";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
+import { syncOfflineTravelQueue, type TravelOfflineReplayResult } from "@/lib/travel-offline-replay";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -52,9 +53,16 @@ export async function GET() {
   }
 
   const res = await callDaemon<Health>({ path: "/api/v1/health", timeoutMs: 1500 });
+  let travelReplay: TravelOfflineReplayResult | null = null;
   if (target.mode === "hub") {
     hubReachable = res.ok;
     travelState = await recordTravelHubReachability(res.ok);
+    if (res.ok && !travelState.manualOffline) {
+      travelReplay = await syncOfflineTravelQueue(config);
+      if (travelReplay.attempted > 0) {
+        travelState = (await loadState()).travel;
+      }
+    }
   }
   let travelStatus = deriveTravelClientStatus({
     multiHost: config.multiHost,
@@ -78,6 +86,7 @@ export async function GET() {
       target: targetSummary(target),
       executors: executorStatuses,
       travel: travelStatus,
+      travelReplay,
       workspacePath: root,
       projectRoot: root,
     });
@@ -97,6 +106,7 @@ export async function GET() {
     target: targetSummary(target),
     executors: executorStatuses,
     travel: travelStatus,
+    travelReplay,
     workspacePath: root,
     projectRoot: root,
   });

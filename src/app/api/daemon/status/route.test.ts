@@ -66,6 +66,24 @@ assert.match(
 
 assert.match(
   source,
+  /syncOfflineTravelQueue\(config\)/,
+  "daemon status should replay queued travel work after the hub reconnects",
+);
+
+assert.match(
+  source,
+  /res\.ok && !travelState\.manualOffline/,
+  "manual offline mode should block automatic reconnect replay",
+);
+
+assert.match(
+  source,
+  /travelReplay/,
+  "daemon status should expose reconnect replay attempts in the status response",
+);
+
+assert.match(
+  source,
   /reason: target\.error/,
   "an unconfigured hub should be reported as an explicit status failure",
 );
