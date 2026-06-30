@@ -5,6 +5,7 @@ import path from "node:path";
 import { stripAnsi } from "@/lib/ansi";
 import {
   bindingFor,
+  enqueueOfflineTravelItem,
   type CaveConfig,
   type FamiliarBinding,
   loadConfig,
@@ -102,6 +103,7 @@ import {
 } from "@/lib/usage-format";
 import type { ChatResponseMetadata } from "@/lib/chat-response-metadata";
 import type { StreamEvent } from "@/lib/stream-events";
+import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -133,6 +135,25 @@ type SendBody = {
 
 type ReasoningEffort = "low" | "medium" | "high";
 type ResponseSpeed = "fast" | "balanced" | "careful";
+
+type OfflineChatQueuePayload = Pick<
+  SendBody,
+  | "familiarId"
+  | "projectRoot"
+  | "modelOverride"
+  | "modelOverrideScope"
+  | "reasoningEffort"
+  | "responseSpeed"
+  | "mentionedFiles"
+  | "mentionedFilesRoot"
+  | "parentTurnId"
+  | "origin"
+> & {
+  prompt: string;
+  sessionId: string;
+  attachments: ChatAttachment[];
+  responseMetadata: ChatResponseMetadata;
+};
 
 
 // Hook-line shapes emitted by codex/claude harnesses while a tool runs.
@@ -382,6 +403,75 @@ async function setDefaultSessionTitleIfMissing(sessionId: string, title: string)
 
 function sse(event: StreamEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+async function maybeQueueOfflineChat(args: {
+  body: SendBody;
+  config: CaveConfig;
+  promptText: string;
+  persistedAttachments: ChatAttachment[];
+  responseMetadata: ChatResponseMetadata;
+}): Promise<Response | null> {
+  const state = await loadState();
+  const travelStatus = deriveTravelClientStatus({
+    multiHost: args.config.multiHost,
+    travel: state.travel,
+    hubReachable: state.travel.hubUnreachableSince ? false : null,
+  });
+  if (travelStatus.authority !== "travel-local") return null;
+
+  const sessionId = args.body.sessionId ?? crypto.randomUUID();
+  const payload: OfflineChatQueuePayload = {
+    familiarId: args.body.familiarId,
+    prompt: args.promptText,
+    sessionId,
+    projectRoot: args.body.projectRoot,
+    modelOverride: args.body.modelOverride,
+    modelOverrideScope: args.body.modelOverrideScope,
+    reasoningEffort: args.body.reasoningEffort,
+    responseSpeed: args.body.responseSpeed,
+    attachments: args.persistedAttachments,
+    mentionedFiles: args.body.mentionedFiles,
+    mentionedFilesRoot: args.body.mentionedFilesRoot,
+    parentTurnId: args.body.parentTurnId,
+    origin: args.body.origin,
+    responseMetadata: args.responseMetadata,
+  };
+  const queued = await enqueueOfflineTravelItem({
+    kind: "chat",
+    summary: chatTitleFromPrompt(args.promptText) ?? `Offline chat with ${args.body.familiarId}`,
+    payload,
+  });
+
+  const stream = new ReadableStream<Uint8Array>({
+    start: (controller) => {
+      const push = (event: StreamEvent) => controller.enqueue(sse(event));
+      push({ kind: "session", sessionId });
+      push({ kind: "user", text: args.promptText });
+      push({
+        kind: "progress",
+        id: "queued-offline",
+        label: "Queued for travel sync",
+        status: "done",
+        detail: `${travelStatus.reason}: ${queued.id}`,
+      });
+      push({
+        kind: "done",
+        isError: false,
+        sessionId,
+        responseMetadata: args.responseMetadata,
+      });
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+    },
+  });
 }
 
 // Model parity: probe once per process whether the installed `coven run`
@@ -967,6 +1057,14 @@ export async function POST(req: Request) {
     modelApplicationState: modelState.applicationState,
     modelApplicationReason: modelState.reason,
   };
+  const offlineChatResponse = await maybeQueueOfflineChat({
+    body,
+    config,
+    promptText,
+    persistedAttachments,
+    responseMetadata,
+  });
+  if (offlineChatResponse) return offlineChatResponse;
 
   // Image delivery channel: only local coven-run harnesses can Read files on
   // this machine. The OpenClaw bridge and SSH runtimes cannot, so their
