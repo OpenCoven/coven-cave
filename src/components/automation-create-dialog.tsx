@@ -11,6 +11,7 @@ import {
 } from "@/lib/codex-automation-form";
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
 import { SkillSelect } from "@/components/automation-skill-select";
+import { CwdPickerField } from "@/components/cwd-picker-field";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 export type AutomationCreateInput = {
@@ -285,16 +286,16 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
           </select>
         </label>
 
-        {/* Working directories */}
+        {/* Working directories — type paths or browse projects (parity with the
+            cron detail editor). */}
         <label className="workflow-field">
           <span>Working directories</span>
-          <textarea
+          <CwdPickerField
             value={cwds}
-            onChange={(event) => setCwds(event.target.value)}
-            rows={3}
-            placeholder="/path/to/repo (one per line)"
-            className={monoTextareaClass}
-            style={fieldStyle}
+            onChange={setCwds}
+            familiarId={[...selected][0] ?? ""}
+            textareaClass={monoTextareaClass}
+            fieldStyle={fieldStyle}
           />
         </label>
 
