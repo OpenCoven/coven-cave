@@ -965,6 +965,7 @@ function CodexDetailPanel({
               aria-modal="true"
               aria-label="Pick working directories"
               onClick={() => setCwdPickerOpen(false)}
+              onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setCwdPickerOpen(false); } }}
             >
               <div
                 className="flex max-h-[80vh] w-[460px] max-w-full flex-col overflow-hidden rounded-lg border border-[var(--border-hairline)] shadow-xl"
@@ -1057,18 +1058,25 @@ function CodexDetailPanel({
                   <button
                     type="button"
                     onClick={() => void toggleRunLog(r.id)}
+                    aria-expanded={openRunId === r.id}
+                    aria-controls={`automation-run-log-${r.id}`}
+                    aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
                     className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[12px] hover:bg-white/5"
                   >
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background:
+                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background:
                       r.status === "succeeded" ? "var(--accent-presence)" : r.status === "failed" ? "var(--color-danger)" : "var(--text-muted)" }} />
                     <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
                     {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
-                    <span className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
+                    <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
                       <Icon name={openRunId === r.id ? "ph:caret-down" : "ph:caret-right"} width={11} />
                     </span>
                   </button>
                   {openRunId === r.id && (
-                    <pre className="mt-1 max-h-48 overflow-auto rounded bg-[var(--bg-base)] p-2 text-[10px] leading-snug" style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    <pre
+                      id={`automation-run-log-${r.id}`}
+                      className="mt-1 max-h-48 overflow-auto rounded bg-[var(--bg-base)] p-2 text-[10px] leading-snug"
+                      style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+                    >
                       {runLogLoading ? "Loading…" : (runLog || "(empty log)")}
                     </pre>
                   )}
@@ -1142,10 +1150,8 @@ function AutomationScheduleRow({
       <button
         type="button"
         onClick={() => onSelect(auto)}
-        className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
-        style={{ background: selected ? "rgba(255,255,255,0.05)" : "transparent" }}
-        onMouseEnter={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
-        onMouseLeave={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+        aria-current={selected ? "true" : undefined}
+        className={`focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-white/5" : "hover:bg-white/5"}`}
       >
         {/* Status dot */}
         {isActive ? (
@@ -1317,10 +1323,7 @@ function InboxFeedRow({
         type="button"
         onClick={() => onSelect(item)}
         aria-current={selected ? "true" : undefined}
-        className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
-        style={{ background: selected ? "rgba(255,255,255,0.05)" : "transparent" }}
-        onMouseEnter={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.03)"; }}
-        onMouseLeave={(e) => { if (!selected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+        className={`focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-white/5" : "hover:bg-white/5"}`}
       >
         <StatusIcon item={item} />
         <span className="flex-1 min-w-0 flex items-center gap-2">
