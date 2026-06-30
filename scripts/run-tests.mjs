@@ -3,7 +3,7 @@
 // effectively unmergeable (every newly authored test was a merge conflict on a
 // single 30k-char line) and impossible to read. The lists now live here.
 //
-// Usage:  node scripts/run-tests.mjs <suite> [suite...]
+// Usage:  node scripts/run-tests.mjs <suite-or-test> [suite-or-test...]
 //   suites: app | api | mobile   (pass "all" or nothing to run every suite)
 //
 // Each test runs in its own `node` process, sequentially; the runner exits on
@@ -96,6 +96,7 @@ export const SUITES = {
     "src/lib/eval-loop-daemon.test.ts",
     "src/lib/familiar-stream.test.ts",
     "src/lib/quick-chat.test.ts",
+    "src/lib/command-controls.test.ts",
     "src/lib/travel-client-state.test.ts",
     "src/lib/travel-offline-replay.test.ts",
     "src/lib/travel-network-drop-proof.test.ts",
@@ -757,6 +758,7 @@ const ALIAS_LOADER = new Set([
   "src/components/chat-view.test.ts",
   "src/lib/familiar-stream.test.ts",
   "src/lib/quick-chat.test.ts",
+  "src/lib/command-controls.test.ts",
   "src/lib/travel-network-drop-proof.test.ts",
 ]);
 
@@ -777,12 +779,13 @@ function main(argv) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   let names = argv.length ? argv : ["all"];
   if (names.includes("all")) names = Object.keys(SUITES);
-  const unknown = names.filter((n) => !SUITES[n]);
+  const knownTests = new Set(Object.values(SUITES).flat());
+  const unknown = names.filter((n) => !SUITES[n] && !knownTests.has(n));
   if (unknown.length) {
-    console.error(`unknown suite(s): ${unknown.join(", ")}. known: ${[...Object.keys(SUITES), "all"].join(", ")}`);
+    console.error(`unknown suite(s) or test file(s): ${unknown.join(", ")}. known suites: ${[...Object.keys(SUITES), "all"].join(", ")}`);
     process.exit(2);
   }
-  const list = names.flatMap((n) => SUITES[n]);
+  const list = names.flatMap((n) => SUITES[n] ?? [n]);
   console.log(`running ${list.length} test file(s) [${names.join(", ")}]`);
   let passed = 0;
   for (const file of list) {
