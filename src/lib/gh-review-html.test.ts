@@ -26,7 +26,7 @@ const html = buildReviewHtml({
   state: "merged",
   author: "buns",
   url: "https://github.com/OpenCoven/coven-cave/pull/42",
-  body: "Body with <html> & stuff",
+  body: "Body with <html> & <script>alert(1)</script>",
   comments: [{ author: "rev", body: "looks good", createdAt: "2026-06-29" }],
   threads: [{ path: "src/x.ts", diffHunk: "@@ -1 +1 @@\n-a\n+b", comments: [{ author: "rev", body: "tweak" }] }],
   generatedAt: "2026-06-29T00:00:00Z",
@@ -35,11 +35,14 @@ assert.match(html, /^<!doctype html>/i, "is a full HTML document");
 assert.match(html, /Add &lt;reviewer&gt;/, "title is escaped");
 assert.match(html, /ghx-state--merged/, "merged state class");
 assert.match(html, /<h2>Description<\/h2>/, "renders a Description section");
-assert.match(html, /Body with &lt;html&gt; &amp; stuff/, "body content is escaped");
+assert.match(html, /Body with &lt;html&gt; &amp;/, "body content is escaped");
 assert.match(html, /<h2>Conversation \(1\)<\/h2>/, "renders the conversation");
 assert.match(html, /<h2>Review threads \(1\)<\/h2>/, "renders review threads");
 assert.match(html, /ghx-l--add/, "thread diff is colorized");
-assert.doesNotMatch(html, /<script>/, "no unescaped script tags leak through");
+// A script payload in the body is escaped, never emitted as a live tag (string
+// checks, not regex, so this stays a behavioural assertion — not a tag filter).
+assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"), "script payload is escaped");
+assert.ok(!html.includes("<script>alert"), "no unescaped script tag leaks through");
 
 // Familiar review section only appears when supplied.
 assert.doesNotMatch(html, /Review by/, "no familiar-review section without a review");
