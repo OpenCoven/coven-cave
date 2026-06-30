@@ -175,11 +175,11 @@ Add `"src/lib/command-controls.test.ts",` to `ALIAS_LOADER` beside `"src/lib/qui
 Run:
 
 ```bash
-node --experimental-strip-types src/lib/command-controls.test.ts
-node scripts/run-tests.mjs src/lib/command-controls.test.ts
+node --experimental-strip-types --import ./scripts/test-alias-register.mjs src/lib/command-controls.test.ts
+pnpm check:tests-wired
 ```
 
-Expected: both commands print `command-controls tests passed`.
+Expected: the direct test prints `command-controls tests passed`, and the wiring guard reports every test is registered.
 
 - [ ] **Step 6: Commit**
 
@@ -1037,7 +1037,7 @@ git commit -m "Lock chat and code command control parity"
 Run:
 
 ```bash
-node scripts/run-tests.mjs \
+for test in \
   src/lib/command-controls.test.ts \
   src/components/home-composer.test.ts \
   src/components/workspace-chat-handoff.test.ts \
@@ -1046,7 +1046,9 @@ node scripts/run-tests.mjs \
   src/components/tray-quick-chat.test.ts \
   src/components/code-view.test.ts \
   src/app/api/chat/send/harness-routing.test.ts \
-  src/components/composer-density.test.ts
+  src/components/composer-density.test.ts; do
+  node --experimental-strip-types --import ./scripts/test-alias-register.mjs "$test"
+done
 ```
 
 Expected: every listed test passes.
@@ -1134,7 +1136,7 @@ gh pr create --base main --head command-center-shared-controls \
 - adds compact Quick Chat controls and regression coverage
 
 ## Tests
-- node scripts/run-tests.mjs src/lib/command-controls.test.ts src/components/home-composer.test.ts src/components/workspace-chat-handoff.test.ts src/components/chat-surface.test.ts src/lib/familiar-stream.test.ts src/components/tray-quick-chat.test.ts src/components/code-view.test.ts src/app/api/chat/send/harness-routing.test.ts src/components/composer-density.test.ts
+- for each focused test: node --experimental-strip-types --import ./scripts/test-alias-register.mjs <test>
 - pnpm check:tests-wired
 - rendered Home, Chat, Code, and Quick Chat smoke checks"
 ```
