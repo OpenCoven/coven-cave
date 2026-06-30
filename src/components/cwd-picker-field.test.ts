@@ -13,7 +13,10 @@ assert.match(src, /Browse projects/, "offers a Browse-projects affordance");
 assert.match(src, /fetch\("\/api\/projects"\)/, "lazy-loads the project list from /api/projects when the picker opens");
 assert.match(src, /<ProjectTree[\s\S]*?onDirSelect=\{addCwd\}[\s\S]*?selectedDirs=\{selectedDirs\}/, "browses with the shared ProjectTree, toggling dirs in/out");
 assert.match(src, /role="dialog"[\s\S]*?aria-modal="true"/, "the picker is a labelled modal dialog");
-assert.match(src, /e\.key === "Escape"/, "the picker closes on Escape");
+// Escape + Tab cycling + focus management come from the shared focus-trap hook,
+// not a bespoke inline onKeyDown.
+assert.match(src, /useFocusTrap\(pickerOpen, dialogRef, \{ onEscape: \(\) => setPickerOpen\(false\) \}\)/, "the picker dismisses via the shared useFocusTrap hook");
+assert.doesNotMatch(src, /onKeyDown=/, "no hand-rolled key handler — the focus trap owns Escape");
 assert.match(src, /list\.includes\(clean\)/, "addCwd dedupes already-listed paths");
 
 // The cron create dialog uses it (parity with the detail editor — no more

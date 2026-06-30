@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { ProjectTree } from "@/components/project-tree";
 import type { CaveProject } from "@/lib/cave-projects-types";
 
@@ -31,6 +32,11 @@ export function CwdPickerField({
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [projects, setProjects] = useState<CaveProject[]>([]);
+  // Shared focus trap: Escape-to-close, Tab cycling, and focus into/back out of
+  // the dialog — the app's one dialog-dismissal path, instead of a bespoke
+  // inline Escape handler.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(pickerOpen, dialogRef, { onEscape: () => setPickerOpen(false) });
 
   const list = useMemo(
     () => value.split("\n").map((s) => s.trim()).filter(Boolean),
@@ -91,9 +97,9 @@ export function CwdPickerField({
           aria-modal="true"
           aria-label="Pick working directories"
           onClick={() => setPickerOpen(false)}
-          onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setPickerOpen(false); } }}
         >
           <div
+            ref={dialogRef}
             className="flex max-h-[80vh] w-[460px] max-w-full flex-col overflow-hidden rounded-lg border border-[var(--border-hairline)] shadow-xl"
             style={{ background: "var(--bg-panel)" }}
             onClick={(event) => event.stopPropagation()}
