@@ -67,6 +67,7 @@ type Props = {
 // Persist the in-progress prompt so a page reload doesn't eat what you were
 // typing on the home screen (mirrors the chat composer's draft persistence).
 const HOME_DRAFT_KEY = "cave:home-composer-draft:v1";
+const HOME_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the home composer.
 const HOME_HISTORY_KEY = "cave:home-composer-history:v1";
 
@@ -289,7 +290,10 @@ export function HomeComposer({
   // Persist the draft so a reload restores it; cleared when the input empties
   // (e.g. after a send), so sent prompts don't reappear.
   useEffect(() => {
-    writeHomeDraft(text);
+    const timer = window.setTimeout(() => {
+      writeHomeDraft(text);
+    }, HOME_DRAFT_WRITE_DELAY_MS);
+    return () => window.clearTimeout(timer);
   }, [text]);
 
   // Persist the ↑/↓ prompt-history so past prompts survive a reload.

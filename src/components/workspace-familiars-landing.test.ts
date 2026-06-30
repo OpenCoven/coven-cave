@@ -142,6 +142,26 @@ assert.match(
   /if \(!activeFamiliarHydrated\) return;[\s\S]*setFamiliarScope\(\[\.\.\.scopeIds\]\)/,
   "Workspace should not write scope storage until after the mount restore runs",
 );
+assert.match(
+  workspace,
+  /usePausablePoll\(\(\) => void refreshDaemonStatus\(\), 5000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  "Workspace pauses the daemon-status poll while a mobile text input is active",
+);
+assert.match(
+  workspace,
+  /usePausablePoll\(\(\) => void loadSessions\(\), 4000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  "Workspace pauses the heavy sessions poll while a mobile text input is active",
+);
+assert.match(
+  workspace,
+  /usePausablePoll\(\(\) => void refreshEscalations\(\), 30_000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  "Workspace pauses the escalation poll while a mobile text input is active",
+);
+assert.match(
+  workspace,
+  /usePausablePoll\(\(\) => void refreshOpenTaskCards\(\), 60_000, \{\s*pauseWhileInputActive: true,?\s*\}\)/,
+  "Workspace pauses the task-card poll while a mobile text input is active",
+);
 
 assert.doesNotMatch(
   workspace,

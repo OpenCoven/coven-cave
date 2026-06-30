@@ -576,7 +576,9 @@ export function Workspace() {
   useEffect(() => {
     void refreshDaemonStatus();
   }, [refreshDaemonStatus]);
-  usePausablePoll(() => void refreshDaemonStatus(), 5000);
+  usePausablePoll(() => void refreshDaemonStatus(), 5000, {
+    pauseWhileInputActive: true,
+  });
 
   // Push / dismiss the daemon-offline banner into the shared shell channel so
   // it appears at the top of every surface, not just Chat.
@@ -695,7 +697,9 @@ export function Workspace() {
     loadFamiliars();
     loadSessions();
   }, [loadFamiliars, loadSessions]);
-  usePausablePoll(() => void loadSessions(), 4000);
+  usePausablePoll(() => void loadSessions(), 4000, {
+    pauseWhileInputActive: true,
+  });
 
   const refreshPrefs = useCallback(async () => {
     try {
@@ -1004,7 +1008,9 @@ export function Workspace() {
   useEffect(() => {
     void refreshEscalations();
   }, [refreshEscalations]);
-  usePausablePoll(() => void refreshEscalations(), 30_000);
+  usePausablePoll(() => void refreshEscalations(), 30_000, {
+    pauseWhileInputActive: true,
+  });
 
   const refreshOpenTaskCards = useCallback(async () => {
     try {
@@ -1049,7 +1055,9 @@ export function Workspace() {
   useEffect(() => {
     void refreshOpenTaskCards();
   }, [refreshOpenTaskCards]);
-  usePausablePoll(() => void refreshOpenTaskCards(), 60_000);
+  usePausablePoll(() => void refreshOpenTaskCards(), 60_000, {
+    pauseWhileInputActive: true,
+  });
 
   const handleEnrichTasks = useCallback(async () => {
     if (!activeId || enrichingTasks) return;

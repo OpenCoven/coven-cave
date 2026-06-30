@@ -213,6 +213,16 @@ assert.match(
   /persistSendModelIntent\(conv, body, modelState\)/,
   "Native transcript persistence should save direct session-scoped model intent",
 );
+assert.match(
+  chatRoute,
+  /const push = \(e: StreamEvent\) => \{[\s\S]*?if \(closed \|\| req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(sse\(e\)\);[\s\S]*?catch/,
+  "Native stream pushes should be ignored after close/abort so late child output cannot enqueue into a closed stream",
+);
+assert.match(
+  chatRoute,
+  /catch \(error\) \{[\s\S]*?closed = true;[\s\S]*?if \(!req\.signal\.aborted\) console\.warn/,
+  "Native stream enqueue failures should mark the stream closed and avoid noisy abort-path errors",
+);
 assert.doesNotMatch(
   chatRoute,
   /saveConfig\([\s\S]*modelOverride/,

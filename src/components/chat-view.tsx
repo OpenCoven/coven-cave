@@ -292,6 +292,7 @@ const COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
 // half-written message. The composer is a single shared input (it isn't
 // remounted per session), so one key mirrors the in-memory behaviour.
 const COMPOSER_DRAFT_KEY = "cave:chat-composer-draft:v1";
+const COMPOSER_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the chat composer.
 const COMPOSER_HISTORY_KEY = "cave:chat-composer-history:v1";
 // Initial render cap: while the reader is pinned to the newest content, only the
@@ -4031,7 +4032,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Persist the composer draft so a reload restores a half-written message.
   // Cleared (key removed) when the input empties — e.g. after a send.
   useEffect(() => {
-    writeComposerDraft(input);
+    const timer = window.setTimeout(() => {
+      writeComposerDraft(input);
+    }, COMPOSER_DRAFT_WRITE_DELAY_MS);
+    return () => window.clearTimeout(timer);
   }, [input]);
 
   // Persist the ↑/↓ prompt-history so past prompts survive a reload.

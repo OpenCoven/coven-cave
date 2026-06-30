@@ -476,8 +476,8 @@ assert.match(
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{\s*writeComposerDraft\(input\);\s*\}, \[input\]\)/,
-  "the draft is persisted whenever the composer input changes",
+  /useEffect\(\(\) => \{\s*const timer = window\.setTimeout\(\(\) => \{\s*writeComposerDraft\(input\);\s*\}, COMPOSER_DRAFT_WRITE_DELAY_MS\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[input\]\)/,
+  "the draft is debounced so mobile typing does not write localStorage on every keystroke",
 );
 assert.match(
   source,

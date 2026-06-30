@@ -1092,7 +1092,16 @@ export async function POST(req: Request) {
 
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
-      const push = (e: StreamEvent) => controller.enqueue(sse(e));
+      let closed = false;
+      const push = (e: StreamEvent) => {
+        if (closed || req.signal.aborted) return;
+        try {
+          controller.enqueue(sse(e));
+        } catch (error) {
+          closed = true;
+          if (!req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
+        }
+      };
       const pushProgress = (
         id: string,
         label: string,
@@ -1108,7 +1117,6 @@ export async function POST(req: Request) {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
-      let closed = false;
       const close = () => {
         if (closed) return;
         closed = true;

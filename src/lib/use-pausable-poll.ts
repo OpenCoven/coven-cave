@@ -16,16 +16,30 @@ import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
  *
  * The recurring poll is suspended while `document.hidden`, so a backgrounded tab
  * stops hitting the network. Pass `{ enabled: false }` to stop polling entirely
- * (e.g. only poll while a run is active). The initial mount load stays the
- * caller's job — this hook only schedules the recurring poll + the on-return
- * refresh.
+ * (e.g. only poll while a run is active). Pass `{ pauseWhileInputActive: true }`
+ * for nonessential shell polls that should not compete with mobile composition.
+ * The initial mount load stays the caller's job — this hook only schedules the
+ * recurring poll + the on-return refresh.
  */
+function pollPausedForActiveInput(pauseWhileInputActive: boolean): boolean {
+  if (!pauseWhileInputActive || typeof document === "undefined") return false;
+  const active = document.activeElement;
+  if (!active) return false;
+  return (
+    active instanceof HTMLTextAreaElement ||
+    active instanceof HTMLInputElement ||
+    active instanceof HTMLSelectElement ||
+    (active instanceof HTMLElement && active.isContentEditable)
+  );
+}
+
 export function usePausablePoll(
   callback: () => void,
   intervalMs: number,
-  opts?: { enabled?: boolean },
+  opts?: { enabled?: boolean; pauseWhileInputActive?: boolean },
 ): void {
   const enabled = opts?.enabled ?? true;
+  const pauseWhileInputActive = opts?.pauseWhileInputActive ?? false;
   // Read the latest callback via a ref so a changing callback identity doesn't
   // tear down and recreate the interval on every render.
   const cbRef = useRef(callback);
@@ -35,12 +49,16 @@ export function usePausablePoll(
     if (!enabled) return;
     const id = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
+      if (pollPausedForActiveInput(pauseWhileInputActive)) return;
       cbRef.current();
     }, intervalMs);
     return () => clearInterval(id);
-  }, [enabled, intervalMs]);
+  }, [enabled, intervalMs, pauseWhileInputActive]);
 
   // Immediate refresh on regaining the foreground (browser focus/visibility +
   // Tauri native focus), so returning to the tab doesn't wait out the interval.
-  useRefreshOnFocus(() => cbRef.current(), { enabled });
+  useRefreshOnFocus(() => {
+    if (pollPausedForActiveInput(pauseWhileInputActive)) return;
+    cbRef.current();
+  }, { enabled });
 }

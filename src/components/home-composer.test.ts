@@ -251,8 +251,8 @@ assert.match(
 );
 assert.match(
   source,
-  /useEffect\(\(\) => \{\s*writeHomeDraft\(text\);\s*\}, \[text\]\)/,
-  "the home draft is persisted whenever the prompt changes",
+  /useEffect\(\(\) => \{\s*const timer = window\.setTimeout\(\(\) => \{\s*writeHomeDraft\(text\);\s*\}, HOME_DRAFT_WRITE_DELAY_MS\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[text\]\)/,
+  "the home draft is debounced so mobile typing does not write localStorage on every keystroke",
 );
 assert.match(
   source,
