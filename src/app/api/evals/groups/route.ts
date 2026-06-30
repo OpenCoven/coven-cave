@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
-import { listEvalGroups, saveEvalGroup } from "@/lib/server/eval-store";
+import { deleteEvalGroup, listEvalGroups, saveEvalGroup } from "@/lib/server/eval-store";
 import type { EvalGroup } from "@/lib/evals/eval-model";
 
 export const dynamic = "force-dynamic";
@@ -34,4 +34,15 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
+}
+
+/** Delete an eval group by `?id=`. */
+export async function DELETE(req: Request) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
+  const id = new URL(req.url).searchParams.get("id");
+  if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
+  const ok = await deleteEvalGroup(id);
+  return NextResponse.json({ ok });
 }

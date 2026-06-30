@@ -32,8 +32,10 @@ assert.match(source, /EvalLoopPanel/, "embeds eval-loop controls in the unified 
 assert.match(source, /EvalsAnalysisSummary/, "renders a rich analysis summary");
 assert.match(source, /LoopAnalysisPanel/, "renders eval-loop analysis inside Evals");
 assert.match(source, /ThreadFreshnessPanel/, "renders grouped thread freshness analysis inside Evals");
+assert.match(source, /EvalGroupsPanel/, "renders the eval groups management panel inside Evals");
+assert.match(source, /\["groups", "Groups"\]/, "includes a Groups tab in the nav");
 assert.match(source, /downloadRetroSnapshot/, "keeps sanitized eval-loop export available inside Evals");
-assert.match(source, /"overview" \| "insights" \| "suites" \| "runs" \| "compare" \| "loops" \| "threads"/, "unified surface has analysis-first tabs");
+assert.match(source, /"overview" \| "insights" \| "suites" \| "runs" \| "compare" \| "loops" \| "threads" \| "groups"/, "unified surface has analysis-first tabs");
 assert.match(source, /Overview/, "includes an Overview tab");
 assert.match(source, /Suites/, "includes a Suites tab");
 assert.match(source, /Loops/, "includes a Loops tab");

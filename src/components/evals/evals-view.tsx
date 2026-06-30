@@ -31,6 +31,7 @@ import {
 } from "@/lib/evals/eval-templates";
 import { Modal } from "@/components/ui/modal";
 import { EvalsInsightsPanel } from "@/components/evals/evals-insights-panel";
+import { EvalGroupsPanel } from "@/components/evals/eval-groups-panel";
 import { RunCompare } from "@/components/evals/run-compare";
 import "@/styles/evals.css";
 
@@ -40,7 +41,7 @@ type Props = {
 };
 
 type GraderKindOption = { kind: GraderKind; label: string; hint: string; valueless?: boolean };
-type EvalsTab = "overview" | "insights" | "suites" | "runs" | "compare" | "loops" | "threads";
+type EvalsTab = "overview" | "insights" | "suites" | "runs" | "compare" | "loops" | "threads" | "groups";
 type RetroApiResponse =
   | { ok: true; snapshot: RetroRunsSnapshot }
   | { ok: false; snapshot?: RetroRunsSnapshot; error?: string };
@@ -140,6 +141,13 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     () => activeGroup ? rollupEvalGroup(activeGroup, activeGroupStates) : null,
     [activeGroup, activeGroupStates],
   );
+  // Each group rolls up against its OWN derived thread states. A shared union
+  // would make every group that has no thread members (rollupEvalGroup's
+  // size===0 fallthrough) count every other group's threads.
+  const groupStatesById = useMemo(
+    () => new Map(groups.map((g) => [g.id, deriveEvalGroupStates(g, threadSnapshots)])),
+    [groups, threadSnapshots],
+  );
   const familiarName = (familiars.find((f) => f.id === familiarId)?.display_name ?? familiarId) || "Familiar";
   const activeLoopState = retroSnapshot.familiars.find((familiar) => familiar.familiarId === familiarId) ?? null;
   const analysis = useMemo(
@@ -194,6 +202,18 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const reloadGroups = useCallback(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/evals/groups");
+        const data = (await res.json()) as { ok: boolean; groups?: EvalGroup[] };
+        setGroups(data.groups ?? []);
+      } catch {
+        // leave the current list in place on a transient failure
+      }
+    })();
   }, []);
 
   const selectSuite = useCallback((suite: EvalSuite) => {
@@ -470,6 +490,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
             ["compare", "Compare"],
             ["loops", "Loops"],
             ["threads", "Thread freshness"],
+            ["groups", "Groups"],
           ] as Array<[EvalsTab, string]>).map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} className={`evals-tab${tab === id ? " is-active" : ""}`} onClick={() => setTab(id)}>
               {label}
@@ -523,13 +544,20 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
             snapshot={retroSnapshot}
             activeLoopState={activeLoopState}
           />
-        ) : (
+        ) : tab === "threads" ? (
           <ThreadFreshnessPanel
             group={activeGroup}
             states={activeGroupStates}
             rollup={activeGroupRollup}
             queuedCount={queue.length}
             onQueue={queueStaleGroup}
+          />
+        ) : (
+          <EvalGroupsPanel
+            groups={groups}
+            statesById={groupStatesById}
+            familiars={familiars}
+            onChanged={reloadGroups}
           />
         )}
       </section>
