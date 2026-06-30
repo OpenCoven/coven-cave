@@ -362,6 +362,16 @@ export function renderCovenRoster(
  *  oldest rounds are dropped first. */
 export const COVEN_RELAY_WINDOW = 3;
 
+function escapeCovenPromptText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, "\\u0022")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e");
+}
+
 /**
  * Render the recent coven transcript for ONE receiving familiar, so it can see
  * and build on what the OTHER participants just said (the roster says who is
@@ -416,10 +426,10 @@ export function renderCovenContext(
     "In this coven, other participants have already responded below. Read what they said, then answer as yourself — in your own identity and lane. You may reference or build on their replies, but do not repeat their words as your own or speak for them.";
 
   const blocks = windowed.map((r) => {
-    const lines: string[] = [`(human) asked: "${r.user.text.trim()}"`];
+    const lines: string[] = [`(human) asked: "${escapeCovenPromptText(r.user.text.trim())}"`];
     for (const rep of r.replies) {
-      lines.push(`${nameOf(rep.familiarId)} said:`);
-      lines.push(rep.text.trim());
+      lines.push(`${escapeCovenPromptText(nameOf(rep.familiarId))} said:`);
+      lines.push(escapeCovenPromptText(rep.text.trim()));
     }
     return lines.join("\n");
   });
