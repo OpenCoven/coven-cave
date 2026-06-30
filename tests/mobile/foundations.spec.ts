@@ -68,6 +68,23 @@ test.describe("mobile foundations", () => {
   });
 
   test("desktop shell is headerless and non-scrollable across primary surfaces", async ({ page }) => {
+    // Guard against render crashes on any surface. The chrome/layout assertions
+    // below all PASS when a surface infinite-loops or throws, because React
+    // tears the app down to its error boundary — and a centered "couldn't load"
+    // view has a hidden top bar, no overflow, and fits the viewport. So without
+    // this, a surface can be fully broken and the test stays green (exactly how
+    // the #2162 CodeSidebar `useSyncExternalStore` infinite loop reached main).
+    // Catch both uncaught exceptions and the fatal React render-error class
+    // (which an error boundary swallows into a console.error rather than a
+    // pageerror). Benign console noise (failed daemon-less fetches) is ignored.
+    const pageErrors: string[] = [];
+    const fatalConsole: string[] = [];
+    const FATAL_RENDER = /maximum update depth|too many re-?renders|minified react error|getsnapshot should be cached|rendered (more|fewer) hooks|hooks can only be called/i;
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+    page.on("console", (msg) => {
+      if (msg.type() === "error" && FATAL_RENDER.test(msg.text())) fatalConsole.push(msg.text());
+    });
+
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/");
     await page.waitForSelector(".shell-frame");
@@ -102,6 +119,11 @@ test.describe("mobile foundations", () => {
       expect(metrics.bodyOverflow, `${surface} should not create body vertical scroll`).toBeLessThanOrEqual(1);
       expect(metrics.frameBottom, `${surface} app frame should fit the viewport`).toBeLessThanOrEqual(metrics.viewportHeight + 1);
     }
+
+    // No surface may crash the app. (These would be invisible to the layout
+    // assertions above — see the note at the top of this test.)
+    expect(pageErrors, `uncaught page errors while sweeping surfaces:\n${pageErrors.join("\n")}`).toEqual([]);
+    expect(fatalConsole, `fatal React render errors while sweeping surfaces:\n${fatalConsole.join("\n")}`).toEqual([]);
   });
 
   test("library document rail scrolls inside the right panel", async ({ page }) => {
