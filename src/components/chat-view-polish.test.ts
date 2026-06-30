@@ -227,6 +227,22 @@ assert.match(
 
 assert.match(
   source,
+  /PERMISSION_MODES|permissionMode/,
+  "composer has a permission-mode chip",
+);
+assert.match(
+  source,
+  /label="Model"/,
+  "composer has a model chip",
+);
+assert.match(
+  source,
+  /ph:microphone/,
+  "desktop composer has a mic/voice button",
+);
+
+assert.match(
+  source,
   /const activeSlashOptionRef = useRef<HTMLButtonElement \| null>\(null\)/,
   "Slash menu should keep a ref to the active option so keyboard navigation can keep it visible",
 );
