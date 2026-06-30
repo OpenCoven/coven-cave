@@ -1147,6 +1147,25 @@ export function Workspace() {
     setMode("chat");
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // @ts-expect-error Tauri injects this at runtime
+    if (!window.__TAURI_INTERNALS__) return;
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        unlisten = await listen("quick-chat:open-session", (event) => {
+          const payload = event.payload as { sessionId?: string; familiarId?: string | null };
+          if (payload?.sessionId) openFamiliarSession(payload.sessionId, payload.familiarId);
+        });
+      } catch {
+        /* harmless in browser dev */
+      }
+    })();
+    return () => unlisten?.();
+  }, [openFamiliarSession]);
+
   const openReminderLink = useCallback((link: LinkRef) => {
     if (link.kind === "url") {
       if (!link.ref) return;

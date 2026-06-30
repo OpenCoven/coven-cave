@@ -23,8 +23,15 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, Url, WebviewUrl, WebviewWindowBuilder,
+    Emitter, Listener, Manager, Url, WebviewUrl, WebviewWindowBuilder,
 };
+
+#[cfg(desktop)]
+const QUICK_CHAT_WINDOW_LABEL: &str = "quick-chat";
+#[cfg(desktop)]
+const QUICK_CHAT_WIDTH: f64 = 390.0;
+#[cfg(desktop)]
+const QUICK_CHAT_HEIGHT: f64 = 520.0;
 
 #[cfg(desktop)]
 fn coven_tray_icon() -> Image<'static> {
@@ -53,6 +60,62 @@ fn coven_tray_icon() -> Image<'static> {
     }
 
     Image::new_owned(rgba, SIZE, SIZE)
+}
+
+#[cfg(desktop)]
+fn focus_main_window(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+#[cfg(desktop)]
+fn quick_chat_position(app: &tauri::AppHandle) -> (f64, f64) {
+    if let Ok(Some(monitor)) = app.primary_monitor() {
+        let scale = monitor.scale_factor();
+        let position = monitor.position();
+        let size = monitor.size();
+        let screen_x = position.x as f64 / scale;
+        let screen_y = position.y as f64 / scale;
+        let screen_w = size.width as f64 / scale;
+        return (screen_x + screen_w - QUICK_CHAT_WIDTH - 14.0, screen_y + 34.0);
+    }
+    (24.0, 40.0)
+}
+
+#[cfg(desktop)]
+fn show_quick_chat_window(app: &tauri::AppHandle, quick_chat_url: &Url) {
+    if let Some(window) = app.get_webview_window(QUICK_CHAT_WINDOW_LABEL) {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    let (x, y) = quick_chat_position(app);
+    match WebviewWindowBuilder::new(
+        app,
+        QUICK_CHAT_WINDOW_LABEL,
+        WebviewUrl::External(quick_chat_url.clone()),
+    )
+    .title("CovenCave Quick Chat")
+    .inner_size(QUICK_CHAT_WIDTH, QUICK_CHAT_HEIGHT)
+    .min_inner_size(340.0, 420.0)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .position(x, y)
+    .shadow(true)
+    .disable_drag_drop_handler()
+    .build()
+    {
+        Ok(window) => {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        Err(e) => log::warn!("[cave] failed to open quick chat window: {}", e),
+    }
 }
 
 /// Surface a fatal startup error to the user. Platform-specific: macOS uses
@@ -1083,6 +1146,8 @@ pub fn run() {
             };
 
             pty::trust_main_origin(&main_url);
+            let mut quick_chat_url = main_url.clone();
+            quick_chat_url.set_path("/quick-chat");
             let mut main_window = WebviewWindowBuilder::new(
                 app,
                 "main",
@@ -1142,6 +1207,8 @@ pub fn run() {
                 true,
                 None::<&str>,
             )?;
+            let quick_chat =
+                MenuItem::with_id(app, "quick_chat", "Quick Chat…", true, None::<&str>)?;
             let show_app =
                 MenuItem::with_id(app, "show_app", "Show CovenCave", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
@@ -1151,6 +1218,7 @@ pub fn run() {
                 &[
                     &open_inbox,
                     &new_reminder,
+                    &quick_chat,
                     &separator,
                     &show_app,
                     &separator,
@@ -1161,32 +1229,23 @@ pub fn run() {
             // `icon_as_template(true)` is a macOS-only concept (renders the
             // icon as a template image so the system can adapt it to dark/light
             // menu bar). On other platforms the call doesn't exist — guard it.
+            let quick_chat_url_for_menu = quick_chat_url.clone();
             let tray_builder = TrayIconBuilder::with_id("cave-tray")
                 .icon(coven_tray_icon())
                 .menu(&tray_menu)
                 .show_menu_on_left_click(false)
                 .tooltip("CovenCave")
-                .on_menu_event(|app, event| match event.id.as_ref() {
+                .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open_inbox" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
+                        focus_main_window(app);
                         let _ = app.emit("tray:open-inbox", ());
                     }
                     "new_reminder" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
+                        focus_main_window(app);
                         let _ = app.emit("tray:new-reminder", ());
                     }
-                    "show_app" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
+                    "quick_chat" => show_quick_chat_window(app, &quick_chat_url_for_menu),
+                    "show_app" => focus_main_window(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -1199,10 +1258,7 @@ pub fn run() {
                         ..
                     } = event
                     {
-                        if let Some(w) = tray.app_handle().get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
+                        focus_main_window(tray.app_handle());
                     }
                 });
 
@@ -1213,14 +1269,21 @@ pub fn run() {
 
             let _tray = tray_builder.build(app)?;
 
+            let app_handle = app.handle().clone();
+            app.listen("quick-chat:open-session", move |_| {
+                focus_main_window(&app_handle);
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                if let Some(state) = window.app_handle().try_state::<SidecarState>() {
-                    if let Some(mut child) = state.0.lock().expect("sidecar lock").take() {
-                        let _ = child.kill();
-                        let _ = child.wait();
+                if window.label() == "main" {
+                    if let Some(state) = window.app_handle().try_state::<SidecarState>() {
+                        if let Some(mut child) = state.0.lock().expect("sidecar lock").take() {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                        }
                     }
                 }
             }

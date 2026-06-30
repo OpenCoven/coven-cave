@@ -15,7 +15,7 @@ export async function streamFamiliarText(opts: {
   prompt: string;
   sessionId?: string;
   signal?: AbortSignal;
-}): Promise<{ text: string; error: string | null }> {
+}): Promise<{ text: string; error: string | null; sessionId?: string }> {
   let res: Response;
   try {
     res = await fetch("/api/chat/send", {
@@ -38,6 +38,7 @@ export async function streamFamiliarText(opts: {
   let buffer = "";
   let text = "";
   let error: string | null = null;
+  let sessionId: string | undefined;
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
@@ -49,9 +50,13 @@ export async function streamFamiliarText(opts: {
       const ev = parseSseFrame(frame);
       if (!ev) continue;
       if (ev.kind === "assistant_chunk") text += ev.text ?? "";
-      else if (ev.kind === "done" && ev.isError) error = error ?? "the familiar reported an error";
+      else if (ev.kind === "session") sessionId = ev.sessionId;
+      else if (ev.kind === "done") {
+        if (ev.sessionId) sessionId = ev.sessionId;
+        if (ev.isError) error = error ?? "the familiar reported an error";
+      }
       else if (ev.kind === "error") error = ev.message ?? "generation error";
     }
   }
-  return { text, error };
+  return { text, error, sessionId };
 }

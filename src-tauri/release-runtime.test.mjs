@@ -86,6 +86,51 @@ test("packaged sidecar bootstraps mobile handoff tokens", async () => {
   );
 });
 
+test("macOS tray exposes quick chat as a separate floating window", async () => {
+  const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
+
+  assert.match(
+    launcher,
+    /const QUICK_CHAT_WINDOW_LABEL: &str = "quick-chat"/,
+    "launcher must use a stable window label for the menubar quick chat",
+  );
+  assert.match(
+    launcher,
+    /MenuItem::with_id\(app, "quick_chat", "Quick Chat…"/,
+    "tray menu must expose Quick Chat separately from the main app actions",
+  );
+  assert.match(
+    launcher,
+    /show_quick_chat_window\(app, &quick_chat_url_for_menu\)/,
+    "the Quick Chat menu item must open the dedicated quick chat window",
+  );
+  assert.match(
+    launcher,
+    /WebviewWindowBuilder::new\([\s\S]*QUICK_CHAT_WINDOW_LABEL[\s\S]*WebviewUrl::External\(quick_chat_url\.clone\(\)\)/,
+    "quick chat must be its own webview window, not the main window",
+  );
+  assert.match(
+    launcher,
+    /const QUICK_CHAT_WIDTH: f64 = 390\.0[\s\S]*const QUICK_CHAT_HEIGHT: f64 = 520\.0/,
+    "quick chat dimensions should stay small enough for a menubar panel",
+  );
+  assert.match(
+    launcher,
+    /\.inner_size\(QUICK_CHAT_WIDTH, QUICK_CHAT_HEIGHT\)[\s\S]*\.decorations\(false\)[\s\S]*\.always_on_top\(true\)[\s\S]*\.skip_taskbar\(true\)[\s\S]*\.position\(x, y\)/,
+    "quick chat window should be a small floating menubar-style panel",
+  );
+  assert.match(
+    launcher,
+    /app\.listen\("quick-chat:open-session"/,
+    "quick chat should be able to ask the native shell to reveal the full app",
+  );
+  assert.match(
+    launcher,
+    /if window\.label\(\) == "main"[\s\S]*try_state::<SidecarState>/,
+    "closing the quick chat window must not stop the desktop sidecar",
+  );
+});
+
 test("Windows packaged sidecar starts without a console window", async () => {
   const launcher = await readFile(new URL("./src/lib.rs", import.meta.url), "utf8");
 

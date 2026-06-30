@@ -49,6 +49,19 @@ describe("streamFamiliarText", () => {
     assert.equal(JSON.parse(bodies[1]).sessionId, "sess-9", "resume run includes sessionId");
   });
 
+  it("returns the created session id from stream frames", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "session", sessionId: "sess-created" }),
+      frame({ kind: "assistant_chunk", text: "saved" }),
+      frame({ kind: "done", sessionId: "sess-created" }),
+    ])) as typeof fetch;
+
+    const { text, sessionId, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(text, "saved");
+    assert.equal(sessionId, "sess-created");
+    assert.equal(error, null);
+  });
+
   it("surfaces an error frame", async () => {
     globalThis.fetch = (async () => sseResponse([
       frame({ kind: "assistant_chunk", text: "partial" }),

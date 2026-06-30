@@ -95,6 +95,7 @@ export const SUITES = {
     "src/lib/retro-runs.test.ts",
     "src/lib/eval-loop-daemon.test.ts",
     "src/lib/familiar-stream.test.ts",
+    "src/lib/quick-chat.test.ts",
     "src/lib/role-manifest.test.ts",
     "src/lib/chat-cwd-root.test.ts",
     "src/lib/agent-completion-report.test.ts",
@@ -473,6 +474,7 @@ export const SUITES = {
     "src/components/familiar-switcher.test.ts",
     "src/components/familiar-menu-bar.test.ts",
     "src/components/menu-bar-icon-size.test.ts",
+    "src/components/tray-quick-chat.test.ts",
     "src/components/familiar-quick-switch.test.ts",
     "src/components/familiar-pin-order.test.ts",
     "src/lib/familiar-quick-switch.test.ts",
@@ -741,6 +743,7 @@ const ALIAS_LOADER = new Set([
   "src/components/thread-signals-section.test.ts",
   "src/components/chat-view.test.ts",
   "src/lib/familiar-stream.test.ts",
+  "src/lib/quick-chat.test.ts",
 ]);
 
 /** Build the `node` argv (flags + file) for a single test path. */
