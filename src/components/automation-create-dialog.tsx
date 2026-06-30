@@ -13,6 +13,7 @@ import {
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
 import { SkillSelect } from "@/components/automation-skill-select";
 import { CwdPickerField } from "@/components/cwd-picker-field";
+import { parseListInput } from "@/lib/automations/list-input";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 export type AutomationCreateInput = {
@@ -86,8 +87,8 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate }:
       name: name.trim(),
       rrule,
       prompt,
-      cwds: cwds.split("\n").map((s) => s.trim()).filter(Boolean),
-      tags: tagsText.split(",").map((s) => s.trim()).filter(Boolean),
+      cwds: parseListInput(cwds),
+      tags: parseListInput(tagsText),
       familiars: [...selected],
       model: model.trim(),
       reasoning_effort: reasoningEffort,

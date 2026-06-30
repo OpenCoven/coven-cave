@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { ProjectTree } from "@/components/project-tree";
+import { parseListInput } from "@/lib/automations/list-input";
 import type { CaveProject } from "@/lib/cave-projects-types";
 
 /**
@@ -38,10 +39,7 @@ export function CwdPickerField({
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(pickerOpen, dialogRef, { onEscape: () => setPickerOpen(false) });
 
-  const list = useMemo(
-    () => value.split("\n").map((s) => s.trim()).filter(Boolean),
-    [value],
-  );
+  const list = useMemo(() => parseListInput(value), [value]);
   const selectedDirs = useMemo(() => new Set(list), [list]);
 
   const addCwd = (dir: string) => {

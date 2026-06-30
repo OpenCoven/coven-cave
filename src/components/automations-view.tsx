@@ -43,6 +43,7 @@ import {
   type AutomationType,
   type AutomationEntry,
 } from "@/lib/automations/automation-entry";
+import { listInput, commaInput, parseListInput } from "@/lib/automations/list-input";
 
 // AutomationsView — Schedules surface, redesigned June 2026
 // Clean list layout matching the sleek/professional reference design:
@@ -126,20 +127,6 @@ function relTime(iso: string | undefined | null): string {
   return relativeTimeSigned(iso);
 }
 
-function listInput(values: string[]): string {
-  return values.join("\n");
-}
-
-function commaInput(values: string[]): string {
-  return values.join(", ");
-}
-
-function parseListInput(value: string): string[] {
-  return value
-    .split(/\n|,/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
 
 function FieldLabel({ children }: { children: ReactNode }) {
   return (
