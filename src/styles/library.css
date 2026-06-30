@@ -3634,11 +3634,17 @@ h3:hover .library-heading-anchor,
 /* ── Reduced motion: reader transitions become instant ──────────── */
 @media (prefers-reduced-motion: reduce) {
   .library-reader-backdrop,
-  .library-reader-modal {
+  .library-reader-modal,
+  .library-research-modal {
     animation: none;
   }
   .library-heading--active {
     transition: none;
+  }
+  /* The research step spinner is informational; keep one quiet tick instead of
+     a fast spin so motion-sensitive users still see "in progress". */
+  .library-research-step__spin {
+    animation-duration: 2.4s;
   }
 }
 
@@ -4543,7 +4549,7 @@ h3:hover .library-heading-anchor,
   padding: 0 16px;
   font-size: 13px;
   font-weight: 650;
-  color: #fff;
+  color: var(--accent-presence-foreground);
   background: var(--accent-presence, #5b8def);
   border: none;
   border-radius: 9px;
@@ -4559,8 +4565,8 @@ h3:hover .library-heading-anchor,
   font-size: 11px;
   padding: 1px 5px;
   border-radius: 5px;
-  background: rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.9);
+  background: color-mix(in oklch, var(--accent-presence-foreground) 20%, transparent);
+  color: color-mix(in oklch, var(--accent-presence-foreground) 90%, transparent);
 }
 
 .library-research-status {
@@ -4631,7 +4637,7 @@ h3:hover .library-heading-anchor,
 .library-research-step[data-state="done"] .library-research-step__dot {
   border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
   background: var(--accent-presence);
-  color: #fff;
+  color: var(--accent-presence-foreground);
 }
 .library-research-step__spin {
   width: 12px;

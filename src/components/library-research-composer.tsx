@@ -324,7 +324,7 @@ function ResearchProgress({
 }) {
   const pct = Math.round(((phaseIdx + 1) / RESEARCH_PHASES.length) * 100);
   return (
-    <div className="library-research-progress" role="status" aria-live="polite">
+    <div className="library-research-progress">
       <p className="library-research-progress__topic">
         {familiarName ? <strong>{familiarName}</strong> : "A familiar"} is researching
         <span className="library-research-progress__topic-text"> “{topic.trim()}”</span>
@@ -353,10 +353,16 @@ function ResearchProgress({
       <div className="library-research-progress__bar" aria-hidden>
         <span style={{ width: `${pct}%` }} />
       </div>
-      {status ? <p className="library-research-progress__caption">{status}</p> : null}
+      {/* Scope the live region to just the concise status — the checklist
+          advances on a timer and would otherwise be re-announced in bulk. */}
+      {status ? (
+        <p className="library-research-progress__caption" role="status" aria-live="polite">
+          {status}
+        </p>
+      ) : null}
       <p className="library-research-progress__note">
-        This can take a minute or two. You can close this — research keeps running and the brief
-        will appear in your Library when it’s done.
+        This usually takes a minute or two — keep this open while the familiar writes the brief.
+        It’ll land in your Library’s Research collection when it’s done.
       </p>
     </div>
   );
