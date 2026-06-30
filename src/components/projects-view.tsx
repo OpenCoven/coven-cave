@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { useMinuteTick } from "@/lib/use-minute-tick";
-import { normalizeProjectRoot } from "@/lib/cave-projects-types";
+import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-types";
 import type { SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { stripTaskPrefix } from "@/lib/projects/session-glyph";
@@ -64,9 +64,11 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const rootInputRef = useRef<HTMLInputElement>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [rootDraft, setRootDraft] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createdProject, setCreatedProject] = useState<CaveProject | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [moveToast, setMoveToast] = useState<{ sessionId: string; prevRoot: string | null; label: string } | null>(null);
   // Bulk delete is deferred + undoable: the rows hide immediately, the actual
@@ -246,6 +248,12 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     setMoveToast(null);
   };
 
+  function openCreateProjectForm() {
+    setCreatedProject(null);
+    setShowForm(true);
+    window.setTimeout(() => rootInputRef.current?.focus(), 0);
+  }
+
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const name = nameDraft.trim();
@@ -258,6 +266,9 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     setNameDraft("");
     setRootDraft("");
     setShowForm(false);
+    setCreatedProject(project);
+    setExpanded(project.id, true);
+    setQuery("");
   };
 
   // Delete one chat, mirroring the Chats list delete (DELETE
@@ -351,7 +362,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
             </button>
             <button
               type="button"
-              onClick={() => setShowForm((value) => !value)}
+              onClick={showForm ? () => setShowForm(false) : openCreateProjectForm}
               className="focus-ring flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[12px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
             >
               <Icon name="ph:plus-bold" width={12} aria-hidden />
@@ -411,6 +422,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
               className="focus-ring h-9 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
             <input
+              ref={rootInputRef}
               value={rootDraft}
               onChange={(event) => setRootDraft(event.target.value)}
               placeholder="/absolute/path/to/project"
@@ -434,6 +446,34 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
             </div>
           </div>
         </form>
+      ) : null}
+
+      {createdProject && !showForm ? (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 px-4 py-2 text-[12px] sm:px-6">
+          <span className="min-w-0 truncate text-[var(--text-secondary)]">
+            Created <span className="font-medium text-[var(--text-primary)]">{createdProject.name}</span>
+          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            {onNewChat ? (
+              <button
+                type="button"
+                onClick={() => onNewChat?.(createdProject.root)}
+                className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-2.5 text-[12px] font-medium text-[var(--text-primary)]"
+              >
+                <Icon name="ph:chat-circle-dots-bold" width={13} aria-hidden />
+                Start chat in {createdProject.name}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setCreatedProject(null)}
+              aria-label="Dismiss created project action"
+              className="focus-ring grid h-8 w-8 place-items-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+            >
+              <Icon name="ph:x" width={12} aria-hidden />
+            </button>
+          </div>
+        </div>
       ) : null}
 
       <main ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
@@ -465,7 +505,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
               <>
                 <button
                   type="button"
-                  onClick={() => setShowForm(true)}
+                  onClick={openCreateProjectForm}
                   className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                 >
                   New project

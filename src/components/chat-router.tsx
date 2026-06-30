@@ -17,6 +17,7 @@ import { applyProjectOverrides } from "@/lib/chat-project-overrides";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
+import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import {
   normalizeSelection,
   projectSelectionKeys,
@@ -55,6 +56,8 @@ type Props = {
   /** Compact mode for the narrow companion sidepanel (FamiliarPanel). Hides the
    *  project sidebar in both list and chat views to reclaim the limited width. */
   compact?: boolean;
+  /** Jump from the in-chat project rail to the dedicated Projects tab. */
+  onOpenProjectsTab?: () => void;
 };
 
 export type ChatRouterHandle = {
@@ -96,6 +99,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     onOpenUrl,
     syncUrlHash,
     compact = false,
+    onOpenProjectsTab,
   },
   ref,
 ) {
@@ -105,6 +109,13 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   const [pendingFind, setPendingFind] = useState<{ query: string; nonce: number } | null>(null);
   const viewHandle = useRef<ChatViewHandle | null>(null);
   const previousFamiliarIdRef = useRef<string | null | undefined>(undefined);
+  const openProjectsTab = useCallback(() => {
+    if (onOpenProjectsTab) {
+      onOpenProjectsTab();
+      return;
+    }
+    window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+  }, [onOpenProjectsTab]);
   const sidebarPrefsLoadedRef = useRef(false);
   const sidebarDefaultExpandedRef = useRef(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -404,6 +415,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             familiarId: next?.id ?? nextFamiliarId ?? null,
           });
         }}
+        onOpenProjectsTab={openProjectsTab}
       />
       )}
       <div className="min-h-0 min-w-0 flex-1">

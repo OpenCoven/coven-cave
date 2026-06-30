@@ -22,6 +22,7 @@ import {
   writeSessionOrder,
 } from "@/lib/chat-session-order";
 import { Icon, type IconName } from "@/lib/icon";
+import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import {
   DndContext,
   PointerSensor,
@@ -62,6 +63,7 @@ type Props = {
   onToggleExpanded: (key: string) => void;
   onOpenSession: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
+  onOpenProjectsTab?: () => void;
 };
 
 function statusDotClass(status: string): string {
@@ -301,6 +303,7 @@ export function ChatProjectSidebar({
   onToggleExpanded,
   onOpenSession,
   onNewChat,
+  onOpenProjectsTab,
 }: Props) {
   const [search, setSearch] = useState("");
   const [pinnedIds, setPinnedIds] = useState<string[]>([]);
@@ -350,6 +353,14 @@ export function ChatProjectSidebar({
 
   const displayIds = useMemo(() => display.map((s) => s.id), [display]);
   const hasSearch = search.trim().length > 0;
+
+  function openProjectsTab() {
+    if (onOpenProjectsTab) {
+      onOpenProjectsTab();
+      return;
+    }
+    window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT));
+  }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -460,6 +471,15 @@ export function ChatProjectSidebar({
           ].join(" ")}
         >
           All sessions
+        </button>
+        <button
+          type="button"
+          title="Open Projects tab"
+          aria-label="Open Projects tab"
+          onClick={openProjectsTab}
+          className="focus-ring grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)]/40 hover:text-[var(--text-primary)]"
+        >
+          <Icon name="ph:folder-open-bold" width={13} aria-hidden />
         </button>
         <button
           type="button"

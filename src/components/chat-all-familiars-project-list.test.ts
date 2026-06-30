@@ -69,6 +69,36 @@ assert.match(
 );
 
 assert.match(
+  chatProjectSidebar,
+  /onOpenProjectsTab\?: \(\) => void/,
+  "Chat project rail should accept a Projects-tab jump callback",
+);
+
+assert.match(
+  chatProjectSidebar,
+  /aria-label="Open Projects tab"[\s\S]{0,180}onClick=\{openProjectsTab\}/,
+  "Chat project rail should expose a keyboard-accessible Projects-tab button",
+);
+
+assert.match(
+  chatProjectSidebar,
+  /CHAT_OPEN_PROJECTS_EVENT/,
+  "Chat project rail should know how to route the shortcut through the shared Projects event",
+);
+
+assert.match(
+  chatProjectSidebar,
+  /function openProjectsTab\(\) \{[\s\S]*?onOpenProjectsTab\(\);[\s\S]*?window\.dispatchEvent\(new CustomEvent\(CHAT_OPEN_PROJECTS_EVENT\)\);[\s\S]*?\}/,
+  "Chat project rail should supply a Projects-tab fallback when the parent callback is absent",
+);
+
+assert.match(
+  chatRouter,
+  /onOpenProjectsTab=\{openProjectsTab\}/,
+  "ChatRouter should pass the concrete Projects-tab handler to the rail",
+);
+
+assert.match(
   workspace,
   /normalizeGitHubTasks/,
   "Workspace should normalize GitHub task context when refreshing sessions",

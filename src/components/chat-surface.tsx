@@ -496,12 +496,9 @@ export function ChatSurface({
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
-            Only the Code surface needs a header row: a Sessions/Memory tab pair
-            (the comux pane owns file nav) plus the layout/companion toolbar. The
-            standalone chat is just the conversation — no Chat/Code toggle, so it
-            renders no header strip. Code is reached from its own sidebar
-            surface; Projects open as a sub-state of Chat via ⌘9 / the board /
-            the /projects slash. */}
+            Standalone Chat keeps Projects discoverable as a first-class tab.
+            Code keeps its Sessions/Memory pair because the comux pane owns
+            project/file navigation there. */}
         {isCodeSurface ? (
           <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -521,6 +518,23 @@ export function ChatSurface({
               />
             </div>
             <CodeInlineToolbar />
+          </div>
+        ) : !isCodeSurface ? (
+          <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
+            <Tabs<FamiliarsScope>
+              bordered={false}
+              value={scope}
+              onChange={(s) => {
+                setScope(s);
+                if (s === "conversation") {
+                  window.setTimeout(() => routerRef.current?.goToList(), 0);
+                }
+              }}
+              items={[
+                { id: "conversation", label: "Sessions" },
+                { id: "projects", label: "Projects" },
+              ]}
+            />
           </div>
         ) : null}
 
@@ -561,6 +575,7 @@ export function ChatSurface({
                   pendingProjectRoot={pendingProjectRoot}
                   onOpenTask={onOpenTask}
                   onOpenUrl={onOpenUrl}
+                  onOpenProjectsTab={() => setScope("projects")}
                   syncUrlHash
                 />
               </div>

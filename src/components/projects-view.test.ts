@@ -14,6 +14,7 @@ const projectsView = [
 ].join("\n\n");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const chatProjectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
 const workspaceMode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const iconSource = readFileSync(new URL("../lib/icon.tsx", import.meta.url), "utf8");
 const globalsCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -21,6 +22,13 @@ const globalsCss = readFileSync(new URL("../app/globals.css", import.meta.url), 
 assert.match(projectsView, /export function ProjectsView/, "ProjectsView should export the workspace surface");
 assert.match(projectsView, /useProjects\(\{ familiarId: activeFamiliarId \}\)/, "ProjectsView should scope the live projects hook to the active familiar");
 assert.match(projectsView, /createProject\(name, root\)/, "ProjectsView should create projects through the hook");
+assert.match(projectsView, /const rootInputRef = useRef<HTMLInputElement>\(null\)/, "new-project flow keeps a root input ref for quick focus");
+assert.match(projectsView, /function openCreateProjectForm/, "ProjectsView should centralize opening the quick-create form");
+assert.match(projectsView, /rootInputRef\.current\?\.focus\(\)/, "quick-create can focus the path field directly");
+assert.match(projectsView, /const \[createdProject, setCreatedProject\] = useState/, "ProjectsView should remember the just-created project");
+assert.match(projectsView, /setCreatedProject\(project\)/, "successful creation should mark the new project for follow-up actions");
+assert.match(projectsView, /onNewChat\?\.?\(createdProject\.root\)/, "created-project success state should offer immediate chat launch");
+assert.match(projectsView, /Start chat in \{createdProject\.name\}/, "created-project success state should label the immediate chat action");
 assert.match(projectsView, /onRename=\{renameProject\}/, "ProjectsView should wire inline rename");
 assert.match(projectsView, /onUpdateRoot=\{updateRoot\}/, "ProjectsView should wire root updates");
 assert.match(projectsView, /onDelete=\{deleteProject\}/, "ProjectsView should wire deletion");
@@ -138,7 +146,7 @@ assert.match(chatTabEvents, /CHAT_OPEN_PROJECTS_EVENT/, "reroute event exists");
 assert.match(workspace, /case "\/projects":[\s\S]*?setMode\("chat"\)[\s\S]*?CHAT_OPEN_PROJECTS_EVENT/, "/projects reroutes: setMode(chat) + chat-open-projects event");
 
 assert.doesNotMatch(sidebar, /id: "projects"/, "Sidebar no longer shows a Projects entry — Projects lives only in the Chat tab");
-assert.doesNotMatch(sidebar, /CHAT_OPEN_PROJECTS_EVENT/, "Sidebar no longer imports the chat-tab reroute event (entry removed)");
+assert.match(chatProjectSidebar, /CHAT_OPEN_PROJECTS_EVENT/, "Chat rail can jump to the dedicated Projects tab through the shared reroute event");
 
 for (const icon of [
   "ph:folders-bold",
