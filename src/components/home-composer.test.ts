@@ -165,6 +165,18 @@ assert.match(
 
 assert.match(
   css,
+  /\.hc-control-group\s*\{[\s\S]*?flex-wrap: nowrap;[\s\S]*?gap: 6px;/,
+  "HomeComposer command clusters should stay together with compact internal spacing",
+);
+
+assert.match(
+  css,
+  /\.hc-control-group--who\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?\.hc-control-group--intent\s*\{[\s\S]*?flex: 1 1 auto;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?flex: 0 1 auto;/,
+  "HomeComposer action bar should keep side clusters content-sized while the intent group absorbs slack",
+);
+
+assert.match(
+  css,
   /\.home-composer-card-wrap\s*\{[\s\S]*?container-type: inline-size;/,
   "HomeComposer card wrapper should establish an inline-size container",
 );

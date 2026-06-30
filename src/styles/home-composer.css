@@ -138,34 +138,44 @@
   opacity: 0.5;
 }
 
-/* ── Action bar ──────────────────────────────────────────────────────────── */
+/* ── Action bar ──────────────────────────────────────────────────────────────
+ *   One balanced row: a compact "who" cluster anchored left, the intent pills
+ *   centered, and the "run" config cluster anchored right. Only the centre
+ *   group grows to absorb slack, so the side clusters stay tight to the edges
+ *   instead of stretching open big interior gaps. The larger column gap (vs the
+ *   intra-group gap) reads the three clusters as distinct without a divider. */
 .hc-action-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 8px 14px;
   padding: 10px 14px 14px;
 }
 
+/* Groups never split internally — a cluster wraps as a whole unit (so Speed and
+ * the send button can't orphan onto their own line, as they did before). */
 .hc-control-group {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
   min-width: 0;
 }
 
+/* Side clusters are content-sized (no grow → no trailing/leading gap). */
 .hc-control-group--who {
-  flex: 1 1 320px;
+  flex: 0 1 auto;
 }
 
+/* The intent group is the only one that grows; it absorbs all the slack and
+ * centres the destination pills between the two side clusters. */
 .hc-control-group--intent {
-  flex: 1 1 160px;
+  flex: 1 1 auto;
   justify-content: center;
 }
 
 .hc-control-group--run {
-  flex: 1 1 420px;
+  flex: 0 1 auto;
   justify-content: flex-end;
   margin-left: auto;
 }
@@ -230,6 +240,8 @@
   display: flex;
   align-items: center;
   gap: 5px;
+  min-height: 30px;
+  box-sizing: border-box;
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
   border: 1px solid color-mix(in oklch, var(--accent-presence) 25%, transparent);
   border-radius: 8px;
@@ -291,9 +303,8 @@
 /* ── Destination pills ───────────────────────────────────────────────────── */
 .hc-dest-pills {
   display: flex;
-  gap: 3px;
-  flex: 1 1 140px;
-  flex-wrap: wrap;
+  gap: 4px;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -301,10 +312,12 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-height: 30px;
+  box-sizing: border-box;
   font-size: 11px;
   font-weight: 450;
-  padding: 3px 9px;
-  border-radius: 7px;
+  padding: 3px 11px;
+  border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
