@@ -7,6 +7,45 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.127] - 2026-06-30
+
+Patch release on top of v0.0.126. Headline: Cave now has release-ready
+travel/mobile resilience, safer group chat relay context, richer review and
+automation surfaces, and stronger release CI coverage.
+
+### Added
+
+- **Travel mode** - added travel client state, offline chat/work queues, replay
+  on reconnect, local daemon wakeup, hub daemon routing config, and hub executor
+  availability so Cave can keep useful work queued across network changes.
+- **Group chat** - full-coven sends can now relay sequentially with coven roster
+  context so later familiars can see earlier replies in the same round.
+- **GitHub review artifacts** - PR reviews and diffs can render/export as
+  colored HTML artifacts, including familiar-review output.
+- **Dashboard, Evals, Research, and Code** - added the dashboard cockpit and
+  predictive signals, eval insights/groups management, the redesigned Research
+  composer, and the latest Code surface layout passes.
+- **Desktop and automations** - added tray quick chat, the header operational
+  summary, all-list automation run actions, cron working-directory picking, and
+  a release compatibility banner.
+
+### Fixed
+
+- **Mobile typing** - paused expensive shell polls while composing in inputs,
+  debounced composer draft writes, and ignored late stream pushes after
+  abort/close so cancelled sends no longer churn `Controller is already closed`
+  errors.
+- **Group chat safety** - escaped relay transcript text before embedding it in
+  prompt context so user/reply text cannot break out of the coven transcript.
+- **Navigation and polish** - fixed Evals deep links, desktop automation
+  interaction/a11y details, and several release-line UI polish issues.
+
+### Internal
+
+- **Release readiness** - added secret preflight coverage, Tailscale host
+  discovery proof, sidecar runtime smoke matrix coverage, and the
+  cross-environment aggregate CI check.
+
 ## [0.0.126] - 2026-06-28
 
 Patch release on top of v0.0.125. Headline: Cave now ships inline
