@@ -6,6 +6,7 @@ import {
   SELF_REPORT_SESSION_ID_RE,
 } from "@/lib/server/familiar-self-reports";
 import { isValidFamiliarId } from "@/lib/server/familiar-id";
+import { parseSelfReportJsonObject } from "@/lib/server/self-report-json";
 import type {
   BlockerCategory,
   BlockerImpact,
@@ -65,13 +66,6 @@ function enumValue<T extends string>(value: unknown, allowed: Set<T>, field: str
 
 function objectArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter(isRecord) : [];
-}
-
-function parseJsonObject(raw: string): Record<string, unknown> {
-  const trimmed = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  const parsed = JSON.parse(trimmed) as unknown;
-  if (!isRecord(parsed)) throw new Error("response was not an object");
-  return parsed;
 }
 
 function normalizePayload(payload: Record<string, unknown>, meta: {
@@ -161,7 +155,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   }
 
   try {
-    const report = redactSecretsDeep(normalizePayload(parseJsonObject(raw), {
+    const report = redactSecretsDeep(normalizePayload(parseSelfReportJsonObject(raw), {
       familiarId: id,
       sessionId,
       threadTitle: optionalText(body.threadTitle),

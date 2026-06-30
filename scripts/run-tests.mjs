@@ -293,6 +293,7 @@ export const SUITES = {
     "src/lib/familiar-analytics-insight.test.ts",
     "src/lib/familiar-heal-requests.test.ts",
     "src/lib/thread-self-report.test.ts",
+    "src/app/api/familiar-self-report-route.test.ts",
     "src/components/familiar-analytics-view.test.ts",
     "src/components/familiar-analytics-navigation.test.ts",
     "src/lib/server/familiar-self-reports.test.ts",
