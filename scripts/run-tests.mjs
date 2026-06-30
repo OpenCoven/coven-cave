@@ -43,6 +43,7 @@ export const SUITES = {
     "src/lib/project-status.test.ts",
     "src/lib/github-checks.test.ts",
     "src/lib/gfm-autolink.test.ts",
+    "src/lib/gh-diff.test.ts",
     "src/lib/chat-projects.test.ts",
     "src/lib/conversation-tree.test.ts",
     "src/lib/chat-project-selection.test.ts",
