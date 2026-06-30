@@ -90,6 +90,21 @@ assert.match(
   /CheckpointSection|CheckpointRow/,
   "Panel should render a saved-checkpoints list (restore/delete), not just write-only snapshots",
 );
+assert.match(
+  changesPanel,
+  /session-changes-table-wrap[\s\S]*?<table[\s\S]*?className="session-changes-table/,
+  "Changes file list should use the compact table-style rail layout instead of stacked cards",
+);
+assert.match(
+  changesPanel,
+  /<thead[\s\S]*?File[\s\S]*?Diff[\s\S]*?<\/thead>/,
+  "Changes table should expose File and Diff columns like the task tables",
+);
+assert.match(
+  changesPanel,
+  /function splitFilePath[\s\S]*?basename[\s\S]*?dirname/,
+  "Changes rows should split basename and parent path so narrow rails preserve the useful file name",
+);
 
 const changesRoute = await readFile(
   new URL("../app/api/changes/route.ts", import.meta.url),

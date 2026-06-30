@@ -15,10 +15,11 @@ import { useChangesSummary } from "@/lib/use-changes-summary";
 import { CodeEditor } from "@/components/code-editor";
 import { resolveLangLabel } from "@/lib/code-lang";
 import {
+  CODE_PRESET_COLUMN_FLEX,
   CODE_PRESET_EVENT,
   CODE_PRESET_RIGHT_VIEW,
-  CODE_PROJECT_LIST_EVENT,
   readProjectListCollapsed,
+  readCodePreset,
   writeProjectListCollapsed,
   type CodePreset,
 } from "@/lib/code-layout-preset";
@@ -455,6 +456,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [projectListCollapsed, setProjectListCollapsed] = useState(false);
   const [projectDetailCollapsed, setProjectDetailCollapsed] = useState(false);
   const [filePreviewCollapsed, setFilePreviewCollapsed] = useState(false);
+  const [codePreset, setCodePreset] = useState<CodePreset>(() => readCodePreset());
   // Right pane view: the file preview, or the project's git changes/diff review.
   // Controllable: when the parent passes onRightViewChange (the Code workspace's
   // top-level Files/Changes tabs), the prop wins and every setRightView call is
@@ -1054,39 +1056,33 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     return () => window.removeEventListener("cave:code-select-project", onSelectProject as EventListener);
   }, [active, view]);
 
-  // Code workspace toolbar wiring (projects view only): the Projects toggle
-  // shows/hides this column, and a layout preset additionally switches the
-  // right pane (Review → Changes, Split → Files). Sync the initial collapse
-  // state from storage so a reload remembers it.
+  // Code workspace toolbar wiring (projects view only): the Code/Changes toggle
+  // switches the right pane and applies the matching 2/3 column weighting. Sync
+  // initial persisted state so a reload remembers the selected mode.
   useEffect(() => {
     if (view !== "projects") return;
     setProjectListCollapsed(readProjectListCollapsed());
-    const onProjectList = (event: Event) => {
-      const detail = (event as CustomEvent<{ collapsed?: boolean }>).detail;
-      setProjectListCollapsed(Boolean(detail?.collapsed));
-    };
+    const initialPreset = readCodePreset();
+    setCodePreset(initialPreset);
+    setRightView(CODE_PRESET_RIGHT_VIEW[initialPreset]);
     const onPreset = (event: Event) => {
       const preset = (event as CustomEvent<{ preset?: CodePreset }>).detail?.preset;
       if (!preset) return;
+      setCodePreset(preset);
       const nextRight = CODE_PRESET_RIGHT_VIEW[preset];
-      if (nextRight) {
-        // An explicit preset is a deliberate view choice — pin it so diff-first
-        // auto-switch doesn't override.
-        pinnedRightViewRef.current = true;
-        setRightView(nextRight);
-      }
+      // An explicit preset is a deliberate view choice — pin it so diff-first
+      // auto-switch doesn't override.
+      pinnedRightViewRef.current = true;
+      setRightView(nextRight);
     };
-    window.addEventListener(CODE_PROJECT_LIST_EVENT, onProjectList as EventListener);
     window.addEventListener(CODE_PRESET_EVENT, onPreset as EventListener);
     return () => {
-      window.removeEventListener(CODE_PROJECT_LIST_EVENT, onProjectList as EventListener);
       window.removeEventListener(CODE_PRESET_EVENT, onPreset as EventListener);
     };
-  }, [view]);
+  }, [setRightView, view]);
 
   // Show/hide the projects list from its own header (and the collapsed rail).
-  // Persists so a reload remembers; the Code presets also drive this over the
-  // event above.
+  // Persists so a reload remembers.
   const setProjectListVisible = useCallback((visible: boolean) => {
     setProjectListCollapsed(!visible);
     writeProjectListCollapsed(!visible);
@@ -1290,6 +1286,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // now actually colorizes.
   const previewExt = previewPath ? previewPath.split(".").pop() : undefined;
   const previewLangLabel = preview?.kind === "text" ? resolveLangLabel(previewExt) : null;
+  const codeColumnFlex = CODE_PRESET_COLUMN_FLEX[codePreset];
   const visiblePaneCount = visiblePaneSessionIds.length;
   const sessionById = useMemo(
     () => new Map(sessions.map((session) => [session.id, session])),
@@ -2119,7 +2116,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     the right). Only the Code workspace passes a centerSlot; the
                     Library projects browser stays two-column. */}
                 {centerSlot ? (
-                  <div className="comux-center-column flex min-w-0 min-h-0 flex-[2.4] flex-col overflow-hidden border-b border-[var(--border-hairline)] xl:border-b-0 xl:border-r">
+                  <div
+                    className="comux-center-column flex min-w-0 min-h-0 flex-col overflow-hidden border-b border-[var(--border-hairline)] xl:border-b-0 xl:border-r"
+                    style={{ flex: codeColumnFlex.chat }}
+                  >
                     {centerSlot}
                   </div>
                 ) : null}
@@ -2140,7 +2140,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                     </span>
                   </button>
                 ) : (
-                  <div className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden">
+                  <div
+                    className="min-w-0 min-h-0 flex flex-1 flex-col overflow-hidden"
+                    style={{ flex: codeColumnFlex.worktree }}
+                  >
                   {/* Files / Changes toggle — review the familiar's working-tree
                       diffs (revert + checkpoints) without leaving the surface.
                       Hidden when a parent owns the selection (Code workspace's

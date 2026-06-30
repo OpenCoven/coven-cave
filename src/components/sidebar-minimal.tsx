@@ -6,7 +6,7 @@
  * Layout (top to bottom):
  *   1. Familiar scope selector + New chat CTA
  *   2. App destinations grouped by purpose:
- *      Work  (Home / Familiars / Board / Calendar / Schedules)
+ *      Work  (Home / Chat / Tasks / Automations)
  *      Tools (Browser / Terminal / Code / Library / Roles / Flow / GitHub)
  *   3. Footer: Notifications, Settings
  */
@@ -102,12 +102,11 @@ const FOLDER_MODES: Array<{
   { id: "groupchat", label: "Group", iconName: "ph:users-three", group: "work", description: "Group chat — broadcast to a coven of familiars at once" },
   { id: "board", label: "Tasks", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", group: "work", description: "Your daily journal and generated sketches" },
-  { id: "calendar", label: "Calendar", iconName: "ph:calendar-blank", group: "work", kbd: "⌘4", description: "Schedule and timeline of work" },
-  { id: "inbox", label: "Automations", iconName: "ph:lightning-bold", group: "work", kbd: "⌘5", description: "Reminders, crons, and flows in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
+  { id: "inbox", label: "Automations", iconName: "ph:lightning-bold", group: "work", kbd: "⌘4", description: "Calendar, reminders, crons, and flows in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Tools
-  { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘6", description: "Built-in web browser" },
-  { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description: "Shell session in your project" },
-  { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘8", description: "Chat with a familiar beside your files and terminal" },
+  { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘5", description: "Built-in web browser" },
+  { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘6", description: "Shell session in your project" },
+  { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘7", description: "Chat with a familiar beside your files and terminal" },
   { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description: "Saved docs, links, and reading" },
   { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, skills, and the capabilities your familiars can use" },
   { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
@@ -245,7 +244,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   // Gated surfaces are hidden from the nav until enabled in Settings → Add-ons
   // (all default off). This keeps the default Cave to a simple core — Home, Chat,
-  // Board, Calendar, Schedules — with everything else opt-in.
+  // Board, Automations — with everything else opt-in.
   const visibleFolderModes = FOLDER_MODES.filter((fm) => {
     if (fm.id === "github") return addons?.github === true;
     if (fm.id === "library") return addons?.library === true;

@@ -113,10 +113,16 @@ assert.match(
   "the Tasks surface (mode id 'board') sits on the ⌘3 Work shortcut",
 );
 
+assert.doesNotMatch(
+  source,
+  /\{ id: "calendar", label: "Calendar"/,
+  "Calendar should not appear as a standalone sidebar row after merging into Automations",
+);
+
 assert.match(
   source,
-  /\{ id: "inbox", label: "Automations", iconName: "ph:lightning-bold", group: "work", kbd: "⌘5", description:/,
-  "Automations should stay on the inbox route as the ⌘5 Work surface",
+  /\{ id: "inbox", label: "Automations", iconName: "ph:lightning-bold", group: "work", kbd: "⌘4", description:/,
+  "Automations should own the old Calendar shortcut as the unified schedule surface",
 );
 
 assert.match(
@@ -144,14 +150,14 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘6", description:/,
-  "Browser is the first Tools surface, on ⌘6",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘5", description:/,
+  "Browser is the first Tools surface after Automations, on ⌘5",
 );
 
 assert.match(
   source,
-  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘7", description:/,
-  "Terminal follows Browser on ⌘7",
+  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘6", description:/,
+  "Terminal follows Browser on ⌘6",
 );
 
 assert.match(

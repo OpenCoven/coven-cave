@@ -214,18 +214,18 @@ assert.match(
   /mode === "code" \? \([\s\S]*?<ComuxView\s+view="projects"[\s\S]*?storageNamespace=":code"/,
   "the Code workspace comux uses the projects view (coding surfaces), not terminal-only",
 );
-// Code is the 8th sidebar surface (⌘8), reached via the SURFACE_ORDER lookup.
+// Code is the 7th sidebar surface (⌘7), reached via the SURFACE_ORDER lookup.
 assert.match(
   workspace,
   /const SURFACE_ORDER: WorkspaceMode\[\] = \[[\s\S]*?"terminal", "code",/,
-  "Cmd/Ctrl+8 switches to the Code workspace (last entry in SURFACE_ORDER)",
+  "Cmd/Ctrl+7 switches to the Code workspace (last entry in SURFACE_ORDER)",
 );
 
-// ── sidebar exposes a Code entry (⌘8) ────────────────────────────────────────
+// ── sidebar exposes a Code entry (⌘7) ────────────────────────────────────────
 assert.match(
   sidebar,
-  /id: "code", label: "Code"[\s\S]*?kbd: "⌘8"/,
-  "sidebar has a Code nav entry bound to ⌘8",
+  /id: "code", label: "Code"[\s\S]*?kbd: "⌘7"/,
+  "sidebar has a Code nav entry bound to ⌘7",
 );
 
 console.log("code-view.test.ts: ok");
