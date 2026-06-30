@@ -3,7 +3,7 @@
 // effectively unmergeable (every newly authored test was a merge conflict on a
 // single 30k-char line) and impossible to read. The lists now live here.
 //
-// Usage:  node scripts/run-tests.mjs <suite-or-test> [suite-or-test...]
+// Usage:  node scripts/run-tests.mjs <suite> [suite...]
 //   suites: app | api | mobile   (pass "all" or nothing to run every suite)
 //
 // Each test runs in its own `node` process, sequentially; the runner exits on
@@ -779,13 +779,12 @@ function main(argv) {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   let names = argv.length ? argv : ["all"];
   if (names.includes("all")) names = Object.keys(SUITES);
-  const knownTests = new Set(Object.values(SUITES).flat());
-  const unknown = names.filter((n) => !SUITES[n] && !knownTests.has(n));
+  const unknown = names.filter((n) => !SUITES[n]);
   if (unknown.length) {
-    console.error(`unknown suite(s) or test file(s): ${unknown.join(", ")}. known suites: ${[...Object.keys(SUITES), "all"].join(", ")}`);
+    console.error(`unknown suite(s): ${unknown.join(", ")}. known: ${[...Object.keys(SUITES), "all"].join(", ")}`);
     process.exit(2);
   }
-  const list = names.flatMap((n) => SUITES[n] ?? [n]);
+  const list = names.flatMap((n) => SUITES[n]);
   console.log(`running ${list.length} test file(s) [${names.join(", ")}]`);
   let passed = 0;
   for (const file of list) {
