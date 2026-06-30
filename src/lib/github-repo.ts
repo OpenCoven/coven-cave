@@ -32,6 +32,8 @@ export type GitHubRepoOverview = {
   meta: GitHubRepoMeta;
   /** Raw README markdown, or null when the repo has no README. */
   readme: string | null;
+  /** GitHub-rendered README HTML, or null when unavailable. */
+  readmeHtml: string | null;
 };
 
 export type GitHubRepoError = { error: string; status: number };
@@ -135,6 +137,18 @@ export async function fetchRepoOverview(
   };
 
   // README is best-effort: a repo without one still returns a useful overview.
+  let readmeHtml: string | null = null;
+  try {
+    const readmeHtmlRes = await doFetch(`${base}/readme`, {
+      headers: { ...authHeaders(token), Accept: "application/vnd.github.html+json" },
+    });
+    if (readmeHtmlRes.ok) {
+      readmeHtml = await readmeHtmlRes.text();
+    }
+  } catch {
+    /* keep readmeHtml null */
+  }
+
   let readme: string | null = null;
   try {
     const readmeRes = await doFetch(`${base}/readme`, {
@@ -147,7 +161,7 @@ export async function fetchRepoOverview(
     /* keep readme null */
   }
 
-  return { meta, readme };
+  return { meta, readme, readmeHtml };
 }
 
 /** Compact "1.2k" / "12.3k" / "1.4M" star/fork formatter. */

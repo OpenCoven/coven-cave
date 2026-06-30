@@ -29,9 +29,14 @@ function jsonResponse(body, init = {}) {
 
 await (async () => {
   const calls = [];
-  const fakeFetch = async (url, opts) => {
+  const acceptHeaders = [];
+  const fakeFetch = async (url, opts = {}) => {
     calls.push(String(url));
-    if (String(url).endsWith("/readme")) return new Response("# Hello\n\nbody", { status: 200 });
+    acceptHeaders.push(opts.headers?.Accept ?? opts.headers?.accept ?? "");
+    if (String(url).endsWith("/readme") && opts.headers?.Accept === "application/vnd.github.html+json") {
+      return new Response("<article><h1>Hello</h1><ul class=\"contains-task-list\"><li><input type=\"checkbox\" checked> done</li></ul></article>", { status: 200 });
+    }
+    if (String(url).endsWith("/readme")) return new Response("# Hello\n\n- [x] done", { status: 200 });
     return jsonResponse({
       full_name: "vercel/next.js",
       description: "The React Framework",
@@ -54,8 +59,14 @@ await (async () => {
   assert.equal(out.meta.defaultBranch, "canary");
   assert.equal(out.meta.license, "MIT");
   assert.deepEqual(out.meta.topics, ["react", "ssr"]);
-  assert.equal(out.readme, "# Hello\n\nbody");
-  assert.equal(calls.length, 2, "fetched meta + readme");
+  assert.equal(out.readme, "# Hello\n\n- [x] done");
+  assert.match(out.readmeHtml, /contains-task-list/, "returns GitHub-rendered README HTML for GFM features");
+  assert.equal(calls.length, 3, "fetched meta + rendered README HTML + raw README markdown");
+  assert.deepEqual(
+    acceptHeaders.slice(1),
+    ["application/vnd.github.html+json", "application/vnd.github.raw+json"],
+    "README requests should ask GitHub for rendered HTML before raw markdown fallback",
+  );
 })();
 
 await (async () => {
@@ -83,6 +94,7 @@ await (async () => {
   const out = await fetchRepoOverview("a/b", { fetchImpl: fakeFetch });
   assert.ok(!("error" in out));
   assert.equal(out.readme, null, "no readme -> null");
+  assert.equal(out.readmeHtml, null, "no readme -> null rendered HTML");
 })();
 
 assert.ok((await fetchRepoOverview("not a repo", { fetchImpl: async () => new Response("{}") })).error, "bad input -> error");
