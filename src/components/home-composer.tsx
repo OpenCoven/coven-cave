@@ -380,82 +380,6 @@ export function HomeComposer({
     [destination],
   );
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      // Inline model picker takes priority when "/model <partial>" is open.
-      if (modelMenuActive && modelOptions) {
-        const opts = modelOptions;
-        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return; }
-        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return; }
-        if (e.key === "Tab") { e.preventDefault(); const m = opts[slashIdx]; if (m) setText(`/model ${m.id}`); return; }
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const m = opts[slashIdx];
-          if (m) { handleSelectModel(m.id); onToast(`Model set to ${m.id}.`); setText(""); }
-          return;
-        }
-      }
-      // Slash menu hotkeys take priority over history/submit when it's open
-      if (slashSuggestions.length > 0) {
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setSlashIdx((i) => Math.min(i + 1, slashSuggestions.length - 1));
-          return;
-        }
-        if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setSlashIdx((i) => Math.max(i - 1, 0));
-          return;
-        }
-        if (e.key === "Tab") {
-          e.preventDefault();
-          const cmd = slashSuggestions[slashIdx];
-          if (cmd) setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
-          return;
-        }
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          const cmd = slashSuggestions[slashIdx];
-          // If the input is an exact command (no args yet), run it directly;
-          // otherwise autocomplete first so the user can fill in args.
-          if (cmd && cmd.argPlaceholder && canonicalize(text.trim()) !== cmd.name) {
-            setText(cmd.name + " ");
-          } else {
-            void handleSubmit();
-          }
-          return;
-        }
-      }
-      // plain Enter sends; Shift+Enter inserts newline
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        void handleSubmit();
-        return;
-      }
-      if (e.key === "ArrowUp" && text === "" && history.length > 0) {
-        e.preventDefault();
-        const idx = historyIdx < history.length - 1 ? historyIdx + 1 : historyIdx;
-        setHistoryIdx(idx);
-        setText(history[history.length - 1 - idx] ?? "");
-        return;
-      }
-      if (e.key === "ArrowDown" && historyIdx > 0) {
-        e.preventDefault();
-        const idx = historyIdx - 1;
-        setHistoryIdx(idx);
-        setText(history[history.length - 1 - idx] ?? "");
-        return;
-      }
-      if (e.key === "ArrowDown" && historyIdx === 0) {
-        e.preventDefault();
-        setHistoryIdx(-1);
-        setText("");
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [text, history, historyIdx, slashSuggestions, slashIdx],
-  );
-
   const handleSubmit = useCallback(async () => {
     const prompt = text.trim();
     if (!prompt || sending) return;
@@ -535,19 +459,109 @@ export function HomeComposer({
     } finally {
       setSending(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     text,
     destination,
     activeFamiliarId,
     selectedFamiliarId,
     selectedProject,
+    modelState,
+    modelHarness,
     thinkingEffort,
     responseSpeed,
     sending,
+    handleSelectModel,
     onSlash,
     onStartChat,
+    onNavigateToBoard,
+    onToast,
   ]);
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // Inline model picker takes priority when "/model <partial>" is open.
+      if (modelMenuActive && modelOptions) {
+        const opts = modelOptions;
+        if (e.key === "ArrowDown") { e.preventDefault(); setSlashIdx((i) => Math.min(i + 1, opts.length - 1)); return; }
+        if (e.key === "ArrowUp") { e.preventDefault(); setSlashIdx((i) => Math.max(i - 1, 0)); return; }
+        if (e.key === "Tab") { e.preventDefault(); const m = opts[slashIdx]; if (m) setText(`/model ${m.id}`); return; }
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          const m = opts[slashIdx];
+          if (m) { handleSelectModel(m.id); onToast(`Model set to ${m.id}.`); setText(""); }
+          return;
+        }
+      }
+      // Slash menu hotkeys take priority over history/submit when it's open
+      if (slashSuggestions.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setSlashIdx((i) => Math.min(i + 1, slashSuggestions.length - 1));
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setSlashIdx((i) => Math.max(i - 1, 0));
+          return;
+        }
+        if (e.key === "Tab") {
+          e.preventDefault();
+          const cmd = slashSuggestions[slashIdx];
+          if (cmd) setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
+          return;
+        }
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          const cmd = slashSuggestions[slashIdx];
+          // If the input is an exact command (no args yet), run it directly;
+          // otherwise autocomplete first so the user can fill in args.
+          if (cmd && cmd.argPlaceholder && canonicalize(text.trim()) !== cmd.name) {
+            setText(cmd.name + " ");
+          } else {
+            void handleSubmit();
+          }
+          return;
+        }
+      }
+      // plain Enter sends; Shift+Enter inserts newline
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        void handleSubmit();
+        return;
+      }
+      if (e.key === "ArrowUp" && text === "" && history.length > 0) {
+        e.preventDefault();
+        const idx = historyIdx < history.length - 1 ? historyIdx + 1 : historyIdx;
+        setHistoryIdx(idx);
+        setText(history[history.length - 1 - idx] ?? "");
+        return;
+      }
+      if (e.key === "ArrowDown" && historyIdx > 0) {
+        e.preventDefault();
+        const idx = historyIdx - 1;
+        setHistoryIdx(idx);
+        setText(history[history.length - 1 - idx] ?? "");
+        return;
+      }
+      if (e.key === "ArrowDown" && historyIdx === 0) {
+        e.preventDefault();
+        setHistoryIdx(-1);
+        setText("");
+      }
+    },
+    [
+      handleSubmit,
+      handleSelectModel,
+      history,
+      historyIdx,
+      modelMenuActive,
+      modelOptions,
+      onToast,
+      slashIdx,
+      slashSuggestions,
+      text,
+    ],
+  );
 
   const renderCompactSelect = (
     label: string,

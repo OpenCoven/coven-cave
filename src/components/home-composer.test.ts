@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 const destinations = source.match(/const DESTINATIONS:[\s\S]*?\n\];/)?.[0] ?? "";
+const handleKeyDownBlock = source.match(/const handleKeyDown = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
 
 assert.match(
   destinations,
@@ -178,6 +179,18 @@ assert.doesNotMatch(
   source,
   /native Cave chat only supports Codex, Claude Code, and Hermes right now/,
   "HomeComposer should allow OpenClaw familiars through native chat send",
+);
+
+assert.match(
+  handleKeyDownBlock,
+  /\[[\s\S]*handleSubmit[\s\S]*modelMenuActive[\s\S]*modelOptions[\s\S]*\]/,
+  "HomeComposer Enter-submit keyboard handler should depend on the current submit callback and model menu state",
+);
+
+assert.doesNotMatch(
+  handleKeyDownBlock,
+  /eslint-disable-next-line react-hooks\/exhaustive-deps/,
+  "HomeComposer keyboard handler should not suppress exhaustive deps and risk stale command controls",
 );
 
 // ─── CHAT-D2-04: textarea/listbox ARIA on both slash menus ───────────────────
