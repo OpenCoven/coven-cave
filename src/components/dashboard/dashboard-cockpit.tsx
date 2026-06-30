@@ -13,6 +13,7 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { SectionHead, EmptyState, QuickLink } from "@/components/daily-report-ui";
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { DonutChart } from "@/components/ui/charts/donut-chart";
+import { TrendChart } from "@/components/ui/charts/trend-chart";
 import { familiarMiniProfiles, familiarLoadSeries } from "@/lib/dashboard-analytics";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
 import { TodaySummary } from "@/components/dashboard/today-summary";
@@ -44,7 +45,7 @@ const EMPTY: CockpitData = { cards: [], familiars: [], github: [], reading: [], 
 // Draggable panel layout — order per column, persisted to localStorage.
 const LAYOUT_KEY = "cave:cockpit:layout";
 type Layout = { main: string[]; rail: string[] };
-const DEFAULT_LAYOUT: Layout = { main: ["needs", "board", "today"], rail: ["agents", "github", "agenda", "reading"] };
+const DEFAULT_LAYOUT: Layout = { main: ["needs", "board", "today"], rail: ["agents", "load", "github", "agenda", "reading"] };
 
 /** Merge a saved order with the defaults: keep known ids in saved order, append
  *  any new defaults, drop anything unknown (survives version changes). */
@@ -233,6 +234,17 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
         <Panel title="Agents" icon="ph:sparkle" count={data.familiars.length || undefined}>
           <AgentsPanel familiars={data.familiars} sessions={data.sessions} loaded={ready.has("familiars")} />
         </Panel>);
+      case "load": {
+        const series = familiarLoadSeries(data.familiars, data.sessions, Date.now(), 7, 4);
+        return (
+          <Panel title="Familiar load" icon="ph:chart-bar-bold">
+            {series.length > 0 ? (
+              <div className="cockpit-load"><TrendChart series={series} height={150} fill={false} /></div>
+            ) : (
+              <EmptyState icon="ph:chart-bar-bold">No sessions in the last 7 days.</EmptyState>
+            )}
+          </Panel>);
+      }
       case "github": return (
         <Panel title="GitHub" icon="ph:github-logo" count={data.github.length || undefined} hint={prsToReview.length ? `${prsToReview.length} to review` : undefined}>
           <GithubPanel items={data.github} loaded={ready.has("github")} />

@@ -335,3 +335,5 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 
 .cockpit-agent__trend { margin-left: auto; width: 64px; flex-shrink: 0; }
 .cockpit-agent__count { font-size: 10.5px; color: var(--text-muted); margin-left: 8px; white-space: nowrap; }
+
+.cockpit-load { padding-top: 4px; }
