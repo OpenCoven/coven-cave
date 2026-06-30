@@ -248,6 +248,7 @@ export const SUITES = {
     "src/lib/server/eval-store.test.ts",
     "src/lib/evals/eval-judge.test.ts",
     "src/components/evals/evals-view.test.ts",
+    "src/components/evals/eval-groups-panel.test.ts",
     "src/components/retro-runs-view.test.ts",
     "src/components/debug-pane.test.ts",
     "src/components/library-link-viewer.test.ts",
