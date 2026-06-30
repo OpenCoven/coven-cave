@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   mergeCatalog,
   deriveRequiresSetup,
@@ -172,5 +173,21 @@ assert.deepEqual(
 );
 // coven-native collection is category-driven so it always tracks first-party plugins
 assert.equal(COLLECTIONS.find((c) => c.id === "coven-native").category, "Coven");
+
+// --- production marketplace: OpenClaw skill migration is visible in Cave ---
+const productionMarketplace = JSON.parse(
+  readFileSync(new URL("../../marketplace/marketplace.json", import.meta.url), "utf8"),
+);
+const productionOpenClawSkills = productionMarketplace.plugins.find(
+  (p) => p.name === "openclaw-skills",
+);
+assert.ok(productionOpenClawSkills, "OpenClaw Skills card should be present in Cave marketplace");
+assert.equal(productionOpenClawSkills.displayName, "OpenClaw Skills");
+assert.equal(productionOpenClawSkills.category, "Coven");
+assert.equal(
+  COLLECTIONS.find((c) => c.id === "coven-native").category,
+  productionOpenClawSkills.category,
+  "OpenClaw Skills should appear in the Cave Coven native collection",
+);
 
 console.log("marketplace-catalog.test.ts: ok");
