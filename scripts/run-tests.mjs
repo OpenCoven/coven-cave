@@ -535,6 +535,7 @@ export const SUITES = {
     "src/app/api/daemon/status/route.test.ts",
     "src/app/api/travel/client/route.test.ts",
     "src/lib/executor-status.test.ts",
+    "src/lib/daemon-start.test.ts",
     "src/app/api/projects/route.test.ts",
     "src/app/api/coven/exec/route.test.ts",
     "src/lib/coven-daemon.test.ts",

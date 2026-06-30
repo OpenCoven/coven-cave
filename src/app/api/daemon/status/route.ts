@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { loadConfig, loadState, recordTravelHubReachability } from "@/lib/cave-config";
+import { loadConfig, loadState, recordLocalSubdaemonWakeRequest, recordTravelHubReachability } from "@/lib/cave-config";
 import { callDaemon, daemonTargetForConfig, type DaemonTarget } from "@/lib/coven-daemon";
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
+import { startLocalDaemon } from "@/lib/daemon-start";
 import { executorStatusesForConfig } from "@/lib/executor-status";
 import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 
@@ -55,11 +56,20 @@ export async function GET() {
     hubReachable = res.ok;
     travelState = await recordTravelHubReachability(res.ok);
   }
-  const travelStatus = deriveTravelClientStatus({
+  let travelStatus = deriveTravelClientStatus({
     multiHost: config.multiHost,
     travel: travelState,
     hubReachable,
   });
+  if (target.mode === "hub" && travelStatus.wakeLocalSubdaemon) {
+    await startLocalDaemon();
+    travelState = await recordLocalSubdaemonWakeRequest();
+    travelStatus = deriveTravelClientStatus({
+      multiHost: config.multiHost,
+      travel: travelState,
+      hubReachable,
+    });
+  }
   const root = covenWorkspaceRoot();
   if (!res.ok || !res.data) {
     return NextResponse.json({

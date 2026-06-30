@@ -54,6 +54,18 @@ assert.match(
 
 assert.match(
   source,
+  /startLocalDaemon\(\)/,
+  "daemon status should wake the laptop-local daemon when travel mode takes authority",
+);
+
+assert.match(
+  source,
+  /recordLocalSubdaemonWakeRequest\(\)/,
+  "daemon status should persist that travel mode requested a local sub-daemon wake",
+);
+
+assert.match(
+  source,
   /reason: target\.error/,
   "an unconfigured hub should be reported as an explicit status failure",
 );

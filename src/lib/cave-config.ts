@@ -492,6 +492,16 @@ export async function recordTravelHubReachability(reachable: boolean, now = new 
   });
 }
 
+export async function recordLocalSubdaemonWakeRequest(now = new Date()): Promise<CaveTravelState> {
+  return updateState((state) => {
+    state.travel = normalizeTravelState(state.travel);
+    state.travel.localSubdaemonWakeRequestedAt = nowIso(now);
+    state.travel.localBindHost = "127.0.0.1";
+    state.travel.staleCache = true;
+    return state.travel;
+  });
+}
+
 export async function enqueueOfflineTravelItem(
   item: {
     kind: CaveTravelQueueItem["kind"];

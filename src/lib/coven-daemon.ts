@@ -95,7 +95,7 @@ export function normalizeHubUrl(rawUrl: string): string {
 
 export function daemonTargetForConfig(config: Pick<CaveConfig, "multiHost">): DaemonTarget {
   if (config.multiHost?.mode !== "hub") {
-    return { mode: "local", label: "Local daemon", socketPath: socketPath() };
+    return localDaemonTarget();
   }
   const url = normalizeHubUrl(config.multiHost.hubUrl ?? "");
   if (!url) {
@@ -106,6 +106,10 @@ export function daemonTargetForConfig(config: Pick<CaveConfig, "multiHost">): Da
     };
   }
   return { mode: "hub", label: "Server hub", url };
+}
+
+export function localDaemonTarget(): Extract<DaemonTarget, { mode: "local" }> {
+  return { mode: "local", label: "Local daemon", socketPath: socketPath() };
 }
 
 async function loadDaemonTarget(): Promise<DaemonTarget> {
@@ -148,6 +152,18 @@ export async function callDaemon<T = unknown>({
   timeoutMs = 4000,
 }: DaemonRequest): Promise<DaemonResponse<T>> {
   const target = await loadDaemonTarget();
+  return callDaemonTarget<T>(target, { method, path: reqPath, body, timeoutMs });
+}
+
+export async function callDaemonTarget<T = unknown>(
+  target: DaemonTarget,
+  {
+    method = "GET",
+    path: reqPath,
+    body,
+    timeoutMs = 4000,
+  }: DaemonRequest,
+): Promise<DaemonResponse<T>> {
   if (target.mode === "unconfigured-hub") {
     return {
       ok: false,
