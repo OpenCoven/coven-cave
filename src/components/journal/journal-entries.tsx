@@ -30,25 +30,185 @@ type JournalDay = {
   context: string;
 };
 
+type NoticeAction = { label: string; mode: string };
+type NoticeFn = (text: string, action?: NoticeAction) => void;
+
+/** One-click "automate" actions for a suggested next step. Each turns the
+ *  familiar's suggestion into a real action with no typing:
+ *   • Run now    → opens a chat that acts on it immediately (cave:agents-new-chat)
+ *   • Add task   → files it on the task board (POST /api/board)
+ *   • Remind me  → schedules a reminder for tomorrow 9am (POST /api/inbox)
+ *  All self-contained — no prop threading through the workspace shell. */
+const AUTOMATIONS = [
+  { action: "run", icon: "ph:play", label: "Run now", doneLabel: "Started" },
+  { action: "task", icon: "ph:kanban", label: "Add task", doneLabel: "Added" },
+  { action: "remind", icon: "ph:bell", label: "Remind me", doneLabel: "Reminder set" },
+] as const;
+type AutoAction = (typeof AUTOMATIONS)[number]["action"];
+
+function NextPaths({
+  suggestions,
+  familiarId,
+  onNotice,
+  onError,
+}: {
+  suggestions: string[];
+  familiarId: string | null;
+  onNotice: NoticeFn;
+  onError: (text: string) => void;
+}) {
+  // The recommended (first) step is expanded by default so the automate
+  // affordances are discoverable without a hunt.
+  const [open, setOpen] = useState<number | null>(0);
+  const [pending, setPending] = useState<string | null>(null); // `${i}:${action}`
+  const [done, setDone] = useState<string | null>(null);
+  const doneTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(doneTimer.current), []);
+
+  // Collapse back to the first step whenever the day's suggestions change.
+  useEffect(() => { setOpen(suggestions.length ? 0 : null); }, [suggestions]);
+
+  const flashDone = useCallback((key: string) => {
+    setDone(key);
+    window.clearTimeout(doneTimer.current);
+    doneTimer.current = window.setTimeout(() => setDone((d) => (d === key ? null : d)), 1800);
+  }, []);
+
+  const automate = useCallback(
+    async (i: number, action: AutoAction, text: string) => {
+      const key = `${i}:${action}`;
+      if (action === "run") {
+        if (!familiarId) {
+          onError("Pick a familiar first — actions run as a familiar.");
+          return;
+        }
+        window.dispatchEvent(
+          new CustomEvent("cave:agents-new-chat", { detail: { familiarId, initialPrompt: text } }),
+        );
+        flashDone(key);
+        onNotice("Opened a chat to act on this step.");
+        return;
+      }
+      setPending(key);
+      try {
+        if (action === "task") {
+          const res = await fetch("/api/board", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ title: text, familiarId: familiarId ?? null }),
+          });
+          const json = await res.json().catch(() => ({ ok: false }));
+          if (!res.ok || !json.ok) throw new Error();
+          flashDone(key);
+          onNotice("Added to your task board.", { label: "View tasks", mode: "board" });
+        } else {
+          // Reminder: default to tomorrow 9:00am local; the user can retime it
+          // from Automations. One click should never demand a date picker.
+          const when = new Date();
+          when.setDate(when.getDate() + 1);
+          when.setHours(9, 0, 0, 0);
+          const res = await fetch("/api/inbox", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              kind: "reminder",
+              title: text,
+              fireAt: when.toISOString(),
+              recurrence: { type: "none" },
+              familiarId: familiarId ?? null,
+              source: "user",
+            }),
+          });
+          const json = await res.json().catch(() => ({ ok: false }));
+          if (!res.ok || !json.ok) throw new Error();
+          flashDone(key);
+          onNotice("Reminder set for tomorrow, 9:00 AM.", { label: "View automations", mode: "inbox" });
+        }
+      } catch {
+        onError(action === "task" ? "Couldn't add the task." : "Couldn't set the reminder.");
+      } finally {
+        setPending((p) => (p === key ? null : p));
+      }
+    },
+    [familiarId, flashDone, onNotice, onError],
+  );
+
+  if (suggestions.length === 0) return null;
+  return (
+    <div className="journal-entry__next">
+      <span className="journal-entry__next-label">
+        <Icon name="ph:lightning-fill" width={11} aria-hidden /> Suggested next steps
+        <span className="journal-next__hint">click to automate</span>
+      </span>
+      <ul className="journal-next__list">
+        {suggestions.map((s, i) => {
+          const isOpen = open === i;
+          const recommended = i === 0;
+          return (
+            <li key={i} className="journal-next__item">
+              <button
+                type="button"
+                className={`journal-next__chip${recommended ? " journal-next__chip--rec" : ""}${isOpen ? " is-open" : ""}`}
+                aria-expanded={isOpen}
+                onClick={() => setOpen(isOpen ? null : i)}
+              >
+                <Icon name="ph:sparkle" width={13} className="journal-next__chip-icon" aria-hidden />
+                <span className="journal-next__chip-text">{s}</span>
+                <Icon name="ph:caret-down" width={11} className="journal-next__caret" aria-hidden />
+              </button>
+              {isOpen ? (
+                <div className="journal-next__tray" role="group" aria-label={`Automate: ${s}`}>
+                  {AUTOMATIONS.map((a) => {
+                    const key = `${i}:${a.action}`;
+                    const isPending = pending === key;
+                    const isDone = done === key;
+                    return (
+                      <button
+                        key={a.action}
+                        type="button"
+                        className={`journal-next__act journal-next__act--${a.action}${isDone ? " is-done" : ""}`}
+                        disabled={isPending}
+                        aria-label={`${a.label}: ${s}`}
+                        onClick={() => void automate(i, a.action, s)}
+                      >
+                        <Icon name={isDone ? "ph:check" : a.icon} width={12} aria-hidden />
+                        <span>{isPending ? "Working…" : isDone ? a.doneLabel : a.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 /** Render a journal reflection. The reflection is generated through the chat
  *  pipeline, which appends a `<coven:next-paths>` suggestions block; lift it out
- *  (as chat-view does) so the tags don't leak into the markdown, and show the
- *  suggestions as a quiet "Next" list below the reflection. */
-function JournalReflection({ text }: { text: string }) {
-  const { visible, suggestions } = extractNextPaths(text);
+ *  (as chat-view does) so the tags don't leak into the markdown, and surface the
+ *  suggestions as one-click "automate" steps below the reflection. */
+function JournalReflection({
+  text,
+  familiarId,
+  onNotice,
+  onError,
+}: {
+  text: string;
+  familiarId: string | null;
+  onNotice: NoticeFn;
+  onError: (text: string) => void;
+}) {
+  // Memoize so `suggestions` keeps a stable identity across parent re-renders
+  // (e.g. the notice toast updating) — otherwise NextPaths' open-step effect
+  // would reset the expanded step on every render.
+  const { visible, suggestions } = useMemo(() => extractNextPaths(text), [text]);
   return (
     <>
       <MarkdownBlock text={visible} className="journal-entry__reflection" />
-      {suggestions.length > 0 ? (
-        <div className="journal-entry__next">
-          <span className="journal-entry__next-label">Next</span>
-          <ul className="journal-entry__next-list">
-            {suggestions.map((s, i) => (
-              <li key={i}>{s}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      <NextPaths suggestions={suggestions} familiarId={familiarId} onNotice={onNotice} onError={onError} />
     </>
   );
 }
@@ -81,6 +241,16 @@ export function JournalEntries({
   // fires only after the undo window, and Undo restores the reflection.
   const { pending: deletePending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<string>();
   const [error, setError] = useState<string | null>(null);
+  // Transient confirmation toast for one-click "automate" actions on the
+  // suggested next steps (Add task / Remind me / Run now).
+  const [notice, setNotice] = useState<{ text: string; action?: { label: string; mode: string } } | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
+  const showNotice = useCallback((text: string, action?: { label: string; mode: string }) => {
+    setNotice({ text, action });
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 6000);
+  }, []);
+  useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
   const [filter, setFilter] = useState("");
   const selectedFamiliarId = activeFamiliarId ?? familiars[0]?.id ?? null;
   // Guard async setState after unmount, and ignore a stale day fetch when the
@@ -305,7 +475,7 @@ export function JournalEntries({
       <aside className="journal-list__rail">
         <button
           type="button"
-          className="journal-entry-gen"
+          className={`journal-entry-gen${generating ? " is-generating" : ""}`}
           disabled={!canGenerate || generating || selected !== today}
           onClick={generate}
           title={selected !== today ? "Select today to generate" : undefined}
@@ -464,7 +634,12 @@ export function JournalEntries({
                     autoFocus
                   />
                 ) : (
-                  <JournalReflection text={day.entry.reflection} />
+                  <JournalReflection
+                    text={day.entry.reflection}
+                    familiarId={selectedFamiliarId}
+                    onNotice={showNotice}
+                    onError={setError}
+                  />
                 )}
                 <div className="journal-entry__by">
                   <Icon name="ph:sparkle" aria-hidden />
@@ -499,6 +674,26 @@ export function JournalEntries({
           <div className="journal-empty journal-empty--pane"><SkeletonRows count={5} /></div>
         )}
       </section>
+      {notice ? (
+        <div className="journal-notice" role="status" aria-live="polite">
+          <Icon name="ph:check-circle" width={16} aria-hidden className="journal-notice__icon" />
+          <span className="journal-notice__text">{notice.text}</span>
+          {notice.action ? (
+            <button
+              type="button"
+              className="journal-notice__act"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent("cave:navigate-mode", { detail: { mode: notice.action!.mode } }),
+                );
+                setNotice(null);
+              }}
+            >
+              {notice.action.label}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {deletePending ? (
         <UndoToast
           key={deletePending.id}

@@ -173,4 +173,47 @@ assert.match(list, /return \(\) => \{ mountedRef\.current = false; \}/, "canvas 
 assert.match(list, /await generateArtifactCode\([\s\S]{0,80}?if \(!mountedRef\.current\) return;/, "runGeneration bails after the LLM call if unmounted");
 assert.match(list, /const json = await res\.json\(\)[\s\S]{0,80}?if \(!mountedRef\.current\) return;/, "load bails after the fetch if unmounted");
 
+// ── Click-to-automate: suggested next steps become one-click actions ─────────
+// The familiar's `<coven:next-paths>` suggestions are no longer static text —
+// each opens an automate tray (Run now / Add task / Remind me) that turns the
+// step into a real action with no typing.
+assert.match(entries, /function NextPaths\(/, "JournalEntries renders an interactive NextPaths component for suggested steps");
+assert.match(entries, /aria-expanded=\{isOpen\}/, "each suggested step is an expandable automate chip");
+assert.match(
+  entries,
+  /new CustomEvent\("cave:agents-new-chat", \{ detail: \{ familiarId, initialPrompt: text \} \}\)/,
+  "Run now opens a chat that acts on the suggestion (self-contained, no prop threading)",
+);
+assert.match(
+  entries,
+  /fetch\("\/api\/board",\s*\{[\s\S]*?method:\s*"POST"[\s\S]*?title: text/,
+  "Add task files the suggestion on the task board via /api/board POST",
+);
+assert.match(
+  entries,
+  /fetch\("\/api\/inbox",\s*\{[\s\S]*?kind:\s*"reminder"[\s\S]*?title: text[\s\S]*?fireAt: when\.toISOString\(\)/,
+  "Remind me schedules the suggestion as a reminder via /api/inbox POST",
+);
+assert.match(entries, /aria-label=\{`\$\{a\.label\}: \$\{s\}`\}/, "each automate action exposes an accessible label naming the step");
+assert.match(entries, /className=\{`journal-next__act[\s\S]*?\$\{isDone \? " is-done" : ""\}/, "automate actions flash a success state when they land");
+// One-click confirmation toast, with a deep-link to the surface the action wrote to.
+assert.match(entries, /className="journal-notice"[\s\S]*?role="status"[\s\S]*?aria-live="polite"/, "an automate action shows an aria-live confirmation toast");
+assert.match(
+  entries,
+  /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: notice\.action!\.mode \} \}\)/,
+  "the toast's action deep-links to the surface the automation landed on",
+);
+assert.match(entries, /className=\{`journal-entry-gen\$\{generating \? " is-generating" : ""\}`\}/, "the generate button animates while reflecting");
+
+// Engaging click feedback: chips/actions/buttons have press + transition styling,
+// with a reduced-motion fallback.
+assert.match(css, /\.journal-next__chip \{[\s\S]*?cursor: pointer;/, "suggested-step chips are styled, interactive controls");
+assert.match(css, /\.journal-next__act\b/, "automate tray action buttons are styled");
+assert.match(css, /\.journal-next__act\.is-done \{[\s\S]*?animation: journal-act-pop/, "a landed automate action pops with a success animation");
+assert.match(css, /\.journal-notice \{[\s\S]*?position: fixed/, "the automate confirmation toast is styled");
+assert.match(css, /\.journal-entry-gen:active:not\(:disabled\) \{ transform:/, "the generate button has a tactile press");
+assert.match(css, /\.journal-day:active \{ transform:/, "day rows have a tactile press");
+assert.match(css, /\.journal-entry__action:active:not\(:disabled\) \{ transform: scale/, "entry action icons have a tactile press");
+assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.journal-next__chip,/, "the new interactions respect prefers-reduced-motion");
+
 console.log("journal-view.test.ts: ok");
