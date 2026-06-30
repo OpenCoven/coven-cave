@@ -38,6 +38,7 @@ import {
   filterEntries,
   countByType,
   flowTrigger,
+  humanRecurrence,
   AUTOMATION_TYPE_META,
   type AutomationType,
   type AutomationEntry,
@@ -87,48 +88,22 @@ function navigateToMode(mode: string) {
 
 import {
   RRULE_DAY_ORDER,
+  RRULE_DAY_LABEL,
   parseCodexRrule,
   buildCodexRrule,
   splitAutomationPrompt,
   composeAutomationPrompt,
 } from "@/lib/codex-automation-form";
 
-const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const DAY_INITIALS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-const RRULE_DAY_LABEL: Record<string, string> = {
-  SU: "Sun",
-  MO: "Mon",
-  TU: "Tue",
-  WE: "Wed",
-  TH: "Thu",
-  FR: "Fri",
-  SA: "Sat",
-};
-
-// Format a schedule's hour:minute honoring the user's 12h/24h clock pref
-// (so "Daily at 14:00" reads as "Daily at 2:00 PM" when 12-hour is selected).
+// Clock-pref-aware time formatter (12h/24h) injected into the shared
+// humanRecurrence() so the schedule line honors the user's preference — one
+// formatter, instead of a forked humanSchedule() that drifted from it.
 function scheduleTime(hour: number, minute: number): string {
   return formatClock(new Date(2000, 0, 1, hour, minute, 0).toISOString());
 }
 
-function humanSchedule(rec: Recurrence | undefined): string {
-  if (!rec || rec.type === "none") return "One-shot";
-  if (rec.type === "interval") {
-    const m = Math.round(rec.everyMs / 60000);
-    if (m < 60) return `Every ${m}m`;
-    const h = Math.round(m / 60);
-    if (h < 24) return `Every ${h}h`;
-    return `Every ${Math.round(h / 24)}d`;
-  }
-  if (rec.type === "daily")
-    return `Daily at ${scheduleTime(rec.hour, rec.minute)}`;
-  if (rec.type === "weekly") {
-    const days = rec.days.map((d) => WEEKDAY[d] ?? "?").join("/");
-    return `${days}s at ${scheduleTime(rec.hour, rec.minute)}`;
-  }
-  if (rec.type === "cron") return `Cron: ${rec.expr}`;
-  return "Scheduled";
-}
+const humanSchedule = (rec: Recurrence | undefined | null): string =>
+  humanRecurrence(rec, scheduleTime);
 
 function isScheduleInboxItem(item: InboxItem): boolean {
   return item.kind === "reminder" || item.kind === "daily-summary";

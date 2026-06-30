@@ -18,6 +18,11 @@ assert.equal(humanRecurrence({ type: "interval", everyMs: 3 * 3600_000 }), "Ever
 assert.equal(humanRecurrence({ type: "daily", hour: 9, minute: 5 }), "Daily at 09:05");
 assert.equal(humanRecurrence({ type: "weekly", days: [1, 3], hour: 14, minute: 0 }), "Mon/Wed at 14:00");
 assert.equal(humanRecurrence({ type: "cron", expr: "0 9 * * 1" }), "Cron: 0 9 * * 1");
+// An injected time formatter (e.g. the view's clock-pref-aware one) is used for
+// the hour:minute, while the rest of the line stays identical.
+const ampm = (h: number, m: number) => `${((h + 11) % 12) + 1}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+assert.equal(humanRecurrence({ type: "daily", hour: 14, minute: 0 }, ampm), "Daily at 2:00 PM");
+assert.equal(humanRecurrence({ type: "weekly", days: [1, 3], hour: 9, minute: 30 }, ampm), "Mon/Wed at 9:30 AM");
 
 // flowTrigger picks schedule > webhook > chat > manual, ignoring disabled nodes.
 const node = (type, extra = {}) => ({ id: type, type, name: type, position: { x: 0, y: 0 }, params: {}, ...extra });

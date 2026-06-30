@@ -6,6 +6,17 @@ export type ScheduleMode = "daily" | "weekly" | "raw";
 
 export const RRULE_DAY_ORDER = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 
+/** RRULE weekday code → short label, for day-chip pickers. */
+export const RRULE_DAY_LABEL: Record<string, string> = {
+  SU: "Sun",
+  MO: "Mon",
+  TU: "Tue",
+  WE: "Wed",
+  TH: "Thu",
+  FR: "Fri",
+  SA: "Sat",
+};
+
 export function parseCodexRrule(rrule: string | null): {
   mode: ScheduleMode;
   days: string[];

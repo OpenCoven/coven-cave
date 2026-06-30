@@ -5,6 +5,7 @@ import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import {
   RRULE_DAY_ORDER,
+  RRULE_DAY_LABEL,
   buildCodexRrule,
   composeAutomationPrompt,
   type ScheduleMode,
@@ -33,15 +34,6 @@ type Props = {
   onCreate: (input: AutomationCreateInput) => void;
 };
 
-const RRULE_DAY_LABEL: Record<string, string> = {
-  SU: "Sun",
-  MO: "Mon",
-  TU: "Tue",
-  WE: "Wed",
-  TH: "Thu",
-  FR: "Fri",
-  SA: "Sat",
-};
 
 const fieldBaseClass =
   "w-full rounded-md border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
