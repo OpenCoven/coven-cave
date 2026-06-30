@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import type { DashboardModel } from "@/lib/dashboard-model";
@@ -15,6 +15,7 @@ import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { DonutChart } from "@/components/ui/charts/donut-chart";
 import { TrendChart } from "@/components/ui/charts/trend-chart";
 import { familiarMiniProfiles, familiarLoadSeries } from "@/lib/dashboard-analytics";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
 import { TodaySummary } from "@/components/dashboard/today-summary";
 import { RecentReports } from "@/components/dashboard/recent-reports";
@@ -116,10 +117,20 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   // lands — the slow ones (sessions) never block the fast ones (board, agents).
   const [ready, setReady] = useState<ReadonlySet<keyof CockpitData>>(new Set());
 
+  // Keep setState off an unmounted tree: the polled `load` may resolve after
+  // unmount. A ref survives across the stable `load` identity (a plain `let`
+  // would be recreated every render and never flip to false on cleanup).
+  const aliveRef = useRef(true);
   useEffect(() => {
-    let alive = true;
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
+
+  // Each source populates independently so a panel renders the moment its data
+  // lands. Stable identity so the poll interval isn't torn down each render.
+  const load = useCallback(() => {
     const put = <K extends keyof CockpitData>(key: K, value: CockpitData[K]) => {
-      if (!alive) return;
+      if (!aliveRef.current) return;
       setData((d) => ({ ...d, [key]: value }));
       setReady((r) => new Set(r).add(key));
     };
@@ -136,8 +147,11 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       for (const it of [...(ghAct?.items ?? []), ...(ghAssigned?.items ?? [])]) ghMap.set(it.id, it);
       put("github", [...ghMap.values()]);
     });
-    return () => { alive = false; };
   }, []);
+
+  // Initial mount load, then refresh on a paused-when-backgrounded interval.
+  useEffect(() => { load(); }, [load]);
+  usePausablePoll(load, 30_000);
 
   const now = model.date;
 
