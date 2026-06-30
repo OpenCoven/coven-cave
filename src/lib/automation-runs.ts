@@ -12,7 +12,7 @@ import path from "node:path";
  */
 export const AUTOMATION_RUNS_CAP = 200;
 
-export type AutomationRunStatus = "running" | "succeeded" | "failed";
+export type AutomationRunStatus = "queued" | "running" | "succeeded" | "failed";
 export type AutomationRunRecord = {
   id: string;
   automationId: string;

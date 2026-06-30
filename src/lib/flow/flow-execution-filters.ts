@@ -5,6 +5,7 @@ export type FlowExecutionStartedFilter = "any" | "hour" | "today" | "week";
 
 export const FLOW_EXECUTION_STATUS_FILTERS: Array<{ value: FlowExecutionStatusFilter; label: string }> = [
   { value: "all", label: "All" },
+  { value: "queued", label: "Queued" },
   { value: "running", label: "Running" },
   { value: "succeeded", label: "Succeeded" },
   { value: "failed", label: "Failed" },

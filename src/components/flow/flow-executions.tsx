@@ -17,6 +17,7 @@ import type { FlowRunRecord, FlowRunStatus } from "@/lib/flows";
 
 const STATUS_LABEL: Record<FlowRunStatus, string> = {
   preview: "Preview",
+  queued: "Queued",
   running: "Running",
   succeeded: "Succeeded",
   failed: "Failed",
@@ -60,6 +61,7 @@ export function FlowExecutions({
     const next: Record<FlowExecutionStatusFilter, number> = {
       all: runs.length,
       preview: 0,
+      queued: 0,
       running: 0,
       succeeded: 0,
       failed: 0,

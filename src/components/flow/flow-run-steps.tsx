@@ -10,6 +10,7 @@ import { stripStepMarkers } from "@/lib/workflow-step-progress";
 
 const STATUS_LABEL: Record<FlowRunRecord["status"], string> = {
   preview: "Preview",
+  queued: "Queued",
   running: "Running",
   succeeded: "Succeeded",
   failed: "Failed",

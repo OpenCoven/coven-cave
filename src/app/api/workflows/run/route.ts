@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
-import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
+import {
+  bindingFor,
+  enqueueOfflineTravelItem,
+  loadConfig,
+  recordSessionFamiliar,
+  setSessionTitle,
+} from "@/lib/cave-config";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
+import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
 import { loadLocalWorkflowList } from "@/lib/workflow-source";
@@ -33,8 +40,56 @@ async function resolveWorkflow(body: RunBody): Promise<WorkflowSummary | null> {
   );
 }
 
+async function maybeQueueOfflineWorkflow(body: RunBody, workflow: WorkflowSummary | null): Promise<Response | null> {
+  const config = await loadConfig();
+  const travelStatus = await travelLocalQueueStatus(config);
+  if (!travelStatus) return null;
+
+  const workflowId = workflow?.id ?? body.id ?? body.path ?? "unknown";
+  const queued = await enqueueOfflineTravelItem({
+    kind: "workflow",
+    summary: workflow?.name ? `Workflow: ${workflow.name}` : `Workflow: ${workflowId}`,
+    payload: {
+      route: "/api/workflows/run",
+      body,
+      workflow: workflow
+        ? {
+            id: workflow.id,
+            name: workflow.name,
+            version: workflow.version,
+            path: workflow.path,
+          }
+        : null,
+    },
+  });
+  const run = await recordRun({
+    workflowId,
+    version: workflow?.version,
+    kind: "execution",
+    status: "queued",
+    startedAt: queued.createdAt,
+    steps: (workflow?.steps ?? []).map((step) => ({
+      id: step.id,
+      kind: step.kind,
+      status: "ready" as const,
+    })),
+    summary: `queued offline ${queued.id}`,
+    source: "cave",
+  });
+
+  return NextResponse.json({
+    ok: true,
+    queued: true,
+    queueItem: queued,
+    run,
+    executor: "travel-queue",
+    travel: { reason: travelStatus.reason },
+  });
+}
+
 /**
- * Execute a workflow. Two executors, daemon-first:
+ * Execute a workflow. Travel-local clients queue work first; online execution
+ * still uses two executors, daemon-first:
  *
  *  1. The daemon's native workflow engine (`/api/v1/workflows/run`), if it ever
  *     lands. Forward-compatible — when present, we use it verbatim.
@@ -71,6 +126,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: blocked }, { status: 400 });
     }
   }
+  const offlineWorkflowResponse = await maybeQueueOfflineWorkflow(body, gateWorkflow);
+  if (offlineWorkflowResponse) return offlineWorkflowResponse;
 
   // 1. Native daemon engine first (forward-compatible).
   const engine = await callDaemon<DaemonRunResponse>({

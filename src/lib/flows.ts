@@ -9,7 +9,7 @@ import type { FlowExecutionMode } from "./flow/flow-compile.ts";
 
 export type { FlowDoc, FlowNode, FlowEdge } from "./flow/flow-doc.ts";
 
-export type FlowRunStatus = "preview" | "running" | "succeeded" | "failed";
+export type FlowRunStatus = "preview" | "queued" | "running" | "succeeded" | "failed";
 
 export type FlowRunStepStatus = "pending" | "running" | "succeeded" | "failed" | "skipped";
 
@@ -48,9 +48,10 @@ export type FlowMutationResponse = { ok: boolean; error?: string };
 export type FlowRunsResponse = { ok: boolean; runs: FlowRunRecord[]; error?: string };
 export type FlowRunResponse = {
   ok: boolean;
-  executor?: "session" | "engine";
+  executor?: "session" | "engine" | "travel-queue";
   sessionId?: string;
   run?: FlowRunRecord;
+  queued?: boolean;
   unavailable?: boolean;
   error?: string;
 };

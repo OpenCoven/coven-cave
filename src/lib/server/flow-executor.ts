@@ -1,4 +1,11 @@
-import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
+import {
+  bindingFor,
+  enqueueOfflineTravelItem,
+  loadConfig,
+  recordSessionFamiliar,
+  setSessionTitle,
+  type CaveTravelQueueItem,
+} from "@/lib/cave-config";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { catalogNode } from "@/lib/flow/flow-catalog";
 import {
@@ -18,13 +25,16 @@ import { extractFlowCustomData } from "@/lib/flow/flow-execution-data";
 import type { FlowRunRecord, FlowRunStepStatus } from "@/lib/flows";
 import { recordFlowRun } from "@/lib/server/flow-store";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
+import { travelLocalQueueStatus } from "@/lib/travel-offline-queue";
 
 export type StartFlowSessionResult = {
   ok: boolean;
   status?: number;
-  executor?: "session";
+  executor?: "session" | "travel-queue";
   sessionId?: string;
   run?: FlowRunRecord;
+  queued?: boolean;
+  queueItem?: CaveTravelQueueItem;
   unavailable?: boolean;
   error?: string;
 };
@@ -86,6 +96,44 @@ export async function startFlowSession(
       ok: false,
       error: `harness '${binding.harness}' can't run as an agent session`,
       status: 409,
+    };
+  }
+  const travelStatus = await travelLocalQueueStatus(config);
+  if (travelStatus) {
+    const order = options.targetNodeId ? flowPartialExecutionOrder(flow, options.targetNodeId) : flowExecutionOrder(flow);
+    const byId = new Map(flow.nodes.map((node) => [node.id, node]));
+    const queued = await enqueueOfflineTravelItem({
+      kind: "workflow",
+      summary: options.targetNodeId ? `Flow step: ${flow.name} / ${options.targetNodeId}` : `Flow: ${flow.name}`,
+      payload: {
+        route: "flow-session",
+        flow,
+        options,
+        familiarId,
+        harness: binding.harness,
+      },
+    });
+    const run = await recordFlowRun({
+      flowId: flow.id,
+      flowName: flow.name,
+      status: "queued",
+      mode: options.mode ?? "manual",
+      startedAt: queued.createdAt,
+      steps: order.map((stepId) => ({
+        id: stepId,
+        type: byId.get(stepId)?.type ?? "unknown",
+        status: "pending",
+      })),
+      summary: `queued offline ${queued.id}`,
+      source: "cave",
+      flowSnapshot: flow,
+    });
+    return {
+      ok: true,
+      executor: "travel-queue",
+      queued: true,
+      queueItem: queued,
+      run,
     };
   }
 

@@ -1064,7 +1064,7 @@ function CodexDetailPanel({
                     className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[12px] hover:bg-white/5"
                   >
                     <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background:
-                      r.status === "succeeded" ? "var(--accent-presence)" : r.status === "failed" ? "var(--color-danger)" : "var(--text-muted)" }} />
+                      r.status === "succeeded" ? "var(--accent-presence)" : r.status === "failed" ? "var(--color-danger)" : r.status === "queued" ? "var(--color-warning)" : "var(--text-muted)" }} />
                     <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
                     {r.summary && <span className="truncate" style={{ color: "var(--text-muted)" }}>{r.summary}</span>}
                     <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
@@ -1190,6 +1190,7 @@ function AutomationScheduleRow({
           <span className="shrink-0 text-[11px]" title={lastRun.startedAt ? formatTimestamp(lastRun.startedAt, readDateTimePrefs()) : undefined} style={{ color:
             lastRun.status === "failed" ? "var(--color-danger)"
             : lastRun.status === "running" ? "var(--accent-presence)"
+            : lastRun.status === "queued" ? "var(--color-warning)"
             : "var(--text-muted)" }}>
             Run {relTime(lastRun.startedAt)}
           </span>
