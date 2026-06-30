@@ -354,6 +354,80 @@ export function renderCovenRoster(
 }
 
 // ---------------------------------------------------------------------------
+// Coven relay (pure) — what other familiars just said
+// ---------------------------------------------------------------------------
+
+/** Max prior user-rounds of cross-familiar transcript to relay into a prompt.
+ *  Token growth is ~quadratic (coven size × rounds), so window conservatively;
+ *  oldest rounds are dropped first. */
+export const COVEN_RELAY_WINDOW = 3;
+
+/**
+ * Render the recent coven transcript for ONE receiving familiar, so it can see
+ * and build on what the OTHER participants just said (the roster says who is
+ * present; this says what was said). Pairs with {@link renderCovenRoster}.
+ *
+ * Third-person, named, with an explicit stay-yourself guard (Coven canon).
+ * Excludes the receiving familiar's own turns (already in its resumed session),
+ * keeps only settled non-empty replies, and windows to the last N rounds. The
+ * caller passes already-cleaned reply text (next-paths block stripped) so this
+ * stays dependency-free. Returns "" when there is nothing to relay.
+ */
+export function renderCovenContext(
+  transcript: GroupTurn[],
+  receivingFamiliarId: string,
+  participants: MentionableFamiliar[],
+  opts?: { window?: number },
+): string {
+  const window = Math.max(0, opts?.window ?? COVEN_RELAY_WINDOW);
+  if (window === 0) return "";
+  const nameOf = (id: string): string =>
+    participants.find((p) => p.id === id)?.name ?? id;
+
+  type Round = { user: GroupUserTurn; replies: GroupReply[] };
+  const rounds: Round[] = [];
+  const byUserId = new Map<string, Round>();
+  for (const turn of transcript) {
+    if (turn.role === "user") {
+      const round: Round = { user: turn, replies: [] };
+      rounds.push(round);
+      byUserId.set(turn.id, round);
+    } else {
+      byUserId.get(turn.replyTo)?.replies.push(turn);
+    }
+  }
+
+  const kept = rounds
+    .map((r) => ({
+      user: r.user,
+      replies: r.replies.filter(
+        (rep) =>
+          rep.status === "done" &&
+          rep.text.trim() !== "" &&
+          rep.familiarId !== receivingFamiliarId,
+      ),
+    }))
+    .filter((r) => r.replies.length > 0);
+
+  if (kept.length === 0) return "";
+  const windowed = kept.slice(-window);
+
+  const guard =
+    "In this coven, other participants have already responded below. Read what they said, then answer as yourself — in your own identity and lane. You may reference or build on their replies, but do not repeat their words as your own or speak for them.";
+
+  const blocks = windowed.map((r) => {
+    const lines: string[] = [`(human) asked: "${r.user.text.trim()}"`];
+    for (const rep of r.replies) {
+      lines.push(`${nameOf(rep.familiarId)} said:`);
+      lines.push(rep.text.trim());
+    }
+    return lines.join("\n");
+  });
+
+  return `<coven_transcript>\n${guard}\n\n${blocks.join("\n\n")}\n</coven_transcript>`;
+}
+
+// ---------------------------------------------------------------------------
 // Persistence (thin localStorage wrappers — safe to call client-side only)
 // ---------------------------------------------------------------------------
 

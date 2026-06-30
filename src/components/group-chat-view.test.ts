@@ -22,6 +22,10 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
   assert.match(view, /abortRef\.current\?\.abort\(\)/, "Stop aborts the broadcast");
   // Injects the coven roster into each send so a familiar knows who else is present.
   assert.match(view, /renderCovenRoster\(rosterParticipants, r\.familiarId\)/, "injects the per-familiar coven roster");
+  // Full-coven broadcasts relay sequentially so each familiar sees peers' fresh replies.
+  assert.match(view, /const shouldRelay = mentioned\.length === 0 && replies\.length > 1/, "gates relay to full-coven broadcasts");
+  assert.match(view, /for \(const r of replies\)/, "relays sequentially when gated on");
+  assert.match(view, /renderCovenContext\(contextTurns, r\.familiarId/, "injects peers' prior replies as transcript");
   // Strips the piggybacked next-paths block (visible) and surfaces the parsed
   // lines (suggestions) so control markup never leaks and chips can render.
   assert.match(

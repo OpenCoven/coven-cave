@@ -11,9 +11,11 @@ import {
   setGroupParticipants,
   parseMentions,
   renderCovenRoster,
+  renderCovenContext,
   findActiveMention,
   matchMentions,
   applyMention,
+  type GroupTurn,
   type GroupReply,
   type MentionableFamiliar,
   type RosterParticipant,
@@ -266,4 +268,75 @@ test("renderCovenRoster: returns '' for a degenerate roster (<= 1 participant)",
     renderCovenRoster([{ id: "nova", name: "Nova", role: "Lead", kind: "familiar" }], "nova"),
     "",
   );
+});
+
+const NAMES: MentionableFamiliar[] = [
+  { id: "nova", name: "Nova" },
+  { id: "charm", name: "Charm" },
+];
+const user = (id: string, text: string): GroupTurn => ({ id, role: "user", text, createdAt: "t" });
+const reply = (
+  id: string,
+  familiarId: string,
+  replyTo: string,
+  text: string,
+  status: GroupReply["status"] = "done",
+): GroupTurn => ({ id, role: "assistant", familiarId, replyTo, sessionId: null, text, status, createdAt: "t" });
+
+function roundTranscript(): GroupTurn[] {
+  return [
+    user("u1", "how many are here?"),
+    reply("r1", "nova", "u1", "Three: you, me, and Charm."),
+    reply("r2", "charm", "u1", "Agreed — three of us."),
+  ];
+}
+
+test("renderCovenContext: excludes the receiving familiar's own turns", () => {
+  const out = renderCovenContext(roundTranscript(), "nova", NAMES);
+  assert.match(out, /Charm said:/);
+  assert.doesNotMatch(out, /Nova said:/); // nova is the receiver
+  assert.match(out, /Three of us|three of us|Agreed/);
+});
+
+test("renderCovenContext: third-person framing with a stay-yourself guard, never 'you said'", () => {
+  const out = renderCovenContext(roundTranscript(), "nova", NAMES);
+  assert.match(out, /said:/);
+  assert.match(out, /answer as yourself/i);
+  assert.doesNotMatch(out, /you said/i);
+  assert.match(out, /<coven_transcript>[\s\S]*<\/coven_transcript>/);
+});
+
+test("renderCovenContext: windows to the last N rounds, oldest dropped", () => {
+  const turns: GroupTurn[] = [];
+  for (let i = 1; i <= 5; i++) {
+    turns.push(user(`u${i}`, `q${i}`));
+    turns.push(reply(`r${i}`, "charm", `u${i}`, `answer ${i}`));
+  }
+  const out = renderCovenContext(turns, "nova", NAMES, { window: 2 });
+  assert.match(out, /answer 5/);
+  assert.match(out, /answer 4/);
+  assert.doesNotMatch(out, /answer 3/);
+});
+
+test("renderCovenContext: returns '' for empty, only-own, or unsettled transcripts", () => {
+  assert.equal(renderCovenContext([], "nova", NAMES), "");
+  // only the receiver's own turns
+  assert.equal(
+    renderCovenContext([user("u1", "hi"), reply("r1", "nova", "u1", "hello")], "nova", NAMES),
+    "",
+  );
+  // peer reply still streaming / empty → not relayed
+  assert.equal(
+    renderCovenContext(
+      [user("u1", "hi"), reply("r1", "charm", "u1", "partial", "streaming"), reply("r2", "charm", "u1", "  ", "done")],
+      "nova",
+      NAMES,
+    ),
+    "",
+  );
+});
+
+test("renderCovenContext: falls back to the raw id when a name is unknown", () => {
+  const out = renderCovenContext(roundTranscript(), "nova", []);
+  assert.match(out, /charm said:/); // no name map → raw id
 });
