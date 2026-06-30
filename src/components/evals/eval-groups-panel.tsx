@@ -14,7 +14,7 @@ import {
 
 type Props = {
   groups: EvalGroup[];
-  states: ThreadEvalState[];
+  statesById: Map<string, ThreadEvalState[]>;
   familiars: ResolvedFamiliar[];
   onChanged: () => void;
 };
@@ -60,7 +60,7 @@ function newGroup(rubricVersion: string): EvalGroup {
   };
 }
 
-export function EvalGroupsPanel({ groups, states, familiars, onChanged }: Props) {
+export function EvalGroupsPanel({ groups, statesById, familiars, onChanged }: Props) {
   const [draft, setDraft] = useState<EvalGroup | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -72,8 +72,8 @@ export function EvalGroupsPanel({ groups, states, familiars, onChanged }: Props)
   );
 
   const rollups = useMemo(
-    () => new Map(groups.map((group) => [group.id, rollupEvalGroup(group, states)])),
-    [groups, states],
+    () => new Map(groups.map((group) => [group.id, rollupEvalGroup(group, statesById.get(group.id) ?? [])])),
+    [groups, statesById],
   );
 
   const existingRubric = groups[0]?.rubricVersion ?? "v1";
@@ -144,10 +144,11 @@ export function EvalGroupsPanel({ groups, states, familiars, onChanged }: Props)
   }, [draft, onChanged]);
 
   const remove = useCallback(
-    async (id: string) => {
+    async (group: EvalGroup) => {
+      if (typeof window !== "undefined" && !window.confirm(`Delete eval group "${group.name}"?`)) return;
       try {
-        await fetch(`/api/evals/groups?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-        if (draft?.id === id) setDraft(null);
+        await fetch(`/api/evals/groups?id=${encodeURIComponent(group.id)}`, { method: "DELETE" });
+        if (draft?.id === group.id) setDraft(null);
         onChanged();
       } catch {
         // best-effort; the list refetch will reflect reality
@@ -309,7 +310,7 @@ export function EvalGroupsPanel({ groups, states, familiars, onChanged }: Props)
                   <button type="button" className="evals-icon-btn" onClick={() => startEdit(group)} title="Edit group" aria-label="Edit group">
                     <Icon name="ph:pencil-simple" width={13} />
                   </button>
-                  <button type="button" className="evals-icon-btn" onClick={() => void remove(group.id)} title="Delete group" aria-label="Delete group">
+                  <button type="button" className="evals-icon-btn" onClick={() => void remove(group)} title="Delete group" aria-label="Delete group">
                     <Icon name="ph:trash" width={13} />
                   </button>
                 </div>

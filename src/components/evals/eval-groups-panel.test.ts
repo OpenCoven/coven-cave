@@ -11,7 +11,7 @@ const source = readFileSync(new URL("./eval-groups-panel.tsx", import.meta.url),
 assert.match(source, /"use client"/, "is a client component");
 assert.match(source, /export function EvalGroupsPanel/, "exports the panel");
 assert.match(source, /groups: EvalGroup\[\]/, "receives the groups list");
-assert.match(source, /states: (readonly )?ThreadEvalState\[\]/, "receives derived thread eval states");
+assert.match(source, /statesById: Map<string, ThreadEvalState\[\]>/, "receives derived thread eval states scoped per group id");
 assert.match(source, /familiars: ResolvedFamiliar\[\]/, "receives the familiars prop for member selection");
 assert.match(source, /onChanged/, "calls back to refetch groups after a mutation");
 

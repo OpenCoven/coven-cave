@@ -141,18 +141,13 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     () => activeGroup ? rollupEvalGroup(activeGroup, activeGroupStates) : null,
     [activeGroup, activeGroupStates],
   );
-  // Union of every group's derived thread states (deduped by thread) so the
-  // Groups panel can roll each group up against a single states array; the
-  // rollup scopes itself to the group's own thread members.
-  const allGroupStates = useMemo(() => {
-    const byThread = new Map<string, ThreadEvalState>();
-    for (const group of groups) {
-      for (const state of deriveEvalGroupStates(group, threadSnapshots)) {
-        byThread.set(state.threadId, state);
-      }
-    }
-    return [...byThread.values()];
-  }, [groups, threadSnapshots]);
+  // Each group rolls up against its OWN derived thread states. A shared union
+  // would make every group that has no thread members (rollupEvalGroup's
+  // size===0 fallthrough) count every other group's threads.
+  const groupStatesById = useMemo(
+    () => new Map(groups.map((g) => [g.id, deriveEvalGroupStates(g, threadSnapshots)])),
+    [groups, threadSnapshots],
+  );
   const familiarName = (familiars.find((f) => f.id === familiarId)?.display_name ?? familiarId) || "Familiar";
   const activeLoopState = retroSnapshot.familiars.find((familiar) => familiar.familiarId === familiarId) ?? null;
   const analysis = useMemo(
@@ -560,7 +555,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
         ) : (
           <EvalGroupsPanel
             groups={groups}
-            states={allGroupStates}
+            statesById={groupStatesById}
             familiars={familiars}
             onChanged={reloadGroups}
           />
