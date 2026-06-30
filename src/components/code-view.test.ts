@@ -8,6 +8,7 @@ import { readFile } from "node:fs/promises";
 const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const codeSidebar = await readFile(new URL("./code-sidebar.tsx", import.meta.url), "utf8");
 const comux = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const preset = await readFile(new URL("../lib/code-layout-preset.ts", import.meta.url), "utf8");
@@ -58,13 +59,59 @@ assert.match(chatSurface, /isCodeSurface \? \([\s\S]*?<CodeInlineToolbar \/>/, "
 assert.match(toolbar, /code-panel-toggle/, "the toolbar includes the companion-panel toggle");
 assert.match(toolbar, /cave:toggle-right-panel/, "the panel toggle asks the shell to toggle the companion panel");
 
-// ── The projects list is merged into the file-explorer column (in comux) ──────
-// It's a collapsible "Projects" section above the file tree, sharing one column
-// with it (no separate 200px column / rail). The Code toolbar no longer carries
-// the toggle; it drives the section's collapse via projectListCollapsed.
+// ── Code mode owns project/thread nav in the primary sidebar ─────────────────
+// The app shell swaps the far-left application menu for CodeSidebar when
+// mode === "code"; comux keeps file/search/diff concerns and hides its internal
+// project/session navigator in that mode.
+assert.match(workspace, /import \{ CodeSidebar \}/, "Workspace imports the CodeSidebar");
+assert.match(
+  workspace,
+  /const codeSidebar = \([\s\S]*?<CodeSidebar[\s\S]*?onBack=\{exitCodeMode\}/,
+  "Workspace builds a CodeSidebar with a back action",
+);
+assert.match(
+  workspace,
+  /nav=\{mode === "code" \? codeSidebar : sidebar\}/,
+  "Code mode replaces the primary nav slot instead of supplementing it",
+);
+assert.match(
+  workspace,
+  /const \[lastNonCodeMode, setLastNonCodeMode\] = useState<WorkspaceMode>\("home"\)/,
+  "Workspace tracks the previous non-Code surface for Back",
+);
+assert.match(
+  workspace,
+  /const exitCodeMode = useCallback\(\(\) => \{[\s\S]*?setMode\(lastNonCodeMode === "code" \? "home" : lastNonCodeMode\)/,
+  "Back exits Code to the previous non-Code surface with Home fallback",
+);
+assert.match(
+  codeSidebar,
+  /export function CodeSidebar/,
+  "CodeSidebar is a dedicated component",
+);
+assert.match(codeSidebar, /aria-label="Back to previous surface"/, "CodeSidebar exposes the Back control");
+assert.match(codeSidebar, /aria-label="Code projects and threads"/, "CodeSidebar names its project/thread navigator");
+assert.match(codeSidebar, /cave:code-select-project/, "CodeSidebar announces project selection to the Code surface");
+assert.match(codeSidebar, /onOpenSession\(session\)/, "CodeSidebar opens thread rows through the workspace/session bridge");
+assert.match(
+  workspace,
+  /<ComuxView[\s\S]*?view="projects"[\s\S]*?hideProjectNavigator/,
+  "Code-mode ComuxView hides duplicate project/thread navigation",
+);
+assert.match(comux, /hideProjectNavigator\?: boolean/, "ComuxView accepts hideProjectNavigator");
+assert.match(comux, /if \(hideProjectNavigator\) return;/, "Comux project-list shortcuts are disabled when hidden");
+assert.match(comux, /cave:code-select-project/, "Comux listens for CodeSidebar project selection");
+assert.match(
+  comux,
+  /\{!hideProjectNavigator && \([\s\S]*?Projects — merged into this column/,
+  "Comux wraps the project switcher in the hideProjectNavigator guard",
+);
+assert.match(
+  comux,
+  /\{!hideProjectNavigator && \([\s\S]*?Recent sessions/,
+  "Comux wraps duplicate recent sessions in the hideProjectNavigator guard",
+);
 assert.doesNotMatch(codeView, /toggleProjects|aria-label=\{?"?(Hide|Show) projects/i, "the collapse toggle is not in the Code toolbar anymore");
-assert.match(comux, /onClick=\{\(\) => setProjectListVisible\(projectListCollapsed\)\}/, "the merged Projects section header toggles its own collapse");
-assert.match(comux, /comux-project-row/, "the projects list renders project rows in the explorer column");
 // Right-click a project row → a context menu with cwd-scoped actions. The row
 // is an extracted SortableProjectRow; the wiring lives in the onRowContextMenu
 // callback passed to it.
