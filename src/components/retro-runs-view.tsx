@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useMinuteTick } from "@/lib/use-minute-tick";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { RetroOutcome, RetroRun, RetroRunsSnapshot, RetroTrack } from "@/lib/retro-runs";
 
@@ -122,6 +124,7 @@ export function RetroRunsView({
   embedded?: boolean;
 }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  useMinuteTick();    // keep "last run … ago" / "never" labels current between polls
   const [snapshot, setSnapshot] = useState<RetroRunsSnapshot>(EMPTY_SNAPSHOT);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -131,16 +134,24 @@ export function RetroRunsView({
   const [outcome, setOutcome] = useState<OutcomeFilter>("all");
   const apiPath = familiarId ? `/api/retro-runs?familiarId=${encodeURIComponent(familiarId)}` : "/api/retro-runs";
 
-  async function load({ quiet = false } = {}) {
+  // `silentError` is for background polls: a transient poll failure must not
+  // replace a good snapshot with an error callout. Explicit loads/refreshes
+  // keep surfacing errors as before.
+  async function load({ quiet = false, silentError = false } = {}) {
     if (quiet) setRefreshing(true);
     else setLoading(true);
     try {
       const res = await fetch(apiPath, { cache: "no-store" });
       const json = (await res.json()) as RetroApiResponse;
-      setSnapshot(json.snapshot ?? EMPTY_SNAPSHOT);
-      setError(json.ok ? null : json.error ?? "retro runs unavailable");
+      if (json.ok) {
+        setSnapshot(json.snapshot ?? EMPTY_SNAPSHOT);
+        setError(null);
+      } else if (!silentError) {
+        setSnapshot(json.snapshot ?? EMPTY_SNAPSHOT);
+        setError(json.error ?? "retro runs unavailable");
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "retro runs unavailable");
+      if (!silentError) setError(err instanceof Error ? err.message : "retro runs unavailable");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -150,6 +161,12 @@ export function RetroRunsView({
   useEffect(() => {
     void load();
   }, [apiPath]);
+
+  // Live refresh so "running" indicators and "last run" labels stay current
+  // without a manual reload: poll fast while any familiar is mid-run, slower
+  // when idle. usePausablePoll suspends on hidden tabs and refreshes on focus.
+  const anyRunning = snapshot.summary.runningFamiliars > 0;
+  usePausablePoll(() => { void load({ quiet: true, silentError: true }); }, anyRunning ? 5000 : 30_000);
 
   const filteredRuns = useMemo(() => {
     const q = query.trim().toLowerCase();
