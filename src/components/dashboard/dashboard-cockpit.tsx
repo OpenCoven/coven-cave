@@ -12,6 +12,7 @@ import { relativeTime } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { SectionHead, EmptyState, QuickLink } from "@/components/daily-report-ui";
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
+import { DonutChart } from "@/components/ui/charts/donut-chart";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
 import { TodaySummary } from "@/components/dashboard/today-summary";
 import { RecentReports } from "@/components/dashboard/recent-reports";
@@ -399,12 +400,11 @@ function BoardSnapshot({ byStatus, total, active, loaded, familiars }: {
   const famName = (id: string | null) => familiars.find((f) => f.id === id)?.display_name;
   return (
     <>
-      <div className="cockpit-bar" role="img" aria-label="Board status distribution">
-        {segs.map(({ s, n }) => (
-          <span key={s} className="cockpit-bar__seg" title={`${STATUS_META[s].label}: ${n}`}
-            style={{ flexGrow: n, background: STATUS_META[s].color }} />
-        ))}
-      </div>
+      <DonutChart
+        data={segs.map(({ s, n }) => ({ label: STATUS_META[s].label, value: n, color: STATUS_META[s].color }))}
+        size={132}
+        thickness={18}
+      />
       <div className="cockpit-bar__legend">
         {segs.map(({ s, n }) => (
           <span key={s} className="cockpit-legend">
