@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { useMemo, useRef, useState } from "react";
+import { Icon, type IconName } from "@/lib/icon";
 import { deriveComuxProjects, type ComuxProject } from "@/lib/comux-projects";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
+import { useSessionPins } from "@/lib/use-session-pins";
+import { toggleSessionPin } from "@/lib/session-pins";
 import type { SessionRow } from "@/lib/types";
 
 type Props = {
@@ -27,7 +29,7 @@ function statusClass(status: string): string {
   return "bg-[var(--text-muted)]";
 }
 
-function threadLeadingIcon(title: string): string | null {
+function threadLeadingIcon(title: string): IconName | null {
   if (/^\s*resolve\s+pr\b|\bpr\s*#?\d+/i.test(title)) return "ph:git-pull-request";
   if (/\bbranch\b|\bmerge\b|\brebase\b/i.test(title)) return "ph:git-branch";
   return null;
@@ -53,6 +55,15 @@ export function CodeSidebar({
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
 
   const projects = useMemo(() => deriveComuxProjects(sessions), [sessions]);
+  const pinnedIds = useSessionPins();
+  const [showAllByRoot, setShowAllByRoot] = useState<Set<string>>(() => new Set());
+  const THREADS_PREVIEW = 5;
+  const pinnedSessions = useMemo(
+    () => pinnedIds
+      .map((id) => sessions.find((s) => s.id === id))
+      .filter((s): s is SessionRow => Boolean(s)),
+    [pinnedIds, sessions],
+  );
   const visibleProjects = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return projects;
@@ -136,6 +147,30 @@ export function CodeSidebar({
       </div>
 
       <nav aria-label="Code projects and threads" className="min-h-0 flex-1 overflow-y-auto pb-2">
+        {pinnedSessions.length > 0 ? (
+          <section aria-label="Pinned threads" className="border-b border-[var(--border-hairline)] py-1">
+            <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Pinned</div>
+            <ul>
+              {pinnedSessions.map((session) => {
+                const title = sessionRailTitle(session);
+                const active = activeSessionId === session.id;
+                return (
+                  <li key={`pin-${session.id}`}>
+                    <button
+                      type="button"
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => onOpenSession(session)}
+                      className={`focus-ring flex min-h-[32px] w-full items-center gap-1.5 py-1.5 pl-3 pr-2 text-left text-[12px] ${active ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]"}`}
+                    >
+                      <Icon name="ph:push-pin-fill" width={11} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
         {visibleProjects.length === 0 ? (
           <p className="px-3 py-4 text-center text-[11px] text-[var(--text-muted)]">
             No code projects yet.
@@ -183,9 +218,10 @@ export function CodeSidebar({
                       <p className="py-1 pl-8 pr-3 text-[11px] text-[var(--text-muted)]">No threads yet.</p>
                     ) : (
                       <ul>
-                        {projectSessions.map((session) => {
+                        {(showAllByRoot.has(project.root) ? projectSessions : projectSessions.slice(0, THREADS_PREVIEW)).map((session) => {
                           const title = sessionRailTitle(session);
                           const active = activeSessionId === session.id;
+                          const isPinnedRow = pinnedIds.includes(session.id);
                           const confirming = confirmingSessionId === session.id;
                           const deleting = deletingSessionId === session.id;
                           return (
@@ -249,20 +285,42 @@ export function CodeSidebar({
                                     </button>
                                   </span>
                                 ) : (
-                                  <button
-                                    type="button"
-                                    title="Delete thread"
-                                    aria-label={`Delete thread ${title}`}
-                                    onClick={() => setConfirmingSessionId(session.id)}
-                                    className="touch-always-visible focus-ring mr-1 grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-55 transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/code-thread:opacity-100"
-                                  >
-                                    <Icon name="ph:x-bold" width={10} aria-hidden />
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      title={isPinnedRow ? "Unpin thread" : "Pin thread"}
+                                      aria-label={isPinnedRow ? `Unpin ${title}` : `Pin ${title}`}
+                                      onClick={() => toggleSessionPin(session.id)}
+                                      className="touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover/code-thread:opacity-100"
+                                    >
+                                      <Icon name={isPinnedRow ? "ph:push-pin-fill" : "ph:push-pin"} width={11} aria-hidden />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Delete thread"
+                                      aria-label={`Delete thread ${title}`}
+                                      onClick={() => setConfirmingSessionId(session.id)}
+                                      className="touch-always-visible focus-ring mr-1 grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-55 transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/code-thread:opacity-100"
+                                    >
+                                      <Icon name="ph:x-bold" width={10} aria-hidden />
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </li>
                           );
                         })}
+                        {projectSessions.length > THREADS_PREVIEW && !showAllByRoot.has(project.root) ? (
+                          <li>
+                            <button
+                              type="button"
+                              onClick={() => setShowAllByRoot((cur) => new Set(cur).add(project.root))}
+                              className="focus-ring w-full py-1.5 pl-8 pr-3 text-left text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                            >
+                              Show more
+                            </button>
+                          </li>
+                        ) : null}
                       </ul>
                     )
                   ) : null}
