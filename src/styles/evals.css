@@ -281,19 +281,23 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(120px, 1fr));
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border-hairline);
-  background: var(--bg-base);
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--accent-presence) 5%, var(--bg-base)), var(--bg-base));
 }
 .evals-analysis-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 2px 8px;
   min-width: 0;
-  padding: var(--space-2);
+  padding: 11px 12px;
   border: 1px solid var(--border-hairline);
-  border-radius: var(--radius-control);
-  background: var(--bg-raised);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--foreground) 4%, transparent), transparent),
+    color-mix(in oklch, var(--bg-raised) 88%, var(--bg-base));
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 .evals-analysis-card svg {
   grid-row: span 3;
@@ -335,14 +339,25 @@
 }
 .evals-loop-analysis {
   display: grid;
-  grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
-  gap: var(--space-3);
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  align-content: start;
+  gap: 16px;
+  background:
+    radial-gradient(circle at 12% 0%, color-mix(in oklch, var(--accent-presence) 13%, transparent), transparent 310px),
+    linear-gradient(180deg, color-mix(in oklch, var(--bg-panel) 60%, var(--bg-base)), var(--bg-base) 42%);
 }
-.evals-loop-analysis > .retro-surface {
+.evals-loop-analysis > .retro-surface.retro-surface--embedded {
   grid-column: 1 / -1;
-  min-height: 420px;
+  height: auto;
+  min-height: 260px;
+  padding: 14px;
+  overflow: visible;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--foreground) 3%, transparent), transparent),
+    color-mix(in oklch, var(--bg-raised) 70%, var(--bg-base));
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent);
 }
 .evals-thread-freshness {
   display: flex;
@@ -353,14 +368,19 @@
   min-width: 0;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-panel);
-  background: var(--bg-raised);
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--foreground) 3%, transparent), transparent),
+    color-mix(in oklch, var(--bg-raised) 82%, var(--bg-base));
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 5%, transparent),
+    0 18px 48px color-mix(in oklch, black 16%, transparent);
 }
 .evals-section-head {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  padding: var(--space-3);
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border-hairline);
 }
 .evals-section-head b {
@@ -399,8 +419,8 @@
 .evals-loop-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-  padding: var(--space-3);
+  gap: 10px;
+  padding: 16px;
   border-bottom: 1px solid var(--border-hairline);
 }
 .evals-loop-run-list {
@@ -433,6 +453,115 @@
 }
 .evals-loop-control {
   overflow: hidden;
+}
+.evals-loop-control .eval-loop-panel {
+  min-height: 100%;
+  padding: 16px;
+}
+.evals-loop-control .eval-loop-panel > div:first-child {
+  min-height: 30px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.evals-loop-analysis .evals-runs-empty {
+  margin: 0;
+  padding: 48px 16px;
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+}
+.retro-surface--embedded .retro-hero {
+  align-items: center;
+  margin: 0 0 12px;
+  padding: 0 2px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.retro-surface--embedded .retro-hero__copy {
+  max-width: none;
+}
+.retro-surface--embedded .retro-eyebrow {
+  margin-bottom: 5px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+.retro-surface--embedded .retro-hero h2 {
+  font-size: 18px;
+  line-height: 1.18;
+}
+.retro-surface--embedded .retro-hero p:not(.retro-eyebrow) {
+  margin-top: 4px;
+  max-width: 72ch;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.retro-surface--embedded .retro-hero__actions {
+  align-self: center;
+}
+.retro-surface--embedded .retro-icon-btn,
+.retro-surface--embedded .retro-btn {
+  height: 32px;
+}
+.retro-surface--embedded .retro-icon-btn {
+  width: 32px;
+}
+.retro-surface--embedded .retro-btn {
+  padding-inline: 11px;
+  font-size: 12px;
+}
+.retro-surface--embedded .retro-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.retro-surface--embedded .retro-metric {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 9px;
+  align-items: center;
+  padding: 10px 11px;
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-elevated) 54%, transparent);
+}
+.retro-surface--embedded .retro-metric svg {
+  grid-row: span 2;
+}
+.retro-surface--embedded .retro-metric span {
+  margin: 0;
+  overflow: hidden;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.retro-surface--embedded .retro-metric p {
+  margin: 0;
+  font-size: 11px;
+}
+.retro-surface--embedded .retro-controls {
+  grid-template-columns: minmax(260px, 1fr) auto minmax(150px, auto);
+  margin-bottom: 12px;
+}
+.retro-surface--embedded .retro-content--ledger {
+  display: block;
+}
+.retro-surface--embedded .retro-runs-list {
+  gap: 8px;
+}
+.retro-surface--embedded .retro-run-row {
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--bg-panel) 44%, var(--bg-raised));
+}
+.retro-surface--embedded .retro-run-row__main {
+  padding: 11px 12px;
+}
+.retro-surface--embedded .retro-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.retro-surface--embedded .retro-run-row__summary {
+  margin-top: 9px;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 /* ---- Eval groups -------------------------------------------------------- */
@@ -825,13 +954,51 @@
     align-items: stretch;
     flex-direction: column;
   }
-  .evals-analysis-summary,
+  .evals-analysis-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .evals-overview,
   .evals-loop-analysis {
     grid-template-columns: 1fr;
   }
+  .evals-loop-analysis {
+    overflow-x: hidden;
+    padding: 12px;
+  }
+  .evals-loop-analysis .evals-section-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .evals-loop-analysis .evals-section-head .evals-btn {
+    width: 100%;
+    margin-left: 0;
+    justify-content: center;
+  }
+  .evals-loop-metrics {
+    grid-template-columns: 1fr;
+  }
   .evals-loop-analysis > .retro-surface {
     grid-column: auto;
+  }
+  .evals-loop-analysis > .retro-surface.retro-surface--embedded {
+    padding: 12px;
+  }
+  .retro-surface--embedded .retro-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .retro-surface--embedded .retro-hero__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .retro-surface--embedded .retro-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .retro-surface--embedded .retro-controls {
+    grid-template-columns: 1fr;
+  }
+  .retro-surface--embedded .retro-select {
+    width: 100%;
   }
   .evals-loop-run {
     grid-template-columns: auto minmax(0, 1fr);

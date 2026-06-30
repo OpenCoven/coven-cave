@@ -115,9 +115,11 @@ function RunRow({ run }: { run: RetroRun }) {
 export function RetroRunsView({
   standalone = false,
   familiarId = null,
+  embedded = false,
 }: {
   standalone?: boolean;
   familiarId?: string | null;
+  embedded?: boolean;
 }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const [snapshot, setSnapshot] = useState<RetroRunsSnapshot>(EMPTY_SNAPSHOT);
@@ -166,19 +168,21 @@ export function RetroRunsView({
     });
   }, [outcome, query, snapshot.runs, track]);
 
-  const shellClass = `retro-surface${standalone ? " retro-surface--standalone" : ""}`;
+  const shellClass = `retro-surface${standalone ? " retro-surface--standalone" : ""}${embedded ? " retro-surface--embedded" : ""}`;
 
   return (
-    <section className={shellClass} aria-label="Eval Loops">
+    <section className={shellClass} aria-label={embedded ? "Eval loop ledger" : "Eval Loops"}>
       <header className="retro-hero">
         <div className="retro-hero__copy">
           <p className="retro-eyebrow">
             <Icon name="ph:arrows-clockwise-bold" aria-hidden />
             Eval Loops
           </p>
-          <h2>Familiar eval loops, scrubbed clean.</h2>
+          <h2>{embedded ? "Loop ledger" : "Familiar eval loops, scrubbed clean."}</h2>
           <p>
-            Inspect and operate synthesis, prompt, and memory iterations across familiars with secrets redacted before they reach the surface.
+            {embedded
+              ? "Sanitized synthesis, prompt, and memory iterations for the selected familiar."
+              : "Inspect and operate synthesis, prompt, and memory iterations across familiars with secrets redacted before they reach the surface."}
           </p>
         </div>
         <div className="retro-hero__actions">
@@ -275,28 +279,30 @@ export function RetroRunsView({
         </div>
       ) : null}
 
-      <div className="retro-content">
-        <aside className="retro-familiar-panel" aria-label="Familiar coverage">
-          <div className="retro-panel-title">
-            <Icon name="ph:users-three-bold" aria-hidden />
-            Coverage
-          </div>
-          {snapshot.familiars.length === 0 ? (
-            <p className="retro-muted">No familiars reported yet.</p>
-          ) : (
-            <ul>
-              {snapshot.familiars.map((familiar) => (
-                <li key={familiar.familiarId}>
-                  <span>
-                    <b>{familiar.familiarName}</b>
-                    <small>{familiar.runs.length} runs · {familiar.running ? "running" : lastRunLabel(familiar.lastRun)}</small>
-                  </span>
-                  <i aria-hidden={familiar.running ? "false" : "true"} className={familiar.running ? "is-running" : ""} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
+      <div className={`retro-content${embedded ? " retro-content--ledger" : ""}`}>
+        {!embedded ? (
+          <aside className="retro-familiar-panel" aria-label="Familiar coverage">
+            <div className="retro-panel-title">
+              <Icon name="ph:users-three-bold" aria-hidden />
+              Coverage
+            </div>
+            {snapshot.familiars.length === 0 ? (
+              <p className="retro-muted">No familiars reported yet.</p>
+            ) : (
+              <ul>
+                {snapshot.familiars.map((familiar) => (
+                  <li key={familiar.familiarId}>
+                    <span>
+                      <b>{familiar.familiarName}</b>
+                      <small>{familiar.runs.length} runs · {familiar.running ? "running" : lastRunLabel(familiar.lastRun)}</small>
+                    </span>
+                    <i aria-hidden={familiar.running ? "false" : "true"} className={familiar.running ? "is-running" : ""} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
+        ) : null}
 
         <div className="retro-runs-list" aria-busy={loading || refreshing}>
           {loading ? (

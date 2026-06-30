@@ -244,7 +244,7 @@ export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRoll
   const currentLock = state?.lock?.locked ? state.lock : null;
 
   return (
-    <div className="flex flex-col gap-4 p-3 text-xs">
+    <div className="eval-loop-panel flex flex-col gap-4 p-3 text-xs">
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">

@@ -827,7 +827,7 @@ function LoopAnalysisPanel({
       ) : (
         <EmptyState compact icon="ph:user" headline="Select a familiar to run eval loops." />
       )}
-      {familiarId ? <RetroRunsView familiarId={familiarId} /> : null}
+      {familiarId ? <RetroRunsView familiarId={familiarId} embedded /> : null}
     </div>
   );
 }
