@@ -305,7 +305,9 @@
 .hc-mode-strip {
   display: flex;
   align-items: center;
-  padding: 12px 14px 2px;
+  padding: 12px 14px 10px;
+  /* A faint hairline separates the mode switch from the prompt area below. */
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
 }
 
 /* Destination pills — a segmented toggle inside the mode strip. */
