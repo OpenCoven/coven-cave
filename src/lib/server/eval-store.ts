@@ -253,6 +253,15 @@ export async function saveEvalGroup(input: unknown): Promise<EvalGroup> {
   return group;
 }
 
+export async function deleteEvalGroup(id: string): Promise<boolean> {
+  try {
+    await rm(path.join(groupsDir(), fileName(id, "group")), { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function listThreadEvalSnapshots(): Promise<ThreadEvalSnapshot[]> {
   const snapshots = await listJsonDir(threadStatesDir(), coerceThreadEvalSnapshot);
   snapshots.sort((a, b) => (b.evaluatedAt > a.evaluatedAt ? 1 : b.evaluatedAt < a.evaluatedAt ? -1 : 0));
