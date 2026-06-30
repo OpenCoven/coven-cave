@@ -206,6 +206,16 @@ assert.match(
   /mode === "code" \? \([\s\S]*?<CodeView[\s\S]*?storageNamespace=":code"/,
   "mode 'code' renders CodeView with a namespaced ComuxView",
 );
+assert.match(
+  workspace,
+  /mode === "code" \? \([\s\S]*?<ChatSurface[\s\S]*surface="code"/,
+  "Code mode should continue to embed ChatSurface instead of forking chat controls",
+);
+assert.doesNotMatch(
+  codeView,
+  /streamFamiliarText|\/api\/chat\/send/,
+  "CodeView should not own a separate chat send path",
+);
 // The Code workspace must mount the comux PROJECTS view (file tree + editable
 // preview + project search + Files/Changes), not the terminal-only view — that
 // is where the coding surfaces live.

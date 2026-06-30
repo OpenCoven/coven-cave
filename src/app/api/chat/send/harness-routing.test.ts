@@ -31,6 +31,10 @@ const boardRoute = await readFile(
   new URL("../../board/enrich-steps/route.ts", import.meta.url),
   "utf8",
 );
+const chatView = await readFile(
+  new URL("../../../../components/chat-view.tsx", import.meta.url),
+  "utf8",
+);
 
 assert.match(
   chatRoute,
@@ -240,9 +244,29 @@ assert.match(
   "Send body should accept the composer speed control value",
 );
 assert.match(
+  chatView,
+  /fetch\("\/api\/chat\/send"[\s\S]*body: JSON\.stringify\(\{[\s\S]*reasoningEffort: controlsOverride\?\.thinkingEffort \?\? thinkingEffort,[\s\S]*responseSpeed: controlsOverride\?\.responseSpeed \?\? responseSpeed/,
+  "ChatView should send selected Thinking and Speed controls through the existing chat send body",
+);
+assert.match(
+  chatRoute,
+  /type OfflineChatQueuePayload = Pick<[\s\S]*\|\s*"reasoningEffort"[\s\S]*\|\s*"responseSpeed"/,
+  "Offline queued sends should preserve response controls from any composer surface",
+);
+assert.match(
+  chatRoute,
+  /const payload: OfflineChatQueuePayload = \{[\s\S]*reasoningEffort: args\.body\.reasoningEffort,[\s\S]*responseSpeed: args\.body\.responseSpeed/,
+  "The send route should carry composer responseSpeed through offline queue payloads",
+);
+assert.match(
   chatRoute,
   /function buildPromptWithResponseControls/,
   "Send route should turn composer controls into harness-visible instructions",
+);
+assert.match(
+  chatRoute,
+  /const speed = normalizeResponseSpeed\(body\.responseSpeed\)/,
+  "Chat send route should continue accepting responseSpeed from all composer send bodies",
 );
 assert.match(
   chatRoute,
