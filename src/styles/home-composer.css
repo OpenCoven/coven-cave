@@ -344,11 +344,19 @@
 }
 
 .hc-dest-pill.active {
-  background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-raised));
-  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 32%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 80%, transparent);
   color: var(--text-primary);
   font-weight: 600;
-  box-shadow: 0 1px 2px color-mix(in oklch, var(--text-primary) 8%, transparent);
+  box-shadow:
+    0 2px 8px color-mix(in oklch, var(--accent-presence) 32%, transparent),
+    inset 0 1px 0 color-mix(in oklch, var(--foreground) 10%, transparent);
+}
+
+/* The active tab's icon picks up the accent so the selected mode reads at a
+ * glance, while the label stays high-contrast for legibility. */
+.hc-dest-pill.active svg {
+  color: var(--accent-presence);
 }
 
 @media (max-width: 520px) {
