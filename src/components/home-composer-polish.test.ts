@@ -47,13 +47,16 @@ assert.doesNotMatch(source, /className="hc-send-label"/, "visible Send text labe
 assert.doesNotMatch(css, /\.hc-send-label\s*\{/, "old .hc-send-label rule removed");
 assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*999px/, ".hc-send-btn is a circular disc");
 
-// ── "Jump back in" recent-chats strip ──
-assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer accepts a resume handler");
-assert.match(source, /const recentSessions = useMemo/, "derives the recent sessions");
-assert.match(source, /\.filter\(\(s\) => !s\.archived_at && s\.title\)/, "recents exclude archived/untitled chats");
-assert.match(source, /onOpenSession && recentSessions\.length > 0/, "the strip only shows when there are recents and a resume handler");
-assert.match(source, /onClick=\{\(\) => onOpenSession\(s\.id, s\.familiarId \?\? null\)\}/, "clicking a recent resumes that chat");
-assert.match(source, /Jump back in/, "the strip is labelled");
-assert.match(css, /\.home-recent \{/, "the recents strip is styled");
+// ── "Jump back in" recent-chats strip REMOVED ──
+// The standalone recents strip was dropped from the home surface; resume now
+// lives only in the Daily-summary carousel's session cards.
+assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler (used by the digest)");
+assert.doesNotMatch(source, /const recentSessions = useMemo/, "the recents memo is gone");
+assert.doesNotMatch(source, /Jump back in/, "the recents strip label is gone");
+assert.doesNotMatch(source, /className="home-recent/, "the recents strip markup is gone");
+assert.doesNotMatch(css, /\.home-recent\b/, "the recents strip CSS is removed");
+// Resume still reaches the digest carousel.
+assert.match(source, /<HomeDigestCarousel/, "HomeComposer renders the daily-summary carousel");
+assert.match(source, /onOpenSession=\{onOpenSession\}/, "the carousel receives the resume handler");
 
 console.log("home-composer-polish.test.ts: ok");

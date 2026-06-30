@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { buildDigestCards, firstImageUrl } from "./home-digest.ts";
+import { buildDigestCards, firstImageUrl, isAiRelated } from "./home-digest.ts";
 
 // Midday UTC so the small ±hour offsets below stay on the same calendar day in
 // CI's timezone (and most others), keeping the "today" filter deterministic.
@@ -19,10 +19,13 @@ const items = [
   { id: "i3", kind: "reminder", status: "fired", firedAt: hoursAgo(50), updatedAt: hoursAgo(50) }, // yesterday, ignored
 ];
 
+// The home carousel only surfaces AI-related headlines, so the fixtures qualify
+// either by an "AI" feed category or by an AI keyword in the title.
 const rssItems = [
-  { id: "r1", title: "Headline one", link: "https://example.com/a", isoDate: hoursAgo(1), source: "Example", descriptionHtml: '<p>x</p><img src="https://img.example.com/a.jpg" alt="">' },
-  { id: "r2", title: "No link skipped", link: "", isoDate: hoursAgo(1), source: "Example" },
-  { id: "r3", title: "Headline two", link: "https://news.test/b", isoDate: hoursAgo(2), source: "News" },
+  { id: "r1", title: "OpenAI ships a new model", link: "https://example.com/a", isoDate: hoursAgo(1), source: "Example", category: "Tech", descriptionHtml: '<p>x</p><img src="https://img.example.com/a.jpg" alt="">' },
+  { id: "r2", title: "No link skipped (AI)", link: "", isoDate: hoursAgo(1), source: "Example" },
+  { id: "r3", title: "Weekly roundup", link: "https://news.test/b", isoDate: hoursAgo(2), source: "News", category: "AI" },
+  { id: "r4", title: "Best pancake recipes", link: "https://food.test/c", isoDate: hoursAgo(3), source: "Food", category: "World" },
 ];
 
 const familiarNameById = new Map([["f1", "Sage"]]);
@@ -53,11 +56,24 @@ assert.equal(sessionCards[0].familiarId, "f1");
 assert.ok(sessionCards[0].subtitle.includes("Sage"), "subtitle resolves the familiar name");
 assert.ok(sessionCards[0].subtitle.includes("+12 -4"), "subtitle includes the diff");
 
-// ── RSS cards: linkless items dropped, newest-first preserved ──────────────────
+// ── RSS cards: linkless + non-AI items dropped, newest-first preserved ─────────
 const rssCards = cards.filter((c) => c.kind === "rss");
-assert.equal(rssCards.length, 2, "the linkless rss item is dropped");
+assert.equal(rssCards.length, 2, "linkless and non-AI rss items are dropped");
 assert.equal(rssCards[0].url, "https://example.com/a");
 assert.equal(rssCards[0].host, "example.com", "host is derived from the link");
+assert.ok(
+  !rssCards.some((c) => c.url === "https://food.test/c"),
+  "a non-AI headline (no AI category, no AI keyword) is excluded",
+);
+
+// ── isAiRelated: AI feed category OR an AI keyword in the title ────────────────
+assert.ok(isAiRelated({ title: "x", category: "AI" }), "AI feed category qualifies");
+assert.ok(isAiRelated({ title: "x", category: "ai" }), "category match is case-insensitive");
+assert.ok(isAiRelated({ title: "Anthropic releases Claude" }), "AI keyword in title qualifies");
+assert.ok(isAiRelated({ title: "The new AI era" }), "the short token 'ai' matches as a word");
+assert.ok(!isAiRelated({ title: "Reply to this email", category: "World" }), "'email' must not match 'ai'");
+assert.ok(!isAiRelated({ title: "A guide to HTML and CSS", category: "Dev" }), "'html' must not match 'ml'");
+assert.ok(!isAiRelated({ title: "Best pancake recipes" }), "an unrelated headline is excluded");
 
 // ── Media thumbnails: image pulled from the item body when present ─────────────
 assert.equal(
