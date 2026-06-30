@@ -212,6 +212,7 @@ export const SUITES = {
     "src/lib/canvas-generate.test.ts",
     "src/lib/slash-commands.test.ts",
     "src/lib/slash-model.test.ts",
+    "src/lib/slash-skill.test.ts",
     "src/lib/cave-canvas.test.ts",
     "src/components/journal/journal-view.test.ts",
     "src/lib/journal.test.ts",

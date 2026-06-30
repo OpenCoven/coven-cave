@@ -26,6 +26,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/shortcuts", aliases: ["/keys"], hint: "open ⌘/ sheet", description: "Open the keyboard shortcuts sheet.", section: "chat" },
   { name: "/new", hint: "new chat", description: "Start a fresh chat with the active familiar.", section: "chat" },
   { name: "/model", aliases: ["/m"], hint: "switch model", description: "Switch the active model — pass an id or pick from the menu; bare /model lists them.", argPlaceholder: "model", section: "chat" },
+  { name: "/skill", hint: "run a skill", description: "Invoke a skill — pass a name or pick from the menu as you type.", argPlaceholder: "name", section: "chat" },
+  { name: "/skills", hint: "browse skills", description: "Show every available skill to pick from.", section: "chat" },
 
   // Familiar
   { name: "/familiar", aliases: ["/agent"], hint: "switch", description: "Open the familiar picker. Pass a name to switch directly.", argPlaceholder: "name", section: "familiar" },

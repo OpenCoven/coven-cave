@@ -52,6 +52,13 @@ import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
 import { modelSlashOptions, resolveModelArg, formatModelList } from "@/lib/slash-model";
+import {
+  skillSlashOptions,
+  resolveSkillArg,
+  formatSkillList,
+  buildSkillPrompt,
+  type SkillOption,
+} from "@/lib/slash-skill";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
@@ -2647,6 +2654,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Esc hides the menu for the current input; any edit brings it back.
   const [slashDismissed, setSlashDismissed] = useState(false);
   const slashSuggestions: SlashCommand[] = slashDismissed ? [] : slashMatches;
+  // Skills for the inline `/skill` / `/skills` picker — fetched once from the
+  // local skill scan (Coven skills + ~/.claude/skills).
+  const [skills, setSkills] = useState<SkillOption[]>([]);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/skills/local", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (alive && j?.ok && Array.isArray(j.skills)) setSkills(j.skills as SkillOption[]);
+      })
+      .catch(() => {
+        /* offline → no inline skill picker (the command menu still works) */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // While typing "/model <partial>", the menu shows model options instead of
   // commands (an inline picker). null ⇒ not in /model arg position.
   const modelHarness = modelState?.harness ?? familiar.harness ?? "claude";
@@ -2665,10 +2689,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       ? modelState.effectiveModel
       : composerModelOptions[0]?.id ?? "";
   const modelMenuActive = (modelOptions?.length ?? 0) > 0;
-  // The slash-command and /model pickers are mutually exclusive inline listboxes
-  // sharing one listbox id, so the composer's combobox ARIA tracks whichever is
-  // open (was: slash-only, leaving the /model picker unannounced).
-  const menuOpen = modelMenuActive || slashSuggestions.length > 0;
+  // Inline `/skill` / `/skills` picker — null ⇒ not in a skill-picker position.
+  const skillOptions = useMemo(
+    () => (slashDismissed ? null : skillSlashOptions(input, skills)),
+    [input, skills, slashDismissed],
+  );
+  const skillMenuActive = (skillOptions?.length ?? 0) > 0;
+  // The slash-command, /model and /skill pickers are mutually exclusive inline
+  // listboxes sharing one listbox id, so the composer's combobox ARIA tracks
+  // whichever is open (was: slash-only, leaving the pickers unannounced).
+  const menuOpen = modelMenuActive || skillMenuActive || slashSuggestions.length > 0;
   // Stable per-mount listbox id — the home composer mounts its own slash menu,
   // so ids must be unique across simultaneously mounted composers.
   const slashListboxId = useId();
@@ -3224,6 +3254,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       handleSelectModel(id);
       appendSystem(`Model set to ${id}.`);
       setInput("");
+      return true;
+    }
+    if (command === "/skill" || command === "/skills") {
+      if (!args.trim()) {
+        // Bare /skill or /skills: list everything (the inline picker shows the
+        // same list while typing; this is the submitted fallback).
+        appendSystem(formatSkillList(skills));
+        setInput("");
+        return true;
+      }
+      const skill = resolveSkillArg(args, skills);
+      if (!skill) {
+        appendSystem(`Unknown skill "${args.trim()}". Type /skills to list the options.`);
+        setInput("");
+        return true;
+      }
+      setInput("");
+      // Invoke by sending a directive to the active familiar's harness, which
+      // owns Skill execution (mirrors the /run prompt-send pattern).
+      setTimeout(() => sendRaw(buildSkillPrompt(skill)), 0);
       return true;
     }
     if (command === "/doctor" || command === "/daemon") {
@@ -3994,6 +4044,35 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
     }
+    if (skillMenuActive && skillOptions) {
+      const opts = skillOptions;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIdx((i) => Math.min(i + 1, opts.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIdx((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const s = opts[slashIdx];
+        if (s) setInput(`/skill ${s.id}`);
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const s = opts[slashIdx];
+        if (s) {
+          setInput("");
+          setSlashIdx(0);
+          setTimeout(() => sendRaw(buildSkillPrompt(s)), 0);
+        }
+        return;
+      }
+    }
     if (slashSuggestions.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -4631,6 +4710,43 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </ul>
               <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
                 {keys.up}{keys.down} navigate · {keys.enter} switch · esc cancel
+              </div>
+            </div>
+          ) : skillMenuActive && skillOptions ? (
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
+              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Skills">
+                {skillOptions.map((s, i) => {
+                  const active = i === slashIdx;
+                  return (
+                    <li key={s.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        ref={active ? activeSlashOptionRef : null}
+                        onMouseEnter={() => setSlashIdx(i)}
+                        onClick={() => {
+                          setInput("");
+                          setSlashIdx(0);
+                          const skill = s;
+                          setTimeout(() => sendRaw(buildSkillPrompt(skill)), 0);
+                          inputRef.current?.focus();
+                        }}
+                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        }`}
+                      >
+                        <Icon name="ph:sparkle" width={13} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
+                        <span className="text-[var(--text-primary)]">{s.name}</span>
+                        <span className="flex-1 truncate text-[11px] text-[var(--text-muted)]">
+                          {s.description || s.id}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
+                {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
               </div>
             </div>
           ) : slashSuggestions.length > 0 ? (

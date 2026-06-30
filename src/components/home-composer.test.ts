@@ -284,8 +284,8 @@ for (const [name, src] of [
   // the slash menu. Both composers must use it.
   assert.match(
     src,
-    /const menuOpen = modelMenuActive \|\| slashSuggestions\.length > 0;/,
-    `${name} combobox ARIA must reflect either inline menu (slash or /model)`,
+    /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| slashSuggestions\.length > 0;/,
+    `${name} combobox ARIA must reflect every inline menu (slash, /model, /skill)`,
   );
 }
 
@@ -294,9 +294,15 @@ for (const [name, src] of [
 // textarea announces the /model picker too (was: slash-only).
 assert.match(
   source,
-  /const menuOpen = modelMenuActive \|\| slashSuggestions\.length > 0;/,
-  "HomeComposer combobox ARIA reflects either inline menu (slash or /model)",
+  /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| slashSuggestions\.length > 0;/,
+  "HomeComposer combobox ARIA reflects every inline menu (slash, /model, /skill)",
 );
+
+// ── /skill + /skills inline picker (mirrors /model) ──────────────────────────
+assert.match(source, /skillSlashOptions\(text, skills\)/, "HomeComposer offers inline /skill autocomplete");
+assert.match(source, /command === "\/skill" \|\| command === "\/skills"/, "HomeComposer handles the /skill and /skills commands");
+assert.match(source, /role="listbox" aria-label="Skills"/, "HomeComposer renders a Skills picker listbox");
+assert.match(source, /buildSkillPrompt\(skill\)/, "HomeComposer invokes a skill by starting a chat with the skill prompt");
 
 // ── Destination pills are an accessible single-select radiogroup ─────────────
 assert.match(
