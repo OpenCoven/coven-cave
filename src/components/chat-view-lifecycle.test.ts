@@ -335,8 +335,8 @@ const usageTurnRow =
 assert.ok(usageTurnRow, "TurnRow body should be extractable (CHAT-D12-02)");
 assert.match(
   usageTurnRow,
-  /formatTimestamp\(turn\.createdAt, dtPrefs\)[\s\S]{0,180}?<UsageText usage=\{turn\.usage\} costUsd=\{turn\.costUsd\} \/>/,
-  "Assistant turn meta row appends the muted usage/cost readout after the formatted timestamp (CHAT-D12-02)",
+  /className="cave-linear-turn-recency"[\s\S]{0,220}?title=\{exactTime\}[\s\S]{0,220}?\{recency\}[\s\S]{0,220}?<UsageText usage=\{turn\.usage\} costUsd=\{turn\.costUsd\} \/>/,
+  "Assistant turn meta row appends the muted usage/cost readout after the visible recency timestamp (CHAT-D12-02)",
 );
 
 // ── CHAT-D9-04: find highlight timer cleanup ──
