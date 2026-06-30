@@ -67,8 +67,12 @@ function toolStatusText(tool: ToolStatus): string {
   return "Up to date";
 }
 
+function toolNeedsCompatibilityUpdate(tool: ToolStatus): boolean {
+  return tool.installed && Boolean(tool.current) && !tool.compatible;
+}
+
 function toolCompatibilityText(tool: ToolStatus): string | null {
-  if (tool.compatible) return null;
+  if (!toolNeedsCompatibilityUpdate(tool)) return null;
   return `Requires >= ${tool.minimumVersion}`;
 }
 
@@ -143,7 +147,7 @@ export function OpenCovenToolsBannerTrigger() {
       .then((json) => {
         if (cancelled || !json?.ok) return;
         const tools = (json.tools ?? []).filter((tool) => isInstallTarget(tool.id));
-        const incompatibleTools = tools.filter((tool) => !tool.compatible);
+        const incompatibleTools = tools.filter(toolNeedsCompatibilityUpdate);
         const outdatedTools = tools.filter((tool) => tool.compatible && tool.outdated);
         const bannerTools = incompatibleTools.length > 0 ? incompatibleTools : outdatedTools;
         if (bannerTools.length === 0 || dismissedToolBanner(bannerTools)) return;
@@ -429,7 +433,7 @@ export function OpenCovenToolsUpdate() {
                   <Icon name="ph:circle-notch-bold" className="animate-spin" width={12} />
                   Updating... {formatElapsed(job.elapsedMs)}
                 </span>
-              ) : tool.outdated ? (
+              ) : tool.outdated || toolNeedsCompatibilityUpdate(tool) ? (
                 <button
                   type="button"
                   onClick={() => void updateTool(tool.id)}

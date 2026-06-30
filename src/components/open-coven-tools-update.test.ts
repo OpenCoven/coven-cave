@@ -19,7 +19,10 @@ assert.match(src, /Update \{tool\.label\}/, "outdated tools expose a clear updat
 assert.match(src, /function toolVersionText\(tool: ToolStatus\): string/, "tool version text is centralized");
 assert.match(src, /if \(!tool\.current\) return "Installed, version unknown"/, "installed tools with unknown versions should say the version is unknown");
 assert.match(src, /function toolStatusText\(tool: ToolStatus\): string/, "tool status text is centralized");
+assert.match(src, /function toolNeedsCompatibilityUpdate\(tool: ToolStatus\): boolean/, "tool compatibility failures ignore missing or unknown-version installs");
+assert.match(src, /return tool\.installed && Boolean\(tool\.current\) && !tool\.compatible/, "only installed tools with known stale versions trigger compatibility warnings");
 assert.match(src, /function toolCompatibilityText\(tool: ToolStatus\): string \| null/, "tool compatibility copy is centralized");
+assert.match(src, /if \(!toolNeedsCompatibilityUpdate\(tool\)\) return null/, "missing tools do not render a compatibility floor warning");
 assert.match(src, /return `Requires >= \$\{tool\.minimumVersion\}`/, "below-minimum tools show the compatibility floor");
 assert.match(src, /if \(!tool\.current\) return "Version unknown"/, "installed tools with unknown versions must not claim to be up to date");
 assert.match(src, /tool\.outdated \? `\$\{tool\.current\} -> \$\{tool\.latest\}` : tool\.current/, "version line should show an arrow only for actual upgrades");
@@ -32,6 +35,7 @@ assert.match(src, /Copy diagnostics/, "About tools exposes a copy diagnostics ac
 assert.match(src, /export function OpenCovenToolsBannerTrigger/, "exports a shell banner trigger for stale OpenCoven tools");
 assert.match(src, /coven-cave:tool-update:dismissed:/, "tool update banners persist dismissal per released tool version");
 assert.match(src, /pushBanner\(/, "tool update trigger publishes through the shared shell banner system");
+assert.match(src, /const incompatibleTools = tools\.filter\(toolNeedsCompatibilityUpdate\)/, "global banner only warns for installed tools below the Cave floor");
 assert.match(src, /severity: incompatibleTools\.length > 0 \? "warning" : "info"/, "compatibility failures get stronger warning severity than ordinary updates");
 assert.match(src, /Review tools/, "tool update banner sends users to the settings tool surface");
 assert.match(shell, /OpenCovenToolsBannerTrigger/, "Shell imports and mounts the OpenCoven tools banner trigger");
