@@ -752,6 +752,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/automation-runner.test.ts",
   "src/lib/server/automation-log-paths.test.ts",
   "src/lib/session-project-scope.test.ts",
+  "src/lib/session-pins.test.ts",
   "src/lib/theme-token-hex.test.ts",
   "src/lib/familiar-growth-signals.test.ts",
   "src/lib/familiar-growth-route-wiring.test.ts",
