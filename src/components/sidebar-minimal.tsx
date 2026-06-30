@@ -14,6 +14,12 @@
 import React from "react";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
+import {
+  PAGE_DRAG_MIME,
+  emitPageDragStart,
+  emitPageDragEnd,
+  isSplittablePage,
+} from "@/lib/page-drag";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
@@ -191,12 +197,17 @@ function FolderRow({
   description?: string;
   onClick: () => void;
 }) {
+  // Splittable pages can be dragged into the main area to open beside the
+  // current surface (desktop snap-to-split). Non-clickable drags don't fire the
+  // onClick, so navigation by click is unaffected.
+  const draggable = isSplittablePage(id);
   // Native title doubles as a desktop hover tooltip and a touch long-press
   // hint, and is exposed to AT as the button's accessible description.
+  const dragHint = draggable ? " · drag into the page to split" : "";
   const title = description
     ? kbd
-      ? `${label} — ${description} (${kbd})`
-      : `${label} — ${description}`
+      ? `${label} — ${description} (${kbd})${dragHint}`
+      : `${label} — ${description}${dragHint}`
     : undefined;
   return (
     <button
@@ -204,7 +215,19 @@ function FolderRow({
       className={`sidebar-folder-row${active ? " sidebar-folder-row--active" : ""}`}
       aria-current={active ? "page" : undefined}
       title={title}
+      draggable={draggable || undefined}
       onClick={onClick}
+      onDragStart={
+        draggable
+          ? (e) => {
+              e.dataTransfer.setData(PAGE_DRAG_MIME, id);
+              e.dataTransfer.setData("text/plain", label);
+              e.dataTransfer.effectAllowed = "copy";
+              emitPageDragStart({ mode: id, label });
+            }
+          : undefined
+      }
+      onDragEnd={draggable ? () => emitPageDragEnd() : undefined}
     >
       <Icon name={iconName} width={CAVE_ICON_SIZE.sidePanelNav} height={CAVE_ICON_SIZE.sidePanelNav} className="sidebar-folder-icon" />
       <span className="sidebar-folder-label">{label}</span>

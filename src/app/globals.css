@@ -10693,3 +10693,184 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
   overflow: hidden;
 }
+
+/* ======================================================================
+ * Drag-to-split — open any sidebar page beside the current surface and
+ * resize it with modern-desktop snapping (DetailSplitHost). The host
+ * renders as a Fragment, so the snap guide + drop overlay anchor against
+ * the .shell-detail main (made position:relative just below).
+ * ====================================================================== */
+.shell-detail { position: relative; }
+
+/* The resizable split group fills the detail panel like the solo surface. */
+.split-host__group {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Secondary pane shell — a framed "window" beside the primary surface. */
+.split-host__pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-base);
+}
+.split-host__pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 70%, transparent);
+  flex: 0 0 auto;
+}
+.split-host__pane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.split-host__pane-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.split-host__pane-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.split-host__pane-btn:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+  border-color: var(--border-hairline);
+}
+.split-host__pane-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring-focus);
+}
+.split-host__pane-close:hover {
+  background: color-mix(in oklch, var(--color-danger, #e5484d) 16%, transparent);
+  color: var(--color-danger, #e5484d);
+  border-color: transparent;
+}
+.split-host__pane-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.split-host__pane-body > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Live snap guide drawn while dragging the divider. */
+.split-host__guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: color-mix(in oklch, var(--text-muted) 45%, transparent);
+  pointer-events: none;
+  z-index: 6;
+  transition: left 0.04s linear;
+}
+.split-host__guide--snap {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent),
+    0 0 12px color-mix(in oklch, var(--accent) 55%, transparent);
+}
+.split-host__guide--close { background: var(--color-danger, #e5484d); }
+.split-host__guide-chip {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--accent-foreground, #fff);
+  background: var(--accent);
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+.split-host__guide--close .split-host__guide-chip {
+  background: var(--color-danger, #e5484d);
+  color: #fff;
+}
+
+/* Drop overlay — two desktop-style snap targets over the main area. */
+.split-dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  pointer-events: none;
+}
+.split-dropzone__half {
+  flex: 1 1 50%;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 10px;
+  border: 2px dashed color-mix(in oklch, var(--accent) 40%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+  backdrop-filter: blur(2px);
+  color: var(--text-muted);
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.split-dropzone__half--left { margin-right: 5px; }
+.split-dropzone__half--right { margin-left: 5px; }
+.split-dropzone__half.is-hover {
+  background: color-mix(in oklch, var(--accent) 18%, var(--bg-base));
+  border-color: var(--accent);
+  border-style: solid;
+  color: var(--text-primary);
+}
+.split-dropzone__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: color-mix(in oklch, var(--bg-raised) 88%, transparent);
+  border: 1px solid var(--border-hairline);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .split-host__guide { transition: none; }
+}

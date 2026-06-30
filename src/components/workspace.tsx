@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { groupInboxFeed } from "@/lib/inbox-feed";
@@ -23,8 +23,7 @@ import { Shell, type ShellHandle } from "@/components/shell";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
-import { CompanionRail, type CompanionTab } from "@/components/companion-rail";
-import { RailInspector } from "@/components/inspector-pane";
+import { type CompanionTab } from "@/components/companion-rail";
 import { FamiliarsView } from "@/components/familiars-view";
 import { GroupChatView } from "@/components/group-chat-view";
 import {
@@ -39,7 +38,6 @@ import { recordFamiliarUsed } from "@/lib/familiar-quick-switch";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { ChooserModal, type ChooserOption } from "@/components/ui/chooser-modal";
-import { FamiliarPanel } from "@/components/familiar-panel";
 import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
 // Heavy, mode-gated surfaces are code-split via @/components/lazy-surfaces so
 // their chunks (and deps like @xyflow/react, @uiw/react-codemirror) load on
@@ -60,7 +58,6 @@ import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page"
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
-import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
 import { ShortcutsSheet } from "@/components/shortcuts-sheet";
 import { nativeNotify } from "@/lib/native-notify";
@@ -249,10 +246,13 @@ export function Workspace() {
   const [daemonOffline, setDaemonOffline] = useState(false);
   const daemonHealthyStreakRef = useRef(0);
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
-  const companionBrowserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
   const [codeRightView, setCodeRightView] = useState<"files" | "changes">("files");
+  // Drag-to-split: a second page opened beside the primary surface. `splitMode`
+  // is the page; `splitSide` is which half it occupies (modern-desktop snap).
+  const [splitMode, setSplitMode] = useState<WorkspaceMode | null>(null);
+  const [splitSide, setSplitSide] = useState<"left" | "right">("right");
   const [railTab, setRailTab] = useState<CompanionTab>(() => {
     if (typeof window === "undefined") return "chat";
     const stored = window.localStorage.getItem("cave:rail.tab");
@@ -262,10 +262,6 @@ export function Workspace() {
     return (stored as CompanionTab) ?? "chat";
   });
   const [familiarPanelOpen, setFamiliarPanelOpen] = useState(false);
-  // YouTube ("Video") toggle state, lifted out of the companion rail so the
-  // shell can keep the right panel peeking as a rotated video strip when the
-  // user collapses it instead of vanishing (and stopping playback).
-  const [railVideoActive, setRailVideoActive] = useState(false);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -1429,6 +1425,22 @@ export function Workspace() {
     shellRef.current?.toggleFamiliar();
   }, []);
 
+  // Open a page in the split beside the current surface (drag-to-split drop).
+  const openSplitPage = useCallback(
+    (m: string, side: "left" | "right") => {
+      if (!m || m === mode) return;
+      setSplitSide(side);
+      setSplitMode(m as WorkspaceMode);
+    },
+    [mode],
+  );
+
+  // A split showing the same page as the primary is redundant — clear it (e.g.
+  // the user navigated the primary surface to the page that was in the split).
+  useEffect(() => {
+    if (splitMode && splitMode === mode) setSplitMode(null);
+  }, [splitMode, mode]);
+
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {
       setActiveId(intent.familiarId);
@@ -1942,11 +1954,12 @@ export function Workspace() {
     </div>
   );
 
-  const detail = (
-    <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
-      <h1 className="sr-only">{WORKSPACE_MODE_TITLES[mode] ?? "Coven Cave"}</h1>
-      {terminalDetail}
-      {mode === "terminal" ? null : mode === "agents" ? (
+  // renderSurface maps a workspace mode to its surface element. Extracted so the
+  // same machinery renders both the primary detail and a dragged-in split
+  // secondary. `terminal` is served by the always-mounted terminalDetail (primary
+  // only) and excluded from drag-to-split, so it never reaches renderSurface.
+  const renderSurface = (m: WorkspaceMode): ReactNode =>
+    m === "agents" ? (
       <FamiliarsView
         familiars={familiars}
         sessions={sessions}
@@ -1965,7 +1978,7 @@ export function Workspace() {
           selectFamiliar(id);
         }}
       />
-    ) : mode === "chat" ? (
+    ) : m === "chat" ? (
       <ChatSurface
         familiars={familiars}
         sessions={sessions}
@@ -1995,13 +2008,13 @@ export function Workspace() {
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInAppBrowser}
       />
-    ) : mode === "groupchat" ? (
+    ) : m === "groupchat" ? (
       <GroupChatView
         familiars={resolvedFamiliars}
         onSessionStarted={loadSessions}
         onOpenUrl={openUrlInAppBrowser}
       />
-    ) : mode === "code" ? (
+    ) : m === "code" ? (
       <CodeView
         chat={
           <ChatSurface
@@ -2038,7 +2051,7 @@ export function Workspace() {
         comux={
           <ComuxView
             view="projects"
-            active={mode === "code"}
+            active={m === "code"}
             storageNamespace=":code"
             rightView={codeRightView}
             onRightViewChange={setCodeRightView}
@@ -2052,14 +2065,14 @@ export function Workspace() {
           />
         }
       />
-    ) : mode === "library" ? (
+    ) : m === "library" ? (
       <LibraryView
         onOpenUrl={openUrlInAppBrowser}
         sessions={sessions}
         onOpenSession={openFamiliarSession}
         onNewProjectChat={openProjectChat}
       />
-    ) : mode === "board" ? (
+    ) : m === "board" ? (
       <BoardView
         familiars={familiars}
         sessions={sessions}
@@ -2070,16 +2083,16 @@ export function Workspace() {
           openFamiliarSession(sessionId, familiarId);
         }}
       />
-    ) : mode === "journal" ? (
+    ) : m === "journal" ? (
       <JournalView familiars={familiars} activeFamiliarId={activeId} scopeFamiliarIds={scopeIds} />
-    ) : mode === "inbox" || mode === "calendar" ? (
+    ) : m === "inbox" || mode === "calendar" ? (
       // Calendar and Automations are one Automations surface: Calendar is the
       // leading tab of the Automations view. The "calendar" mode still resolves
       // here (nav button / deep links) but opens that tab; keying on the mode
       // remounts so the deep link lands on it.
       <InboxEscalationsView
-        key={mode}
-        initialTab={mode === "calendar" ? "calendar" : "all"}
+        key={m}
+        initialTab={m ==="calendar" ? "calendar" : "all"}
         onOpenSource={(item) => {
           if (item.sourceSessionKey) {
             openFamiliarSession(item.sourceSessionKey);
@@ -2129,34 +2142,34 @@ export function Workspace() {
           />
         }
       />
-    ) : mode === "browser" ? (
+    ) : m === "browser" ? (
       <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} />
-    ) : mode === "github" ? (
+    ) : m === "github" ? (
       <GitHubView
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
       />
-    ) : mode === "roles" || mode === "capabilities" ? (
+    ) : m === "roles" || mode === "capabilities" ? (
       // Capabilities is the rightmost tab of the Roles page. The "capabilities"
       // mode still resolves here (deep links / navigate-mode) but opens that
       // tab; keying on the mode remounts so the deep link lands on it.
       <PluginsView
-        key={mode}
+        key={m}
         tabs={["roles", "skills", "capabilities"]}
-        initialTab={mode === "capabilities" ? "capabilities" : "roles"}
+        initialTab={m ==="capabilities" ? "capabilities" : "roles"}
         activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
         onCreateSkill={() => setMode("capabilities")}
       />
-    ) : mode === "marketplace" ? (
+    ) : m === "marketplace" ? (
       <MarketplaceView />
-    ) : mode === "submissions" ? (
+    ) : m === "submissions" ? (
       <OpenCovenSubmissionPage />
-    ) : mode === "flow" ? (
+    ) : m === "flow" ? (
       <FlowView />
-    ) : mode === "evals" || mode === "retro" ? (
-      <EvalsView familiars={resolvedFamiliars} activeFamiliarId={mode === "retro" ? retroFamiliarId : activeId} />
+    ) : m === "evals" || mode === "retro" ? (
+      <EvalsView familiars={resolvedFamiliars} activeFamiliarId={m === "retro" ? retroFamiliarId : activeId} />
     ) : (
       <HomeComposer
         familiars={familiars}
@@ -2171,9 +2184,24 @@ export function Workspace() {
         onSlash={(command, args) => onPaletteIntent({ kind: "slash", command, args })}
         onOpenSession={(sessionId, familiarId) => openFamiliarSession(sessionId, familiarId)}
       />
-    )}
+    );
+
+  const detail = (
+    <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
+      <h1 className="sr-only">{WORKSPACE_MODE_TITLES[mode] ?? "Coven Cave"}</h1>
+      {terminalDetail}
+      {mode === "terminal" ? null : renderSurface(mode)}
     </div>
   );
+
+  // The dragged-in split secondary, if any. Heavy/stateful surfaces (terminal)
+  // are excluded from drag, so renderSurface always has something to render.
+  const splitDetail =
+    splitMode && splitMode !== mode ? (
+      <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
+        {renderSurface(splitMode)}
+      </div>
+    ) : null;
 
   const mobileTabs = (
     <MobileBottomTabs
@@ -2190,13 +2218,13 @@ export function Workspace() {
       <Shell
         ref={shellRef}
         mobileTabs={mobileTabs}
-        // While a video is playing in the rail, collapsing the right panel
-        // leaves a thin peek strip (rotated video) instead of closing fully.
-        rightPanelPeek={showCompanionRail && railVideoActive}
-        onFamiliarOpenChange={(open) => {
-          setFamiliarPanelOpen(open);
-          if (activeId) setRailOpen(activeId, open);
-        }}
+        // Drag-to-split: a sidebar page dropped into the main area opens beside
+        // the current surface, resizable with desktop-style snapping.
+        split={splitDetail}
+        splitTitle={splitMode ? WORKSPACE_MODE_TITLES[splitMode] : ""}
+        splitSide={splitSide}
+        onCloseSplit={() => setSplitMode(null)}
+        onDropSplitPage={openSplitPage}
         topBar={({ navDrawerOpen, listDrawerOpen, familiarDrawerOpen }) => (
           <>
             <FamiliarMenuBar
@@ -2256,67 +2284,15 @@ export function Workspace() {
               navDrawerOpen={navDrawerOpen}
             listDrawerOpen={listDrawerOpen}
             familiarDrawerOpen={familiarDrawerOpen}
-            onToggleFamiliar={
-              showCompanionRail
-                ? () => {
-                    openCompanionTab(railTab === "browser" ? "browser" : "salem");
-                  }
-                : undefined
-            }
+            // The right companion panel was removed in favour of drag-to-split;
+            // there is no longer a companion rail to toggle.
+            onToggleFamiliar={undefined}
           />
           </>
         )}
         nav={mode === "code" ? codeSidebar : sidebar}
         list={list}
         detail={detail}
-        agent={
-          showCompanionRail ? (
-            <CompanionRail
-              familiar={active}
-              defaultTab={railTab}
-              activeTab={railTab}
-              onTabChange={persistRailTab}
-              chatBadge={active ? responseNeeded.has(active.id) : false}
-              daemonRunning={daemonRunning}
-              onCreateFamiliar={openOnboarding}
-              youtubeActive={railVideoActive}
-              onYoutubeActiveChange={setRailVideoActive}
-              // When the panel is collapsed (peek) with video on, show only the
-              // rotated video strip; the top-bar toggle / this button re-expand.
-              videoStrip={railVideoActive && !familiarPanelOpen}
-              onExpandRail={() => shellRef.current?.openFamiliar()}
-              hideChatTab={mode === "chat"}
-              // Chat surface already shows a "Choose a familiar" CTA in the
-              // detail panel — suppress the rail's duplicate prompt there.
-              suppressEmpty={mode === "chat"}
-              // Empty scope set = "All familiars" is selected (not a missing
-              // pick) — the rail must not pitch "Create familiar" in that case.
-              scopeIsAll={scopeIds.size === 0}
-              chatSlot={
-                <FamiliarPanel
-                  familiar={active}
-                  sessions={sessions}
-                  daemonRunning={daemonRunning}
-                  onSessionStarted={loadSessions}
-                  onSlashFromChat={handleSlashIntent}
-                  onOpenOnboarding={openOnboarding}
-                />
-              }
-              memorySlot={
-                <RailInspector familiar={active} onOpenFullView={() => setMode("agents")} />
-              }
-              browserSlot={
-                <BrowserPane ref={companionBrowserPaneRef} label="companion" activeFamiliarId={active?.id ?? null} />
-              }
-              salemSlot={
-                <SalemChatPanel
-                  familiarId={active?.id ?? familiars.find((f) => f.id === "salem")?.id ?? "salem"}
-                  model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
-                />
-              }
-            />
-          ) : undefined
-        }
       />
 
       <CommandPalette

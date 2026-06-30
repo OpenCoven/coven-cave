@@ -16,6 +16,7 @@ import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { useIsMobile } from "@/lib/use-viewport";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
+import { DetailSplitHost } from "@/components/detail-split-host";
 import {
   getPanelShortcutBindings,
   labelPanelShortcut,
@@ -119,6 +120,11 @@ function ShellInner({
   bottom,
   topBar,
   mobileTabs,
+  split = null,
+  splitTitle = "",
+  splitSide = "right",
+  onCloseSplit,
+  onDropSplitPage,
   onNavOpenChange,
   onFamiliarOpenChange,
   rightPanelPeek = false,
@@ -130,6 +136,13 @@ function ShellInner({
   agent?: ReactNode;
   bottom?: ReactNode;
   topBar?: ShellTopBar;
+  /** Secondary "page" rendered beside the detail surface in a resizable split
+   *  (null = no split). Opened by dragging a sidebar page into the main area. */
+  split?: ReactNode;
+  splitTitle?: string;
+  splitSide?: "left" | "right";
+  onCloseSplit?: () => void;
+  onDropSplitPage?: (mode: string, side: "left" | "right") => void;
   /** Mobile/tablet-only bottom tab bar. Rendered after `.shell-body`
    *  inside `.shell-frame`, but only when the viewport matches the
    *  mobile breakpoint (≤1023px). */
@@ -508,7 +521,15 @@ function ShellInner({
           <UpdateBannerTrigger />
           <OpenCovenToolsBannerTrigger />
           <ShellBannerStrip />
-          {detail}
+          <DetailSplitHost
+            primary={detail}
+            secondary={split}
+            secondaryTitle={splitTitle}
+            secondarySide={splitSide}
+            onClose={() => onCloseSplit?.()}
+            onDropPage={(mode, side) => onDropSplitPage?.(mode, side)}
+            enableDrop={!isMobile}
+          />
         </main>
       </Panel>
       {hasFamiliar && (
