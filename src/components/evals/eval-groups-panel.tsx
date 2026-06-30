@@ -37,6 +37,14 @@ const TRACK_OPTIONS: Array<{ value: EvalTrack; label: string }> = [
 
 const HOUR_MS = 60 * 60 * 1000;
 
+function groupStatusLabel(rollup: ReturnType<typeof rollupEvalGroup> | undefined): string {
+  if (!rollup || rollup.totalThreads === 0) return "No threads";
+  if (rollup.blockedThreads > 0) return `${rollup.blockedThreads} blocked`;
+  const staleTotal = rollup.staleThreads + rollup.neverRunThreads;
+  if (staleTotal > 0) return `${staleTotal} need review`;
+  return "Fresh";
+}
+
 function newGroup(rubricVersion: string): EvalGroup {
   const now = new Date().toISOString();
   let id: string;
@@ -75,6 +83,31 @@ export function EvalGroupsPanel({ groups, statesById, familiars, onChanged }: Pr
   const rollups = useMemo(
     () => new Map(groups.map((group) => [group.id, rollupEvalGroup(group, statesById.get(group.id) ?? [])])),
     [groups, statesById],
+  );
+
+  const groupTotals = useMemo(
+    () =>
+      groups.reduce(
+        (totals, group) => {
+          const rollup = rollups.get(group.id);
+          totals.members += group.members.length;
+          totals.tracks += group.tracks.length;
+          totals.totalThreads += rollup?.totalThreads ?? 0;
+          totals.runnableThreads += rollup?.runnableThreadIds.length ?? 0;
+          totals.staleOrNeverRun += (rollup?.staleThreads ?? 0) + (rollup?.neverRunThreads ?? 0);
+          totals.blockedThreads += rollup?.blockedThreads ?? 0;
+          return totals;
+        },
+        {
+          members: 0,
+          tracks: 0,
+          totalThreads: 0,
+          runnableThreads: 0,
+          staleOrNeverRun: 0,
+          blockedThreads: 0,
+        },
+      ),
+    [groups, rollups],
   );
 
   const existingRubric = groups[0]?.rubricVersion ?? "v1";
@@ -172,18 +205,42 @@ export function EvalGroupsPanel({ groups, statesById, familiars, onChanged }: Pr
 
   return (
     <div className="evals-groups">
-      <div className="evals-section-head">
-        <span className="evals-group-kicker">Eval groups</span>
-        <button type="button" className="evals-btn" onClick={startCreate}>
-          <Icon name="ph:plus" width={13} /> New group
-        </button>
+      <div className="evals-groups-hero">
+        <div className="evals-groups-hero-copy">
+          <span className="evals-group-kicker">Eval groups</span>
+          <h3>Thread freshness sets</h3>
+          <p>Group related threads and familiars, track stale coverage, and queue the exact work that needs another eval pass.</p>
+        </div>
+        <div className="evals-groups-hero-actions">
+          <button type="button" className="evals-btn evals-btn-primary" onClick={startCreate}>
+            <Icon name="ph:plus" width={13} /> New group
+          </button>
+        </div>
+        <div className="evals-groups-stats" aria-label="Eval group summary">
+          <div className="evals-groups-stat">
+            <span>Tracked groups</span>
+            <b>{groups.length}</b>
+          </div>
+          <div className="evals-groups-stat">
+            <span>Total threads</span>
+            <b>{groupTotals.totalThreads}</b>
+          </div>
+          <div className="evals-groups-stat">
+            <span>Runnable threads</span>
+            <b>{groupTotals.runnableThreads}</b>
+          </div>
+          <div className="evals-groups-stat">
+            <span>Stale or never run</span>
+            <b>{groupTotals.staleOrNeverRun}</b>
+          </div>
+        </div>
       </div>
 
       {groups.length === 0 && !draft ? (
         <EmptyState
           icon="ph:squares-four"
-          headline="No eval groups yet"
-          subtitle="Group threads and familiars into a tracked eval set, choose which tracks to run, and watch freshness roll up across the group."
+          headline="No tracked groups"
+          subtitle="Create a group when a thread set needs its own freshness policy, track mix, and manual queue."
           actions={
             <button type="button" className="evals-btn evals-btn-primary" onClick={startCreate}>
               <Icon name="ph:plus" width={14} /> New group
@@ -194,213 +251,238 @@ export function EvalGroupsPanel({ groups, statesById, familiars, onChanged }: Pr
 
       {draft ? (
         <article className="evals-group-editor" aria-label="Edit eval group">
-          <label className="evals-field">
-            <span>Name</span>
-            <input
-              className="evals-group-name-input"
-              value={draft.name}
-              onChange={(e) => patch({ name: e.target.value })}
-              aria-label="Group name"
-            />
-          </label>
-          <label className="evals-field">
-            <span>Description</span>
-            <textarea
-              className="evals-desc"
-              value={draft.description ?? ""}
-              placeholder="What does this group track? (optional)"
-              onChange={(e) => patch({ description: e.target.value })}
-              rows={2}
-              aria-label="Group description"
-            />
-          </label>
-          <label className="evals-field">
-            <span>Scope</span>
-            <select
-              className="evals-grader-kind"
-              value={draft.scope}
-              onChange={(e) => patch({ scope: e.target.value as EvalGroupScope })}
-              aria-label="Group scope"
-            >
-              {SCOPE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="evals-field">
-            <span>Tracks</span>
-            <div className="evals-track-toggles" role="group" aria-label="Eval tracks">
-              {TRACK_OPTIONS.map((o) => {
-                const on = draft.tracks.includes(o.value);
-                return (
-                  <button
-                    key={o.value}
-                    type="button"
-                    className={`evals-toggle-chip${on ? " is-on" : ""}`}
-                    aria-pressed={on}
-                    onClick={() => toggleTrack(o.value)}
-                  >
-                    {o.label}
-                  </button>
-                );
-              })}
+          <div className="evals-section-head">
+            <div>
+              <span className="evals-group-kicker">{isNew ? "New group" : "Edit group"}</span>
+              <b>{draft.name.trim() || "Untitled group"}</b>
             </div>
+            <span className="evals-group-muted">{draft.members.length} members · {draft.tracks.length} tracks</span>
           </div>
+          <div className="evals-group-editor-body">
+            <label className="evals-field">
+              <span>Name</span>
+              <input
+                className="evals-group-name-input"
+                value={draft.name}
+                onChange={(e) => patch({ name: e.target.value })}
+                aria-label="Group name"
+              />
+            </label>
+            <label className="evals-field evals-field-stack">
+              <span>Description</span>
+              <textarea
+                className="evals-desc"
+                value={draft.description ?? ""}
+                placeholder="What does this group track? (optional)"
+                onChange={(e) => patch({ description: e.target.value })}
+                rows={3}
+                aria-label="Group description"
+              />
+            </label>
+            <label className="evals-field">
+              <span>Scope</span>
+              <select
+                className="evals-grader-kind"
+                value={draft.scope}
+                onChange={(e) => patch({ scope: e.target.value as EvalGroupScope })}
+                aria-label="Group scope"
+              >
+                {SCOPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="evals-field">
-            <span>Stale after (hours)</span>
-            <input
-              type="number"
-              min={0}
-              value={draft.stalePolicy.ttlMs != null ? Math.round(draft.stalePolicy.ttlMs / HOUR_MS) : ""}
-              placeholder="never"
-              onChange={(e) => {
-                const hours = e.target.value === "" ? undefined : Number(e.target.value);
-                patch({
-                  stalePolicy: {
-                    ttlMs: hours == null || Number.isNaN(hours) || hours <= 0 ? undefined : Math.round(hours * HOUR_MS),
-                  },
-                });
-              }}
-              aria-label="Stale policy TTL in hours"
-            />
-          </label>
-
-          <div className="evals-field">
-            <span>Familiar members</span>
-            {familiars.length === 0 ? (
-              <small className="evals-group-muted">No familiars available</small>
-            ) : (
-              <div className="evals-member-toggles" role="group" aria-label="Familiar members">
-                {familiars.map((f) => {
-                  const on = draft.members.some((m) => m.kind === "familiar" && m.id === f.id);
+            <div className="evals-field evals-field-stack">
+              <span>Tracks</span>
+              <div className="evals-track-toggles" role="group" aria-label="Eval tracks">
+                {TRACK_OPTIONS.map((o) => {
+                  const on = draft.tracks.includes(o.value);
                   return (
                     <button
-                      key={f.id}
+                      key={o.value}
                       type="button"
                       className={`evals-toggle-chip${on ? " is-on" : ""}`}
                       aria-pressed={on}
-                      onClick={() => toggleFamiliar(f.id)}
+                      onClick={() => toggleTrack(o.value)}
                     >
-                      {f.display_name}
+                      {o.label}
                     </button>
                   );
                 })}
               </div>
-            )}
-          </div>
+            </div>
 
-          {error ? <p className="evals-group-error">{error}</p> : null}
+            <label className="evals-field">
+              <span>Stale after (hours)</span>
+              <input
+                type="number"
+                min={0}
+                value={draft.stalePolicy.ttlMs != null ? Math.round(draft.stalePolicy.ttlMs / HOUR_MS) : ""}
+                placeholder="never"
+                onChange={(e) => {
+                  const hours = e.target.value === "" ? undefined : Number(e.target.value);
+                  patch({
+                    stalePolicy: {
+                      ttlMs: hours == null || Number.isNaN(hours) || hours <= 0 ? undefined : Math.round(hours * HOUR_MS),
+                    },
+                  });
+                }}
+                aria-label="Stale policy TTL in hours"
+              />
+            </label>
 
-          <div className="evals-toolbar-actions">
-            <button type="button" className="evals-btn evals-btn-primary" onClick={save} disabled={saving || !draft.name.trim()}>
-              <Icon name="ph:check" width={13} /> {isNew ? "Create group" : "Save group"}
-            </button>
-            <button type="button" className="evals-btn" onClick={cancel} disabled={saving}>
-              Cancel
-            </button>
+            <div className="evals-field evals-field-stack">
+              <span>Familiar members</span>
+              {familiars.length === 0 ? (
+                <small className="evals-group-muted">No familiars available</small>
+              ) : (
+                <div className="evals-member-toggles" role="group" aria-label="Familiar members">
+                  {familiars.map((f) => {
+                    const on = draft.members.some((m) => m.kind === "familiar" && m.id === f.id);
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        className={`evals-toggle-chip${on ? " is-on" : ""}`}
+                        aria-pressed={on}
+                        onClick={() => toggleFamiliar(f.id)}
+                      >
+                        {f.display_name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {error ? <p className="evals-group-error">{error}</p> : null}
+
+            <div className="evals-toolbar-actions">
+              <button type="button" className="evals-btn evals-btn-primary" onClick={save} disabled={saving || !draft.name.trim()}>
+                <Icon name="ph:check" width={13} /> {isNew ? "Create group" : "Save group"}
+              </button>
+              <button type="button" className="evals-btn" onClick={cancel} disabled={saving}>
+                Cancel
+              </button>
+            </div>
           </div>
         </article>
       ) : null}
 
-      <ul className="evals-group-list">
-        {groups.map((group) => {
-          const rollup = rollups.get(group.id);
-          const states = statesById.get(group.id) ?? [];
-          const debugOpen = debugGroupIds.has(group.id);
-          const debugPanelId = `eval-group-debug-${group.id}`;
-          const memberFamiliars = group.members.filter((m) => m.kind === "familiar");
-          return (
-            <li key={group.id} className="evals-group-card">
-              <div className="evals-group-card-head">
-                <div className="evals-group-summary">
-                  <b>{group.name}</b>
-                  <span className="evals-group-muted">
-                    {group.scope} · {group.tracks.length ? group.tracks.join(", ") : "no tracks"}
-                  </span>
-                </div>
-                <div className="evals-group-card-actions">
-                  <button
-                    type="button"
-                    className="evals-icon-btn"
-                    onClick={() => toggleGroupDebug(group.id)}
-                    title="Debug group"
-                    aria-label="Toggle group debug details"
-                    aria-expanded={debugOpen}
-                    aria-controls={debugPanelId}
-                  >
-                    <Icon name="ph:bug-bold" width={13} />
-                  </button>
-                  <button type="button" className="evals-icon-btn" onClick={() => startEdit(group)} title="Edit group" aria-label="Edit group">
-                    <Icon name="ph:pencil-simple" width={13} />
-                  </button>
-                  <button type="button" className="evals-icon-btn" onClick={() => void remove(group)} title="Delete group" aria-label="Delete group">
-                    <Icon name="ph:trash" width={13} />
-                  </button>
-                </div>
-              </div>
-              {group.description ? <p className="evals-group-desc">{group.description}</p> : null}
-              {rollup ? (
-                <div className="evals-group-rollup" aria-label="Group freshness rollup">
-                  <span className="evals-chip">{rollup.totalThreads} threads</span>
-                  <span className="evals-chip is-pass">{rollup.freshThreads} fresh</span>
-                  <span className="evals-chip is-fail">{rollup.staleThreads} stale</span>
-                  <span className="evals-chip">{rollup.neverRunThreads} never run</span>
-                </div>
-              ) : null}
-              {memberFamiliars.length ? (
-                <div className="evals-group-members">
-                  {memberFamiliars.map((m) => (
-                    <span key={m.id} className="evals-toggle-chip is-on">
-                      {familiarName(m.familiarId ?? m.id)}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              {debugOpen ? (
-                <div id={debugPanelId} className="evals-group-debug" aria-label="Group debug details">
-                  <div className="evals-group-debug-title">Group debug details</div>
-                  <pre>
-                    {JSON.stringify(
-                      {
-                        group: {
-                          id: group.id,
-                          name: group.name,
-                          scope: group.scope,
-                          tracks: group.tracks,
-                          rubricVersion: group.rubricVersion,
-                          stalePolicy: group.stalePolicy,
-                          schedulePolicy: group.schedulePolicy,
-                          createdAt: group.createdAt,
-                          updatedAt: group.updatedAt,
-                          members: group.members.map((member) => ({
-                            ...member,
-                            label: member.kind === "familiar" ? familiarName(member.familiarId ?? member.id) : member.id,
-                          })),
-                        },
-                        rollup: rollup ?? null,
-                        states: states.map((state) => ({
-                          threadId: state.threadId,
-                          familiarId: state.familiarId,
-                          status: state.status,
-                          staleReasons: state.staleReasons,
-                          evaluatedAt: state.evaluatedAt,
-                          details: state.details,
-                        })),
-                      },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                </div>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
+      {groups.length ? (
+        <section className="evals-group-set" aria-label="Group set">
+          <div className="evals-section-head">
+            <div>
+              <span className="evals-group-kicker">Group set</span>
+              <b>{groups.length} tracked</b>
+            </div>
+            <span className="evals-group-muted">
+              {groupTotals.members} members · {groupTotals.tracks} tracks · {groupTotals.blockedThreads} blocked
+            </span>
+          </div>
+          <ul className="evals-group-list">
+            {groups.map((group) => {
+              const rollup = rollups.get(group.id);
+              const states = statesById.get(group.id) ?? [];
+              const debugOpen = debugGroupIds.has(group.id);
+              const debugPanelId = `eval-group-debug-${group.id}`;
+              const memberFamiliars = group.members.filter((m) => m.kind === "familiar");
+              return (
+                <li key={group.id} className="evals-group-card">
+                  <div className="evals-group-card-head">
+                    <div className="evals-group-summary">
+                      <div className="evals-group-title-row">
+                        <b>{group.name}</b>
+                        <span className="evals-group-status">{groupStatusLabel(rollup)}</span>
+                      </div>
+                      <span className="evals-group-muted">
+                        {group.scope} · {group.tracks.length ? group.tracks.join(", ") : "no tracks"}
+                      </span>
+                    </div>
+                    <div className="evals-group-card-actions">
+                      <button
+                        type="button"
+                        className={`evals-icon-btn${debugOpen ? " is-active" : ""}`}
+                        onClick={() => toggleGroupDebug(group.id)}
+                        title="Debug group"
+                        aria-label="Toggle group debug details"
+                        aria-expanded={debugOpen}
+                        aria-controls={debugPanelId}
+                      >
+                        <Icon name="ph:bug-bold" width={13} />
+                      </button>
+                      <button type="button" className="evals-icon-btn" onClick={() => startEdit(group)} title="Edit group" aria-label="Edit group">
+                        <Icon name="ph:pencil-simple" width={13} />
+                      </button>
+                      <button type="button" className="evals-icon-btn" onClick={() => void remove(group)} title="Delete group" aria-label="Delete group">
+                        <Icon name="ph:trash" width={13} />
+                      </button>
+                    </div>
+                  </div>
+                  {group.description ? <p className="evals-group-desc">{group.description}</p> : null}
+                  {rollup ? (
+                    <div className="evals-group-rollup" aria-label="Group freshness rollup">
+                      <span className="evals-chip">{rollup.totalThreads} threads</span>
+                      <span className="evals-chip is-pass">{rollup.freshThreads} fresh</span>
+                      <span className="evals-chip is-fail">{rollup.staleThreads} stale</span>
+                      <span className="evals-chip">{rollup.neverRunThreads} never run</span>
+                    </div>
+                  ) : null}
+                  {memberFamiliars.length ? (
+                    <div className="evals-group-members">
+                      {memberFamiliars.map((m) => (
+                        <span key={m.id} className="evals-toggle-chip is-on">
+                          {familiarName(m.familiarId ?? m.id)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {debugOpen ? (
+                    <div id={debugPanelId} className="evals-group-debug" aria-label="Group debug details">
+                      <div className="evals-group-debug-title">Group debug details</div>
+                      <pre>
+                        {JSON.stringify(
+                          {
+                            group: {
+                              id: group.id,
+                              name: group.name,
+                              scope: group.scope,
+                              tracks: group.tracks,
+                              rubricVersion: group.rubricVersion,
+                              stalePolicy: group.stalePolicy,
+                              schedulePolicy: group.schedulePolicy,
+                              createdAt: group.createdAt,
+                              updatedAt: group.updatedAt,
+                              members: group.members.map((member) => ({
+                                ...member,
+                                label: member.kind === "familiar" ? familiarName(member.familiarId ?? member.id) : member.id,
+                              })),
+                            },
+                            rollup: rollup ?? null,
+                            states: states.map((state) => ({
+                              threadId: state.threadId,
+                              familiarId: state.familiarId,
+                              status: state.status,
+                              staleReasons: state.staleReasons,
+                              evaluatedAt: state.evaluatedAt,
+                              details: state.details,
+                            })),
+                          },
+                          null,
+                          2,
+                        )}
+                      </pre>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
     </div>
   );
 }

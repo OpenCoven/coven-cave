@@ -373,19 +373,24 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     <div className="evals evals-unified">
       <aside className="evals-rail">
         <div className="evals-rail-head">
-          <span className="evals-rail-title">Evals</span>
-          <button
-            type="button"
-            className="evals-icon-btn"
-            onClick={() => setShowTemplates(true)}
-            title="New suite from template"
-            aria-label="New suite from template"
-          >
-            <Icon name="ph:sparkle" width={14} />
-          </button>
-          <button type="button" className="evals-icon-btn" onClick={createSuite} title="New blank eval suite" aria-label="New blank eval suite">
-            <Icon name="ph:plus" width={14} />
-          </button>
+          <div>
+            <span className="evals-rail-title">Evals</span>
+            <span className="evals-rail-subtitle">{suites.length} suite{suites.length === 1 ? "" : "s"} tracked</span>
+          </div>
+          <div className="evals-rail-actions">
+            <button
+              type="button"
+              className="evals-icon-btn"
+              onClick={() => setShowTemplates(true)}
+              title="New suite from template"
+              aria-label="New suite from template"
+            >
+              <Icon name="ph:sparkle" width={14} />
+            </button>
+            <button type="button" className="evals-icon-btn" onClick={createSuite} title="New blank eval suite" aria-label="New blank eval suite">
+              <Icon name="ph:plus" width={14} />
+            </button>
+          </div>
         </div>
         <ul className="evals-suite-list">
           {suites.map((s) => (
@@ -396,7 +401,10 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
                 onClick={() => selectSuite(s)}
               >
                 <span className="evals-suite-name">{s.name}</span>
-                <span className="evals-suite-meta">{s.cases.length} case{s.cases.length === 1 ? "" : "s"}</span>
+                <span className="evals-suite-meta">
+                  <Icon name="ph:list-bullets-bold" width={12} aria-hidden />
+                  {s.cases.length} case{s.cases.length === 1 ? "" : "s"}
+                </span>
               </button>
             </li>
           ))}
@@ -429,7 +437,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       <section className="evals-main">
         <header className="evals-toolbar evals-unified-toolbar">
           <div className="evals-title-block">
-            <span className="evals-group-kicker">Unified Evals</span>
+            <span className="evals-group-kicker">Evaluation cockpit</span>
             {draft ? (
               <input
                 className="evals-name-input"
@@ -440,42 +448,49 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
             ) : (
               <h2>Evals</h2>
             )}
+            <span className="evals-title-meta">
+              {draft
+                ? `${draft.cases.length} case${draft.cases.length === 1 ? "" : "s"} · ${runs.length} selected-suite run${runs.length === 1 ? "" : "s"}`
+                : loaded ? "Create or choose a suite to begin." : "Loading suites and run history."}
+            </span>
           </div>
-          <label className="evals-familiar-pick">
-            <span className="evals-familiar-label">Familiar</span>
-            <select
-              value={familiarId}
-              onChange={(e) => patchDraft({ familiarId: e.target.value })}
-              aria-label="Familiar to evaluate"
-              disabled={!draft}
-            >
-              {familiars.length === 0 && <option value="">No familiars</option>}
-              {familiars.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.display_name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="evals-toolbar-actions">
-            <button type="button" className="evals-btn" onClick={save} disabled={!draft || saving || !dirty}>
-              {saving ? "Saving…" : dirty ? "Save" : "Saved"}
-            </button>
-            {running ? (
-              <button type="button" className="evals-btn evals-btn-stop" onClick={stop}>
-                <span className="evals-spinner" aria-hidden /> Stop
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="evals-btn evals-btn-primary"
-                onClick={run}
-                disabled={!draft || Boolean(blockReason)}
-                title={blockReason ?? "Run this suite against the familiar"}
+          <div className="evals-command-stack">
+            <label className="evals-familiar-pick">
+              <span className="evals-familiar-label">Familiar</span>
+              <select
+                value={familiarId}
+                onChange={(e) => patchDraft({ familiarId: e.target.value })}
+                aria-label="Familiar to evaluate"
+                disabled={!draft}
               >
-                <Icon name="ph:play" width={13} /> Run
+                {familiars.length === 0 && <option value="">No familiars</option>}
+                {familiars.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.display_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="evals-toolbar-actions">
+              <button type="button" className="evals-btn" onClick={save} disabled={!draft || saving || !dirty}>
+                {saving ? "Saving…" : dirty ? "Save" : "Saved"}
               </button>
-            )}
+              {running ? (
+                <button type="button" className="evals-btn evals-btn-stop" onClick={stop}>
+                  <span className="evals-spinner" aria-hidden /> Stop
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="evals-btn evals-btn-primary"
+                  onClick={run}
+                  disabled={!draft || Boolean(blockReason)}
+                  title={blockReason ?? "Run this suite against the familiar"}
+                >
+                  <Icon name="ph:play" width={13} /> Run
+                </button>
+              )}
+            </div>
           </div>
         </header>
 
@@ -498,68 +513,74 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
           ))}
         </div>
 
-        {tab === "overview" ? (
-          <EvalsOverview
-            analysis={analysis}
-            recentLoopRuns={retroSnapshot.runs.slice(0, 5)}
-            activeLoopState={activeLoopState}
-            activeGroupRollup={activeGroupRollup}
-          />
-        ) : tab === "insights" ? (
-          <EvalsInsightsPanel suite={draft} runs={allRuns} />
-        ) : tab === "suites" ? (
-          draft ? (
-            <SuiteEditor draft={draft} patchDraft={patchDraft} patchCase={patchCase} patchGrader={patchGrader} setDraft={setDraft} />
-          ) : (
-            <EmptyState
-              icon="ph:flask"
-              headline="Run evals on your familiars"
-              subtitle="Build a suite of test cases, grade each answer with deterministic checks or an LLM judge, and track pass rates over time."
-              actions={
-                <>
-                  <button type="button" className="evals-btn evals-btn-primary" onClick={() => setShowTemplates(true)}>
-                    <Icon name="ph:sparkle" width={14} /> Start from template
-                  </button>
-                  <button type="button" className="evals-btn" onClick={createSuite}>
-                    <Icon name="ph:plus" width={14} /> Blank suite
-                  </button>
-                </>
-              }
+        <div className="evals-tab-panel">
+          {tab === "overview" ? (
+            <EvalsOverview
+              analysis={analysis}
+              draft={draft}
+              runs={runs}
+              recentLoopRuns={retroSnapshot.runs.slice(0, 5)}
+              activeLoopState={activeLoopState}
+              activeGroupRollup={activeGroupRollup}
+              onOpenSuite={() => setTab("suites")}
+              onOpenRuns={() => setTab("runs")}
             />
-          )
-        ) : tab === "runs" ? (
-          <RunsPanel
-            runs={runs}
-            progress={progress}
-            running={running}
-            expandedRunId={expandedRunId}
-            onToggle={(id) => setExpandedRunId((cur) => (cur === id ? null : id))}
-          />
-        ) : tab === "compare" ? (
-          <RunCompare runs={draft ? allRuns.filter((r) => r.suiteId === draft.id) : allRuns} />
-        ) : tab === "loops" ? (
-          <LoopAnalysisPanel
-            familiarId={familiarId}
-            familiarName={familiarName}
-            snapshot={retroSnapshot}
-            activeLoopState={activeLoopState}
-          />
-        ) : tab === "threads" ? (
-          <ThreadFreshnessPanel
-            group={activeGroup}
-            states={activeGroupStates}
-            rollup={activeGroupRollup}
-            queuedCount={queue.length}
-            onQueue={queueStaleGroup}
-          />
-        ) : (
-          <EvalGroupsPanel
-            groups={groups}
-            statesById={groupStatesById}
-            familiars={familiars}
-            onChanged={reloadGroups}
-          />
-        )}
+          ) : tab === "insights" ? (
+            <EvalsInsightsPanel suite={draft} runs={allRuns} />
+          ) : tab === "suites" ? (
+            draft ? (
+              <SuiteEditor draft={draft} patchDraft={patchDraft} patchCase={patchCase} patchGrader={patchGrader} setDraft={setDraft} />
+            ) : (
+              <EmptyState
+                icon="ph:flask"
+                headline="Run evals on your familiars"
+                subtitle="Build a suite of test cases, grade each answer with deterministic checks or an LLM judge, and track pass rates over time."
+                actions={
+                  <>
+                    <button type="button" className="evals-btn evals-btn-primary" onClick={() => setShowTemplates(true)}>
+                      <Icon name="ph:sparkle" width={14} /> Start from template
+                    </button>
+                    <button type="button" className="evals-btn" onClick={createSuite}>
+                      <Icon name="ph:plus" width={14} /> Blank suite
+                    </button>
+                  </>
+                }
+              />
+            )
+          ) : tab === "runs" ? (
+            <RunsPanel
+              runs={runs}
+              progress={progress}
+              running={running}
+              expandedRunId={expandedRunId}
+              onToggle={(id) => setExpandedRunId((cur) => (cur === id ? null : id))}
+            />
+          ) : tab === "compare" ? (
+            <RunCompare runs={draft ? allRuns.filter((r) => r.suiteId === draft.id) : allRuns} />
+          ) : tab === "loops" ? (
+            <LoopAnalysisPanel
+              familiarId={familiarId}
+              familiarName={familiarName}
+              snapshot={retroSnapshot}
+              activeLoopState={activeLoopState}
+            />
+          ) : tab === "threads" ? (
+            <ThreadFreshnessPanel
+              group={activeGroup}
+              states={activeGroupStates}
+              rollup={activeGroupRollup}
+              queuedCount={queue.length}
+              onQueue={queueStaleGroup}
+            />
+          ) : (
+            <EvalGroupsPanel
+              groups={groups}
+              statesById={groupStatesById}
+              familiars={familiars}
+              onChanged={reloadGroups}
+            />
+          )}
+        </div>
       </section>
 
       <TemplateGallery
@@ -746,21 +767,60 @@ function AnalysisCard({ icon, label, value, detail }: { icon: IconName; label: s
 
 function EvalsOverview({
   analysis,
+  draft,
+  runs,
   recentLoopRuns,
   activeLoopState,
   activeGroupRollup,
+  onOpenSuite,
+  onOpenRuns,
 }: {
   analysis: EvalsAnalysis;
+  draft: EvalSuite | null;
+  runs: EvalRun[];
   recentLoopRuns: RetroRun[];
   activeLoopState: RetroRunsSnapshot["familiars"][number] | null;
   activeGroupRollup: EvalGroupRollup | null;
+  onOpenSuite: () => void;
+  onOpenRuns: () => void;
 }) {
+  const latestRun = runs[0] ?? null;
   return (
     <div className="evals-overview">
+      <section className="evals-analysis-panel evals-overview-hero">
+        <div className="evals-section-head">
+          <span className="evals-group-kicker">Evaluation focus</span>
+          <b>{draft?.name ?? "No suite selected"}</b>
+          <button type="button" className="evals-btn" onClick={onOpenSuite}>
+            <Icon name="ph:pencil-simple" width={13} /> Edit suite
+          </button>
+        </div>
+        <div className="evals-overview-hero-grid">
+          <div className="evals-focus-score">
+            <span>Latest pass rate</span>
+            <b>{passRateLabel(analysis.latestPassRate)}</b>
+            <small>{analysis.passTrend == null ? "Run twice to establish a trend." : `${trendLabel(analysis.passTrend)} since previous run.`}</small>
+          </div>
+          <div className="evals-focus-copy">
+            <p>
+              {draft?.description?.trim()
+                ? draft.description
+                : "Build repeatable cases, run them against a familiar, then compare regressions before promoting behavior changes."}
+            </p>
+            <div className="evals-focus-actions">
+              <button type="button" className="evals-btn evals-btn-primary" onClick={onOpenRuns}>
+                <Icon name="ph:chart-bar-bold" width={13} /> Review runs
+              </button>
+              <span className="evals-focus-pill">{draft ? `${draft.cases.length} case${draft.cases.length === 1 ? "" : "s"}` : "No suite"}</span>
+              <span className="evals-focus-pill">{latestRun ? `${latestRun.summary.passed}/${latestRun.summary.total} passed` : "No run history"}</span>
+            </div>
+          </div>
+        </div>
+      </section>
       <section className="evals-analysis-panel">
         <div className="evals-section-head">
-          <span className="evals-group-kicker">Analysis</span>
-          <b>What needs attention</b>
+          <span className="evals-group-kicker">Attention queue</span>
+          <b>{analysis.staleThreads + analysis.blockedThreads + analysis.runningFamiliars} active signals</b>
         </div>
         <ul className="evals-insight-list">
           <li>{analysis.latestPassRate == null ? "No suite runs yet." : `Latest selected-suite pass rate is ${passRateLabel(analysis.latestPassRate)}.`}</li>
@@ -768,13 +828,6 @@ function EvalsOverview({
           <li>{analysis.staleThreads > 0 ? `${analysis.staleThreads} thread eval snapshots need review.` : "Grouped thread eval snapshots are fresh where configured."}</li>
           <li>{activeLoopState?.running ? `${activeLoopState.familiarName} has an eval loop running.` : "No selected familiar eval loop is currently running."}</li>
         </ul>
-      </section>
-      <section className="evals-analysis-panel">
-        <div className="evals-section-head">
-          <span className="evals-group-kicker">Recent eval-loop runs</span>
-          <b>{recentLoopRuns.length ? `${recentLoopRuns.length} newest` : "No loop runs"}</b>
-        </div>
-        <LoopRunList runs={recentLoopRuns} />
       </section>
       <section className="evals-analysis-panel">
         <div className="evals-section-head">
@@ -786,6 +839,13 @@ function EvalsOverview({
             ? `${activeGroupRollup.freshThreads} fresh, ${activeGroupRollup.staleThreads} stale, ${activeGroupRollup.neverRunThreads} never run, ${activeGroupRollup.blockedThreads} blocked.`
             : "Create an eval group to connect thread freshness, stale reasons, and manual queueing."}
         </p>
+      </section>
+      <section className="evals-analysis-panel evals-overview-wide">
+        <div className="evals-section-head">
+          <span className="evals-group-kicker">Recent eval-loop runs</span>
+          <b>{recentLoopRuns.length ? `${recentLoopRuns.length} newest` : "No loop runs"}</b>
+        </div>
+        <LoopRunList runs={recentLoopRuns} />
       </section>
     </div>
   );
@@ -993,31 +1053,55 @@ function SuiteEditor({
 
   return (
     <div className="evals-editor">
-      <textarea
-        className="evals-desc"
-        value={draft.description ?? ""}
-        placeholder="What does this suite check? (optional)"
-        onChange={(e) => patchDraft({ description: e.target.value })}
-        rows={2}
-        aria-label="Suite description"
-      />
-      <label className="evals-field">
-        <span>Pass-rate SLA (%)</span>
-        <input
-          type="number"
-          min={0}
-          max={100}
-          value={draft.slaMinPassRate != null ? Math.round(draft.slaMinPassRate * 100) : ""}
-          onChange={(e) => {
-            const pct = e.target.value === "" ? undefined : Number(e.target.value);
-            patchDraft({
-              slaMinPassRate: pct == null || Number.isNaN(pct) ? undefined : Math.min(1, Math.max(0, pct / 100)),
-            });
-          }}
-          aria-label="Pass-rate SLA percent"
-        />
-      </label>
+      <section className="evals-suite-config" aria-label="Suite configuration">
+        <div className="evals-section-head">
+          <span className="evals-group-kicker">Suite contract</span>
+          <b>Readiness</b>
+        </div>
+        <div className="evals-suite-config-body">
+          <label className="evals-field evals-field-stack">
+            <span>Description</span>
+            <textarea
+              className="evals-desc"
+              value={draft.description ?? ""}
+              placeholder="What does this suite check? (optional)"
+              onChange={(e) => patchDraft({ description: e.target.value })}
+              rows={4}
+              aria-label="Suite description"
+            />
+          </label>
+          <label className="evals-field">
+            <span>Pass-rate SLA (%)</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              value={draft.slaMinPassRate != null ? Math.round(draft.slaMinPassRate * 100) : ""}
+              onChange={(e) => {
+                const pct = e.target.value === "" ? undefined : Number(e.target.value);
+                patchDraft({
+                  slaMinPassRate: pct == null || Number.isNaN(pct) ? undefined : Math.min(1, Math.max(0, pct / 100)),
+                });
+              }}
+              aria-label="Pass-rate SLA percent"
+            />
+          </label>
+          <div className="evals-contract-stats" aria-label="Suite contract summary">
+            <ThreadEvalDetail label="Cases" value={String(draft.cases.length)} />
+            <ThreadEvalDetail label="Checks" value={String(draft.cases.reduce((total, item) => total + item.graders.length, 0))} />
+          </div>
+        </div>
+      </section>
       <div className="evals-cases">
+        <div className="evals-cases-head">
+          <div>
+            <span className="evals-group-kicker">Cases</span>
+            <b>Prompt checks</b>
+          </div>
+          <button type="button" className="evals-add-case" onClick={addCase}>
+            <Icon name="ph:plus" width={14} /> Add case
+          </button>
+        </div>
         {draft.cases.map((c, ci) => (
           <article className="evals-case" key={c.id}>
             <div className="evals-case-head">
@@ -1056,9 +1140,6 @@ function SuiteEditor({
           </article>
         ))}
       </div>
-      <button type="button" className="evals-add-case" onClick={addCase}>
-        <Icon name="ph:plus" width={14} /> Add case
-      </button>
     </div>
   );
 }

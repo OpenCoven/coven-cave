@@ -17,10 +17,18 @@ assert.match(source, /onChanged/, "calls back to refetch groups after a mutation
 
 // Rollup summary per group.
 assert.match(source, /rollupEvalGroup\(/, "rolls each group's state into status counts");
+assert.match(source, /groupTotals/, "derives a page-level groups summary");
+assert.match(source, /evals-groups-hero/, "renders a dedicated Groups tab header");
+assert.match(source, /Tracked groups/, "shows tracked group count");
+assert.match(source, /Runnable threads/, "shows runnable thread count");
+assert.match(source, /Stale or never run/, "shows stale work needing attention");
+assert.match(source, /No tracked groups/, "distinguishes an empty groups list from the editor");
+assert.match(source, /Group set/, "labels the group list region");
 assert.match(source, /freshThreads/, "shows fresh thread count");
 assert.match(source, /staleThreads/, "shows stale thread count");
 assert.match(source, /neverRunThreads/, "shows never-run thread count");
 assert.match(source, /aria-label="Toggle group debug details"/, "each group exposes a debug details toggle");
+assert.match(source, /is-active/, "debug action exposes its active state visually");
 assert.match(source, /Group debug details/, "labels the inline debug payload");
 assert.match(source, /statesById\.get\(group\.id\)/, "debug payload uses the exact derived states for the group");
 assert.match(source, /JSON\.stringify\(\s*\{\s*group:/, "renders copyable JSON debug data");
