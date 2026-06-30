@@ -29,6 +29,16 @@ export const COMMAND_RESPONSE_SPEED_OPTIONS: Array<{ value: CommandResponseSpeed
   { value: "careful", label: "Careful" },
 ];
 
+export type CommandPermissionMode = "full" | "read" | "ask";
+
+export const PERMISSION_MODES: { value: CommandPermissionMode; label: string; icon: string }[] = [
+  { value: "full", label: "Full access", icon: "ph:shield-warning" },
+  { value: "read", label: "Read only", icon: "ph:eye" },
+  { value: "ask", label: "Ask first", icon: "ph:hand" },
+];
+
+export const DEFAULT_PERMISSION_MODE: CommandPermissionMode = "full";
+
 function isThinkingEffort(value: unknown): value is CommandThinkingEffort {
   return COMMAND_THINKING_OPTIONS.some((option) => option.value === value);
 }

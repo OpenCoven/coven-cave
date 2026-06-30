@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { useMemo, useRef, useState } from "react";
+import { Icon, type IconName } from "@/lib/icon";
 import { deriveComuxProjects, type ComuxProject } from "@/lib/comux-projects";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
+import { useSessionPins } from "@/lib/use-session-pins";
+import { toggleSessionPin } from "@/lib/session-pins";
 import type { SessionRow } from "@/lib/types";
 
 type Props = {
@@ -19,7 +21,18 @@ type Props = {
   onOpenSession: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
+  userName?: string;
+  userPlan?: string;
+  scheduledCount?: number;
 };
+
+function navigateMode(mode: string) {
+  window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
+}
+
+// Deep-link targets for the Code-nav shortcuts: Scheduled → Automations,
+// Plugins → the Plugins/Marketplace surface.
+const NAV_TARGETS = { scheduled: { mode: "inbox" }, plugins: { mode: "marketplace" } } as const;
 
 function compactTime(iso: string): string {
   return relativeTime(iso, Date.now(), "compact");
@@ -30,6 +43,12 @@ function statusClass(status: string): string {
   if (status === "failed") return "bg-[var(--color-danger)]";
   if (status === "queued") return "bg-[var(--color-warning)]";
   return "bg-[var(--text-muted)]";
+}
+
+function threadLeadingIcon(title: string): IconName | null {
+  if (/^\s*resolve\s+pr\b|\bpr\s*#?\d+/i.test(title)) return "ph:git-pull-request";
+  if (/\bbranch\b|\bmerge\b|\brebase\b/i.test(title)) return "ph:git-branch";
+  return null;
 }
 
 function sessionsForProject(sessions: SessionRow[], project: ComuxProject): SessionRow[] {
@@ -46,14 +65,18 @@ export function CodeSidebar({
   onOpenSession,
   onNewChat,
   onDeleteSession,
+  userName,
+  userPlan = "Pro",
+  scheduledCount,
 }: Props) {
   const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const [expandedRoots, setExpandedRoots] = useState<Set<string>>(() => new Set());
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
 
   // Scope to the selected familiar (null = All → count everything) so the project
-  // list, counts, and rows reflect only that familiar's chats.
+  // list, counts, rows, and pinned threads reflect only that familiar's chats.
   const scopedSessions = useMemo(
     () =>
       activeFamiliarId
@@ -63,6 +86,15 @@ export function CodeSidebar({
   );
 
   const projects = useMemo(() => deriveComuxProjects(scopedSessions), [scopedSessions]);
+  const pinnedIds = useSessionPins();
+  const [showAllByRoot, setShowAllByRoot] = useState<Set<string>>(() => new Set());
+  const THREADS_PREVIEW = 5;
+  const pinnedSessions = useMemo(
+    () => pinnedIds
+      .map((id) => scopedSessions.find((s) => s.id === id))
+      .filter((s): s is SessionRow => Boolean(s)),
+    [pinnedIds, scopedSessions],
+  );
   const visibleProjects = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return projects;
@@ -121,10 +153,33 @@ export function CodeSidebar({
         </div>
       </header>
 
+      <nav aria-label="Code navigation" className="shrink-0 border-b border-[var(--border-hairline)] px-1.5 py-1.5">
+        {[
+          { key: "new", label: "New chat", icon: "ph:pencil-simple" as IconName, count: undefined as number | undefined, onClick: () => onNewChat(null) },
+          { key: "search", label: "Search", icon: "ph:magnifying-glass" as IconName, count: undefined as number | undefined, onClick: () => searchRef.current?.focus() },
+          { key: "scheduled", label: "Scheduled", icon: "ph:clock" as IconName, count: scheduledCount, onClick: () => navigateMode(NAV_TARGETS.scheduled.mode) },
+          { key: "plugins", label: "Plugins", icon: "ph:plugs" as IconName, count: undefined as number | undefined, onClick: () => navigateMode(NAV_TARGETS.plugins.mode) },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={item.onClick}
+            className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name={item.icon} width={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            {typeof item.count === "number" && item.count > 0 ? (
+              <span className="shrink-0 rounded-full bg-[var(--bg-raised)] px-1.5 text-[10px] font-mono text-[var(--text-muted)]">{item.count}</span>
+            ) : null}
+          </button>
+        ))}
+      </nav>
+
       <div className="shrink-0 border-b border-[var(--border-hairline)] px-2 py-2">
         <label className="flex h-7 items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/55 px-2 focus-within:border-[var(--border-strong)]">
           <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
           <input
+            ref={searchRef}
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -146,6 +201,30 @@ export function CodeSidebar({
       </div>
 
       <nav aria-label="Code projects and threads" className="min-h-0 flex-1 overflow-y-auto pb-2">
+        {pinnedSessions.length > 0 ? (
+          <section aria-label="Pinned threads" className="border-b border-[var(--border-hairline)] py-1">
+            <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Pinned</div>
+            <ul>
+              {pinnedSessions.map((session) => {
+                const title = sessionRailTitle(session);
+                const active = activeSessionId === session.id;
+                return (
+                  <li key={`pin-${session.id}`}>
+                    <button
+                      type="button"
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => onOpenSession(session)}
+                      className={`focus-ring flex min-h-[32px] w-full items-center gap-1.5 py-1.5 pl-3 pr-2 text-left text-[12px] ${active ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]"}`}
+                    >
+                      <Icon name="ph:push-pin-fill" width={11} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
         {visibleProjects.length === 0 ? (
           <p className="px-3 py-4 text-center text-[11px] text-[var(--text-muted)]">
             No code projects yet.
@@ -193,9 +272,10 @@ export function CodeSidebar({
                       <p className="py-1 pl-8 pr-3 text-[11px] text-[var(--text-muted)]">No threads yet.</p>
                     ) : (
                       <ul>
-                        {projectSessions.map((session) => {
+                        {(showAllByRoot.has(project.root) ? projectSessions : projectSessions.slice(0, THREADS_PREVIEW)).map((session) => {
                           const title = sessionRailTitle(session);
                           const active = activeSessionId === session.id;
+                          const isPinnedRow = pinnedIds.includes(session.id);
                           const confirming = confirmingSessionId === session.id;
                           const deleting = deletingSessionId === session.id;
                           return (
@@ -217,7 +297,14 @@ export function CodeSidebar({
                                   }}
                                   className="focus-ring flex min-h-[34px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-4 pr-1 text-left text-[12px]"
                                 >
-                                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusClass(session.status)}`} aria-hidden />
+                                  {(() => {
+                                    const glyph = threadLeadingIcon(title);
+                                    return glyph ? (
+                                      <Icon name={glyph} width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                                    ) : (
+                                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusClass(session.status)}`} aria-hidden />
+                                    );
+                                  })()}
                                   <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
                                   {confirming ? null : (
                                     <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)]">
@@ -252,20 +339,42 @@ export function CodeSidebar({
                                     </button>
                                   </span>
                                 ) : (
-                                  <button
-                                    type="button"
-                                    title="Delete thread"
-                                    aria-label={`Delete thread ${title}`}
-                                    onClick={() => setConfirmingSessionId(session.id)}
-                                    className="touch-always-visible focus-ring mr-1 grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-55 transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/code-thread:opacity-100"
-                                  >
-                                    <Icon name="ph:x-bold" width={10} aria-hidden />
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      title={isPinnedRow ? "Unpin thread" : "Pin thread"}
+                                      aria-label={isPinnedRow ? `Unpin ${title}` : `Pin ${title}`}
+                                      onClick={() => toggleSessionPin(session.id)}
+                                      className="touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover/code-thread:opacity-100"
+                                    >
+                                      <Icon name={isPinnedRow ? "ph:push-pin-fill" : "ph:push-pin"} width={11} aria-hidden />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Delete thread"
+                                      aria-label={`Delete thread ${title}`}
+                                      onClick={() => setConfirmingSessionId(session.id)}
+                                      className="touch-always-visible focus-ring mr-1 grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-55 transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/code-thread:opacity-100"
+                                    >
+                                      <Icon name="ph:x-bold" width={10} aria-hidden />
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </li>
                           );
                         })}
+                        {projectSessions.length > THREADS_PREVIEW && !showAllByRoot.has(project.root) ? (
+                          <li>
+                            <button
+                              type="button"
+                              onClick={() => setShowAllByRoot((cur) => new Set(cur).add(project.root))}
+                              className="focus-ring w-full py-1.5 pl-8 pr-3 text-left text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                            >
+                              Show more
+                            </button>
+                          </li>
+                        ) : null}
                       </ul>
                     )
                   ) : null}
@@ -275,6 +384,16 @@ export function CodeSidebar({
           </ul>
         )}
       </nav>
+
+      <footer className="code-sidebar__footer code-sidebar__user mt-auto flex shrink-0 items-center gap-2 border-t border-[var(--border-hairline)] px-3 py-2">
+        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--bg-raised)] text-[11px] font-semibold text-[var(--text-primary)]" aria-hidden>
+          {(userName ?? "You").split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase()}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[12px] font-medium text-[var(--text-primary)]">{userName ?? "You"}</span>
+          <span className="block truncate text-[10px] text-[var(--text-muted)]">{userPlan}</span>
+        </span>
+      </footer>
       </div>
     </div>
   );

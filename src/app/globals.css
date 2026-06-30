@@ -4543,6 +4543,19 @@ button:active > .edge-rail-chip {
   background: color-mix(in oklch, var(--code-surface) 76%, black);
 }
 
+/* Codex composer card: on the code surface the composer reads as a rounded
+   card with pill-shaped control chips. Scoped to .cave-code-page so the
+   standalone chat composer is untouched. */
+.cave-code-page .cave-composer-panel {
+  border-radius: 16px;
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 60%, transparent);
+}
+
+.cave-code-page .cave-composer-settings-row .cave-composer-select {
+  border-radius: 999px;
+}
+
 @media (max-width: 1023px) {
   /* On narrow screens the two columns can't sit side by side: the conversation
      fills the surface and the Environment rail slides in as a full overlay. */

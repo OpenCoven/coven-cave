@@ -15,4 +15,8 @@ assert.match(bubble, /observer\.observe\(el, \{ childList: true, subtree: true \
 assert.match(bubble, /return \(\) => observer\.disconnect\(\)/, "the observer is disconnected on cleanup");
 assert.match(bubble, /const wireAll = \(\) => \{[\s\S]*?wireCopyButtons\(el\)[\s\S]*?\};[\s\S]*?wireAll\(\);/, "initial pass wires immediately, then the observer re-wires");
 
+assert.match(bubble, /ph:thumbs-up/, "assistant action row has thumbs-up");
+assert.match(bubble, /ph:thumbs-down/, "assistant action row has thumbs-down");
+assert.match(bubble, /ph:share-network/, "assistant action row has share");
+
 console.log("message-bubble-rewire.test.ts: ok");

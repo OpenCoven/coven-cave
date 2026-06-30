@@ -30,6 +30,7 @@ import type { PreviewPlugin } from "@create-markdown/preview";
 import type { Highlighter } from "shiki";
 import moodCTheme from "@/styles/shiki/mood-c-dark.json";
 import { Icon } from "@/lib/icon";
+import { getFeedback, setFeedback, type Feedback } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -1023,6 +1024,11 @@ export type MessageBubbleProps = {
    *  caller gates it on settled (non-pending) turns with text. */
   onReply?: () => void;
   onOpenUrl?: (url: string) => void;
+  /** Stable id for this message — enables local thumbs-up/down persistence
+   *  (assistant role only). Without it the thumbs buttons are not rendered. */
+  messageId?: string;
+  /** Share this turn — renders a Share action in the assistant action row. */
+  onShare?: () => void;
   /** CHAT-D4-01: ordered segments — prose spans interleaved with tool blocks
    *  at their chronological position. Assistant role only; when present they
    *  replace the single MarkdownContent render. `content` must still carry
@@ -1040,8 +1046,10 @@ export type MessageBubbleProps = {
   };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, segments, branchNav }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, onShare, segments, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
+  const [vote, setVote] = useState<Feedback | null>(() => (messageId ? getFeedback(messageId) : null));
+  const applyVote = (v: Feedback) => { if (!messageId) return; setFeedback(messageId, v); setVote(getFeedback(messageId)); };
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
@@ -1206,6 +1214,38 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
           ) : null}
           <ExpandBubble text={content} label={label ?? "Familiar response"} />
           <CopyBubble text={content} />
+          {messageId ? (
+            <>
+              <button
+                type="button"
+                aria-label="Good response"
+                aria-pressed={vote === "up"}
+                onClick={() => applyVote("up")}
+                className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+              >
+                <Icon name="ph:thumbs-up" width={13} aria-hidden />
+              </button>
+              <button
+                type="button"
+                aria-label="Bad response"
+                aria-pressed={vote === "down"}
+                onClick={() => applyVote("down")}
+                className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+              >
+                <Icon name="ph:thumbs-down" width={13} aria-hidden />
+              </button>
+            </>
+          ) : null}
+          {onShare ? (
+            <button
+              type="button"
+              aria-label="Share"
+              onClick={onShare}
+              className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
+            >
+              <Icon name="ph:share-network" width={13} aria-hidden />
+            </button>
+          ) : null}
         </div>
       ) : null}
       <div className={`cave-bubble-timestamp${shouldShowTs ? " cave-bubble-timestamp--visible" : ""}`}>

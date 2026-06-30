@@ -105,6 +105,8 @@ export const SUITES = {
     "src/lib/agent-completion-report.test.ts",
     "src/lib/chat-reply.test.ts",
     "src/components/chat-reply-wiring.test.ts",
+    "src/lib/artifact-comments.test.ts",
+    "src/components/artifact-comments.test.ts",
     "src/lib/reminder-draft.test.ts",
     "src/lib/daily-report.test.ts",
     "src/lib/daily-note.test.ts",
@@ -520,6 +522,8 @@ export const SUITES = {
     "src/components/board-clear-done.test.ts",
     "src/components/board-schedule-window.test.ts",
     "src/lib/server/automation-runner.test.ts",
+    "src/lib/session-pins.test.ts",
+    "src/lib/message-feedback.test.ts",
   ],
   api: [
     "scripts/dependency-policy.test.mjs",

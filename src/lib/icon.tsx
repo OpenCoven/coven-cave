@@ -74,6 +74,7 @@ export const ICON_NAMES = [
   "ph:note-pencil",
   "ph:plug",
   "ph:plug-bold",
+  "ph:plugs",
   "ph:list-bullets-bold",
   "ph:mask-happy",
   "ph:cursor-click",
@@ -215,6 +216,7 @@ export const ICON_NAMES = [
   "ph:link",
   "ph:link-simple",
   "ph:git-pull-request",
+  "ph:git-branch",
   "ph:git-merge",
   "ph:git-diff",
   "ph:code",
@@ -300,6 +302,8 @@ export const ICON_NAMES = [
   "ph:pause",
   "ph:clock-counter-clockwise",
   "ph:arrow-down",
+  "ph:shield-warning",
+  "ph:microphone",
 ] as const;
 
 export type IconName = (typeof ICON_NAMES)[number];
