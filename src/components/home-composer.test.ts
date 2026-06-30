@@ -195,8 +195,8 @@ assert.match(
 
 assert.match(
   css,
-  /\.hc-control-group--who\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?\.hc-control-group--intent\s*\{[\s\S]*?flex: 1 1 auto;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?flex: 0 1 auto;/,
-  "HomeComposer action bar should keep side clusters content-sized while the intent group absorbs slack",
+  /\.hc-control-group--who\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?margin-left: auto;/,
+  "HomeComposer action bar should keep the who cluster content-sized and pin the run cluster to the right edge",
 );
 
 assert.match(
@@ -313,6 +313,27 @@ assert.match(
   source,
   /const nav = \["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"\];/,
   "The radiogroup supports arrow/Home/End keyboard selection per the ARIA radio pattern",
+);
+
+// ── Chat/Task lead the card as a mode strip above the textarea ───────────────
+assert.match(
+  source,
+  /hc-mode-strip[\s\S]*?className="hc-dest-pills"[\s\S]*?className="hc-textarea"/,
+  "The Chat/Task switch renders in a mode strip above the textarea, not in the action bar",
+);
+assert.match(
+  css,
+  /\.hc-mode-strip\s*\{/,
+  "HomeComposer CSS should define the mode strip that seats the Chat/Task switch atop the card",
+);
+
+// ── Chat-only send config collapses when Task is the destination ─────────────
+// Runtime/model, Think, and Speed configure a chat send and are meaningless for
+// creating a board task, so they render only while the Chat mode is selected.
+assert.match(
+  source,
+  /destination === "chat" \? \(\s*<>[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<\/>\s*\) : null/,
+  "Runtime/model, Think, and Speed controls collapse out of the action bar when Task is selected",
 );
 
 // ── Model selection moved to the /model slash command ────────────────────────

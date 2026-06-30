@@ -694,6 +694,35 @@ export function HomeComposer({
 
         <div className="home-composer-card">
 
+        {/* Mode strip — the composer's primary intent switch (Chat vs Task)
+            leads the card, above the textarea, so it reads as the top-level
+            mode rather than one control buried among the per-send config. */}
+        <div className="hc-mode-strip">
+          <div
+            className="hc-dest-pills"
+            role="radiogroup"
+            aria-label="Send to"
+            ref={destGroupRef}
+            onKeyDown={handleDestKeyDown}
+          >
+            {DESTINATIONS.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                role="radio"
+                aria-checked={destination === d.id}
+                tabIndex={destination === d.id ? 0 : -1}
+                className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
+                onClick={() => setDestination(d.id)}
+                title={d.label}
+              >
+                <Icon name={d.icon} width={12} aria-hidden />
+                <span className="hc-dest-label">{d.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Textarea */}
         <textarea
           ref={textareaRef}
@@ -780,78 +809,59 @@ export function HomeComposer({
             </label>
           </div>
 
-          <div className="hc-control-group hc-control-group--intent">
-            <div
-              className="hc-dest-pills"
-              role="radiogroup"
-              aria-label="Send to"
-              ref={destGroupRef}
-              onKeyDown={handleDestKeyDown}
-            >
-              {DESTINATIONS.map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={destination === d.id}
-                  tabIndex={destination === d.id ? 0 : -1}
-                  className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
-                  onClick={() => setDestination(d.id)}
-                  title={d.label}
-                >
-                  <Icon name={d.icon} width={12} aria-hidden />
-                  <span className="hc-dest-label">{d.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="hc-control-group hc-control-group--run">
-            <label className="hc-familiar-selector hc-runtime-model-selector">
-              <Icon name="ph:terminal-window" width={13} className="hc-familiar-glyph" aria-hidden />
-              <select
-                aria-label="Choose runtime and model"
-                className="hc-familiar-select"
-                value={selectedRuntimeModelValue}
-                onChange={(e) => handleSelectRuntimeModel(e.currentTarget.value)}
-                disabled={!selectedFamiliarId || sending}
-              >
-                {COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => (
-                  <optgroup key={adapter.id} label={adapter.label}>
-                    {runtimeModelOptionsFor(adapter.id).length === 0 ? (
-                      <option value={runtimeModelValue(adapter.id, "")}>
-                        Runtime managed
-                      </option>
-                    ) : (
-                      runtimeModelOptionsFor(adapter.id).map((model) => (
-                        <option key={model.id} value={runtimeModelValue(adapter.id, model.id)}>
-                          {model.label}
-                        </option>
-                      ))
-                    )}
-                  </optgroup>
-                ))}
-              </select>
-              <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-            </label>
+            {/* Runtime/model, Think, and Speed configure a chat send — they're
+                meaningless for creating a board task, so they collapse out when
+                the Task mode is selected, leaving just the submit affordance. */}
+            {destination === "chat" ? (
+              <>
+                <label className="hc-familiar-selector hc-runtime-model-selector">
+                  <Icon name="ph:terminal-window" width={13} className="hc-familiar-glyph" aria-hidden />
+                  <select
+                    aria-label="Choose runtime and model"
+                    className="hc-familiar-select"
+                    value={selectedRuntimeModelValue}
+                    onChange={(e) => handleSelectRuntimeModel(e.currentTarget.value)}
+                    disabled={!selectedFamiliarId || sending}
+                  >
+                    {COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => (
+                      <optgroup key={adapter.id} label={adapter.label}>
+                        {runtimeModelOptionsFor(adapter.id).length === 0 ? (
+                          <option value={runtimeModelValue(adapter.id, "")}>
+                            Runtime managed
+                          </option>
+                        ) : (
+                          runtimeModelOptionsFor(adapter.id).map((model) => (
+                            <option key={model.id} value={runtimeModelValue(adapter.id, model.id)}>
+                              {model.label}
+                            </option>
+                          ))
+                        )}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+                </label>
 
-            {renderCompactSelect(
-              "Think",
-              "ph:sparkle-bold",
-              thinkingEffort,
-              (value) => setThinkingEffort(value as CommandThinkingEffort),
-              COMMAND_THINKING_OPTIONS,
-              "Choose thinking effort",
-            )}
+                {renderCompactSelect(
+                  "Think",
+                  "ph:sparkle-bold",
+                  thinkingEffort,
+                  (value) => setThinkingEffort(value as CommandThinkingEffort),
+                  COMMAND_THINKING_OPTIONS,
+                  "Choose thinking effort",
+                )}
 
-            {renderCompactSelect(
-              "Speed",
-              "ph:lightning-bold",
-              responseSpeed,
-              (value) => setResponseSpeed(value as CommandResponseSpeed),
-              COMMAND_RESPONSE_SPEED_OPTIONS,
-              "Choose response speed",
-            )}
+                {renderCompactSelect(
+                  "Speed",
+                  "ph:lightning-bold",
+                  responseSpeed,
+                  (value) => setResponseSpeed(value as CommandResponseSpeed),
+                  COMMAND_RESPONSE_SPEED_OPTIONS,
+                  "Choose response speed",
+                )}
+              </>
+            ) : null}
 
             <button
               type="button"

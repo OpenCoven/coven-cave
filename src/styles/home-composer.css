@@ -139,11 +139,11 @@
 }
 
 /* ── Action bar ──────────────────────────────────────────────────────────────
- *   One balanced row: a compact "who" cluster anchored left, the intent pills
- *   centered, and the "run" config cluster anchored right. Only the centre
- *   group grows to absorb slack, so the side clusters stay tight to the edges
- *   instead of stretching open big interior gaps. The larger column gap (vs the
- *   intra-group gap) reads the three clusters as distinct without a divider. */
+ *   One balanced row: a compact "who" cluster anchored left and the "run"
+ *   config cluster anchored right (pushed there with margin-left:auto). The
+ *   intent switch (Chat/Task) no longer lives here — it leads the card as a
+ *   mode strip above the textarea — so the bar reads as pure send config. The
+ *   larger column gap (vs the intra-group gap) keeps the clusters distinct. */
 .hc-action-bar {
   display: flex;
   align-items: center;
@@ -167,13 +167,7 @@
   flex: 0 1 auto;
 }
 
-/* The intent group is the only one that grows; it absorbs all the slack and
- * centres the destination pills between the two side clusters. */
-.hc-control-group--intent {
-  flex: 1 1 auto;
-  justify-content: center;
-}
-
+/* The run cluster is content-sized and pinned to the right edge. */
 .hc-control-group--run {
   flex: 0 1 auto;
   justify-content: flex-end;
@@ -304,23 +298,37 @@
   flex-shrink: 0;
 }
 
-/* ── Destination pills ───────────────────────────────────────────────────── */
-.hc-dest-pills {
+/* ── Mode strip (Chat / Task) ──────────────────────────────────────────────────
+ *   The composer's primary intent switch, seated at the top of the card above
+ *   the textarea. A compact segmented control so the Chat-vs-Task choice reads
+ *   as the top-level mode, distinct from the per-send config in the action bar. */
+.hc-mode-strip {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  padding: 12px 14px 2px;
+}
+
+/* Destination pills — a segmented toggle inside the mode strip. */
+.hc-dest-pills {
+  display: inline-flex;
+  gap: 2px;
   flex: 0 0 auto;
   min-width: 0;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-hairline);
 }
 
 .hc-dest-pill {
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-height: 30px;
+  gap: 5px;
+  min-height: 28px;
   box-sizing: border-box;
-  font-size: 11px;
-  font-weight: 450;
-  padding: 3px 11px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 14px;
   border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
@@ -331,16 +339,16 @@
 }
 
 .hc-dest-pill:hover {
-  background: var(--bg-base);
+  background: var(--bg-raised);
   color: var(--text-secondary);
-  border-color: var(--border-hairline);
 }
 
 .hc-dest-pill.active {
-  background: color-mix(in oklch, var(--accent-presence) 14%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 18%, var(--bg-raised));
+  border-color: color-mix(in oklch, var(--accent-presence) 45%, transparent);
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: 600;
+  box-shadow: 0 1px 2px color-mix(in oklch, var(--text-primary) 8%, transparent);
 }
 
 @media (max-width: 520px) {
@@ -422,10 +430,6 @@
   .hc-control-group--run {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .hc-control-group--intent {
-    order: 3;
   }
 
   .hc-control-group--run {
