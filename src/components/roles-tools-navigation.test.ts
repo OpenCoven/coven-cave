@@ -32,14 +32,39 @@ assert.match(
 
 assert.match(
   workspace,
-  /mode === "roles"[\s\S]*<PluginsView[\s\S]*tabs=\{\["roles", "skills", "marketplace", "capabilities"\]\}/,
-  "The Roles surface should expose roles, skills, marketplace, and capabilities without reopening the old Workflows page",
+  /mode === "roles"[\s\S]*<PluginsView[\s\S]*tabs=\{\["roles", "skills", "capabilities"\]\}/,
+  "The Roles surface should expose roles, skills, and capabilities (Marketplace is now its own page)",
 );
 
 assert.doesNotMatch(
   workspace,
   /setMode\("workflows"\)|mode === "workflows"|<WorkflowsView\b/,
   "Workspace should not expose a top-level Workflows page",
+);
+
+// --- Marketplace is its own first-class page, not a tab of the Roles surface ---
+assert.match(
+  workspaceMode,
+  /\|\s*"marketplace"/,
+  "Marketplace should be a first-class workspace mode",
+);
+
+assert.match(
+  sidebar,
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description:/,
+  "Sidebar navigation should expose Marketplace as its own tools surface",
+);
+
+assert.match(
+  workspace,
+  /mode === "marketplace" \? \(\s*<MarketplaceView \/>/,
+  "Workspace should render the standalone Marketplace surface for the marketplace mode",
+);
+
+assert.doesNotMatch(
+  pluginsView,
+  /MarketplaceViewSurface/,
+  "PluginsView should no longer embed the Marketplace surface — it lives on its own page",
 );
 
 assert.doesNotMatch(
