@@ -1484,56 +1484,97 @@ function StateDot({ state }: { state: AutomationEntry["state"] }) {
 }
 
 // A single unified row in the "All" list — type chip + name + trigger + state.
+/** busyId encoding differs per native store: flows are `flow:<id>`, the rest use
+ *  the bare native id. Mirror that here so the All row's Run button shows the
+ *  spinner for the right entry. */
+function entryBusyKey(entry: AutomationEntry): string {
+  return entry.type === "flow" ? `flow:${entry.nativeId}` : entry.nativeId;
+}
+
 function AutomationEntryRow({
   entry,
   familiarLabel,
+  busy,
+  onRun,
   onOpen,
 }: {
   entry: AutomationEntry;
   familiarLabel: (id?: string | null) => string | null;
+  busy: boolean;
+  onRun: (entry: AutomationEntry) => void;
   onOpen: (entry: AutomationEntry) => void;
 }) {
   const fam = familiarLabel(entry.familiarId);
+  // Next fire (reminders only, for now) as a friendly relative time alongside the
+  // schedule string — so the unified list answers "when next?" at a glance.
+  const nextFire = entry.state === "active" && entry.nextFireAt ? relTime(entry.nextFireAt) : null;
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(entry)}
-      className="focus-ring-inset automation-list-row group/srow flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+    <div
+      className="automation-list-row group/srow flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
       style={{ border: "1px solid var(--border-hairline)" }}
     >
       <AutomationTypeChip type={entry.type} />
-      <span className="min-w-0 flex-1">
+      <button
+        type="button"
+        onClick={() => onOpen(entry)}
+        className="focus-ring-inset min-w-0 flex-1 rounded-md text-left"
+      >
         <span className="block truncate text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>
           {entry.name}
         </span>
         <span className="mt-0.5 flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex shrink-0 items-center gap-1">
             <Icon name={entry.scheduled ? "ph:clock" : "ph:play"} width={11} aria-hidden />
             {entry.trigger}
           </span>
+          {nextFire && (
+            <span className="shrink-0 whitespace-nowrap" style={{ color: "var(--text-secondary)" }} title={`Next fire: ${entry.nextFireAt}`}>
+              · {nextFire}
+            </span>
+          )}
           {fam && <span className="truncate">· {fam}</span>}
         </span>
-      </span>
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onRun(entry)}
+        aria-label={`Run ${entry.name} now`}
+        className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium opacity-0 transition-colors hover:bg-white/10 focus-visible:opacity-100 group-hover/srow:opacity-100 disabled:opacity-50"
+        style={{ color: "var(--text-secondary)" }}
+      >
+        <Icon name="ph:play" width={11} aria-hidden />
+        {busy ? "…" : "Run"}
+      </button>
       <StateDot state={entry.state} />
-      <Icon name="ph:caret-right" width={13} aria-hidden className="shrink-0 opacity-0 transition-opacity group-hover/srow:opacity-60" />
-    </button>
+    </div>
   );
 }
 
 function AutomationAllList({
   entries,
+  busyId,
   familiarLabel,
+  onRun,
   onOpen,
 }: {
   entries: AutomationEntry[];
   busyId: string | null;
   familiarLabel: (id?: string | null) => string | null;
+  onRun: (entry: AutomationEntry) => void;
   onOpen: (entry: AutomationEntry) => void;
 }) {
   return (
     <div className="space-y-1.5 pt-1">
       {entries.map((entry) => (
-        <AutomationEntryRow key={entry.key} entry={entry} familiarLabel={familiarLabel} onOpen={onOpen} />
+        <AutomationEntryRow
+          key={entry.key}
+          entry={entry}
+          familiarLabel={familiarLabel}
+          busy={busyId === entryBusyKey(entry)}
+          onRun={onRun}
+          onOpen={onOpen}
+        />
       ))}
     </div>
   );
@@ -1946,6 +1987,21 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     if (auto) { setSelectedCodex(auto); setSelectedItem(null); }
   }, [items, codexAutos]);
 
+  // Run any entry straight from the unified "All" list, dispatching to the right
+  // per-type handler (crons + flows confirm first; reminders fire immediately).
+  const runEntry = useCallback((entry: AutomationEntry) => {
+    if (entry.type === "reminder") { void runNow(entry.nativeId); return; }
+    if (entry.type === "cron") {
+      const auto = codexAutos.find((a) => a.id === entry.nativeId);
+      if (auto) void runCodexNow(auto);
+      return;
+    }
+    if (entry.type === "flow") {
+      const flow = flows.find((f) => f.id === entry.nativeId);
+      if (flow) void runFlowNow(flow);
+    }
+  }, [codexAutos, flows, runNow, runCodexNow, runFlowNow]);
+
   // Ids whose delete is pending in the undo window — hidden everywhere until the
   // window lapses (committing the delete) or Undo restores them.
   const hiddenIds = useMemo(() => new Set(deletePending?.item ?? []), [deletePending]);
@@ -2331,6 +2387,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   entries={allEntries}
                   busyId={busyId}
                   familiarLabel={familiarLabel}
+                  onRun={runEntry}
                   onOpen={openEntry}
                 />
               ) : activeTab === "reminders" ? (
