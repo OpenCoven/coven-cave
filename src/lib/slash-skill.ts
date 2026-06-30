@@ -10,6 +10,12 @@ export type SkillOption = {
   description?: string;
   /** Scope the skill belongs to (e.g. "global", "user") — shown as a hint. */
   familiar?: string;
+  // Extra metadata from /api/skills/local, shown in the picker's detail preview.
+  version?: string;
+  kind?: string;
+  tags?: string[];
+  /** Absolute path to the skill directory (shown muted in the preview). */
+  path?: string;
 };
 
 // `/skills` is the no-arg "show everything" picker; it also accepts a trailing

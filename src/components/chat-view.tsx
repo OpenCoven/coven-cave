@@ -24,6 +24,7 @@ import { resolveFamiliar } from "@/lib/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
+import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import { ChatArchiveNudge } from "@/components/chat-archive-nudge";
 import {
   isChatArchiveNudgeDismissed,
@@ -4714,7 +4715,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             </div>
           ) : skillMenuActive && skillOptions ? (
             <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
-              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Skills">
+              <div className="flex">
+              <ul className="max-h-64 flex-1 min-w-0 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Skills">
                 {skillOptions.map((s, i) => {
                   const active = i === slashIdx;
                   return (
@@ -4745,6 +4747,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   );
                 })}
               </ul>
+              <SkillDetailPreview skill={skillOptions[slashIdx] ?? skillOptions[0] ?? null} />
+              </div>
               <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
                 {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
               </div>

@@ -54,4 +54,25 @@ assert.match(chatView, /sendRaw\(buildSkillPrompt\(skill\)\)/, "chat-view invoke
 assert.match(chatView, /role="listbox" aria-label="Skills"/, "chat-view renders a Skills listbox");
 assert.match(chatView, /fetch\("\/api\/skills\/local"/, "chat-view sources skills from the local skill scan");
 
+// ── Skill detail preview in the picker ───────────────────────────────────────
+const preview = await readFile(new URL("../components/skill-detail-preview.tsx", import.meta.url), "utf8");
+assert.match(preview, /export function SkillDetailPreview\(\{ skill \}/, "exports a SkillDetailPreview component");
+assert.match(preview, /skill\.description/, "preview shows the full description");
+assert.match(preview, /skill\.tags\?\.length/, "preview shows tags when present");
+assert.match(preview, /skill\.path/, "preview shows the skill path");
+assert.match(preview, /skill\.familiar/, "preview shows the skill scope");
+
+const homeComposer = await readFile(new URL("../components/home-composer.tsx", import.meta.url), "utf8");
+for (const [label, src] of [["chat-view", chatView], ["home-composer", homeComposer]]) {
+  assert.match(
+    src,
+    /<SkillDetailPreview skill=\{skillOptions\[slashIdx\] \?\? skillOptions\[0\] \?\? null\}/,
+    `${label} renders the detail preview for the highlighted skill`,
+  );
+}
+
+// The SkillOption type carries the metadata the preview renders.
+const lib = await readFile(new URL("./slash-skill.ts", import.meta.url), "utf8");
+assert.match(lib, /version\?: string;[\s\S]*?tags\?: string\[\];[\s\S]*?path\?: string;/, "SkillOption carries preview metadata");
+
 console.log("slash-skill.test.ts: ok");

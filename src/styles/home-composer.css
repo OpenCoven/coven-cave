@@ -786,6 +786,10 @@
     0 14px 32px -16px color-mix(in oklch, var(--accent-presence) 22%, transparent),
     0 4px 18px -6px rgb(0 0 0 / 0.35);
 }
+/* Skills picker: option list + detail preview side by side. */
+.hc-slash-body { display: flex; align-items: stretch; min-height: 0; }
+.hc-slash-body .hc-slash-list { flex: 1 1 auto; min-width: 0; }
+.hc-slash-body .skill-preview { max-height: 260px; }
 .hc-slash-list {
   list-style: none;
   margin: 0;

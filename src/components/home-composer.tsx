@@ -25,6 +25,7 @@ import {
   buildSkillPrompt,
   type SkillOption,
 } from "@/lib/slash-skill";
+import { SkillDetailPreview } from "@/components/skill-detail-preview";
 import type { ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
@@ -730,25 +731,28 @@ export function HomeComposer({
           </div>
         ) : skillMenuActive && skillOptions ? (
           <div className="hc-slash-menu">
-            <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Skills">
-              {skillOptions.map((s, i) => {
-                const active = i === slashIdx;
-                return (
-                  <li key={s.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onMouseEnter={() => setSlashIdx(i)}
-                      onClick={() => invokeSkill(s)}
-                      className={`hc-slash-row${active ? " active" : ""}`}
-                    >
-                      <span className="hc-slash-name">{s.name}</span>
-                      <span className="hc-slash-desc">{s.description || s.id}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="hc-slash-body">
+              <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Skills">
+                {skillOptions.map((s, i) => {
+                  const active = i === slashIdx;
+                  return (
+                    <li key={s.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        onMouseEnter={() => setSlashIdx(i)}
+                        onClick={() => invokeSkill(s)}
+                        className={`hc-slash-row${active ? " active" : ""}`}
+                      >
+                        <span className="hc-slash-name">{s.name}</span>
+                        <span className="hc-slash-desc">{s.description || s.id}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <SkillDetailPreview skill={skillOptions[slashIdx] ?? skillOptions[0] ?? null} />
+            </div>
             <div className="hc-slash-footer">↑↓ navigate · Enter run · Tab complete · Esc cancel</div>
           </div>
         ) : slashSuggestions.length > 0 ? (
