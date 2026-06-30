@@ -16,6 +16,7 @@ import { githubItemMatchesQuery } from "@/lib/github-search";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { DiffHunk } from "@/components/gh-diff-view";
+import { GhReviewActions } from "@/components/gh-review-actions";
 import { gfmAutolink } from "@/lib/gfm-autolink";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
@@ -1226,6 +1227,20 @@ function GitHubItemGlassPanel({
               <RelativeTime iso={detail?.createdAt ?? item.updatedAt} />
             </span>
           </div>
+          {(item.kind === "pr" || item.kind === "review_request") && (
+            <GhReviewActions
+              pr={{
+                repo: item.repo,
+                number: item.number ?? null,
+                title: detail?.title ?? item.title,
+                state: stateKind,
+                author: detail?.author?.login ?? null,
+                url: detail?.htmlUrl ?? item.url,
+                body: detail?.body ?? null,
+              }}
+              familiars={familiars}
+            />
+          )}
         </div>
 
         <div className="gh-glass-section">

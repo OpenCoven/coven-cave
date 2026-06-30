@@ -44,6 +44,7 @@ export const SUITES = {
     "src/lib/github-checks.test.ts",
     "src/lib/gfm-autolink.test.ts",
     "src/lib/gh-diff.test.ts",
+    "src/lib/gh-review-html.test.ts",
     "src/lib/chat-projects.test.ts",
     "src/lib/conversation-tree.test.ts",
     "src/lib/chat-project-selection.test.ts",
@@ -697,6 +698,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/gh-review-html.test.ts",
   "src/lib/evals/eval-analytics.test.ts",
   "src/lib/home-digest.test.ts",
   "src/lib/use-refresh-on-focus.test.ts",
