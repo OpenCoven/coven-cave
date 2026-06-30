@@ -19,6 +19,7 @@ import type { IconName } from "@/lib/icon";
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
 import { relativeTime as age } from "@/lib/relative-time";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { ResponseConfidenceRollup } from "@/lib/thread-self-report";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -124,6 +125,34 @@ function lockHasRunJson(lock: EvalLoopLockState): boolean {
   return lock.runJsonExists ?? lock.run_json_exists ?? false;
 }
 
+/** "0:07" / "4:32" / "1:02:05" — elapsed time, anchored to a run's start. */
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const s = total % 60;
+  const m = Math.floor(total / 60) % 60;
+  const h = Math.floor(total / 3600);
+  const ss = String(s).padStart(2, "0");
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${ss}`;
+  return `${m}:${ss}`;
+}
+
+/** Short, ticking "freshness" label for the live poll: "just now" / "12s ago" / "3m ago". */
+function freshnessLabel(deltaMs: number): string {
+  const s = Math.max(0, Math.floor(deltaMs / 1000));
+  if (s < 5) return "just now";
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  return `${Math.floor(m / 60)}h ago`;
+}
+
+/** Parse an ISO/loose timestamp to epoch ms, or null if unparseable. */
+function toMs(ts: string | null | undefined): number | null {
+  if (!ts) return null;
+  const n = Date.parse(ts);
+  return Number.isNaN(n) ? null : n;
+}
+
 const TRACK_ICON: Record<Track, IconName> = {
   synthesis: "ph:book-open-bold",
   prompt:    "ph:pencil-line-bold",
@@ -146,6 +175,29 @@ export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRoll
   const [triggering, setTriggering] = useState(false);
   const [clearingLock, setClearingLock] = useState(false);
   const [activeTrack, setActiveTrack] = useState<Track | "all">("all");
+  // Epoch ms of the last successful state read — drives the "updated Ns ago"
+  // freshness label so a polling panel visibly proves it is live, not frozen.
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  // A ticking clock so relative labels (elapsed timer, freshness) advance
+  // between data refreshes. Ticks every second while a run is active, otherwise
+  // once a minute — cheap, and enough to keep idle labels current.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  // Epoch ms when we first observed the current run as active — a fallback
+  // anchor for the elapsed timer when the run lock carries no requested-at.
+  const [runObservedAt, setRunObservedAt] = useState<number | null>(null);
+
+  const running = state?.running ?? false;
+
+  useEffect(() => {
+    const interval = running ? 1000 : 60_000;
+    const id = setInterval(() => setNowMs(Date.now()), interval);
+    return () => clearInterval(id);
+  }, [running]);
+
+  useEffect(() => {
+    setRunObservedAt((prev) => (running ? prev ?? Date.now() : null));
+  }, [running]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,6 +210,7 @@ export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRoll
         if (!cancelled) {
           if (json.ok) {
             setState(json.state as EvalLoopState);
+            setLastUpdatedAt(Date.now());
           } else {
             setError(json.error ?? "eval-loop data unavailable");
           }
@@ -173,16 +226,28 @@ export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRoll
     return () => { cancelled = true; };
   }, [familiarId]);
 
-  async function refreshState() {
-    const res = await fetch("/api/skills/eval-loop/" + familiarId, { cache: "no-store" });
-    const json = await res.json();
-    if (json.ok) {
-      setState(json.state as EvalLoopState);
-      setError(null);
-      return;
+  // Live polling: refresh fast while a run is active so iterations, lock state,
+  // and the running badge update without a manual reload; back off when idle so
+  // the panel stays current but light. usePausablePoll suspends on hidden tabs
+  // and fires an immediate refresh when the window regains focus.
+  async function refreshState(opts?: { quiet?: boolean }) {
+    try {
+      const res = await fetch("/api/skills/eval-loop/" + familiarId, { cache: "no-store" });
+      const json = await res.json();
+      if (json.ok) {
+        setState(json.state as EvalLoopState);
+        setLastUpdatedAt(Date.now());
+        setError(null);
+        return;
+      }
+      // A failed poll shouldn't blank a panel that already has good data.
+      if (!opts?.quiet) setError(json.error ?? "eval-loop data unavailable");
+    } catch (err) {
+      if (!opts?.quiet) setError(err instanceof Error ? err.message : "fetch failed");
     }
-    setError(json.error ?? "eval-loop data unavailable");
   }
+
+  usePausablePoll(() => { void refreshState({ quiet: true }); }, running ? 5000 : 30_000);
 
   async function triggerRun(track: Track) {
     setTriggering(true);
@@ -243,26 +308,51 @@ export function EvalLoopPanel({ familiarId, familiarName, responseConfidenceRoll
   const currentLastRun = lastRun(state);
   const currentLock = state?.lock?.locked ? state.lock : null;
 
+  // Anchor the live elapsed timer to the run's lock timestamp when present
+  // (survives remounts/refreshes); otherwise to the moment we first saw it run.
+  const lockReqMs = currentLock ? toMs(lockRequestedAt(currentLock)) : null;
+  const runStartMs = running ? (lockReqMs ?? runObservedAt) : null;
+  const elapsedLabel = runStartMs != null ? formatElapsed(nowMs - runStartMs) : null;
+  const freshness = lastUpdatedAt != null ? freshnessLabel(nowMs - lastUpdatedAt) : null;
+
   return (
     <div className="eval-loop-panel flex flex-col gap-4 p-3 text-xs">
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Icon name="ph:arrows-clockwise-bold" className="text-[var(--accent-presence)]" width="0.85rem" />
+          <Icon
+            name="ph:arrows-clockwise-bold"
+            className={"text-[var(--accent-presence)]" + (running ? " animate-spin [animation-duration:2.4s]" : "")}
+            width="0.85rem"
+          />
           <span className="text-[11px] font-medium uppercase tracking-widest text-[var(--text-secondary)]">
             eval-loop
           </span>
-          {state?.running ? (
-            <span className="rounded-full bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-1.5 py-px text-[9px] uppercase tracking-widest text-[var(--color-warning)]">
+          {running ? (
+            <span
+              role="status"
+              aria-live="polite"
+              className="inline-flex items-center gap-1 rounded-full bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-1.5 py-px text-[9px] uppercase tracking-widest text-[var(--color-warning)]"
+            >
+              <span className="h-1 w-1 animate-pulse rounded-full bg-[var(--color-warning)]" aria-hidden />
               running
+              {elapsedLabel ? <span className="font-mono tabular-nums tracking-normal lowercase">{elapsedLabel}</span> : null}
             </span>
           ) : null}
         </div>
-        {currentLastRun ? (
-          <span className="text-[10px] text-[var(--text-muted)]">
-            last run {age(currentLastRun)}
-          </span>
-        ) : null}
+        <div className="flex flex-col items-end gap-0.5">
+          {currentLastRun ? (
+            <span className="text-[10px] text-[var(--text-muted)]">
+              last run {age(currentLastRun)}
+            </span>
+          ) : null}
+          {freshness ? (
+            <span className="inline-flex items-center gap-1 text-[9px] text-[var(--text-muted)]" title="Panel auto-refreshes; time since the last successful update.">
+              <span className={"h-1 w-1 rounded-full " + (running ? "animate-pulse bg-[var(--color-success)]" : "bg-[var(--text-muted)]")} aria-hidden />
+              updated {freshness}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       {loading ? (
