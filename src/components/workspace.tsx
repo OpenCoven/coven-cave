@@ -1892,6 +1892,7 @@ export function Workspace() {
   const codeSidebar = (
     <CodeSidebar
       sessions={sessions}
+      activeFamiliarId={activeId}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
       onBack={exitCodeMode}
       onOpenSession={(session) => {

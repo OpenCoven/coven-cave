@@ -11,6 +11,11 @@ import type { SessionRow } from "@/lib/types";
 
 type Props = {
   sessions: SessionRow[];
+  /** Selected familiar (null = "All familiars"). When set, the project list and
+   *  every per-project session count/row is scoped to this familiar so the
+   *  navigator matches the familiar-filtered thread list rather than tallying
+   *  every familiar's chats in a shared project. */
+  activeFamiliarId?: string | null;
   activeSessionId?: string | null;
   onBack: () => void;
   onOpenSession: (session: SessionRow) => void;
@@ -54,6 +59,7 @@ function sessionsForProject(sessions: SessionRow[], project: ComuxProject): Sess
 
 export function CodeSidebar({
   sessions,
+  activeFamiliarId = null,
   activeSessionId,
   onBack,
   onOpenSession,
@@ -69,26 +75,36 @@ export function CodeSidebar({
   const [confirmingSessionId, setConfirmingSessionId] = useState<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
 
-  const projects = useMemo(() => deriveComuxProjects(sessions), [sessions]);
+  // Scope to the selected familiar (null = All → count everything) so the project
+  // list, counts, rows, and pinned threads reflect only that familiar's chats.
+  const scopedSessions = useMemo(
+    () =>
+      activeFamiliarId
+        ? sessions.filter((session) => session.familiarId === activeFamiliarId)
+        : sessions,
+    [sessions, activeFamiliarId],
+  );
+
+  const projects = useMemo(() => deriveComuxProjects(scopedSessions), [scopedSessions]);
   const pinnedIds = useSessionPins();
   const [showAllByRoot, setShowAllByRoot] = useState<Set<string>>(() => new Set());
   const THREADS_PREVIEW = 5;
   const pinnedSessions = useMemo(
     () => pinnedIds
-      .map((id) => sessions.find((s) => s.id === id))
+      .map((id) => scopedSessions.find((s) => s.id === id))
       .filter((s): s is SessionRow => Boolean(s)),
-    [pinnedIds, sessions],
+    [pinnedIds, scopedSessions],
   );
   const visibleProjects = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return projects;
     return projects.filter((project) => {
       if (project.name.toLowerCase().includes(q) || project.root.toLowerCase().includes(q)) return true;
-      return sessionsForProject(sessions, project).some((session) =>
+      return sessionsForProject(scopedSessions, project).some((session) =>
         sessionRailTitle(session).toLowerCase().includes(q),
       );
     });
-  }, [projects, query, sessions]);
+  }, [projects, query, scopedSessions]);
 
   const toggleProject = (root: string) => {
     setExpandedRoots((current) => {
@@ -216,7 +232,7 @@ export function CodeSidebar({
         ) : (
           <ul>
             {visibleProjects.map((project) => {
-              const projectSessions = sessionsForProject(sessions, project);
+              const projectSessions = sessionsForProject(scopedSessions, project);
               const expanded = expandedRoots.has(project.root) || query.trim().length > 0;
               return (
                 <li key={project.root}>
