@@ -5,7 +5,8 @@
  *   1. a single summary card — today's at-a-glance counts (sessions, reminders,
  *      responses waiting, familiar updates), mirroring the daily-summary digest;
  *   2. session cards — the chats touched today, newest first (click to resume);
- *   3. RSS cards — the freshest merged headlines (click opens externally).
+ *   3. RSS cards — the freshest merged AI-related headlines (click opens
+ *      externally); non-AI feed items are filtered out (see `isAiRelated`).
  *
  * Everything here is pure and clock-injected (`nowMs`) so it unit-tests without
  * a network, DOM, or wall clock (see home-digest.test.ts).
@@ -93,6 +94,49 @@ function dayLabel(now: Date): string {
   return now.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/**
+ * AI-relevance matcher for the media row. The home carousel only surfaces
+ * AI-related headlines, so an item qualifies when its feed is categorized "AI"
+ * or its title mentions an AI topic. Phrases are matched with word boundaries
+ * so short tokens (e.g. "ai", "ml", "gpt") don't match inside unrelated words
+ * ("email", "html", "egypt"). Pure — unit-tested.
+ */
+const AI_KEYWORDS = [
+  "ai",
+  "a\\.i\\.",
+  "artificial intelligence",
+  "machine learning",
+  "ml",
+  "llm",
+  "llms",
+  "gpt",
+  "chatgpt",
+  "claude",
+  "anthropic",
+  "openai",
+  "gemini",
+  "deepmind",
+  "mistral",
+  "llama",
+  "hugging ?face",
+  "neural network",
+  "deep learning",
+  "generative",
+  "diffusion",
+  "transformer",
+  "copilot",
+  "agentic",
+  "multimodal",
+  "chatbot",
+  "midjourney",
+];
+const AI_KEYWORD_RE = new RegExp(`\\b(?:${AI_KEYWORDS.join("|")})\\b`, "i");
+
+export function isAiRelated(item: FeedItem): boolean {
+  if (item.category && item.category.toLowerCase() === "ai") return true;
+  return AI_KEYWORD_RE.test(item.title ?? "");
+}
+
 /** Build the ordered carousel cards. Returns [] when there's nothing to show
  *  (no activity today and no headlines), so the home strip stays hidden. */
 export function buildDigestCards(input: BuildDigestInput): DigestCard[] {
@@ -153,7 +197,7 @@ export function buildDigestCards(input: BuildDigestInput): DigestCard[] {
     });
   }
 
-  for (const r of rssItems.filter((it) => it.link).slice(0, maxRss)) {
+  for (const r of rssItems.filter((it) => it.link && isAiRelated(it)).slice(0, maxRss)) {
     cards.push({
       kind: "rss",
       id: `rss:${r.id}`,
