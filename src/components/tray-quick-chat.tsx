@@ -1,21 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback } from "react";
 import {
-  COMMAND_CONTROL_DEFAULTS,
   COMMAND_RESPONSE_SPEED_OPTIONS,
   COMMAND_THINKING_OPTIONS,
   type CommandResponseSpeed,
   type CommandThinkingEffort,
 } from "@/lib/command-controls";
 import { Icon } from "@/lib/icon";
-import { resolveQuickChatTarget } from "@/lib/quick-chat";
-import { streamFamiliarText } from "@/lib/familiar-stream";
+import { useQuickChat } from "@/lib/use-quick-chat";
 import type { Familiar } from "@/lib/types";
-
-const LAST_FAMILIAR_KEY = "cave.quick-chat.last-familiar";
-
-type SendState = "idle" | "sending" | "done";
 
 function initials(familiar: Familiar): string {
   return (familiar.display_name || familiar.id)
@@ -27,76 +21,37 @@ function initials(familiar: Familiar): string {
 }
 
 export function TrayQuickChat() {
-  const [familiars, setFamiliars] = useState<Familiar[]>([]);
-  const [selectedFamiliarId, setSelectedFamiliarId] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sendState, setSendState] = useState<SendState>("idle");
-  const [loading, setLoading] = useState(true);
-  const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
-    COMMAND_CONTROL_DEFAULTS.thinkingEffort,
-  );
-  const [responseSpeed, setResponseSpeed] = useState<CommandResponseSpeed>(
-    COMMAND_CONTROL_DEFAULTS.responseSpeed,
-  );
+  const {
+    familiars,
+    selectedFamiliarId,
+    setSelectedFamiliarId,
+    selectedFamiliar,
+    draft,
+    setDraft,
+    answer,
+    error,
+    sessionId,
+    sendState,
+    loading,
+    thinkingEffort,
+    setThinkingEffort,
+    responseSpeed,
+    setResponseSpeed,
+    send,
+    cancel,
+  } = useQuickChat();
 
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const res = await fetch("/api/familiars");
-        const json = await res.json();
-        if (!alive) return;
-        const next = (json?.familiars ?? []) as Familiar[];
-        const stored =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem(LAST_FAMILIAR_KEY)
-            : null;
-        setFamiliars(next);
-        setSelectedFamiliarId(
-          (stored && next.some((familiar) => familiar.id === stored) ? stored : null) ??
-            next[0]?.id ??
-            null,
-        );
-      } catch (err) {
-        if (alive) setError((err as Error)?.message ?? "Failed to load familiars.");
-      } finally {
-        if (alive) setLoading(false);
+  const sending = sendState === "sending";
+
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        if (!sending) void send();
       }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const selectedFamiliar = useMemo(
-    () => familiars.find((familiar) => familiar.id === selectedFamiliarId) ?? familiars[0] ?? null,
-    [familiars, selectedFamiliarId],
+    },
+    [send, sending],
   );
-
-  const send = useCallback(async () => {
-    const target = resolveQuickChatTarget(draft, familiars, selectedFamiliarId);
-    setError(target.error);
-    setAnswer("");
-    setSessionId(null);
-    if (target.error || !target.familiarId) return;
-
-    setSendState("sending");
-    setSelectedFamiliarId(target.familiarId);
-    window.localStorage.setItem(LAST_FAMILIAR_KEY, target.familiarId);
-    const result = await streamFamiliarText({
-      familiarId: target.familiarId,
-      prompt: target.prompt,
-      reasoningEffort: thinkingEffort,
-      responseSpeed,
-    });
-    setAnswer(result.text);
-    setError(result.error);
-    setSessionId(result.sessionId ?? null);
-    setSendState("done");
-  }, [draft, familiars, responseSpeed, selectedFamiliarId, thinkingEffort]);
 
   const openFullSession = useCallback(async () => {
     if (!sessionId) return;
@@ -154,7 +109,7 @@ export function TrayQuickChat() {
           <select
             value={thinkingEffort}
             onChange={(event) => setThinkingEffort(event.target.value as CommandThinkingEffort)}
-            disabled={sendState === "sending"}
+            disabled={sending}
             className="min-w-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none"
             aria-label="Choose thinking effort"
           >
@@ -167,7 +122,7 @@ export function TrayQuickChat() {
           <select
             value={responseSpeed}
             onChange={(event) => setResponseSpeed(event.target.value as CommandResponseSpeed)}
-            disabled={sendState === "sending"}
+            disabled={sending}
             className="min-w-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none"
             aria-label="Choose response speed"
           >
@@ -203,22 +158,35 @@ export function TrayQuickChat() {
           <textarea
             id="quick-chat-draft"
             value={draft}
+            autoFocus
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
             placeholder="@sage summarize what needs attention"
             className="mt-2 h-28 w-full resize-none rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-sm outline-none focus:border-[var(--accent-presence)]"
           />
 
           {error ? (
-            <p className="mt-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--fg-primary)]">
-              {error}
-            </p>
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--fg-primary)]">
+              <span className="min-w-0 truncate">{error}</span>
+              <button
+                type="button"
+                onClick={() => void send()}
+                disabled={sending}
+                className="shrink-0 rounded-md border border-[var(--border-hairline)] px-2 py-1 text-xs font-medium disabled:opacity-50"
+              >
+                Retry
+              </button>
+            </div>
           ) : null}
 
-          <div className="mt-3 min-h-32 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] p-3 text-sm">
-            {sendState === "sending" ? (
-              <p className="text-[var(--fg-muted)]">Thinking...</p>
-            ) : answer ? (
+          <div
+            className="mt-3 min-h-32 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] p-3 text-sm"
+            aria-live="polite"
+          >
+            {answer ? (
               <p className="whitespace-pre-wrap leading-6">{answer}</p>
+            ) : sending ? (
+              <p className="text-[var(--fg-muted)]">Thinking...</p>
             ) : (
               <p className="text-[var(--fg-muted)]">The reply will appear here.</p>
             )}
@@ -227,17 +195,28 @@ export function TrayQuickChat() {
 
         <footer className="flex items-center justify-between gap-3 border-t border-[var(--border-hairline)] px-4 py-3">
           <p className="min-w-0 truncate text-xs text-[var(--fg-muted)]">
-            Use @id to switch familiars.
+            Use @id to switch familiars. ⌘↵ to send.
           </p>
-          <button
-            type="button"
-            onClick={send}
-            disabled={sendState === "sending" || loading}
-            className="inline-flex items-center gap-2 rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <Icon name="ph:sparkle" width={14} aria-hidden />
-            Send
-          </button>
+          <div className="flex items-center gap-2">
+            {sending ? (
+              <button
+                type="button"
+                onClick={cancel}
+                className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] px-3 py-2 text-sm font-medium"
+              >
+                Cancel
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void send()}
+              disabled={sending || loading}
+              className="inline-flex items-center gap-2 rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Icon name="ph:sparkle" width={14} aria-hidden />
+              Send
+            </button>
+          </div>
         </footer>
       </section>
     </main>
