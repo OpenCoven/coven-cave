@@ -209,6 +209,38 @@ export function formatTimestamp(iso: string, prefs: DateTimePrefs = DEFAULT_PREF
   return datePart ? `${datePart} ${time}` : time;
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function localDayStart(input: Date): number {
+  return new Date(input.getFullYear(), input.getMonth(), input.getDate()).getTime();
+}
+
+/**
+ * Chat row timestamp for author headers: "Today at 11:58",
+ * "Yesterday at 11:58", weekday for the last week, then a short date.
+ */
+export function formatChatRecency(
+  iso: string,
+  prefs: DateTimePrefs = readDateTimePrefs(),
+  now: number = Date.now(),
+): string {
+  const d = new Date(iso);
+  const n = new Date(now);
+  if (Number.isNaN(d.getTime()) || Number.isNaN(n.getTime())) return "";
+  const time = formatClock(iso, prefs);
+  if (!time) return "";
+  const ageDays = Math.round((localDayStart(n) - localDayStart(d)) / DAY_MS);
+  const label =
+    ageDays === 0
+      ? "Today"
+      : ageDays === 1
+        ? "Yesterday"
+        : ageDays > 1 && ageDays < 7
+          ? d.toLocaleDateString([], { weekday: "long" })
+          : formatDate(iso, prefs, { year: d.getFullYear() !== n.getFullYear() });
+  return label ? `${label} at ${time}` : "";
+}
+
 /**
  * Verbose date honoring the date preference's ORDERING (month-first vs
  * day-first), keeping the month name (+ optional year/weekday) — so non-chat

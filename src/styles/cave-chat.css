@@ -2929,9 +2929,9 @@ details[open] > .cave-tool-summary::before {
 /* No hover tint on chat turns — hovering a message must not shift its
    background; the per-message action row is the only hover affordance. */
 
-/* User turn — right-aligned bubble */
+/* User turn — avatar row, matching assistant/group chat anatomy */
 .cave-linear-turn--user {
-  align-items: flex-end;
+  align-items: stretch;
 }
 
 /* Assistant turn — full width with avatar rail */
@@ -2948,7 +2948,7 @@ details[open] > .cave-tool-summary::before {
 /* ── User turn meta + bubble ────────────────────────────────────────────── */
 
 .cave-linear-turn--user .cave-linear-turn-meta {
-  justify-content: flex-end;
+  justify-content: flex-start;
   margin-bottom: 5px;
 }
 
@@ -2967,10 +2967,11 @@ details[open] > .cave-tool-summary::before {
 
 /* ── Assistant turn — avatar + content ─────────────────────────────────── */
 
-.cave-linear-turn--assistant .cave-linear-turn-content {
+.cave-linear-turn--assistant .cave-linear-turn-content,
+.cave-linear-turn-content--with-avatar {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 12px;
   align-items: start;
 }
 
@@ -2981,10 +2982,10 @@ details[open] > .cave-tool-summary::before {
 .cave-linear-turn-avatar {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 22%, transparent);
-  border-radius: 11px;
+  width: 48px;
+  height: 48px;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 24%, transparent);
+  border-radius: 50%;
   background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
   color: var(--accent-presence);
   overflow: hidden;
@@ -2995,7 +2996,7 @@ details[open] > .cave-tool-summary::before {
 .cave-linear-turn-avatar.is-selected {
   width: 64px;
   height: 64px;
-  border-radius: 14px;
+  border-radius: 50%;
 }
 
 /* Photo avatars fill the enlarged box edge-to-edge; glyph avatars keep their
@@ -3005,6 +3006,37 @@ details[open] > .cave-tool-summary::before {
   height: 100%;
   object-fit: cover;
   border-radius: inherit;
+}
+
+.cave-linear-turn-avatar--human {
+  background:
+    radial-gradient(circle at 35% 28%, color-mix(in oklch, var(--accent-presence) 22%, transparent), transparent 46%),
+    color-mix(in oklch, var(--bg-raised) 92%, var(--accent-presence));
+  color: var(--text-primary);
+}
+
+.cave-linear-turn-avatar--system {
+  background: color-mix(in oklch, var(--bg-panel) 84%, var(--foreground));
+  color: var(--text-secondary);
+  border-color: var(--border-hairline);
+}
+
+.cave-user-chat-avatar {
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+}
+
+.cave-user-chat-avatar:focus-visible {
+  outline: 2px solid var(--accent-presence);
+  outline-offset: 2px;
+}
+
+.cave-user-chat-avatar__image {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .cave-linear-turn-right {
@@ -3043,10 +3075,49 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-linear-turn-name {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 750;
   color: var(--text-primary);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
+}
+
+.cave-linear-turn-crest {
+  display: inline-flex;
+  align-items: center;
+  color: color-mix(in oklch, var(--color-success) 72%, var(--text-secondary));
+  margin-left: 1px;
+}
+
+.cave-linear-turn-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(18rem, 42vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 5px;
+  padding: 2px 7px;
+  background: color-mix(in oklch, var(--bg-raised) 82%, var(--foreground));
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.cave-linear-turn-badge--op {
+  background: color-mix(in oklch, var(--accent-presence) 35%, var(--bg-raised));
+  color: color-mix(in oklch, var(--accent-presence) 30%, var(--text-primary));
+  text-transform: uppercase;
+}
+
+.cave-linear-turn-recency {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cave-linear-turn-meta--identity {
+  margin-bottom: 4px;
 }
 
 .cave-linear-turn-body {
@@ -3057,6 +3128,17 @@ details[open] > .cave-tool-summary::before {
 
 .cave-chat-linear .cave-bubble-assistant {
   width: 100%;
+}
+
+.cave-chat-linear .cave-bubble-user,
+.cave-group-chat-turn .cave-bubble-user {
+  width: 100%;
+  max-width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
 }
 
 .cave-chat-linear .cave-bubble-timestamp {
@@ -3433,7 +3515,8 @@ details[open] > .cave-tool-summary::before {
     padding: 12px 0;
   }
 
-  .cave-linear-turn--assistant .cave-linear-turn-content {
+  .cave-linear-turn--assistant .cave-linear-turn-content,
+  .cave-linear-turn-content--with-avatar {
     grid-template-columns: 38px minmax(0, 1fr);
     gap: 9px;
   }
@@ -3441,12 +3524,12 @@ details[open] > .cave-tool-summary::before {
   .cave-linear-turn-avatar {
     width: 38px;
     height: 38px;
-    border-radius: 10px;
+    border-radius: 50%;
   }
 
   .cave-chat-linear .cave-bubble-user {
-    max-width: min(92%, 520px);
-    padding: 10px 12px;
+    max-width: 100%;
+    padding: 0;
   }
 
   .cave-linear-turn-body,
@@ -3668,6 +3751,139 @@ details[open] > .cave-tool-summary::before {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, var(--accent-presence) 20%, transparent) transparent;
+}
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   GROUP CHAT TRANSCRIPT ROWS
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+.cave-group-chat-turn {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+}
+
+.cave-group-chat-avatar {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 24%, transparent);
+  border-radius: 50%;
+  background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
+  color: var(--accent-presence);
+}
+
+.cave-group-chat-avatar--human {
+  background:
+    radial-gradient(circle at 35% 28%, color-mix(in oklch, var(--accent-presence) 22%, transparent), transparent 46%),
+    color-mix(in oklch, var(--bg-raised) 92%, var(--accent-presence));
+  color: var(--text-primary);
+}
+
+.cave-group-chat-avatar__image {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.cave-group-chat-message {
+  min-width: 0;
+}
+
+.cave-group-chat-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.cave-group-chat-name {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.cave-group-chat-crest {
+  display: inline-flex;
+  align-items: center;
+  color: color-mix(in oklch, var(--color-success) 72%, var(--text-secondary));
+}
+
+.cave-group-chat-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: min(18rem, 42vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 5px;
+  padding: 2px 7px;
+  background: color-mix(in oklch, var(--bg-raised) 82%, var(--foreground));
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.cave-group-chat-badge--op {
+  background: color-mix(in oklch, var(--accent-presence) 35%, var(--bg-raised));
+  color: color-mix(in oklch, var(--accent-presence) 30%, var(--text-primary));
+  text-transform: uppercase;
+}
+
+.cave-group-chat-recency {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .cave-group-chat-shell {
+    flex-direction: column;
+  }
+
+  .cave-group-chat-rail {
+    width: 100%;
+    max-height: 156px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-hairline);
+  }
+
+  .cave-group-chat-main {
+    min-height: 0;
+  }
+
+  .cave-group-chat-turn {
+    grid-template-columns: 38px minmax(0, 1fr);
+    gap: 9px;
+  }
+
+  .cave-group-chat-avatar {
+    width: 38px;
+    height: 38px;
+  }
+
+  .cave-group-chat-name {
+    font-size: 14px;
+  }
+
+  .cave-group-chat-recency {
+    font-size: 12px;
+  }
+
+  .cave-group-chat-badge {
+    max-width: 9.5rem;
+  }
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

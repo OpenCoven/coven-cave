@@ -46,6 +46,30 @@ assert.match(
 
 assert.match(
   source,
+  /currentLock\.stale \? "clear stale" : "force clear"/,
+  "active locks should make the destructive force-clear action explicit",
+);
+
+assert.match(
+  source,
+  /Run controls are paused by the \$\{currentLock\.stale \? "stale" : "active"\} eval-loop lock/,
+  "locked running state should explain why iteration buttons are disabled",
+);
+
+assert.match(
+  source,
+  /aria-describedby=\{runBlockedReason \? "eval-loop-run-blocked-reason" : undefined\}/,
+  "disabled run buttons should reference the visible blocked-run explanation",
+);
+
+assert.match(
+  source,
+  /Waiting for \$\{activeTrack !== "all" \? TRACK_LABEL\[activeTrack as Track\] : "eval-loop"\} results from the active run/,
+  "empty running tracks should read as waiting for results, not as a terminal empty state",
+);
+
+assert.match(
+  source,
   /fetch\("\/api\/skills\/eval-loop\/" \+ familiarId \+ "\/run-lock"/,
   "clear-lock handler should call the Cave run-lock proxy",
 );

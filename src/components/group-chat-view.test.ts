@@ -54,6 +54,29 @@ test("@mentions target a subset of the coven", () => {
   assert.match(view, /applyMention\(draft, mention\.start, mention\.query/, "inserts the chosen familiar");
 });
 
+test("Group chat transcript uses avatar author rows with recency", () => {
+  assert.match(
+    view,
+    /import \{ formatChatRecency, useDateTimePrefs \} from "@\/lib\/datetime-format"/,
+    "group chat imports the shared chat recency formatter",
+  );
+  assert.match(
+    view,
+    /const dtPrefs = useDateTimePrefs\(\)/,
+    "group chat reads date/time preferences for message recency",
+  );
+  assert.match(
+    view,
+    /className="cave-group-chat-turn cave-group-chat-turn--user"[\s\S]*cave-group-chat-avatar cave-group-chat-avatar--human[\s\S]*cave-group-chat-name[\s\S]*You[\s\S]*cave-group-chat-badge cave-group-chat-badge--op[\s\S]*formatChatRecency\(user\.createdAt, dtPrefs\)/,
+    "group user turns render a Discord-like avatar/name/OP/recency header",
+  );
+  assert.match(
+    view,
+    /className="cave-group-chat-turn cave-group-chat-turn--assistant"[\s\S]*<FamiliarAvatar familiar=\{f\} size="xl"[\s\S]*cave-group-chat-name[\s\S]*f\?\.display_name[\s\S]*formatChatRecency\(r\.createdAt, dtPrefs\)/,
+    "group assistant replies render large avatars, author names, and recency",
+  );
+});
+
 test("Group Chat is wired into navigation", () => {
   assert.match(mode, /\| "groupchat"/, "groupchat is a valid WorkspaceMode");
   assert.match(sidebar, /id: "groupchat", label: "Group"/, "sidebar exposes the Group surface");

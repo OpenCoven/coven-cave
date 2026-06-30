@@ -4,6 +4,7 @@ import {
   DEFAULT_CLOCK,
   DEFAULT_DATE,
   formatClock,
+  formatChatRecency,
   formatDate,
   formatTimestamp,
   normalizeClock,
@@ -53,6 +54,15 @@ test("date Off returns the time only", () => {
 test("unparseable input renders nothing", () => {
   assert.equal(formatTimestamp("not-a-date"), "");
   assert.equal(formatTimestamp(""), "");
+});
+
+test("formatChatRecency renders today/yesterday wording with exact clock", () => {
+  const prefs = { clock: "24h", date: "mmdd" } as const;
+  const now = new Date("2026-06-30T17:00:00").getTime();
+  assert.equal(formatChatRecency("2026-06-30T11:58:00", prefs, now), "Today at 11:58");
+  assert.equal(formatChatRecency("2026-06-29T11:58:00", prefs, now), "Yesterday at 11:58");
+  assert.match(formatChatRecency("2026-06-28T11:58:00", prefs, now), /^[A-Za-z]+ at 11:58$/);
+  assert.equal(formatChatRecency("not-a-date", prefs, now), "");
 });
 
 test("formatClock honors the clock pref, time only (app-wide entry point)", () => {

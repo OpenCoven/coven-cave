@@ -187,6 +187,29 @@ assert.match(
 
 assert.match(
   source,
+  /import \{ formatChatRecency, formatTimestamp, useDateTimePrefs \} from "@\/lib\/datetime-format"/,
+  "Chat turn headers should use the shared chat recency formatter",
+);
+
+assert.match(
+  turnRow,
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-content--with-avatar[\s\S]*<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" \/>[\s\S]*cave-linear-turn-name[\s\S]*You[\s\S]*cave-linear-turn-badge cave-linear-turn-badge--op[\s\S]*cave-linear-turn-recency/,
+  "User turns should render a Discord-like avatar/name/badge/recency header",
+);
+assert.match(
+  styles,
+  /\.cave-linear-turn--user \.cave-linear-turn-meta \{[\s\S]*justify-content: flex-start;/,
+  "User turn author rows should align beside the avatar, not at the old right-aligned bubble edge",
+);
+
+assert.match(
+  turnRow,
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-avatar-btn[\s\S]*<FamiliarIcon familiar=\{familiar\} size="xl" \/>[\s\S]*cave-linear-turn-name[\s\S]*familiar\.display_name[\s\S]*cave-linear-turn-crest[\s\S]*cave-linear-turn-recency/,
+  "Assistant turns should render a large circular avatar with author identity and recency",
+);
+
+assert.match(
+  source,
   /<div className="cave-composer-shell">/,
   "Composer should use the CSS-controlled shell so linear chat can run full width",
 );
@@ -203,10 +226,10 @@ assert.doesNotMatch(
   "Dead turn-index className should be deleted from TurnRow (CSS rule is already display:none)",
 );
 
-assert.doesNotMatch(
-  source,
+assert.match(
+  turnRow,
   /\{turn\.role === "user" \? "You" : "System"\}/,
-  "User turns should drop the \"You\" label — bubble + right-alignment already convey role",
+  "User and system turns should identify the speaker in the avatar row header",
 );
 
 assert.doesNotMatch(
