@@ -7,9 +7,9 @@ assert.equal(modelSlashOptions("/mod", "claude"), null, "not /model arg position
 assert.equal(modelSlashOptions("/familiar researcher", "claude"), null, "ignores other commands");
 
 const all = modelSlashOptions("/model ", "claude");
-assert.ok(Array.isArray(all) && all.length === 4, "‘/model ’ lists every claude model");
+assert.ok(Array.isArray(all) && all.length === 5, "‘/model ’ lists every claude model");
 
-assert.equal(modelSlashOptions("/m ", "claude").length, 4, "the /m alias works too");
+assert.equal(modelSlashOptions("/m ", "claude").length, 5, "the /m alias works too");
 
 const opus = modelSlashOptions("/model opus", "claude");
 assert.ok(opus.every((m) => /opus/i.test(m.label)), "filters by partial label");
@@ -20,7 +20,7 @@ assert.equal(modelSlashOptions("/model haiku", "codex").length, 0, "codex catalo
 // --- resolveModelArg: id / label / substring / custom -----------------------
 assert.equal(resolveModelArg("Claude Sonnet 4.6", "claude"), "anthropic/claude-sonnet-4-6", "matches by label");
 assert.equal(resolveModelArg("anthropic/claude-haiku-4-5", "claude"), "anthropic/claude-haiku-4-5", "matches by exact id");
-assert.equal(resolveModelArg("sonnet", "claude"), "anthropic/claude-sonnet-4-6", "matches by substring");
+assert.equal(resolveModelArg("sonnet", "claude"), "anthropic/claude-sonnet-5", "substring matches the newest Sonnet first");
 assert.equal(resolveModelArg("openai/gpt-6", "claude"), "openai/gpt-6", "accepts a valid custom id");
 assert.equal(resolveModelArg("  ", "claude"), null, "empty arg → null");
 assert.equal(resolveModelArg("not a model!!", "claude"), null, "malformed custom id → null");

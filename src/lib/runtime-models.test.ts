@@ -26,6 +26,10 @@ assert.ok(
   "claude catalog should seed Claude Opus 4.8",
 );
 assert.ok(
+  catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-sonnet-5"),
+  "claude catalog should seed Claude Sonnet 5",
+);
+assert.ok(
   !catalogForRuntime("claude").models.some((m) => m.id === "anthropic/claude-fable-5"),
   "claude catalog should not offer Claude Fable 5",
 );

@@ -38,6 +38,7 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
     models: [
       { id: "anthropic/claude-opus-4-8", label: "Claude Opus 4.8" },
       { id: "anthropic/claude-opus-4-7", label: "Claude Opus 4.7" },
+      { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5" },
       { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
       { id: "anthropic/claude-haiku-4-5", label: "Claude Haiku 4.5" },
     ],
