@@ -6,6 +6,7 @@ import type { Familiar, SessionRow } from "@/lib/types";
 import { NewCardModal, type NewCardDraft } from "@/components/new-card-modal";
 import { type WipLimits, readWipLimits, writeWipLimits, setWipLimit } from "@/lib/board-wip";
 import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
@@ -115,7 +116,12 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   // so an accidental drag is one click to revert.
   const [rescheduleUndo, setRescheduleUndo] = useState<{ id: string; title: string; prev: Partial<Card> } | null>(null);
 
-  const load = useCallback(async () => {
+  // `quiet` is for background polls: a transient poll failure must not blank
+  // the board (setCards([])) or flash an error — leave the last-good cards in
+  // place. Explicit loads (mount, focus, reload event) stay loud. Callers that
+  // pass an event (e.g. useRefreshOnFocus) read as not-quiet, which is correct.
+  const load = useCallback(async (opts?: { quiet?: boolean }) => {
+    const quiet = opts?.quiet === true;
     try {
       const res = await fetch("/api/board", { cache: "no-store" });
       const json = await res.json();
@@ -123,13 +129,15 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         const loaded = json.cards as Card[];
         setCards(loaded);
         setError(null);
-      } else {
+      } else if (!quiet) {
         setCards([]);
         setError(json.error ?? "load failed");
       }
     } catch (err) {
-      setCards([]);
-      setError(err instanceof Error ? err.message : "load failed");
+      if (!quiet) {
+        setCards([]);
+        setError(err instanceof Error ? err.message : "load failed");
+      }
     } finally {
       setHasLoaded(true);
     }
@@ -174,12 +182,30 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     return () => window.removeEventListener("cave:board:reload", onReload);
   }, [load]);
 
-  // Re-sync when the app regains focus. The board has no poll and no daemon
-  // subscription, so a familiar finishing a task (or any change made while the
-  // window was in the background) would otherwise sit stale until a manual
-  // reload — most visibly in the installed desktop app, where the OS window
-  // manager doesn't fire the web visibility events that browser tabs do.
+  // Re-sync when the app regains focus, so a familiar finishing a task (or any
+  // change made while the window was in the background) doesn't sit stale until
+  // a manual reload — most visibly in the installed desktop app, where the OS
+  // window manager doesn't fire the web visibility events that browser tabs do.
   useRefreshOnFocus(load);
+
+  // Light background poll so a card that flips status (e.g. a familiar moving a
+  // task running -> done) reflects without a manual reload while the board is
+  // open. Quiet (never blanks on a transient failure), suspended on hidden tabs
+  // and while typing, and paused whenever the user is mid-interaction — an open
+  // modal/inspector, a pending undo, or a confirm gate — so a reload can't
+  // clobber an optimistic edit or yank cards out from under a drag.
+  const interacting =
+    modalOpen ||
+    selectedCardId !== null ||
+    clearConfirm ||
+    clearedBanner !== null ||
+    rescheduleUndo !== null ||
+    (deletePending?.item?.length ?? 0) > 0;
+  usePausablePoll(
+    () => { void load({ quiet: true }); },
+    15_000,
+    { enabled: !interacting, pauseWhileInputActive: true },
+  );
 
   // Honour `#card-<id>` in the URL: workspace's `focus-card` palette intent
   // (e.g. the Task chip in chat-view) routes to /?…#card-<id>; we pick that
