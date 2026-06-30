@@ -2652,6 +2652,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Paths the user picked this draft — sent alongside the prompt so the
   // server can hand the harness resolvable absolute paths.
   const [mentionedFiles, setMentionedFiles] = useState<string[]>([]);
+  const [enhanceStatus, setEnhanceStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [enhanceOriginal, setEnhanceOriginal] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState<{ root: string; repo: boolean; files: string[] } | null>(null);
   const mentionListboxId = useId();
   const activeMentionOptionRef = useRef<HTMLButtonElement | null>(null);
@@ -3469,6 +3471,40 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       lastFailedSend.mentionedFiles ?? [],
       lastFailedSend.promptOverride ? { promptOverride: lastFailedSend.promptOverride } : undefined,
     );
+  }
+
+  async function enhancePrompt() {
+    const draft = input.trim();
+    if (!draft || busy || enhanceStatus === "loading") return;
+    setEnhanceOriginal(input);
+    setEnhanceStatus("loading");
+    try {
+      const res = await fetch("/api/prompt/enhance", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          draft: input,
+          mode: activeProjectRoot ? "code" : "chat",
+          context: {
+            activeProject: activeProjectRoot
+              ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
+              : null,
+            selectedFiles: mentionedFiles,
+            recentThreadTitle: session?.title ?? null,
+          },
+        }),
+      });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; enhanced?: string } | null;
+      if (!res.ok || !json?.ok || typeof json.enhanced !== "string") {
+        setEnhanceStatus("error");
+        return;
+      }
+      setInput(json.enhanced);
+      setEnhanceStatus("success");
+      window.setTimeout(() => inputRef.current?.focus(), 0);
+    } catch {
+      setEnhanceStatus("error");
+    }
   }
 
   // CHAT-D6-01: edit-and-resend. Loads a user turn's text into the composer so
@@ -4714,6 +4750,39 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               }
               {...mentionAriaOverrides}
             />
+            {enhanceStatus !== "idle" ? (
+              <div className="flex items-center gap-2 border-t border-[var(--border-hairline)]/60 px-3 py-1.5 text-[11px] text-[var(--text-muted)]" role="status">
+                <Icon
+                  name={enhanceStatus === "loading" ? "ph:arrow-clockwise" : enhanceStatus === "success" ? "ph:check" : "ph:warning-circle"}
+                  width={12}
+                  className={enhanceStatus === "loading" ? "animate-spin" : ""}
+                  aria-hidden
+                />
+                <span className="min-w-0 flex-1 truncate">
+                  {enhanceStatus === "loading"
+                    ? "Enhancing prompt..."
+                    : enhanceStatus === "success"
+                      ? "Prompt improved"
+                      : "Prompt enhancement failed"}
+                </span>
+                {enhanceStatus === "success" && enhanceOriginal !== null ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInput(enhanceOriginal);
+                      setEnhanceOriginal(null);
+                      setEnhanceStatus("idle");
+                      inputRef.current?.focus();
+                    }}
+                    className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+                    aria-label="Revert prompt enhancement"
+                    title="Revert prompt enhancement"
+                  >
+                    Revert
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             <div className="cave-composer-controls">
               <div className="cave-composer-action-row">
                 <input
@@ -4731,6 +4800,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                     void attachFiles(files);
                   }}
                 />
+                <button
+                  type="button"
+                  className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                  title="Enhance prompt"
+                  aria-label="Enhance prompt"
+                  disabled={busy || enhanceStatus === "loading" || !input.trim()}
+                  onClick={() => void enhancePrompt()}
+                >
+                  <Icon name="ph:sparkle" width={13} aria-hidden />
+                  <span className="hidden sm:inline">Enhance</span>
+                </button>
                 <button
                   type="button"
                   className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"

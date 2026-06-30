@@ -134,6 +134,7 @@ const contracts: RouteContract[] = [
   { route: "/projects/[id]", methods: ["PUT", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/projects/seed", methods: ["POST"], kind: "json" },
   { route: "/projects", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
+  { route: "/prompt/enhance", methods: ["POST"], kind: "json", readsJson: true },
   { route: "/roles", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/roles/workflows", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/retro-runs", methods: ["GET"], kind: "json" },
