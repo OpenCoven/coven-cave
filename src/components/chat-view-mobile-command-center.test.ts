@@ -67,8 +67,8 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-chat-linear \.cave-bubble-user\s*\{[\s\S]*max-width\s*:\s*min\(92%, 520px\)/,
-  "Mobile user bubbles should use phone-friendly line length instead of desktop width",
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-linear-turn-content--with-avatar\s*\{[\s\S]*grid-template-columns\s*:\s*38px minmax\(0, 1fr\)[\s\S]*\.cave-chat-linear \.cave-bubble-user\s*\{[\s\S]*max-width\s*:\s*100%/,
+  "Mobile avatar rows should keep user content inside the phone-width transcript column",
 );
 
 assert.match(
