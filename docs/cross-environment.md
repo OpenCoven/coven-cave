@@ -19,16 +19,25 @@ that diverge. It pairs with the conformance suite that enforces them.
 - **Stable required check** — `Cross-environment required` depends on the
   matrix and fails unless every OS leg succeeds. Use that stable job name for
   branch protection instead of requiring each dynamic matrix leg directly.
+- **Packaged sidecar runtime matrix** — `Sidecar runtime (<os>)` builds the
+  OS-specific bundled Node sidecar on `ubuntu-latest`, `windows-latest`, and
+  `macos-latest`, boots the packaged `server.mjs` with sidecar auth, and proves
+  a seeded raster familiar avatar is transcoded through the real HTTP route.
+  `Sidecar runtime required` is the stable aggregate check for branch
+  protection.
 - **The conformance suite** — [`scripts/cross-environment.test.ts`](../scripts/cross-environment.test.ts).
   Identical assertions on every OS; branches that can only run on one platform
   run there for real and are **explicit, reasoned skips** elsewhere (printed as
   `↷ skipped: <reason>`), never silent no-ops. Run it locally with
   `pnpm test:conformance`.
+- **The sidecar runtime smoke** — [`scripts/sidecar-runtime-smoke.mjs`](../scripts/sidecar-runtime-smoke.mjs).
+  Run it after `bash scripts/sidecar-bundle.sh` with
+  `pnpm test:sidecar-runtime`.
 
-What is **not** yet covered (tracked as Slice B in #1990, surfaced as explicit
-skips): booting the packaged OS-specific sidecar and transcoding a raster
-avatar end-to-end, and mDNS / Tailscale host discovery. Both need per-OS build
-hosts / network stacks rather than a pure unit matrix.
+What is **not** yet covered (tracked as the remaining Slice B network gap in
+#1990, surfaced as an explicit skip): mDNS / Tailscale host discovery. That
+needs the platform's real networking stack and tailnet/mDNS preconditions rather
+than a pure unit matrix.
 
 ## Neutral defaults
 
@@ -84,7 +93,9 @@ source of truth shared by `scripts/sidecar-bundle.sh` (via
 Notes:
 - `sharp` must remain a **runtime** dependency (not dev) so the production
   sidecar install includes it — the familiar avatar route transcodes raster
-  avatars at request time. Root cause: #2010.
+  avatars at request time. Root cause: #2010. The `Sidecar runtime (<os>)`
+  matrix now proves this end-to-end by booting the packaged sidecar and fetching
+  a seeded JPEG avatar as PNG on every target OS.
 - `fsevents` is kept only on darwin.
 - The release DMG/installer must be built **on the matching host arch** — the
   prune keys off the build host, same as `@next/swc` and `node-pty`. Mobile

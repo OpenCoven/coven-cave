@@ -174,11 +174,11 @@ function skip(reason: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Contract D — explicit, reasoned gaps (Slice B). These are deliberately NOT
-// asserted here; they are surfaced as skips so the report shows the gap rather
-// than a falsely-green check (#1990 acceptance criterion 5).
+// Contract D — explicit, reasoned remaining network gap. Packaged sidecar boot
+// + raster-avatar transcode is covered by the Sidecar runtime matrix; mDNS /
+// Tailscale discovery still needs real network-stack preconditions rather than
+// a pure conformance assertion.
 // ---------------------------------------------------------------------------
-skip("packaged-sidecar boot + raster-avatar transcode: requires building the OS-specific sidecar bundle (Slice B)");
 skip("mDNS / Tailscale host discovery: requires the platform's networking stack (Slice B)");
 
 console.log(`cross-environment.test.ts: ok on ${process.platform}/${process.arch} (${skips.length} explicit skip(s))`);

@@ -35,6 +35,7 @@
     "test:api:http": "node scripts/api-http-smoke.mjs",
     "test:mobile": "node scripts/run-tests.mjs mobile",
     "test:conformance": "node scripts/run-tests.mjs conformance",
+    "test:sidecar-runtime": "node scripts/sidecar-runtime-smoke.mjs",
     "e2e:install": "playwright install chromium webkit",
     "test:e2e:mobile": "pnpm e2e:install && playwright test --project=pixel-5 --project=iphone-13",
     "test:e2e": "pnpm e2e:install && playwright test",
