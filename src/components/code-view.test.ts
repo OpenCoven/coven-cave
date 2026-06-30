@@ -17,6 +17,7 @@ const globals = await readFile(new URL("../app/globals.css", import.meta.url), "
 // Sessions/Memory tab row, in a self-contained toolbar.
 const toolbar = await readFile(new URL("./code-inline-toolbar.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
+const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 
 // ── CodeView is the Codex 3-column shell — Files · Chat · Changes ────────────
 // Three columns side by side: the file-tree explorer (left), the familiar
@@ -237,5 +238,38 @@ assert.match(
   /id: "code", label: "Code"[\s\S]*?kbd: "⌘7"/,
   "sidebar has a Code nav entry bound to ⌘7",
 );
+
+// ── Collapsed nav rail shows a "Sessions" label, not a bare clipped icon ─────
+// When the Code surface's nav panel collapses to the 56px rail, the CodeSidebar
+// renders a vertical "Sessions" label (mirrors the comux Details/Preview rails)
+// that reopens the panel on click via the symmetric cave:toggle-left-panel hook.
+assert.match(codeSidebar, /className="code-sidebar__rail focus-ring"/, "CodeSidebar renders a collapsed rail control");
+assert.match(codeSidebar, /aria-label="Expand sessions"/, "the collapsed rail is an accessible expand affordance");
+assert.match(
+  codeSidebar,
+  /new CustomEvent\("cave:toggle-left-panel"\)/,
+  "the collapsed rail reopens the nav panel via the cave:toggle-left-panel event",
+);
+assert.match(
+  codeSidebar,
+  /<span className="code-sidebar__rail-label">Sessions<\/span>/,
+  "the collapsed rail shows a 'Sessions' label instead of a bare icon",
+);
+assert.match(codeSidebar, /className="code-sidebar__full/, "the full sidebar is wrapped so CSS can hide it when collapsed");
+// Shell honours the symmetric left-panel toggle event (mirror of the right one).
+assert.match(
+  shell,
+  /window\.addEventListener\("cave:toggle-left-panel", onToggleLeft\)/,
+  "the shell listens for cave:toggle-left-panel to reopen the nav panel",
+);
+assert.match(
+  shell,
+  /const onToggleLeft = \(\) => \{[\s\S]*?togglePanel\(navRef\.current\)/,
+  "cave:toggle-left-panel toggles the nav panel (desktop)",
+);
+// CSS hides the full sidebar and shows the rotated label only in the collapsed rail.
+assert.match(globals, /\.shell-nav--rail \.code-sidebar__full \{\s*display: none;/, "collapsed rail hides the full sidebar");
+assert.match(globals, /\.shell-nav--rail \.code-sidebar__rail \{[\s\S]*?display: flex;/, "collapsed rail shows the Sessions control");
+assert.match(globals, /\.code-sidebar__rail-label \{[\s\S]*?writing-mode: vertical-rl;/, "the Sessions rail label reads vertically");
 
 console.log("code-view.test.ts: ok");

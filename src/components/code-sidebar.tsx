@@ -73,6 +73,22 @@ export function CodeSidebar({
 
   return (
     <div className="code-sidebar flex h-full min-h-0 flex-col bg-[color-mix(in_oklch,var(--bg-raised)_88%,transparent)]">
+      {/* Collapsed rail — when the nav panel is collapsed the shell adds
+          `.shell-nav--rail`, which CSS uses to hide the full sidebar and show
+          this vertical "Sessions" label instead of a bare clipped icon (mirrors
+          the comux Details/Preview rails). Clicking it reopens the panel. */}
+      <button
+        type="button"
+        className="code-sidebar__rail focus-ring"
+        aria-label="Expand sessions"
+        title="Expand sessions"
+        onClick={() => window.dispatchEvent(new CustomEvent("cave:toggle-left-panel"))}
+      >
+        <Icon name="ph:sidebar-simple" width={15} aria-hidden />
+        <span className="code-sidebar__rail-label">Sessions</span>
+      </button>
+
+      <div className="code-sidebar__full flex min-h-0 flex-1 flex-col">
       <header className="code-sidebar__header flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-2">
         <button
           type="button"
@@ -243,6 +259,7 @@ export function CodeSidebar({
           </ul>
         )}
       </nav>
+      </div>
     </div>
   );
 }

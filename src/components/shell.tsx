@@ -419,13 +419,21 @@ function ShellInner({
     const onToggleRight = () => {
       if (hasFamiliar) toggleFamiliarPanel();
     };
+    // Symmetric hook for the left nav panel — lets a collapsed-rail label (e.g.
+    // the Code sidebar's "Sessions" rail) reopen the panel without a panel ref.
+    const onToggleLeft = () => {
+      if (isMobile) toggleDrawerSlot("nav");
+      else togglePanel(navRef.current);
+    };
     window.addEventListener("keydown", handler);
     window.addEventListener("keydown", bottomToggle);
     window.addEventListener("cave:toggle-right-panel", onToggleRight);
+    window.addEventListener("cave:toggle-left-panel", onToggleLeft);
     return () => {
       window.removeEventListener("keydown", handler);
       window.removeEventListener("keydown", bottomToggle);
       window.removeEventListener("cave:toggle-right-panel", onToggleRight);
+      window.removeEventListener("cave:toggle-left-panel", onToggleLeft);
     };
   }, [twoPane, hasFamiliar, hasBottom, isMobile, panelShortcuts]);
 
