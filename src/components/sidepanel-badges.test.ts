@@ -24,7 +24,8 @@ assert.match(workspace, /groupInboxFeed\(inboxItemsWithEphemeral\)\.needsYou\.le
 assert.match(workspace, /const persistRailTab = useCallback/, "explicit tab choices persist per familiar");
 assert.match(workspace, /"cave:rail\.tab:" \+ \(activeIdRef\.current \?\? "all"\)/, "tab stored under the active familiar");
 assert.match(workspace, /"cave:rail\.tab:" \+ \(activeId \?\? "all"\)/, "tab restored for the active familiar");
-assert.match(workspace, /onTabChange=\{persistRailTab\}/, "rail tab clicks persist");
+// The right companion rail was removed (drag-to-split replaces it); rail tab
+// clicks no longer have an onTabChange to wire.
 
 // ── Video split persistence ────────────────────────────────────────────────────
 assert.match(rail, /useDefaultLayout/, "rail split uses the layout-persistence hook");

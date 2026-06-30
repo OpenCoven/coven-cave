@@ -354,8 +354,8 @@ assert.match(
 );
 assert.match(
   source,
-  /`\$\{label\} — \$\{description\}( \(\$\{kbd\}\))?`/,
-  "title combines label + description (+ shortcut when present)",
+  /`\$\{label\} — \$\{description\}( \(\$\{kbd\}\))?\$\{dragHint\}`/,
+  "title combines label + description (+ shortcut when present) + drag-to-split hint",
 );
 
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

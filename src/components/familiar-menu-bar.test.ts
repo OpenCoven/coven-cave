@@ -142,8 +142,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /salemSlot=\{[\s\S]*?<SalemChatPanel\s+familiarId=\{[\s\S]*?model=\{/,
-  "Salem should remain available in the companion sidepanel",
+  /<SalemChatPanel\s+familiarId=\{[\s\S]*?model=\{/,
+  "Salem should remain available — re-homed into the drag-to-split pane",
 );
 assert.doesNotMatch(
   workspace,

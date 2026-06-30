@@ -23,10 +23,8 @@ test("companion-rail accepts suppressEmpty and short-circuits", () => {
   assert.match(src, /if\s*\(suppressEmpty\)\s*return null/, "early return when suppressed");
 });
 
-test("workspace passes suppressEmpty={mode === 'chat'} to CompanionRail", () => {
-  const src = read("./workspace.tsx");
-  assert.match(src, /suppressEmpty=\{mode === "chat"\}/, "suppressEmpty wired for chat mode");
-});
+// The right companion rail (which took suppressEmpty={mode === "chat"}) was
+// removed in favour of drag-to-split, so there is no rail to wire here anymore.
 
 test("chat-surface tab strip uses the shared Vercel-style Tabs component", () => {
   const src = read("./chat-surface.tsx");

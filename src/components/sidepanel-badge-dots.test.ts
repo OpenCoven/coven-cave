@@ -27,10 +27,9 @@ assert.match(rail, /chatBadge = false/, "chat badge defaults off");
 assert.match(rail, /className="companion-rail__tab-dot"/, "Chat tab renders a needs-attention dot");
 assert.match(globals, /\.companion-rail__tab-dot \{[\s\S]*?position: absolute/, "tab dot is styled");
 assert.match(globals, /\.companion-rail__tab \{\n\s*position: relative;/, "tab is the dot's positioning context");
-assert.match(
-  workspace,
-  /chatBadge=\{active \? responseNeeded\.has\(active\.id\) : false\}/,
-  "Chat tab dot lights when the active familiar needs a reply",
-);
+// The right companion rail was removed (drag-to-split replaces it), so the
+// workspace no longer wires a Chat-tab needs-reply dot. `workspace` stays read
+// above only for the collapsed-nav badge context.
+void workspace;
 
 console.log("sidepanel-badge-dots.test.ts: ok");

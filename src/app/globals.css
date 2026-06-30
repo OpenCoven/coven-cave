@@ -10854,8 +10854,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .split-dropzone__half--right { margin-left: 5px; }
 .split-dropzone__half.is-hover {
   background: color-mix(in oklch, var(--accent) 18%, var(--bg-base));
-  border-color: var(--accent);
-  border-style: solid;
+  border: 2px solid var(--accent);
   color: var(--text-primary);
 }
 .split-dropzone__hint {

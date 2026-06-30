@@ -54,11 +54,8 @@ assert.match(
   "Companion rail is hidden on Familiars and Browser unless a floating rail tab is selected",
 );
 
-assert.match(
-  workspace,
-  /hideChatTab=\{mode === "chat"\}/,
-  "Workspace should hide the companion rail Chat tab while the main surface is already Familiars",
-);
+// The right companion rail (and its Chat tab) was removed in favour of
+// drag-to-split, so there is no rail Chat tab to hide on the Familiars surface.
 
 assert.match(
   workspace,

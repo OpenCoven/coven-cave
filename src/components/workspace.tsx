@@ -24,6 +24,8 @@ import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { type CompanionTab } from "@/components/companion-rail";
+import { RailInspector } from "@/components/inspector-pane";
+import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { FamiliarsView } from "@/components/familiars-view";
 import { GroupChatView } from "@/components/group-chat-view";
 import {
@@ -83,6 +85,21 @@ import {
 } from "@/lib/open-external";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
+
+// What the drag-to-split secondary pane is showing: either a draggable page
+// (a workspace mode) or one of the companion surfaces (Salem / Memory /
+// Browser) that were re-homed here when the right rail was removed.
+type SplitTarget =
+  | { kind: "page"; mode: WorkspaceMode }
+  | { kind: "salem" }
+  | { kind: "memory" }
+  | { kind: "browser" };
+
+const SPLIT_COMPANION_TITLES: Record<Exclude<SplitTarget["kind"], "page">, string> = {
+  salem: "Salem",
+  memory: "Memory",
+  browser: "Browser",
+};
 
 // CHAT-D13-05 (axe page-has-heading-one): the shell renders no visible page
 // title, so the detail pane carries a visually-hidden h1 naming the active
@@ -249,9 +266,11 @@ export function Workspace() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
   const [codeRightView, setCodeRightView] = useState<"files" | "changes">("files");
-  // Drag-to-split: a second page opened beside the primary surface. `splitMode`
-  // is the page; `splitSide` is which half it occupies (modern-desktop snap).
-  const [splitMode, setSplitMode] = useState<WorkspaceMode | null>(null);
+  // Drag-to-split: a second surface opened beside the primary one. The target
+  // is either a draggable page (a workspace mode) or a companion surface
+  // (Salem / Memory / Browser) that used to live in the removed right rail.
+  // `splitSide` is which half it occupies (modern-desktop snap).
+  const [splitTarget, setSplitTarget] = useState<SplitTarget | null>(null);
   const [splitSide, setSplitSide] = useState<"left" | "right">("right");
   const [railTab, setRailTab] = useState<CompanionTab>(() => {
     if (typeof window === "undefined") return "chat";
@@ -510,9 +529,11 @@ export function Workspace() {
   }, [activeId, activeFamiliarHydrated]);
 
   useEffect(() => {
+    // Salem was re-homed from the (removed) right rail into the drag-to-split
+    // pane — its launcher now opens Salem beside the current surface.
     const openSalem = () => {
-      setRailTab("salem");
-      requestAnimationFrame(() => shellRef.current?.openFamiliar());
+      setSplitSide("right");
+      setSplitTarget({ kind: "salem" });
     };
     window.addEventListener("cave:salem-open", openSalem);
     return () => window.removeEventListener("cave:salem-open", openSalem);
@@ -1430,16 +1451,24 @@ export function Workspace() {
     (m: string, side: "left" | "right") => {
       if (!m || m === mode) return;
       setSplitSide(side);
-      setSplitMode(m as WorkspaceMode);
+      setSplitTarget({ kind: "page", mode: m as WorkspaceMode });
     },
     [mode],
   );
 
-  // A split showing the same page as the primary is redundant — clear it (e.g.
-  // the user navigated the primary surface to the page that was in the split).
+  const closeSplit = useCallback(() => {
+    // Tell Salem it's undocking so it can pause, mirroring the old rail teardown.
+    setSplitTarget((prev) => {
+      if (prev?.kind === "salem") window.dispatchEvent(new CustomEvent("cave:salem-undock"));
+      return null;
+    });
+  }, []);
+
+  // A page split showing the same page as the primary is redundant — clear it
+  // (e.g. the user navigated the primary surface to the page in the split).
   useEffect(() => {
-    if (splitMode && splitMode === mode) setSplitMode(null);
-  }, [splitMode, mode]);
+    if (splitTarget?.kind === "page" && splitTarget.mode === mode) setSplitTarget(null);
+  }, [splitTarget, mode]);
 
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {
@@ -1958,8 +1987,8 @@ export function Workspace() {
   // same machinery renders both the primary detail and a dragged-in split
   // secondary. `terminal` is served by the always-mounted terminalDetail (primary
   // only) and excluded from drag-to-split, so it never reaches renderSurface.
-  const renderSurface = (m: WorkspaceMode): ReactNode =>
-    m === "agents" ? (
+  const renderSurface = (mode: WorkspaceMode): ReactNode =>
+    mode === "agents" ? (
       <FamiliarsView
         familiars={familiars}
         sessions={sessions}
@@ -1978,7 +2007,7 @@ export function Workspace() {
           selectFamiliar(id);
         }}
       />
-    ) : m === "chat" ? (
+    ) : mode === "chat" ? (
       <ChatSurface
         familiars={familiars}
         sessions={sessions}
@@ -2008,13 +2037,13 @@ export function Workspace() {
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
         onOpenUrl={openUrlInAppBrowser}
       />
-    ) : m === "groupchat" ? (
+    ) : mode === "groupchat" ? (
       <GroupChatView
         familiars={resolvedFamiliars}
         onSessionStarted={loadSessions}
         onOpenUrl={openUrlInAppBrowser}
       />
-    ) : m === "code" ? (
+    ) : mode === "code" ? (
       <CodeView
         chat={
           <ChatSurface
@@ -2051,7 +2080,7 @@ export function Workspace() {
         comux={
           <ComuxView
             view="projects"
-            active={m === "code"}
+            active={mode === "code"}
             storageNamespace=":code"
             rightView={codeRightView}
             onRightViewChange={setCodeRightView}
@@ -2065,14 +2094,14 @@ export function Workspace() {
           />
         }
       />
-    ) : m === "library" ? (
+    ) : mode === "library" ? (
       <LibraryView
         onOpenUrl={openUrlInAppBrowser}
         sessions={sessions}
         onOpenSession={openFamiliarSession}
         onNewProjectChat={openProjectChat}
       />
-    ) : m === "board" ? (
+    ) : mode === "board" ? (
       <BoardView
         familiars={familiars}
         sessions={sessions}
@@ -2083,16 +2112,16 @@ export function Workspace() {
           openFamiliarSession(sessionId, familiarId);
         }}
       />
-    ) : m === "journal" ? (
+    ) : mode === "journal" ? (
       <JournalView familiars={familiars} activeFamiliarId={activeId} scopeFamiliarIds={scopeIds} />
-    ) : m === "inbox" || mode === "calendar" ? (
+    ) : mode === "inbox" || mode === "calendar" ? (
       // Calendar and Automations are one Automations surface: Calendar is the
       // leading tab of the Automations view. The "calendar" mode still resolves
       // here (nav button / deep links) but opens that tab; keying on the mode
       // remounts so the deep link lands on it.
       <InboxEscalationsView
-        key={m}
-        initialTab={m ==="calendar" ? "calendar" : "all"}
+        key={mode}
+        initialTab={mode === "calendar" ? "calendar" : "all"}
         onOpenSource={(item) => {
           if (item.sourceSessionKey) {
             openFamiliarSession(item.sourceSessionKey);
@@ -2142,34 +2171,34 @@ export function Workspace() {
           />
         }
       />
-    ) : m === "browser" ? (
+    ) : mode === "browser" ? (
       <BrowserPane ref={browserPaneRef} label="main" activeFamiliarId={active?.id ?? null} />
-    ) : m === "github" ? (
+    ) : mode === "github" ? (
       <GitHubView
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
       />
-    ) : m === "roles" || mode === "capabilities" ? (
+    ) : mode === "roles" || mode === "capabilities" ? (
       // Capabilities is the rightmost tab of the Roles page. The "capabilities"
       // mode still resolves here (deep links / navigate-mode) but opens that
       // tab; keying on the mode remounts so the deep link lands on it.
       <PluginsView
-        key={m}
+        key={mode}
         tabs={["roles", "skills", "capabilities"]}
-        initialTab={m ==="capabilities" ? "capabilities" : "roles"}
+        initialTab={mode === "capabilities" ? "capabilities" : "roles"}
         activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
         onCreateSkill={() => setMode("capabilities")}
       />
-    ) : m === "marketplace" ? (
+    ) : mode === "marketplace" ? (
       <MarketplaceView />
-    ) : m === "submissions" ? (
+    ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
-    ) : m === "flow" ? (
+    ) : mode === "flow" ? (
       <FlowView />
-    ) : m === "evals" || mode === "retro" ? (
-      <EvalsView familiars={resolvedFamiliars} activeFamiliarId={m === "retro" ? retroFamiliarId : activeId} />
+    ) : mode === "evals" || mode === "retro" ? (
+      <EvalsView familiars={resolvedFamiliars} activeFamiliarId={mode === "retro" ? retroFamiliarId : activeId} />
     ) : (
       <HomeComposer
         familiars={familiars}
@@ -2194,14 +2223,35 @@ export function Workspace() {
     </div>
   );
 
-  // The dragged-in split secondary, if any. Heavy/stateful surfaces (terminal)
-  // are excluded from drag, so renderSurface always has something to render.
-  const splitDetail =
-    splitMode && splitMode !== mode ? (
-      <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
-        {renderSurface(splitMode)}
-      </div>
-    ) : null;
+  // The split secondary, if any: a dragged-in page (heavy/stateful surfaces like
+  // terminal are excluded from drag, so renderSurface always has something) or a
+  // re-homed companion surface (Salem / Memory / Browser).
+  const splitDetail: ReactNode = !splitTarget
+    ? null
+    : splitTarget.kind === "page"
+      ? splitTarget.mode !== mode
+        ? (
+            <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
+              {renderSurface(splitTarget.mode)}
+            </div>
+          )
+        : null
+      : splitTarget.kind === "salem"
+        ? (
+            <SalemChatPanel
+              familiarId={active?.id ?? familiars.find((f) => f.id === "salem")?.id ?? "salem"}
+              model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
+            />
+          )
+        : splitTarget.kind === "memory"
+          ? <RailInspector familiar={active} onOpenFullView={() => setMode("agents")} />
+          : <BrowserPane label="companion" activeFamiliarId={active?.id ?? null} />;
+
+  const splitTitle = !splitTarget
+    ? ""
+    : splitTarget.kind === "page"
+      ? WORKSPACE_MODE_TITLES[splitTarget.mode]
+      : SPLIT_COMPANION_TITLES[splitTarget.kind];
 
   const mobileTabs = (
     <MobileBottomTabs
@@ -2221,9 +2271,9 @@ export function Workspace() {
         // Drag-to-split: a sidebar page dropped into the main area opens beside
         // the current surface, resizable with desktop-style snapping.
         split={splitDetail}
-        splitTitle={splitMode ? WORKSPACE_MODE_TITLES[splitMode] : ""}
+        splitTitle={splitTitle}
         splitSide={splitSide}
-        onCloseSplit={() => setSplitMode(null)}
+        onCloseSplit={closeSplit}
         onDropSplitPage={openSplitPage}
         topBar={({ navDrawerOpen, listDrawerOpen, familiarDrawerOpen }) => (
           <>

@@ -80,17 +80,14 @@ assert.doesNotMatch(widget, /salem-panel__preload/, "preload count pills stay re
 //    the right panel. The right edge-rail toggle was retired in favour of the
 //    shell's floating top-right panel toggle.
 const workspace = await readFile(path.join(root, "src/components/workspace.tsx"), "utf8");
-const companionRail = await readFile(path.join(root, "src/components/companion-rail.tsx"), "utf8");
-assert.match(workspace, /const openCompanionTab = useCallback/, "Salem opens through the shared companion tab opener");
-assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "the companion tab opener expands the right panel");
+// The right companion rail was removed; Salem was re-homed into the
+// drag-to-split pane. Its launcher event now opens Salem in the split.
 assert.match(workspace, /cave:salem-open/, "workspace must listen for Salem launcher events");
-assert.match(workspace, /shellRef\.current\?\.openFamiliar\(\)/, "Salem launcher must expand the right panel");
-assert.match(workspace, /setRailTab\("salem"\)/, "Salem launcher must select the Salem rail tab");
+assert.match(workspace, /setSplitTarget\(\{ kind: "salem" \}\)/, "Salem launcher must open Salem in the drag-to-split pane");
 assert.match(workspace, /import \{ SalemChatPanel \}/, "workspace should import only the Salem sidepanel surface");
 assert.doesNotMatch(workspace, /SalemWidget|salemRetreating/, "workspace must not render or compute floating Salem state");
-assert.match(workspace, /salemSlot=\{[\s\S]*?<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the companion rail with the local familiar id");
-assert.match(workspace, /salemSlot=\{[\s\S]*?<SalemChatPanel[\s\S]*?model=\{/, "workspace must render Salem in the companion rail with the local familiar's model");
-assert.match(companionRail, /"salem"/, "companion rail must expose a Salem tab");
+assert.match(workspace, /<SalemChatPanel\s+familiarId=\{/, "workspace must render Salem in the split with the local familiar id");
+assert.match(workspace, /<SalemChatPanel[\s\S]*?model=\{/, "workspace must render Salem in the split with the local familiar's model");
 
 // 7. CSS classes present
 const css = await readFile(path.join(root, "src/app/globals.css"), "utf8");

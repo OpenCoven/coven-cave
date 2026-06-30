@@ -38,12 +38,13 @@ test("Shell hosts the split inside the detail main with a drop zone", () => {
 
 test("workspace owns split state and the drop handler, and reuses renderSurface", () => {
   const src = read("./workspace.tsx");
-  assert.match(src, /const \[splitMode, setSplitMode\] = useState<WorkspaceMode \| null>\(null\)/);
+  assert.match(src, /const \[splitTarget, setSplitTarget\] = useState<SplitTarget \| null>\(null\)/);
   assert.match(src, /const openSplitPage = useCallback/);
-  assert.match(src, /const renderSurface = \(m: WorkspaceMode\): ReactNode =>/);
+  assert.match(src, /const renderSurface = \(mode: WorkspaceMode\): ReactNode =>/);
   assert.match(src, /\{mode === "terminal" \? null : renderSurface\(mode\)\}/, "primary uses renderSurface");
-  assert.match(src, /\{renderSurface\(splitMode\)\}/, "secondary reuses the same machinery");
+  assert.match(src, /renderSurface\(splitTarget\.mode\)/, "secondary reuses the same machinery");
   assert.match(src, /onDropSplitPage=\{openSplitPage\}/);
+  assert.match(src, /setSplitTarget\(\{ kind: "salem" \}\)/, "Salem re-homed into the split (not the removed rail)");
 });
 
 test("the right companion (agent) panel is no longer mounted", () => {

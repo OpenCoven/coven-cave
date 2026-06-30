@@ -223,11 +223,8 @@ assert.match(
   /onOpenUrl=\{openUrlInAppBrowser\}/,
   "Workspace should thread the in-app browser opener into ChatSurface",
 );
-assert.match(
-  workspace,
-  /openCompanionTab\(railTab === "browser" \? "browser" : "salem"\)/,
-  "Right sidepanel toggle should collapse the active Browser panel instead of switching to Salem",
-);
+// The right companion (Browser/Salem) panel was removed in favour of
+// drag-to-split, so there is no companion toggle to assert here anymore.
 
 assert.match(
   automationsView,
