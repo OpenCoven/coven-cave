@@ -71,7 +71,29 @@ direction.
 
 Listed cheapest first.
 
-### 1. Surface-claim file — `.claude/claims.json` (cheap, useful, fragile)
+### 1. Surface-claim file — `.claude/claims.json` ✅ IMPLEMENTED
+
+**Status:** Built as an automatic PreToolUse hook —
+`scripts/surface-claim-guard.mjs`, wired in `.claude/settings.json` (matcher
+`Edit|Write|NotebookEdit`). It removes the "nothing forces sessions to write
+claims" fragility below: claims are now a *byproduct* of editing, requiring zero
+discipline.
+
+On every Edit/Write to the **shared primary checkout**, the hook:
+- records this session's claim on the target file (keyed by `session_id`);
+- prunes claims with no activity in the last ~2h;
+- if another live session already claimed that exact file, surfaces a collision
+  warning to both the user (`systemMessage`) and the model
+  (`hookSpecificOutput.additionalContext`).
+
+It is **advisory only** — it never blocks or fails an edit (always exits 0, even
+on corrupt input). Edits inside `.worktrees/` are skipped: those sessions are
+already isolated, and their divergence surfaces at PR/merge time (see §2). The
+warning fires for the *second* session to touch a file — exactly the moment a
+clobber would otherwise happen silently. Covered by
+`scripts/surface-claim-guard.test.mjs`.
+
+---
 
 A flat file recording "Session X has begun work touching surfaces Y and Z."
 Updated when a session starts a non-trivial task on a surface; cleared on

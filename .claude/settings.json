@@ -4,5 +4,20 @@
       "WebSearch",
       "WebFetch"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/surface-claim-guard.mjs\"",
+            "timeout": 10,
+            "statusMessage": "Checking surface claims…"
+          }
+        ]
+      }
+    ]
   }
 }

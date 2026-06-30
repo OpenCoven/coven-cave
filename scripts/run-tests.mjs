@@ -521,6 +521,7 @@ export const SUITES = {
   api: [
     "scripts/dependency-policy.test.mjs",
     "scripts/build-sandbox-runtime.test.mjs",
+    "scripts/surface-claim-guard.test.mjs",
     "scripts/git-hooks-pre-commit.test.mjs",
     "scripts/secret-preflight.test.mjs",
     "scripts/uninstall-app.test.mjs",
