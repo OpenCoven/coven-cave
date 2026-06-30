@@ -35,6 +35,9 @@ type Props = {
    *  `FamiliarMenuBar` carries these), so these render only on mobile. Omit
    *  either handler to hide that button. */
   onEnrichTasks?: () => void;
+  /** Reveal the in-app quick-chat popover (anchored under the top bar). When
+   *  provided, the top bar renders a chat icon button that toggles it open. */
+  onOpenQuickChat?: () => void;
   enrichingTasks?: boolean;
   enrichProgress?: { done: number; total: number } | null;
   onViewTasks?: () => void;
@@ -84,6 +87,7 @@ export function TopBar(props: Props) {
     familiarOptions,
     onSelectFamiliar,
     onEnrichTasks,
+    onOpenQuickChat,
     enrichingTasks,
     enrichProgress,
     onViewTasks,
@@ -175,6 +179,17 @@ export function TopBar(props: Props) {
             placement="bottom-end"
             labeled={familiarSwitcherLabeled}
           />
+        ) : null}
+        {onOpenQuickChat ? (
+          <button
+            type="button"
+            className="top-bar__icon-btn"
+            onClick={onOpenQuickChat}
+            aria-label="Quick chat"
+            title="Quick chat"
+          >
+            <Icon name="ph:chat-circle-dots" width={CAVE_ICON_SIZE.headerAction} height={CAVE_ICON_SIZE.headerAction} />
+          </button>
         ) : null}
         {onEnrichTasks ? (
           <button

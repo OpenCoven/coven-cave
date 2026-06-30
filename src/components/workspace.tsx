@@ -77,6 +77,7 @@ import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
+import { QuickChatOverlay } from "@/components/quick-chat-overlay";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import {
@@ -295,6 +296,7 @@ export function Workspace() {
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [addChooserOpen, setAddChooserOpen] = useState(false);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
+  const [quickChatOpen, setQuickChatOpen] = useState(false);
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
@@ -2228,6 +2230,7 @@ export function Workspace() {
               onOpenInbox={() => setMode("inbox")}
               onOpenSettings={() => nextRouter.push("/settings")}
               onOpenMobileHandoff={() => setMobileHandoffOpen(true)}
+              onOpenQuickChat={() => setQuickChatOpen(true)}
               inboxItems={inboxItemsWithEphemeral}
               familiars={familiars}
               activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
@@ -2441,6 +2444,15 @@ export function Workspace() {
         nativeHost={mobileModeHost}
         mobileModeError={mobileModeError}
         onMobileModeChange={setMobileModeEnabled}
+      />
+
+      <QuickChatOverlay
+        open={quickChatOpen}
+        onClose={() => setQuickChatOpen(false)}
+        onOpenFullSession={(sid, fid) => {
+          setQuickChatOpen(false);
+          openFamiliarSession(sid, fid);
+        }}
       />
     </FamiliarStudioProvider>
   );

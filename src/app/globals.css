@@ -10666,3 +10666,30 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   background: color-mix(in oklch, var(--text-primary) 8%, transparent);
   color: var(--text-primary);
 }
+
+/* Quick-chat reveal: an in-app popover anchored top-right under the top bar,
+   opened by the top-bar chat-circle icon. The Tauri standalone window
+   (TrayQuickChat) reuses the same useQuickChat hook but renders full-screen. */
+.quick-chat-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1190;
+  background: transparent;
+}
+
+.quick-chat-overlay {
+  position: fixed;
+  top: 52px;
+  right: 12px;
+  z-index: 1200;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-panel, 12px);
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-panel);
+  color: var(--fg-primary);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+}

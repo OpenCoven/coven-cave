@@ -182,4 +182,21 @@ assert.match(
   "Tasks button shows an open-task count badge, hidden at zero",
 );
 
+// Quick-chat reveal: a single top-bar icon button opens the in-app popover.
+assert.match(
+  source,
+  /onOpenQuickChat\?: \(\) => void/,
+  "Top bar accepts an onOpenQuickChat handler to reveal the in-app quick chat",
+);
+assert.match(
+  source,
+  /onClick=\{onOpenQuickChat\}/,
+  "Top bar wires the quick-chat button to the onOpenQuickChat handler",
+);
+assert.match(
+  source,
+  /aria-label="Quick chat"/,
+  "Quick-chat top-bar button is accessibly labeled",
+);
+
 console.log("top-bar.test.ts: ok");
