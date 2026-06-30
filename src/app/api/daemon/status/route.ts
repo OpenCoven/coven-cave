@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { loadConfig } from "@/lib/cave-config";
+import { loadConfig, loadState, recordTravelHubReachability } from "@/lib/cave-config";
 import { callDaemon, daemonTargetForConfig, type DaemonTarget } from "@/lib/coven-daemon";
 import { covenWorkspaceRoot } from "@/lib/coven-paths";
 import { displayCovenVersion, installedCovenVersion } from "@/lib/coven-version";
 import { executorStatusesForConfig } from "@/lib/executor-status";
+import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -29,19 +30,36 @@ export async function GET() {
   const config = await loadConfig();
   const target = daemonTargetForConfig(config);
   const executorStatuses = await executorStatusesForConfig(config);
+  let travelState = (await loadState()).travel;
+  let hubReachable: boolean | null = target.mode === "local" ? true : null;
   if (target.mode === "unconfigured-hub") {
     const root = covenWorkspaceRoot();
+    const travelStatus = deriveTravelClientStatus({
+      multiHost: config.multiHost,
+      travel: travelState,
+      hubReachable: false,
+    });
     return NextResponse.json({
       running: false,
       reason: target.error,
       target: targetSummary(target),
       executors: executorStatuses,
+      travel: travelStatus,
       workspacePath: root,
       projectRoot: root,
     });
   }
 
   const res = await callDaemon<Health>({ path: "/api/v1/health", timeoutMs: 1500 });
+  if (target.mode === "hub") {
+    hubReachable = res.ok;
+    travelState = await recordTravelHubReachability(res.ok);
+  }
+  const travelStatus = deriveTravelClientStatus({
+    multiHost: config.multiHost,
+    travel: travelState,
+    hubReachable,
+  });
   const root = covenWorkspaceRoot();
   if (!res.ok || !res.data) {
     return NextResponse.json({
@@ -49,6 +67,7 @@ export async function GET() {
       reason: target.mode === "hub" ? `hub unreachable: ${res.error ?? `http ${res.status}`}` : res.error ?? `http ${res.status}`,
       target: targetSummary(target),
       executors: executorStatuses,
+      travel: travelStatus,
       workspacePath: root,
       projectRoot: root,
     });
@@ -67,6 +86,7 @@ export async function GET() {
     daemon: res.data.daemon,
     target: targetSummary(target),
     executors: executorStatuses,
+    travel: travelStatus,
     workspacePath: root,
     projectRoot: root,
   });

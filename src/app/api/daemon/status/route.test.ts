@@ -6,7 +6,7 @@ const source = await readFile(new URL("./route.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
-  /import \{ loadConfig \} from "@\/lib\/cave-config"/,
+  /import \{[^}]*loadConfig[^}]*\} from "@\/lib\/cave-config"/,
   "daemon status should read Cave config before calling the daemon",
 );
 
@@ -30,8 +30,26 @@ assert.match(
 
 assert.match(
   source,
+  /deriveTravelClientStatus\(/,
+  "daemon status should derive the travel-client mode from Cave travel state and hub reachability",
+);
+
+assert.match(
+  source,
+  /recordTravelHubReachability\(res\.ok/,
+  "daemon status should persist hub reachability transitions for the 10s travel switch threshold",
+);
+
+assert.match(
+  source,
   /executors: executorStatuses/,
   "daemon status response should include executor node availability",
+);
+
+assert.match(
+  source,
+  /travel: travelStatus/,
+  "daemon status response should include travel/offline/queue state",
 );
 
 assert.match(
