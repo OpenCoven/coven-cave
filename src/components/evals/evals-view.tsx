@@ -6,6 +6,7 @@ import type { IconName } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { RetroRunsView } from "@/components/retro-runs-view";
+import { FamiliarAvatar } from "@/components/familiar-avatar";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { RetroRun, RetroRunsSnapshot } from "@/lib/retro-runs";
@@ -137,12 +138,46 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   useMinuteTick(); // keep relative-time labels (last run, freshness) current between polls
 
   const dirty = useMemo(() => (draft ? JSON.stringify(draft) !== savedJson : false), [draft, savedJson]);
-  const familiarId = draft?.familiarId || activeFamiliarId || familiars[0]?.id || "";
+
+  // The Evals page is fixated on ONE familiar: the workspace-selected one
+  // (`activeFamiliarId`), falling back to the first familiar. There is no
+  // per-page picker — everything below is scoped to this single familiar so
+  // the surface only ever shows that familiar's suites, runs, loops, and
+  // threads.
+  const familiarId = activeFamiliarId || familiars[0]?.id || "";
+  const activeFamiliar = useMemo(
+    () => familiars.find((f) => f.id === familiarId) ?? null,
+    [familiars, familiarId],
+  );
+  const familiarName = activeFamiliar?.display_name || familiarId || "Familiar";
+
+  // Scope every data slice to the active familiar.
+  const scopedSuites = useMemo(
+    () => suites.filter((s) => s.familiarId === familiarId),
+    [suites, familiarId],
+  );
+  const scopedAllRuns = useMemo(
+    () => allRuns.filter((r) => r.familiarId === familiarId),
+    [allRuns, familiarId],
+  );
+  const scopedThreadSnapshots = useMemo(
+    () => threadSnapshots.filter((t) => t.familiarId === familiarId),
+    [threadSnapshots, familiarId],
+  );
+  const scopedGroups = useMemo(
+    () => groups.filter((g) => g.members.some((m) => m.familiarId === familiarId)),
+    [groups, familiarId],
+  );
+  const scopedEvalThreads = useMemo(
+    () => evalThreads.filter((t) => t.familiarId === familiarId),
+    [evalThreads, familiarId],
+  );
+
   const blockReason = draft ? suiteRunBlockReason({ ...draft, familiarId }, familiarId) : "Select a suite";
-  const activeGroup = groups[0] ?? null;
+  const activeGroup = scopedGroups[0] ?? null;
   const activeGroupStates = useMemo(
-    () => activeGroup ? deriveEvalGroupStates(activeGroup, threadSnapshots) : [],
-    [activeGroup, threadSnapshots],
+    () => activeGroup ? deriveEvalGroupStates(activeGroup, scopedThreadSnapshots) : [],
+    [activeGroup, scopedThreadSnapshots],
   );
   const activeGroupRollup = useMemo(
     () => activeGroup ? rollupEvalGroup(activeGroup, activeGroupStates) : null,
@@ -152,21 +187,20 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   // would make every group that has no thread members (rollupEvalGroup's
   // size===0 fallthrough) count every other group's threads.
   const groupStatesById = useMemo(
-    () => new Map(groups.map((g) => [g.id, deriveEvalGroupStates(g, threadSnapshots)])),
-    [groups, threadSnapshots],
+    () => new Map(scopedGroups.map((g) => [g.id, deriveEvalGroupStates(g, scopedThreadSnapshots)])),
+    [scopedGroups, scopedThreadSnapshots],
   );
-  const familiarName = (familiars.find((f) => f.id === familiarId)?.display_name ?? familiarId) || "Familiar";
   const activeLoopState = retroSnapshot.familiars.find((familiar) => familiar.familiarId === familiarId) ?? null;
   const analysis = useMemo(
     () => deriveEvalsAnalysis({
-      suites,
-      allRuns,
+      suites: scopedSuites,
+      allRuns: scopedAllRuns,
       selectedRuns: runs,
-      retroSnapshot,
+      activeLoopState,
       activeGroupRollup,
       queueCount: queue.length,
     }),
-    [activeGroupRollup, allRuns, queue.length, retroSnapshot, runs, suites],
+    [activeGroupRollup, scopedAllRuns, queue.length, activeLoopState, runs, scopedSuites],
   );
 
   // Load suites and grouped eval metadata once.
@@ -200,7 +234,8 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
         setRetroSnapshot(retroData.snapshot ?? EMPTY_RETRO_SNAPSHOT);
         // Eval-discuss chat threads, migrated out of the chat list into the Evals page.
         setEvalThreads((sessionsData.sessions ?? []).filter((s) => s.origin === "eval"));
-        if (list.length) selectSuite(list[0]);
+        // Selection is handled by the familiar-scoped effect below so it always
+        // lands on a suite that belongs to the active familiar.
       } finally {
         if (alive) setLoaded(true);
       }
@@ -210,6 +245,26 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep the selected suite in sync with the active familiar. On first load and
+  // whenever the workspace familiar changes, select that familiar's first suite
+  // (or clear the editor when it has none). Deliberately NOT keyed on `suites`,
+  // so creating/saving a suite doesn't re-trigger a reselect and clobber the
+  // in-progress draft.
+  useEffect(() => {
+    if (!loaded) return;
+    if (draft && draft.familiarId === familiarId) return;
+    const mine = suites.filter((s) => s.familiarId === familiarId);
+    if (mine.length) {
+      selectSuite(mine[0]);
+    } else {
+      setSelectedId(null);
+      setDraft(null);
+      setRuns([]);
+      setTab("overview");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, familiarId]);
 
   const reloadGroups = useCallback(() => {
     void (async () => {
@@ -284,21 +339,21 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   }, []);
 
   const createSuite = useCallback(() => {
-    const suite = newSuite();
+    const suite = { ...newSuite(), familiarId };
     setSuites((prev) => [suite, ...prev]);
     setSelectedId(suite.id);
     setDraft(suite);
     setSavedJson(""); // unsaved
     setRuns([]);
     setTab("suites");
-  }, []);
+  }, [familiarId]);
 
   const createFromTemplate = useCallback(
     (template: EvalTemplate) => {
       const suite = instantiateTemplate(template, {
         makeId: freshId,
         now: nowIso(),
-        familiarId: activeFamiliarId || familiars[0]?.id,
+        familiarId,
       });
       setSuites((prev) => [suite, ...prev]);
       setSelectedId(suite.id);
@@ -308,7 +363,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       setTab("suites");
       setShowTemplates(false);
     },
-    [activeFamiliarId, familiars],
+    [familiarId],
   );
 
   const patchDraft = useCallback((patch: Partial<EvalSuite>) => {
@@ -341,7 +396,8 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       const res = await fetch("/api/evals/suites", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ suite: { ...draft, updatedAt: nowIso() } }),
+        // Persist ownership by the active familiar so the suite stays scoped.
+        body: JSON.stringify({ suite: { ...draft, familiarId, updatedAt: nowIso() } }),
       });
       const data = (await res.json()) as { ok: boolean; suite?: EvalSuite };
       if (data.ok && data.suite) {
@@ -356,7 +412,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [draft]);
+  }, [draft, familiarId]);
 
   const remove = useCallback(async () => {
     if (!draft) return;
@@ -432,7 +488,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       >
         <Icon name={railOpen ? "ph:x" : "ph:list-bullets-bold"} width={14} aria-hidden />
         <span>Suites</span>
-        <span className="evals-rail-toggle-count">{suites.length}</span>
+        <span className="evals-rail-toggle-count">{scopedSuites.length}</span>
       </button>
       {/* Backdrop closes the drawer; only interactive while open on small screens. */}
       <div
@@ -443,8 +499,8 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       <aside id="evals-rail" className="evals-rail">
         <div className="evals-rail-head">
           <div>
-            <span className="evals-rail-title">Evals</span>
-            <span className="evals-rail-subtitle">{suites.length} suite{suites.length === 1 ? "" : "s"} tracked</span>
+            <span className="evals-rail-title">Suites</span>
+            <span className="evals-rail-subtitle">{scopedSuites.length} for {familiarName}</span>
           </div>
           <div className="evals-rail-actions">
             <button
@@ -461,31 +517,35 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
             </button>
           </div>
         </div>
-        <ul className="evals-suite-list">
-          {suites.map((s) => (
-            <li key={s.id}>
-              <button
-                type="button"
-                className={`evals-suite-row${s.id === selectedId ? " is-active" : ""}`}
-                onClick={() => selectSuite(s)}
-              >
-                <span className="evals-suite-name">{s.name}</span>
-                <span className="evals-suite-meta">
-                  <Icon name="ph:list-bullets-bold" width={12} aria-hidden />
-                  {s.cases.length} case{s.cases.length === 1 ? "" : "s"}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        {evalThreads.length > 0 && (
+        {scopedSuites.length === 0 ? (
+          <p className="evals-rail-empty">No suites yet for {familiarName}. Create one to start evaluating.</p>
+        ) : (
+          <ul className="evals-suite-list">
+            {scopedSuites.map((s) => (
+              <li key={s.id}>
+                <button
+                  type="button"
+                  className={`evals-suite-row${s.id === selectedId ? " is-active" : ""}`}
+                  onClick={() => selectSuite(s)}
+                >
+                  <span className="evals-suite-name">{s.name}</span>
+                  <span className="evals-suite-meta">
+                    <Icon name="ph:list-bullets-bold" width={12} aria-hidden />
+                    {s.cases.length} case{s.cases.length === 1 ? "" : "s"}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {scopedEvalThreads.length > 0 && (
           <div className="evals-threads">
             <div className="evals-threads-head">
               <span>Discussion threads</span>
-              <span className="evals-threads-count">{evalThreads.length}</span>
+              <span className="evals-threads-count">{scopedEvalThreads.length}</span>
             </div>
             <ul className="evals-thread-list">
-              {evalThreads.map((thread) => (
+              {scopedEvalThreads.map((thread) => (
                 <li key={thread.id}>
                   <button
                     type="button"
@@ -506,7 +566,16 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       <section className="evals-main">
         <header className="evals-toolbar evals-unified-toolbar">
           <div className="evals-title-block">
-            <span className="evals-group-kicker">Evaluation cockpit</span>
+            {/* The page is fixated on ONE familiar — shown here as the fixed
+                subject rather than a picker. Change familiars from the workspace
+                sidebar to re-scope the whole surface. */}
+            <div className="evals-subject" aria-label={`Evaluating ${familiarName}`}>
+              {activeFamiliar ? <FamiliarAvatar familiar={activeFamiliar} size="md" /> : null}
+              <span className="evals-subject-text">
+                <span className="evals-subject-kicker">Evals</span>
+                <b className="evals-subject-name">{familiarName}</b>
+              </span>
+            </div>
             {draft ? (
               <input
                 className="evals-name-input"
@@ -514,32 +583,14 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
                 onChange={(e) => patchDraft({ name: e.target.value })}
                 aria-label="Suite name"
               />
-            ) : (
-              <h2>Evals</h2>
-            )}
+            ) : null}
             <span className="evals-title-meta">
               {draft
-                ? `${draft.cases.length} case${draft.cases.length === 1 ? "" : "s"} · ${runs.length} selected-suite run${runs.length === 1 ? "" : "s"}`
-                : loaded ? "Create or choose a suite to begin." : "Loading suites and run history."}
+                ? `${draft.cases.length} case${draft.cases.length === 1 ? "" : "s"} · ${runs.length} run${runs.length === 1 ? "" : "s"}`
+                : loaded ? "Choose or create a suite to begin." : "Loading…"}
             </span>
           </div>
           <div className="evals-command-stack">
-            <label className="evals-familiar-pick">
-              <span className="evals-familiar-label">Familiar</span>
-              <select
-                value={familiarId}
-                onChange={(e) => patchDraft({ familiarId: e.target.value })}
-                aria-label="Familiar to evaluate"
-                disabled={!draft}
-              >
-                {familiars.length === 0 && <option value="">No familiars</option>}
-                {familiars.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.display_name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <div className="evals-toolbar-actions">
               <button type="button" className="evals-btn" onClick={save} disabled={!draft || saving || !dirty}>
                 {saving ? "Saving…" : dirty ? "Save" : "Saved"}
@@ -554,7 +605,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
                   className="evals-btn evals-btn-primary"
                   onClick={run}
                   disabled={!draft || Boolean(blockReason)}
-                  title={blockReason ?? "Run this suite against the familiar"}
+                  title={blockReason ?? `Run this suite against ${familiarName}`}
                 >
                   <Icon name="ph:play" width={13} /> Run
                 </button>
@@ -588,14 +639,14 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
               analysis={analysis}
               draft={draft}
               runs={runs}
-              recentLoopRuns={retroSnapshot.runs.slice(0, 5)}
+              recentLoopRuns={(activeLoopState?.runs ?? []).slice(0, 5)}
               activeLoopState={activeLoopState}
               activeGroupRollup={activeGroupRollup}
               onOpenSuite={() => setTab("suites")}
               onOpenRuns={() => setTab("runs")}
             />
           ) : tab === "insights" ? (
-            <EvalsInsightsPanel suite={draft} runs={allRuns} />
+            <EvalsInsightsPanel suite={draft} runs={scopedAllRuns} />
           ) : tab === "suites" ? (
             draft ? (
               <SuiteEditor draft={draft} patchDraft={patchDraft} patchCase={patchCase} patchGrader={patchGrader} setDraft={setDraft} />
@@ -625,7 +676,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
               onToggle={(id) => setExpandedRunId((cur) => (cur === id ? null : id))}
             />
           ) : tab === "compare" ? (
-            <RunCompare runs={draft ? allRuns.filter((r) => r.suiteId === draft.id) : allRuns} />
+            <RunCompare runs={draft ? scopedAllRuns.filter((r) => r.suiteId === draft.id) : scopedAllRuns} />
           ) : tab === "loops" ? (
             <LoopAnalysisPanel
               familiarId={familiarId}
@@ -643,9 +694,9 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
             />
           ) : (
             <EvalGroupsPanel
-              groups={groups}
+              groups={scopedGroups}
               statesById={groupStatesById}
-              familiars={familiars}
+              familiars={activeFamiliar ? [activeFamiliar] : []}
               onChanged={reloadGroups}
             />
           )}
@@ -760,30 +811,32 @@ function deriveEvalsAnalysis({
   suites,
   allRuns,
   selectedRuns,
-  retroSnapshot,
+  activeLoopState,
   activeGroupRollup,
   queueCount,
 }: {
   suites: EvalSuite[];
   allRuns: EvalRun[];
   selectedRuns: EvalRun[];
-  retroSnapshot: RetroRunsSnapshot;
+  activeLoopState: RetroRunsSnapshot["familiars"][number] | null;
   activeGroupRollup: EvalGroupRollup | null;
   queueCount: number;
 }): EvalsAnalysis {
   const sortedSelectedRuns = [...selectedRuns].sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
   const latestPassRate = sortedSelectedRuns[0]?.summary.passRate ?? null;
   const previousPassRate = sortedSelectedRuns[1]?.summary.passRate ?? null;
+  // Loop metrics come from THIS familiar's slice, not the cross-familiar total.
+  const loopRuns = activeLoopState?.runs.length ?? 0;
   return {
     suiteCount: suites.length,
     totalSuiteRuns: allRuns.length,
     selectedSuiteRuns: selectedRuns.length,
     latestPassRate,
     passTrend: latestPassRate != null && previousPassRate != null ? latestPassRate - previousPassRate : null,
-    loopRuns: retroSnapshot.summary.totalRuns,
-    loopAccepted: retroSnapshot.summary.accepted,
-    loopReverted: retroSnapshot.summary.reverted,
-    runningFamiliars: retroSnapshot.summary.runningFamiliars,
+    loopRuns,
+    loopAccepted: activeLoopState?.totalAccepted ?? 0,
+    loopReverted: activeLoopState?.totalReverted ?? 0,
+    runningFamiliars: activeLoopState?.running ? 1 : 0,
     staleThreads: (activeGroupRollup?.staleThreads ?? 0) + (activeGroupRollup?.neverRunThreads ?? 0),
     blockedThreads: activeGroupRollup?.blockedThreads ?? 0,
     queuedCount: queueCount,
@@ -818,7 +871,7 @@ function EvalsAnalysisSummary({ analysis }: { analysis: EvalsAnalysis }) {
       <AnalysisCard icon="ph:chart-bar-bold" label="Latest suite pass" value={passRateLabel(analysis.latestPassRate)} detail={trendLabel(analysis.passTrend)} />
       <AnalysisCard icon="ph:arrows-clockwise-bold" label="Loop accept/revert" value={`${analysis.loopAccepted}/${analysis.loopReverted}`} detail={`${analysis.loopRuns} loop runs`} />
       <AnalysisCard icon="ph:clock-countdown" label="Thread freshness" value={`${analysis.staleThreads} stale`} detail={`${analysis.blockedThreads} blocked · ${analysis.queuedCount} queued`} />
-      <AnalysisCard icon="ph:heartbeat" label="Running loops" value={String(analysis.runningFamiliars)} detail="familiar eval loops" />
+      <AnalysisCard icon="ph:heartbeat" label="Loop status" value={analysis.runningFamiliars > 0 ? "Running" : "Idle"} detail="this familiar's eval loop" />
     </section>
   );
 }

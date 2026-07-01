@@ -200,6 +200,41 @@
   font-size: 20px;
   line-height: 1.2;
 }
+/* Fixed evaluation subject — the familiar this whole page is scoped to. */
+.evals-subject {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.evals-subject-text {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.1;
+}
+.evals-subject-kicker {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.evals-subject-name {
+  font-size: 15px;
+  font-weight: 680;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.evals-rail-empty {
+  margin: 0;
+  padding: 14px 12px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
 .evals-name-input {
   flex: 0 1 auto;
   min-width: 8ch;
