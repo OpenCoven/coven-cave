@@ -9903,7 +9903,9 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   position: fixed;
   inset: 0;
   z-index: 1190;
-  background: transparent;
+  /* Faint scrim so the popover reads as a focused surface without going full-modal. */
+  background: color-mix(in oklch, var(--bg-base) 28%, transparent);
+  animation: quick-chat-backdrop-in 140ms var(--ease-standard, ease-out);
 }
 
 .quick-chat-overlay {
@@ -9911,16 +9913,102 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   top: 52px;
   right: 12px;
   z-index: 1200;
-  width: 360px;
+  width: 372px;
   max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 72px);
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius-panel, 12px);
+  border-radius: var(--radius-panel, 14px);
   border: 1px solid var(--border-hairline);
   background: var(--bg-panel);
   color: var(--fg-primary);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.32);
+  /* Layered elevation: an inner top highlight + two soft drop shadows read as a
+     crisp floating panel rather than one flat blur. */
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in oklch, var(--foreground) 7%, transparent),
+    0 24px 60px -14px rgba(0, 0, 0, 0.5),
+    0 8px 22px -10px rgba(0, 0, 0, 0.4);
   overflow: hidden;
+  transform-origin: top right;
+  animation: quick-chat-overlay-in 180ms var(--ease-emphasized, cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+
+@keyframes quick-chat-overlay-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes quick-chat-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quick-chat-overlay,
+  .quick-chat-overlay-backdrop {
+    animation: none;
+  }
+}
+
+/* Header — subtle raised tint separates it from the body. */
+.quick-chat-overlay > header {
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
+}
+
+/* Control selects (familiar / thinking / speed) — hover + focus affordance. */
+.quick-chat-overlay select {
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast, 120ms) var(--ease-standard, ease),
+    background var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+.quick-chat-overlay .grid select:hover {
+  border-color: var(--border-strong);
+  background: color-mix(in oklch, var(--bg-raised) 40%, var(--bg-base));
+}
+.quick-chat-overlay select:focus-visible {
+  border-color: var(--accent-presence, var(--accent));
+  outline: none;
+}
+
+/* Message textarea — accent focus glow. */
+.quick-chat-overlay textarea {
+  transition:
+    border-color var(--duration-fast, 120ms) var(--ease-standard, ease),
+    box-shadow var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+.quick-chat-overlay textarea:focus {
+  border-color: var(--accent-presence, var(--accent));
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
+}
+
+/* Answer pane — inset surface + slim custom scrollbar. */
+.quick-chat-overlay [aria-live] {
+  background: color-mix(in oklch, var(--bg-base) 90%, var(--foreground) 10%);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hairline) transparent;
+}
+.quick-chat-overlay [aria-live]::-webkit-scrollbar {
+  width: 8px;
+}
+.quick-chat-overlay [aria-live]::-webkit-scrollbar-thumb {
+  background: var(--border-hairline);
+  border-radius: 999px;
+}
+
+/* Footer buttons — smooth hover; accent Send gets a gentle lift. */
+.quick-chat-overlay > footer button {
+  transition:
+    background var(--duration-fast, 120ms) var(--ease-standard, ease),
+    border-color var(--duration-fast, 120ms) var(--ease-standard, ease),
+    filter var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+.quick-chat-overlay > footer button:not(:disabled):hover {
+  filter: brightness(1.06);
 }
 
 /* ======================================================================
