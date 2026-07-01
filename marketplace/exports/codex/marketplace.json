@@ -545,6 +545,18 @@
       "category": "Coven"
     },
     {
+      "name": "openclaw-skills",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/openclaw-skills"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
       "name": "coven-flows",
       "source": {
         "source": "local",

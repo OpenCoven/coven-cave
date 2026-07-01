@@ -1464,6 +1464,94 @@
       }
     },
     {
+      "name": "openclaw-skills",
+      "displayName": "OpenClaw Skills",
+      "version": "0.1.0",
+      "description": "The migrated OpenClaw workspace skill library, represented in Coven so familiars can share one canonical skill surface.",
+      "category": "Coven",
+      "keywords": [
+        "openclaw",
+        "skills",
+        "familiars",
+        "migration",
+        "coven"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills",
+        "https://github.com/OpenCoven/coven/blob/main/skills/openclaw-skills-manifest.json"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "nova",
+          "roles": [
+            "operator",
+            "maintainer"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist",
+            "retrospector"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison",
+            "social-voice"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Use the migrated OpenClaw skill library from Coven, checking coverage before treating the migration as complete.",
+        "useCases": [
+          "Find the Coven copy of an OpenClaw workspace skill",
+          "Verify OpenClaw skill migration coverage",
+          "Update shared familiar workflows through the Coven skill library"
+        ],
+        "guardrails": [
+          "Run the Coven `sync-openclaw-skills` coverage check before claiming 100% migration",
+          "Do not overwrite richer Coven-native skills when a represented skill already exists",
+          "Keep secret-bearing examples sanitized before publishing skills"
+        ]
+      }
+    },
+    {
       "name": "coven-flows",
       "displayName": "Coven Flows",
       "version": "0.1.0",

@@ -842,6 +842,57 @@
       ]
     }
   ],
+  "openclaw-skills": [
+    {
+      "familiar": "nova",
+      "roles": [
+        "operator",
+        "maintainer"
+      ]
+    },
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "debugger",
+        "code-reviewer"
+      ]
+    },
+    {
+      "familiar": "kitty",
+      "roles": [
+        "general-helper"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher",
+        "librarian"
+      ]
+    },
+    {
+      "familiar": "echo",
+      "roles": [
+        "archivist",
+        "retrospector"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator",
+        "coordination-layer"
+      ]
+    },
+    {
+      "familiar": "charm",
+      "roles": [
+        "devrel-liaison",
+        "social-voice"
+      ]
+    }
+  ],
   "coven-flows": [
     {
       "familiar": "astra",
