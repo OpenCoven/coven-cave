@@ -7,6 +7,18 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.129] - 2026-07-01
+
+Patch release on top of v0.0.128. Headline: Cave clarifies Hermes mode as the
+installed Hermes Agent runtime, not a bundled Hermes model selection.
+
+### Fixed
+
+- **Hermes runtime** - treated Hermes as a runtime-managed adapter in the model
+  catalog, keeping its picker label in runtime-managed mode and defaulting new
+  Hermes familiars to the synthetic `hermes-local` marker instead of a
+  Nous/Hermes model id.
+
 ## [0.0.128] - 2026-07-01
 
 Patch release on top of v0.0.127. Headline: Cave adds the first-party
