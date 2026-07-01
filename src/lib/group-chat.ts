@@ -353,6 +353,38 @@ export function renderCovenRoster(
   ].join("\n");
 }
 
+export type CovenRoundtablePromptArgs = {
+  participants: RosterParticipant[];
+  receivingFamiliarId: string;
+  userText: string;
+  targeted: boolean;
+};
+
+/**
+ * Build the default group-chat prompt for one familiar.
+ *
+ * The first pass through a coven should preserve distinct voices: every
+ * participant receives the same human request in parallel, plus a compact
+ * roster and explicit "answer independently" framing. Cross-familiar transcript
+ * relay is reserved for future explicit debate/synthesis modes; dumping peer
+ * replies into the default prompt makes later familiars converge toward a
+ * blended consensus voice.
+ */
+export function renderCovenRoundtablePrompt(args: CovenRoundtablePromptArgs): string {
+  const roster = renderCovenRoster(args.participants, args.receivingFamiliarId);
+  const mode = [
+    "<coven_roundtable>",
+    args.targeted
+      ? "You were directly mentioned in this coven. Answer the human's request as yourself."
+      : "This is an independent first-pass group reply. Other familiars receive the same human request in parallel.",
+    "Answer from your own identity, role, and judgment.",
+    "Do not summarize, predict, imitate, or speak for other familiars.",
+    "If useful, state what you would hand off to another familiar, but keep your answer yours.",
+    "</coven_roundtable>",
+  ].join("\n");
+  return [roster, mode, args.userText.trim()].filter(Boolean).join("\n\n");
+}
+
 // ---------------------------------------------------------------------------
 // Coven relay (pure) — what other familiars just said
 // ---------------------------------------------------------------------------

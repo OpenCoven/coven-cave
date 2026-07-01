@@ -21,11 +21,11 @@ test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () =
   // A Stop control aborts the in-flight broadcast.
   assert.match(view, /abortRef\.current\?\.abort\(\)/, "Stop aborts the broadcast");
   // Injects the coven roster into each send so a familiar knows who else is present.
-  assert.match(view, /renderCovenRoster\(rosterParticipants, r\.familiarId\)/, "injects the per-familiar coven roster");
-  // Full-coven broadcasts relay sequentially so each familiar sees peers' fresh replies.
-  assert.match(view, /const shouldRelay = mentioned\.length === 0 && replies\.length > 1/, "gates relay to full-coven broadcasts");
-  assert.match(view, /for \(const r of replies\)/, "relays sequentially when gated on");
-  assert.match(view, /renderCovenContext\(contextTurns, r\.familiarId/, "injects peers' prior replies as transcript");
+  assert.match(view, /renderCovenRoundtablePrompt\(\{/, "builds the per-familiar roundtable prompt");
+  assert.match(view, /receivingFamiliarId: r\.familiarId/, "marks the receiving familiar in prompt context");
+  assert.match(view, /targeted: mentioned\.length > 0/, "tells the prompt whether the user targeted this reply");
+  assert.doesNotMatch(view, /renderCovenContext\(contextTurns, r\.familiarId/, "default group chat does not relay peer replies");
+  assert.doesNotMatch(view, /const shouldRelay = mentioned\.length === 0 && replies\.length > 1/, "full-coven broadcasts no longer switch to sequential relay");
   // Strips the piggybacked next-paths block (visible) and surfaces the parsed
   // lines (suggestions) so control markup never leaks and chips can render.
   assert.match(
