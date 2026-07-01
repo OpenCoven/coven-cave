@@ -1115,6 +1115,8 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             }
                           }}
                           data-selected={selectMode && selectedIds.has(s.id) ? "true" : undefined}
+                          data-status={st.label}
+                          data-active={isActive ? "true" : undefined}
                           className={[
                             "chat-list-row focus-ring-inset group relative flex cursor-pointer gap-3 px-4 py-3.5 transition-colors",
                             isActive
@@ -1215,7 +1217,7 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
                             </span>
 
                             {/* Row 3: status preview */}
-                            <span className={`truncate text-[12px] ${st.preview}`}>
+                            <span className={`chat-list-row-preview truncate text-[12px] ${st.preview}`}>
                               {s.archived_at ? <span className="text-[var(--text-muted)]">Archived · </span> : null}
                               {st.label === "running"
                                 ? "Active now…"
