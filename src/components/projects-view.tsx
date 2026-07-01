@@ -39,6 +39,13 @@ import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 
 import { ProjectRow } from "./projects/project-row";
 import { lastActiveMs, shortRoot, openSessionById } from "./projects/projects-shared";
+import { DirectoryPickerModal } from "@/components/directory-picker-modal";
+import { isTauri } from "@/lib/tauri-platform";
+
+/** Last path segment of an absolute path (handles both / and \ separators). */
+function pathBasename(p: string): string {
+  return p.replace(/[/\\]+$/, "").split(/[/\\]/).filter(Boolean).pop() ?? "";
+}
 
 type ProjectsViewProps = {
   sessions?: SessionRow[];
@@ -67,6 +74,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   const rootInputRef = useRef<HTMLInputElement>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [rootDraft, setRootDraft] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createdProject, setCreatedProject] = useState<CaveProject | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -271,6 +279,31 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     setQuery("");
   };
 
+  // A folder was chosen (native dialog or in-app browser) → fill the path, and
+  // seed the name from the folder when the user hasn't typed one yet.
+  const applyPickedDir = (dir: string) => {
+    const trimmed = dir.trim();
+    if (!trimmed) return;
+    setRootDraft(trimmed);
+    setNameDraft((current) => (current.trim() ? current : pathBasename(trimmed)));
+    rootInputRef.current?.focus();
+  };
+
+  // "Browse…" — native OS folder dialog on desktop, in-app $HOME browser on web.
+  const handleBrowse = async () => {
+    if (isTauri()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const picked = await invoke<string | null>("shell_pick_directory");
+        if (picked) applyPickedDir(picked);
+        return;
+      } catch {
+        // Native dialog unavailable on this build — fall back to the web browser.
+      }
+    }
+    setPickerOpen(true);
+  };
+
   // Delete one chat, mirroring the Chats list delete (DELETE
   // /api/chat/conversation/:id). Returns whether it succeeded; callers refetch.
   const deleteOneSession = async (sessionId: string): Promise<boolean> => {
@@ -421,13 +454,24 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
               placeholder="Project name"
               className="focus-ring h-9 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
-            <input
-              ref={rootInputRef}
-              value={rootDraft}
-              onChange={(event) => setRootDraft(event.target.value)}
-              placeholder="/absolute/path/to/project"
-              className="focus-ring h-9 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[12px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                ref={rootInputRef}
+                value={rootDraft}
+                onChange={(event) => setRootDraft(event.target.value)}
+                placeholder="/absolute/path/to/project"
+                className="focus-ring h-9 min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[12px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
+              />
+              <button
+                type="button"
+                onClick={() => void handleBrowse()}
+                title="Browse for a project folder"
+                className="focus-ring inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+              >
+                <Icon name="ph:folder-open" width={14} aria-hidden />
+                Browse
+              </button>
+            </div>
             <div className="flex items-center gap-2">
               <button
                 type="submit"
@@ -447,6 +491,15 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
           </div>
         </form>
       ) : null}
+
+      <DirectoryPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(dir) => {
+          applyPickedDir(dir);
+          setPickerOpen(false);
+        }}
+      />
 
       {createdProject && !showForm ? (
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]/50 px-4 py-2 text-[12px] sm:px-6">
