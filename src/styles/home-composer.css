@@ -456,6 +456,20 @@
   max-width: 132px;
 }
 
+/* The dropdown popup of a native <select> is drawn on the OS's own surface
+   (white on macOS), but its <option>/<optgroup> text inherits the control's
+   light dark-theme color — leaving every item invisible until the OS hover
+   highlight lands on it. Pin an explicit, theme-aware background + color so the
+   model / familiar / project menus stay readable in every theme. */
+.hc-familiar-select option,
+.hc-familiar-select optgroup {
+  background-color: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.hc-familiar-select optgroup {
+  font-weight: 600;
+}
+
 .hc-select-caret {
   position: absolute;
   right: 5px;
