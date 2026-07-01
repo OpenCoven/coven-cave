@@ -78,6 +78,14 @@ export function HomeFeed({ onOpenUrl }: Props) {
     if (tab === "tweets" && tweetState === "idle") void loadTweets();
   }, [tab, repoState, tweetState, loadRepos, loadTweets]);
 
+  // Re-stamp `nowMs` once a minute so the "pushed Nm ago" / tweet-age labels
+  // advance instead of freezing at the value from the last load. Cheap; the
+  // feed data itself stays user-refreshed via the refresh button.
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const refresh = useCallback(() => {
     if (tab === "repos") { setRepoState("idle"); void loadRepos(); }
     if (tab === "tweets") void loadTweets(true);
