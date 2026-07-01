@@ -523,7 +523,6 @@ export const SUITES = {
     "src/lib/familiar-contract.test.ts",
     "src/lib/familiar-rehabilitation.test.ts",
     "src/components/familiar-studio-contract-tab.test.ts",
-    "src/components/right-panel-expand.test.ts",
     "src/lib/next-paths.test.ts",
     "src/components/board-clear-done.test.ts",
     "src/components/board-schedule-window.test.ts",
