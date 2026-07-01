@@ -44,4 +44,19 @@ assert.match(src, /import \{ openExternalUrl \} from "@\/lib\/open-external"/, "
 assert.match(src, /onClick=\{\(\) => void openExternalUrl\(GITHUB_PAT_URL\)\}/, "inline PAT setup opens GitHub token creation outside the local app");
 assert.doesNotMatch(src, /href="https:\/\/github\.com\/settings\/tokens\/new/, "inline PAT setup no longer uses a plain localhost-bound anchor");
 
+// ── Attachments section: add/remove are accessible and go through onPatch ────
+assert.match(src, /function AttachmentsSection\(/, "the inspector has an editable AttachmentsSection");
+assert.match(
+  src,
+  /const converted = await Promise\.all\(picked\.map\(\(file\) => fileToAttachment\(file\)\)\)/,
+  "added files are converted client-side via the shared fileToAttachment helper",
+);
+assert.match(
+  src,
+  /onPatch\(card\.id, \{ attachments: attachments\.filter\(\(_, i\) => i !== index\) \}\)/,
+  "removing an attachment PATCHes the filtered array",
+);
+assert.match(src, /aria-label=\{`Remove \$\{att\.name\}`\}/, "each attachment's remove button is named for its file");
+assert.match(src, /disabled=\{busy \|\| atCap\}/, "the add-files button is disabled while busy or at the 10-file cap");
+
 console.log("board-inspector-a11y.test.ts: ok");

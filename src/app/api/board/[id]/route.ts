@@ -8,6 +8,7 @@ import {
 } from "@/lib/cave-board";
 import type { CardStep } from "@/lib/cave-board-types";
 import type { CardGitHubLink } from "@/lib/cave-board-types";
+import type { ChatAttachment } from "@/lib/chat-attachments";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export async function PATCH(
     needsHuman: boolean;
     runningSince: string | undefined;
     steps: CardStep[];
+    attachments: ChatAttachment[];
   }>;
   try {
     body = await req.json();

@@ -56,5 +56,34 @@ assert.equal(stored.attachments[1].dataUrl, undefined, "stored image stays lean 
 const bare = await board.createCard({ title: "No files here" });
 assert.equal(bare.attachments, undefined, "cards with no staged files omit the attachments field");
 
+// ── Inspector edit path: updateCard applies the same lean pipeline ──────────
+// Add a fresh file (with a fat image dataUrl) to a card that had none — it must
+// be stored lean, exactly like createCard.
+const added = await board.updateCard(bare.id, {
+  attachments: [
+    { name: "later.txt", type: "text/plain", size: 5, text: "hi" },
+    { name: "diagram.png", type: "image/png", mimeType: "image/png", size: 68, dataUrl: pngDataUrl },
+  ],
+});
+assert.ok(added, "updateCard returns the updated card");
+assert.equal(added.attachments.length, 2, "updateCard stores added attachments");
+assert.equal(added.attachments[0].text, "hi", "added text attachment keeps its content");
+assert.equal(added.attachments[1].dataUrl, undefined, "updateCard strips the added image dataUrl lean");
+
+// Remove one attachment (PATCH the filtered array).
+const removed = await board.updateCard(bare.id, {
+  attachments: added.attachments.filter((a) => a.name !== "diagram.png"),
+});
+assert.equal(removed.attachments.length, 1, "updateCard removes an attachment");
+assert.equal(removed.attachments[0].name, "later.txt", "the surviving attachment is the right one");
+
+// A patch that does NOT mention attachments leaves them untouched.
+const untouched = await board.updateCard(bare.id, { title: "Renamed" });
+assert.equal(untouched.attachments.length, 1, "an unrelated patch preserves attachments");
+
+// Clearing to an empty array drops the field entirely.
+const cleared = await board.updateCard(bare.id, { attachments: [] });
+assert.equal(cleared.attachments, undefined, "clearing to [] removes the attachments field");
+
 await rm(tmpHome, { recursive: true, force: true });
 console.log("cave-board-attachments: ok");
