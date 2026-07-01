@@ -59,6 +59,61 @@ function gitDiff(cwd: string, args: string[]): Promise<{ stdout: string; stderr:
   return git(cwd, ["diff", "--no-ext-diff", "--no-textconv", ...args]);
 }
 
+/** Network git (push) and `gh` can take longer than the read-only 10s budget. */
+const NET_TIMEOUT_MS = 60_000;
+function gitLong(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync("git", args, { cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
+}
+/** Run the GitHub CLI (argument array, no shell) for PR creation. */
+function ghCli(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  return execFileAsync("gh", args, { cwd, timeout: NET_TIMEOUT_MS, maxBuffer: MAX_GIT_BUFFER });
+}
+
+const PR_URL_RE = /https:\/\/github\.com\/[^\s]+\/pull\/\d+/;
+
+/** Current branch name, or "HEAD" when detached. */
+async function currentBranch(repoRoot: string): Promise<string> {
+  const { stdout } = await git(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  return stdout.trim();
+}
+
+/** The repo's default branch: origin/HEAD when known, else main/master, else main. */
+async function defaultBranch(repoRoot: string): Promise<string> {
+  try {
+    const { stdout } = await git(repoRoot, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]);
+    const m = stdout.trim().match(/refs\/remotes\/origin\/(.+)$/);
+    if (m) return m[1];
+  } catch { /* no origin/HEAD ref */ }
+  for (const b of ["main", "master"]) {
+    try {
+      await git(repoRoot, ["rev-parse", "--verify", "--quiet", b]);
+      return b;
+    } catch { /* not present */ }
+  }
+  return "main";
+}
+
+/** Server-generated, shell-safe feature branch name derived from the commit
+ *  message. `cave/<slug>-<base36-stamp>` — never client-controlled. */
+function featureBranchName(message: string, nowMs: number): string {
+  const slug = message
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    // Trim leading/trailing dashes with anchored single-char replaces.
+    // The collapse above already reduces any run of separators to a single
+    // "-", so a linear-time trim suffices and avoids the polynomial-ReDoS
+    // backtracking of `/^-+|-+$/g` on attacker-influenced input.
+    .replace(/^-/, "")
+    .replace(/-$/, "")
+    .slice(0, 32) || "changes";
+  return `cave/${slug}-${nowMs.toString(36)}`;
+}
+
+function stderrOf(err: unknown): string {
+  const e = err as { stderr?: unknown; stdout?: unknown; message?: unknown };
+  return String(e?.stderr || e?.stdout || e?.message || err).trim();
+}
+
 type RootResolution =
   | { ok: true; repoRoot: string }
   | { ok: false; status: number; error: string; notARepo?: boolean };
@@ -367,8 +422,11 @@ export async function POST(req: NextRequest) {
     projectRoot?: string;
     path?: string;
     confirmUntracked?: boolean;
-    action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint";
+    action?: "revert" | "checkpoint" | "restore-checkpoint" | "delete-checkpoint" | "commit" | "create-pr";
     checkpoint?: string;
+    message?: string;
+    title?: string;
+    prBody?: string;
   };
   try {
     body = await req.json();
@@ -394,6 +452,101 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    }
+  }
+  // Stage all working-tree changes and commit them. To keep the default branch
+  // clean (and set up the PR flow), a commit made while on the default branch
+  // (or a detached HEAD) first spins up a fresh `cave/<slug>` feature branch.
+  // The commit is signed (-S) to match the repo norm; a signing failure is
+  // surfaced rather than silently dropped.
+  if (action === "commit") {
+    const message = typeof body.message === "string" ? body.message.trim() : "";
+    if (!message) {
+      return NextResponse.json({ ok: false, error: "commit message is required" }, { status: 400 });
+    }
+    try {
+      const { stdout: statusOut } = await git(root.repoRoot, ["status", "--porcelain"]);
+      if (!statusOut.trim()) {
+        return NextResponse.json({ ok: false, error: "nothing to commit — the working tree is clean" }, { status: 400 });
+      }
+      const cur = await currentBranch(root.repoRoot);
+      const def = await defaultBranch(root.repoRoot);
+      let branch = cur;
+      let branchCreated = false;
+      if (cur === def || cur === "HEAD") {
+        branch = featureBranchName(message, Date.now());
+        await git(root.repoRoot, ["checkout", "-b", branch]);
+        branchCreated = true;
+      }
+      await git(root.repoRoot, ["add", "-A"]);
+      try {
+        await gitLong(root.repoRoot, ["commit", "-S", "-m", message]);
+      } catch (err) {
+        // Roll back the just-created branch so a failed commit doesn't strand it.
+        if (branchCreated) await git(root.repoRoot, ["checkout", cur]).catch(() => {});
+        const detail = stderrOf(err);
+        const signing = /gpg|signing|ssh|secret key|sign/i.test(detail);
+        return NextResponse.json(
+          { ok: false, error: signing ? `commit signing failed: ${detail}` : `commit failed: ${detail}` },
+          { status: 500 },
+        );
+      }
+      const { stdout: sha } = await git(root.repoRoot, ["rev-parse", "--short", "HEAD"]);
+      return NextResponse.json({
+        ok: true,
+        sha: sha.trim(),
+        branch,
+        branchCreated,
+        onDefaultBranch: branch === def,
+        defaultBranch: def,
+      });
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });
+    }
+  }
+  // Push the current feature branch and open a GitHub pull request via `gh`.
+  // Refuses to run from the default branch (there'd be nothing to PR and the
+  // push would be rejected by branch protection). If a PR already exists for
+  // the branch, gh's message carries its URL — surfaced as a success.
+  if (action === "create-pr") {
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title) {
+      return NextResponse.json({ ok: false, error: "PR title is required" }, { status: 400 });
+    }
+    const prBody = typeof body.prBody === "string" ? body.prBody : "";
+    try {
+      const branch = await currentBranch(root.repoRoot);
+      const def = await defaultBranch(root.repoRoot);
+      if (branch === def || branch === "HEAD") {
+        return NextResponse.json(
+          { ok: false, error: `you're on ${branch} — commit to a feature branch first, then open a PR` },
+          { status: 400 },
+        );
+      }
+      try {
+        await gitLong(root.repoRoot, ["push", "-u", "origin", branch]);
+      } catch (err) {
+        return NextResponse.json({ ok: false, error: `git push failed: ${stderrOf(err)}` }, { status: 502 });
+      }
+      try {
+        const { stdout } = await ghCli(root.repoRoot, [
+          "pr", "create", "--base", def, "--head", branch, "--title", title, "--body", prBody,
+        ]);
+        const url = stdout.match(PR_URL_RE)?.[0] ?? stdout.trim();
+        return NextResponse.json({ ok: true, url, branch, base: def });
+      } catch (err) {
+        const e = err as NodeJS.ErrnoException & { stderr?: string };
+        if (e.code === "ENOENT") {
+          return NextResponse.json({ ok: false, error: "GitHub CLI (gh) not found — install it to open PRs" }, { status: 500 });
+        }
+        const detail = stderrOf(err);
+        // gh exits non-zero when a PR already exists; its message includes the URL.
+        const existing = detail.match(PR_URL_RE);
+        if (existing) return NextResponse.json({ ok: true, url: existing[0], branch, base: def, existed: true });
+        return NextResponse.json({ ok: false, error: `gh pr create failed: ${detail}` }, { status: 502 });
+      }
+    } catch (err) {
+      return NextResponse.json({ ok: false, error: stderrOf(err) }, { status: 500 });
     }
   }
   if (action === "restore-checkpoint" || action === "delete-checkpoint") {

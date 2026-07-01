@@ -6,6 +6,7 @@ import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
+import { openExternalUrl } from "@/lib/open-external";
 
 /**
  * "Changes" right-panel tab (CHAT-D8-01): a per-session review surface for the
@@ -433,6 +434,20 @@ export function SessionChangesInner({
   const [busyCheckpoint, setBusyCheckpoint] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
+  // Commit + Create PR flow.
+  const [commitMsg, setCommitMsg] = useState("");
+  const [committing, setCommitting] = useState(false);
+  // Set after a successful commit so the "Create PR" affordance persists even
+  // though the file list is now empty.
+  const [postCommit, setPostCommit] = useState<
+    { sha: string; branch: string; onDefaultBranch: boolean } | null
+  >(null);
+  const [prOpen, setPrOpen] = useState(false);
+  const [prTitle, setPrTitle] = useState("");
+  const [prBody, setPrBody] = useState("");
+  const [creatingPr, setCreatingPr] = useState(false);
+  const [prUrl, setPrUrl] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
@@ -693,6 +708,62 @@ export function SessionChangesInner({
     [load, loadCheckpoints, projectRoot],
   );
 
+  const commitChanges = useCallback(async () => {
+    const message = commitMsg.trim();
+    if (!message) return;
+    setCommitting(true);
+    setActionError(null);
+    setPrUrl(null);
+    try {
+      const res = await fetch("/api/changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectRoot, action: "commit", message }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        ok?: boolean; sha?: string; branch?: string; onDefaultBranch?: boolean; error?: string;
+      };
+      if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+      setPostCommit({ sha: json.sha ?? "", branch: json.branch ?? "", onDefaultBranch: json.onDefaultBranch === true });
+      setPrTitle(message.split("\n")[0].slice(0, 72));
+      setPrBody("");
+      setPrOpen(false);
+      setCommitMsg("");
+      setDiffs({});
+      setExpandedPath(null);
+      await Promise.all([load(), loadCheckpoints()]);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCommitting(false);
+    }
+  }, [commitMsg, projectRoot, load, loadCheckpoints]);
+
+  const createPr = useCallback(async () => {
+    const title = prTitle.trim();
+    if (!title) return;
+    setCreatingPr(true);
+    setActionError(null);
+    try {
+      const res = await fetch("/api/changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectRoot, action: "create-pr", title, prBody }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
+      if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
+      setPrUrl(json.url ?? null);
+      setPrOpen(false);
+      setPostCommit(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreatingPr(false);
+    }
+  }, [prTitle, prBody, projectRoot]);
+
+  const canCommit = loaded && !notARepo && !error && files.length > 0;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header: honest scope copy + refresh */}
@@ -873,6 +944,121 @@ export function SessionChangesInner({
           />
         ) : null}
       </div>
+
+      {/* Commit + Create PR — the working tree's outbound actions. */}
+      {loaded && !notARepo && !error ? (
+        <div className="session-changes-panel__commit shrink-0 space-y-1.5 border-t border-[var(--border-hairline)] px-3 py-2">
+          {prUrl ? (
+            <div className="flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[11px] text-[var(--accent-presence)]">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Icon name="ph:check-circle" width={12} aria-hidden className="shrink-0" />
+                <span className="min-w-0 truncate">Pull request opened.</span>
+              </span>
+              <button
+                type="button"
+                className="focus-ring inline-flex shrink-0 items-center gap-1 underline"
+                onClick={() => openExternalUrl(prUrl)}
+              >
+                Open PR <Icon name="ph:arrow-square-out" width={11} aria-hidden />
+              </button>
+            </div>
+          ) : null}
+
+          {postCommit ? (
+            <div className="rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[11px] text-[var(--accent-presence)]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Icon name="ph:check-circle" width={12} aria-hidden className="shrink-0" />
+                  <span className="min-w-0 truncate font-mono">
+                    {postCommit.sha} · {postCommit.branch}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="focus-ring shrink-0"
+                  aria-label="Dismiss commit result"
+                  onClick={() => setPostCommit(null)}
+                >
+                  <Icon name="ph:x-bold" width={10} aria-hidden />
+                </button>
+              </div>
+              {!prOpen && !postCommit.onDefaultBranch ? (
+                <button
+                  type="button"
+                  className="focus-ring mt-1.5 inline-flex items-center gap-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] font-medium text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
+                  onClick={() => setPrOpen(true)}
+                >
+                  <Icon name="ph:git-pull-request" width={12} aria-hidden /> Create PR
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {prOpen ? (
+            <div className="space-y-1.5 rounded-md border border-[var(--border-hairline)] p-2">
+              <input
+                value={prTitle}
+                onChange={(e) => setPrTitle(e.target.value)}
+                placeholder="Pull request title"
+                aria-label="Pull request title"
+                className="focus-ring w-full rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)]"
+              />
+              <textarea
+                value={prBody}
+                onChange={(e) => setPrBody(e.target.value)}
+                placeholder="Description (optional)"
+                aria-label="Pull request description"
+                rows={3}
+                className="focus-ring w-full resize-y rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)]"
+              />
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={!prTitle.trim() || creatingPr}
+                  onClick={() => void createPr()}
+                  className="focus-ring inline-flex items-center gap-1 rounded bg-[var(--accent-presence)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent-presence-foreground,white)] disabled:opacity-40"
+                >
+                  <Icon name="ph:git-pull-request" width={12} aria-hidden />
+                  {creatingPr ? "Opening…" : "Create pull request"}
+                </button>
+                <button
+                  type="button"
+                  className="focus-ring rounded px-2 py-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  onClick={() => setPrOpen(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {!postCommit && !prOpen ? (
+            <div className="flex items-center gap-1.5">
+              <input
+                value={commitMsg}
+                onChange={(e) => setCommitMsg(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void commitChanges();
+                }}
+                placeholder={canCommit ? "Commit message" : "No changes to commit"}
+                aria-label="Commit message"
+                disabled={!canCommit || committing}
+                className="focus-ring min-w-0 flex-1 rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1 text-[11px] text-[var(--text-primary)] disabled:opacity-40"
+              />
+              <button
+                type="button"
+                disabled={!canCommit || !commitMsg.trim() || committing}
+                onClick={() => void commitChanges()}
+                title="Stage all changes and commit"
+                className="focus-ring inline-flex shrink-0 items-center gap-1 rounded bg-[var(--accent-presence)] px-2.5 py-1 text-[11px] font-medium text-[var(--accent-presence-foreground,white)] disabled:opacity-40"
+              >
+                <Icon name="ph:git-diff" width={12} aria-hidden />
+                {committing ? "Committing…" : "Commit"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
