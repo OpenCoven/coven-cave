@@ -5473,11 +5473,31 @@ function TurnRowImpl({
             {turn.attachments?.length ? <AttachmentList attachments={turn.attachments} /> : null}
             {turn.progress?.length ? <ProgressGroup progress={turn.progress} pending={!!turn.pending} /> : null}
             {reasoning ? <ReasoningBlock reasoning={reasoning} durationMs={turn.durationMs} /> : null}
-            {/* Designated "Tool activity" section: on every settled turn that
-                used tools, collect them into one collapsed group below the prose
-                (which renders uninterrupted above). Streaming turns show tools
-                inline instead — see renderSegments. */}
-            {!turn.pending && turn.tools?.length ? <ToolGroup tools={turn.tools} /> : null}
+            {/* Designated "Tool activity" section on settled turns. Codex
+                file-edit cards (Edit/Write/etc. with a target file) stay VISIBLE
+                inline — they're the actionable output (Review/Undo), so they must
+                not be buried in the collapsed rollup. All OTHER tool activity
+                (reads, greps, bash, …) collapses into the ToolGroup below the
+                prose. Streaming turns weave tools inline instead — see
+                renderSegments. */}
+            {!turn.pending && turn.tools?.length
+              ? (() => {
+                  const isEditCard = (t: ToolEvent) =>
+                    toolInputAsDiff(t.name, t.input) != null && toolTargetFile(t.name, t.input) != null;
+                  const editCards = turn.tools.filter(isEditCard);
+                  const otherTools = turn.tools.filter((t) => !isEditCard(t));
+                  return (
+                    <>
+                      {editCards.length ? (
+                        <div className="cave-edit-cards mt-3 space-y-2">
+                          {editCards.map((tool) => <ToolBlock key={tool.id} tool={tool} />)}
+                        </div>
+                      ) : null}
+                      {otherTools.length ? <ToolGroup tools={otherTools} /> : null}
+                    </>
+                  );
+                })()
+              : null}
             {/* Suggested follow-ups render LAST — they're the most actionable
                 element (click to send), so they sit closest to the composer and
                 aren't pushed up the turn by the tool-activity section. */}

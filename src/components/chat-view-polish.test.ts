@@ -163,8 +163,18 @@ assert.match(
 
 assert.match(
   turnRow,
-  /!turn\.pending && turn\.tools\?\.length \? <ToolGroup/,
-  "every settled turn that used tools renders the designated ToolGroup section",
+  /!turn\.pending && turn\.tools\?\.length/,
+  "settled turns that used tools render a designated tool section",
+);
+assert.match(
+  turnRow,
+  /cave-edit-cards[\s\S]*editCards\.map\(\(tool\) => <ToolBlock/,
+  "edit-tool cards stay visible inline on settled turns (not buried in the collapsed rollup)",
+);
+assert.match(
+  turnRow,
+  /otherTools\.length \? <ToolGroup tools=\{otherTools\}/,
+  "non-edit tool activity still collapses into the designated ToolGroup",
 );
 
 assert.match(

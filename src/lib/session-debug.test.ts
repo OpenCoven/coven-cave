@@ -227,8 +227,8 @@ assert.match(
 );
 assert.match(
   chatViewSource,
-  /\{!turn\.pending && turn\.tools\?\.length \? <ToolGroup tools=\{turn\.tools\} \/> : null\}/,
-  "every settled turn with tools renders the designated trailing ToolGroup section",
+  /!turn\.pending && turn\.tools\?\.length[\s\S]*otherTools\.length \? <ToolGroup tools=\{otherTools\} \/>/,
+  "settled turns render edit-tool cards inline and collapse other tool activity into the ToolGroup",
 );
 assert.match(
   chatViewSource,
