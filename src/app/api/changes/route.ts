@@ -99,7 +99,12 @@ function featureBranchName(message: string, nowMs: number): string {
   const slug = message
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    // Trim leading/trailing dashes with anchored single-char replaces.
+    // The collapse above already reduces any run of separators to a single
+    // "-", so a linear-time trim suffices and avoids the polynomial-ReDoS
+    // backtracking of `/^-+|-+$/g` on attacker-influenced input.
+    .replace(/^-/, "")
+    .replace(/-$/, "")
     .slice(0, 32) || "changes";
   return `cave/${slug}-${nowMs.toString(36)}`;
 }
