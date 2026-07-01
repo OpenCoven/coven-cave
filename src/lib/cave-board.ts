@@ -18,6 +18,11 @@ import {
   taskGitHubLinkFromUrl,
 } from "@/lib/task-github";
 import { loadProjects, projectForRoot } from "@/lib/cave-projects";
+import {
+  normalizeChatAttachments,
+  stripPreviewOnlyAttachmentFields,
+  type ChatAttachment,
+} from "@/lib/chat-attachments";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -226,7 +231,18 @@ export type NewCardInput = {
   template?: string | null;
   /** Optional checklist steps to seed the card with (e.g. a Salem path). */
   steps?: { text: string }[];
+  /** Files staged in the composer, carried onto the card at creation time. */
+  attachments?: ChatAttachment[];
 };
+
+/** Store attachments lean: normalize (bounds text + validates image payloads),
+ * then strip the base64 `dataUrl`/`mimeType` so images ride as metadata only and
+ * the board JSON stays small. Returns undefined when nothing usable remains. */
+function boardAttachments(input: ChatAttachment[] | undefined): ChatAttachment[] | undefined {
+  if (!input || input.length === 0) return undefined;
+  const lean = stripPreviewOnlyAttachmentFields(normalizeChatAttachments(input));
+  return lean.length ? lean : undefined;
+}
 
 export async function createCard(input: NewCardInput): Promise<Card> {
   return withBoardLock(async () => {
@@ -261,6 +277,8 @@ export async function createCard(input: NewCardInput): Promise<Card> {
       .filter(Boolean)
       .map((text) => ({ id: crypto.randomUUID(), text, done: false, addedAt: now })),
   };
+  const attachments = boardAttachments(input.attachments);
+  if (attachments) card.attachments = attachments;
   board.cards.push(card);
   await saveBoard(board);
   return card;
