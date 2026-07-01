@@ -44,7 +44,8 @@ assert.equal(runtimeModelSelectLabel([]), "Runtime managed", "empty model catalo
 assert.equal(runtimeModelSelectLabel([{ id: "anthropic/claude-opus-4-7", label: "Claude Opus 4.7" }]), "Model");
 
 assert.equal(PERMISSION_MODES.find((m) => m.value === "full")?.value, "full", "full access is a permission mode");
+assert.equal(PERMISSION_MODES.find((m) => m.value === "read")?.value, "read", "read-only is a permission mode");
 assert.equal(DEFAULT_PERMISSION_MODE, "full", "defaults to full access (matches Codex reference)");
-assert.equal(PERMISSION_MODES.length, 3, "three permission modes");
+assert.equal(PERMISSION_MODES.length, 2, "two enforceable permission modes (Ask-first dropped — no interactive approval in the one-shot bridge)");
 
 console.log("command-controls tests passed");

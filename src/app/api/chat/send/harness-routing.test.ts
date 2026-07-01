@@ -66,6 +66,25 @@ assert.doesNotMatch(
   "OpenClaw should not be special-cased inside the generic coven run argv builder",
 );
 
+// Permission enforcement: Read-only forwards `coven run --permission read-only`
+// (mapped to the harness's native sandbox flag), gated on the CLI advertising
+// the flag; "full" stays implicit so the harness keeps its default sandbox.
+assert.match(
+  chatRoute,
+  /covenRunSupportsPermission\(\)/,
+  "route capability-probes coven run --permission before forwarding",
+);
+assert.match(
+  chatRoute,
+  /body\.permissionMode === "read" \? "read-only" : null/,
+  "only Read-only is forwarded; Full access stays implicit (harness default sandbox)",
+);
+assert.match(
+  chatRoute,
+  /a\.push\("--permission", forwardPermission\)/,
+  "coven run argv forwards --permission when enabled",
+);
+
 assert.match(
   chatRoute,
   /if \(binding\.harness === "openclaw" && !sshRuntime\)/,

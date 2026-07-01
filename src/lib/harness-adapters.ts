@@ -159,6 +159,14 @@ export function covenRunSupportsModelFlag(helpText: string): boolean {
   return /(^|\s)--model(?![\w-])/m.test(helpText);
 }
 
+// Same gated-forwarding probe for `coven run --permission <full|read-only>` (the
+// sandbox/permission flag added in @opencoven/cli). Forwarding stays a no-op on
+// CLIs that predate the flag, since `coven run` rejects unknown flags.
+export function covenRunSupportsPermissionFlag(helpText: string): boolean {
+  if (typeof helpText !== "string" || !helpText) return false;
+  return /(^|\s)--permission(?![\w-])/m.test(helpText);
+}
+
 export function mergeAdapterReports(
   localReports: Array<
     Partial<AdapterReport> & {
