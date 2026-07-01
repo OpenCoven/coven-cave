@@ -63,4 +63,11 @@ assert.match(css, /\.home-digest__card--media[\s\S]*?padding-left/, "media cards
 assert.match(composer, /import \{ HomeDigestCarousel \}/, "home composer imports the carousel");
 assert.match(composer, /<HomeDigestCarousel/, "home composer renders the carousel");
 
+// ── Ambient refresh pauses during composition (sits right below the composer) ──
+assert.match(
+  view,
+  /usePausablePoll\(\(\) => \{ void loadDigest\(\); \}, 60_000, \{ pauseWhileInputActive: true \}\)/,
+  "the once-a-minute digest refresh pauses while the user is typing",
+);
+
 console.log("home-digest-carousel.test.ts passed");

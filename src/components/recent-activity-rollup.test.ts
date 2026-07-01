@@ -27,4 +27,13 @@ assert.match(
   "the header toggle writes through the persisting handler",
 );
 
+// This rollup polls the same heavy /api/sessions/list as the shell, so it must
+// pause while the user is typing — otherwise it re-introduces the mobile typing
+// lag the shell polls were gated to avoid.
+assert.match(
+  source,
+  /usePausablePoll\(\(\) => void load\(\), POLL_MS, \{ pauseWhileInputActive: true \}\)/,
+  "the sessions poll pauses during active input composition",
+);
+
 console.log("recent-activity-rollup.test.ts: ok");

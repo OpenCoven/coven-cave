@@ -58,8 +58,10 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
   }, [loadDigest]);
 
   // Ambient "Daily summary" — refresh once a minute so reminder/session counts
-  // and relative ages advance. Suspends on hidden tabs and refreshes on focus.
-  usePausablePoll(() => { void loadDigest(); }, 60_000);
+  // and relative ages advance. Suspends on hidden tabs and refreshes on focus,
+  // and pauses while the user is typing so this ambient refresh (+ its re-render)
+  // doesn't compete with composition in the Home composer just below.
+  usePausablePoll(() => { void loadDigest(); }, 60_000, { pauseWhileInputActive: true });
 
   const cards = useMemo(
     () => buildDigestCards({ items, sessions, rssItems: rss, familiarNameById, nowMs }),
