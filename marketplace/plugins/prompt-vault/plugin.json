@@ -1,0 +1,40 @@
+{
+  "name": "prompt-vault",
+  "version": "0.1.0",
+  "description": "Save, search, tag, and manage reusable AI prompts via the pv CLI \u2014 a local SQLite-backed library with version history, tag filtering, and JSON export/import.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "prompts",
+    "vault",
+    "sqlite",
+    "cli",
+    "tags",
+    "library"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/prompt-vault",
+  "x-coven": {
+    "displayName": "Prompt Vault",
+    "category": "AI & ML",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/prompt-vault"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

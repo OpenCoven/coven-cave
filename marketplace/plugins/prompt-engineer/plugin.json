@@ -1,0 +1,39 @@
+{
+  "name": "prompt-engineer",
+  "version": "0.1.0",
+  "description": "Design, optimize, test, and evaluate LLM prompts for effectiveness, consistency, and cost efficiency across zero-shot, few-shot, chain-of-thought, ReAct, and other patterns.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "prompt",
+    "llm",
+    "few-shot",
+    "chain-of-thought",
+    "evaluation",
+    "optimization"
+  ],
+  "capabilities": [
+    "read_files"
+  ],
+  "marketplaceId": "opencoven/prompt-engineer",
+  "x-coven": {
+    "displayName": "Prompt Engineer",
+    "category": "AI & ML",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/prompt-engineer"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

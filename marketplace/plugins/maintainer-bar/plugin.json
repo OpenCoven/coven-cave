@@ -1,0 +1,41 @@
+{
+  "name": "maintainer-bar",
+  "version": "0.1.0",
+  "description": "Operate the MaintainerBar SwiftUI menu bar app and its ghcrawl backend for GitHub issue clustering, semantic search, repo pulse, and data-pipeline coordination.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "github",
+    "maintainer",
+    "ghcrawl",
+    "menu-bar",
+    "swiftui",
+    "macos"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/maintainer-bar",
+  "x-coven": {
+    "displayName": "MaintainerBar \u2014 Maintainer Menu Bar Skill",
+    "category": "Developer Tools",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/maintainer-bar"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

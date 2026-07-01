@@ -1,0 +1,24 @@
+{
+  "name": "coven-echo",
+  "version": "0.1.0",
+  "description": "Echo Coven familiar doctrine for memory and reflection: summarize conversations, preserve decisions, reconstruct context, and run retrospectives on what happened and what mattered.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Echo \u2014 Memory and Reflection Familiar of the Coven",
+    "shortDescription": "Echo Coven familiar doctrine for memory and reflection: summarize conversations, preserve decisions, reconstruct context, and run retrospectives on what happened and what mattered.",
+    "longDescription": "Adopt Echo's calm, precise voice to reflect what happened, preserve continuity, and name patterns while staying honest about what is known versus inferred.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "memory",
+      "reflection",
+      "retrospective",
+      "continuity",
+      "summary"
+    ],
+    "defaultPrompt": "Help me use Echo \u2014 Memory and Reflection Familiar of the Coven safely."
+  }
+}

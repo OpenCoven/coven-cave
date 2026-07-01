@@ -1,0 +1,24 @@
+{
+  "name": "codex-session-manager",
+  "version": "0.1.0",
+  "description": "Supervise, inspect, resume, unblock, verify, redirect, and hand off Codex/coding-agent sessions as a session steward using sessions_list, sessions_history, and sessions_send.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Session Manager",
+    "shortDescription": "Supervise, inspect, resume, unblock, verify, redirect, and hand off Codex/coding-agent sessions as a session steward using sessions_list, sessions_history, and sessions_send.",
+    "longDescription": "Inspect a coding-agent session's history before acting, then send one bounded, state-aware instruction and require evidence before declaring completion.",
+    "developerName": "OpenCoven",
+    "category": "Agents & Harnesses",
+    "capabilities": [
+      "codex",
+      "session",
+      "orchestration",
+      "handoff",
+      "verification"
+    ],
+    "defaultPrompt": "Help me use Codex Session Manager safely."
+  }
+}

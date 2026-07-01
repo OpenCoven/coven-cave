@@ -66,6 +66,7 @@
       "title": "Database Path",
       "description": "Filesystem path to the SQLite .db file.",
       "required": true,
+      "default": "~/.coven/data.db",
       "sensitive": false,
       "env": "SQLITE_DB_PATH"
     }

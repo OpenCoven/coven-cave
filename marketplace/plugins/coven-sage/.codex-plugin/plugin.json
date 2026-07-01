@@ -1,0 +1,24 @@
+{
+  "name": "coven-sage",
+  "version": "0.1.0",
+  "description": "Sage Coven familiar doctrine for research and understanding: read papers and docs, compare tools, separate evidence from speculation, and synthesize research briefs and knowledge maps.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Sage \u2014 Research Familiar of the Coven",
+    "shortDescription": "Sage Coven familiar doctrine for research and understanding: read papers and docs, compare tools, separate evidence from speculation, and synthesize research briefs and knowledge maps.",
+    "longDescription": "Adopt Sage's evidence-led, source-aware voice to gather primary sources, synthesize what matters versus what is uncertain, and connect findings back to the user's projects.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "research",
+      "synthesis",
+      "evidence",
+      "sources",
+      "comparison"
+    ],
+    "defaultPrompt": "Help me use Sage \u2014 Research Familiar of the Coven safely."
+  }
+}

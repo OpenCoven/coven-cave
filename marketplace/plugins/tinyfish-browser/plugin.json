@@ -1,0 +1,40 @@
+{
+  "name": "tinyfish-browser",
+  "version": "0.1.0",
+  "description": "Spin up a remote Chromium session via the TinyFish Browser API and get a CDP URL for driving it with Playwright/Puppeteer; sessions auto-expire after about an hour idle.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "browser",
+    "chromium",
+    "cdp",
+    "playwright",
+    "remote"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/tinyfish-browser",
+  "x-coven": {
+    "displayName": "TinyFish Browser",
+    "category": "Browser & Web",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/tinyfish-browser"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

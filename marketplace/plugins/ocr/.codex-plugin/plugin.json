@@ -1,0 +1,25 @@
+{
+  "name": "ocr",
+  "version": "0.1.0",
+  "description": "Extract text from screenshots, images, scans, and PDFs into text, JSON, or Markdown using a bundled ocr.py helper with a repeatable, uncertainty-aware workflow.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OCR",
+    "shortDescription": "Extract text from screenshots, images, scans, and PDFs into text, JSON, or Markdown using a bundled ocr.py helper with a repeatable, uncertainty-aware workflow.",
+    "longDescription": "Run scripts/ocr.py against a local image or PDF, choosing text/json/markdown output and --force-ocr only when a PDF is a scan, then inspect results before relying on them.",
+    "developerName": "OpenCoven",
+    "category": "Productivity",
+    "capabilities": [
+      "ocr",
+      "text-extraction",
+      "pdf",
+      "screenshots",
+      "transcription",
+      "vision"
+    ],
+    "defaultPrompt": "Help me use OCR safely."
+  }
+}

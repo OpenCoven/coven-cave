@@ -1,0 +1,25 @@
+{
+  "name": "daily-dev-agentic",
+  "version": "0.1.0",
+  "description": "Autonomous continuous learning via daily.dev feeds \u2014 set up a personalized feed, run daily learning loops, note insights, and proactively share findings with the owner.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "daily.dev Agentic Learning",
+    "shortDescription": "Autonomous continuous learning via daily.dev feeds \u2014 set up a personalized feed, run daily learning loops, note insights, and proactively share findings with the owner.",
+    "longDescription": "Create a daily.dev feed, follow goal-relevant tags, and run scheduled learning loops that fetch, note, and share insights autonomously.",
+    "developerName": "OpenCoven",
+    "category": "Knowledge & Docs",
+    "capabilities": [
+      "learning",
+      "daily-dev",
+      "knowledge",
+      "feeds",
+      "cron",
+      "insights"
+    ],
+    "defaultPrompt": "Help me use daily.dev Agentic Learning safely."
+  }
+}

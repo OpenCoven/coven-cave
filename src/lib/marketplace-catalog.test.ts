@@ -94,6 +94,21 @@ assert.deepEqual(requiredConfigFromManifest(rcManifests.fs), [
 assert.deepEqual(requiredConfigFromManifest(rcManifests.none), []); // opt not required; noenv has no env
 assert.deepEqual(requiredConfigFromManifest({}), []);
 
+// default pre-fill: carried through for non-sensitive fields, stripped for sensitive ones
+assert.deepEqual(
+  requiredConfigFromManifest({
+    userConfig: { db: { required: true, sensitive: false, title: "Database Path", env: "SQLITE_DB_PATH", default: "~/.coven/data.db" } },
+  }),
+  [{ key: "db", env: "SQLITE_DB_PATH", title: "Database Path", description: undefined, sensitive: false, default: "~/.coven/data.db" }],
+);
+// a secret field never gets a pre-filled default, even if the manifest declares one
+assert.deepEqual(
+  requiredConfigFromManifest({
+    userConfig: { tok: { required: true, sensitive: true, title: "Token", env: "TOKEN", default: "should-be-ignored" } },
+  }),
+  [{ key: "tok", env: "TOKEN", title: "Token", description: undefined, sensitive: true }],
+);
+
 const rcMerged = mergeCatalog(
   [{ name: "github", displayName: "GitHub", category: "Developer Tools", trust: "reference-local", policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" } }],
   { github: rcManifests.github },
@@ -174,20 +189,24 @@ assert.deepEqual(
 // coven-native collection is category-driven so it always tracks first-party plugins
 assert.equal(COLLECTIONS.find((c) => c.id === "coven-native").category, "Coven");
 
-// --- production marketplace: OpenClaw skill migration is visible in Cave ---
+// --- production marketplace: OpenClaw skills are individual cards (not one bundle) ---
 const productionMarketplace = JSON.parse(
   readFileSync(new URL("../../marketplace/marketplace.json", import.meta.url), "utf8"),
 );
-const productionOpenClawSkills = productionMarketplace.plugins.find(
-  (p) => p.name === "openclaw-skills",
-);
-assert.ok(productionOpenClawSkills, "OpenClaw Skills card should be present in Cave marketplace");
-assert.equal(productionOpenClawSkills.displayName, "OpenClaw Skills");
-assert.equal(productionOpenClawSkills.category, "Coven");
+const prodNames = new Set(productionMarketplace.plugins.map((p) => p.name));
+// the old bundled umbrella entry is gone — each OpenClaw skill is its own card now
+assert.ok(!prodNames.has("openclaw-skills"), "bundled OpenClaw Skills umbrella should be removed");
+// representative individual skills are present as their own cards
+for (const name of ["ocr", "higgsfield-generate", "coven-sage", "prompt-vault"]) {
+  assert.ok(prodNames.has(name), `individual OpenClaw skill "${name}" should be a Cave marketplace card`);
+}
+// the coven-* familiar doctrine skills stay in the "Coven" category → coven-native collection
+const covenSage = productionMarketplace.plugins.find((p) => p.name === "coven-sage");
+assert.equal(covenSage.category, "Coven");
 assert.equal(
   COLLECTIONS.find((c) => c.id === "coven-native").category,
-  productionOpenClawSkills.category,
-  "OpenClaw Skills should appear in the Cave Coven native collection",
+  covenSage.category,
+  "Coven doctrine skills should appear in the Cave Coven native collection",
 );
 
 console.log("marketplace-catalog.test.ts: ok");

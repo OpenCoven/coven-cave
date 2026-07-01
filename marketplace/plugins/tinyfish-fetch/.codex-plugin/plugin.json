@@ -1,0 +1,24 @@
+{
+  "name": "tinyfish-fetch",
+  "version": "0.1.0",
+  "description": "Fetch one or more URLs via the TinyFish Fetch API and get clean markdown, HTML, or screenshots back, with JS rendering and optional geo-targeted proxying.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "TinyFish Fetch",
+    "shortDescription": "Fetch one or more URLs via the TinyFish Fetch API and get clean markdown, HTML, or screenshots back, with JS rendering and optional geo-targeted proxying.",
+    "longDescription": "Verify TINYFISH_API_KEY is set, then POST target URLs to the Fetch API and read rendered content from results[].content.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "fetch",
+      "scraping",
+      "markdown",
+      "screenshot",
+      "proxy"
+    ],
+    "defaultPrompt": "Help me use TinyFish Fetch safely."
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "ritual-dapp-frontend",
+  "version": "0.1.0",
+  "description": "Build production React/Next.js frontends for Ritual Chain dApps with async precompile transaction state machines, on-chain event subscriptions, and wagmi/viem wallet integration.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "ritual",
+    "dapp",
+    "wagmi",
+    "viem",
+    "web3"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/ritual-dapp-frontend",
+  "x-coven": {
+    "displayName": "Ritual dApp Frontend",
+    "category": "Developer Tools",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/ritual-dapp-frontend"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

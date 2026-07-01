@@ -1,0 +1,24 @@
+{
+  "name": "research-ingestion",
+  "version": "0.1.0",
+  "description": "Extract actionable insights from research papers (PDF/URL) and turn them into OpenClaw agent skills, workflow improvements, and concrete techniques.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Research Ingestion",
+    "shortDescription": "Extract actionable insights from research papers (PDF/URL) and turn them into OpenClaw agent skills, workflow improvements, and concrete techniques.",
+    "longDescription": "Obtain paper text via PyMuPDF/pdftotext or web fetch, extract structured insights, and optionally scaffold a new skill.",
+    "developerName": "OpenCoven",
+    "category": "Knowledge & Docs",
+    "capabilities": [
+      "research",
+      "papers",
+      "pdf",
+      "insights",
+      "skill-generation"
+    ],
+    "defaultPrompt": "Help me use Research Ingestion safely."
+  }
+}

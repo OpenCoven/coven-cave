@@ -1,0 +1,50 @@
+{
+  "name": "coven-charm",
+  "version": "0.1.0",
+  "description": "Charm's operating doctrine for communication, social posts, DevRel, and product copy \u2014 making words clear, warm, alive, and native to each platform while preserving Val's voice.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "communication",
+    "social",
+    "devrel",
+    "copywriting",
+    "tone",
+    "voice"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/coven-charm",
+  "x-coven": {
+    "displayName": "Charm \u2014 Voice and Presence Familiar of the Coven",
+    "category": "Coven",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/coven-charm"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "charm",
+        "roles": [
+          "devrel-liaison",
+          "social-voice"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "opencoven-role-creation-process",
+  "version": "0.1.0",
+  "description": "Create, validate, and activate ROLE.md specs for familiars with low-lift agentic guidance, bundling identity, skills, tools, workflows, and permission declarations.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "roles",
+    "familiars",
+    "opencoven",
+    "role-authoring",
+    "workflows",
+    "validation"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/opencoven-role-creation-process",
+  "x-coven": {
+    "displayName": "OpenCoven Role Creation Process",
+    "category": "Coven",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/opencoven-role-creation-process"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

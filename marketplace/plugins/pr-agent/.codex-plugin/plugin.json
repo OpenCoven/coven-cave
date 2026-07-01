@@ -1,0 +1,24 @@
+{
+  "name": "pr-agent",
+  "version": "0.1.0",
+  "description": "Orchestrates the OpenClaw three-phase maintainer PR workflow (review-pr, prepare-pr, merge-pr) via wrapper scripts, enforcing quality bars, artifacts, and checkpoint questions.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "PR Agent \u2014 Maintainer Workflow Orchestrator",
+    "shortDescription": "Orchestrates the OpenClaw three-phase maintainer PR workflow (review-pr, prepare-pr, merge-pr) via wrapper scripts, enforcing quality bars, artifacts, and checkpoint questions.",
+    "longDescription": "Run the review, prepare, and merge phases through scripts/pr-* wrappers, validating .local artifacts and checkpoints between each.",
+    "developerName": "OpenCoven",
+    "category": "Agents & Harnesses",
+    "capabilities": [
+      "github",
+      "pr",
+      "orchestrator",
+      "maintainer",
+      "workflow"
+    ],
+    "defaultPrompt": "Help me use PR Agent \u2014 Maintainer Workflow Orchestrator safely."
+  }
+}

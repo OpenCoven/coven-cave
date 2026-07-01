@@ -1,0 +1,42 @@
+{
+  "name": "heygen-skills",
+  "version": "0.1.0",
+  "description": "Create HeyGen avatar videos through the v3 Video Agent pipeline, handling avatar resolution, aspect-ratio correction, prompt engineering, and voice selection automatically.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "heygen",
+    "avatar",
+    "video",
+    "digital-twin",
+    "presenter",
+    "voice"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/heygen-skills",
+  "x-coven": {
+    "displayName": "HeyGen Skills",
+    "category": "Media & Creative",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/heygen-skills"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

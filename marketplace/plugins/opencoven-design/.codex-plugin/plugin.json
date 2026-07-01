@@ -1,0 +1,25 @@
+{
+  "name": "opencoven-design",
+  "version": "0.1.0",
+  "description": "Opinionated design constraints for OpenCoven harness cockpits, docs, and agent-built UI \u2014 dark-first, minimal, symbolic, with controlled purple and tokenized colors and typography.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OpenCoven Design Skill",
+    "shortDescription": "Opinionated design constraints for OpenCoven harness cockpits, docs, and agent-built UI \u2014 dark-first, minimal, symbolic, with controlled purple and tokenized colors and typography.",
+    "longDescription": "Design and implement OpenCoven surfaces against DESIGN.md and brand/ui token files, keeping interfaces dark, dense, and symbolic.",
+    "developerName": "OpenCoven",
+    "category": "Design",
+    "capabilities": [
+      "design",
+      "brand",
+      "ui",
+      "cockpit",
+      "dark",
+      "tokens"
+    ],
+    "defaultPrompt": "Help me use OpenCoven Design Skill safely."
+  }
+}

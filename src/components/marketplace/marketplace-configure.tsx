@@ -11,6 +11,8 @@ type FieldStatus = {
   title: string;
   description: string | null;
   sensitive: boolean;
+  /** Suggested pre-fill value; null for sensitive fields or when none is set. */
+  default: string | null;
   validatable: boolean;
   satisfied: boolean;
   source: "env" | "vault" | "encrypted" | "none";
@@ -35,13 +37,22 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
   const [results, setResults] = useState<Record<string, ValidationResult>>({});
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (seedDefaults = false) => {
     setLoaded(false);
     try {
       const res = await fetch(`/api/marketplace/config?id=${encodeURIComponent(pluginId)}`, { cache: "no-store" });
       const json = (await res.json()) as { ok?: boolean; fields?: FieldStatus[]; error?: string };
       if (!json.ok) throw new Error(json.error ?? `config http ${res.status}`);
-      setFields(json.fields ?? []);
+      const nextFields = json.fields ?? [];
+      setFields(nextFields);
+      // On first open, pre-fill still-unset non-sensitive fields with their suggested default.
+      if (seedDefaults) {
+        const seeded: Record<string, string> = {};
+        for (const f of nextFields) {
+          if (!f.satisfied && !f.sensitive && f.default) seeded[f.key] = f.default;
+        }
+        setDrafts(seeded);
+      }
       setError(null);
     } catch (err) {
       setFields([]);
@@ -54,7 +65,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
   useEffect(() => {
     if (open) {
       setDrafts({});
-      void load();
+      void load(true);
     }
   }, [open, load]);
 
@@ -151,7 +162,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
                   type="text"
                   value={drafts[f.key] ?? ""}
                   onChange={(e) => setDrafts((d) => ({ ...d, [f.key]: e.target.value }))}
-                  placeholder={f.sensitive ? "Paste a secret or op://Vault/Item/field" : "Enter a value (e.g. a directory path)"}
+                  placeholder={f.sensitive ? "Paste a secret or op://Vault/Item/field" : f.default ? `e.g. ${f.default}` : "Enter a value (e.g. a directory path)"}
                   aria-label={`${f.title} value`}
                   className="min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 text-[12px] text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
                   style={{ height: 32 }}

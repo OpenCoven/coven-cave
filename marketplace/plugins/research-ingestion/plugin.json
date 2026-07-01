@@ -1,0 +1,41 @@
+{
+  "name": "research-ingestion",
+  "version": "0.1.0",
+  "description": "Extract actionable insights from research papers (PDF/URL) and turn them into OpenClaw agent skills, workflow improvements, and concrete techniques.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "research",
+    "papers",
+    "pdf",
+    "insights",
+    "skill-generation"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/research-ingestion",
+  "x-coven": {
+    "displayName": "Research Ingestion",
+    "category": "Knowledge & Docs",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/research-ingestion"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

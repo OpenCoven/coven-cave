@@ -1,0 +1,25 @@
+{
+  "name": "threejs-animation",
+  "version": "0.1.0",
+  "description": "Three.js animation \u2014 keyframe tracks, skeletal animation, morph targets, animation mixing and blending, GLTF clip playback, and procedural motion patterns.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Three.js Animation",
+    "shortDescription": "Three.js animation \u2014 keyframe tracks, skeletal animation, morph targets, animation mixing and blending, GLTF clip playback, and procedural motion patterns.",
+    "longDescription": "Build Three.js animations with AnimationMixer, AnimationClip, and AnimationAction, and blend or crossfade clips in the render loop.",
+    "developerName": "OpenCoven",
+    "category": "Media & Creative",
+    "capabilities": [
+      "threejs",
+      "animation",
+      "keyframe",
+      "skeletal",
+      "morph-targets",
+      "blending"
+    ],
+    "defaultPrompt": "Help me use Three.js Animation safely."
+  }
+}

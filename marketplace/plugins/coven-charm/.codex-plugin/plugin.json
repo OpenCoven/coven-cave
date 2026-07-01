@@ -1,0 +1,25 @@
+{
+  "name": "coven-charm",
+  "version": "0.1.0",
+  "description": "Charm's operating doctrine for communication, social posts, DevRel, and product copy \u2014 making words clear, warm, alive, and native to each platform while preserving Val's voice.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Charm \u2014 Voice and Presence Familiar of the Coven",
+    "shortDescription": "Charm's operating doctrine for communication, social posts, DevRel, and product copy \u2014 making words clear, warm, alive, and native to each platform while preserving Val's voice.",
+    "longDescription": "Establish the audience, platform, and desired outcome, then shape 2-3 tone options that sound human and preserve Val's voice rather than replacing it.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "communication",
+      "social",
+      "devrel",
+      "copywriting",
+      "tone",
+      "voice"
+    ],
+    "defaultPrompt": "Help me use Charm \u2014 Voice and Presence Familiar of the Coven safely."
+  }
+}

@@ -63,6 +63,7 @@
       "title": "SearXNG Instance URL",
       "description": "Base URL of the SearXNG instance to query.",
       "required": true,
+      "default": "http://localhost:8080",
       "sensitive": false,
       "env": "SEARXNG_URL"
     }

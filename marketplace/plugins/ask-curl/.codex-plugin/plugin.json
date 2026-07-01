@@ -1,0 +1,24 @@
+{
+  "name": "ask-curl",
+  "version": "0.1.0",
+  "description": "Turn natural-language requests into well-formed cURL commands with 1Password (op://) secret injection, response parsing, request history, and chained calls.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Ask cURL",
+    "shortDescription": "Turn natural-language requests into well-formed cURL commands with 1Password (op://) secret injection, response parsing, request history, and chained calls.",
+    "longDescription": "Describe the HTTP request you want, review the generated cURL command, and run it with secrets injected at runtime via op run.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "http",
+      "api",
+      "curl",
+      "1password",
+      "requests"
+    ],
+    "defaultPrompt": "Help me use Ask cURL safely."
+  }
+}

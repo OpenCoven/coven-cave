@@ -1,0 +1,25 @@
+{
+  "name": "tinyfish-web-agent",
+  "version": "0.1.0",
+  "description": "Use the TinyFish web agent to extract or scrape websites, pull structured data, and automate browser actions with natural language, including bot-protected and geo-restricted sites.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "TinyFish Web Agent",
+    "shortDescription": "Use the TinyFish web agent to extract or scrape websites, pull structured data, and automate browser actions with natural language, including bot-protected and geo-restricted sites.",
+    "longDescription": "Verify TINYFISH_API_KEY, then POST a URL and an explicit JSON-shaped goal to the run-sse endpoint, adding stealth or proxy config for protected or geo-restricted sites.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "tinyfish",
+      "scraping",
+      "extraction",
+      "browser",
+      "stealth",
+      "automation"
+    ],
+    "defaultPrompt": "Help me use TinyFish Web Agent safely."
+  }
+}

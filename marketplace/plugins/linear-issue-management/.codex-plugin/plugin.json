@@ -1,0 +1,24 @@
+{
+  "name": "linear-issue-management",
+  "version": "0.1.0",
+  "description": "File, triage, edit, and audit Linear issues through the GraphQL API with team/project/label discovery, duplicate search, mutually-exclusive label handling, and secret-safe auth.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Linear Issue Management",
+    "shortDescription": "File, triage, edit, and audit Linear issues through the GraphQL API with team/project/label discovery, duplicate search, mutually-exclusive label handling, and secret-safe auth.",
+    "longDescription": "Discover exact team/project/label/state IDs and search for duplicates before executing one focused GraphQL mutation.",
+    "developerName": "OpenCoven",
+    "category": "Project Management",
+    "capabilities": [
+      "linear",
+      "graphql",
+      "issues",
+      "triage",
+      "labels"
+    ],
+    "defaultPrompt": "Help me use Linear Issue Management safely."
+  }
+}

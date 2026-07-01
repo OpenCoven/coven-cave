@@ -1480,12 +1480,42 @@
       ]
     },
     {
-      "name": "openclaw-skills",
-      "displayName": "OpenClaw Skills",
+      "name": "1password",
+      "displayName": "1Password Secret Management",
+      "category": "Security",
+      "source": {
+        "source": "local",
+        "path": "./plugins/1password"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "codeflow-maintainer",
+      "displayName": "CodeFlow Maintainer Skill",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codeflow-maintainer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-cody",
+      "displayName": "Cody \u2014 Code Familiar of the Coven",
       "category": "Coven",
       "source": {
         "source": "local",
-        "path": "./plugins/openclaw-skills"
+        "path": "./plugins/coven-cody"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -1494,47 +1524,563 @@
       "trust": "official-local",
       "roleAffinity": [
         {
-          "familiar": "nova",
-          "roles": [
-            "operator",
-            "maintainer"
-          ]
-        },
-        {
           "familiar": "cody",
           "roles": [
             "implementer",
             "debugger",
             "code-reviewer"
           ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
+        }
+      ]
+    },
+    {
+      "name": "coven-parallel-work",
+      "displayName": "Coven Parallel Work Protocol",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-parallel-work"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "disk-space-optimizer",
+      "displayName": "Disk Space Optimization",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/disk-space-optimizer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "linear-issue-management",
+      "displayName": "Linear Issue Management",
+      "category": "Project Management",
+      "source": {
+        "source": "local",
+        "path": "./plugins/linear-issue-management"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "memory-timeline-manager",
+      "displayName": "Memory Timeline Manager",
+      "category": "Knowledge & Docs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/memory-timeline-manager"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "openclaw-dev",
+      "displayName": "OpenClaw Dev Agent",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/openclaw-dev"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "pr-agent",
+      "displayName": "PR Agent \u2014 Maintainer Workflow Orchestrator",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/pr-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "research-ingestion",
+      "displayName": "Research Ingestion",
+      "category": "Knowledge & Docs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/research-ingestion"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "skill-scanner",
+      "displayName": "Skill Scanner",
+      "category": "Security",
+      "source": {
+        "source": "local",
+        "path": "./plugins/skill-scanner"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tinyfish-browser",
+      "displayName": "TinyFish Browser",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tinyfish-browser"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "ask-curl",
+      "displayName": "Ask cURL",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ask-curl"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "codex-session-manager",
+      "displayName": "Codex Session Manager",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-session-manager"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-echo",
+      "displayName": "Echo \u2014 Memory and Reflection Familiar of the Coven",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-echo"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
         {
           "familiar": "echo",
           "roles": [
             "archivist",
             "retrospector"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "name": "coven-sage",
+      "displayName": "Sage \u2014 Research Familiar of the Coven",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-sage"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "epub-to-pdf",
+      "displayName": "EPUB to PDF",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/epub-to-pdf"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "lit-ui-designer",
+      "displayName": "Lit UI Designer",
+      "category": "Design",
+      "source": {
+        "source": "local",
+        "path": "./plugins/lit-ui-designer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "ml-engineer",
+      "displayName": "ML Engineer",
+      "category": "AI & ML",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ml-engineer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "openclaw-trust",
+      "displayName": "OpenClaw Trust",
+      "category": "Security",
+      "source": {
+        "source": "local",
+        "path": "./plugins/openclaw-trust"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "project-manager",
+      "displayName": "Project Manager",
+      "category": "Project Management",
+      "source": {
+        "source": "local",
+        "path": "./plugins/project-manager"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "ritual-dapp-frontend",
+      "displayName": "Ritual dApp Frontend",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ritual-dapp-frontend"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tauri-apple-release",
+      "displayName": "Tauri Apple Release",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tauri-apple-release"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tinyfish-fetch",
+      "displayName": "TinyFish Fetch",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tinyfish-fetch"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "board",
+      "displayName": "BOARD \u2014 Shared Task Board",
+      "category": "Project Management",
+      "source": {
+        "source": "local",
+        "path": "./plugins/board"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-astra",
+      "displayName": "Astra \u2014 Navigator of the Coven",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-astra"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
         {
           "familiar": "astra",
           "roles": [
             "strategic-navigator",
             "coordination-layer"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "name": "coven-identity-canon",
+      "displayName": "Coven Identity Canon",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-identity-canon"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "daily-dev-agentic",
+      "displayName": "daily.dev Agentic Learning",
+      "category": "Knowledge & Docs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/daily-dev-agentic"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "heygen-skills",
+      "displayName": "HeyGen Skills",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/heygen-skills"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "lobster",
+      "displayName": "Lobster \u2014 Workflow Shell",
+      "category": "Automation",
+      "source": {
+        "source": "local",
+        "path": "./plugins/lobster"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "nodriver",
+      "displayName": "nodriver",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/nodriver"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "opencoven-design",
+      "displayName": "OpenCoven Design Skill",
+      "category": "Design",
+      "source": {
+        "source": "local",
+        "path": "./plugins/opencoven-design"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "prompt-engineer",
+      "displayName": "Prompt Engineer",
+      "category": "AI & ML",
+      "source": {
+        "source": "local",
+        "path": "./plugins/prompt-engineer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "rollcall",
+      "displayName": "rollcall",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/rollcall"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "threejs-animation",
+      "displayName": "Three.js Animation",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/threejs-animation"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tinyfish-search",
+      "displayName": "TinyFish Search",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tinyfish-search"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "cleanup-unused-files",
+      "displayName": "Cleanup Unused Files",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/cleanup-unused-files"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "coven-charm",
+      "displayName": "Charm \u2014 Voice and Presence Familiar of the Coven",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-charm"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
         {
           "familiar": "charm",
           "roles": [
@@ -1543,6 +2089,163 @@
           ]
         }
       ]
+    },
+    {
+      "name": "coven-kitty",
+      "displayName": "Kitty \u2014 General Task Familiar of the Coven",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/coven-kitty"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "discrawl",
+      "displayName": "Discrawl",
+      "category": "Social",
+      "source": {
+        "source": "local",
+        "path": "./plugins/discrawl"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "higgsfield-generate",
+      "displayName": "Higgsfield Generate",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/higgsfield-generate"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "maintainer-bar",
+      "displayName": "MaintainerBar \u2014 Maintainer Menu Bar Skill",
+      "category": "Developer Tools",
+      "source": {
+        "source": "local",
+        "path": "./plugins/maintainer-bar"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "ocr",
+      "displayName": "OCR",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ocr"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "opencoven-role-creation-process",
+      "displayName": "OpenCoven Role Creation Process",
+      "category": "Coven",
+      "source": {
+        "source": "local",
+        "path": "./plugins/opencoven-role-creation-process"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "prompt-vault",
+      "displayName": "Prompt Vault",
+      "category": "AI & ML",
+      "source": {
+        "source": "local",
+        "path": "./plugins/prompt-vault"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "security-agent",
+      "displayName": "Security Agent",
+      "category": "Security",
+      "source": {
+        "source": "local",
+        "path": "./plugins/security-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tinyfish-agent-run",
+      "displayName": "TinyFish Agent Run",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tinyfish-agent-run"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "tinyfish-web-agent",
+      "displayName": "TinyFish Web Agent",
+      "category": "Browser & Web",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tinyfish-web-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
     },
     {
       "name": "coven-flows",

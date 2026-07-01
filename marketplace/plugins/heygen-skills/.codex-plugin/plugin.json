@@ -1,0 +1,25 @@
+{
+  "name": "heygen-skills",
+  "version": "0.1.0",
+  "description": "Create HeyGen avatar videos through the v3 Video Agent pipeline, handling avatar resolution, aspect-ratio correction, prompt engineering, and voice selection automatically.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "HeyGen Skills",
+    "shortDescription": "Create HeyGen avatar videos through the v3 Video Agent pipeline, handling avatar resolution, aspect-ratio correction, prompt engineering, and voice selection automatically.",
+    "longDescription": "Route all HeyGen usage through MCP, the heygen CLI, or the OpenClaw plugin's v3 pipeline \u2014 never raw api.heygen.com calls.",
+    "developerName": "OpenCoven",
+    "category": "Media & Creative",
+    "capabilities": [
+      "heygen",
+      "avatar",
+      "video",
+      "digital-twin",
+      "presenter",
+      "voice"
+    ],
+    "defaultPrompt": "Help me use HeyGen Skills safely."
+  }
+}

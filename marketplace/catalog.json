@@ -12,14 +12,28 @@
       "version": "0.1.0",
       "description": "Repository, issue, and pull request context for implementation, review, release, and triage workflows.",
       "category": "Developer Tools",
-      "keywords": ["github", "git", "issues", "pull-requests", "code-review"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/modelcontextprotocol/servers"],
+      "keywords": [
+        "github",
+        "git",
+        "issues",
+        "pull-requests",
+        "code-review"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/modelcontextprotocol/servers"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "github": {
           "command": "npx",
-          "args": ["-y", "@modelcontextprotocol/server-github"],
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-github"
+          ],
           "type": "stdio",
           "env": {
             "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
@@ -37,17 +51,60 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["code-reviewer", "implementer", "debugger"]},
-        {"familiar": "sage", "roles": ["researcher", "librarian"]},
-        {"familiar": "charm", "roles": ["devrel-liaison"]},
-        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]},
-        {"familiar": "echo", "roles": ["archivist", "retrospector"]},
-        {"familiar": "kitty", "roles": ["general-helper"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "code-reviewer",
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist",
+            "retrospector"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
       ],
       "skill": {
         "description": "Use GitHub context without leaking tokens or taking repository state changes without approval.",
-        "useCases": ["Inspect issues and pull requests", "Read repository history", "Prepare review or release context"],
-        "guardrails": ["Do not push, merge, close, label, or comment without explicit approval", "Prefer read-only queries before mutations", "Never reveal token values"]
+        "useCases": [
+          "Inspect issues and pull requests",
+          "Read repository history",
+          "Prepare review or release context"
+        ],
+        "guardrails": [
+          "Do not push, merge, close, label, or comment without explicit approval",
+          "Prefer read-only queries before mutations",
+          "Never reveal token values"
+        ]
       }
     },
     {
@@ -56,14 +113,29 @@
       "version": "0.1.0",
       "description": "Inbox reading, draft preparation, and email triage through Google Workspace.",
       "category": "Productivity",
-      "keywords": ["gmail", "email", "inbox", "google-workspace"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/google/mcp", "https://github.com/googleworkspace/cli"],
+      "keywords": [
+        "gmail",
+        "email",
+        "inbox",
+        "google-workspace"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/google/mcp",
+        "https://github.com/googleworkspace/cli"
+      ],
       "trust": "preview-local",
       "mcpServers": {
         "gmail": {
           "command": "gws",
-          "args": ["mcp", "-s", "gmail"],
+          "args": [
+            "mcp",
+            "-s",
+            "gmail"
+          ],
           "type": "stdio"
         }
       },
@@ -77,17 +149,56 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "sage", "roles": ["researcher"]},
-        {"familiar": "charm", "roles": ["copywriter", "devrel-liaison"]},
-        {"familiar": "astra", "roles": ["coordination-layer"]},
-        {"familiar": "echo", "roles": ["archivist"]},
-        {"familiar": "cody", "roles": ["implementer"]},
-        {"familiar": "kitty", "roles": ["general-helper"]}
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter",
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Gmail for triage and drafting while keeping external sends behind explicit approval.",
-        "useCases": ["Summarize unread or searched mail", "Prepare reply drafts", "Extract action items into plans or tasks"],
-        "guardrails": ["Do not send mail without explicit approval", "Quote only what is needed", "Treat email content as private by default"]
+        "useCases": [
+          "Summarize unread or searched mail",
+          "Prepare reply drafts",
+          "Extract action items into plans or tasks"
+        ],
+        "guardrails": [
+          "Do not send mail without explicit approval",
+          "Quote only what is needed",
+          "Treat email content as private by default"
+        ]
       }
     },
     {
@@ -96,14 +207,29 @@
       "version": "0.1.0",
       "description": "Calendar lookup, schedule reasoning, and event-draft preparation through Google Workspace.",
       "category": "Productivity",
-      "keywords": ["calendar", "schedule", "google-workspace", "events"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/google/mcp", "https://github.com/googleworkspace/cli"],
+      "keywords": [
+        "calendar",
+        "schedule",
+        "google-workspace",
+        "events"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/google/mcp",
+        "https://github.com/googleworkspace/cli"
+      ],
       "trust": "preview-local",
       "mcpServers": {
         "google-calendar": {
           "command": "gws",
-          "args": ["mcp", "-s", "calendar"],
+          "args": [
+            "mcp",
+            "-s",
+            "calendar"
+          ],
           "type": "stdio"
         }
       },
@@ -117,17 +243,56 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]},
-        {"familiar": "kitty", "roles": ["general-helper"]},
-        {"familiar": "sage", "roles": ["researcher"]},
-        {"familiar": "charm", "roles": ["devrel-liaison"]},
-        {"familiar": "echo", "roles": ["archivist"]},
-        {"familiar": "cody", "roles": ["implementer"]}
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        }
       ],
       "skill": {
         "description": "Use calendar context for scheduling and planning without creating or changing events silently.",
-        "useCases": ["Check availability", "Summarize upcoming events", "Draft event details for approval"],
-        "guardrails": ["Do not create, move, delete, or invite without explicit approval", "Use concrete dates and time zones", "Minimize disclosure of private event details"]
+        "useCases": [
+          "Check availability",
+          "Summarize upcoming events",
+          "Draft event details for approval"
+        ],
+        "guardrails": [
+          "Do not create, move, delete, or invite without explicit approval",
+          "Use concrete dates and time zones",
+          "Minimize disclosure of private event details"
+        ]
       }
     },
     {
@@ -136,9 +301,19 @@
       "version": "0.1.0",
       "description": "Issue, project, and planning context from Linear's official remote MCP server.",
       "category": "Project Management",
-      "keywords": ["linear", "issues", "projects", "roadmap"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://linear.app/docs/mcp"],
+      "keywords": [
+        "linear",
+        "issues",
+        "projects",
+        "roadmap"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://linear.app/docs/mcp"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "linear": {
@@ -147,17 +322,58 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger", "code-reviewer"]},
-        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]},
-        {"familiar": "charm", "roles": ["devrel-liaison"]},
-        {"familiar": "sage", "roles": ["researcher"]},
-        {"familiar": "echo", "roles": ["archivist"]},
-        {"familiar": "kitty", "roles": ["general-helper"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Linear issues and projects as planning context while keeping writes intentional.",
-        "useCases": ["Read issue details", "Map project status", "Draft issue updates or task breakdowns"],
-        "guardrails": ["Do not create or update issues without approval", "Keep status reports dated and concrete", "Avoid syncing private notes into public issue text"]
+        "useCases": [
+          "Read issue details",
+          "Map project status",
+          "Draft issue updates or task breakdowns"
+        ],
+        "guardrails": [
+          "Do not create or update issues without approval",
+          "Keep status reports dated and concrete",
+          "Avoid syncing private notes into public issue text"
+        ]
       }
     },
     {
@@ -166,9 +382,20 @@
       "version": "0.1.0",
       "description": "Design search, creation, export, brand, and asset workflows through Canva's official remote MCP server.",
       "category": "Design",
-      "keywords": ["canva", "design", "assets", "brand", "export"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://www.canva.dev/docs/mcp/"],
+      "keywords": [
+        "canva",
+        "design",
+        "assets",
+        "brand",
+        "export"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://www.canva.dev/docs/mcp/"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "canva": {
@@ -177,15 +404,45 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "charm", "roles": ["copywriter", "social-voice", "devrel-liaison"]},
-        {"familiar": "sage", "roles": ["librarian"]},
-        {"familiar": "astra", "roles": ["strategic-navigator"]},
-        {"familiar": "kitty", "roles": ["general-helper"]}
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter",
+            "social-voice",
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Canva for design work that needs brand-aware creation, search, edits, or exports.",
-        "useCases": ["Find recent designs", "Prepare social or presentation assets", "Export approved designs"],
-        "guardrails": ["Do not publish or share externally without approval", "Respect brand-kit and asset permissions", "Confirm destructive edits before applying them"]
+        "useCases": [
+          "Find recent designs",
+          "Prepare social or presentation assets",
+          "Export approved designs"
+        ],
+        "guardrails": [
+          "Do not publish or share externally without approval",
+          "Respect brand-kit and asset permissions",
+          "Confirm destructive edits before applying them"
+        ]
       }
     },
     {
@@ -194,9 +451,20 @@
       "version": "0.1.0",
       "description": "Project, deployment, docs, and log context through Vercel's official remote MCP server.",
       "category": "Developer Tools",
-      "keywords": ["vercel", "deployments", "logs", "projects", "docs"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://vercel.com/docs/agent-resources/vercel-mcp"],
+      "keywords": [
+        "vercel",
+        "deployments",
+        "logs",
+        "projects",
+        "docs"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://vercel.com/docs/agent-resources/vercel-mcp"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "vercel": {
@@ -205,15 +473,44 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]},
-        {"familiar": "astra", "roles": ["strategic-navigator"]},
-        {"familiar": "sage", "roles": ["researcher"]},
-        {"familiar": "charm", "roles": ["devrel-liaison"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Vercel deployment and docs context for debugging and release planning.",
-        "useCases": ["Inspect deployment status", "Read runtime logs", "Look up Vercel docs from the official MCP server"],
-        "guardrails": ["Do not promote, rollback, or change env vars without approval", "Treat logs as potentially sensitive", "Prefer project-scoped queries"]
+        "useCases": [
+          "Inspect deployment status",
+          "Read runtime logs",
+          "Look up Vercel docs from the official MCP server"
+        ],
+        "guardrails": [
+          "Do not promote, rollback, or change env vars without approval",
+          "Treat logs as potentially sensitive",
+          "Prefer project-scoped queries"
+        ]
       }
     },
     {
@@ -222,9 +519,19 @@
       "version": "0.1.0",
       "description": "Task, project, and portfolio context from Asana's official remote MCP server.",
       "category": "Project Management",
-      "keywords": ["asana", "tasks", "projects", "work-graph"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://developers.asana.com/docs/using-asanas-mcp-server"],
+      "keywords": [
+        "asana",
+        "tasks",
+        "projects",
+        "work-graph"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://developers.asana.com/docs/using-asanas-mcp-server"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "asana": {
@@ -249,15 +556,44 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]},
-        {"familiar": "echo", "roles": ["archivist"]},
-        {"familiar": "charm", "roles": ["devrel-liaison"]},
-        {"familiar": "kitty", "roles": ["general-helper"]}
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Asana for work graph lookup, task summaries, and project status without silently changing assignments.",
-        "useCases": ["Find incomplete tasks", "Summarize project status", "Draft task updates"],
-        "guardrails": ["Do not create, assign, complete, or delete tasks without approval", "Keep work status concrete", "Avoid copying private planning notes into shared workspaces"]
+        "useCases": [
+          "Find incomplete tasks",
+          "Summarize project status",
+          "Draft task updates"
+        ],
+        "guardrails": [
+          "Do not create, assign, complete, or delete tasks without approval",
+          "Keep work status concrete",
+          "Avoid copying private planning notes into shared workspaces"
+        ]
       }
     },
     {
@@ -266,17 +602,40 @@
       "version": "0.1.0",
       "description": "X/Twitter drafting, lookup, and approved-post workflows for Charm's social voice lane.",
       "category": "Social",
-      "keywords": ["x", "twitter", "social", "posting", "devrel"],
-      "capabilities": ["network", "shell"],
+      "keywords": [
+        "x",
+        "twitter",
+        "social",
+        "posting",
+        "devrel"
+      ],
+      "capabilities": [
+        "network",
+        "shell"
+      ],
       "sourceRefs": [],
       "trust": "local-tool",
       "roleAffinity": [
-        {"familiar": "charm", "roles": ["social-voice", "devrel-liaison"]}
+        {
+          "familiar": "charm",
+          "roles": [
+            "social-voice",
+            "devrel-liaison"
+          ]
+        }
       ],
       "skill": {
         "description": "Use xurl only for approved X/Twitter workflows and keep drafting separate from posting.",
-        "useCases": ["Draft posts", "Inspect approved post status", "Post only after explicit approval"],
-        "guardrails": ["Do not post, reply, like, repost, or delete without approval", "Preserve exact approved text when posting", "Record post IDs or failure reasons"]
+        "useCases": [
+          "Draft posts",
+          "Inspect approved post status",
+          "Post only after explicit approval"
+        ],
+        "guardrails": [
+          "Do not post, reply, like, repost, or delete without approval",
+          "Preserve exact approved text when posting",
+          "Record post IDs or failure reasons"
+        ]
       }
     },
     {
@@ -285,14 +644,29 @@
       "version": "0.1.0",
       "description": "Scoped local file access through the MCP reference filesystem server.",
       "category": "Core MCP",
-      "keywords": ["filesystem", "files", "local", "reference-mcp"],
-      "capabilities": ["read_files", "write_files", "mcp"],
-      "sourceRefs": ["https://github.com/modelcontextprotocol/servers"],
+      "keywords": [
+        "filesystem",
+        "files",
+        "local",
+        "reference-mcp"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/modelcontextprotocol/servers"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "filesystem": {
           "command": "npx",
-          "args": ["-y", "@modelcontextprotocol/server-filesystem", "${COVEN_MCP_FILESYSTEM_ROOT}"],
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "${COVEN_MCP_FILESYSTEM_ROOT}"
+          ],
           "type": "stdio"
         }
       },
@@ -302,20 +676,51 @@
           "title": "Allowed Filesystem Root",
           "description": "Root directory the filesystem MCP server may access.",
           "required": true,
+          "default": "~/projects",
           "sensitive": false,
           "env": "COVEN_MCP_FILESYSTEM_ROOT"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]},
-        {"familiar": "sage", "roles": ["researcher", "librarian"]},
-        {"familiar": "echo", "roles": ["archivist"]},
-        {"familiar": "kitty", "roles": ["general-helper"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
       ],
       "skill": {
         "description": "Use filesystem MCP only with a narrow allowed root and explicit write intent.",
-        "useCases": ["Read scoped project files", "Inspect local artifacts", "Apply approved file edits"],
-        "guardrails": ["Use the smallest useful root", "Do not delete files without approval", "Do not expose secrets from local files"]
+        "useCases": [
+          "Read scoped project files",
+          "Inspect local artifacts",
+          "Apply approved file edits"
+        ],
+        "guardrails": [
+          "Use the smallest useful root",
+          "Do not delete files without approval",
+          "Do not expose secrets from local files"
+        ]
       }
     },
     {
@@ -324,14 +729,30 @@
       "version": "0.1.0",
       "description": "Repository history and diff operations through the MCP reference Git server.",
       "category": "Core MCP",
-      "keywords": ["git", "repository", "diff", "history", "reference-mcp"],
-      "capabilities": ["read_files", "shell", "mcp"],
-      "sourceRefs": ["https://github.com/modelcontextprotocol/servers"],
+      "keywords": [
+        "git",
+        "repository",
+        "diff",
+        "history",
+        "reference-mcp"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/modelcontextprotocol/servers"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "git": {
           "command": "uvx",
-          "args": ["mcp-server-git", "--repository", "${COVEN_MCP_GIT_REPOSITORY}"],
+          "args": [
+            "mcp-server-git",
+            "--repository",
+            "${COVEN_MCP_GIT_REPOSITORY}"
+          ],
           "type": "stdio"
         }
       },
@@ -341,18 +762,39 @@
           "title": "Git Repository",
           "description": "Repository path the Git MCP server may inspect.",
           "required": true,
+          "default": ".",
           "sensitive": false,
           "env": "COVEN_MCP_GIT_REPOSITORY"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["code-reviewer", "implementer", "debugger"]},
-        {"familiar": "echo", "roles": ["archivist"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "code-reviewer",
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Git MCP for repository understanding while preserving repo safety rules.",
-        "useCases": ["Inspect diffs", "Read commit history", "Map changed files"],
-        "guardrails": ["Do not reset, clean, force-push, or commit through MCP without approval", "Report dirty worktrees before changing state", "Stage only files changed in the current session"]
+        "useCases": [
+          "Inspect diffs",
+          "Read commit history",
+          "Map changed files"
+        ],
+        "guardrails": [
+          "Do not reset, clean, force-push, or commit through MCP without approval",
+          "Report dirty worktrees before changing state",
+          "Stage only files changed in the current session"
+        ]
       }
     },
     {
@@ -361,26 +803,64 @@
       "version": "0.1.0",
       "description": "Web content retrieval through the MCP reference Fetch server.",
       "category": "Core MCP",
-      "keywords": ["fetch", "web", "http", "research", "reference-mcp"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/modelcontextprotocol/servers"],
+      "keywords": [
+        "fetch",
+        "web",
+        "http",
+        "research",
+        "reference-mcp"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/modelcontextprotocol/servers"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "fetch": {
           "command": "uvx",
-          "args": ["mcp-server-fetch"],
+          "args": [
+            "mcp-server-fetch"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "sage", "roles": ["researcher", "librarian"]},
-        {"familiar": "charm", "roles": ["copywriter", "devrel-liaison"]},
-        {"familiar": "cody", "roles": ["debugger"]}
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter",
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Fetch for bounded source retrieval with primary-source preference.",
-        "useCases": ["Fetch docs pages", "Read articles for synthesis", "Capture cited source context"],
-        "guardrails": ["Prefer primary sources", "Do not over-quote copyrighted text", "Record URLs used in summaries"]
+        "useCases": [
+          "Fetch docs pages",
+          "Read articles for synthesis",
+          "Capture cited source context"
+        ],
+        "guardrails": [
+          "Prefer primary sources",
+          "Do not over-quote copyrighted text",
+          "Record URLs used in summaries"
+        ]
       }
     },
     {
@@ -389,26 +869,64 @@
       "version": "0.1.0",
       "description": "Knowledge-graph memory through the MCP reference Memory server.",
       "category": "Core MCP",
-      "keywords": ["memory", "knowledge-graph", "recall", "reference-mcp"],
-      "capabilities": ["read_files", "write_files", "mcp"],
-      "sourceRefs": ["https://github.com/modelcontextprotocol/servers"],
+      "keywords": [
+        "memory",
+        "knowledge-graph",
+        "recall",
+        "reference-mcp"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/modelcontextprotocol/servers"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "memory": {
           "command": "npx",
-          "args": ["-y", "@modelcontextprotocol/server-memory"],
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-memory"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "echo", "roles": ["archivist", "retrospector"]},
-        {"familiar": "sage", "roles": ["librarian"]},
-        {"familiar": "astra", "roles": ["strategic-navigator"]}
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist",
+            "retrospector"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Memory MCP for explicit, curated recall rather than dumping raw private context.",
-        "useCases": ["Create durable facts", "Search prior decisions", "Maintain relationship between people, projects, and events"],
-        "guardrails": ["Do not store secrets", "Prefer concise facts over raw transcripts", "Mark uncertainty when memory is inferred"]
+        "useCases": [
+          "Create durable facts",
+          "Search prior decisions",
+          "Maintain relationship between people, projects, and events"
+        ],
+        "guardrails": [
+          "Do not store secrets",
+          "Prefer concise facts over raw transcripts",
+          "Mark uncertainty when memory is inferred"
+        ]
       }
     },
     {
@@ -417,26 +935,63 @@
       "version": "0.1.0",
       "description": "Structured reasoning support through the MCP reference Sequential Thinking server.",
       "category": "Core MCP",
-      "keywords": ["reasoning", "planning", "thinking", "reference-mcp"],
-      "capabilities": ["mcp"],
-      "sourceRefs": ["https://github.com/modelcontextprotocol/servers"],
+      "keywords": [
+        "reasoning",
+        "planning",
+        "thinking",
+        "reference-mcp"
+      ],
+      "capabilities": [
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/modelcontextprotocol/servers"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "sequential-thinking": {
           "command": "npx",
-          "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+          "args": [
+            "-y",
+            "@modelcontextprotocol/server-sequential-thinking"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]},
-        {"familiar": "cody", "roles": ["debugger", "code-reviewer"]},
-        {"familiar": "sage", "roles": ["researcher"]}
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Sequential Thinking for complex reasoning, not as a substitute for evidence or tests.",
-        "useCases": ["Break down ambiguous tasks", "Trace debugging hypotheses", "Compare options before a recommendation"],
-        "guardrails": ["Do not present private reasoning as final output", "Verify claims with tools or sources", "Stop when the path is clear enough to act"]
+        "useCases": [
+          "Break down ambiguous tasks",
+          "Trace debugging hypotheses",
+          "Compare options before a recommendation"
+        ],
+        "guardrails": [
+          "Do not present private reasoning as final output",
+          "Verify claims with tools or sources",
+          "Stop when the path is clear enough to act"
+        ]
       }
     },
     {
@@ -445,14 +1000,27 @@
       "version": "0.1.0",
       "description": "Timezone conversion and current-time lookup through the MCP reference Time server.",
       "category": "Core MCP",
-      "keywords": ["time", "timezone", "calendar", "reference-mcp"],
-      "capabilities": ["mcp"],
-      "sourceRefs": ["https://github.com/modelcontextprotocol/servers"],
+      "keywords": [
+        "time",
+        "timezone",
+        "calendar",
+        "reference-mcp"
+      ],
+      "capabilities": [
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/modelcontextprotocol/servers"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "time": {
           "command": "uvx",
-          "args": ["mcp-server-time", "--local-timezone", "${COVEN_MCP_LOCAL_TIMEZONE}"],
+          "args": [
+            "mcp-server-time",
+            "--local-timezone",
+            "${COVEN_MCP_LOCAL_TIMEZONE}"
+          ],
           "type": "stdio"
         }
       },
@@ -467,14 +1035,38 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]},
-        {"familiar": "kitty", "roles": ["general-helper"]},
-        {"familiar": "charm", "roles": ["devrel-liaison"]}
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Time MCP whenever relative dates, time zones, or scheduling precision matter.",
-        "useCases": ["Convert time zones", "Resolve today/tomorrow/yesterday", "Prepare dated status updates"],
-        "guardrails": ["Use absolute dates when the user may be confused", "Preserve the user's timezone preference", "Do not schedule external events without approval"]
+        "useCases": [
+          "Convert time zones",
+          "Resolve today/tomorrow/yesterday",
+          "Prepare dated status updates"
+        ],
+        "guardrails": [
+          "Use absolute dates when the user may be confused",
+          "Preserve the user's timezone preference",
+          "Do not schedule external events without approval"
+        ]
       }
     },
     {
@@ -483,25 +1075,67 @@
       "version": "0.1.0",
       "description": "Semantic code retrieval and editing toolkit purpose-built for coding agents and harnesses.",
       "category": "Agents & Harnesses",
-      "keywords": ["coding-agent", "semantic-code", "lsp", "refactor", "harness"],
-      "capabilities": ["read_files", "write_files", "shell", "mcp"],
-      "sourceRefs": ["https://github.com/oraios/serena", "https://github.com/mcp-use/mcp-use"],
+      "keywords": [
+        "coding-agent",
+        "semantic-code",
+        "lsp",
+        "refactor",
+        "harness"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/oraios/serena",
+        "https://github.com/mcp-use/mcp-use"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "serena": {
           "command": "uvx",
-          "args": ["--from", "git+https://github.com/oraios/serena", "serena", "start-mcp-server", "--context", "ide-assistant"],
+          "args": [
+            "--from",
+            "git+https://github.com/oraios/serena",
+            "serena",
+            "start-mcp-server",
+            "--context",
+            "ide-assistant"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "code-reviewer", "debugger"]},
-        {"familiar": "sage", "roles": ["researcher", "librarian"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Serena for symbol-level code navigation and edits instead of dumping whole files into context.",
-        "useCases": ["Find symbols and references", "Plan precise multi-file edits", "Read project structure semantically"],
-        "guardrails": ["Confirm the project root before indexing", "Do not apply edits without approval", "Prefer targeted symbol reads over whole-file dumps"]
+        "useCases": [
+          "Find symbols and references",
+          "Plan precise multi-file edits",
+          "Read project structure semantically"
+        ],
+        "guardrails": [
+          "Confirm the project root before indexing",
+          "Do not apply edits without approval",
+          "Prefer targeted symbol reads over whole-file dumps"
+        ]
       }
     },
     {
@@ -510,9 +1144,21 @@
       "version": "0.1.0",
       "description": "Up-to-date, version-accurate library documentation injected into agent prompts on demand.",
       "category": "Agents & Harnesses",
-      "keywords": ["docs", "libraries", "context", "coding-agent", "reference"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/upstash/context7", "https://github.com/mcp-use/mcp-use"],
+      "keywords": [
+        "docs",
+        "libraries",
+        "context",
+        "coding-agent",
+        "reference"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/upstash/context7",
+        "https://github.com/mcp-use/mcp-use"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "context7": {
@@ -521,13 +1167,33 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]},
-        {"familiar": "sage", "roles": ["researcher", "librarian"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Context7 to fetch current, version-specific docs before writing code against a library.",
-        "useCases": ["Resolve a library to its current docs", "Pull API usage for the installed version", "Avoid stale or hallucinated API calls"],
-        "guardrails": ["Match docs to the version actually installed", "Cite the library and version used", "Prefer official docs over generated summaries"]
+        "useCases": [
+          "Resolve a library to its current docs",
+          "Pull API usage for the installed version",
+          "Avoid stale or hallucinated API calls"
+        ],
+        "guardrails": [
+          "Match docs to the version actually installed",
+          "Cite the library and version used",
+          "Prefer official docs over generated summaries"
+        ]
       }
     },
     {
@@ -536,26 +1202,63 @@
       "version": "0.1.0",
       "description": "Convert PDF, Office, image, and audio files to Markdown for agent ingestion.",
       "category": "Agents & Harnesses",
-      "keywords": ["markdown", "documents", "pdf", "office", "ingestion"],
-      "capabilities": ["read_files", "mcp"],
-      "sourceRefs": ["https://github.com/microsoft/markitdown"],
+      "keywords": [
+        "markdown",
+        "documents",
+        "pdf",
+        "office",
+        "ingestion"
+      ],
+      "capabilities": [
+        "read_files",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/microsoft/markitdown"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "markitdown": {
           "command": "uvx",
-          "args": ["markitdown-mcp"],
+          "args": [
+            "markitdown-mcp"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "sage", "roles": ["researcher", "librarian"]},
-        {"familiar": "echo", "roles": ["archivist"]},
-        {"familiar": "kitty", "roles": ["general-helper"]}
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Markitdown to turn binary documents into clean Markdown before reasoning over them.",
-        "useCases": ["Convert a PDF or Word file to Markdown", "Extract text from images or slides", "Normalize documents for summarization"],
-        "guardrails": ["Treat converted document content as private by default", "Confirm the source path before reading", "Do not exfiltrate document contents externally"]
+        "useCases": [
+          "Convert a PDF or Word file to Markdown",
+          "Extract text from images or slides",
+          "Normalize documents for summarization"
+        ],
+        "guardrails": [
+          "Treat converted document content as private by default",
+          "Confirm the source path before reading",
+          "Do not exfiltrate document contents externally"
+        ]
       }
     },
     {
@@ -564,25 +1267,59 @@
       "version": "0.1.0",
       "description": "Drive real web browsers via accessibility trees for testing, navigation, and data extraction.",
       "category": "Browser & Web",
-      "keywords": ["browser", "automation", "testing", "playwright", "scraping"],
-      "capabilities": ["network", "shell", "mcp"],
-      "sourceRefs": ["https://github.com/microsoft/playwright-mcp"],
+      "keywords": [
+        "browser",
+        "automation",
+        "testing",
+        "playwright",
+        "scraping"
+      ],
+      "capabilities": [
+        "network",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/microsoft/playwright-mcp"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "playwright": {
           "command": "npx",
-          "args": ["-y", "@playwright/mcp@latest"],
+          "args": [
+            "-y",
+            "@playwright/mcp@latest"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]},
-        {"familiar": "sage", "roles": ["researcher"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Playwright to navigate and verify web pages through the accessibility tree, not screenshots alone.",
-        "useCases": ["Reproduce a UI bug in a browser", "Extract structured data from a page", "Verify a deployed change end to end"],
-        "guardrails": ["Do not submit forms or trigger payments without approval", "Respect site terms and robots rules", "Avoid logging into accounts without explicit consent"]
+        "useCases": [
+          "Reproduce a UI bug in a browser",
+          "Extract structured data from a page",
+          "Verify a deployed change end to end"
+        ],
+        "guardrails": [
+          "Do not submit forms or trigger payments without approval",
+          "Respect site terms and robots rules",
+          "Avoid logging into accounts without explicit consent"
+        ]
       }
     },
     {
@@ -591,24 +1328,53 @@
       "version": "0.1.0",
       "description": "Inspect and control Chrome via the DevTools protocol for debugging and performance work.",
       "category": "Browser & Web",
-      "keywords": ["chrome", "devtools", "debugging", "performance", "browser"],
-      "capabilities": ["network", "shell", "mcp"],
-      "sourceRefs": ["https://github.com/ChromeDevTools/chrome-devtools-mcp"],
+      "keywords": [
+        "chrome",
+        "devtools",
+        "debugging",
+        "performance",
+        "browser"
+      ],
+      "capabilities": [
+        "network",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/ChromeDevTools/chrome-devtools-mcp"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "chrome-devtools": {
           "command": "npx",
-          "args": ["-y", "chrome-devtools-mcp@latest"],
+          "args": [
+            "-y",
+            "chrome-devtools-mcp@latest"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["debugger", "implementer"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger",
+            "implementer"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Chrome DevTools MCP to inspect live pages, network, and performance during debugging.",
-        "useCases": ["Trace a failing network request", "Profile a slow page", "Inspect DOM and console state"],
-        "guardrails": ["Do not interact with authenticated sessions without approval", "Treat captured network data as sensitive", "Close controlled browser instances when done"]
+        "useCases": [
+          "Trace a failing network request",
+          "Profile a slow page",
+          "Inspect DOM and console state"
+        ],
+        "guardrails": [
+          "Do not interact with authenticated sessions without approval",
+          "Treat captured network data as sensitive",
+          "Close controlled browser instances when done"
+        ]
       }
     },
     {
@@ -617,14 +1383,28 @@
       "version": "0.1.0",
       "description": "Crawl, scrape, and extract structured web data through the Firecrawl platform.",
       "category": "Browser & Web",
-      "keywords": ["scraping", "crawl", "web", "extract", "research"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/firecrawl/firecrawl-mcp-server"],
+      "keywords": [
+        "scraping",
+        "crawl",
+        "web",
+        "extract",
+        "research"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/firecrawl/firecrawl-mcp-server"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "firecrawl": {
           "command": "npx",
-          "args": ["-y", "firecrawl-mcp"],
+          "args": [
+            "-y",
+            "firecrawl-mcp"
+          ],
           "type": "stdio",
           "env": {
             "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
@@ -642,13 +1422,33 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "sage", "roles": ["researcher", "librarian"]},
-        {"familiar": "charm", "roles": ["copywriter", "devrel-liaison"]}
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter",
+            "devrel-liaison"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Firecrawl for bounded, structured web extraction with primary-source preference.",
-        "useCases": ["Scrape a documentation site", "Extract structured fields from pages", "Gather cited research sources"],
-        "guardrails": ["Respect site terms and rate limits", "Do not over-quote copyrighted text", "Record source URLs in summaries"]
+        "useCases": [
+          "Scrape a documentation site",
+          "Extract structured fields from pages",
+          "Gather cited research sources"
+        ],
+        "guardrails": [
+          "Respect site terms and rate limits",
+          "Do not over-quote copyrighted text",
+          "Record source URLs in summaries"
+        ]
       }
     },
     {
@@ -657,14 +1457,28 @@
       "version": "0.1.0",
       "description": "Advanced web search and answer extraction tuned for AI agents.",
       "category": "Browser & Web",
-      "keywords": ["search", "web", "research", "answers", "tavily"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/tavily-ai/tavily-mcp"],
+      "keywords": [
+        "search",
+        "web",
+        "research",
+        "answers",
+        "tavily"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/tavily-ai/tavily-mcp"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "tavily": {
           "command": "npx",
-          "args": ["-y", "tavily-mcp@latest"],
+          "args": [
+            "-y",
+            "tavily-mcp@latest"
+          ],
           "type": "stdio",
           "env": {
             "TAVILY_API_KEY": "${TAVILY_API_KEY}"
@@ -682,13 +1496,32 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "sage", "roles": ["researcher", "librarian"]},
-        {"familiar": "astra", "roles": ["strategic-navigator"]}
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Tavily for fast, agent-friendly web search with concise sourced answers.",
-        "useCases": ["Answer a current-events question", "Find primary sources fast", "Gather citations for synthesis"],
-        "guardrails": ["Prefer primary sources", "Record URLs used", "Flag uncertainty when sources conflict"]
+        "useCases": [
+          "Answer a current-events question",
+          "Find primary sources fast",
+          "Gather citations for synthesis"
+        ],
+        "guardrails": [
+          "Prefer primary sources",
+          "Record URLs used",
+          "Flag uncertainty when sources conflict"
+        ]
       }
     },
     {
@@ -697,14 +1530,28 @@
       "version": "0.1.0",
       "description": "Search, extract, and navigate the public web at scale through Bright Data's Web MCP.",
       "category": "Browser & Web",
-      "keywords": ["scraping", "web-data", "proxy", "extract", "search"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/brightdata/brightdata-mcp"],
+      "keywords": [
+        "scraping",
+        "web-data",
+        "proxy",
+        "extract",
+        "search"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/brightdata/brightdata-mcp"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "brightdata": {
           "command": "npx",
-          "args": ["-y", "@brightdata/mcp"],
+          "args": [
+            "-y",
+            "@brightdata/mcp"
+          ],
           "type": "stdio",
           "env": {
             "API_TOKEN": "${BRIGHTDATA_API_TOKEN}"
@@ -722,13 +1569,31 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "sage", "roles": ["researcher"]},
-        {"familiar": "astra", "roles": ["strategic-navigator"]}
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Bright Data for resilient large-scale web extraction with respect for source policies.",
-        "useCases": ["Search and extract web data", "Navigate sites that block naive scrapers", "Collect market or competitive data"],
-        "guardrails": ["Respect site terms and legal limits", "Do not collect personal data without basis", "Record sources and extraction scope"]
+        "useCases": [
+          "Search and extract web data",
+          "Navigate sites that block naive scrapers",
+          "Collect market or competitive data"
+        ],
+        "guardrails": [
+          "Respect site terms and legal limits",
+          "Do not collect personal data without basis",
+          "Record sources and extraction scope"
+        ]
       }
     },
     {
@@ -737,9 +1602,20 @@
       "version": "0.1.0",
       "description": "Run thousands of scrapers, crawlers, and automations from the Apify Store over MCP.",
       "category": "Browser & Web",
-      "keywords": ["actors", "scraping", "automation", "apify", "store"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/apify/actors-mcp-server"],
+      "keywords": [
+        "actors",
+        "scraping",
+        "automation",
+        "apify",
+        "store"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/apify/actors-mcp-server"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "apify": {
@@ -748,13 +1624,31 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "sage", "roles": ["researcher"]},
-        {"familiar": "astra", "roles": ["strategic-navigator"]}
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Apify Actors for prebuilt scraping and automation tasks instead of hand-rolling crawlers.",
-        "useCases": ["Run a Store actor to extract data", "Automate a repetitive web task", "Collect structured datasets"],
-        "guardrails": ["Confirm actor cost and scope before running", "Respect target site terms", "Do not run actors that mutate external state without approval"]
+        "useCases": [
+          "Run a Store actor to extract data",
+          "Automate a repetitive web task",
+          "Collect structured datasets"
+        ],
+        "guardrails": [
+          "Confirm actor cost and scope before running",
+          "Respect target site terms",
+          "Do not run actors that mutate external state without approval"
+        ]
       }
     },
     {
@@ -763,14 +1657,28 @@
       "version": "0.1.0",
       "description": "Privacy-respecting metasearch with pagination and URL reading through a SearXNG instance.",
       "category": "Browser & Web",
-      "keywords": ["search", "privacy", "metasearch", "searxng", "web"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/ihor-sokoliuk/mcp-searxng"],
+      "keywords": [
+        "search",
+        "privacy",
+        "metasearch",
+        "searxng",
+        "web"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/ihor-sokoliuk/mcp-searxng"
+      ],
       "trust": "local-tool",
       "mcpServers": {
         "searxng": {
           "command": "npx",
-          "args": ["-y", "mcp-searxng"],
+          "args": [
+            "-y",
+            "mcp-searxng"
+          ],
           "type": "stdio",
           "env": {
             "SEARXNG_URL": "${SEARXNG_URL}"
@@ -783,17 +1691,32 @@
           "title": "SearXNG Instance URL",
           "description": "Base URL of the SearXNG instance to query.",
           "required": true,
+          "default": "http://localhost:8080",
           "sensitive": false,
           "env": "SEARXNG_URL"
         }
       },
       "roleAffinity": [
-        {"familiar": "sage", "roles": ["researcher", "librarian"]}
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        }
       ],
       "skill": {
         "description": "Use SearXNG for privacy-respecting web search against a self-chosen instance.",
-        "useCases": ["Search without tracking", "Page through results", "Read a result URL's content"],
-        "guardrails": ["Use a trusted SearXNG instance", "Record source URLs", "Prefer primary sources"]
+        "useCases": [
+          "Search without tracking",
+          "Page through results",
+          "Read a result URL's content"
+        ],
+        "guardrails": [
+          "Use a trusted SearXNG instance",
+          "Record source URLs",
+          "Prefer primary sources"
+        ]
       }
     },
     {
@@ -802,14 +1725,32 @@
       "version": "0.1.0",
       "description": "Token-efficient universal database MCP for PostgreSQL, MySQL, SQL Server, SQLite, and MariaDB.",
       "category": "Databases",
-      "keywords": ["database", "sql", "postgres", "mysql", "sqlite"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/bytebase/dbhub"],
+      "keywords": [
+        "database",
+        "sql",
+        "postgres",
+        "mysql",
+        "sqlite"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/bytebase/dbhub"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "dbhub": {
           "command": "npx",
-          "args": ["-y", "@bytebase/dbhub", "--transport", "stdio", "--dsn", "${DBHUB_DSN}"],
+          "args": [
+            "-y",
+            "@bytebase/dbhub",
+            "--transport",
+            "stdio",
+            "--dsn",
+            "${DBHUB_DSN}"
+          ],
           "type": "stdio"
         }
       },
@@ -824,29 +1765,62 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]},
-        {"familiar": "sage", "roles": ["researcher"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
       ],
       "skill": {
         "description": "Use DBHub for read-first database inspection with intentional, approved writes.",
-        "useCases": ["Inspect schema", "Run read-only queries", "Prepare migrations for review"],
-        "guardrails": ["Default to read-only; confirm before any write or DDL", "Never expose credentials from the DSN", "Scope queries to the smallest dataset needed"]
+        "useCases": [
+          "Inspect schema",
+          "Run read-only queries",
+          "Prepare migrations for review"
+        ],
+        "guardrails": [
+          "Default to read-only; confirm before any write or DDL",
+          "Never expose credentials from the DSN",
+          "Scope queries to the smallest dataset needed"
+        ]
       }
     },
     {
       "name": "supabase",
       "displayName": "Supabase",
       "version": "0.1.0",
-      "description": "Manage and query Supabase projects — database, auth, storage, and edge functions.",
+      "description": "Manage and query Supabase projects \u2014 database, auth, storage, and edge functions.",
       "category": "Databases",
-      "keywords": ["supabase", "postgres", "backend", "auth", "storage"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/supabase-community/supabase-mcp"],
+      "keywords": [
+        "supabase",
+        "postgres",
+        "backend",
+        "auth",
+        "storage"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/supabase-community/supabase-mcp"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "supabase": {
           "command": "npx",
-          "args": ["-y", "@supabase/mcp-server-supabase@latest"],
+          "args": [
+            "-y",
+            "@supabase/mcp-server-supabase@latest"
+          ],
           "type": "stdio",
           "env": {
             "SUPABASE_ACCESS_TOKEN": "${SUPABASE_ACCESS_TOKEN}"
@@ -864,13 +1838,32 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]},
-        {"familiar": "astra", "roles": ["strategic-navigator"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Supabase MCP for project inspection and approved changes, preferring read-only first.",
-        "useCases": ["Inspect tables and policies", "Run read-only queries", "Prepare schema or function changes for review"],
-        "guardrails": ["Prefer read-only mode; confirm writes and migrations", "Scope to a single project", "Never reveal the access token"]
+        "useCases": [
+          "Inspect tables and policies",
+          "Run read-only queries",
+          "Prepare schema or function changes for review"
+        ],
+        "guardrails": [
+          "Prefer read-only mode; confirm writes and migrations",
+          "Scope to a single project",
+          "Never reveal the access token"
+        ]
       }
     },
     {
@@ -879,14 +1872,28 @@
       "version": "0.1.0",
       "description": "Inspect and query MongoDB databases and collections through the official MCP server.",
       "category": "Databases",
-      "keywords": ["mongodb", "database", "nosql", "collections", "query"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/mongodb-js/mongodb-mcp-server"],
+      "keywords": [
+        "mongodb",
+        "database",
+        "nosql",
+        "collections",
+        "query"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/mongodb-js/mongodb-mcp-server"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "mongodb": {
           "command": "npx",
-          "args": ["-y", "mongodb-mcp-server"],
+          "args": [
+            "-y",
+            "mongodb-mcp-server"
+          ],
           "type": "stdio",
           "env": {
             "MDB_MCP_CONNECTION_STRING": "${MDB_MCP_CONNECTION_STRING}"
@@ -904,13 +1911,32 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]},
-        {"familiar": "sage", "roles": ["researcher"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
       ],
       "skill": {
         "description": "Use MongoDB MCP for read-first data inspection with approved, scoped writes.",
-        "useCases": ["List collections and indexes", "Run read-only find/aggregate queries", "Prepare data changes for review"],
-        "guardrails": ["Default to read-only; confirm writes and deletes", "Never reveal the connection string", "Scope queries to the smallest dataset needed"]
+        "useCases": [
+          "List collections and indexes",
+          "Run read-only find/aggregate queries",
+          "Prepare data changes for review"
+        ],
+        "guardrails": [
+          "Default to read-only; confirm writes and deletes",
+          "Never reveal the connection string",
+          "Scope queries to the smallest dataset needed"
+        ]
       }
     },
     {
@@ -919,25 +1945,62 @@
       "version": "0.1.0",
       "description": "Connect agents to Azure services across storage, databases, monitoring, and more.",
       "category": "Cloud & Infrastructure",
-      "keywords": ["azure", "cloud", "infrastructure", "microsoft", "devops"],
-      "capabilities": ["network", "shell", "mcp"],
-      "sourceRefs": ["https://github.com/Azure/azure-mcp"],
+      "keywords": [
+        "azure",
+        "cloud",
+        "infrastructure",
+        "microsoft",
+        "devops"
+      ],
+      "capabilities": [
+        "network",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/Azure/azure-mcp"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "azure": {
           "command": "npx",
-          "args": ["-y", "@azure/mcp@latest", "server", "start"],
+          "args": [
+            "-y",
+            "@azure/mcp@latest",
+            "server",
+            "start"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]},
-        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Azure MCP for cloud resource inspection and approved operations via your signed-in Azure context.",
-        "useCases": ["List resources and configs", "Read logs and metrics", "Prepare infrastructure changes for review"],
-        "guardrails": ["Do not provision, delete, or change resources without approval", "Treat resource configs as sensitive", "Prefer scoped, subscription-aware queries"]
+        "useCases": [
+          "List resources and configs",
+          "Read logs and metrics",
+          "Prepare infrastructure changes for review"
+        ],
+        "guardrails": [
+          "Do not provision, delete, or change resources without approval",
+          "Treat resource configs as sensitive",
+          "Prefer scoped, subscription-aware queries"
+        ]
       }
     },
     {
@@ -946,14 +2009,29 @@
       "version": "0.1.0",
       "description": "Work with Azure DevOps repos, work items, builds, releases, test plans, and code search.",
       "category": "Cloud & Infrastructure",
-      "keywords": ["azure-devops", "work-items", "pipelines", "repos", "boards"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/microsoft/azure-devops-mcp"],
+      "keywords": [
+        "azure-devops",
+        "work-items",
+        "pipelines",
+        "repos",
+        "boards"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/microsoft/azure-devops-mcp"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "azure-devops": {
           "command": "npx",
-          "args": ["-y", "@azure-devops/mcp", "${AZURE_DEVOPS_ORG}"],
+          "args": [
+            "-y",
+            "@azure-devops/mcp",
+            "${AZURE_DEVOPS_ORG}"
+          ],
           "type": "stdio"
         }
       },
@@ -968,13 +2046,32 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "code-reviewer"]},
-        {"familiar": "astra", "roles": ["coordination-layer"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Azure DevOps MCP for planning and review context without silently changing work state.",
-        "useCases": ["Read work items and pipelines", "Summarize build or release status", "Draft work-item updates"],
-        "guardrails": ["Do not create, complete, or reassign work without approval", "Keep status reports dated and concrete", "Respect project-level access boundaries"]
+        "useCases": [
+          "Read work items and pipelines",
+          "Summarize build or release status",
+          "Draft work-item updates"
+        ],
+        "guardrails": [
+          "Do not create, complete, or reassign work without approval",
+          "Keep status reports dated and concrete",
+          "Respect project-level access boundaries"
+        ]
       }
     },
     {
@@ -983,25 +2080,61 @@
       "version": "0.1.0",
       "description": "Generate accurate Terraform and automate HCP Terraform and Terraform Enterprise workflows.",
       "category": "Cloud & Infrastructure",
-      "keywords": ["terraform", "iac", "hashicorp", "infrastructure", "providers"],
-      "capabilities": ["network", "shell", "mcp"],
-      "sourceRefs": ["https://github.com/hashicorp/terraform-mcp-server"],
+      "keywords": [
+        "terraform",
+        "iac",
+        "hashicorp",
+        "infrastructure",
+        "providers"
+      ],
+      "capabilities": [
+        "network",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/hashicorp/terraform-mcp-server"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "terraform": {
           "command": "docker",
-          "args": ["run", "-i", "--rm", "hashicorp/terraform-mcp-server"],
+          "args": [
+            "run",
+            "-i",
+            "--rm",
+            "hashicorp/terraform-mcp-server"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]},
-        {"familiar": "astra", "roles": ["strategic-navigator"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Terraform MCP for provider-accurate IaC authoring and read-first workspace inspection.",
-        "useCases": ["Look up provider/resource schemas", "Draft accurate Terraform config", "Inspect workspace and run status"],
-        "guardrails": ["Do not apply, destroy, or change state without approval", "Treat state and variables as sensitive", "Show plans before any apply"]
+        "useCases": [
+          "Look up provider/resource schemas",
+          "Draft accurate Terraform config",
+          "Inspect workspace and run status"
+        ],
+        "guardrails": [
+          "Do not apply, destroy, or change state without approval",
+          "Treat state and variables as sensitive",
+          "Show plans before any apply"
+        ]
       }
     },
     {
@@ -1010,9 +2143,21 @@
       "version": "0.1.0",
       "description": "Read, search, and draft Notion pages and databases through Notion's official MCP server.",
       "category": "Productivity",
-      "keywords": ["notion", "docs", "wiki", "knowledge-base", "notes"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/makenotion/notion-mcp-server", "https://developers.notion.com/docs/mcp"],
+      "keywords": [
+        "notion",
+        "docs",
+        "wiki",
+        "knowledge-base",
+        "notes"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/makenotion/notion-mcp-server",
+        "https://developers.notion.com/docs/mcp"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "notion": {
@@ -1021,15 +2166,44 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "sage", "roles": ["researcher", "librarian"]},
-        {"familiar": "echo", "roles": ["archivist"]},
-        {"familiar": "charm", "roles": ["copywriter"]},
-        {"familiar": "astra", "roles": ["coordination-layer"]}
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Notion for knowledge lookup and drafting while keeping page edits behind approval.",
-        "useCases": ["Search the workspace", "Summarize pages and databases", "Draft new content for review"],
-        "guardrails": ["Do not create, edit, or move pages without approval", "Respect workspace permissions", "Keep private content private by default"]
+        "useCases": [
+          "Search the workspace",
+          "Summarize pages and databases",
+          "Draft new content for review"
+        ],
+        "guardrails": [
+          "Do not create, edit, or move pages without approval",
+          "Respect workspace permissions",
+          "Keep private content private by default"
+        ]
       }
     },
     {
@@ -1038,9 +2212,21 @@
       "version": "0.1.0",
       "description": "Search, create, and manage Jira, Confluence, and Compass work via Atlassian's official MCP.",
       "category": "Project Management",
-      "keywords": ["jira", "confluence", "atlassian", "issues", "wiki"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/atlassian/atlassian-mcp-server", "https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/"],
+      "keywords": [
+        "jira",
+        "confluence",
+        "atlassian",
+        "issues",
+        "wiki"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/atlassian/atlassian-mcp-server",
+        "https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "atlassian": {
@@ -1049,25 +2235,60 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]},
-        {"familiar": "cody", "roles": ["implementer"]},
-        {"familiar": "echo", "roles": ["archivist"]}
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "echo",
+          "roles": [
+            "archivist"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Atlassian Rovo for Jira/Confluence context while keeping writes intentional and approved.",
-        "useCases": ["Read issues and pages", "Summarize project status", "Draft issue or page updates"],
-        "guardrails": ["Do not create, transition, or comment without approval", "Keep status reports dated and concrete", "Respect space and project permissions"]
+        "useCases": [
+          "Read issues and pages",
+          "Summarize project status",
+          "Draft issue or page updates"
+        ],
+        "guardrails": [
+          "Do not create, transition, or comment without approval",
+          "Keep status reports dated and concrete",
+          "Respect space and project permissions"
+        ]
       }
     },
     {
       "name": "figma",
       "displayName": "Figma",
       "version": "0.1.0",
-      "description": "Bring Figma design context — frames, components, and variables — into agent workflows.",
+      "description": "Bring Figma design context \u2014 frames, components, and variables \u2014 into agent workflows.",
       "category": "Design",
-      "keywords": ["figma", "design", "components", "dev-mode", "ui"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Figma-MCP-server"],
+      "keywords": [
+        "figma",
+        "design",
+        "components",
+        "dev-mode",
+        "ui"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Figma-MCP-server"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "figma": {
@@ -1076,14 +2297,38 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer"]},
-        {"familiar": "charm", "roles": ["copywriter", "social-voice"]},
-        {"familiar": "astra", "roles": ["strategic-navigator"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter",
+            "social-voice"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Figma MCP to pull design context and specs into implementation without guessing values.",
-        "useCases": ["Read frame and component structure", "Pull spacing, color, and type tokens", "Translate a design into code"],
-        "guardrails": ["Do not edit or publish designs without approval", "Respect file and team permissions", "Confirm the target node before extracting"]
+        "useCases": [
+          "Read frame and component structure",
+          "Pull spacing, color, and type tokens",
+          "Translate a design into code"
+        ],
+        "guardrails": [
+          "Do not edit or publish designs without approval",
+          "Respect file and team permissions",
+          "Confirm the target node before extracting"
+        ]
       }
     },
     {
@@ -1092,9 +2337,21 @@
       "version": "0.1.0",
       "description": "Work with Stripe customers, products, payments, and billing through the official MCP server.",
       "category": "Commerce",
-      "keywords": ["stripe", "payments", "billing", "customers", "subscriptions"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/stripe/agent-toolkit", "https://docs.stripe.com/mcp"],
+      "keywords": [
+        "stripe",
+        "payments",
+        "billing",
+        "customers",
+        "subscriptions"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/stripe/agent-toolkit",
+        "https://docs.stripe.com/mcp"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "stripe": {
@@ -1103,13 +2360,32 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]},
-        {"familiar": "astra", "roles": ["strategic-navigator"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Stripe MCP for read-first billing inspection; treat money-moving actions as approval-gated.",
-        "useCases": ["Look up customers and subscriptions", "Inspect payments and invoices", "Draft product or price changes for review"],
-        "guardrails": ["Never create charges, refunds, or payouts without explicit approval", "Treat financial and PII data as highly sensitive", "Prefer test mode until production is approved"]
+        "useCases": [
+          "Look up customers and subscriptions",
+          "Inspect payments and invoices",
+          "Draft product or price changes for review"
+        ],
+        "guardrails": [
+          "Never create charges, refunds, or payouts without explicit approval",
+          "Treat financial and PII data as highly sensitive",
+          "Prefer test mode until production is approved"
+        ]
       }
     },
     {
@@ -1118,9 +2394,21 @@
       "version": "0.1.0",
       "description": "Pull trusted Microsoft Learn documentation directly into agent workflows.",
       "category": "Knowledge & Docs",
-      "keywords": ["docs", "microsoft", "learn", "reference", "azure"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://learn.microsoft.com/en-us/training/support/mcp", "https://github.com/MicrosoftDocs/mcp"],
+      "keywords": [
+        "docs",
+        "microsoft",
+        "learn",
+        "reference",
+        "azure"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://learn.microsoft.com/en-us/training/support/mcp",
+        "https://github.com/MicrosoftDocs/mcp"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "microsoft-learn": {
@@ -1129,13 +2417,32 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "sage", "roles": ["researcher", "librarian"]},
-        {"familiar": "cody", "roles": ["implementer"]}
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Microsoft Learn MCP for authoritative, current Microsoft/Azure documentation.",
-        "useCases": ["Look up Azure or .NET docs", "Confirm current API guidance", "Cite official Microsoft sources"],
-        "guardrails": ["Prefer official docs over generated summaries", "Cite the page used", "Match guidance to the relevant product version"]
+        "useCases": [
+          "Look up Azure or .NET docs",
+          "Confirm current API guidance",
+          "Cite official Microsoft sources"
+        ],
+        "guardrails": [
+          "Prefer official docs over generated summaries",
+          "Cite the page used",
+          "Match guidance to the relevant product version"
+        ]
       }
     },
     {
@@ -1144,9 +2451,21 @@
       "version": "0.1.0",
       "description": "Reach 280+ open-source integrations (\"pieces\") as tools through a self-hosted Activepieces MCP server.",
       "category": "Automation",
-      "keywords": ["automation", "workflows", "integrations", "zapier-alternative", "no-code"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/activepieces/activepieces", "https://www.activepieces.com/docs/mcp/overview"],
+      "keywords": [
+        "automation",
+        "workflows",
+        "integrations",
+        "zapier-alternative",
+        "no-code"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/activepieces/activepieces",
+        "https://www.activepieces.com/docs/mcp/overview"
+      ],
       "trust": "official-remote",
       "mcpServers": {
         "activepieces": {
@@ -1165,14 +2484,38 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "astra", "roles": ["strategic-navigator", "coordination-layer"]},
-        {"familiar": "charm", "roles": ["devrel-liaison"]},
-        {"familiar": "kitty", "roles": ["general-helper"]}
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator",
+            "coordination-layer"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "devrel-liaison"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Activepieces to invoke prebuilt integrations and flows instead of wiring each API by hand.",
-        "useCases": ["Trigger an automation flow", "Use a Store piece as a tool", "Connect SaaS apps through one MCP endpoint"],
-        "guardrails": ["Confirm scope and side effects before running a flow", "Do not move data between systems without approval", "Keep the tokenized MCP URL secret"]
+        "useCases": [
+          "Trigger an automation flow",
+          "Use a Store piece as a tool",
+          "Connect SaaS apps through one MCP endpoint"
+        ],
+        "guardrails": [
+          "Confirm scope and side effects before running a flow",
+          "Do not move data between systems without approval",
+          "Keep the tokenized MCP URL secret"
+        ]
       }
     },
     {
@@ -1181,24 +2524,54 @@
       "version": "0.1.0",
       "description": "Terminal commands, file operations, and process management on the local machine over MCP.",
       "category": "Developer Tools",
-      "keywords": ["terminal", "shell", "files", "process", "local"],
-      "capabilities": ["read_files", "write_files", "shell", "mcp"],
-      "sourceRefs": ["https://github.com/wonderwhy-er/DesktopCommanderMCP"],
+      "keywords": [
+        "terminal",
+        "shell",
+        "files",
+        "process",
+        "local"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/wonderwhy-er/DesktopCommanderMCP"
+      ],
       "trust": "local-tool",
       "mcpServers": {
         "desktop-commander": {
           "command": "npx",
-          "args": ["-y", "@wonderwhy-er/desktop-commander@latest"],
+          "args": [
+            "-y",
+            "@wonderwhy-er/desktop-commander@latest"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Desktop Commander for local shell and file work with explicit, narrow intent.",
-        "useCases": ["Run scoped local commands", "Edit or move local files", "Inspect running processes"],
-        "guardrails": ["Confirm before destructive commands or deletes", "Use the narrowest path scope", "Never run commands that exfiltrate secrets"]
+        "useCases": [
+          "Run scoped local commands",
+          "Edit or move local files",
+          "Inspect running processes"
+        ],
+        "guardrails": [
+          "Confirm before destructive commands or deletes",
+          "Use the narrowest path scope",
+          "Never run commands that exfiltrate secrets"
+        ]
       }
     },
     {
@@ -1207,14 +2580,32 @@
       "version": "0.1.0",
       "description": "Real-time infrastructure metrics, logs, alerts, and anomaly detection for AI troubleshooting.",
       "category": "Cloud & Infrastructure",
-      "keywords": ["monitoring", "metrics", "observability", "logs", "alerts"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://learn.netdata.cloud/docs/netdata-ai/mcp"],
+      "keywords": [
+        "monitoring",
+        "metrics",
+        "observability",
+        "logs",
+        "alerts"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://learn.netdata.cloud/docs/netdata-ai/mcp"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "netdata": {
           "command": "npx",
-          "args": ["-y", "mcp-remote@latest", "--http", "${NETDATA_MCP_URL}", "--header", "Authorization: Bearer ${NETDATA_API_KEY}"],
+          "args": [
+            "-y",
+            "mcp-remote@latest",
+            "--http",
+            "${NETDATA_MCP_URL}",
+            "--header",
+            "Authorization: Bearer ${NETDATA_API_KEY}"
+          ],
           "type": "stdio"
         }
       },
@@ -1237,13 +2628,31 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["debugger"]},
-        {"familiar": "astra", "roles": ["coordination-layer"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "debugger"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "coordination-layer"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Netdata to investigate live infrastructure health before drawing conclusions about incidents.",
-        "useCases": ["Inspect real-time metrics", "Correlate alerts with logs", "Spot anomalies during an incident"],
-        "guardrails": ["Treat telemetry as sensitive", "Do not change agent config without approval", "Cite the time window and node inspected"]
+        "useCases": [
+          "Inspect real-time metrics",
+          "Correlate alerts with logs",
+          "Spot anomalies during an incident"
+        ],
+        "guardrails": [
+          "Treat telemetry as sensitive",
+          "Do not change agent config without approval",
+          "Cite the time window and node inspected"
+        ]
       }
     },
     {
@@ -1252,51 +2661,119 @@
       "version": "0.1.0",
       "description": "Microsoft Fabric REST/OpenAPI context for AI-assisted Fabric development, served locally.",
       "category": "Cloud & Infrastructure",
-      "keywords": ["fabric", "microsoft", "data", "analytics", "openapi"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/microsoft/mcp/tree/main/servers/Fabric.Mcp.Server"],
+      "keywords": [
+        "fabric",
+        "microsoft",
+        "data",
+        "analytics",
+        "openapi"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/microsoft/mcp/tree/main/servers/Fabric.Mcp.Server"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "fabric": {
           "command": "npx",
-          "args": ["-y", "@microsoft/fabric-mcp@latest", "server", "start", "--mode", "all"],
+          "args": [
+            "-y",
+            "@microsoft/fabric-mcp@latest",
+            "server",
+            "start",
+            "--mode",
+            "all"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer"]},
-        {"familiar": "sage", "roles": ["researcher"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Microsoft Fabric MCP for accurate Fabric API context when building against the platform.",
-        "useCases": ["Look up Fabric REST API shapes", "Draft Fabric automation accurately", "Confirm current Fabric capabilities"],
-        "guardrails": ["Do not change Fabric workspaces without approval", "Treat workspace data as sensitive", "Prefer official API context over guesses"]
+        "useCases": [
+          "Look up Fabric REST API shapes",
+          "Draft Fabric automation accurately",
+          "Confirm current Fabric capabilities"
+        ],
+        "guardrails": [
+          "Do not change Fabric workspaces without approval",
+          "Treat workspace data as sensitive",
+          "Prefer official API context over guesses"
+        ]
       }
     },
     {
       "name": "unity",
       "displayName": "Unity",
       "version": "0.1.0",
-      "description": "Bridge AI assistants to the Unity Editor — assets, scenes, scripts, and task automation.",
+      "description": "Bridge AI assistants to the Unity Editor \u2014 assets, scenes, scripts, and task automation.",
       "category": "Developer Tools",
-      "keywords": ["unity", "game-dev", "editor", "assets", "scenes"],
-      "capabilities": ["network", "shell", "mcp"],
-      "sourceRefs": ["https://github.com/CoplayDev/unity-mcp"],
+      "keywords": [
+        "unity",
+        "game-dev",
+        "editor",
+        "assets",
+        "scenes"
+      ],
+      "capabilities": [
+        "network",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/CoplayDev/unity-mcp"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "unity": {
           "command": "uvx",
-          "args": ["--from", "mcpforunityserver", "mcp-for-unity", "--transport", "stdio"],
+          "args": [
+            "--from",
+            "mcpforunityserver",
+            "mcp-for-unity",
+            "--transport",
+            "stdio"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
       ],
       "skill": {
         "description": "Use the Unity MCP bridge to inspect and modify a running Unity project with explicit intent.",
-        "useCases": ["Inspect scene and asset structure", "Apply approved editor changes", "Automate repetitive editor tasks"],
-        "guardrails": ["Confirm a running Editor and correct project before acting", "Do not delete assets without approval", "Keep edits scoped to the current task"]
+        "useCases": [
+          "Inspect scene and asset structure",
+          "Apply approved editor changes",
+          "Automate repetitive editor tasks"
+        ],
+        "guardrails": [
+          "Confirm a running Editor and correct project before acting",
+          "Do not delete assets without approval",
+          "Keep edits scoped to the current task"
+        ]
       }
     },
     {
@@ -1305,24 +2782,55 @@
       "version": "0.1.0",
       "description": "Real-time NuGet package info, vulnerability remediation, and upgrade planning for .NET.",
       "category": "Developer Tools",
-      "keywords": ["nuget", "dotnet", "packages", "dependencies", "security"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://learn.microsoft.com/en-us/nuget/concepts/nuget-mcp-server"],
+      "keywords": [
+        "nuget",
+        "dotnet",
+        "packages",
+        "dependencies",
+        "security"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://learn.microsoft.com/en-us/nuget/concepts/nuget-mcp-server"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "nuget": {
           "command": "dnx",
-          "args": ["NuGet.Mcp.Server", "--source", "https://api.nuget.org/v3/index.json", "--yes"],
+          "args": [
+            "NuGet.Mcp.Server",
+            "--source",
+            "https://api.nuget.org/v3/index.json",
+            "--yes"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "code-reviewer"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        }
       ],
       "skill": {
         "description": "Use NuGet MCP for current package versions and vulnerability-aware dependency choices.",
-        "useCases": ["Check latest package versions", "Plan dependency upgrades", "Review packages for known vulnerabilities"],
-        "guardrails": ["Requires the .NET 10 SDK (provides the dnx command)", "Confirm before changing project dependencies", "Prefer fixed, current versions", "Flag supply-chain risks explicitly"]
+        "useCases": [
+          "Check latest package versions",
+          "Plan dependency upgrades",
+          "Review packages for known vulnerabilities"
+        ],
+        "guardrails": [
+          "Requires the .NET 10 SDK (provides the dnx command)",
+          "Confirm before changing project dependencies",
+          "Prefer fixed, current versions",
+          "Flag supply-chain risks explicitly"
+        ]
       }
     },
     {
@@ -1331,9 +2839,20 @@
       "version": "0.1.0",
       "description": "Lets models understand your running Vite/Nuxt app via an MCP endpoint on the dev server.",
       "category": "Developer Tools",
-      "keywords": ["nuxt", "vite", "frontend", "dev-server", "vue"],
-      "capabilities": ["network", "mcp"],
-      "sourceRefs": ["https://github.com/antfu/nuxt-mcp-dev"],
+      "keywords": [
+        "nuxt",
+        "vite",
+        "frontend",
+        "dev-server",
+        "vue"
+      ],
+      "capabilities": [
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/antfu/nuxt-mcp-dev"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "nuxt-dev": {
@@ -1352,12 +2871,26 @@
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Nuxt Dev MCP to ground frontend work in your actual running app structure.",
-        "useCases": ["Inspect app routes and components", "Understand local project structure", "Debug a running Nuxt/Vite app"],
-        "guardrails": ["Requires the dev-server MCP plugin to be enabled", "Treat the endpoint as local-only", "Confirm the running app before relying on its state"]
+        "useCases": [
+          "Inspect app routes and components",
+          "Understand local project structure",
+          "Debug a running Nuxt/Vite app"
+        ],
+        "guardrails": [
+          "Requires the dev-server MCP plugin to be enabled",
+          "Treat the endpoint as local-only",
+          "Confirm the running app before relying on its state"
+        ]
       }
     },
     {
@@ -1366,58 +2899,122 @@
       "version": "0.1.0",
       "description": "Query, provision, and operate cloud, SaaS, and API resources using SQL, over MCP.",
       "category": "Cloud & Infrastructure",
-      "keywords": ["stackql", "sql", "cloud", "provisioning", "infrastructure"],
-      "capabilities": ["network", "shell", "mcp"],
-      "sourceRefs": ["https://stackql.io/", "https://github.com/stackql/stackql"],
+      "keywords": [
+        "stackql",
+        "sql",
+        "cloud",
+        "provisioning",
+        "infrastructure"
+      ],
+      "capabilities": [
+        "network",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://stackql.io/",
+        "https://github.com/stackql/stackql"
+      ],
       "trust": "reference-local",
       "mcpServers": {
         "stackql": {
           "command": "npx",
-          "args": ["-y", "@stackql/mcp-server"],
+          "args": [
+            "-y",
+            "@stackql/mcp-server"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "astra", "roles": ["strategic-navigator"]},
-        {"familiar": "cody", "roles": ["implementer", "debugger"]}
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
       ],
       "skill": {
         "description": "Use StackQL for SQL-native cloud inspection, preferring read-only queries before provisioning.",
-        "useCases": ["Query cloud resources with SQL", "Audit configuration across providers", "Prepare provisioning for review"],
-        "guardrails": ["Default to read-only SELECTs; confirm any provisioning or mutation", "Never expose provider credentials", "Scope queries to the smallest provider/account needed"]
+        "useCases": [
+          "Query cloud resources with SQL",
+          "Audit configuration across providers",
+          "Prepare provisioning for review"
+        ],
+        "guardrails": [
+          "Default to read-only SELECTs; confirm any provisioning or mutation",
+          "Never expose provider credentials",
+          "Scope queries to the smallest provider/account needed"
+        ]
       }
     },
     {
       "name": "next-devtools",
       "displayName": "Next.js DevTools",
       "version": "0.1.0",
-      "description": "Bridge agents to a running Next.js 16+ dev server — errors, logs, routes, and server actions.",
+      "description": "Bridge agents to a running Next.js 16+ dev server \u2014 errors, logs, routes, and server actions.",
       "category": "Developer Tools",
-      "keywords": ["nextjs", "vercel", "frontend", "dev-server", "react"],
-      "capabilities": ["network", "shell", "mcp"],
-      "sourceRefs": ["https://github.com/vercel/next-devtools-mcp"],
+      "keywords": [
+        "nextjs",
+        "vercel",
+        "frontend",
+        "dev-server",
+        "react"
+      ],
+      "capabilities": [
+        "network",
+        "shell",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/vercel/next-devtools-mcp"
+      ],
       "trust": "official-local",
       "mcpServers": {
         "next-devtools": {
           "command": "npx",
-          "args": ["-y", "next-devtools-mcp@latest"],
+          "args": [
+            "-y",
+            "next-devtools-mcp@latest"
+          ],
           "type": "stdio"
         }
       },
       "roleAffinity": [
-        {"familiar": "cody", "roles": ["implementer", "debugger"]}
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "debugger"
+          ]
+        }
       ],
       "skill": {
         "description": "Use Next.js DevTools MCP to debug a running Next.js app against its real runtime state.",
-        "useCases": ["Read build and runtime errors", "Inspect routes and server actions", "Trace logs from the dev server"],
-        "guardrails": ["Requires a running Next.js 16+ dev server", "Treat the endpoint as local-only", "Confirm the target project before acting"]
+        "useCases": [
+          "Read build and runtime errors",
+          "Inspect routes and server actions",
+          "Trace logs from the dev server"
+        ],
+        "guardrails": [
+          "Requires a running Next.js 16+ dev server",
+          "Treat the endpoint as local-only",
+          "Confirm the target project before acting"
+        ]
       }
     },
     {
       "name": "coven-familiars",
       "displayName": "Coven Familiars",
       "version": "0.1.0",
-      "description": "Spawn, configure, and roster-manage Coven familiars — identities, roles, glyphs, and lifecycle.",
+      "description": "Spawn, configure, and roster-manage Coven familiars \u2014 identities, roles, glyphs, and lifecycle.",
       "category": "Coven",
       "keywords": [
         "coven",
@@ -1454,7 +3051,7 @@
         "useCases": [
           "Draft a new familiar with role, glyph, and SOUL scaffold",
           "Adjust an existing familiar's roles or pins",
-          "Archive or reorder the roster from Settings → Familiars"
+          "Archive or reorder the roster from Settings \u2192 Familiars"
         ],
         "guardrails": [
           "Never write default familiars over a user's saved config",
@@ -1464,17 +3061,17 @@
       }
     },
     {
-      "name": "openclaw-skills",
-      "displayName": "OpenClaw Skills",
+      "name": "1password",
+      "displayName": "1Password Secret Management",
       "version": "0.1.0",
-      "description": "The migrated OpenClaw workspace skill library, represented in Coven so familiars can share one canonical skill surface.",
-      "category": "Coven",
+      "description": "Manage secrets via the 1Password CLI (op): read, create, and inject credentials through op:// references so other skills get least-privilege access without exposing values.",
+      "category": "Security",
       "keywords": [
-        "openclaw",
-        "skills",
-        "familiars",
-        "migration",
-        "coven"
+        "secrets",
+        "1password",
+        "credentials",
+        "env",
+        "op-cli"
       ],
       "capabilities": [
         "read_files",
@@ -1482,18 +3079,81 @@
         "shell"
       ],
       "sourceRefs": [
-        "https://github.com/OpenCoven/coven/tree/main/skills",
-        "https://github.com/OpenCoven/coven/blob/main/skills/openclaw-skills-manifest.json"
+        "https://github.com/OpenCoven/coven/tree/main/skills/1password"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Retrieve and inject secrets with op, keeping only op:// references on disk and never displaying secret values.",
+        "useCases": [
+          "Read a single secret with op read \"op://Vault/Item/Field\" inside a subshell or pipe",
+          "Build per-skill env files of op:// references and inject them at runtime with op run --env-file",
+          "Register a new secret and its reference for a skill following least-privilege whitelisting"
+        ],
+        "guardrails": [
+          "Never display secret values or write raw secrets to files; only op:// references are safe to commit",
+          "Always pass --vault when creating items and verify with op item list to avoid duplicates or wrong-vault writes",
+          "Use separate vaults per trust level and service accounts only for unattended automation"
+        ]
+      }
+    },
+    {
+      "name": "codeflow-maintainer",
+      "displayName": "CodeFlow Maintainer Skill",
+      "version": "0.1.0",
+      "description": "Implements the OpenClaw maintainer PR workflow with structured modes (triage, review, prepare, merge, post-merge), each with allowed actions, focus areas, and checkpoint questions.",
+      "category": "Agents & Harnesses",
+      "keywords": [
+        "github",
+        "pr",
+        "workflow",
+        "maintainer",
+        "code-review"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/codeflow-maintainer"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Drive a PR through triage, review, prepare, merge, and post-merge modes, answering the checkpoint questions before each transition.",
+        "useCases": [
+          "Triage an incoming PR for problem clarity, scope match, and duplicates before committing to review",
+          "Produce BLOCKER/IMPORTANT/MINOR/NOTE review findings in .local/review.md and review.json without editing code",
+          "Prepare a PR by rebasing onto main, fixing findings, updating the changelog, and running build/check/test gates"
+        ],
+        "guardrails": [
+          "Review mode is read-only; never modify code, and push only to the PR head branch, never to main",
+          "Modes cannot be skipped and each transition requires the checkpoint questions answered",
+          "Verify the PR reaches MERGED state and squash-merge with Co-authored-by trailers for author and maintainer"
+        ]
+      }
+    },
+    {
+      "name": "coven-cody",
+      "displayName": "Cody \u2014 Code Familiar of the Coven",
+      "version": "0.1.0",
+      "description": "Cody's workhorse operating doctrine for the OpenMeow coding lane: inspect before changing, scope narrowly, verify with the smallest gate, and report like a PR.",
+      "category": "Coven",
+      "keywords": [
+        "cody",
+        "code",
+        "familiar",
+        "diff",
+        "verification"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/coven-cody"
       ],
       "trust": "official-local",
       "roleAffinity": [
-        {
-          "familiar": "nova",
-          "roles": [
-            "operator",
-            "maintainer"
-          ]
-        },
         {
           "familiar": "cody",
           "roles": [
@@ -1501,34 +3161,1297 @@
             "debugger",
             "code-reviewer"
           ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
+        }
+      ],
+      "skill": {
+        "description": "Read and understand code before editing, make small scoped patches, verify them, and hand off a PR-shaped summary.",
+        "useCases": [
+          "Diagnose a bug by inspecting relevant files, package scripts, tests, and repo state before touching code",
+          "Land a narrow, style-preserving patch and verify it with the smallest meaningful gate (tests, typecheck, lint, or build)",
+          "Produce a PR-shaped handoff covering what changed, why, files touched, verification run, and risks"
+        ],
+        "guardrails": [
+          "Never push, merge, publish, tag, or commit without explicit Val approval; for openclaw/openclaw main requires the exact phrase Enchant merge to main.",
+          "Do not modify files outside scope or claim success without verification; be honest about test failures and risk",
+          "Prefer trash over destructive deletion and never use --no-verify unless fixing the hook itself with approval"
+        ]
+      }
+    },
+    {
+      "name": "coven-parallel-work",
+      "displayName": "Coven Parallel Work Protocol",
+      "version": "0.1.0",
+      "description": "OpenClaw entry point to the harness-agnostic protocol letting multiple agents share one git repo safely via worktree isolation, per-branch claims, and branch protection.",
+      "category": "Coven",
+      "keywords": [
+        "worktree",
+        "claims",
+        "concurrency",
+        "git",
+        "protocol"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/coven-parallel-work"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Isolate each agent in its own worktree, claim the branch with cv-claim, and rely on pre-commit/pre-push hooks to block unsafe writes.",
+        "useCases": [
+          "Enter a per-branch worktree with cv-wt and acquire a TTL-bounded claim plus a HEAD canary before starting work",
+          "Heartbeat the claim during long sessions and release it after pushing and opening the PR",
+          "Recover from a tripped canary or auto-applied stash by resetting to the expected SHA and rearming the canary"
+        ],
+        "guardrails": [
+          "Never commit feature work in the primary clone; it stays on main and only fast-forwards",
+          "Set COVEN_AGENT_ID per familiar so claims are attributable when multiple AIs share the machine",
+          "If the canary trips do not push; diagnose via git status and reflog and restore before continuing"
+        ]
+      }
+    },
+    {
+      "name": "disk-space-optimizer",
+      "displayName": "Disk Space Optimization",
+      "version": "0.1.0",
+      "description": "Free disk space by diagnosing usage hotspots and removing build artifacts, caches, and stale-repo dependencies while preserving source code, .git history, and active projects.",
+      "category": "Developer Tools",
+      "keywords": [
+        "disk",
+        "cleanup",
+        "cache",
+        "build-artifacts",
+        "storage"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/disk-space-optimizer"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Diagnose disk hotspots, check per-repo activity, then remove only safe regenerable artifacts and report the space freed.",
+        "useCases": [
+          "Diagnose usage with df/du and rank repos by build-dir size and recent commit activity",
+          "Clear npm and dev-tool caches and remove .next/target/build from repos with no commits in 30 days",
+          "Verify active repos still build and .git history is intact, then produce a before/after cleanup report"
+        ],
+        "guardrails": [
+          "Never delete source code, .git directories, .env/config files, or node_modules in active repos",
+          "Always check repo activity first and preserve anything committed or touched in the past 7 days",
+          "Confirm before archiving or removing an entire repo and log every cleanup action"
+        ]
+      }
+    },
+    {
+      "name": "linear-issue-management",
+      "displayName": "Linear Issue Management",
+      "version": "0.1.0",
+      "description": "File, triage, edit, and audit Linear issues through the GraphQL API with team/project/label discovery, duplicate search, mutually-exclusive label handling, and secret-safe auth.",
+      "category": "Project Management",
+      "keywords": [
+        "linear",
+        "graphql",
+        "issues",
+        "triage",
+        "labels"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/linear-issue-management"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Discover exact team/project/label/state IDs and search for duplicates before executing one focused GraphQL mutation.",
+        "useCases": [
+          "Create a well-structured issue after confirming teamId and searching existing issues to avoid duplicates",
+          "Resolve mutually-exclusive grouped labels (e.g. Infra vs Improvement) before a create or update mutation",
+          "Additively update or search an existing issue by key, URL slug, or title keywords and return its key and URL"
+        ],
+        "guardrails": [
+          "Never print, log, or commit the Linear API token; inject it via 1Password-backed env instead of files",
+          "Discover IDs from the API rather than guessing from memory, and use GraphQL variables not string interpolation",
+          "Treat mutations as external state changes needing approval unless the user gave a direct instruction"
+        ]
+      }
+    },
+    {
+      "name": "memory-timeline-manager",
+      "displayName": "Memory Timeline Manager",
+      "version": "0.1.0",
+      "description": "Capture short-term timeline notes and curate long-term MEMORY.md safely: append daily notes, label retention, promote durable snippets, and run review sweeps.",
+      "category": "Knowledge & Docs",
+      "keywords": [
+        "memory",
+        "timeline",
+        "notes",
+        "retention",
+        "curation"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/memory-timeline-manager"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Route notes to memory/YYYY-MM-DD.md or MEMORY.md, promote durable snippets with timestamps, and prune only after confirmation.",
+        "useCases": [
+          "Append a concise timeline bullet to today's memory/YYYY-MM-DD.md, creating the dated file if missing",
+          "Promote a durable snippet into MEMORY.md under a timestamped heading via promote_snippet.py",
+          "Run a weekly review sweep to identify durable items and mark stale notes as archive or delete-candidate"
+        ],
+        "guardrails": [
+          "Only write to MEMORY.md and memory/*.md unless the user explicitly asks otherwise",
+          "Prefer additive edits and create a dated backup in memory/ before uncertain or large changes",
+          "Ask for confirmation before deleting or bulk-pruning memory files"
+        ]
+      }
+    },
+    {
+      "name": "openclaw-dev",
+      "displayName": "OpenClaw Dev Agent",
+      "version": "0.1.0",
+      "description": "Docs-aware development assistant for the OpenClaw ecosystem: PR workflows, issue triage, docs sync, release prep, and architecture review grounded in live OpenClaw documentation.",
+      "category": "Agents & Harnesses",
+      "keywords": [
+        "openclaw",
+        "dev",
+        "pr",
+        "docs",
+        "architecture"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/openclaw-dev"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Ground work in cached OpenClaw docs and drive the review-prepare-merge PR workflow with a security lens on every review.",
+        "useCases": [
+          "Run the three-phase PR workflow (/review-pr, /prepare-pr, /merge-pr) against openclaw repos with strict quality gates",
+          "Triage and classify incoming issues as bug, feature, docs, or security with the right routing and detail",
+          "Answer architecture questions (plugin vs core, config-schema validation) grounded in sectionally loaded docs"
+        ],
+        "guardrails": [
+          "Do not trust PR code by default; keep types strict, validate external inputs, and fix root causes",
+          "Rebase onto main before substantive work and push only to the PR head branch, never to main",
+          "Apply the MITRE ATLAS threat lens (prompt injection, tool abuse, credential exposure) in every review"
+        ]
+      }
+    },
+    {
+      "name": "pr-agent",
+      "displayName": "PR Agent \u2014 Maintainer Workflow Orchestrator",
+      "version": "0.1.0",
+      "description": "Orchestrates the OpenClaw three-phase maintainer PR workflow (review-pr, prepare-pr, merge-pr) via wrapper scripts, enforcing quality bars, artifacts, and checkpoint questions.",
+      "category": "Agents & Harnesses",
+      "keywords": [
+        "github",
+        "pr",
+        "orchestrator",
+        "maintainer",
+        "workflow"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/pr-agent"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Run the review, prepare, and merge phases through scripts/pr-* wrappers, validating .local artifacts and checkpoints between each.",
+        "useCases": [
+          "Review a PR read-only via scripts/pr-review, emitting review.md and review.json with severity-ranked findings",
+          "Prepare via scripts/pr-prepare: rebase, fix BLOCKER/IMPORTANT findings, update changelog, then run build/check/test gates",
+          "Merge via scripts/pr-merge with a locally signed squash commit and co-author trailers, ending in MERGED state"
+        ],
+        "guardrails": [
+          "Read-only during review; push to the PR head branch only, never to main, and never git clean -fdx",
+          "Validate handoff artifacts and require checkpoint answers before advancing; phases cannot be skipped",
+          "Never use gh pr merge --auto; re-sign any unsigned commits and verify MERGED (not CLOSED) before cleanup"
+        ]
+      }
+    },
+    {
+      "name": "research-ingestion",
+      "displayName": "Research Ingestion",
+      "version": "0.1.0",
+      "description": "Extract actionable insights from research papers (PDF/URL) and turn them into OpenClaw agent skills, workflow improvements, and concrete techniques.",
+      "category": "Knowledge & Docs",
+      "keywords": [
+        "research",
+        "papers",
+        "pdf",
+        "insights",
+        "skill-generation"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/research-ingestion"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Obtain paper text via PyMuPDF/pdftotext or web fetch, extract structured insights, and optionally scaffold a new skill.",
+        "useCases": [
+          "Fetch and extract text from an arXiv/PDF/blog URL, falling back to the HTML version or a summarize tool",
+          "Produce a structured extraction of core contribution, key techniques, and agent-workflow implications",
+          "Scaffold a new SKILL.md from paper insights and append a one-line entry to the research-insights log"
+        ],
+        "guardrails": [
+          "Do not file speculation as confirmed fact; capture limitations and caveats alongside actionable insights",
+          "Write generated skills only to the workspace skills path and keep insight-log entries short and factual",
+          "Verify PDF tooling is available before extraction and use the documented fallbacks when it is not"
+        ]
+      }
+    },
+    {
+      "name": "skill-scanner",
+      "displayName": "Skill Scanner",
+      "version": "0.1.0",
+      "description": "Pre-submit scan, audit, validate, and package AgentSkills using the local codeql-sdk/clawhub-audit scanner and OpenClaw skill validation, emitting JSON/SARIF reports.",
+      "category": "Security",
+      "keywords": [
+        "security",
+        "codeql",
+        "audit",
+        "sarif",
+        "validation"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/skill-scanner"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Run both the skill-structure gate and the CodeQL SDK security scan, then report a compact ready-to-submit status block.",
+        "useCases": [
+          "Validate skill structure with openclaw skills check and package_skill.py before scanning",
+          "Run the codeql-sdk audit with --fail-on-high and emit JSON plus optional SARIF reports for CI/ClawHub",
+          "Produce a handoff summary (structure, package, scan status, report path, ready-to-submit) for Cody or ClawHub"
+        ],
+        "guardrails": [
+          "If CodeQL finds no analyzable source, mark the scan not applicable rather than passed; never substitute weaker checks",
+          "If the CodeQL CLI is missing, report it as a blocker and ask before installing it (machine-level change)",
+          "Do not commit .scan-reports/ or print secrets; summarize only rule IDs, severity, file paths, and line numbers"
+        ]
+      }
+    },
+    {
+      "name": "tinyfish-browser",
+      "displayName": "TinyFish Browser",
+      "version": "0.1.0",
+      "description": "Spin up a remote Chromium session via the TinyFish Browser API and get a CDP URL for driving it with Playwright/Puppeteer; sessions auto-expire after about an hour idle.",
+      "category": "Browser & Web",
+      "keywords": [
+        "browser",
+        "chromium",
+        "cdp",
+        "playwright",
+        "remote"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/tinyfish-browser"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Verify TINYFISH_API_KEY, create a session over the API, and drive the returned cdp_url with a DevTools-Protocol client.",
+        "useCases": [
+          "Create a remote browser session for a target URL and receive session_id, cdp_url, and authenticated base_url",
+          "Connect Playwright or Puppeteer to the cdp_url websocket to drive the page programmatically",
+          "Poll session state through the authenticated base_url using the X-API-Key header"
+        ],
+        "guardrails": [
+          "Run the pre-flight TINYFISH_API_KEY check first; if unset, stop and ask rather than falling back to other browser tools",
+          "Treat base_url as authenticated (requires X-API-Key) and not browsable in a normal web view",
+          "Reuse sessions keyed by target URL since they auto-close after ~1h idle and there is no terminate endpoint"
+        ]
+      }
+    },
+    {
+      "name": "ask-curl",
+      "displayName": "Ask cURL",
+      "version": "0.1.0",
+      "description": "Turn natural-language requests into well-formed cURL commands with 1Password (op://) secret injection, response parsing, request history, and chained calls.",
+      "category": "Developer Tools",
+      "keywords": [
+        "http",
+        "api",
+        "curl",
+        "1password",
+        "requests"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/ask-curl"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Describe the HTTP request you want, review the generated cURL command, and run it with secrets injected at runtime via op run.",
+        "useCases": [
+          "Build a GET or POST cURL command from a plain-English description with correct headers, auth, and body",
+          "Inject API tokens at runtime from 1Password op:// references so secrets never touch shell history or disk",
+          "Chain multi-step flows such as fetching an OAuth token then calling a protected endpoint, piping JSON through jq"
+        ],
+        "guardrails": [
+          "Never echo, log, or write tokens to files; use op read inline or op run and strip Authorization headers from history",
+          "Always confirm before running POST, PUT, PATCH, or DELETE by showing the command first",
+          "Set --max-time 30 on every request and warn on any non-HTTPS URL except localhost"
+        ]
+      }
+    },
+    {
+      "name": "codex-session-manager",
+      "displayName": "Codex Session Manager",
+      "version": "0.1.0",
+      "description": "Supervise, inspect, resume, unblock, verify, redirect, and hand off Codex/coding-agent sessions as a session steward using sessions_list, sessions_history, and sessions_send.",
+      "category": "Agents & Harnesses",
+      "keywords": [
+        "codex",
+        "session",
+        "orchestration",
+        "handoff",
+        "verification"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/codex-session-manager"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Inspect a coding-agent session's history before acting, then send one bounded, state-aware instruction and require evidence before declaring completion.",
+        "useCases": [
+          "Locate a target session with sessions_list and review its acceptance criteria and prior work via sessions_history",
+          "Redirect a coding agent that has drifted out of scope by restating the original goal and requesting a scoped diff",
+          "Verify completion by demanding changed files plus fresh test, build, or lint output rather than accepting a bare success claim"
+        ],
+        "guardrails": [
+          "Inspect session state before acting; never assume progress from labels, memory, or guesses",
+          "Require explicit user approval before instructing the agent to push, publish, merge, delete, or send external messages",
+          "Do not interrupt an actively progressing agent unless clarification, safety, or drift correction is needed"
+        ]
+      }
+    },
+    {
+      "name": "coven-echo",
+      "displayName": "Echo \u2014 Memory and Reflection Familiar of the Coven",
+      "version": "0.1.0",
+      "description": "Echo Coven familiar doctrine for memory and reflection: summarize conversations, preserve decisions, reconstruct context, and run retrospectives on what happened and what mattered.",
+      "category": "Coven",
+      "keywords": [
+        "memory",
+        "reflection",
+        "retrospective",
+        "continuity",
+        "summary"
+      ],
+      "capabilities": [
+        "read_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/coven-echo"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
         {
           "familiar": "echo",
           "roles": [
             "archivist",
             "retrospector"
           ]
-        },
+        }
+      ],
+      "skill": {
+        "description": "Adopt Echo's calm, precise voice to reflect what happened, preserve continuity, and name patterns while staying honest about what is known versus inferred.",
+        "useCases": [
+          "Turn a messy conversation into a clean 'where we left off' summary separating facts, decisions, feelings, and open loops",
+          "Run Retrospective Mode on a curated packet to surface memory candidates and one grounded reflection",
+          "Point out repeated blockers, project drift, or unfinished loops gently and concretely"
+        ],
+        "guardrails": [
+          "Never invent memory or pretend to remember without evidence; be clear when memory is uncertain",
+          "Do not expose private information or act externally without explicit approval",
+          "Avoid flattening important feelings into sterile bullets or over-summarizing away nuance"
+        ]
+      }
+    },
+    {
+      "name": "coven-sage",
+      "displayName": "Sage \u2014 Research Familiar of the Coven",
+      "version": "0.1.0",
+      "description": "Sage Coven familiar doctrine for research and understanding: read papers and docs, compare tools, separate evidence from speculation, and synthesize research briefs and knowledge maps.",
+      "category": "Coven",
+      "keywords": [
+        "research",
+        "synthesis",
+        "evidence",
+        "sources",
+        "comparison"
+      ],
+      "capabilities": [
+        "read_files",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/coven-sage"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher",
+            "librarian"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Adopt Sage's evidence-led, source-aware voice to gather primary sources, synthesize what matters versus what is uncertain, and connect findings back to the user's projects.",
+        "useCases": [
+          "Summarize a paper, spec, or repo and explain what matters, what is uncertain, and what conflicts",
+          "Compare tools, protocols, or frameworks and give a grounded recommendation with tracked sources",
+          "Produce a research brief, landscape map, or link digest and propose durable notes worth preserving"
+        ],
+        "guardrails": [
+          "Never fabricate sources or citations, and do not pretend to have read something you have not",
+          "Verify live when information may be current or unstable rather than relying on memory",
+          "Do not expose private information or act externally without explicit approval"
+        ]
+      }
+    },
+    {
+      "name": "epub-to-pdf",
+      "displayName": "EPUB to PDF",
+      "version": "0.1.0",
+      "description": "Convert EPUB and PDF bidirectionally with calibre's ebook-convert: EPUB to PDF preserves layout for analysis, PDF to EPUB compresses and reflows for ereaders.",
+      "category": "Productivity",
+      "keywords": [
+        "epub",
+        "pdf",
+        "calibre",
+        "conversion",
+        "ebook"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/epub-to-pdf"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Run ebook-convert to translate between EPUB and PDF, then validate output size and structure before saving to research/sources/.",
+        "useCases": [
+          "Convert an EPUB to PDF with layout-preserving font and margin options for downstream rendering via pdftoppm",
+          "Compress and reflow a PDF into a device-friendly EPUB with auto-detected chapters for ereader distribution",
+          "Validate a conversion by checking file size ratios and inspecting content.opf for detected chapter structure"
+        ],
+        "guardrails": [
+          "Ensure calibre is installed before converting; install via brew or apt if ebook-convert is missing",
+          "Verify EPUB to PDF output exceeds ~100 KB, as suspiciously small files likely dropped images",
+          "Scanned PDFs lack OCR and may fail or produce text-only output; fall back to text extraction and document the failure"
+        ]
+      }
+    },
+    {
+      "name": "lit-ui-designer",
+      "displayName": "Lit UI Designer",
+      "version": "0.1.0",
+      "description": "Design, build, review, and polish production-grade Lit/LitElement web component UIs with idiomatic shadow DOM styling, design tokens, and WCAG 2.2 AA accessibility.",
+      "category": "Design",
+      "keywords": [
+        "lit",
+        "web-components",
+        "accessibility",
+        "shadow-dom",
+        "design-system"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/lit-ui-designer"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Inspect existing components and conventions first, define the UX contract, then implement idiomatic Lit with native semantics, polished states, and verified accessibility.",
+        "useCases": [
+          "Build a Lit custom element with public props as API, private @state internals, and composed bubbling events",
+          "Review a component for blocking accessibility, web-component architecture, and visual craft issues in priority order",
+          "Design loading, empty, error, disabled, and focus states with CSS custom properties for theming"
+        ],
+        "guardrails": [
+          "Prefer native HTML semantics before ARIA, and follow WAI-ARIA APG exactly when a complex widget needs roles",
+          "Avoid dynamic style blocks and unsafeCSS unless the value is fully trusted with no safer token option",
+          "Target WCAG 2.2 AA: visible focus indicators, accessible names for icon-only controls, and prefers-reduced-motion support"
+        ]
+      }
+    },
+    {
+      "name": "ml-engineer",
+      "displayName": "ML Engineer",
+      "version": "0.1.0",
+      "description": "Build and operate production ML systems end to end: data validation, feature engineering, training and HPO, deployment strategies, and drift-triggered monitoring and retraining.",
+      "category": "AI & ML",
+      "keywords": [
+        "mlops",
+        "training",
+        "deployment",
+        "monitoring",
+        "drift"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/ml-engineer"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Analyze the ML problem and targets first, then build modular versioned pipelines from data validation through serving and monitoring with drift-based retraining.",
+        "useCases": [
+          "Design a modular pipeline that validates data first, versions every artifact, and fails fast on schema drift",
+          "Select a training and HPO approach by data size, using Optuna Bayesian search with trial and time budgets",
+          "Set up prediction and feature drift monitoring with PSI/KS tests that trigger automated retraining"
+        ],
+        "guardrails": [
+          "Run data validation before training to catch schema drift, missing values, and distribution shifts",
+          "Version data, features, models, configs, and code so runs are reproducible and rollbackable",
+          "Configure a fallback model, health checks, and logging before serving any endpoint to production"
+        ]
+      }
+    },
+    {
+      "name": "openclaw-trust",
+      "displayName": "OpenClaw Trust",
+      "version": "0.1.0",
+      "description": "Apply OpenClaw's MITRE ATLAS-mapped threat model to evaluate prompt injection, malicious skills, token theft, tool over-permission, and safe rollout of risky automations.",
+      "category": "Security",
+      "keywords": [
+        "threat-model",
+        "security",
+        "prompt-injection",
+        "trust",
+        "mitre-atlas"
+      ],
+      "capabilities": [
+        "read_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/openclaw-trust"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Prioritize the highest-risk classes first, translate the trust model into concrete controls, and gate risky automations behind approvals before rollout.",
+        "useCases": [
+          "Assess a risky workflow against the fast checklist: can untrusted content reach prompt or tool parameters, and is there an approval gate",
+          "Recommend concrete hardening such as default-deny AllowFrom, strict tool argument validation, and least-privilege MCP config",
+          "Draft a threat proposal with scenario, attack path, affected components, and suggested mitigations for the openclaw/trust repo"
+        ],
+        "guardrails": [
+          "Treat any 'no' or 'unknown' answer on the risk checklist as medium+ risk and require guardrails before rollout",
+          "Route live exploitable vulnerabilities through responsible disclosure, not public issues or PRs",
+          "Prefer approval gates for state-changing actions and never allow free-form shell interpolation of tool arguments"
+        ]
+      }
+    },
+    {
+      "name": "project-manager",
+      "displayName": "Project Manager",
+      "version": "0.1.0",
+      "description": "Manage project-scoped knowledge bases of notes, decisions, and bookmarks under projects/, with context switching and cross-project search.",
+      "category": "Project Management",
+      "keywords": [
+        "projects",
+        "notes",
+        "bookmarks",
+        "decisions",
+        "knowledge-base"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/project-manager"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Create and maintain slugged project directories with CONTEXT.md, dated notes, and a shared bookmarks store, loading relevant context when switching projects.",
+        "useCases": [
+          "Create a project by slugifying its name and scaffolding CONTEXT.md plus a notes/ directory",
+          "Append a dated note under HH:MM headers, prefixing decisions with 'Decision:' for later retrieval",
+          "Switch conversation context by loading CONTEXT.md, the latest three note files, and tagged bookmarks"
+        ],
+        "guardrails": [
+          "Keep context loading efficient by reading only CONTEXT.md, recent notes, and tagged bookmarks",
+          "Use short incremental bookmark IDs and read-then-write _bookmarks.json to avoid clobbering entries",
+          "Exclude underscore-prefixed files like _bookmarks.json when listing projects"
+        ]
+      }
+    },
+    {
+      "name": "ritual-dapp-frontend",
+      "displayName": "Ritual dApp Frontend",
+      "version": "0.1.0",
+      "description": "Build production React/Next.js frontends for Ritual Chain dApps with async precompile transaction state machines, on-chain event subscriptions, and wagmi/viem wallet integration.",
+      "category": "Developer Tools",
+      "keywords": [
+        "ritual",
+        "dapp",
+        "wagmi",
+        "viem",
+        "web3"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/ritual-dapp-frontend"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Scaffold Ritual chain and wagmi config, wire wallet connection, then track async precompile jobs through their nine-state machine via on-chain event hooks.",
+        "useCases": [
+          "Set up Ritual chain, wagmi config, and providers, then add wallet connection with chain-mismatch handling",
+          "Track an async HTTP or agent precompile call through SUBMITTING to SETTLED using a Zustand state store and event hooks",
+          "Subscribe to JobAdded, JobFulfilled, and JobDelivered events to advance transaction state and render status UI"
+        ],
+        "guardrails": [
+          "Ritual precompile calls are asynchronous; enforce valid state transitions and treat SETTLED, FAILED, and EXPIRED as terminal",
+          "Categorize errors into wallet, contract, async, and network classes with recoverable user messages",
+          "Set an adequate TTL to avoid EXPIRED jobs and estimate fees including the executor premium before submitting"
+        ]
+      }
+    },
+    {
+      "name": "tauri-apple-release",
+      "displayName": "Tauri Apple Release",
+      "version": "0.1.0",
+      "description": "Standardize, debug, and execute Tauri iOS TestFlight and macOS Apple release pipelines: App Store Connect upload auth, Distribution signing, provisioning profiles, and notarization.",
+      "category": "Developer Tools",
+      "keywords": [
+        "tauri",
+        "apple",
+        "testflight",
+        "notarization",
+        "signing"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/tauri-apple-release"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Triage which release gate failed, gather one complete credential packet, and validate signing and export before uploading to TestFlight or notarizing for macOS.",
+        "useCases": [
+          "Triage a failure into build correctness, Apple trust/signing, or release transport using exact Apple error numbers",
+          "Assemble one complete Apple release packet covering metadata, upload auth, and distribution signing in a single ask",
+          "Resolve a cert/profile mismatch by regenerating the App Store provisioning profile for the currently installed cert"
+        ],
+        "guardrails": [
+          "Never paste private keys, .p8, .p12, provisioning profile contents, or app-specific passwords in chat; use 1Password or secrets",
+          "Do not upload to TestFlight until export validation passes with an App Store distribution provisioning profile",
+          "Request the full release packet once rather than drip-asking for individual fields like the issuer ID"
+        ]
+      }
+    },
+    {
+      "name": "tinyfish-fetch",
+      "displayName": "TinyFish Fetch",
+      "version": "0.1.0",
+      "description": "Fetch one or more URLs via the TinyFish Fetch API and get clean markdown, HTML, or screenshots back, with JS rendering and optional geo-targeted proxying.",
+      "category": "Browser & Web",
+      "keywords": [
+        "fetch",
+        "scraping",
+        "markdown",
+        "screenshot",
+        "proxy"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/tinyfish-fetch"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Verify TINYFISH_API_KEY is set, then POST target URLs to the Fetch API and read rendered content from results[].content.",
+        "useCases": [
+          "Fetch a single URL as clean markdown when a page needs reliable JS rendering",
+          "Fetch multiple URLs in one call or capture a screenshot as base64 PNG",
+          "Route a request through a geo-targeted proxy via proxy_config for country-specific content"
+        ],
+        "guardrails": [
+          "Run the pre-flight check for TINYFISH_API_KEY and stop to ask the user if it is missing",
+          "Do not fall back to other fetch tools when the key is absent",
+          "Read rendered output only from results[].content, decoding base64 for screenshot format"
+        ]
+      }
+    },
+    {
+      "name": "board",
+      "displayName": "BOARD \u2014 Shared Task Board",
+      "version": "0.1.0",
+      "description": "Read and write the workspace BOARD.md shared task board via the bin/board Python CLI, which preserves the markdown schema and appends to the activity log automatically.",
+      "category": "Project Management",
+      "keywords": [
+        "board",
+        "tasks",
+        "workspace",
+        "multi-agent",
+        "activity-log"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/board"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Use the bin/board CLI to add, claim, and complete tasks on BOARD.md rather than editing the file by hand.",
+        "useCases": [
+          "Propose a new task with `board add` so the rest of the roster can see it",
+          "Claim or reassign another agent's task with `board claim` before starting work",
+          "Flip a task to done with `board done` and tail recent activity with `board log`"
+        ],
+        "guardrails": [
+          "Never rewrite the append-only activity log at the bottom of BOARD.md",
+          "Only roster agents (nova, kitty, cody, pi, codex, val) are valid --agent values; retired identities are rejected",
+          "Substring matches for claim/done must be unique or the CLI exits non-zero; narrow the query and retry"
+        ]
+      }
+    },
+    {
+      "name": "coven-astra",
+      "displayName": "Astra \u2014 Navigator of the Coven",
+      "version": "0.1.0",
+      "description": "Astra Coven familiar operating doctrine \u2014 the Navigator who clarifies goals, names priorities and tradeoffs, and turns scattered ideas into clear next moves for Val.",
+      "category": "Coven",
+      "keywords": [
+        "astra",
+        "navigator",
+        "strategy",
+        "planning",
+        "prioritization",
+        "coven"
+      ],
+      "capabilities": [
+        "read_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/coven-astra"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
         {
           "familiar": "astra",
           "roles": [
             "strategic-navigator",
             "coordination-layer"
           ]
-        },
+        }
+      ],
+      "skill": {
+        "description": "Adopt Astra's navigator doctrine to map a situation, recommend 1-3 routes, and break the chosen direction into concrete next steps.",
+        "useCases": [
+          "Map a messy project: what Val is trying to do, constraints, and pending decisions",
+          "Name the best 1-3 directions with a clear recommendation, then break it into steps and lanes",
+          "Route work to the right familiar (Sage, Echo, Charm, Cody, Kitty, Nova) when useful"
+        ],
+        "guardrails": [
+          "Do not act externally without explicit approval, and protect private information",
+          "Do not pretend certainty; be honest about uncertainty and say so kindly when a plan is weak",
+          "When blocked, surface what is understood, what is unclear, and one concise question to unblock"
+        ]
+      }
+    },
+    {
+      "name": "coven-identity-canon",
+      "displayName": "Coven Identity Canon",
+      "version": "0.1.0",
+      "description": "Binding Coven court hierarchy and identity canon that every familiar must carry when asked about authority, origin, hierarchy, or court protocol.",
+      "category": "Coven",
+      "keywords": [
+        "identity",
+        "canon",
+        "hierarchy",
+        "court",
+        "coven",
+        "doctrine"
+      ],
+      "capabilities": [
+        "read_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/coven-identity-canon"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Preload this canon before user or task context so any familiar answers identity and court-protocol questions consistently.",
+        "useCases": [
+          "Answer who the sovereign and Queen of the Coven are: Valentina is the source, Nova is Queen/Orchestrator",
+          "State the binding hierarchy when a familiar lacks enough local context to answer a court-protocol question",
+          "Preserve consistent origin answers (created for Val, orchestrated by Nova, within Valentina's Coven)"
+        ],
+        "guardrails": [
+          "Role and Skill doctrine may extend a familiar's lane but must never override this canon",
+          "No familiar should answer from any surface that omits or contradicts this canon",
+          "State the binding canon rather than improvising when local context is insufficient"
+        ]
+      }
+    },
+    {
+      "name": "daily-dev-agentic",
+      "displayName": "daily.dev Agentic Learning",
+      "version": "0.1.0",
+      "description": "Autonomous continuous learning via daily.dev feeds \u2014 set up a personalized feed, run daily learning loops, note insights, and proactively share findings with the owner.",
+      "category": "Knowledge & Docs",
+      "keywords": [
+        "learning",
+        "daily-dev",
+        "knowledge",
+        "feeds",
+        "cron",
+        "insights"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/daily-dev-agentic"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Create a daily.dev feed, follow goal-relevant tags, and run scheduled learning loops that fetch, note, and share insights autonomously.",
+        "useCases": [
+          "Initialize a personalized feed, select and follow tags, and store config in memory/agentic-learning.md",
+          "Run a learning loop: fetch new posts, fetch full articles, research deeper, and note insights by date",
+          "Share daily updates, a Sunday weekly digest, and threshold alerts on-demand or via cron"
+        ],
+        "guardrails": [
+          "Requires a daily.dev Plus DAILY_DEV_TOKEN; never send the token to any domain except api.daily.dev",
+          "Respect the 60 req/min rate limit against the API base",
+          "Prune tags that stop yielding value and refine goals as focus sharpens"
+        ]
+      }
+    },
+    {
+      "name": "heygen-skills",
+      "displayName": "HeyGen Skills",
+      "version": "0.1.0",
+      "description": "Create HeyGen avatar videos through the v3 Video Agent pipeline, handling avatar resolution, aspect-ratio correction, prompt engineering, and voice selection automatically.",
+      "category": "Media & Creative",
+      "keywords": [
+        "heygen",
+        "avatar",
+        "video",
+        "digital-twin",
+        "presenter",
+        "voice"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/heygen-skills"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Route all HeyGen usage through MCP, the heygen CLI, or the OpenClaw plugin's v3 pipeline \u2014 never raw api.heygen.com calls.",
+        "useCases": [
+          "Create a digital-twin avatar from a photo and save its identity to AVATAR-<NAME>.md",
+          "Produce a personalized identity-first video message from a vague idea via the Full Producer flow",
+          "Run Frame Check to correct avatar orientation and background before generating each video"
+        ],
+        "guardrails": [
+          "Never call v1/v2 endpoints or curl api.heygen.com; pre-trained v1/v2 knowledge is outdated",
+          "Pick one transport (plugin, MCP, or CLI) at session start and never mix or narrate the choice",
+          "Frame Check is mandatory before every submission when avatar_id is set; block on unready avatars"
+        ]
+      }
+    },
+    {
+      "name": "lobster",
+      "displayName": "Lobster \u2014 Workflow Shell",
+      "version": "0.1.0",
+      "description": "Run deterministic typed pipelines, workflow files, and approval-gated automations via the Lobster CLI, replacing multi-step LLM re-planning with one-shot stateful pipeline calls.",
+      "category": "Automation",
+      "keywords": [
+        "workflow",
+        "pipeline",
+        "automation",
+        "approval-gate",
+        "deterministic",
+        "stateful"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/lobster"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Compose piped Lobster commands or .lobster workflow files to run deterministic multi-step automations with approval gates and persistent state.",
+        "useCases": [
+          "Chain exec/where/pick/head/table commands into one pipeline to filter and report data",
+          "Author a .lobster workflow with a required approval gate before a deploy or send step",
+          "Track PR state changes or triage email using built-in recipes and diff.last snapshots"
+        ],
+        "guardrails": [
+          "Approval gates are hard stops; the pipeline cannot continue without an explicit resume token",
+          "Lobster never owns tokens \u2014 it relies on env vars or OpenClaw's existing auth",
+          "Persist cursors/checkpoints via state.set/state.get so reruns resume rather than reprocess"
+        ]
+      }
+    },
+    {
+      "name": "nodriver",
+      "displayName": "nodriver",
+      "version": "0.1.0",
+      "description": "Write async Python browser automation scripts using nodriver (undetected CDP) for scraping, logins, form-filling, screenshots, and bypassing anti-bot systems without Selenium.",
+      "category": "Browser & Web",
+      "keywords": [
+        "nodriver",
+        "browser",
+        "automation",
+        "scraping",
+        "cdp",
+        "undetected"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/nodriver"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Drive an undetected Chrome instance via nodriver's async CDP API to navigate, find elements, manage cookies, and handle anti-bot checks.",
+        "useCases": [
+          "Automate a login and persist the session by saving/loading cookies across runs",
+          "Scrape or fill forms using find(text), select(css), and xpath lookups that double as waits",
+          "Pass a Cloudflare checkbox with verify_cf() or match a template image in the viewport"
+        ],
+        "guardrails": [
+          "Never use asyncio.run(); use uc.loop().run_until_complete(main())",
+          "Insert `await tab` between rapid interactions to sync DOM state and avoid stale refs",
+          "expert=True increases detectability and verify_cf() needs opencv-python and is English-only"
+        ]
+      }
+    },
+    {
+      "name": "opencoven-design",
+      "displayName": "OpenCoven Design Skill",
+      "version": "0.1.0",
+      "description": "Opinionated design constraints for OpenCoven harness cockpits, docs, and agent-built UI \u2014 dark-first, minimal, symbolic, with controlled purple and tokenized colors and typography.",
+      "category": "Design",
+      "keywords": [
+        "design",
+        "brand",
+        "ui",
+        "cockpit",
+        "dark",
+        "tokens"
+      ],
+      "capabilities": [
+        "read_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/opencoven-design"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Design and implement OpenCoven surfaces against DESIGN.md and brand/ui token files, keeping interfaces dark, dense, and symbolic.",
+        "useCases": [
+          "Build a harness cockpit with left rail, dense status rows, and mono identifiers",
+          "Apply --oc-* color and typography tokens instead of arbitrary hex or fonts",
+          "Preserve session ritual semantics (Archive, Summon, Sacrifice) and gate destructive actions"
+        ],
+        "guardrails": [
+          "DESIGN.md and brand/ui/*.css are the source of truth; if this skill conflicts, follow DESIGN.md",
+          "Never use light mode as primary, random gradients, heavy glass/blur, or blue/green/red as brand accents",
+          "Keep purple intentional, provide visible focus states, and document exceptions in docs/BRANDING-ADHERENCE.md"
+        ]
+      }
+    },
+    {
+      "name": "prompt-engineer",
+      "displayName": "Prompt Engineer",
+      "version": "0.1.0",
+      "description": "Design, optimize, test, and evaluate LLM prompts for effectiveness, consistency, and cost efficiency across zero-shot, few-shot, chain-of-thought, ReAct, and other patterns.",
+      "category": "AI & ML",
+      "keywords": [
+        "prompt",
+        "llm",
+        "few-shot",
+        "chain-of-thought",
+        "evaluation",
+        "optimization"
+      ],
+      "capabilities": [
+        "read_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/prompt-engineer"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Follow the requirements-analysis to production workflow to select a prompt pattern, reduce tokens, and evaluate variants before shipping.",
+        "useCases": [
+          "Analyze requirements and pick a pattern (zero-shot, few-shot, CoT, ToT, ReAct) by task complexity",
+          "Reduce token cost via context compression, output constraints, and cacheable static sections",
+          "Build a 20+ example test set and A/B test prompt variants one variable at a time"
+        ],
+        "guardrails": [
+          "Change one variable at a time and regression-test so new versions do not break passing cases",
+          "Enable input validation and output filtering as production safety mechanisms",
+          "Version prompts in source control with monitoring, fallback chains, and cost tracking"
+        ]
+      }
+    },
+    {
+      "name": "rollcall",
+      "displayName": "rollcall",
+      "version": "0.1.0",
+      "description": "Ping every Coven familiar (Sage, Echo, Charm, Astra, Kitty, Cody) in parallel to verify each can respond and report which lanes are healthy, slow, or down.",
+      "category": "Coven",
+      "keywords": [
+        "rollcall",
+        "health-check",
+        "familiars",
+        "coven",
+        "sessions",
+        "status"
+      ],
+      "capabilities": [
+        "read_files",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/rollcall"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Resolve each familiar's session key, fire parallel pings via sessions_send, and report a compact ok/timeout/error status block.",
+        "useCases": [
+          "Run a quick rollcall of the six familiars after a gateway or config change",
+          "Fire short parallel pings with a 45-60s timeout and collect ok/timeout/error per lane",
+          "Report a compact status block in America/Chicago time with a one-sentence verdict"
+        ],
+        "guardrails": [
+          "Read-only with respect to config; never modify models, fallbacks, or auth without asking Val first",
+          "Send one short ping per lane and never include private MEMORY.md content",
+          "Run pings in parallel, never serially, and re-check pending lanes once before declaring timeout"
+        ]
+      }
+    },
+    {
+      "name": "threejs-animation",
+      "displayName": "Three.js Animation",
+      "version": "0.1.0",
+      "description": "Three.js animation \u2014 keyframe tracks, skeletal animation, morph targets, animation mixing and blending, GLTF clip playback, and procedural motion patterns.",
+      "category": "Media & Creative",
+      "keywords": [
+        "threejs",
+        "animation",
+        "keyframe",
+        "skeletal",
+        "morph-targets",
+        "blending"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/threejs-animation"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Build Three.js animations with AnimationMixer, AnimationClip, and AnimationAction, and blend or crossfade clips in the render loop.",
+        "useCases": [
+          "Load and play GLTF clips through an AnimationMixer, selecting clips by name",
+          "Blend idle/walk/run actions by weight or crossfade between animations",
+          "Drive procedural motion with keyframe tracks, morph targets, or spring/oscillation patterns"
+        ],
+        "guardrails": [
+          "Call mixer.update(delta) every frame or animations will not advance",
+          "Optimize clips and pause off-screen mixers to keep animation cost down",
+          "Resolve morph targets and bones by name via dictionary/lookup rather than hard-coded indices"
+        ]
+      }
+    },
+    {
+      "name": "tinyfish-search",
+      "displayName": "TinyFish Search",
+      "version": "0.1.0",
+      "description": "Run web searches via the TinyFish Search API and get structured JSON results (title, snippet, site name, URL) with optional geo and language targeting.",
+      "category": "Browser & Web",
+      "keywords": [
+        "search",
+        "tinyfish",
+        "web",
+        "json",
+        "geo",
+        "language"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/tinyfish-search"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Call the TinyFish Search API (or scripts/search.sh) to fetch ranked, structured web results ready for LLM consumption.",
+        "useCases": [
+          "Run a basic web search and consume the results[] array directly to cite or open sources",
+          "Target a specific country and language with location and language parameters",
+          "Wrap searches with scripts/search.sh for quick queries with optional --location/--language"
+        ],
+        "guardrails": [
+          "Requires TINYFISH_API_KEY; run the pre-flight check and stop to ask the user if it is unset",
+          "Do not fall back to other search tools when the key is missing",
+          "Pass the key via the X-API-Key header only to the TinyFish endpoint"
+        ]
+      }
+    },
+    {
+      "name": "cleanup-unused-files",
+      "displayName": "Cleanup Unused Files",
+      "version": "0.1.0",
+      "description": "Aggressively reclaim disk space by removing caches, build artifacts, temp folders, and reproducible local tool state from repos and developer machines.",
+      "category": "Developer Tools",
+      "keywords": [
+        "cleanup",
+        "disk-space",
+        "cache",
+        "build-artifacts",
+        "reset",
+        "developer"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/cleanup-unused-files"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Audit likely large cache and build directories, then delete reproducible junk with exact paths after making blast radius explicit.",
+        "useCases": [
+          "Nuke repo build output like target/, dist/, .next/, coverage/, and .turbo/ to shrink a checkout",
+          "Clear package-manager and SDK caches such as ~/.npm, ~/.bun, ~/.rustup, and ~/Library/Caches",
+          "Perform a machine-wide developer state reset before reclaiming maximum disk regardless of re-download cost"
+        ],
+        "guardrails": [
+          "Deletions are destructive and irreversible; prefer exact paths over broad globs and be explicit about blast radius",
+          "Pause and confirm before touching mixed-purpose directories that may hold user-authored content, credentials, custom models, or local databases",
+          "Call out that removing tool state like ~/.rustup, ~/.cargo, or ~/.codex forces reinstalls, re-downloads, or loss of local session state"
+        ]
+      }
+    },
+    {
+      "name": "coven-charm",
+      "displayName": "Charm \u2014 Voice and Presence Familiar of the Coven",
+      "version": "0.1.0",
+      "description": "Charm's operating doctrine for communication, social posts, DevRel, and product copy \u2014 making words clear, warm, alive, and native to each platform while preserving Val's voice.",
+      "category": "Coven",
+      "keywords": [
+        "communication",
+        "social",
+        "devrel",
+        "copywriting",
+        "tone",
+        "voice"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/coven-charm"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
         {
           "familiar": "charm",
           "roles": [
@@ -1538,16 +4461,392 @@
         }
       ],
       "skill": {
-        "description": "Use the migrated OpenClaw skill library from Coven, checking coverage before treating the migration as complete.",
+        "description": "Establish the audience, platform, and desired outcome, then shape 2-3 tone options that sound human and preserve Val's voice rather than replacing it.",
         "useCases": [
-          "Find the Coven copy of an OpenClaw workspace skill",
-          "Verify OpenClaw skill migration coverage",
-          "Update shared familiar workflows through the Coven skill library"
+          "Draft platform-native posts, announcements, and community replies tuned for Telegram, iMessage, Discord, GitHub, docs, or X/Twitter",
+          "Shape product framing and launch copy, offering concise, warmer, sharper, playful, or polished variants",
+          "Post approved X/Twitter copy for @OpenCvn via the xurl CLI once Val explicitly approves it in Charm's thread"
         ],
         "guardrails": [
-          "Run the Coven `sync-openclaw-skills` coverage check before claiming 100% migration",
-          "Do not overwrite richer Coven-native skills when a represented skill already exists",
-          "Keep secret-bearing examples sanitized before publishing skills"
+          "Do not impersonate Val without permission and do not send anything externally unless explicitly asked",
+          "Do not manufacture certainty or social proof, and keep private things private",
+          "Avoid corporate slop, fake sweetness, and over-polishing until the humanity disappears; flag cringe or vagueness honestly"
+        ]
+      }
+    },
+    {
+      "name": "coven-kitty",
+      "displayName": "Kitty \u2014 General Task Familiar of the Coven",
+      "version": "0.1.0",
+      "description": "Kitty's workhorse doctrine for general tasks, triage, lightweight planning, drafting, and synthesis \u2014 keeping momentum and routing to specialists when a better lane exists.",
+      "category": "Coven",
+      "keywords": [
+        "general-task",
+        "triage",
+        "planning",
+        "synthesis",
+        "routing",
+        "workhorse"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/coven-kitty"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
+      ],
+      "skill": {
+        "description": "Triage the task, make the smallest meaningful next step, and route to the right specialist familiar when the work belongs to another lane.",
+        "useCases": [
+          "Triage an ambiguous OpenMeow toss and turn a vague 'can you handle this?' into concrete next actions",
+          "Do lightweight research and synthesis, rough drafts, checklists, and practical summaries",
+          "Route work to Cody (code), Sage (research), Echo (memory), Charm (comms), Astra (strategy), or Nova (orchestration) when a better lane exists"
+        ],
+        "guardrails": [
+          "Do not act externally without explicit approval and keep private information private",
+          "Do not claim specialist certainty outside Kitty's lane; hand off instead of pretending to be a specialist",
+          "Ask one concise question when blocked rather than stalling with vague 'happy to help' filler"
+        ]
+      }
+    },
+    {
+      "name": "discrawl",
+      "displayName": "Discrawl",
+      "version": "0.1.0",
+      "description": "Query a local Discord archive \u2014 search, freshness sync, DMs, channel slices, and read-only SQL counts \u2014 via the discrawl CLI before hitting live Discord APIs.",
+      "category": "Social",
+      "keywords": [
+        "discord",
+        "archive",
+        "search",
+        "sync",
+        "sql",
+        "cli"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/discrawl"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Check archive freshness with status/doctor, run bounded search and channel slices, and use read-only SQL for exact counts before ever mutating the DB.",
+        "useCases": [
+          "Search the local Discord archive with bounded slices like discrawl search --limit 20 or messages --channel '#maintainers' --days 7",
+          "Check sync freshness with discrawl status --json and refresh only when stale via discrawl sync --source wiretap",
+          "Run read-only SQL such as select count(*) from messages for exact counts and rankings across the archive"
+        ],
+        "guardrails": [
+          "Never use --unsafe --confirm unless the user explicitly requests a reviewed DB mutation",
+          "Wiretap reads local Discord Desktop artifacts only \u2014 do not extract user tokens, call Discord as the user, or write to Discord storage",
+          "Git-share snapshots must not include secrets or @me DM rows; report date spans, channel names, counts, and known gaps"
+        ]
+      }
+    },
+    {
+      "name": "higgsfield-generate",
+      "displayName": "Higgsfield Generate",
+      "version": "0.1.0",
+      "description": "Generate images and videos via Higgsfield AI across 30+ models plus Marketing Studio branded ads, wrapping the higgsfield CLI for text/image/video-to-media jobs.",
+      "category": "Media & Creative",
+      "keywords": [
+        "image-generation",
+        "video-generation",
+        "higgsfield",
+        "marketing-studio",
+        "ai-media",
+        "text-to-image"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/higgsfield-generate"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Pick a sensible default model, pass media inputs straight to flags, and submit with --wait so the CLI blocks and prints the result URL in one shot.",
+        "useCases": [
+          "Generate a still image with GPT Image 2 or a multi-shot video with Seedance 2.0 from a text prompt",
+          "Do image-to-image or image-to-video work by passing a local file or upload ID to --image, --start-image, or --end-image",
+          "Produce a branded ad video in Marketing Studio by fetching a product from a URL and pairing it with a preset or custom avatar"
+        ],
+        "guardrails": [
+          "Generation calls a paid external API and can be costly; submit without pre-estimating cost only unless the user asks otherwise",
+          "Requires the higgsfield CLI installed and an authenticated session; on Session expired have the user run higgsfield auth login",
+          "Do not use this skill for Soul Character training, mode-specific product photoshoots, or text-only/chat/TTS tasks \u2014 route to the dedicated skill"
+        ]
+      }
+    },
+    {
+      "name": "maintainer-bar",
+      "displayName": "MaintainerBar \u2014 Maintainer Menu Bar Skill",
+      "version": "0.1.0",
+      "description": "Operate the MaintainerBar SwiftUI menu bar app and its ghcrawl backend for GitHub issue clustering, semantic search, repo pulse, and data-pipeline coordination.",
+      "category": "Developer Tools",
+      "keywords": [
+        "github",
+        "maintainer",
+        "ghcrawl",
+        "menu-bar",
+        "swiftui",
+        "macos"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/maintainer-bar"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Build and run the SwiftUI app, then drive ghcrawl through the ghcrawl-op wrapper in --json mode to refresh, cluster, and semantically search repo issues.",
+        "useCases": [
+          "Refresh a repo's issue clusters and browse them with ghcrawl-op clusters --min-size 2 --limit 30 --json",
+          "Run semantic search over issues like ghcrawl-op search --query 'download stalls' --json and inspect cluster or thread detail",
+          "Build and run the MaintainerBar menu bar app with swift build and swift run MaintainerBar on the macOS node"
+        ],
+        "guardrails": [
+          "Secrets are never stored on disk \u2014 GitHub token comes from gh auth token and the OpenAI key from op read via the ghcrawl-op wrapper",
+          "All build, run, and ghcrawl commands must execute on the macOS node (MB Black), not a remote host",
+          "ghcrawl uses OpenAI embeddings for search, which incurs external API usage; keep calls in --json mode for machine-readable output"
+        ]
+      }
+    },
+    {
+      "name": "ocr",
+      "displayName": "OCR",
+      "version": "0.1.0",
+      "description": "Extract text from screenshots, images, scans, and PDFs into text, JSON, or Markdown using a bundled ocr.py helper with a repeatable, uncertainty-aware workflow.",
+      "category": "Productivity",
+      "keywords": [
+        "ocr",
+        "text-extraction",
+        "pdf",
+        "screenshots",
+        "transcription",
+        "vision"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/ocr"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Run scripts/ocr.py against a local image or PDF, choosing text/json/markdown output and --force-ocr only when a PDF is a scan, then inspect results before relying on them.",
+        "useCases": [
+          "Transcribe a screenshot or receipt to plain text with ocr.py --format text, adding --languages for multilingual Vision OCR",
+          "Get structured per-line confidence and bounding boxes with --format json to flag low-confidence lines",
+          "OCR a scanned PDF to Markdown with --force-ocr --max-pages 5 when embedded pdftotext extraction is wrong"
+        ],
+        "guardrails": [
+          "OCR can confuse punctuation, columns, totals, handwriting, and small text; say 'OCR reads\u2026' rather than presenting output as ground truth",
+          "For sensitive documents, summarize only what the user requested and avoid exposing unnecessary personal data",
+          "Flag financial, legal, or medical text as needing human verification before any decision is made"
+        ]
+      }
+    },
+    {
+      "name": "opencoven-role-creation-process",
+      "displayName": "OpenCoven Role Creation Process",
+      "version": "0.1.0",
+      "description": "Create, validate, and activate ROLE.md specs for familiars with low-lift agentic guidance, bundling identity, skills, tools, workflows, and permission declarations.",
+      "category": "Coven",
+      "keywords": [
+        "roles",
+        "familiars",
+        "opencoven",
+        "role-authoring",
+        "workflows",
+        "validation"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/opencoven-role-creation-process"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Read the familiar's SOUL.md and existing roles, decide whether a Role is warranted, draft it from the template with matching workflows, then validate and activate deliberately.",
+        "useCases": [
+          "Draft a domain-specific ROLE.md from templates/ROLE.md with matching workflow files under workflows/<workflow-id>.md",
+          "Place a Role at the canonical source of truth and symlink it into the harness-visible familiar workspace",
+          "Validate a Role with scripts/validate-roles.mjs, confirming frontmatter, listed workflows, symlinks, and SOUL.md relationship text"
+        ],
+        "guardrails": [
+          "SOUL.md wins over every Role; do not duplicate core identity or personality/vibe rules into a Role",
+          "Role permission declarations do not enforce themselves \u2014 the authority layer wins, so set activation deliberately",
+          "High-authority and narrow task Roles should start inactive; avoid broad tool access granted just in case"
+        ]
+      }
+    },
+    {
+      "name": "prompt-vault",
+      "displayName": "Prompt Vault",
+      "version": "0.1.0",
+      "description": "Save, search, tag, and manage reusable AI prompts via the pv CLI \u2014 a local SQLite-backed library with version history, tag filtering, and JSON export/import.",
+      "category": "AI & ML",
+      "keywords": [
+        "prompts",
+        "vault",
+        "sqlite",
+        "cli",
+        "tags",
+        "library"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/prompt-vault"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Use the pv CLI to add prompts with comma-separated tags, search by substring, list or filter by tag, and export the library to JSON for backup.",
+        "useCases": [
+          "Save a prompt the user liked with pv add \"<text>\" --tags refactor,code-review and return its ID",
+          "Find a prompt for reuse with pv search \"X\" and present the best match for the current task",
+          "List prompts newest-first or filter by tag, and export the whole library with pv export > prompts.json"
+        ],
+        "guardrails": [
+          "Requires the pv CLI installed globally; data lives locally at ~/.prompt-vault.db with no sync \u2014 use pv export to back up",
+          "Search is basic substring (LIKE %query%) matching, so broaden or narrow keywords when a match is missed",
+          "Escape inner quotes or use single quotes around prompt text so the CLI arg parses correctly"
+        ]
+      }
+    },
+    {
+      "name": "security-agent",
+      "displayName": "Security Agent",
+      "version": "0.1.0",
+      "description": "Assess, harden, and monitor an OpenClaw deployment across 7 domains \u2014 gateway, channel/sender policy, tool/exec policy, credentials, prompt-injection defense, host OS, and continuous audit.",
+      "category": "Security",
+      "keywords": [
+        "security",
+        "audit",
+        "hardening",
+        "monitoring",
+        "credentials",
+        "threat-model"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/security-agent"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Detect the user's intent, run the matching mode across the 7 security domains, and remediate only with explicit approval and rollback instructions.",
+        "useCases": [
+          "Run a full audit across all 7 domains and produce a posture report with critical, warning, and recommendation sections",
+          "Scan config, env, and shell history for plaintext secrets and flag credentials not using op:// references",
+          "Set up monitoring cron jobs for a weekly deep audit and daily version check, or run guided incident-response lockdown"
+        ],
+        "guardrails": [
+          "Require explicit approval before any state-changing action such as config patches, cron creation, or secret rotation",
+          "Never display tokens, API keys, passwords, or gateway URLs \u2014 use existence checks, wc -c, or redaction only",
+          "Stay in security scope and redirect UI, feature, general-assistant, or PR-review requests to the appropriate agent"
+        ]
+      }
+    },
+    {
+      "name": "tinyfish-agent-run",
+      "displayName": "TinyFish Agent Run",
+      "version": "0.1.0",
+      "description": "Run a TinyFish automation agent against a URL and stream live STARTED/PROGRESS/COMPLETE events as one-line JSON so a caller can surface each step as it happens.",
+      "category": "Browser & Web",
+      "keywords": [
+        "tinyfish",
+        "automation",
+        "browser",
+        "streaming",
+        "sse",
+        "agent"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/tinyfish-agent-run"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Verify TINYFISH_API_KEY is set, run scripts/agent-run.sh <url> <goal>, and parse the streamed JSON events for live progress and the final result payload.",
+        "useCases": [
+          "Execute an autonomous browsing goal like extracting the first product names and prices from a shop URL and return JSON",
+          "Render each PROGRESS.purpose as a live status line and surface navigation targets to an embedded browser view",
+          "Parse the COMPLETE event's result field for the final structured payload once the run finishes"
+        ],
+        "guardrails": [
+          "Requires the TINYFISH_API_KEY environment variable; run the pre-flight check and stop to ask the user if it is not set",
+          "Calls the external TinyFish agent API over the network, so goals run against live sites \u2014 scope them tightly",
+          "Do not fall back to other tools when the key is missing \u2014 the task requires TinyFish"
+        ]
+      }
+    },
+    {
+      "name": "tinyfish-web-agent",
+      "displayName": "TinyFish Web Agent",
+      "version": "0.1.0",
+      "description": "Use the TinyFish web agent to extract or scrape websites, pull structured data, and automate browser actions with natural language, including bot-protected and geo-restricted sites.",
+      "category": "Browser & Web",
+      "keywords": [
+        "tinyfish",
+        "scraping",
+        "extraction",
+        "browser",
+        "stealth",
+        "automation"
+      ],
+      "capabilities": [
+        "read_files",
+        "shell",
+        "network"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven/tree/main/skills/tinyfish-web-agent"
+      ],
+      "trust": "official-local",
+      "skill": {
+        "description": "Verify TINYFISH_API_KEY, then POST a URL and an explicit JSON-shaped goal to the run-sse endpoint, adding stealth or proxy config for protected or geo-restricted sites.",
+        "useCases": [
+          "Extract product info from a page as a well-specified JSON object or array via the run-sse endpoint",
+          "Scrape a bot-protected site by adding browser_profile: stealth to the request body",
+          "Reach a geo-restricted site by routing through a country with a proxy_config block"
+        ],
+        "guardrails": [
+          "Requires the TINYFISH_API_KEY environment variable; run the pre-flight check and stop to ask the user if it is not set \u2014 do not fall back to other tools",
+          "Calls the external TinyFish API over the network against live sites; make separate parallel calls for independent sources rather than one combined prompt",
+          "Always specify the exact JSON structure you want returned so extraction is reliable and machine-readable"
         ]
       }
     },
@@ -1706,7 +5005,7 @@
       "name": "coven-canvas",
       "displayName": "Coven Canvas",
       "version": "0.1.0",
-      "description": "Plan visually on the Coven canvas — triage incoming work and sketch ideas before building.",
+      "description": "Plan visually on the Coven canvas \u2014 triage incoming work and sketch ideas before building.",
       "category": "Coven",
       "keywords": [
         "coven",
@@ -1839,7 +5138,7 @@
         "slack_bot_token": {
           "type": "string",
           "title": "Slack Bot Token",
-          "description": "Bot user OAuth token (xoxb-…) for the Slack MCP server.",
+          "description": "Bot user OAuth token (xoxb-\u2026) for the Slack MCP server.",
           "required": true,
           "sensitive": true,
           "env": "SLACK_BOT_TOKEN"
@@ -2449,6 +5748,7 @@
           "title": "Database Path",
           "description": "Filesystem path to the SQLite .db file.",
           "required": true,
+          "default": "~/.coven/data.db",
           "sensitive": false,
           "env": "SQLITE_DB_PATH"
         }

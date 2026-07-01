@@ -842,14 +842,7 @@
       ]
     }
   ],
-  "openclaw-skills": [
-    {
-      "familiar": "nova",
-      "roles": [
-        "operator",
-        "maintainer"
-      ]
-    },
+  "coven-cody": [
     {
       "familiar": "cody",
       "roles": [
@@ -857,39 +850,49 @@
         "debugger",
         "code-reviewer"
       ]
-    },
-    {
-      "familiar": "kitty",
-      "roles": [
-        "general-helper"
-      ]
-    },
-    {
-      "familiar": "sage",
-      "roles": [
-        "researcher",
-        "librarian"
-      ]
-    },
+    }
+  ],
+  "coven-echo": [
     {
       "familiar": "echo",
       "roles": [
         "archivist",
         "retrospector"
       ]
-    },
+    }
+  ],
+  "coven-sage": [
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher",
+        "librarian"
+      ]
+    }
+  ],
+  "coven-astra": [
     {
       "familiar": "astra",
       "roles": [
         "strategic-navigator",
         "coordination-layer"
       ]
-    },
+    }
+  ],
+  "coven-charm": [
     {
       "familiar": "charm",
       "roles": [
         "devrel-liaison",
         "social-voice"
+      ]
+    }
+  ],
+  "coven-kitty": [
+    {
+      "familiar": "kitty",
+      "roles": [
+        "general-helper"
       ]
     }
   ],

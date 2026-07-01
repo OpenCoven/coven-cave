@@ -1,0 +1,24 @@
+{
+  "name": "disk-space-optimizer",
+  "version": "0.1.0",
+  "description": "Free disk space by diagnosing usage hotspots and removing build artifacts, caches, and stale-repo dependencies while preserving source code, .git history, and active projects.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Disk Space Optimization",
+    "shortDescription": "Free disk space by diagnosing usage hotspots and removing build artifacts, caches, and stale-repo dependencies while preserving source code, .git history, and active projects.",
+    "longDescription": "Diagnose disk hotspots, check per-repo activity, then remove only safe regenerable artifacts and report the space freed.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "disk",
+      "cleanup",
+      "cache",
+      "build-artifacts",
+      "storage"
+    ],
+    "defaultPrompt": "Help me use Disk Space Optimization safely."
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "tinyfish-fetch",
+  "version": "0.1.0",
+  "description": "Fetch one or more URLs via the TinyFish Fetch API and get clean markdown, HTML, or screenshots back, with JS rendering and optional geo-targeted proxying.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "fetch",
+    "scraping",
+    "markdown",
+    "screenshot",
+    "proxy"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/tinyfish-fetch",
+  "x-coven": {
+    "displayName": "TinyFish Fetch",
+    "category": "Browser & Web",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/tinyfish-fetch"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

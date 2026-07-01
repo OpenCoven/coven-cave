@@ -1,0 +1,41 @@
+{
+  "name": "project-manager",
+  "version": "0.1.0",
+  "description": "Manage project-scoped knowledge bases of notes, decisions, and bookmarks under projects/, with context switching and cross-project search.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "projects",
+    "notes",
+    "bookmarks",
+    "decisions",
+    "knowledge-base"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/project-manager",
+  "x-coven": {
+    "displayName": "Project Manager",
+    "category": "Project Management",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/project-manager"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

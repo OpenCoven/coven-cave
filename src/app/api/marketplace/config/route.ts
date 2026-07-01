@@ -47,6 +47,7 @@ export async function GET(req: Request) {
       title: f.title,
       description: f.description ?? null,
       sensitive: f.sensitive,
+      default: f.default ?? null, // suggested pre-fill; never present for sensitive fields
       validatable: hasValidator(f.env),
       satisfied,
       source,

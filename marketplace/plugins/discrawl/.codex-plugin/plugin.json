@@ -1,0 +1,25 @@
+{
+  "name": "discrawl",
+  "version": "0.1.0",
+  "description": "Query a local Discord archive \u2014 search, freshness sync, DMs, channel slices, and read-only SQL counts \u2014 via the discrawl CLI before hitting live Discord APIs.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Discrawl",
+    "shortDescription": "Query a local Discord archive \u2014 search, freshness sync, DMs, channel slices, and read-only SQL counts \u2014 via the discrawl CLI before hitting live Discord APIs.",
+    "longDescription": "Check archive freshness with status/doctor, run bounded search and channel slices, and use read-only SQL for exact counts before ever mutating the DB.",
+    "developerName": "OpenCoven",
+    "category": "Social",
+    "capabilities": [
+      "discord",
+      "archive",
+      "search",
+      "sync",
+      "sql",
+      "cli"
+    ],
+    "defaultPrompt": "Help me use Discrawl safely."
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "name": "ocr",
+  "version": "0.1.0",
+  "description": "Extract text from screenshots, images, scans, and PDFs into text, JSON, or Markdown using a bundled ocr.py helper with a repeatable, uncertainty-aware workflow.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "ocr",
+    "text-extraction",
+    "pdf",
+    "screenshots",
+    "transcription",
+    "vision"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/ocr",
+  "x-coven": {
+    "displayName": "OCR",
+    "category": "Productivity",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/ocr"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

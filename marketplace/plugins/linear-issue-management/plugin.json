@@ -1,0 +1,40 @@
+{
+  "name": "linear-issue-management",
+  "version": "0.1.0",
+  "description": "File, triage, edit, and audit Linear issues through the GraphQL API with team/project/label discovery, duplicate search, mutually-exclusive label handling, and secret-safe auth.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "linear",
+    "graphql",
+    "issues",
+    "triage",
+    "labels"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/linear-issue-management",
+  "x-coven": {
+    "displayName": "Linear Issue Management",
+    "category": "Project Management",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/linear-issue-management"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

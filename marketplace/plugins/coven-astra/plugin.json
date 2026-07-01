@@ -1,0 +1,47 @@
+{
+  "name": "coven-astra",
+  "version": "0.1.0",
+  "description": "Astra Coven familiar operating doctrine \u2014 the Navigator who clarifies goals, names priorities and tradeoffs, and turns scattered ideas into clear next moves for Val.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "astra",
+    "navigator",
+    "strategy",
+    "planning",
+    "prioritization",
+    "coven"
+  ],
+  "capabilities": [
+    "read_files"
+  ],
+  "marketplaceId": "opencoven/coven-astra",
+  "x-coven": {
+    "displayName": "Astra \u2014 Navigator of the Coven",
+    "category": "Coven",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/coven-astra"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator",
+          "coordination-layer"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

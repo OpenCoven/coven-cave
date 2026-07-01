@@ -1,0 +1,24 @@
+{
+  "name": "openclaw-trust",
+  "version": "0.1.0",
+  "description": "Apply OpenClaw's MITRE ATLAS-mapped threat model to evaluate prompt injection, malicious skills, token theft, tool over-permission, and safe rollout of risky automations.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OpenClaw Trust",
+    "shortDescription": "Apply OpenClaw's MITRE ATLAS-mapped threat model to evaluate prompt injection, malicious skills, token theft, tool over-permission, and safe rollout of risky automations.",
+    "longDescription": "Prioritize the highest-risk classes first, translate the trust model into concrete controls, and gate risky automations behind approvals before rollout.",
+    "developerName": "OpenCoven",
+    "category": "Security",
+    "capabilities": [
+      "threat-model",
+      "security",
+      "prompt-injection",
+      "trust",
+      "mitre-atlas"
+    ],
+    "defaultPrompt": "Help me use OpenClaw Trust safely."
+  }
+}

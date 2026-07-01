@@ -1,0 +1,39 @@
+{
+  "name": "codex-session-manager",
+  "version": "0.1.0",
+  "description": "Supervise, inspect, resume, unblock, verify, redirect, and hand off Codex/coding-agent sessions as a session steward using sessions_list, sessions_history, and sessions_send.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "codex",
+    "session",
+    "orchestration",
+    "handoff",
+    "verification"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/codex-session-manager",
+  "x-coven": {
+    "displayName": "Codex Session Manager",
+    "category": "Agents & Harnesses",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/codex-session-manager"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

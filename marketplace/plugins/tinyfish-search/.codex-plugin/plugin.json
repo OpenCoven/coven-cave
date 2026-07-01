@@ -1,0 +1,25 @@
+{
+  "name": "tinyfish-search",
+  "version": "0.1.0",
+  "description": "Run web searches via the TinyFish Search API and get structured JSON results (title, snippet, site name, URL) with optional geo and language targeting.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "TinyFish Search",
+    "shortDescription": "Run web searches via the TinyFish Search API and get structured JSON results (title, snippet, site name, URL) with optional geo and language targeting.",
+    "longDescription": "Call the TinyFish Search API (or scripts/search.sh) to fetch ranked, structured web results ready for LLM consumption.",
+    "developerName": "OpenCoven",
+    "category": "Browser & Web",
+    "capabilities": [
+      "search",
+      "tinyfish",
+      "web",
+      "json",
+      "geo",
+      "language"
+    ],
+    "defaultPrompt": "Help me use TinyFish Search safely."
+  }
+}

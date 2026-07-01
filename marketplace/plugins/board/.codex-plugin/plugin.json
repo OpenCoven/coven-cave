@@ -1,0 +1,24 @@
+{
+  "name": "board",
+  "version": "0.1.0",
+  "description": "Read and write the workspace BOARD.md shared task board via the bin/board Python CLI, which preserves the markdown schema and appends to the activity log automatically.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "BOARD \u2014 Shared Task Board",
+    "shortDescription": "Read and write the workspace BOARD.md shared task board via the bin/board Python CLI, which preserves the markdown schema and appends to the activity log automatically.",
+    "longDescription": "Use the bin/board CLI to add, claim, and complete tasks on BOARD.md rather than editing the file by hand.",
+    "developerName": "OpenCoven",
+    "category": "Project Management",
+    "capabilities": [
+      "board",
+      "tasks",
+      "workspace",
+      "multi-agent",
+      "activity-log"
+    ],
+    "defaultPrompt": "Help me use BOARD \u2014 Shared Task Board safely."
+  }
+}

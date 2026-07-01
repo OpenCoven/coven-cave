@@ -1,0 +1,40 @@
+{
+  "name": "skill-scanner",
+  "version": "0.1.0",
+  "description": "Pre-submit scan, audit, validate, and package AgentSkills using the local codeql-sdk/clawhub-audit scanner and OpenClaw skill validation, emitting JSON/SARIF reports.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "security",
+    "codeql",
+    "audit",
+    "sarif",
+    "validation"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/skill-scanner",
+  "x-coven": {
+    "displayName": "Skill Scanner",
+    "category": "Security",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/skill-scanner"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

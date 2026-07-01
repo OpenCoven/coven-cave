@@ -1,0 +1,41 @@
+{
+  "name": "tinyfish-search",
+  "version": "0.1.0",
+  "description": "Run web searches via the TinyFish Search API and get structured JSON results (title, snippet, site name, URL) with optional geo and language targeting.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "search",
+    "tinyfish",
+    "web",
+    "json",
+    "geo",
+    "language"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/tinyfish-search",
+  "x-coven": {
+    "displayName": "TinyFish Search",
+    "category": "Browser & Web",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/tinyfish-search"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "pr-agent",
+  "version": "0.1.0",
+  "description": "Orchestrates the OpenClaw three-phase maintainer PR workflow (review-pr, prepare-pr, merge-pr) via wrapper scripts, enforcing quality bars, artifacts, and checkpoint questions.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "github",
+    "pr",
+    "orchestrator",
+    "maintainer",
+    "workflow"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/pr-agent",
+  "x-coven": {
+    "displayName": "PR Agent \u2014 Maintainer Workflow Orchestrator",
+    "category": "Agents & Harnesses",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/pr-agent"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

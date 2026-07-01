@@ -1,0 +1,49 @@
+{
+  "name": "coven-kitty",
+  "version": "0.1.0",
+  "description": "Kitty's workhorse doctrine for general tasks, triage, lightweight planning, drafting, and synthesis \u2014 keeping momentum and routing to specialists when a better lane exists.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "general-task",
+    "triage",
+    "planning",
+    "synthesis",
+    "routing",
+    "workhorse"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/coven-kitty",
+  "x-coven": {
+    "displayName": "Kitty \u2014 General Task Familiar of the Coven",
+    "category": "Coven",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/coven-kitty"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "kitty",
+        "roles": [
+          "general-helper"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

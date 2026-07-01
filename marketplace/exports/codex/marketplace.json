@@ -545,16 +545,580 @@
       "category": "Coven"
     },
     {
-      "name": "openclaw-skills",
+      "name": "1password",
       "source": {
         "source": "local",
-        "path": "../../plugins/openclaw-skills"
+        "path": "../../plugins/1password"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Security"
+    },
+    {
+      "name": "codeflow-maintainer",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/codeflow-maintainer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Agents & Harnesses"
+    },
+    {
+      "name": "coven-cody",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-cody"
       },
       "policy": {
         "installation": "AVAILABLE",
         "authentication": "ON_INSTALL"
       },
       "category": "Coven"
+    },
+    {
+      "name": "coven-parallel-work",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-parallel-work"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "disk-space-optimizer",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/disk-space-optimizer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "linear-issue-management",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/linear-issue-management"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Project Management"
+    },
+    {
+      "name": "memory-timeline-manager",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/memory-timeline-manager"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Knowledge & Docs"
+    },
+    {
+      "name": "openclaw-dev",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/openclaw-dev"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Agents & Harnesses"
+    },
+    {
+      "name": "pr-agent",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/pr-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Agents & Harnesses"
+    },
+    {
+      "name": "research-ingestion",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/research-ingestion"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Knowledge & Docs"
+    },
+    {
+      "name": "skill-scanner",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/skill-scanner"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Security"
+    },
+    {
+      "name": "tinyfish-browser",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/tinyfish-browser"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Browser & Web"
+    },
+    {
+      "name": "ask-curl",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/ask-curl"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "codex-session-manager",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/codex-session-manager"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Agents & Harnesses"
+    },
+    {
+      "name": "coven-echo",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-echo"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "coven-sage",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-sage"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "epub-to-pdf",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/epub-to-pdf"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "lit-ui-designer",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/lit-ui-designer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design"
+    },
+    {
+      "name": "ml-engineer",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/ml-engineer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "AI & ML"
+    },
+    {
+      "name": "openclaw-trust",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/openclaw-trust"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Security"
+    },
+    {
+      "name": "project-manager",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/project-manager"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Project Management"
+    },
+    {
+      "name": "ritual-dapp-frontend",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/ritual-dapp-frontend"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "tauri-apple-release",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/tauri-apple-release"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "tinyfish-fetch",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/tinyfish-fetch"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Browser & Web"
+    },
+    {
+      "name": "board",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/board"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Project Management"
+    },
+    {
+      "name": "coven-astra",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-astra"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "coven-identity-canon",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-identity-canon"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "daily-dev-agentic",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/daily-dev-agentic"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Knowledge & Docs"
+    },
+    {
+      "name": "heygen-skills",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/heygen-skills"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Media & Creative"
+    },
+    {
+      "name": "lobster",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/lobster"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Automation"
+    },
+    {
+      "name": "nodriver",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/nodriver"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Browser & Web"
+    },
+    {
+      "name": "opencoven-design",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/opencoven-design"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design"
+    },
+    {
+      "name": "prompt-engineer",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/prompt-engineer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "AI & ML"
+    },
+    {
+      "name": "rollcall",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/rollcall"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "threejs-animation",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/threejs-animation"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Media & Creative"
+    },
+    {
+      "name": "tinyfish-search",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/tinyfish-search"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Browser & Web"
+    },
+    {
+      "name": "cleanup-unused-files",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/cleanup-unused-files"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "coven-charm",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-charm"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "coven-kitty",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/coven-kitty"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "discrawl",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/discrawl"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Social"
+    },
+    {
+      "name": "higgsfield-generate",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/higgsfield-generate"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Media & Creative"
+    },
+    {
+      "name": "maintainer-bar",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/maintainer-bar"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "ocr",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/ocr"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "opencoven-role-creation-process",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/opencoven-role-creation-process"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Coven"
+    },
+    {
+      "name": "prompt-vault",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/prompt-vault"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "AI & ML"
+    },
+    {
+      "name": "security-agent",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/security-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Security"
+    },
+    {
+      "name": "tinyfish-agent-run",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/tinyfish-agent-run"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Browser & Web"
+    },
+    {
+      "name": "tinyfish-web-agent",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/tinyfish-web-agent"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Browser & Web"
     },
     {
       "name": "coven-flows",

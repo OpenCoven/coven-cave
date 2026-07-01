@@ -1,0 +1,25 @@
+{
+  "name": "security-agent",
+  "version": "0.1.0",
+  "description": "Assess, harden, and monitor an OpenClaw deployment across 7 domains \u2014 gateway, channel/sender policy, tool/exec policy, credentials, prompt-injection defense, host OS, and continuous audit.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Security Agent",
+    "shortDescription": "Assess, harden, and monitor an OpenClaw deployment across 7 domains \u2014 gateway, channel/sender policy, tool/exec policy, credentials, prompt-injection defense, host OS, and continuous audit.",
+    "longDescription": "Detect the user's intent, run the matching mode across the 7 security domains, and remediate only with explicit approval and rollback instructions.",
+    "developerName": "OpenCoven",
+    "category": "Security",
+    "capabilities": [
+      "security",
+      "audit",
+      "hardening",
+      "monitoring",
+      "credentials",
+      "threat-model"
+    ],
+    "defaultPrompt": "Help me use Security Agent safely."
+  }
+}

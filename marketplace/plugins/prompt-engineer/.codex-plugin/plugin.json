@@ -1,0 +1,25 @@
+{
+  "name": "prompt-engineer",
+  "version": "0.1.0",
+  "description": "Design, optimize, test, and evaluate LLM prompts for effectiveness, consistency, and cost efficiency across zero-shot, few-shot, chain-of-thought, ReAct, and other patterns.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Prompt Engineer",
+    "shortDescription": "Design, optimize, test, and evaluate LLM prompts for effectiveness, consistency, and cost efficiency across zero-shot, few-shot, chain-of-thought, ReAct, and other patterns.",
+    "longDescription": "Follow the requirements-analysis to production workflow to select a prompt pattern, reduce tokens, and evaluate variants before shipping.",
+    "developerName": "OpenCoven",
+    "category": "AI & ML",
+    "capabilities": [
+      "prompt",
+      "llm",
+      "few-shot",
+      "chain-of-thought",
+      "evaluation",
+      "optimization"
+    ],
+    "defaultPrompt": "Help me use Prompt Engineer safely."
+  }
+}

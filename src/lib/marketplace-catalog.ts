@@ -24,6 +24,8 @@ export type PluginUserConfigField = {
   title?: string;
   description?: string;
   env?: string;
+  /** Suggested value the setup modal pre-fills. Never used for sensitive fields. */
+  default?: string;
 };
 
 export type PluginManifest = {
@@ -44,6 +46,8 @@ export type RequiredConfigField = {
   title: string;
   description?: string;
   sensitive: boolean;
+  /** Suggested value the setup modal pre-fills. Omitted for sensitive fields. */
+  default?: string;
 };
 
 /** Required userConfig fields that declare a target env var (collectable). */
@@ -51,13 +55,21 @@ export function requiredConfigFromManifest(manifest: PluginManifest): RequiredCo
   const uc = manifest.userConfig ?? {};
   return Object.entries(uc)
     .filter(([, f]) => f?.required === true && typeof f?.env === "string" && f.env.length > 0)
-    .map(([key, f]) => ({
-      key,
-      env: f.env as string,
-      title: f.title ?? key,
-      description: f.description,
-      sensitive: f.sensitive === true,
-    }));
+    .map(([key, f]) => {
+      const sensitive = f.sensitive === true;
+      const field: RequiredConfigField = {
+        key,
+        env: f.env as string,
+        title: f.title ?? key,
+        description: f.description,
+        sensitive,
+      };
+      // Never seed a secret field with a pre-filled value.
+      if (!sensitive && typeof f.default === "string" && f.default.length > 0) {
+        field.default = f.default;
+      }
+      return field;
+    });
 }
 
 /** The first remote (url-based) MCP server URL declared by the manifest, if any. */

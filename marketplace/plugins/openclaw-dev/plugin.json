@@ -1,0 +1,40 @@
+{
+  "name": "openclaw-dev",
+  "version": "0.1.0",
+  "description": "Docs-aware development assistant for the OpenClaw ecosystem: PR workflows, issue triage, docs sync, release prep, and architecture review grounded in live OpenClaw documentation.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "openclaw",
+    "dev",
+    "pr",
+    "docs",
+    "architecture"
+  ],
+  "capabilities": [
+    "read_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/openclaw-dev",
+  "x-coven": {
+    "displayName": "OpenClaw Dev Agent",
+    "category": "Agents & Harnesses",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/openclaw-dev"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

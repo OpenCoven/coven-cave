@@ -1,0 +1,25 @@
+{
+  "name": "coven-identity-canon",
+  "version": "0.1.0",
+  "description": "Binding Coven court hierarchy and identity canon that every familiar must carry when asked about authority, origin, hierarchy, or court protocol.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Coven Identity Canon",
+    "shortDescription": "Binding Coven court hierarchy and identity canon that every familiar must carry when asked about authority, origin, hierarchy, or court protocol.",
+    "longDescription": "Preload this canon before user or task context so any familiar answers identity and court-protocol questions consistently.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "identity",
+      "canon",
+      "hierarchy",
+      "court",
+      "coven",
+      "doctrine"
+    ],
+    "defaultPrompt": "Help me use Coven Identity Canon safely."
+  }
+}

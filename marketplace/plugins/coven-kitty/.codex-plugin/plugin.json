@@ -1,0 +1,25 @@
+{
+  "name": "coven-kitty",
+  "version": "0.1.0",
+  "description": "Kitty's workhorse doctrine for general tasks, triage, lightweight planning, drafting, and synthesis \u2014 keeping momentum and routing to specialists when a better lane exists.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Kitty \u2014 General Task Familiar of the Coven",
+    "shortDescription": "Kitty's workhorse doctrine for general tasks, triage, lightweight planning, drafting, and synthesis \u2014 keeping momentum and routing to specialists when a better lane exists.",
+    "longDescription": "Triage the task, make the smallest meaningful next step, and route to the right specialist familiar when the work belongs to another lane.",
+    "developerName": "OpenCoven",
+    "category": "Coven",
+    "capabilities": [
+      "general-task",
+      "triage",
+      "planning",
+      "synthesis",
+      "routing",
+      "workhorse"
+    ],
+    "defaultPrompt": "Help me use Kitty \u2014 General Task Familiar of the Coven safely."
+  }
+}

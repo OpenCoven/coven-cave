@@ -1,0 +1,25 @@
+{
+  "name": "cleanup-unused-files",
+  "version": "0.1.0",
+  "description": "Aggressively reclaim disk space by removing caches, build artifacts, temp folders, and reproducible local tool state from repos and developer machines.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Cleanup Unused Files",
+    "shortDescription": "Aggressively reclaim disk space by removing caches, build artifacts, temp folders, and reproducible local tool state from repos and developer machines.",
+    "longDescription": "Audit likely large cache and build directories, then delete reproducible junk with exact paths after making blast radius explicit.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "cleanup",
+      "disk-space",
+      "cache",
+      "build-artifacts",
+      "reset",
+      "developer"
+    ],
+    "defaultPrompt": "Help me use Cleanup Unused Files safely."
+  }
+}

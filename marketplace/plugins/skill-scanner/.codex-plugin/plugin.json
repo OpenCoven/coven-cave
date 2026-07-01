@@ -1,0 +1,24 @@
+{
+  "name": "skill-scanner",
+  "version": "0.1.0",
+  "description": "Pre-submit scan, audit, validate, and package AgentSkills using the local codeql-sdk/clawhub-audit scanner and OpenClaw skill validation, emitting JSON/SARIF reports.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Skill Scanner",
+    "shortDescription": "Pre-submit scan, audit, validate, and package AgentSkills using the local codeql-sdk/clawhub-audit scanner and OpenClaw skill validation, emitting JSON/SARIF reports.",
+    "longDescription": "Run both the skill-structure gate and the CodeQL SDK security scan, then report a compact ready-to-submit status block.",
+    "developerName": "OpenCoven",
+    "category": "Security",
+    "capabilities": [
+      "security",
+      "codeql",
+      "audit",
+      "sarif",
+      "validation"
+    ],
+    "defaultPrompt": "Help me use Skill Scanner safely."
+  }
+}

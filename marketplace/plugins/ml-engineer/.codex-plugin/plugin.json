@@ -1,0 +1,24 @@
+{
+  "name": "ml-engineer",
+  "version": "0.1.0",
+  "description": "Build and operate production ML systems end to end: data validation, feature engineering, training and HPO, deployment strategies, and drift-triggered monitoring and retraining.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "ML Engineer",
+    "shortDescription": "Build and operate production ML systems end to end: data validation, feature engineering, training and HPO, deployment strategies, and drift-triggered monitoring and retraining.",
+    "longDescription": "Analyze the ML problem and targets first, then build modular versioned pipelines from data validation through serving and monitoring with drift-based retraining.",
+    "developerName": "OpenCoven",
+    "category": "AI & ML",
+    "capabilities": [
+      "mlops",
+      "training",
+      "deployment",
+      "monitoring",
+      "drift"
+    ],
+    "defaultPrompt": "Help me use ML Engineer safely."
+  }
+}

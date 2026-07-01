@@ -1,0 +1,41 @@
+{
+  "name": "ask-curl",
+  "version": "0.1.0",
+  "description": "Turn natural-language requests into well-formed cURL commands with 1Password (op://) secret injection, response parsing, request history, and chained calls.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "http",
+    "api",
+    "curl",
+    "1password",
+    "requests"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/ask-curl",
+  "x-coven": {
+    "displayName": "Ask cURL",
+    "category": "Developer Tools",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/ask-curl"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

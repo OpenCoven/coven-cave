@@ -1,0 +1,40 @@
+{
+  "name": "1password",
+  "version": "0.1.0",
+  "description": "Manage secrets via the 1Password CLI (op): read, create, and inject credentials through op:// references so other skills get least-privilege access without exposing values.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "secrets",
+    "1password",
+    "credentials",
+    "env",
+    "op-cli"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell"
+  ],
+  "marketplaceId": "opencoven/1password",
+  "x-coven": {
+    "displayName": "1Password Secret Management",
+    "category": "Security",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/1password"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

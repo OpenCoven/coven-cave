@@ -1,0 +1,25 @@
+{
+  "name": "maintainer-bar",
+  "version": "0.1.0",
+  "description": "Operate the MaintainerBar SwiftUI menu bar app and its ghcrawl backend for GitHub issue clustering, semantic search, repo pulse, and data-pipeline coordination.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "MaintainerBar \u2014 Maintainer Menu Bar Skill",
+    "shortDescription": "Operate the MaintainerBar SwiftUI menu bar app and its ghcrawl backend for GitHub issue clustering, semantic search, repo pulse, and data-pipeline coordination.",
+    "longDescription": "Build and run the SwiftUI app, then drive ghcrawl through the ghcrawl-op wrapper in --json mode to refresh, cluster, and semantically search repo issues.",
+    "developerName": "OpenCoven",
+    "category": "Developer Tools",
+    "capabilities": [
+      "github",
+      "maintainer",
+      "ghcrawl",
+      "menu-bar",
+      "swiftui",
+      "macos"
+    ],
+    "defaultPrompt": "Help me use MaintainerBar \u2014 Maintainer Menu Bar Skill safely."
+  }
+}

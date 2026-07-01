@@ -1,0 +1,42 @@
+{
+  "name": "nodriver",
+  "version": "0.1.0",
+  "description": "Write async Python browser automation scripts using nodriver (undetected CDP) for scraping, logins, form-filling, screenshots, and bypassing anti-bot systems without Selenium.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "nodriver",
+    "browser",
+    "automation",
+    "scraping",
+    "cdp",
+    "undetected"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/nodriver",
+  "x-coven": {
+    "displayName": "nodriver",
+    "category": "Browser & Web",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/nodriver"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}

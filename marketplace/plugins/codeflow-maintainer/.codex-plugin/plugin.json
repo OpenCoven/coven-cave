@@ -1,0 +1,24 @@
+{
+  "name": "codeflow-maintainer",
+  "version": "0.1.0",
+  "description": "Implements the OpenClaw maintainer PR workflow with structured modes (triage, review, prepare, merge, post-merge), each with allowed actions, focus areas, and checkpoint questions.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "CodeFlow Maintainer Skill",
+    "shortDescription": "Implements the OpenClaw maintainer PR workflow with structured modes (triage, review, prepare, merge, post-merge), each with allowed actions, focus areas, and checkpoint questions.",
+    "longDescription": "Drive a PR through triage, review, prepare, merge, and post-merge modes, answering the checkpoint questions before each transition.",
+    "developerName": "OpenCoven",
+    "category": "Agents & Harnesses",
+    "capabilities": [
+      "github",
+      "pr",
+      "workflow",
+      "maintainer",
+      "code-review"
+    ],
+    "defaultPrompt": "Help me use CodeFlow Maintainer Skill safely."
+  }
+}

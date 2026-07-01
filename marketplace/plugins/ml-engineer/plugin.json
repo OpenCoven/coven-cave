@@ -1,0 +1,41 @@
+{
+  "name": "ml-engineer",
+  "version": "0.1.0",
+  "description": "Build and operate production ML systems end to end: data validation, feature engineering, training and HPO, deployment strategies, and drift-triggered monitoring and retraining.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "mlops",
+    "training",
+    "deployment",
+    "monitoring",
+    "drift"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files",
+    "shell",
+    "network"
+  ],
+  "marketplaceId": "opencoven/ml-engineer",
+  "x-coven": {
+    "displayName": "ML Engineer",
+    "category": "AI & ML",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven/tree/main/skills/ml-engineer"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}
