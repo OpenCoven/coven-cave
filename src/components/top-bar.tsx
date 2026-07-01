@@ -183,7 +183,7 @@ export function TopBar(props: Props) {
             data-quick-chat-trigger
             onClick={onOpenQuickChat}
             aria-label="Quick chat"
-            title="Quick chat"
+            title="Quick chat (⌘J)"
           >
             <Icon name="ph:chat-circle-dots" width={CAVE_ICON_SIZE.headerAction} height={CAVE_ICON_SIZE.headerAction} />
           </button>

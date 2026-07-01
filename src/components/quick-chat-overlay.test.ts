@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./quick-chat-overlay.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const topBar = readFileSync(new URL("./top-bar.tsx", import.meta.url), "utf8");
+const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -95,5 +96,19 @@ assert.match(
   /window\.addEventListener\("resize", measure\)/,
   "the anchor position is kept in sync on resize",
 );
+
+// ── ⌘J toggles quick chat from anywhere, and it's listed in the catalog ───────
+assert.match(
+  workspace,
+  /if \(k === "j"\) \{\s*e\.preventDefault\(\);\s*setQuickChatOpen\(\(open\) => !open\);/,
+  "⌘/Ctrl+J toggles the quick-chat dropdown globally",
+);
+assert.match(
+  shortcuts,
+  /\{ keys: "⌘J", description: "Toggle quick chat" \}/,
+  "the shortcut catalog documents ⌘J (shortcuts sheet + /help)",
+);
+// Tooltips advertise the shortcut without polluting the accessible name.
+assert.match(topBar, /aria-label="Quick chat"\s*\n\s*title="Quick chat \(⌘J\)"/, "mobile trigger tooltip shows the shortcut, aria-label stays clean");
 
 console.log("quick-chat-overlay.test.ts OK");

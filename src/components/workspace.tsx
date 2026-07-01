@@ -910,6 +910,12 @@ export function Workspace() {
           setPaletteOpen(true);
           return;
         }
+        // ⌘J (Ctrl+J off-Mac) → toggle the quick-chat dropdown, from anywhere.
+        if (k === "j") {
+          e.preventDefault();
+          setQuickChatOpen((open) => !open);
+          return;
+        }
         // ⌘/ (Ctrl+/ off-Mac) → keyboard shortcuts sheet, from anywhere.
         if (e.key === "/") {
           e.preventDefault();

@@ -99,6 +99,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     id: "other",
     label: "Other",
     entries: [
+      { keys: "⌘J", description: "Toggle quick chat" },
       { keys: "⌘,", description: "Open Settings" },
       { keys: "⌘S", description: "Save (daily notes, journal)" },
       { keys: "⌘Z", description: "Undo the last delete (while the undo toast is showing)" },

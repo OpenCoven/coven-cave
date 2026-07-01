@@ -130,7 +130,7 @@ export function FamiliarMenuBar({
             data-quick-chat-trigger
             onClick={onOpenQuickChat}
             aria-label="Quick chat"
-            title="Quick chat"
+            title="Quick chat (⌘J)"
           >
             <Icon name="ph:chat-circle-dots" width={22} height={22} aria-hidden />
             <span>Chat</span>
