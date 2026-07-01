@@ -947,3 +947,12 @@ assert.match(source, /cave-edit-card/, "mutation tools render as an inline Codex
 assert.match(source, /diffStat/, "edit card derives a +/- stat");
 assert.match(source, /Review/, "edit card has a Review action");
 assert.match(globalsSrc, /\.cave-edit-card/, "edit card styling exists");
+
+// Inline "Undo" reverts the edited file to its last committed state via the
+// changes revert API, resolving the repo-relative path through a context, and
+// pings the Changes panel to refresh.
+assert.match(source, /cave-edit-card__undo/, "edit card has an Undo action");
+assert.match(source, /ToolProjectRootContext/, "edit card resolves project root via context for revert");
+assert.match(source, /"\/api\/changes"/, "Undo posts to the changes revert API");
+assert.match(source, /cave:changes-refresh/, "Undo notifies the changes panel to refresh");
+assert.match(globalsSrc, /\.cave-edit-card__undo/, "Undo button styling exists");

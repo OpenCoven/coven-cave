@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, Fragment, memo, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { createContext, forwardRef, Fragment, memo, useCallback, useContext, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import { RichText } from "@/components/rich-text";
@@ -4398,6 +4398,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         />
       </header>
       <RunActivityStrip activeTurn={activePendingTurn} lastTurn={lastSettledAssistantTurn} />
+      <ToolProjectRootContext.Provider value={session?.project_root ?? projectRoot ?? null}>
       <div ref={scrollRef} tabIndex={0} className="cave-chat-transcript relative min-h-0 flex-1 overflow-y-auto">
         <div
           className="cave-chat-thread"
@@ -4600,6 +4601,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </button>
         )}
       </div>
+      </ToolProjectRootContext.Provider>
 
       {reflectError ? (
         <div
@@ -5670,6 +5672,88 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
   );
 }
 
+// The active session's project root, provided by ChatView so the inline edit
+// card can convert an absolute target path into the repo-relative path that the
+// `/api/changes` revert endpoint requires — without prop-threading through the
+// five ToolBlock/ToolGroup render sites.
+const ToolProjectRootContext = createContext<string | null>(null);
+
+// Review + Undo actions for the Codex-style inline edit card. Review opens the
+// comux diff (unchanged behavior); Undo reverts the edited file to its last
+// committed state via `/api/changes` (which auto-snapshots the tree to a
+// checkpoint first, so the revert is itself recoverable). Undo requires a
+// two-step arm→confirm to avoid an accidental one-click revert, and is only
+// offered when the target resolves to a repo-relative path under the project
+// root.
+function EditCardActions({ targetFile }: { targetFile: string }) {
+  const projectRoot = useContext(ToolProjectRootContext);
+  const relPath =
+    projectRoot && targetFile.startsWith(projectRoot)
+      ? targetFile.slice(projectRoot.length).replace(/^\/+/, "")
+      : null;
+  const [state, setState] = useState<"idle" | "armed" | "reverting" | "reverted" | "error">("idle");
+  const [err, setErr] = useState<string | null>(null);
+
+  const review = () =>
+    window.dispatchEvent(new CustomEvent("cave:open-file-diff", { detail: { path: targetFile } }));
+
+  const doUndo = async () => {
+    if (!projectRoot || !relPath) return;
+    setState("reverting");
+    setErr(null);
+    try {
+      const res = await fetch("/api/changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectRoot, path: relPath, confirmUntracked: true }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || `revert failed (${res.status})`);
+      setState("reverted");
+      window.dispatchEvent(new CustomEvent("cave:changes-refresh"));
+    } catch (e) {
+      setErr((e as Error)?.message ?? "revert failed");
+      setState("error");
+    }
+  };
+
+  return (
+    <span className="cave-edit-card__actions">
+      {err ? <span className="cave-edit-card__error" title={err}>{err}</span> : null}
+      <button type="button" className="cave-edit-card__review focus-ring" onClick={review}>
+        Review
+      </button>
+      {relPath ? (
+        state === "reverted" ? (
+          <span className="cave-edit-card__reverted">Reverted</span>
+        ) : state === "reverting" ? (
+          <button type="button" className="cave-edit-card__undo focus-ring" disabled>
+            Undoing…
+          </button>
+        ) : state === "armed" ? (
+          <>
+            <button type="button" className="cave-edit-card__undo focus-ring" onClick={() => setState("idle")}>
+              Cancel
+            </button>
+            <button type="button" className="cave-edit-card__undo cave-edit-card__undo--confirm focus-ring" onClick={doUndo}>
+              Confirm undo
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="cave-edit-card__undo focus-ring"
+            onClick={() => setState("armed")}
+            title="Revert this file to its last committed state (a checkpoint is saved first)"
+          >
+            Undo
+          </button>
+        )
+      ) : null}
+    </span>
+  );
+}
+
 function ToolBlock({ tool }: { tool: ToolEvent }) {
   const argSummary = toolArgSummary(tool.name, tool.input);
   // CHAT-D8-02: Edit/Write/MultiEdit/NotebookEdit inputs render as a
@@ -5713,17 +5797,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             <span className="cave-edit-card__del">−{stat.deletions}</span>
           </span>
         </span>
-        <button
-          type="button"
-          className="cave-edit-card__review focus-ring"
-          onClick={() =>
-            window.dispatchEvent(
-              new CustomEvent("cave:open-file-diff", { detail: { path: targetFile } }),
-            )
-          }
-        >
-          Review
-        </button>
+        <EditCardActions targetFile={targetFile} />
       </div>
     );
   }

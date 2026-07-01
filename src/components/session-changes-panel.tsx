@@ -493,6 +493,19 @@ export function SessionChangesInner({
     return () => window.clearInterval(id);
   }, [load, running]);
 
+  // An inline "Undo" on a transcript edit card reverts a file via /api/changes
+  // and fires `cave:changes-refresh` so this panel reflects the reverted file
+  // (and the fresh checkpoint) without waiting for the poll — mirroring the
+  // load()+loadCheckpoints() refresh that revertFile does after its own revert.
+  useEffect(() => {
+    const onRefresh = () => {
+      void load();
+      void loadCheckpoints();
+    };
+    window.addEventListener("cave:changes-refresh", onRefresh);
+    return () => window.removeEventListener("cave:changes-refresh", onRefresh);
+  }, [load, loadCheckpoints]);
+
   const fetchDiff = useCallback(
     // `silent` re-fetches without flashing the "Loading diff…" state or wiping
     // the visible diff on error — used by the poll refresh so an open diff for

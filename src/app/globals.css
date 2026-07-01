@@ -10666,6 +10666,52 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   background: color-mix(in oklch, var(--text-primary) 8%, transparent);
   color: var(--text-primary);
 }
+.cave-edit-card__actions {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.cave-edit-card__undo {
+  flex: none;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border-hairline);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--text-secondary, var(--text-primary));
+  font-size: 11px;
+  cursor: pointer;
+}
+.cave-edit-card__undo:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--text-primary) 8%, transparent);
+  color: var(--text-primary);
+}
+.cave-edit-card__undo:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.cave-edit-card__undo--confirm {
+  color: var(--color-danger);
+  border-color: color-mix(in oklch, var(--color-danger) 45%, transparent);
+}
+.cave-edit-card__undo--confirm:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+}
+.cave-edit-card__reverted {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.cave-edit-card__error {
+  flex: 0 1 auto;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--color-danger);
+}
 
 /* Quick-chat reveal: an in-app popover anchored top-right under the top bar,
    opened by the top-bar chat-circle icon. The Tauri standalone window
