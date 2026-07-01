@@ -256,6 +256,15 @@
   color: var(--text-secondary);
 }
 .hc-attachment-icon { color: var(--text-muted); flex-shrink: 0; }
+/* Image attachments show a small preview thumbnail in place of the icon. */
+.hc-attachment-thumb {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+  display: block;
+}
 .hc-attachment-name {
   min-width: 0;
   overflow: hidden;

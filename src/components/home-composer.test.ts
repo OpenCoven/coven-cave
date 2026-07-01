@@ -470,3 +470,15 @@ assert.match(
   /onPaste=\{\(e\) => \{[\s\S]*?e\.clipboardData\.items[\s\S]*?item\.kind === "file"[\s\S]*?void addFiles\(pastedFiles\)/,
   "pasting files into the composer stages them as attachments",
 );
+
+// ── Image attachment thumbnails ─────────────────────────────────────────────
+assert.match(
+  source,
+  /const isImage = \(att\.mimeType \?\? att\.type\)\?\.startsWith\("image\/"\)/,
+  "image attachments are detected for a preview thumbnail",
+);
+assert.match(
+  source,
+  /isImage && att\.dataUrl \?[\s\S]*?<img src=\{att\.dataUrl\}[\s\S]*?className="hc-attachment-thumb"/,
+  "image chips render a preview thumbnail instead of the generic icon",
+);
