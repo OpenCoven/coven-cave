@@ -1,8 +1,7 @@
 // @ts-nocheck
-// Side panel toggles live in the desktop top menu bar:
-//   - the nav toggle anchors the bar's left edge
-//   - the side-panel + expand toggles its right edge
-//   - they match the row's compact icon-button controls
+// The nav toggle lives in the desktop top menu bar, anchoring the bar's left
+// edge and matching the row's compact icon-button controls. (The right
+// side-panel + expand toggles were removed with the right companion panel.)
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -33,13 +32,8 @@ assert.match(
 );
 assert.match(
   shell,
-  /const rightToggles = !isMobile && hasFamiliar/,
-  "shell builds the right side-panel toggles on desktop only, when a familiar is active",
-);
-assert.match(
-  shell,
-  /<div className="shell-top" data-tauri-drag-region="">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="">\{renderedTopBar\}<\/div>[\s\S]*?\{rightToggles\}/,
-  "the top bar row flanks the rendered top bar with the nav (left) and side-panel (right) toggles",
+  /<div className="shell-top" data-tauri-drag-region="">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="">\{renderedTopBar\}<\/div>/,
+  "the top bar row leads with the nav toggle before the rendered top bar",
 );
 assert.equal(
   shell.match(/<div className="shell-top" data-tauri-drag-region="">/g)?.length,
@@ -63,11 +57,6 @@ assert.match(
 );
 assert.match(
   shell,
-  /shell-top-toggle--right/,
-  "shell renders a top-bar right toggle for the active side panel",
-);
-assert.match(
-  shell,
   /shell-top-toggle--nav[\s\S]*?aria-label=\{navOpen \? "Collapse navigation to icons" : "Expand navigation"\}/,
   "nav toggle label reflects nav state",
 );
@@ -85,16 +74,6 @@ assert.match(
   shell,
   /const toggleNavPanel = \(\) => \{[\s\S]*?panel\.expand\(\); setNavOpen\(true\)[\s\S]*?panel\.collapse\(\); setNavOpen\(false\)/,
   "nav toggle collapses and expands the nav panel",
-);
-assert.match(
-  shell,
-  /shell-top-toggle--right[\s\S]*?aria-expanded=\{familiarOpen\}/,
-  "right toggle exposes the active side-panel state",
-);
-assert.match(
-  shell,
-  /const toggleRightPanel = \(\) => \{[\s\S]*?familiarRef\.current[\s\S]*?setFamiliarOpen/,
-  "right toggle toggles the active right panel via familiarRef",
 );
 // The old collapsed-only left edge rail and full-height corner floats are gone.
 assert.doesNotMatch(
@@ -165,12 +144,6 @@ assert.match(
   /\.shell-top-toggle--active\s*\{[\s\S]*?color:\s*var\(--accent-presence\);[\s\S]*?border-color:\s*color-mix\(in oklch, var\(--accent-presence\) 55%, var\(--border-hairline\)\);/,
   "an open panel's toggle tints accent while staying button-shaped",
 );
-assert.match(
-  css,
-  /\.shell-top-toggle--right > svg\s*\{[\s\S]*?transform:\s*scaleX\(-1\);/,
-  "the right toggle mirrors the sidebar glyph so it reads as a right-edge panel",
-);
-
 // The float is gone — no proximity-glow tracking or --shell-float-top plumbing.
 assert.doesNotMatch(
   shell,
@@ -230,22 +203,14 @@ assert.match(
   /matchesPanelShortcut\(e, panelShortcuts\.toggleLeftPanel\)[\s\S]*togglePanel\(navRef\.current\)/,
   "left panel toggles from the resolved left-panel shortcut",
 );
-assert.match(
-  shell,
-  /matchesPanelShortcut\(e, panelShortcuts\.toggleRightPanel\)[\s\S]*hasFamiliar[\s\S]*toggleFamiliarPanel\(\)/,
-  "right panel toggles from the resolved right-panel shortcut",
-);
 assert.doesNotMatch(
   shell,
   /key === "b"[\s\S]{0,120}togglePanel\(navRef\.current\)/,
   "Shift+B must not fall through to the left sidebar toggle",
 );
 assert.match(shortcuts, /keys: "⌘B"[\s\S]*Toggle the left sidebar/, "shortcut sheet documents the default left panel toggle");
-assert.match(shortcuts, /keys: "⌘⇧B"[\s\S]*Toggle the right side panel/, "shortcut sheet documents the default right panel toggle");
 
-// The CompanionRail's in-panel Hide button was removed along with its
-// cave:familiar-panel-toggle bridge — the top-bar right toggle (and ⌘⇧B) own
-// hiding the right panel now.
+// The right companion panel (and its in-panel collapse bridge) was removed.
 assert.doesNotMatch(
   shell,
   /cave:familiar-panel-toggle/,

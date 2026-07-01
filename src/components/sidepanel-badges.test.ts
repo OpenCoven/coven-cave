@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
-const rail = readFileSync(new URL("./companion-rail.tsx", import.meta.url), "utf8");
 
 // ── Nav badges ───────────────────────────────────────────────────────────────
 assert.match(sidebar, /function badgeText\(n\?: number\)/, "badge formatter exists");
@@ -25,9 +24,7 @@ assert.match(workspace, /groupInboxFeed\(inboxItemsWithEphemeral\)\.needsYou\.le
 // `workspace` is still read above for the nav-badge assertions.
 void workspace;
 
-// ── Video split persistence ────────────────────────────────────────────────────
-assert.match(rail, /useDefaultLayout/, "rail split uses the layout-persistence hook");
-assert.match(rail, /cave:companion-rail-split/, "split layout has a stable storage id");
-assert.match(rail, /defaultLayout=\{splitLayout\} onLayoutChanged=\{onSplitLayout\}/, "split layout wired to the Group");
+// The companion rail (and its persisted video split) was removed with the
+// right panel — drag-to-split replaces it.
 
 console.log("sidepanel-badges.test.ts: ok");

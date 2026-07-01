@@ -89,15 +89,13 @@ const css = await readFile(
   "utf8",
 );
 
+// With the right companion panel removed, the detail fills to the viewport
+// edge — there is no asymmetric right panel to re-center Home around, so the
+// shift is a constant 0 (the CSS var is still exposed for surfaces to read).
 assert.match(
   shell,
-  /const homeCenteringActive = navOpen && familiarOpen/,
-  "Home viewport-centering only activates when nav and agent panels are both open",
-);
-assert.match(
-  shell,
-  /const homeCenterShift = homeCenteringActive\s*\?\s*Math\.round\(\(detailGaps\.right - detailGaps\.left\) \/ 2\)\s*:\s*0/,
-  "Home center shift is zero for one-sided panel layouts",
+  /const homeCenterShift = 0/,
+  "Home center shift is zero now that the right panel is gone",
 );
 assert.match(
   shell,

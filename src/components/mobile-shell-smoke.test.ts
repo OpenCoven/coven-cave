@@ -51,7 +51,7 @@ assert.match(
 
 assert.match(
   topBar,
-  /navDrawerOpen\?: boolean;[\s\S]*listDrawerOpen\?: boolean;[\s\S]*familiarDrawerOpen\?: boolean;/,
+  /navDrawerOpen\?: boolean;[\s\S]*listDrawerOpen\?: boolean;/,
   "TopBar should receive mobile drawer state so controls can announce open/closed state",
 );
 
@@ -94,12 +94,6 @@ assert.match(
   topBar,
   /aria-pressed=\{Boolean\(listDrawerOpen\)\}/,
   "Mobile list toggle should expose pressed state while the list drawer is open",
-);
-
-assert.match(
-  topBar,
-  /aria-pressed=\{Boolean\(familiarDrawerOpen\)\}/,
-  "Mobile familiar toggle should expose pressed state while the familiar drawer is open",
 );
 
 assert.match(
@@ -174,7 +168,7 @@ assert.match(
 
 assert.match(
   globals,
-  /\.shell-nav-panel,[\s\S]{0,120}\.shell-list-panel,[\s\S]{0,120}\.shell-familiar-panel\s*\{[\s\S]{0,260}height:\s*100dvh/,
+  /\.shell-nav-panel,[\s\S]{0,120}\.shell-list-panel\s*\{[\s\S]{0,260}height:\s*100dvh/,
   "Mobile drawers should use dynamic viewport height so iOS browser chrome does not create hidden overflow",
 );
 

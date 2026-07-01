@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 
-export type MobileDrawerSlot = "nav" | "list" | "agent" | null;
+export type MobileDrawerSlot = "nav" | "list" | null;
 
 type MobileDrawerProps = {
   /** Which shell panel is currently open as a drawer, or null when closed. */

@@ -40,7 +40,6 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
     entries: [
       { keys: "⌘K", description: "Open the command palette" },
       { keys: "⌘B", description: "Toggle the left sidebar" },
-      { keys: "⌘⇧B", description: "Toggle the right side panel" },
       { keys: "⌘\\", description: "Toggle the list panel" },
       { keys: "⌃`", description: "Toggle the integrated terminal (desktop app)" },
       { keys: "⌘1–⌘8", description: "Jump to a sidebar surface (Home … Code)" },

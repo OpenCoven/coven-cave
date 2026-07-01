@@ -227,8 +227,4 @@ assert.match(
   /<aside className="shell-list" aria-label="List pane">/,
   "Shell list panel must carry a distinct accessible name (axe landmark-unique)",
 );
-assert.match(
-  shell,
-  /<aside\s+className="shell-familiar"[\s\S]*?aria-label="Companion"/,
-  "Shell agent panel must carry a distinct accessible name (axe landmark-unique)",
-);
+// The right companion (agent) panel was removed with the drag-to-split change.

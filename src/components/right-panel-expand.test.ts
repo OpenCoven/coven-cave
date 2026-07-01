@@ -34,69 +34,9 @@ assert.match(
   "ChatSurface flags right-panel-open on the root for the expand toggle's visibility",
 );
 
-const shell = readFileSync(new URL("./shell.tsx", import.meta.url), "utf8");
-assert.match(
-  shell,
-  /shell-top-toggle--expand/,
-  "shell renders the top-bar expand toggle",
-);
-assert.match(
-  shell,
-  /dispatchEvent\(new CustomEvent\("cave:right-panel-expand"\)\)/,
-  "the expand toggle dispatches the bridge event",
-);
-
-const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-assert.match(
-  css,
-  /\[data-right-panel-open\]\s*\.shell-top-toggle--expand/,
-  "expand toggle is shown only when a right panel is open",
-);
-assert.match(
-  css,
-  /\[data-right-panel-expanded\]\s*\.shell-top-toggle--expand[\s\S]*?display:\s*none/,
-  "expand toggle is hidden again while the panel is expanded",
-);
-
-// ── Collapsed YouTube strip ────────────────────────────────────────────────
-// When a video is playing, "closing" the right panel leaves a thin peek strip
-// (rotated video) instead of collapsing to nothing.
-assert.match(
-  shell,
-  /rightPanelPeek\?:\s*boolean/,
-  "shell accepts a rightPanelPeek prop",
-);
-assert.match(
-  shell,
-  /collapsedSize=\{rightPanelPeek \? `\$\{RAIL_PEEK_PX\}px` : 0\}/,
-  "the agent panel collapses to a peek strip (not 0) while peeking",
-);
-assert.match(
-  shell,
-  /familiarOpen \|\| rightPanelPeek \? agent : null/,
-  "the rail content stays mounted while peeking so the video keeps playing",
-);
-// In the narrow peek strip the video is NOT shown sideways; the iframe stays a
-// hidden sliver (audio keeps playing) and an upright "now playing" strip shows.
-assert.match(
-  css,
-  /\.companion-rail--video-strip\s+\.youtube-viewer__frame\s*\{[\s\S]*?flex:\s*0 0 1px[\s\S]*?opacity:\s*0/,
-  "the strip keeps the iframe a hidden sliver (audio continues, no sideways video)",
-);
-assert.match(
-  css,
-  /\.companion-rail--video-strip\s+\.youtube-viewer__strip\s*\{[\s\S]*?display:\s*flex/,
-  "the strip shows the upright now-playing indicator",
-);
-assert.match(
-  css,
-  /\.youtube-viewer__strip-title\s*\{[\s\S]*?writing-mode:\s*vertical-rl/,
-  "the strip title runs vertically (upright text, not a rotated video)",
-);
-assert.match(
-  css,
-  /\.companion-rail--video-strip\s+\.companion-rail__strip-expand\s*\{[\s\S]*?position:\s*absolute[\s\S]*?inset:\s*0/,
-  "the re-expand affordance is a full-area overlay so tapping the video expands it",
-);
+// The shell's top-bar expand toggle and the companion-rail collapsed-YouTube
+// peek strip were removed with the right companion panel. The chat-surface
+// inspector above keeps its own expand plumbing (its dormant listener is
+// harmless — nothing dispatches cave:right-panel-expand anymore).
 
 console.log("right-panel-expand.test.ts: ok");

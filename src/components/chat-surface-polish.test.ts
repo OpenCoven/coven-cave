@@ -16,13 +16,6 @@ test("chat-router renders mobile-aware empty-state copy", () => {
   assert.match(src, /Pick who should handle the conversation from the left panel/, "desktop subline present");
 });
 
-test("companion-rail accepts suppressEmpty and short-circuits", () => {
-  const src = read("./companion-rail.tsx");
-  assert.match(src, /suppressEmpty\?:\s*boolean/, "suppressEmpty prop typed");
-  assert.match(src, /suppressEmpty\s*=\s*false/, "default value declared");
-  assert.match(src, /if\s*\(suppressEmpty\)\s*return null/, "early return when suppressed");
-});
-
 // The right companion rail (which took suppressEmpty={mode === "chat"}) was
 // removed in favour of drag-to-split, so there is no rail to wire here anymore.
 

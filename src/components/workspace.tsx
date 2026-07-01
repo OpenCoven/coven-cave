@@ -1386,10 +1386,6 @@ export function Workspace() {
     }
   }, [openFamiliarSession, openReminderLink]);
 
-  const toggleFamiliarPanel = useCallback(() => {
-    shellRef.current?.toggleFamiliar();
-  }, []);
-
   // Open a page in the split beside the current surface (drag-to-split drop).
   const openSplitPage = useCallback(
     (m: string, side: "left" | "right") => {
@@ -1586,9 +1582,6 @@ export function Workspace() {
           () => window.dispatchEvent(new CustomEvent("cave:library:research", { detail: { topic: args.trim() } })),
           0,
         );
-        return true;
-      case "/toggle-agent":
-        toggleFamiliarPanel();
         return true;
       case "/quit":
         showFamiliarChatList();
@@ -2207,7 +2200,7 @@ export function Workspace() {
         splitSide={splitSide}
         onCloseSplit={closeSplit}
         onDropSplitPage={openSplitPage}
-        topBar={({ navDrawerOpen, listDrawerOpen, familiarDrawerOpen }) => (
+        topBar={({ navDrawerOpen, listDrawerOpen }) => (
           <>
             <FamiliarMenuBar
               familiars={resolvedFamiliars}
@@ -2265,10 +2258,6 @@ export function Workspace() {
               onToggleList={list ? () => shellRef.current?.toggleList() : undefined}
               navDrawerOpen={navDrawerOpen}
             listDrawerOpen={listDrawerOpen}
-            familiarDrawerOpen={familiarDrawerOpen}
-            // The right companion panel was removed in favour of drag-to-split;
-            // there is no longer a companion rail to toggle.
-            onToggleFamiliar={undefined}
           />
           </>
         )}

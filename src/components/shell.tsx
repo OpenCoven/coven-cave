@@ -24,13 +24,12 @@ import {
   type PanelShortcutBindings,
 } from "@/lib/panel-shortcuts";
 
-// Shell — multi-pane app chrome. Horizontal Group of nav/list/detail/agent,
+// Shell — multi-pane app chrome. Horizontal Group of nav/list/detail,
 // optionally wrapped in a vertical Group when a bottom slot (terminal) is set.
 //
 // Keyboard:
 //   ⌘B   toggle nav
 //   ⌘\   toggle list
-//   ⌘⇧B  toggle agent
 //   ⌃`   toggle bottom terminal
 
 const SHELL_GROUP_ID = "cave.shell.widths.v1";
@@ -76,21 +75,12 @@ function togglePanel(panel: PanelImperativeHandle | null) {
   else panel.collapse();
 }
 
-// Width of the right-panel "peek" strip — the thin sliver the companion rail
-// collapses to (instead of vanishing) when `rightPanelPeek` is on, e.g. to keep
-// a rotated YouTube video visible while the panel is closed. Sizes below this
-// (the strip, or 0 when not peeking) read as "panel closed".
-const RAIL_PEEK_PX = 56;
-const RAIL_OPEN_THRESHOLD_PX = RAIL_PEEK_PX + 16;
 // The left nav collapses to an icons-only rail (instead of vanishing) so the
 // destination icons stay reachable. Sizes at/below the rail read as "collapsed".
 const NAV_RAIL_PX = 56;
 const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 
 export type ShellHandle = {
-  openFamiliar: () => void;
-  closeFamiliar: () => void;
-  toggleFamiliar: () => void;
   openNav: () => void;
   closeNav: () => void;
   toggleNav: () => void;
@@ -107,7 +97,6 @@ export type ShellHandle = {
 type ShellMobileChromeState = {
   navDrawerOpen: boolean;
   listDrawerOpen: boolean;
-  familiarDrawerOpen: boolean;
 };
 
 type ShellTopBar = ReactNode | ((state: ShellMobileChromeState) => ReactNode);
@@ -116,7 +105,6 @@ function ShellInner({
   nav,
   list,
   detail,
-  agent,
   bottom,
   topBar,
   mobileTabs,
@@ -126,14 +114,11 @@ function ShellInner({
   onCloseSplit,
   onDropSplitPage,
   onNavOpenChange,
-  onFamiliarOpenChange,
-  rightPanelPeek = false,
   panelShortcutOverrides,
 }: {
   nav: ReactNode;
   list?: ReactNode;
   detail: ReactNode;
-  agent?: ReactNode;
   bottom?: ReactNode;
   topBar?: ShellTopBar;
   /** Secondary "page" rendered beside the detail surface in a resizable split
@@ -148,18 +133,10 @@ function ShellInner({
    *  mobile breakpoint (≤1023px). */
   mobileTabs?: ReactNode;
   onNavOpenChange?: (open: boolean) => void;
-  onFamiliarOpenChange?: (open: boolean) => void;
-  /** When true, "closing" the right (companion) panel leaves a thin peek strip
-   *  instead of collapsing to nothing, and keeps the panel's content mounted so
-   *  e.g. a playing video survives the collapse. Drives the YouTube-in-a-strip
-   *  behaviour: the companion rail renders its minimized (rotated video) view at
-   *  the peek width. */
-  rightPanelPeek?: boolean;
   panelShortcutOverrides?: Partial<PanelShortcutBindings>;
 }, ref: ForwardedRef<ShellHandle>) {
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
-  const familiarRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -200,7 +177,6 @@ function ShellInner({
   const mobileChromeState: ShellMobileChromeState = {
     navDrawerOpen: isMobile && mobileDrawer === "nav",
     listDrawerOpen: isMobile && mobileDrawer === "list",
-    familiarDrawerOpen: isMobile && mobileDrawer === "agent",
   };
   const renderedTopBar = typeof topBar === "function" ? topBar(mobileChromeState) : topBar;
   const panelShortcuts = useMemo(
@@ -214,23 +190,6 @@ function ShellInner({
       setMobileDrawer((curr) => (curr === slot ? null : slot));
     };
     return {
-      openFamiliar: () => {
-        if (isMobile) { setMobileDrawer("agent"); return; }
-        familiarRef.current?.expand();
-        setFamiliarOpen(true);
-      },
-      closeFamiliar: () => {
-        if (isMobile) { setMobileDrawer((c) => (c === "agent" ? null : c)); return; }
-        familiarRef.current?.collapse();
-        setFamiliarOpen(false);
-      },
-      toggleFamiliar: () => {
-        if (isMobile) { toggleDrawer("agent"); return; }
-        const panel = familiarRef.current;
-        if (!panel) return;
-        if (panel.isCollapsed()) { panel.expand(); setFamiliarOpen(true); }
-        else { panel.collapse(); setFamiliarOpen(false); }
-      },
       openNav: () => {
         if (isMobile) { setMobileDrawer("nav"); return; }
         navRef.current?.expand();
@@ -270,30 +229,16 @@ function ShellInner({
   }, [isMobile]);
 
   const twoPane = !list;
-  const hasFamiliar = !!agent;
   const hasBottom = !!bottom;
   const panelIds: string[] = ["nav"];
   if (!twoPane) panelIds.push("list");
   panelIds.push("detail");
-  if (hasFamiliar) panelIds.push("agent");
-  const groupId =
-    (twoPane ? `${SHELL_GROUP_ID}.two-pane` : SHELL_GROUP_ID) +
-    (hasFamiliar ? ".agent" : "");
+  const groupId = twoPane ? `${SHELL_GROUP_ID}.two-pane` : SHELL_GROUP_ID;
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: groupId,
     panelIds,
     storage: shellStorage,
-  });
-
-  // Initialise familiarOpen from persisted layout so the agent content renders
-  // immediately when layout is restored to an expanded state, rather than
-  // waiting for the first onResize callback.
-  const familiarPanelIdx = panelIds.indexOf("agent");
-  const [familiarOpen, setFamiliarOpen] = useState(() => {
-    if (familiarPanelIdx < 0 || !defaultLayout) return false;
-    const pct = defaultLayout[familiarPanelIdx];
-    return typeof pct === "number" && pct > 0;
   });
 
   const navPanelIdx = panelIds.indexOf("nav");
@@ -350,7 +295,7 @@ function ShellInner({
       ro.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [mounted, hasBottom, hasFamiliar, twoPane, isMobile]);
+  }, [mounted, hasBottom, twoPane, isMobile]);
 
   // The first painted frames can still shift: react-resizable-panels applies
   // its persisted layout (and Workspace collapses an empty companion rail)
@@ -371,34 +316,8 @@ function ShellInner({
   }, [navOpen, onNavOpenChange]);
 
   useEffect(() => {
-    onFamiliarOpenChange?.(familiarOpen);
-    // Mirror the companion panel's open state to the document root + a window
-    // event so an inline toggle (e.g. the Code surface's, outside this subtree)
-    // can reflect it without prop-drilling.
-    const root = document.documentElement;
-    if (familiarOpen) root.setAttribute("data-familiar-open", "");
-    else root.removeAttribute("data-familiar-open");
-    window.dispatchEvent(new CustomEvent("cave:familiar-open", { detail: { open: familiarOpen } }));
-  }, [familiarOpen, onFamiliarOpenChange]);
-
-  useEffect(() => {
     const toggleDrawerSlot = (slot: NonNullable<MobileDrawerSlot>) => {
       setMobileDrawer((curr) => (curr === slot ? null : slot));
-    };
-    const toggleFamiliarPanel = () => {
-      if (isMobile) {
-        toggleDrawerSlot("agent");
-        return;
-      }
-      const panel = familiarRef.current;
-      if (!panel) return;
-      if (panel.isCollapsed()) {
-        panel.expand();
-        setFamiliarOpen(true);
-      } else {
-        panel.collapse();
-        setFamiliarOpen(false);
-      }
     };
     const handler = (e: KeyboardEvent) => {
       if (matchesPanelShortcut(e, panelShortcuts.toggleLeftPanel)) {
@@ -413,9 +332,6 @@ function ShellInner({
         e.preventDefault();
         if (isMobile) toggleDrawerSlot("list");
         else togglePanel(listRef.current);
-      } else if (matchesPanelShortcut(e, panelShortcuts.toggleRightPanel) && hasFamiliar) {
-        e.preventDefault();
-        toggleFamiliarPanel();
       }
     };
     const bottomToggle = (e: KeyboardEvent) => {
@@ -427,11 +343,6 @@ function ShellInner({
         togglePanel(bottomRef.current);
       }
     };
-    // Let an inline toggle (e.g. the Code surface toolbar) flip the companion
-    // panel without reaching into the Shell's panel ref.
-    const onToggleRight = () => {
-      if (hasFamiliar) toggleFamiliarPanel();
-    };
     // Symmetric hook for the left nav panel — lets a collapsed-rail label (e.g.
     // the Code sidebar's "Sessions" rail) reopen the panel without a panel ref.
     const onToggleLeft = () => {
@@ -440,15 +351,13 @@ function ShellInner({
     };
     window.addEventListener("keydown", handler);
     window.addEventListener("keydown", bottomToggle);
-    window.addEventListener("cave:toggle-right-panel", onToggleRight);
     window.addEventListener("cave:toggle-left-panel", onToggleLeft);
     return () => {
       window.removeEventListener("keydown", handler);
       window.removeEventListener("keydown", bottomToggle);
-      window.removeEventListener("cave:toggle-right-panel", onToggleRight);
       window.removeEventListener("cave:toggle-left-panel", onToggleLeft);
     };
-  }, [twoPane, hasFamiliar, hasBottom, isMobile, panelShortcuts]);
+  }, [twoPane, hasBottom, isMobile, panelShortcuts]);
 
   if (!mounted) {
     return (
@@ -532,46 +441,12 @@ function ShellInner({
           />
         </main>
       </Panel>
-      {hasFamiliar && (
-        <>
-          <Separator className="shell-separator" />
-          <Panel
-            id="agent"
-            className="shell-familiar-panel"
-            defaultSize={"24%"}
-            minSize="14%"
-            maxSize="50%"
-            collapsible
-            // When peeking, collapse to a thin strip instead of nothing so the
-            // companion rail can keep e.g. a playing video visible (rotated).
-            collapsedSize={rightPanelPeek ? `${RAIL_PEEK_PX}px` : 0}
-            panelRef={familiarRef}
-            onResize={(size) => {
-              // The panel is "open" only when it's wider than the peek strip —
-              // at the strip (or fully collapsed) the rail shows its minimized
-              // view, not the full content.
-              setFamiliarOpen((size.inPixels ?? 0) > RAIL_OPEN_THRESHOLD_PX);
-            }}
-          >
-            {/* Keep the rail mounted while peeking so the video survives the
-                collapse; otherwise unmount it when closed (the default). */}
-            <aside
-              className="shell-familiar"
-              aria-label="Companion"
-              data-rail-peek={rightPanelPeek && !familiarOpen ? "" : undefined}
-            >
-              {familiarOpen || rightPanelPeek ? agent : null}
-            </aside>
-          </Panel>
-        </>
-      )}
     </Group>
   );
 
-  const homeCenteringActive = navOpen && familiarOpen;
-  const homeCenterShift = homeCenteringActive
-    ? Math.round((detailGaps.right - detailGaps.left) / 2)
-    : 0;
+  // The right companion panel was removed, so the detail fills to the viewport
+  // edge — there is no longer an asymmetric right panel to re-center Home around.
+  const homeCenterShift = 0;
 
   const shellFrameStyle: CSSProperties & {
     "--shell-left-gap-px": string;
@@ -586,23 +461,14 @@ function ShellInner({
     "--shell-right-gap-px": `${detailGaps.right}px`,
     "--shell-home-center-shift-px": `${homeCenterShift}px`,
   };
-  // Panel toggles, hoisted into the top menu bar. The nav toggle anchors the
-  // bar's left edge and the side-panel + expand toggles its right edge, so a
-  // single persistent control owns each panel regardless of its open state
-  // (replacing the old corner edge-rail floats). Desktop-only — below 1024px the
-  // mobile `.top-bar` carries its own drawer toggles.
-  const rightPanelShortcutLabel = labelPanelShortcut(panelShortcuts.toggleRightPanel);
+  // Nav toggle, hoisted into the top menu bar. It anchors the bar's left edge so
+  // a single persistent control owns the nav panel regardless of its open state.
+  // Desktop-only — below 1024px the mobile `.top-bar` carries its own toggle.
   const toggleNavPanel = () => {
     const panel = navRef.current;
     if (!panel) return;
     if (panel.isCollapsed()) { panel.expand(); setNavOpen(true); }
     else { panel.collapse(); setNavOpen(false); }
-  };
-  const toggleRightPanel = () => {
-    const panel = familiarRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) { panel.expand(); setFamiliarOpen(true); }
-    else { panel.collapse(); setFamiliarOpen(false); }
   };
   const navToggle = !isMobile ? (
     <button
@@ -615,32 +481,6 @@ function ShellInner({
     >
       <Icon name={navOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
     </button>
-  ) : null;
-  const rightToggles = !isMobile && hasFamiliar ? (
-    <>
-      {/* Expand-to-cover toggle. CSS keeps it hidden until a chat right panel is
-          actually open (:root[data-right-panel-open]) and re-hides it while
-          expanded. It reaches the chat surface's expand state via a window event. */}
-      <button
-        type="button"
-        className="shell-top-toggle shell-top-toggle--expand focus-ring"
-        aria-label="Expand side panel"
-        title="Expand side panel"
-        onClick={() => window.dispatchEvent(new CustomEvent("cave:right-panel-expand"))}
-      >
-        <Icon name="ph:arrows-out-simple" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
-      </button>
-      <button
-        type="button"
-        className={`shell-top-toggle shell-top-toggle--right focus-ring${familiarOpen ? " shell-top-toggle--active" : ""}`}
-        aria-label={familiarOpen ? "Hide side panel" : "Show side panel"}
-        aria-expanded={familiarOpen}
-        title={familiarOpen ? `Hide side panel (${rightPanelShortcutLabel})` : `Show side panel (${rightPanelShortcutLabel})`}
-        onClick={toggleRightPanel}
-      >
-        <Icon name={familiarOpen ? "ph:sidebar-simple-fill" : "ph:sidebar-simple"} width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} />
-      </button>
-    </>
   ) : null;
 
   return (
@@ -656,7 +496,6 @@ function ShellInner({
         <div className="shell-titlebar-drag-lane" data-tauri-drag-region="" aria-hidden="true" />
         {navToggle}
         <div className="shell-top__bar" data-tauri-drag-region="">{renderedTopBar}</div>
-        {rightToggles}
       </div>
       <div className="shell-body flex flex-1 min-h-0">
         {hasBottom ? (

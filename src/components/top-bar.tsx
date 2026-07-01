@@ -54,10 +54,8 @@ type Props = {
    *  with no list panel should pass `onToggleList={undefined}`. */
   onToggleNav?: () => void;
   onToggleList?: () => void;
-  onToggleFamiliar?: () => void;
   navDrawerOpen?: boolean;
   listDrawerOpen?: boolean;
-  familiarDrawerOpen?: boolean;
 };
 
 const ENRICH_TASKS_TITLE =
@@ -79,10 +77,8 @@ export function TopBar(props: Props) {
     onNotificationPrefsChanged,
     onToggleNav,
     onToggleList,
-    onToggleFamiliar,
     navDrawerOpen,
     listDrawerOpen,
-    familiarDrawerOpen,
     activeFamiliar,
     familiarOptions,
     onSelectFamiliar,
@@ -244,20 +240,6 @@ export function TopBar(props: Props) {
         >
           <Icon name="ph:user" width={CAVE_ICON_SIZE.headerAction} height={CAVE_ICON_SIZE.headerAction} />
         </button>
-        {onToggleFamiliar ? (
-          <button
-            type="button"
-            className="top-bar__mobile-toggle"
-            onClick={onToggleFamiliar}
-            aria-label={familiarDrawerOpen ? "Close familiar panel" : "Open familiar panel (⌘⇧B)"}
-            aria-expanded={Boolean(familiarDrawerOpen)}
-            aria-pressed={Boolean(familiarDrawerOpen)}
-            aria-controls="agent"
-            title={familiarDrawerOpen ? "Close familiar panel" : "Open familiar panel"}
-          >
-            <Icon name="ph:cat" width={CAVE_ICON_SIZE.headerToggle} height={CAVE_ICON_SIZE.headerToggle} />
-          </button>
-        ) : null}
       </div>
     </header>
   );

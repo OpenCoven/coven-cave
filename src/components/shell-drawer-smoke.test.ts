@@ -3,9 +3,9 @@
 // Smoke test for the phase 2 mobile shell drawer wiring. Asserts the
 // CSS + the shell component still agree on the drawer contract:
 //   - globals.css gates drawer behaviour on `[data-mobile-drawer]`
-//   - shell.tsx exposes toggleNav / toggleList / toggleFamiliar and
-//     projects mobileDrawer state onto data-mobile-drawer
-//   - top-bar.tsx renders the three mobile-only toggle buttons
+//   - shell.tsx exposes toggleNav / toggleList and projects mobileDrawer
+//     state onto data-mobile-drawer
+//   - top-bar.tsx renders the mobile-only toggle buttons
 //
 // Run via `pnpm test:mobile`. Pure file-read assertions — no DOM,
 // no browser, no daemon.
@@ -24,8 +24,9 @@ const mobileDrawer = readFileSync(
   "utf8",
 );
 
-// CSS drives the slide via data-mobile-drawer="nav|list|agent" on the
-// shell-root container — verify all three slots are wired.
+// CSS drives the slide via data-mobile-drawer="nav|list" on the shell-root
+// container — verify both slots are wired. (The agent drawer was removed with
+// the right companion panel.)
 assert.match(
   globals,
   /\.shell-root\[data-mobile-drawer="nav"\]\s+\.shell-nav-panel/,
@@ -35,11 +36,6 @@ assert.match(
   globals,
   /\.shell-root\[data-mobile-drawer="list"\]\s+\.shell-list-panel/,
   "globals.css drives the list panel transform from [data-mobile-drawer=\"list\"]",
-);
-assert.match(
-  globals,
-  /\.shell-root\[data-mobile-drawer="agent"\]\s+\.shell-familiar-panel/,
-  "globals.css drives the agent panel transform from [data-mobile-drawer=\"agent\"]",
 );
 
 // Mobile/tablet-width media query owns the drawer transforms. The
@@ -53,12 +49,12 @@ assert.match(
 );
 assert.match(
   globals,
-  /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel,[\s\S]{0,80}\.shell-familiar-panel\s*\{[\s\S]{0,200}position:\s*fixed/,
-  "globals.css positions the three shell panels as fixed drawers",
+  /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel\s*\{[\s\S]{0,200}position:\s*fixed/,
+  "globals.css positions the shell drawer panels as fixed drawers",
 );
 assert.match(
   globals,
-  /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel,[\s\S]{0,80}\.shell-familiar-panel\s*\{[\s\S]*overscroll-behavior:\s*contain/,
+  /\.shell-nav-panel,[\s\S]{0,80}\.shell-list-panel\s*\{[\s\S]*overscroll-behavior:\s*contain/,
   "globals.css contains drawer panel rubber-band scroll on mobile",
 );
 
@@ -85,13 +81,8 @@ assert.match(
   /toggleList: \(\) =>/,
   "ShellHandle exposes toggleList",
 );
-assert.match(
-  shell,
-  /toggleFamiliar: \(\) =>/,
-  "ShellHandle exposes toggleFamiliar",
-);
 
-// top-bar.tsx renders the three drawer toggles behind their callbacks.
+// top-bar.tsx renders the drawer toggles behind their callbacks.
 assert.match(
   topBar,
   /onToggleNav\?\s*:\s*\(\)\s*=>\s*void/,
@@ -101,11 +92,6 @@ assert.match(
   topBar,
   /onToggleList\?\s*:\s*\(\)\s*=>\s*void/,
   "TopBar accepts onToggleList prop",
-);
-assert.match(
-  topBar,
-  /onToggleFamiliar\?\s*:\s*\(\)\s*=>\s*void/,
-  "TopBar accepts onToggleFamiliar prop",
 );
 assert.match(
   topBar,
