@@ -6884,6 +6884,49 @@ a.mobile-handoff__link:hover {
   }
 }
 
+/* ── Session list card polish ──────────────────────────────────────────────
+   Each row reads as a tappable card: a faint leading-edge accent on hover, a
+   refined model pill, and running sessions feel LIVE (pulsing status dot +
+   accent-tinted "Active now…" preview). Purely additive over the row's inline
+   Tailwind background/active states. */
+.chat-list-row {
+  transition:
+    background var(--duration-fast, 120ms) var(--ease-standard, ease),
+    box-shadow var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+.chat-list-row:hover {
+  box-shadow: inset 2px 0 0 0 color-mix(in oklch, var(--accent-presence) 45%, transparent);
+}
+/* Active rows already show the solid absolute accent bar — no hover hairline. */
+.chat-list-row[data-active="true"]:hover {
+  box-shadow: none;
+}
+
+/* Model chip → a clean, consistent pill. */
+.chat-list-row-model {
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 80%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--bg-raised) 55%, transparent);
+}
+
+/* Running sessions: gentle pulsing halo on the status dot + live-tinted preview. */
+.chat-list-row[data-status="running"] .chat-list-status-dot > span {
+  animation: chat-list-dot-pulse 2s var(--ease-standard, ease-out) infinite;
+}
+.chat-list-row[data-status="running"] .chat-list-row-preview {
+  color: color-mix(in oklch, var(--color-success) 78%, var(--text-secondary));
+}
+@keyframes chat-list-dot-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-success) 55%, transparent); }
+  70% { box-shadow: 0 0 0 5px color-mix(in oklch, var(--color-success) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-success) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-list-row[data-status="running"] .chat-list-status-dot > span {
+    animation: none;
+  }
+}
+
 /* Capabilities inspector metadata collapses into one dense row whenever the
    expanded row has enough width, then wraps by whole field on narrower panes. */
 .capability-meta-row {
