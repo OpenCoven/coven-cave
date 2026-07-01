@@ -82,8 +82,10 @@ export function RecentActivityRollup({ activeSessionId, onOpenSession }: Props) 
   useEffect(() => {
     void load();
   }, [load]);
-  // Pauses in a hidden tab; refreshes on return.
-  usePausablePoll(() => void load(), POLL_MS);
+  // Pauses in a hidden tab; refreshes on return. Also pauses while the user is
+  // typing — this polls the same heavy /api/sessions/list the shell does, so it
+  // must not compete with mobile composition.
+  usePausablePoll(() => void load(), POLL_MS, { pauseWhileInputActive: true });
 
   const rows = useMemo(() => sessions, [sessions]);
 
