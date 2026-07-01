@@ -103,9 +103,6 @@ function RightPanel({
   onCreateReminder,
   onOpenInboxItem,
   onInboxItemChanged,
-  expanded = false,
-  allowExpand = false,
-  onToggleExpand,
 }: {
   panel: RightPanelKind;
   activeFamiliar: Familiar | null;
@@ -115,76 +112,8 @@ function RightPanel({
   onCreateReminder: (familiarId: string) => void;
   onOpenInboxItem: (item: InboxItem) => void;
   onInboxItemChanged: () => void | Promise<void>;
-  expanded?: boolean;
-  allowExpand?: boolean;
-  onToggleExpand?: () => void;
 }) {
   const primaryPanel: Exclude<RightPanelKind, "changes"> = panel === "debug" ? "debug" : "inspector";
-
-  if (expanded) {
-    const active = panel; // "inspector" | "debug" | "changes"
-    return (
-      <aside
-        role="region"
-        aria-label="Session panels"
-        className="right-panel--expanded relative flex h-full min-h-0 min-w-0 flex-col bg-[var(--bg-base)]"
-      >
-        <div className="right-panel-tabs">
-          <button
-            type="button"
-            className={`right-panel-tab${active === "inspector" ? " right-panel-tab--active" : ""}`}
-            onClick={() => onSetPanel("inspector")}
-          >
-            <Icon name="ph:brain-bold" width={13} />
-            Inspector
-          </button>
-          <button
-            type="button"
-            className={`right-panel-tab${active === "debug" ? " right-panel-tab--active" : ""}`}
-            onClick={() => onSetPanel("debug")}
-          >
-            <Icon name="ph:bug-bold" width={13} />
-            Debug
-          </button>
-          <button
-            type="button"
-            className={`right-panel-tab${active === "changes" ? " right-panel-tab--active" : ""}`}
-            onClick={() => onSetPanel("changes")}
-          >
-            <Icon name="ph:git-diff" width={13} />
-            Changes
-          </button>
-          <button
-            type="button"
-            className="right-panel-close"
-            aria-label="Restore panel"
-            aria-pressed={true}
-            onClick={() => onToggleExpand?.()}
-          >
-            <Icon name="ph:arrows-in-simple" width={12} />
-          </button>
-          <button type="button" className="right-panel-close" aria-label="Close panel" onClick={() => onSetPanel(null)}>
-            <Icon name="ph:x-bold" width={11} />
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
-          {active === "inspector" && (
-            <InspectorPane
-              familiar={activeFamiliar}
-              inboxItems={inboxItems}
-              onOpenInbox={onOpenInbox}
-              onCreateReminder={onCreateReminder}
-              onOpenInboxItem={onOpenInboxItem}
-              onInboxItemChanged={onInboxItemChanged}
-              hideMemory
-            />
-          )}
-          {active === "debug" && <DebugPane />}
-          {active === "changes" && <SessionChangesPanel />}
-        </div>
-      </aside>
-    );
-  }
 
   return (
     // CHAT-D13-05: this panel renders inside the shell's <main>, where a
@@ -210,17 +139,6 @@ function RightPanel({
               <Icon name="ph:bug-bold" width={13} />
               Debug
             </button>
-            {allowExpand ? (
-              <button
-                type="button"
-                className="right-panel-close"
-                aria-label="Expand panel"
-                aria-pressed={false}
-                onClick={() => onToggleExpand?.()}
-              >
-                <Icon name="ph:arrows-out-simple" width={12} />
-              </button>
-            ) : null}
             <button type="button" className="right-panel-close" onClick={() => onSetPanel(null)}>
               <Icon name="ph:x-bold" width={11} />
             </button>
@@ -293,7 +211,6 @@ export function ChatSurface({
 }: Props) {
   const isCodeSurface = surface === "code";
   const [scope, setScope] = useState<FamiliarsScope>("conversation");
-  const [rightExpanded, setRightExpanded] = useState(false);
   // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
   // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
   // be unreachable. On mobile we render them in a right-edge sheet overlay instead.
@@ -434,41 +351,6 @@ export function ChatSurface({
     return () => window.removeEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
   }, []);
 
-  useEffect(() => {
-    if (rightPanel === null && rightExpanded) setRightExpanded(false);
-  }, [rightPanel, rightExpanded]);
-
-  useEffect(() => {
-    if (!rightExpanded) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setRightExpanded(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [rightExpanded]);
-
-  // The expand affordance lives in the shell's top-bar toggle cluster
-  // (.shell-top-toggle--expand), a different subtree, so it reaches the expand
-  // state through a window event — the same bridge pattern as cave:inspector-open.
-  // The reset effect above clears rightExpanded if the panel closes, so this is
-  // safe to fire unconditionally.
-  useEffect(() => {
-    const onExpand = () => setRightExpanded(true);
-    window.addEventListener("cave:right-panel-expand", onExpand);
-    return () => window.removeEventListener("cave:right-panel-expand", onExpand);
-  }, []);
-
-  // Flag right-panel-open on the document root so the shell's top-bar expand
-  // toggle (in shell.tsx, outside this subtree) shows only when there's actually
-  // a panel to expand. Mirrors the desktop placement: conversation scope only.
-  useEffect(() => {
-    const root = document.documentElement;
-    const open = rightPanel !== null && !isMobile && scope === "conversation";
-    if (open) root.setAttribute("data-right-panel-open", "");
-    else root.removeAttribute("data-right-panel-open");
-    return () => root.removeAttribute("data-right-panel-open");
-  }, [rightPanel, isMobile, scope]);
-
   // The Code surface hosts the companion-panel toggle inline (CodeInlineToolbar
   // on the tab row), so flag the root to hide the shell's top-bar right toggle
   // while this surface is mounted — otherwise there'd be two of them.
@@ -478,17 +360,6 @@ export function ChatSurface({
     root.setAttribute("data-code-inline-toolbar", "");
     return () => root.removeAttribute("data-code-inline-toolbar");
   }, [isCodeSurface]);
-
-  // While the right panel is expanded it covers the chat surface; flag the
-  // expanded state on the document root so CSS can hide the top-bar side-panel
-  // toggle while expanded (it's redundant under a full-surface panel anyway).
-  // Restore/Esc clear it; the cleanup guards against unmount.
-  useEffect(() => {
-    const root = document.documentElement;
-    if (rightExpanded) root.setAttribute("data-right-panel-expanded", "");
-    else root.removeAttribute("data-right-panel-expanded");
-    return () => root.removeAttribute("data-right-panel-expanded");
-  }, [rightExpanded]);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
@@ -597,19 +468,16 @@ export function ChatSurface({
                   minSize="200px"
                   maxSize="480px"
                 >
-                  {!rightExpanded && (
-                    <RightPanel
-                      panel={rightPanel}
-                      activeFamiliar={activeFamiliar}
-                      inboxItems={inboxItems}
-                      onSetPanel={setRightPanel}
-                      onOpenInbox={onOpenInbox}
-                      onCreateReminder={onCreateReminder}
-                      onOpenInboxItem={onOpenInboxItem}
-                      onInboxItemChanged={onInboxItemChanged}
-                      expanded={false}
-                    />
-                  )}
+                  <RightPanel
+                    panel={rightPanel}
+                    activeFamiliar={activeFamiliar}
+                    inboxItems={inboxItems}
+                    onSetPanel={setRightPanel}
+                    onOpenInbox={onOpenInbox}
+                    onCreateReminder={onCreateReminder}
+                    onOpenInboxItem={onOpenInboxItem}
+                    onInboxItemChanged={onInboxItemChanged}
+                  />
                 </Panel>
               </>
             )}
@@ -647,30 +515,6 @@ export function ChatSurface({
               onInboxItemChanged={onInboxItemChanged}
             />
           </div>
-        </div>
-      )}
-      {scope === "conversation" && rightPanel !== null && rightExpanded && !isMobile && (
-        <div className="chat-right-expanded absolute inset-0 z-[60] hidden lg:flex">
-          <RightPanel
-            panel={rightPanel}
-            activeFamiliar={activeFamiliar}
-            inboxItems={inboxItems}
-            onSetPanel={(p) => {
-              if (p === null) {
-                setRightPanel(null);
-                setRightExpanded(false);
-              } else {
-                setRightPanel(p);
-              }
-            }}
-            onOpenInbox={onOpenInbox}
-            onCreateReminder={onCreateReminder}
-            onOpenInboxItem={onOpenInboxItem}
-            onInboxItemChanged={onInboxItemChanged}
-            allowExpand
-            expanded
-            onToggleExpand={() => setRightExpanded(false)}
-          />
         </div>
       )}
     </section>
