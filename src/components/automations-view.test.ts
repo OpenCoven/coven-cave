@@ -94,5 +94,10 @@ assert.match(
   /managed-automation-row__actions[\s\S]*?onClick=\{onRun\}[\s\S]*?onClick=\{onOpen\}/,
   "managed automation row actions render below the automation name",
 );
+assert.match(
+  source,
+  /managed-automation-row__actions[\s\S]*?aria-label=\{`Run \$\{name\} now`\}/,
+  "the managed row's Run button carries a distinct accessible name (not just \"Run\"/\"…\")",
+);
 
 console.log("automations-view.test.ts: ok");
