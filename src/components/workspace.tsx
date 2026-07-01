@@ -23,7 +23,6 @@ import { Shell, type ShellHandle } from "@/components/shell";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
-import { type CompanionTab } from "@/components/companion-rail";
 import { RailInspector } from "@/components/inspector-pane";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { FamiliarsView } from "@/components/familiars-view";
@@ -33,8 +32,6 @@ import {
   setFamiliarScope,
   getLastSurface,
   setLastSurface,
-  getRailOpen,
-  setRailOpen,
 } from "@/lib/familiar-memory";
 import { recordFamiliarUsed } from "@/lib/familiar-quick-switch";
 import { toggleFamiliarSelection } from "@/lib/familiar-multiselect";
@@ -272,15 +269,6 @@ export function Workspace() {
   // `splitSide` is which half it occupies (modern-desktop snap).
   const [splitTarget, setSplitTarget] = useState<SplitTarget | null>(null);
   const [splitSide, setSplitSide] = useState<"left" | "right">("right");
-  const [railTab, setRailTab] = useState<CompanionTab>(() => {
-    if (typeof window === "undefined") return "chat";
-    const stored = window.localStorage.getItem("cave:rail.tab");
-    // The standalone "inspector" (magnifier) tab folded into "memory" (brain);
-    // remap any persisted value so a stale key doesn't select a removed tab.
-    if (stored === "inspector") return "memory";
-    return (stored as CompanionTab) ?? "chat";
-  });
-  const [familiarPanelOpen, setFamiliarPanelOpen] = useState(false);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -491,44 +479,6 @@ export function Workspace() {
   }, [scopeIds, activeFamiliarHydrated]);
 
   useEffect(() => {
-    if (!activeId) {
-      queueMicrotask(() => shellRef.current?.closeFamiliar());
-      return;
-    }
-    const desired = getRailOpen(activeId);
-    queueMicrotask(() => {
-      if (desired) shellRef.current?.openFamiliar();
-      else shellRef.current?.closeFamiliar();
-    });
-  }, [activeId]);
-
-  // Per-familiar rail tab. persistRailTab handles explicit tab choices: it
-  // writes the active familiar slot (plus a global fallback for first paint).
-  // Restoring a familiar tab on scope change uses plain setRailTab so it never
-  // rewrites. Keyed on activeId ("all" when no familiar scope).
-  const persistRailTab = useCallback((next: CompanionTab) => {
-    setRailTab(next);
-    try {
-      window.localStorage.setItem("cave:rail.tab:" + (activeIdRef.current ?? "all"), next);
-      window.localStorage.setItem("cave:rail.tab", next);
-    } catch {
-      /* ignore storage failures */
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!activeFamiliarHydrated || typeof window === "undefined") return;
-    try {
-      const stored =
-        window.localStorage.getItem("cave:rail.tab:" + (activeId ?? "all")) ??
-        window.localStorage.getItem("cave:rail.tab");
-      if (stored) setRailTab(stored === "inspector" ? "memory" : (stored as CompanionTab));
-    } catch {
-      /* ignore storage failures */
-    }
-  }, [activeId, activeFamiliarHydrated]);
-
-  useEffect(() => {
     // Salem was re-homed from the (removed) right rail into the drag-to-split
     // pane — its launcher now opens Salem beside the current surface.
     const openSalem = () => {
@@ -591,12 +541,6 @@ export function Workspace() {
     window.addEventListener("cave:open-project-file", onOpenFile as EventListener);
     return () => window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
   }, []);
-
-  useEffect(() => {
-    if (railTab !== "salem") {
-      window.dispatchEvent(new CustomEvent("cave:salem-undock"));
-    }
-  }, [railTab]);
 
   useEffect(() => {
     fetch("/api/config", { cache: "no-store" })
@@ -1822,18 +1766,6 @@ export function Workspace() {
   // primary Inbox surface). "new" + "acknowledged" + "snoozed-due" all
   // count as needing attention; resolved/dismissed do not.
   const inboxBadgeCount = escalationsUnresolved;
-
-  const showCompanionRail =
-    railTab === "browser" || railTab === "salem" || (mode !== "browser" && mode !== "agents");
-
-  const openCompanionTab = useCallback((tab: CompanionTab) => {
-    persistRailTab(tab);
-    if (familiarPanelOpen && railTab === tab) {
-      shellRef.current?.closeFamiliar();
-      return;
-    }
-    requestAnimationFrame(() => shellRef.current?.openFamiliar());
-  }, [familiarPanelOpen, railTab]);
 
   const openUrlInAppBrowser = useCallback((url: string) => {
     if (!url) return;

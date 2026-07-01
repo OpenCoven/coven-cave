@@ -198,11 +198,8 @@ assert.match(
   "Mobile bottom tab focus ring should use the shared inset offset token",
 );
 
-assert.match(
-  workspace,
-  /railTab === "browser" \|\| railTab === "salem" \|\| \(mode !== "browser" && mode !== "agents"\)/,
-  "Browser and Agents modes suppress the default companion pane unless a floating Browser or Salem tab is selected",
-);
+// The right companion rail was removed in favour of drag-to-split, so the
+// workspace no longer computes companion-pane visibility (showCompanionRail).
 assert.match(
   workspace,
   /const openUrlInAppBrowser = useCallback\(\(url: string\) => \{/,

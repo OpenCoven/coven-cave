@@ -48,20 +48,9 @@ assert.match(
   "Workspace passes the selected familiar into the Familiars page",
 );
 
-assert.match(
-  workspace,
-  /railTab === "browser" \|\| railTab === "salem" \|\| \(mode !== "browser" && mode !== "agents"\)/,
-  "Companion rail is hidden on Familiars and Browser unless a floating rail tab is selected",
-);
-
-// The right companion rail (and its Chat tab) was removed in favour of
-// drag-to-split, so there is no rail Chat tab to hide on the Familiars surface.
-
-assert.match(
-  workspace,
-  /if \(!activeId\) \{\s*queueMicrotask\(\(\) => shellRef\.current\?\.closeFamiliar\(\)\);\s*return;\s*\}/,
-  "Workspace collapses the companion panel when no familiar is selected so empty rails do not crowd every surface",
-);
+// The right companion rail was removed in favour of drag-to-split, so the
+// workspace no longer computes rail visibility (showCompanionRail), a rail Chat
+// tab, or a per-familiar rail-open restore effect.
 
 assert.match(
   workspace,

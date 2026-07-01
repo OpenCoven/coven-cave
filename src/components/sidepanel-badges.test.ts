@@ -20,12 +20,10 @@ assert.match(workspace, /scheduleNeedsCount=\{scheduleNeedsCount\}/, "schedules 
 assert.match(workspace, /githubAssignedCount=\{githubAssignedCount\}/, "github count passed");
 assert.match(workspace, /groupInboxFeed\(inboxItemsWithEphemeral\)\.needsYou\.length/, "schedules badge = needs-you group");
 
-// ── Per-familiar rail tab ──────────────────────────────────────────────────────
-assert.match(workspace, /const persistRailTab = useCallback/, "explicit tab choices persist per familiar");
-assert.match(workspace, /"cave:rail\.tab:" \+ \(activeIdRef\.current \?\? "all"\)/, "tab stored under the active familiar");
-assert.match(workspace, /"cave:rail\.tab:" \+ \(activeId \?\? "all"\)/, "tab restored for the active familiar");
-// The right companion rail was removed (drag-to-split replaces it); rail tab
-// clicks no longer have an onTabChange to wire.
+// Per-familiar rail-tab persistence was dropped with the right companion rail
+// (drag-to-split replaces it) — the workspace no longer stores cave:rail.tab.
+// `workspace` is still read above for the nav-badge assertions.
+void workspace;
 
 // ── Video split persistence ────────────────────────────────────────────────────
 assert.match(rail, /useDefaultLayout/, "rail split uses the layout-persistence hook");

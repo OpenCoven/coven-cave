@@ -61,12 +61,3 @@ export function getLastSurface(familiarId: string): string | null {
 export function setLastSurface(familiarId: string, surface: string): void {
   safeSet(`cave:familiar:${familiarId}:last-surface`, surface);
 }
-
-export function getRailOpen(familiarId: string): boolean {
-  const raw = safeGet(`cave:familiar:${familiarId}:rail.open`);
-  return raw === "1"; // default closed
-}
-
-export function setRailOpen(familiarId: string, open: boolean): void {
-  safeSet(`cave:familiar:${familiarId}:rail.open`, open ? "1" : "0");
-}
