@@ -7,6 +7,24 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.128] - 2026-07-01
+
+Patch release on top of v0.0.127. Headline: Cave adds the first-party
+OpenClaw Skills marketplace card and changes full-coven group chat to a
+parallel roundtable first pass.
+
+### Added
+
+- **Marketplace** - added the OpenClaw Skills card to Cave's Coven collection,
+  with regenerated marketplace, Codex, and role-affinity exports so the card is
+  visible from the first-party plugin catalog.
+
+### Changed
+
+- **Group chat** - full-coven sends now fan out in parallel with shared roster
+  context, so every familiar answers the same human request from its own
+  identity and judgment instead of seeing earlier peer replies by default.
+
 ## [0.0.127] - 2026-06-30
 
 Patch release on top of v0.0.126. Headline: Cave now has release-ready
