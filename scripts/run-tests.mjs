@@ -746,6 +746,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/journal-memory-stats.test.ts",
   "src/lib/journal-generate.test.ts",
   "src/lib/task-archive-nudge.test.ts",
+  "src/lib/task-chat-context.test.ts",
   "src/lib/cave-config.test.ts",
   "src/lib/cave-config-state-race.test.ts",
   "src/lib/travel-client-state.test.ts",
