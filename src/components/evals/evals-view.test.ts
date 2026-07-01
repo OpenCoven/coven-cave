@@ -88,4 +88,16 @@ assert.match(source, /"insights"/, "has an insights tab");
 assert.match(source, /"compare"/, "has a compare tab");
 assert.match(source, /slaMinPassRate/, "suite editor wires the SLA field");
 
+// Suite rail collapses to a drawer on small screens (toggle + backdrop).
+assert.match(source, /const \[railOpen, setRailOpen\] = useState\(false\)/, "tracks the suite-rail drawer open state");
+assert.match(source, /className="evals-rail-toggle"/, "renders the small-screen Suites drawer toggle");
+assert.match(source, /aria-controls="evals-rail"/, "the toggle is associated with the rail");
+assert.match(source, /id="evals-rail" className="evals-rail"/, "the rail is the toggle's controlled region");
+assert.match(source, /evals--rail-open/, "root reflects the drawer open state");
+assert.match(source, /setRailOpen\(false\); \/\/ close the drawer after picking a suite/, "picking a suite closes the drawer");
+const css = readFileSync(new URL("../../styles/evals.css", import.meta.url), "utf8");
+assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.evals-rail \{[\s\S]*?transform: translateX\(-101%\)/, "the rail slides off-canvas under the narrow breakpoint");
+assert.match(css, /\.evals--rail-open \.evals-rail \{ transform: translateX\(0\)/, "opening the drawer slides the rail in");
+assert.doesNotMatch(css, /@media \(max-width: 720px\)[\s\S]*?\.evals-rail \{ display: none;/, "the rail no longer just vanishes on small screens");
+
 console.log("evals-view.test.ts OK");

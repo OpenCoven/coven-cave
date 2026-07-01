@@ -114,6 +114,10 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   const [suites, setSuites] = useState<EvalSuite[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // On small screens the suite rail collapses into a drawer; this tracks whether
+  // it's open. It's a no-op on desktop (the CSS only reacts to it under the
+  // narrow breakpoint), so it can be toggled freely.
+  const [railOpen, setRailOpen] = useState(false);
   const [draft, setDraft] = useState<EvalSuite | null>(null);
   const [savedJson, setSavedJson] = useState<string>("");
   const [runs, setRuns] = useState<EvalRun[]>([]);
@@ -263,6 +267,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
 
   const selectSuite = useCallback((suite: EvalSuite) => {
     setSelectedId(suite.id);
+    setRailOpen(false); // close the drawer after picking a suite (small screens)
     setDraft(structuredClone(suite));
     setSavedJson(JSON.stringify(suite));
     setExpandedRunId(null);
@@ -415,8 +420,27 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   }, [activeGroup, activeGroupStates]);
 
   return (
-    <div className="evals evals-unified">
-      <aside className="evals-rail">
+    <div className={`evals evals-unified${railOpen ? " evals--rail-open" : ""}`}>
+      {/* Small-screen drawer toggle — reveals the suite rail (which collapses
+          off-canvas below the narrow breakpoint). Hidden on desktop via CSS. */}
+      <button
+        type="button"
+        className="evals-rail-toggle"
+        onClick={() => setRailOpen((open) => !open)}
+        aria-expanded={railOpen}
+        aria-controls="evals-rail"
+      >
+        <Icon name={railOpen ? "ph:x" : "ph:list-bullets-bold"} width={14} aria-hidden />
+        <span>Suites</span>
+        <span className="evals-rail-toggle-count">{suites.length}</span>
+      </button>
+      {/* Backdrop closes the drawer; only interactive while open on small screens. */}
+      <div
+        className="evals-rail-backdrop"
+        onClick={() => setRailOpen(false)}
+        aria-hidden
+      />
+      <aside id="evals-rail" className="evals-rail">
         <div className="evals-rail-head">
           <div>
             <span className="evals-rail-title">Evals</span>
