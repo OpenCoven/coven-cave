@@ -530,6 +530,7 @@ export const SUITES = {
     "src/lib/server/automation-runner.test.ts",
     "src/lib/session-pins.test.ts",
     "src/lib/message-feedback.test.ts",
+    "src/components/detail-split-host.test.ts",
   ],
   api: [
     "scripts/dependency-policy.test.mjs",

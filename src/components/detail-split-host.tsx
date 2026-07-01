@@ -334,11 +334,32 @@ export function DetailSplitHost({
             </Group>
           </>
         ) : (
+          // 2+ secondary pages (3+ panes total): a resizable group so every
+          // divider between panes drags freely (min-size clamped), instead of a
+          // fixed equal-width grid. react-resizable-panels distributes the panes
+          // evenly by default and its Separators resize the adjacent panes
+          // natively (no custom snap tracking — that's the 2-pane path above).
           <>
             {mobileSwitcher}
-            <div className="split-host__group split-host__grid" data-variant={variant}>
-              {tiles.map(renderGridTile)}
-            </div>
+            <Group className="split-host__group" data-variant={variant} orientation="horizontal">
+              {tiles.map((tile, i) => (
+                <React.Fragment key={tile.id}>
+                  {i > 0 ? (
+                    <Separator className="shell-separator split-host__sep">
+                      <SeparatorHandle orientation="col" />
+                    </Separator>
+                  ) : null}
+                  <Panel
+                    id={`split-tile-${tile.id}`}
+                    className="split-host__pane-panel split-host__tile-panel flex min-h-0 min-w-0"
+                    data-active={activeTileId === tile.id}
+                    minSize="12%"
+                  >
+                    {renderGridTile(tile)}
+                  </Panel>
+                </React.Fragment>
+              ))}
+            </Group>
           </>
         )
       ) : (
