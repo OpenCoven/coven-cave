@@ -29,12 +29,15 @@ export const COMMAND_RESPONSE_SPEED_OPTIONS: Array<{ value: CommandResponseSpeed
   { value: "careful", label: "Careful" },
 ];
 
-export type CommandPermissionMode = "full" | "read" | "ask";
+// Only the two modes the non-interactive chat bridge can actually enforce via
+// the harness's native sandbox flag (coven run --permission full|read-only).
+// "Ask first" (interactive approval) is intentionally omitted — the harness runs
+// one-shot with no channel to prompt for approval, so it would hang.
+export type CommandPermissionMode = "full" | "read";
 
 export const PERMISSION_MODES: { value: CommandPermissionMode; label: string; icon: string }[] = [
   { value: "full", label: "Full access", icon: "ph:shield-warning" },
   { value: "read", label: "Read only", icon: "ph:eye" },
-  { value: "ask", label: "Ask first", icon: "ph:hand" },
 ];
 
 export const DEFAULT_PERMISSION_MODE: CommandPermissionMode = "full";

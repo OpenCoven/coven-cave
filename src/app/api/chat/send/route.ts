@@ -57,7 +57,7 @@ import {
   resolveOpenClawAgentBinding,
   type OpenClawAgentJson,
 } from "@/lib/openclaw-bridge";
-import { isTrustedChatHarness, covenRunSupportsModelFlag, canonicalHarnessId } from "@/lib/harness-adapters";
+import { isTrustedChatHarness, covenRunSupportsModelFlag, covenRunSupportsPermissionFlag, canonicalHarnessId } from "@/lib/harness-adapters";
 import {
   type ConversationFile,
   type ChatTurn,
@@ -117,6 +117,11 @@ type SendBody = {
   modelOverrideScope?: "next-message" | "session";
   reasoningEffort?: string;
   responseSpeed?: string;
+  /** Composer Access chip: "full" (default) or "read". Forwarded to
+   *  `coven run --permission` (mapped to the harness's native sandbox flag)
+   *  only when the installed CLI advertises it; "full" is left implicit so the
+   *  harness keeps its default sandbox rather than being widened. */
+  permissionMode?: string;
   attachments?: ChatAttachment[];
   /** Repo-relative paths the user @-mentioned in the composer (CHAT-D1-04). */
   mentionedFiles?: string[];
@@ -518,6 +523,52 @@ function covenRunSupportsModel(): Promise<boolean> {
     });
   }
   return covenRunModelFlagProbe;
+}
+
+// Parallel capability probe for `coven run --permission` (the sandbox flag added
+// in @opencoven/cli). Same shape/caching as the model probe; a CLI that predates
+// the flag rejects unknown flags, so forwarding must stay gated to a no-op.
+let covenRunPermissionFlagProbe: Promise<boolean> | null = null;
+function covenRunSupportsPermission(): Promise<boolean> {
+  if (!covenRunPermissionFlagProbe) {
+    covenRunPermissionFlagProbe = new Promise<boolean>((resolve) => {
+      let out = "";
+      let settled = false;
+      const done = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      try {
+        const { command, fixedArgs } = covenLaunchCommand();
+        const child = spawn(command, [...fixedArgs, "run", "--help"], {
+          env: covenSpawnEnv(),
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        child.stdout.on("data", (d) => (out += d.toString()));
+        child.stderr.on("data", (d) => (out += d.toString()));
+        const t = setTimeout(() => {
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            /* ignore */
+          }
+          done(false);
+        }, 2500);
+        child.on("close", () => {
+          clearTimeout(t);
+          done(covenRunSupportsPermissionFlag(out));
+        });
+        child.on("error", () => {
+          clearTimeout(t);
+          done(false);
+        });
+      } catch {
+        done(false);
+      }
+    });
+  }
+  return covenRunPermissionFlagProbe;
 }
 
 function resolveSendModelMetadata(args: {
@@ -937,6 +988,11 @@ export async function POST(req: Request) {
   // probe so this stays a no-op until the companion CLI ships the flag.
   const modelForwardingEnabled =
     binding.harness !== "openclaw" && (await covenRunSupportsModel());
+  // Same gating for the sandbox/permission flag. Only "read" is forwarded
+  // (→ `--permission read-only`); "full" stays implicit so the harness keeps
+  // its own default sandbox instead of being widened to danger-full-access.
+  const permissionForwardingEnabled =
+    binding.harness !== "openclaw" && (await covenRunSupportsPermission());
   const { desiredModel, modelState } = resolveSendModelMetadata({
     body,
     config,
@@ -1138,6 +1194,8 @@ export async function POST(req: Request) {
   // Emitted BEFORE the `--` separator for the same reason every other flag is.
   const forwardModel =
     modelForwardingEnabled && cleanModelId(desiredModel) ? desiredModel : null;
+  const forwardPermission =
+    permissionForwardingEnabled && body.permissionMode === "read" ? "read-only" : null;
   // `promptOverride` lets the transparent resume-retry (below) prime a fresh
   // harness session with replayed conversation history — without it the retry
   // forks a context-free session and the familiar loses the thread.
@@ -1159,6 +1217,10 @@ export async function POST(req: Request) {
     const a = ["run", binding.harness, "--stream-json"];
     if (resumeSessionId) a.push("--continue", resumeSessionId);
     if (forwardModel) a.push("--model", forwardModel);
+    // Enforce Read-only by mapping to the harness's native sandbox flag via
+    // `coven run --permission read-only` (codex --sandbox read-only / claude
+    // --permission-mode plan). Gated on the CLI advertising the flag.
+    if (forwardPermission) a.push("--permission", forwardPermission);
     // Inject identity preamble. coven-cli renders this through the best
     // available identity channel for the chosen harness. Without this, the
     // harness answers as its generic CLI identity instead of as the familiar.
