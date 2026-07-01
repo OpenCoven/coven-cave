@@ -180,6 +180,7 @@ export function TopBar(props: Props) {
           <button
             type="button"
             className="top-bar__icon-btn"
+            data-quick-chat-trigger
             onClick={onOpenQuickChat}
             aria-label="Quick chat"
             title="Quick chat"

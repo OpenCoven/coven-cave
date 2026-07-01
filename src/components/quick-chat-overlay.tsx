@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import {
   COMMAND_RESPONSE_SPEED_OPTIONS,
   COMMAND_THINKING_OPTIONS,
@@ -49,6 +49,41 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession }: Props) {
 
   const sending = sendState === "sending";
 
+  // Anchor the popover directly beneath its menubar trigger so it reads as a
+  // dropdown from the bar (with a caret pointing up at the icon) rather than a
+  // panel pinned to the corner. Falls back to the CSS default (top-right) if the
+  // trigger can't be measured. Recomputed on resize while open.
+  const [anchor, setAnchor] = useState<{ top: number; right: number; caretRight: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      // The trigger lives in the top bar, which is rendered per-breakpoint — pick
+      // the visible instance (a hidden one reports a 0×0 rect). Its icon <svg> is
+      // a leaf that keeps a real box even if the button itself doesn't, so fall
+      // back to that to find the real on-screen position.
+      const btns = Array.from(document.querySelectorAll("[data-quick-chat-trigger]"));
+      const btn = btns.find((el) => el.getBoundingClientRect().width > 0) ?? btns[0] ?? null;
+      let rect: DOMRect | undefined = btn?.getBoundingClientRect();
+      if ((!rect || rect.width === 0) && btn) {
+        rect = (btn.querySelector("svg") ?? btn.firstElementChild)?.getBoundingClientRect();
+      }
+      if (!rect || rect.width === 0) {
+        setAnchor(null);
+        return;
+      }
+      const right = Math.max(12, Math.round(window.innerWidth - rect.right));
+      setAnchor({
+        top: Math.round(rect.bottom + 8),
+        right,
+        // Centre the caret on the trigger icon (distance from the viewport right).
+        caretRight: Math.max(14, Math.round(window.innerWidth - (rect.left + rect.width / 2) - 6)),
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [open]);
+
   // Escape closes the popover while it's open.
   useEffect(() => {
     if (!open) return;
@@ -88,11 +123,19 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession }: Props) {
         onClick={onClose}
         aria-hidden
       />
+      {anchor ? (
+        <div
+          className="quick-chat-overlay__caret"
+          aria-hidden
+          style={{ position: "fixed", top: anchor.top - 5, right: anchor.caretRight, zIndex: 1201 }}
+        />
+      ) : null}
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Quick chat"
         className="quick-chat-overlay"
+        style={anchor ? { top: anchor.top, right: anchor.right } : undefined}
       >
         <header className="flex items-center justify-between border-b border-[var(--border-hairline)] px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">

@@ -9933,6 +9933,19 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   animation: quick-chat-overlay-in 180ms var(--ease-emphasized, cubic-bezier(0.2, 0.8, 0.2, 1));
 }
 
+/* Caret connecting the dropdown to its menubar trigger (positioned inline). */
+.quick-chat-overlay__caret {
+  width: 12px;
+  height: 12px;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-hairline);
+  border-top: 1px solid var(--border-hairline);
+  border-top-left-radius: 3px;
+  transform: rotate(45deg);
+  box-shadow: -2px -2px 6px -3px rgba(0, 0, 0, 0.35);
+  animation: quick-chat-backdrop-in 180ms var(--ease-standard, ease-out);
+}
+
 @keyframes quick-chat-overlay-in {
   from {
     opacity: 0;
@@ -9949,7 +9962,8 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 @media (prefers-reduced-motion: reduce) {
   .quick-chat-overlay,
-  .quick-chat-overlay-backdrop {
+  .quick-chat-overlay-backdrop,
+  .quick-chat-overlay__caret {
     animation: none;
   }
 }
