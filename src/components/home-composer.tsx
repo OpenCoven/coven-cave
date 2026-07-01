@@ -974,8 +974,21 @@ export function HomeComposer({
           enterKeyHint="send"
         />
 
-        {/* Staged attachments — chips with a remove control (mirrors chat). */}
+        {/* Staged attachments — a count + clear-all header over the chips
+            (each chip has its own remove control; mirrors chat). */}
         {attachments.length > 0 && (
+          <div className="hc-attachments-wrap">
+            <div className="hc-attachments-head">
+              <span className="hc-attachments-count">{attachments.length}/10 attached</span>
+              <button
+                type="button"
+                className="hc-attachments-clear"
+                onClick={() => setAttachments([])}
+                disabled={sending}
+              >
+                Clear all
+              </button>
+            </div>
           <ul className="hc-attachments" aria-label="Attachments">
             {attachments.map((att) => {
               const isImage = (att.mimeType ?? att.type)?.startsWith("image/");
@@ -1001,6 +1014,7 @@ export function HomeComposer({
               );
             })}
           </ul>
+          </div>
         )}
 
         {/* Action bar */}

@@ -482,3 +482,15 @@ assert.match(
   /isImage && att\.dataUrl \?[\s\S]*?<img src=\{att\.dataUrl\}[\s\S]*?className="hc-attachment-thumb"/,
   "image chips render a preview thumbnail instead of the generic icon",
 );
+
+// ── Attachment count + clear-all ────────────────────────────────────────────
+assert.match(
+  source,
+  /hc-attachments-count[\s\S]*?\{attachments\.length\}\/10 attached/,
+  "the attachments header shows a count out of the 10 cap",
+);
+assert.match(
+  source,
+  /hc-attachments-clear[\s\S]*?onClick=\{\(\) => setAttachments\(\[\]\)\}[\s\S]*?Clear all/,
+  "a Clear all control empties the staged attachments",
+);
