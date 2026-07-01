@@ -45,7 +45,7 @@ assert.match(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null, \{\s*initialControls: \{ thinkingEffort, responseSpeed \},\s*\}\)/,
+  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null, \{\s*initialControls: \{ thinkingEffort, responseSpeed \},[\s\S]*?\}\)/,
   "HomeComposer should hand the selected project root and initial command controls to chat start",
 );
 
@@ -123,7 +123,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null, \{\s*initialControls: \{ thinkingEffort, responseSpeed \},\s*\}\)/,
+  /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null, \{\s*initialControls: \{ thinkingEffort, responseSpeed \},[\s\S]*?\}\)/,
   "HomeComposer should hand the selected agent chat prompt and command controls to the workspace, which opens a new chat that auto-sends it",
 );
 
@@ -407,4 +407,42 @@ assert.match(
   source,
   /writeComposerHistory\(HOME_HISTORY_KEY, history\)/,
   "home prompt history is persisted when it changes",
+);
+
+// ── Attachments + Enhance (added to the home composer) ──────────────────────
+assert.match(
+  source,
+  /className="hc-add-btn"[\s\S]*?onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?ph:paperclip/,
+  "the + launcher is now a paperclip that opens the file picker",
+);
+assert.match(
+  source,
+  /<input[\s\S]*?type="file"[\s\S]*?multiple[\s\S]*?onChange=\{\(e\) => \{ void addFiles\(e\.target\.files\)/,
+  "a hidden multi-file input feeds addFiles",
+);
+assert.match(
+  source,
+  /attachments\.map\(\(att\) =>[\s\S]*?attachmentIcon\(att\)[\s\S]*?removeAttachment\(att\.id\)/,
+  "staged attachments render as removable chips",
+);
+assert.doesNotMatch(source, /const openCommands =/, "the old slash-launcher click handler is retired (slash still opens on typing '/')");
+assert.match(
+  source,
+  /initialAttachments: outgoing/,
+  "staged attachments are threaded into the started chat",
+);
+assert.match(
+  source,
+  /className=\{`hc-enhance-btn[\s\S]*?onClick=\{\(\) => void enhancePrompt\(\)\}/,
+  "an Enhance button invokes prompt enhancement",
+);
+assert.match(
+  source,
+  /fetch\("\/api\/prompt\/enhance"/,
+  "Enhance calls the prompt-enhance endpoint",
+);
+assert.match(
+  source,
+  /enhanceOriginal != null &&[\s\S]*?onClick=\{revertEnhance\}/,
+  "a one-tap Undo reverts an enhancement",
 );

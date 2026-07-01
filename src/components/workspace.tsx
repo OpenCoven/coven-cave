@@ -76,6 +76,7 @@ import { TopBar } from "@/components/top-bar";
 import { QuickChatOverlay } from "@/components/quick-chat-overlay";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
+import type { ChatAttachment } from "@/lib/chat-attachments";
 import {
   OPEN_IN_APP_BROWSER_EVENT,
   PENDING_IN_APP_BROWSER_URL_KEY,
@@ -1187,6 +1188,7 @@ export function Workspace() {
     projectRoot?: string | null,
     initialPrompt?: string | null,
     initialControls?: InitialCommandControls | null,
+    initialAttachments?: ChatAttachment[] | null,
   ) => {
     if (familiarId) setActiveId(familiarId);
     setPendingProjectChatRoot(projectRoot ?? null);
@@ -1195,6 +1197,7 @@ export function Workspace() {
       familiarId,
       projectRoot,
       initialPrompt,
+      initialAttachments,
       initialControls,
       nonce: Date.now(),
     });
@@ -2131,7 +2134,7 @@ export function Workspace() {
         sessions={sessions}
         onSetActiveFamiliar={setActiveId}
         onStartChat={(prompt, fid, projectRoot, opts) =>
-          startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null)
+          startFamiliarChat(fid, projectRoot, prompt, opts?.initialControls ?? null, opts?.initialAttachments ?? null)
         }
         onNavigateToBoard={() => setMode("board")}
         onToast={pushToast}

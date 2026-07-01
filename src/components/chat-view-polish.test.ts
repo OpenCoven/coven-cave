@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+// fileToAttachment moved to the shared lib (reused by the home composer).
+const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
 
 assert.match(
   globalsSrc,
@@ -21,7 +23,7 @@ assert.match(
 );
 
 assert.match(
-  source,
+  attachmentsLib,
   /if \(file\.size > MAX_ATTACHMENT_IMAGE_BYTES\) \{[\s\S]*?attachment\.truncated = true;/,
   "Oversized image attachments should be capped at capture time and marked like truncated text",
 );

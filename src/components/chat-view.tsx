@@ -36,11 +36,12 @@ import type { Card } from "@/lib/cave-board-types";
 import { TaskLinkPicker } from "@/components/task-link-picker";
 import { openExternalUrl } from "@/lib/open-external";
 import {
+  attachmentIcon,
   extractAgentAttachmentMarkers,
-  MAX_ATTACHMENT_IMAGE_BYTES,
-  MAX_ATTACHMENT_TEXT_CHARS,
+  fileToAttachment,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
+  type ComposerAttachment,
 } from "@/lib/chat-attachments";
 import {
   FILE_MENTION_RESULT_LIMIT,
@@ -251,6 +252,9 @@ type Props = {
   /** Prompt handed off from the home composer. Auto-sent once on mount so the
    *  send runs through this view's streaming path instead of a detached fetch. */
   initialPrompt?: string;
+  /** Files handed off from the home composer alongside `initialPrompt`; included
+   *  in the auto-sent first message. */
+  initialAttachments?: ChatAttachment[];
   initialControls?: InitialCommandControls;
   /** Provenance for a newly-created conversation (e.g. "eval" for eval-discuss
    *  threads). Persisted on the conversation so it can be surfaced/hidden by origin. */
@@ -281,7 +285,6 @@ export type ChatViewHandle = {
   runSlash: (command: string) => void;
 };
 
-type ComposerAttachment = ChatAttachment & { id: string };
 type ChatHistoryState = "idle" | "loading" | "loaded" | "missing" | "error";
 
 function isFlowBackedSession(session: SessionRow | null | undefined): boolean {
@@ -735,56 +738,8 @@ function fmtBytes(size?: number): string {
   return `${size} B`;
 }
 
-function isTextLike(file: File): boolean {
-  if (file.type.startsWith("text/")) return true;
-  if (/\/(json|xml|yaml|toml|javascript|typescript|x-sh|csv)$/i.test(file.type)) return true;
-  return /\.(txt|md|markdown|json|yaml|yml|toml|csv|ts|tsx|js|jsx|css|scss|html|xml|rs|go|py|rb|swift|java|kt|sh|zsh|fish|sql|log)$/i.test(file.name);
-}
-
-function attachmentIcon(attachment: Pick<ChatAttachment, "mimeType" | "type">): IconName {
-  const mimeType = attachment.mimeType ?? attachment.type ?? "";
-  if (mimeType.startsWith("image/")) return "ph:camera";
-  if (mimeType.startsWith("video/")) return "ph:video";
-  if (mimeType.startsWith("text/") || /json|xml|yaml|toml|csv|javascript|typescript/.test(mimeType)) {
-    return "ph:file-text";
-  }
-  return "ph:paperclip";
-}
-
 function hasDraggedFiles(types: DataTransfer["types"]): boolean {
   return Array.from(types).includes("Files");
-}
-
-async function fileToAttachment(file: File): Promise<ComposerAttachment> {
-  const attachment: ComposerAttachment = {
-    id: crypto.randomUUID(),
-    name: file.name,
-    type: file.type || undefined,
-    mimeType: file.type || undefined,
-    size: file.size,
-  };
-  if (isTextLike(file)) {
-    const text = await file.slice(0, MAX_ATTACHMENT_TEXT_CHARS).text();
-    attachment.text = text;
-    if (file.size > new Blob([text]).size) attachment.truncated = true;
-  } else if (file.type.startsWith("image/")) {
-    if (file.size > MAX_ATTACHMENT_IMAGE_BYTES) {
-      // Mirror the text-truncation idiom: keep the attachment listed but
-      // skip capturing an oversized payload, surfacing the same chip.
-      attachment.truncated = true;
-      return attachment;
-    }
-    await new Promise<void>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === "string") attachment.dataUrl = reader.result;
-        resolve();
-      };
-      reader.onerror = () => resolve();
-      reader.readAsDataURL(file);
-    });
-  }
-  return attachment;
 }
 
 /**
@@ -2067,7 +2022,7 @@ function MobileChatActionStrip({
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange, surface },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange, surface },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -3744,7 +3699,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setThinkingEffort(normalized.thinkingEffort);
         setResponseSpeed(normalized.responseSpeed);
       }
-      void sendRaw(initialPrompt, [], [], undefined, normalized ?? undefined);
+      void sendRaw(initialPrompt, initialAttachments ?? [], [], undefined, normalized ?? undefined);
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps

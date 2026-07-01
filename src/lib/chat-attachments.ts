@@ -1,3 +1,5 @@
+import type { IconName } from "@/lib/icon";
+
 export const MAX_ATTACHMENT_TEXT_CHARS = 64_000;
 /** Hard cap on a decoded image payload, enforced on capture (client) and on
  * normalize (server) — the server never trusts the client-side check. */
@@ -200,4 +202,62 @@ export function buildPromptWithAttachments(
   });
 
   return `${header}\n\nAttached files:\n${parts.join("\n\n")}`;
+}
+
+// ── Composer-side file → attachment capture ──────────────────────────────────
+// Shared by the chat composer (ChatView) and the home composer so both convert
+// picked files identically. Browser-only (FileReader/Blob/crypto) but safe to
+// import server-side — nothing runs at module load.
+
+/** A composer-staged attachment: a ChatAttachment plus a local id for the UI. */
+export type ComposerAttachment = ChatAttachment & { id: string };
+
+/** Files we inline as text (captured into `.text`) vs. keep as metadata/image. */
+export function isTextLike(file: File): boolean {
+  if (file.type.startsWith("text/")) return true;
+  if (/\/(json|xml|yaml|toml|javascript|typescript|x-sh|csv)$/i.test(file.type)) return true;
+  return /\.(txt|md|markdown|json|yaml|yml|toml|csv|ts|tsx|js|jsx|css|scss|html|xml|rs|go|py|rb|swift|java|kt|sh|zsh|fish|sql|log)$/i.test(file.name);
+}
+
+/** Phosphor glyph for an attachment chip, by mime/type. */
+export function attachmentIcon(attachment: Pick<ChatAttachment, "mimeType" | "type">): IconName {
+  const mimeType = attachment.mimeType ?? attachment.type ?? "";
+  if (mimeType.startsWith("image/")) return "ph:camera";
+  if (mimeType.startsWith("video/")) return "ph:video";
+  if (mimeType.startsWith("text/") || /json|xml|yaml|toml|csv|javascript|typescript/.test(mimeType)) {
+    return "ph:file-text";
+  }
+  return "ph:paperclip";
+}
+
+/** Convert a picked File into a ComposerAttachment: inline text bodies, embed
+ *  small images as data URLs, keep everything else as metadata (truncated). */
+export async function fileToAttachment(file: File): Promise<ComposerAttachment> {
+  const attachment: ComposerAttachment = {
+    id: crypto.randomUUID(),
+    name: file.name,
+    type: file.type || undefined,
+    mimeType: file.type || undefined,
+    size: file.size,
+  };
+  if (isTextLike(file)) {
+    const text = await file.slice(0, MAX_ATTACHMENT_TEXT_CHARS).text();
+    attachment.text = text;
+    if (file.size > new Blob([text]).size) attachment.truncated = true;
+  } else if (file.type.startsWith("image/")) {
+    if (file.size > MAX_ATTACHMENT_IMAGE_BYTES) {
+      attachment.truncated = true;
+      return attachment;
+    }
+    await new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === "string") attachment.dataUrl = reader.result;
+        resolve();
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
+  }
+  return attachment;
 }
