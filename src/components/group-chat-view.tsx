@@ -39,8 +39,7 @@ import {
   setGroupSession,
   setGroupParticipants,
   parseMentions,
-  renderCovenRoster,
-  renderCovenContext,
+  renderCovenRoundtablePrompt,
   findActiveMention,
   matchMentions,
   applyMention,
@@ -95,9 +94,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // Caret to restore after we programmatically rewrite the draft (mention insert).
   const pendingCaretRef = useRef<number | null>(null);
   const groupsRef = useRef<CovenGroup[]>(groups);
-  const transcriptRef = useRef<GroupTurn[]>(transcript);
   groupsRef.current = groups;
-  transcriptRef.current = transcript;
 
   const byId = useMemo(() => {
     const m = new Map<string, ResolvedFamiliar>();
@@ -243,9 +240,8 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // --- broadcast send ------------------------------------------------------
   const streamOne = useCallback(
     async (group: CovenGroup, reply: GroupReply, prompt: string, signal: AbortSignal): Promise<GroupReply> => {
-      // `settled` mirrors the live React state so relay can read the final reply
-      // synchronously (transcriptRef only refreshes on re-render, which doesn't
-      // happen between sequential iterations). Apply every update to both.
+      // `settled` mirrors the live React state so callers can await the final
+      // reply state without waiting for React to render. Apply every update to both.
       let settled = reply;
       const apply = (fn: (r: GroupReply) => GroupReply) => {
         settled = fn(settled);
@@ -342,51 +338,31 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         status: "queued",
         createdAt: at,
       }));
-      // Prior rounds (before this turn) — the relay reads peers' replies from
-      // here plus the in-round accumulator. Captured before setTranscript, which
-      // flushes async (transcriptRef only refreshes on re-render).
-      const prior = transcriptRef.current;
       setTranscript((prev) => [...prev, userTurn, ...replies]);
       setDraft("");
       setMention(null);
       setBusy(true);
       const controller = new AbortController();
       abortRef.current = controller;
-      // Full-coven broadcasts relay SEQUENTIALLY so each familiar sees the
-      // others' fresh replies this round; targeted/@mention sends stay parallel
-      // (a lone target has no peers to relay, and parallel keeps latency at 1×).
-      const shouldRelay = mentioned.length === 0 && replies.length > 1;
-      if (shouldRelay) {
-        const relayed: GroupReply[] = [];
-        for (const r of replies) {
-          if (controller.signal.aborted) {
-            updateReply(r.id, (x) => ({ ...x, status: "error", error: "cancelled", activity: undefined }));
-            continue;
-          }
-          // Strip the piggybacked next-paths block from peers' text before
-          // quoting it, so control markup never leaks into the next prompt.
-          const contextTurns = [...prior, userTurn, ...relayed].map((t) =>
-            t.role === "assistant" ? { ...t, text: extractNextPaths(t.text).visible } : t,
-          );
-          const roster = renderCovenRoster(rosterParticipants, r.familiarId);
-          const transcript = renderCovenContext(contextTurns, r.familiarId, mentionable);
-          const prompt = [roster, transcript, text].filter(Boolean).join("\n\n");
-          const done = await streamOne(group, r, prompt, controller.signal);
-          if (done.status === "done" && done.text.trim()) relayed.push(done);
-        }
-      } else {
-        await Promise.all(
-          replies.map((r) => {
-            const roster = renderCovenRoster(rosterParticipants, r.familiarId);
-            const prompt = roster ? `${roster}\n\n${text}` : text;
-            return streamOne(group, r, prompt, controller.signal);
-          }),
-        );
-      }
+      await Promise.all(
+        replies.map((r) =>
+          streamOne(
+            group,
+            r,
+            renderCovenRoundtablePrompt({
+              participants: rosterParticipants,
+              receivingFamiliarId: r.familiarId,
+              userText: text,
+              targeted: mentioned.length > 0,
+            }),
+            controller.signal,
+          ),
+        ),
+      );
       abortRef.current = null;
       setBusy(false);
     },
-    [busy, streamOne, byId, updateReply],
+    [busy, streamOne, byId],
   );
 
   // The composer and "click a next-path suggestion to send" chips both go

@@ -11,6 +11,7 @@ import {
   setGroupParticipants,
   parseMentions,
   renderCovenRoster,
+  renderCovenRoundtablePrompt,
   renderCovenContext,
   findActiveMention,
   matchMentions,
@@ -268,6 +269,35 @@ test("renderCovenRoster: returns '' for a degenerate roster (<= 1 participant)",
     renderCovenRoster([{ id: "nova", name: "Nova", role: "Lead", kind: "familiar" }], "nova"),
     "",
   );
+});
+
+test("renderCovenRoundtablePrompt: frames broadcast replies as independent first-pass answers", () => {
+  const out = renderCovenRoundtablePrompt({
+    participants: COVEN,
+    receivingFamiliarId: "nova",
+    userText: "What should we do?",
+    targeted: false,
+  });
+
+  assert.match(out, /<coven_roster>[\s\S]*Nova — Lead orchestrator \(you\)/);
+  assert.match(out, /<coven_roundtable>[\s\S]*independent first-pass group reply/i);
+  assert.match(out, /Other familiars receive the same human request in parallel/);
+  assert.match(out, /Answer from your own identity, role, and judgment/);
+  assert.match(out, /Do not summarize, predict, imitate, or speak for other familiars/);
+  assert.match(out, /What should we do\?$/);
+  assert.doesNotMatch(out, /<coven_transcript>/);
+});
+
+test("renderCovenRoundtablePrompt: targeted replies get direct-mention framing", () => {
+  const out = renderCovenRoundtablePrompt({
+    participants: COVEN,
+    receivingFamiliarId: "charm",
+    userText: "  @Charm check this  ",
+    targeted: true,
+  });
+
+  assert.match(out, /directly mentioned/);
+  assert.match(out, /@Charm check this$/);
 });
 
 const NAMES: MentionableFamiliar[] = [
