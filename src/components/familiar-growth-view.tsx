@@ -189,7 +189,7 @@ export function FamiliarGrowthView({
             <Icon name="ph:chart-bar-bold" aria-hidden />
             Familiar Growth &amp; Performance
           </p>
-          <h2>Spot growth patterns before they stall.</h2>
+          <h2>Spot growth patterns.</h2>
           <p>
             Review familiar activity, retro acceptance, memory freshness, and rule-based growth opportunities in one place.
           </p>
