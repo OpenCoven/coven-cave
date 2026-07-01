@@ -175,4 +175,18 @@ assert.match(
   "menu bar shows on desktop (≥1024px)",
 );
 
+// Desktop quick-chat entry point: the bar carries the quick-chat trigger (the
+// mobile top bar's copy is hidden ≥1024px), tagged so the popover anchors under
+// it as a dropdown from this menubar.
+assert.match(
+  source,
+  /data-quick-chat-trigger[\s\S]{0,140}onClick=\{onOpenQuickChat\}[\s\S]{0,140}aria-label="Quick chat"/,
+  "the desktop menu bar renders a data-quick-chat-trigger button wired to onOpenQuickChat",
+);
+assert.match(
+  workspace,
+  /<FamiliarMenuBar[\s\S]*?onOpenQuickChat=\{\(\) => setQuickChatOpen\(true\)\}/,
+  "workspace wires the desktop menu bar's quick-chat trigger to open the popover",
+);
+
 console.log("familiar-menu-bar.test.ts: ok");

@@ -2225,6 +2225,7 @@ export function Workspace() {
               enrichingTasks={enrichingTasks}
               enrichProgress={enrichProgress}
               onViewInbox={() => setMode("inbox")}
+              onOpenQuickChat={() => setQuickChatOpen(true)}
             />
             <TopBar
               onOpenPalette={() => setPaletteOpen(true)}

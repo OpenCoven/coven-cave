@@ -34,6 +34,8 @@ type Props = {
   enrichProgress?: { done: number; total: number } | null;
   /** Jump to the inbox / schedules. */
   onViewInbox: () => void;
+  /** Open the quick-chat dropdown (anchored under its trigger in this bar). */
+  onOpenQuickChat?: () => void;
 };
 
 const ENRICH_TASKS_TITLE =
@@ -66,6 +68,7 @@ export function FamiliarMenuBar({
   enrichingTasks,
   enrichProgress,
   onViewInbox,
+  onOpenQuickChat,
 }: Props) {
   const enrichLabel = enrichingTasks
     ? enrichProgress
@@ -120,6 +123,19 @@ export function FamiliarMenuBar({
       </form>
 
       <div className="menu-bar__group menu-bar__group--tasks">
+        {onOpenQuickChat ? (
+          <button
+            type="button"
+            className="menu-bar__task focus-ring"
+            data-quick-chat-trigger
+            onClick={onOpenQuickChat}
+            aria-label="Quick chat"
+            title="Quick chat"
+          >
+            <Icon name="ph:chat-circle-dots" width={22} height={22} aria-hidden />
+            <span>Chat</span>
+          </button>
+        ) : null}
         {onEnrichTasks ? (
           <button
             type="button"
