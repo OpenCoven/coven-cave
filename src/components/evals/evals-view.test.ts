@@ -6,10 +6,14 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./evals-view.tsx", import.meta.url), "utf8");
 
-// Familiar scoping + picker
+// Familiar scoping — the page is fixated on ONE familiar (the workspace
+// selection), with no per-page picker. Everything is scoped to that familiar.
 assert.match(source, /familiars: ResolvedFamiliar\[\]/, "view receives resolved familiars");
-assert.match(source, /activeFamiliarId/, "view honors the active familiar scope");
-assert.match(source, /aria-label="Familiar to evaluate"/, "renders a familiar picker");
+assert.match(source, /const familiarId = activeFamiliarId \|\| familiars\[0\]\?\.id \|\| ""/, "familiar is driven by the workspace selection, not a per-suite picker");
+assert.doesNotMatch(source, /aria-label="Familiar to evaluate"/, "the per-page familiar picker is removed in favor of a fixed subject");
+assert.match(source, /aria-label=\{`Evaluating \$\{familiarName\}`\}/, "the active familiar is shown as the fixed evaluation subject");
+assert.match(source, /suites\.filter\(\(s\) => s\.familiarId === familiarId\)/, "suites are scoped to the active familiar");
+assert.match(source, /allRuns\.filter\(\(r\) => r\.familiarId === familiarId\)/, "runs are scoped to the active familiar");
 
 // API endpoints (CRUD + runs)
 assert.match(source, /fetch\("\/api\/evals\/suites"\)/, "loads suites from the API");
