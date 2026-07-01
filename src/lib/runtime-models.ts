@@ -7,9 +7,10 @@
 //
 // The curated lists below are a seed. They are intentionally a one-line edit as
 // providers ship new models, and `allowCustom` is the safety valve so the menu
-// never blocks an id that isn't listed yet. Runtimes with no clean provider
-// (e.g. OpenClaw) get `provider: null` and render a free-text field only — the
-// literal "else the runtime's CLI" branch.
+// never blocks an id that isn't listed yet. Runtime-managed adapters get
+// `provider: null` and render a free-text field only — the literal "else the
+// runtime's CLI" branch. That includes Hermes: Cave's Hermes mode means the
+// installed Hermes Agent runtime, not a bundled Nous/Hermes model selection.
 
 export type RuntimeProvider = "openai" | "anthropic" | "nous" | null;
 
@@ -21,6 +22,8 @@ export type RuntimeModelCatalog = {
   provider: RuntimeProvider;
   /** Curated seed; empty ⇒ no menu, free-text only. */
   models: RuntimeModelOption[];
+  /** Fallback when no curated model exists. Runtime markers are synthetic. */
+  defaultModel?: string;
   /** User may type any model id not present in `models`. */
   allowCustom: boolean;
 };
@@ -46,8 +49,9 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
   },
   hermes: {
     runtime: "hermes",
-    provider: "nous",
-    models: [{ id: "nous/hermes-4", label: "Hermes 4" }],
+    provider: null,
+    models: [],
+    defaultModel: "hermes-local",
     allowCustom: true,
   },
   // No clean provider → defer to the runtime's own CLI: free-text only, no menu.
@@ -66,7 +70,8 @@ export function catalogForRuntime(runtime: string): RuntimeModelCatalog | null {
 }
 
 export function defaultModelForRuntime(runtime: string): string {
-  return catalogForRuntime(runtime)?.models[0]?.id ?? GLOBAL_DEFAULT_MODEL;
+  const catalog = catalogForRuntime(runtime);
+  return catalog?.models[0]?.id ?? catalog?.defaultModel ?? GLOBAL_DEFAULT_MODEL;
 }
 
 export function isModelInCatalog(runtime: string, modelId: string): boolean {
