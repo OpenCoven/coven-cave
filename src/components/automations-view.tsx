@@ -1361,7 +1361,7 @@ function AutomationEntryRow({
   const nextFire = entry.state === "active" && entry.nextFireAt ? relTime(entry.nextFireAt) : null;
   return (
     <div
-      className="automation-list-row group/srow flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
+      className="automation-list-row flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
       style={{ border: "1px solid var(--border-hairline)" }}
     >
       <AutomationTypeChip type={entry.type} />
@@ -1453,7 +1453,7 @@ function ManagedAutomationRow({
 }) {
   return (
     <div
-      className="automation-list-row group/srow flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
+      className="automation-list-row flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
       style={{ border: "1px solid var(--border-hairline)" }}
     >
       <AutomationTypeChip type={type} />
@@ -1465,6 +1465,7 @@ function ManagedAutomationRow({
             type="button"
             disabled={busy}
             onClick={onRun}
+            aria-label={`Run ${name} now`}
             className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
             style={{ color: "var(--text-secondary)" }}
           >
