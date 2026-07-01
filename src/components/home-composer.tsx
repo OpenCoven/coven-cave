@@ -977,9 +977,16 @@ export function HomeComposer({
         {/* Staged attachments — chips with a remove control (mirrors chat). */}
         {attachments.length > 0 && (
           <ul className="hc-attachments" aria-label="Attachments">
-            {attachments.map((att) => (
+            {attachments.map((att) => {
+              const isImage = (att.mimeType ?? att.type)?.startsWith("image/");
+              return (
               <li key={att.id} className="hc-attachment">
-                <Icon name={attachmentIcon(att)} width={12} className="hc-attachment-icon" aria-hidden />
+                {isImage && att.dataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={att.dataUrl} alt="" aria-hidden className="hc-attachment-thumb" />
+                ) : (
+                  <Icon name={attachmentIcon(att)} width={12} className="hc-attachment-icon" aria-hidden />
+                )}
                 <span className="hc-attachment-name" title={att.name}>{att.name}</span>
                 <button
                   type="button"
@@ -991,7 +998,8 @@ export function HomeComposer({
                   <Icon name="ph:x" width={10} aria-hidden />
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
 
