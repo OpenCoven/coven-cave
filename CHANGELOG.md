@@ -7,6 +7,39 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.130] - 2026-07-01
+
+Patch release on top of v0.0.129. Headline: the Changes panel can now commit
+your working tree and open a GitHub PR, Kanban cards carry attachments through
+the whole dispatch flow, and split panes are resizable.
+
+### Added
+
+- **Changes panel** - commit the working tree and create a GitHub PR straight
+  from Cave; a server-generated, shell-safe `cave/<slug>-<stamp>` feature
+  branch is derived from the commit message when on a protected/detached HEAD.
+- **Board attachments** - carry composer attachments onto Task cards, forward
+  them into the dispatched task chat, and add/remove attachments on an existing
+  card.
+- **Resizable panes** - drag to resize split pages when two or more are opened
+  beside the primary page.
+- **Quick-chat** - `⌘J` toggles the quick-chat dropdown.
+- **Marketplace** - OpenClaw Skills are split into individual cards with
+  per-skill config defaults.
+- **Projects** - browse for a project folder when creating a new project.
+- **Home composer** - attachment count indicator with a clear-all control.
+- **Chat** - forward the composer permission mode to `coven run --permission`.
+
+### Fixed
+
+- **Dark theme** - model/familiar picker dropdown options were invisible in the
+  dark theme; restored contrast.
+- **Changes route (security)** - replaced the polynomial-ReDoS-prone
+  `/^-+|-+$/g` trim in the feature-branch slug with anchored linear-time
+  trims (CodeQL `js/polynomial-redos`).
+- **Automations** - accessible label on the managed Run button; removed dead
+  group/subrow markup.
+
 ## [0.0.129] - 2026-07-01
 
 Patch release on top of v0.0.128. Headline: Cave clarifies Hermes mode as the
