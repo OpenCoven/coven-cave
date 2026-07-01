@@ -25,6 +25,7 @@ export const SUITES = {
     "src/lib/session-list-equal.test.ts",
     "src/lib/tool-edit-stat.test.ts",
     "src/lib/split-snap.test.ts",
+    "src/lib/workspace-tiles.test.ts",
     "src/lib/page-drag.test.ts",
     "src/components/chat-view-render-cap.test.ts",
     "src/lib/perf/web-vitals-format.test.ts",

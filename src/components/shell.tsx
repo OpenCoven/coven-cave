@@ -16,7 +16,7 @@ import { UpdateBannerTrigger } from "@/components/update-available";
 import { OpenCovenToolsBannerTrigger } from "@/components/open-coven-tools-update";
 import { useIsMobile } from "@/lib/use-viewport";
 import { MobileDrawer, type MobileDrawerSlot } from "@/components/mobile-drawer";
-import { DetailSplitHost } from "@/components/detail-split-host";
+import { DetailSplitHost, type DetailSplitTile } from "@/components/detail-split-host";
 import {
   getPanelShortcutBindings,
   labelPanelShortcut,
@@ -108,10 +108,10 @@ function ShellInner({
   bottom,
   topBar,
   mobileTabs,
-  split = null,
-  splitTitle = "",
+  splitTiles = [],
   splitSide = "right",
   onCloseSplit,
+  onCloseSplitTile,
   onDropSplitPage,
   onNavOpenChange,
   panelShortcutOverrides,
@@ -121,12 +121,11 @@ function ShellInner({
   detail: ReactNode;
   bottom?: ReactNode;
   topBar?: ShellTopBar;
-  /** Secondary "page" rendered beside the detail surface in a resizable split
-   *  (null = no split). Opened by dragging a sidebar page into the main area. */
-  split?: ReactNode;
-  splitTitle?: string;
+  /** Secondary pages rendered beside the detail surface, capped by Workspace. */
+  splitTiles?: DetailSplitTile[];
   splitSide?: "left" | "right";
   onCloseSplit?: () => void;
+  onCloseSplitTile?: (id: string) => void;
   onDropSplitPage?: (mode: string, side: "left" | "right") => void;
   /** Mobile/tablet-only bottom tab bar. Rendered after `.shell-body`
    *  inside `.shell-frame`, but only when the viewport matches the
@@ -432,10 +431,10 @@ function ShellInner({
           <ShellBannerStrip />
           <DetailSplitHost
             primary={detail}
-            secondary={split}
-            secondaryTitle={splitTitle}
+            secondaryTiles={splitTiles}
             secondarySide={splitSide}
             onClose={() => onCloseSplit?.()}
+            onCloseTile={(id) => onCloseSplitTile?.(id)}
             onDropPage={(mode, side) => onDropSplitPage?.(mode, side)}
             enableDrop={!isMobile}
           />

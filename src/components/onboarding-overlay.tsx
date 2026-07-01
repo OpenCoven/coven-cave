@@ -1174,8 +1174,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 
   // Coven Code is a required OpenCoven tool, but skippable so a failed install
   // can never permanently strand onboarding (see covenCodeSkipped).
-  const covenCodeInstalled = !!status?.tools?.find((t) => t.id === "coven-code")?.installed;
-  const covenCodeSatisfied = covenCodeInstalled || covenCodeSkipped;
+  const covenCodeTool = status?.tools?.find((t) => t.id === "coven-code");
+  const covenCodeInstalled = !!covenCodeTool?.installed;
+  const covenCodeReady = !!covenCodeTool?.installed && !covenCodeTool.outdated;
+  const covenCodeSatisfied = covenCodeReady || covenCodeSkipped;
   // Server `complete` already requires every other step; AND-in the Coven Code
   // requirement so the finish CTA only appears once both tools are handled.
   const effectiveComplete = (status?.complete ?? false) && covenCodeSatisfied;
@@ -1631,11 +1633,10 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             </div>
                             <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
                               The coven daemon runs your familiars in the
-                              background. Cave starts it for you — or run{" "}
+                              background. Cave starts it for you. Run this local command:{" "}
                               <code className="font-mono">
                                 coven daemon start
-                              </code>{" "}
-                              in any terminal.
+                              </code>
                             </p>
                             <div className="flex flex-wrap items-center gap-2">
                               <button
@@ -1647,11 +1648,11 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                 title={
                                   !status?.steps.covenCli.ok
                                     ? "Install coven CLI first (step 1)"
-                                    : "coven daemon start"
+                                    : "Start local daemon (coven daemon start)"
                                 }
                               >
                                 <Icon name="ph:rocket-launch-bold" />
-                                {startingDaemon ? "Starting..." : "Start daemon"}
+                                {startingDaemon ? "Starting..." : "Start local daemon"}
                               </button>
                               {!status?.steps.covenCli.ok ? (
                                 <span className="text-[11px] text-[var(--text-muted)]">
@@ -2696,11 +2697,12 @@ function StepFamiliar(props: {
                 />
                 <span className="text-[12px] leading-5 text-[var(--text-secondary)]">
                   <span className="font-medium text-[var(--text-primary)]">
-                    Runs on a remote machine (SSH)
+                    Optional remote runtime (SSH)
                   </span>{" "}
-                  — the familiar&rsquo;s runtime uses SSH transport on another box (a
-                  build server, a homelab, a VM). Cave connects non-interactively
-                  with your SSH keys and never stores passwords or key material.
+                  — Skip this unless you want this familiar to run on another machine
+                  (a build server, a homelab, a VM). When enabled, it runs on a
+                  remote machine over SSH. Cave connects non-interactively with
+                  your SSH keys and never stores passwords or key material.
                 </span>
               </label>
               {sshEnabled ? (

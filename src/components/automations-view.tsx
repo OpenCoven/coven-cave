@@ -1361,42 +1361,46 @@ function AutomationEntryRow({
   const nextFire = entry.state === "active" && entry.nextFireAt ? relTime(entry.nextFireAt) : null;
   return (
     <div
-      className="automation-list-row group/srow flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
+      className="automation-list-row group/srow flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
       style={{ border: "1px solid var(--border-hairline)" }}
     >
       <AutomationTypeChip type={entry.type} />
-      <button
-        type="button"
-        onClick={() => onOpen(entry)}
-        className="focus-ring-inset min-w-0 flex-1 rounded-md text-left"
-      >
-        <span className="block truncate text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>
-          {entry.name}
-        </span>
-        <span className="mt-0.5 flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-          <span className="inline-flex shrink-0 items-center gap-1">
-            <Icon name={entry.scheduled ? "ph:clock" : "ph:play"} width={11} aria-hidden />
-            {entry.trigger}
+      <span className="min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={() => onOpen(entry)}
+          className="focus-ring-inset block w-full rounded-md text-left"
+        >
+          <span className="block truncate text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>
+            {entry.name}
           </span>
-          {nextFire && (
-            <span className="shrink-0 whitespace-nowrap" style={{ color: "var(--text-secondary)" }} title={`Next fire: ${entry.nextFireAt}`}>
-              · {nextFire}
+          <span className="mt-0.5 flex items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+            <span className="inline-flex shrink-0 items-center gap-1">
+              <Icon name={entry.scheduled ? "ph:clock" : "ph:play"} width={11} aria-hidden />
+              {entry.trigger}
             </span>
-          )}
-          {fam && <span className="truncate">· {fam}</span>}
+            {nextFire && (
+              <span className="shrink-0 whitespace-nowrap" style={{ color: "var(--text-secondary)" }} title={`Next fire: ${entry.nextFireAt}`}>
+                · {nextFire}
+              </span>
+            )}
+            {fam && <span className="truncate">· {fam}</span>}
+          </span>
+        </button>
+        <span className="automation-entry-row__actions mt-1.5 flex items-center gap-1">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onRun(entry)}
+            aria-label={`Run ${entry.name} now`}
+            className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            <Icon name="ph:play" width={11} aria-hidden />
+            {busy ? "…" : "Run"}
+          </button>
         </span>
-      </button>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => onRun(entry)}
-        aria-label={`Run ${entry.name} now`}
-        className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium opacity-0 transition-colors hover:bg-white/10 focus-visible:opacity-100 group-hover/srow:opacity-100 disabled:opacity-50"
-        style={{ color: "var(--text-secondary)" }}
-      >
-        <Icon name="ph:play" width={11} aria-hidden />
-        {busy ? "…" : "Run"}
-      </button>
+      </span>
       <StateDot state={entry.state} />
     </div>
   );
@@ -1449,33 +1453,35 @@ function ManagedAutomationRow({
 }) {
   return (
     <div
-      className="automation-list-row group/srow flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
+      className="automation-list-row group/srow flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
       style={{ border: "1px solid var(--border-hairline)" }}
     >
       <AutomationTypeChip type={type} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>{name}</span>
         <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--text-muted)" }}>{meta}</span>
+        <span className="managed-automation-row__actions mt-1.5 flex items-center gap-1">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onRun}
+            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            <Icon name="ph:play" width={11} aria-hidden />
+            {busy ? "…" : "Run"}
+          </button>
+          <button
+            type="button"
+            onClick={onOpen}
+            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10"
+            style={{ color: "var(--text-secondary)" }}
+          >
+            <Icon name="ph:arrow-square-out" width={11} aria-hidden />
+            Open
+          </button>
+        </span>
       </span>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={onRun}
-        className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
-        style={{ color: "var(--text-secondary)" }}
-      >
-        <Icon name="ph:play" width={11} aria-hidden />
-        {busy ? "…" : "Run"}
-      </button>
-      <button
-        type="button"
-        onClick={onOpen}
-        className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10"
-        style={{ color: "var(--text-secondary)" }}
-      >
-        <Icon name="ph:arrow-square-out" width={11} aria-hidden />
-        Open
-      </button>
     </div>
   );
 }

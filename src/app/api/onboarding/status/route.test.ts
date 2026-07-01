@@ -66,6 +66,12 @@ assert.match(
 
 assert.match(
   source,
+  /tool\.outdated[\s\S]{0,240}ok: false[\s\S]{0,240}COVEN_CLI_INSTALL_COMMAND/,
+  "startup should require the latest coven CLI version, not just any installed version",
+);
+
+assert.match(
+  source,
   /openCovenTools\.find\(\(tool\) => tool\.id === "coven-cli"\)/,
   "startup identifies the coven CLI by the shared tool id",
 );

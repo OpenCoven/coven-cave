@@ -31,18 +31,25 @@ import {
   resolveSplitRelease,
   dividerOffset,
 } from "@/lib/split-snap";
+import { workspaceTileVariant } from "@/lib/workspace-tiles";
+
+export type DetailSplitTile = {
+  id: string;
+  title: string;
+  content: React.ReactNode;
+};
 
 export type DetailSplitHostProps = {
   /** The primary surface (current workspace mode). */
   primary: React.ReactNode;
-  /** The secondary page, or null when no split is open. */
-  secondary: React.ReactNode | null;
-  /** Title shown in the secondary pane header. */
-  secondaryTitle: string;
+  /** Secondary pages/companions shown beside the primary, capped by Workspace. */
+  secondaryTiles: DetailSplitTile[];
   /** Which side the secondary pane occupies. */
   secondarySide: "left" | "right";
-  /** Close the split. */
+  /** Close every secondary tile. */
   onClose: () => void;
+  /** Close one secondary tile. */
+  onCloseTile: (id: string) => void;
   /** A page was dropped into the main area on the given side. */
   onDropPage: (mode: string, side: "left" | "right") => void;
   /** Enable the drag-to-split drop zone (desktop only). */
@@ -53,14 +60,31 @@ const PCT = (ratio: number) => `${(ratio * 100).toFixed(2)}%`;
 
 export function DetailSplitHost({
   primary,
-  secondary,
-  secondaryTitle,
+  secondaryTiles,
   secondarySide,
   onClose,
+  onCloseTile,
   onDropPage,
   enableDrop,
 }: DetailSplitHostProps) {
-  const hasSplit = secondary != null;
+  const hasSplit = secondaryTiles.length > 0;
+  const primaryTile = React.useMemo<DetailSplitTile>(
+    () => ({ id: "primary", title: "Current", content: primary }),
+    [primary],
+  );
+  const tiles = React.useMemo(
+    () =>
+      secondaryTiles.length === 1 && secondarySide === "left"
+        ? [secondaryTiles[0]!, primaryTile]
+        : [primaryTile, ...secondaryTiles],
+    [primaryTile, secondarySide, secondaryTiles],
+  );
+  const variant = workspaceTileVariant(tiles.length);
+  const [activeTileId, setActiveTileId] = React.useState("primary");
+
+  React.useEffect(() => {
+    if (!tiles.some((tile) => tile.id === activeTileId)) setActiveTileId("primary");
+  }, [activeTileId, tiles]);
 
   // ---- Drag-to-split drop zone -------------------------------------------
   const [pageDrag, setPageDrag] = React.useState<PageDragDetail | null>(null);
@@ -100,12 +124,12 @@ export function DetailSplitHost({
 
   // Reset the live divider tracking whenever a fresh split opens.
   React.useEffect(() => {
-    if (hasSplit) {
+    if (secondaryTiles.length === 1) {
       ratioRef.current = SPLIT_DEFAULT_RATIO;
       setDragRatio(null);
       draggingRef.current = false;
     }
-  }, [hasSplit, secondarySide]);
+  }, [secondaryTiles.length, secondarySide]);
 
   const onSecondaryResize = React.useCallback(
     (size: { asPercentage: number }) => {
@@ -142,21 +166,40 @@ export function DetailSplitHost({
     </Separator>
   );
 
-  const secondaryPanel = (
+  const legacySecondaryTile = secondaryTiles[0] ?? null;
+  const mobileSwitcher = hasSplit ? (
+    <div className="split-host__mobile-switcher" role="tablist" aria-label="Open pages">
+      {tiles.map((tile) => (
+        <button
+          key={tile.id}
+          type="button"
+          role="tab"
+          aria-selected={activeTileId === tile.id}
+          className="split-host__mobile-tab"
+          onClick={() => setActiveTileId(tile.id)}
+        >
+          {tile.title}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  const secondaryPanel = legacySecondaryTile ? (
     <Panel
       id="split-secondary"
-      className="split-host__pane-panel flex min-h-0 min-w-0"
+      className="split-host__pane-panel split-host__tile-panel flex min-h-0 min-w-0"
+      data-active={activeTileId === legacySecondaryTile.id}
       panelRef={secRef}
       defaultSize={PCT(SPLIT_DEFAULT_RATIO)}
       minSize="10%"
       maxSize={PCT(SPLIT_MAX_RATIO)}
       onResize={onSecondaryResize}
     >
-      <section className="split-host__pane" aria-label={`${secondaryTitle} (split)`}>
+      <section className="split-host__pane split-host__tile" aria-label={`${legacySecondaryTile.title} (split)`}>
         <header className="split-host__pane-head">
           <span className="split-host__pane-title">
             <Icon name="ph:columns" width={14} height={14} aria-hidden />
-            {secondaryTitle}
+            {legacySecondaryTile.title}
           </span>
           <span className="split-host__pane-actions">
             <button
@@ -191,22 +234,60 @@ export function DetailSplitHost({
               className="split-host__pane-btn split-host__pane-close"
               title="Close split"
               aria-label="Close split"
-              onClick={onClose}
+              onClick={() => onCloseTile(legacySecondaryTile.id)}
             >
               <Icon name="ph:x" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} aria-hidden />
             </button>
           </span>
         </header>
-        <div className="split-host__pane-body">{secondary}</div>
+        <div className="split-host__pane-body">{legacySecondaryTile.content}</div>
       </section>
     </Panel>
-  );
+  ) : null;
 
   const primaryPanel = (
-    <Panel id="split-primary" className="flex min-h-0 min-w-0" minSize="16%">
+    <Panel
+      id="split-primary"
+      className="split-host__tile-panel flex min-h-0 min-w-0"
+      data-active={activeTileId === "primary"}
+      minSize="16%"
+    >
       <div className="min-h-0 min-w-0 flex-1">{primary}</div>
     </Panel>
   );
+
+  const renderGridTile = (tile: DetailSplitTile) => {
+    const isPrimary = tile.id === "primary";
+    return (
+      <section
+        key={tile.id}
+        className={`split-host__pane split-host__tile${isPrimary ? " split-host__tile--primary" : ""}`}
+        data-active={activeTileId === tile.id}
+        aria-label={isPrimary ? tile.title : `${tile.title} (split)`}
+      >
+        <header className="split-host__pane-head">
+          <span className="split-host__pane-title">
+            <Icon name={isPrimary ? "ph:rows" : "ph:columns"} width={14} height={14} aria-hidden />
+            {tile.title}
+          </span>
+          {!isPrimary ? (
+            <span className="split-host__pane-actions">
+              <button
+                type="button"
+                className="split-host__pane-btn split-host__pane-close"
+                title="Close split"
+                aria-label={`Close ${tile.title} split`}
+                onClick={() => onCloseTile(tile.id)}
+              >
+                <Icon name="ph:x" width={CAVE_ICON_SIZE.shellToggle} height={CAVE_ICON_SIZE.shellToggle} aria-hidden />
+              </button>
+            </span>
+          ) : null}
+        </header>
+        <div className="split-host__pane-body">{tile.content}</div>
+      </section>
+    );
+  };
 
   // Live snap guide while dragging the divider.
   const snapPreview = dragRatio != null ? nearestSnap(dragRatio) : null;
@@ -233,21 +314,33 @@ export function DetailSplitHost({
   return (
     <>
       {hasSplit ? (
-        <Group className="split-host__group" orientation="horizontal">
-          {secondarySide === "left" ? (
-            <>
-              {secondaryPanel}
-              {separator}
-              {primaryPanel}
-            </>
-          ) : (
-            <>
-              {primaryPanel}
-              {separator}
-              {secondaryPanel}
-            </>
-          )}
-        </Group>
+        secondaryTiles.length === 1 ? (
+          <>
+            {mobileSwitcher}
+            <Group className="split-host__group" data-variant={variant} orientation="horizontal">
+              {secondarySide === "left" ? (
+                <>
+                  {secondaryPanel}
+                  {separator}
+                  {primaryPanel}
+                </>
+              ) : (
+                <>
+                  {primaryPanel}
+                  {separator}
+                  {secondaryPanel}
+                </>
+              )}
+            </Group>
+          </>
+        ) : (
+          <>
+            {mobileSwitcher}
+            <div className="split-host__group split-host__grid" data-variant={variant}>
+              {tiles.map(renderGridTile)}
+            </div>
+          </>
+        )
       ) : (
         primary
       )}

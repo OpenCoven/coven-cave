@@ -29,22 +29,32 @@ test("DetailSplitHost renders drop zones + a snapping divider", () => {
   assert.match(src, /nearestSnap\(dragRatio\)/, "live snap guide");
 });
 
+test("DetailSplitHost supports optimized variants for up to four visible pages", () => {
+  const src = read("./detail-split-host.tsx");
+  assert.match(src, /secondaryTiles: DetailSplitTile\[\]/, "host receives multiple secondary tiles");
+  assert.match(src, /workspaceTileVariant\(tiles\.length\)/, "host chooses a layout variant from visible tile count");
+  assert.match(src, /data-variant=\{variant\}/, "variant is exposed to CSS");
+  assert.match(src, /split-host__mobile-switcher/, "mobile/tablet gets a tile switcher instead of cramped panes");
+  assert.match(src, /onCloseTile\(tile\.id\)/, "each secondary tile can be closed independently");
+});
+
 test("Shell hosts the split inside the detail main with a drop zone", () => {
   const src = read("./shell.tsx");
-  assert.match(src, /import \{ DetailSplitHost \}/);
-  assert.match(src, /<DetailSplitHost[\s\S]*?primary=\{detail\}[\s\S]*?secondary=\{split\}/);
+  assert.match(src, /import \{ DetailSplitHost, type DetailSplitTile \}/);
+  assert.match(src, /<DetailSplitHost[\s\S]*?primary=\{detail\}[\s\S]*?secondaryTiles=\{splitTiles\}/);
   assert.match(src, /enableDrop=\{!isMobile\}/, "drop zone is desktop-only");
 });
 
 test("workspace owns split state and the drop handler, and reuses renderSurface", () => {
   const src = read("./workspace.tsx");
-  assert.match(src, /const \[splitTarget, setSplitTarget\] = useState<SplitTarget \| null>\(null\)/);
+  assert.match(src, /const \[splitTargets, setSplitTargets\] = useState<SplitTarget\[\]>\(\[\]\)/);
   assert.match(src, /const openSplitPage = useCallback/);
+  assert.match(src, /addSecondaryWorkspaceTile/, "workspace appends split pages up to the secondary tile cap");
   assert.match(src, /const renderSurface = \(mode: WorkspaceMode\): ReactNode =>/);
   assert.match(src, /\{mode === "terminal" \? null : renderSurface\(mode\)\}/, "primary uses renderSurface");
-  assert.match(src, /renderSurface\(splitTarget\.mode\)/, "secondary reuses the same machinery");
+  assert.match(src, /renderSurface\(target\.mode\)/, "secondary tiles reuse the same machinery");
   assert.match(src, /onDropSplitPage=\{openSplitPage\}/);
-  assert.match(src, /setSplitTarget\(\{ kind: "salem" \}\)/, "Salem re-homed into the split (not the removed rail)");
+  assert.match(src, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem re-homed into the split (not the removed rail)");
 });
 
 test("the right companion (agent) panel is no longer mounted", () => {

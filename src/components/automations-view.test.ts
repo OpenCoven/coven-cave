@@ -84,5 +84,15 @@ assert.match(source, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onClick\(\);
 assert.match(source, /actions\.runAutomation\(auto\)/, "the automation row exposes run-now");
 assert.match(source, /actions\.togglePauseReminder\(item\)/, "the reminder row exposes pause/resume");
 assert.match(source, /item\.kind !== "daily-summary"/, "daily-summary rows get no run/pause actions");
+assert.match(
+  source,
+  /automation-entry-row__actions[\s\S]*?aria-label=\{`Run \$\{entry\.name\} now`\}/,
+  "unified automation row actions render below the automation name",
+);
+assert.match(
+  source,
+  /managed-automation-row__actions[\s\S]*?onClick=\{onRun\}[\s\S]*?onClick=\{onOpen\}/,
+  "managed automation row actions render below the automation name",
+);
 
 console.log("automations-view.test.ts: ok");

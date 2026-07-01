@@ -128,8 +128,20 @@ assert.match(
 
 assert.match(
   source,
-  /Runs on a remote machine \(SSH\)/,
+  /remote machine over SSH/,
   "the familiar form offers a remote SSH runtime",
+);
+
+assert.match(
+  source,
+  /Optional remote runtime \(SSH\)/,
+  "SSH runtime copy should make clear it is optional",
+);
+
+assert.match(
+  source,
+  /Skip this unless you want this familiar to run on another machine/,
+  "SSH runtime copy should tell users local setup can ignore it",
 );
 
 assert.match(
@@ -224,6 +236,18 @@ assert.match(
   source,
   /Start the daemon first\. Familiar creation unlocks once Cave can reach it\./,
   "the familiar step explains why creation is unavailable while the daemon is offline",
+);
+
+assert.match(
+  source,
+  /Run this local command:[\s\S]*coven daemon start/,
+  "startup daemon step should present the exact local command plainly",
+);
+
+assert.match(
+  source,
+  /Start local daemon \(coven daemon start\)/,
+  "startup daemon CTA should name the command it runs",
 );
 
 assert.match(
@@ -350,6 +374,12 @@ assert.match(
   source,
   /tools=\{status\?\.tools \?\? \[\]\}/,
   "the startup CLI step receives OpenCoven tool status from onboarding status",
+);
+
+assert.match(
+  source,
+  /const covenCodeReady =[\s\S]{0,180}installed[\s\S]{0,80}!.*outdated/,
+  "startup should require the latest Coven Code version before treating it as ready",
 );
 
 assert.match(

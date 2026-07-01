@@ -54,16 +54,27 @@ async function checkGit(): Promise<Step> {
 }
 
 function checkCovenCli(tool: OpenCovenToolStatus | undefined): Step {
-  if (tool?.installed) {
-    const location = tool.path ?? tool.binary;
+  if (!tool?.installed) {
     return {
-      ok: true,
-      detail: tool.current ? `${tool.current} at ${location}` : `${location} (version unknown)`,
+      ok: false,
+      hint: `Install the coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
     };
   }
+  if (tool.outdated) {
+    const detail =
+      tool.current && tool.latest
+        ? `Update available: ${tool.current} -> ${tool.latest}`
+        : "Update available";
+    return {
+      ok: false,
+      detail,
+      hint: `Update the coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, then re-check.`,
+    };
+  }
+  const location = tool.path ?? tool.binary;
   return {
-    ok: false,
-    hint: `Install the coven CLI with \`${COVEN_CLI_INSTALL_COMMAND}\`, make sure it is on PATH, then re-check.`,
+    ok: true,
+    detail: tool.current ? `${tool.current} at ${location}` : `${location} (version unknown)`,
   };
 }
 

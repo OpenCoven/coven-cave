@@ -20,6 +20,7 @@ import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-t
 import { MagicTriggers } from "@/components/magic-triggers";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
 import { Shell, type ShellHandle } from "@/components/shell";
+import type { DetailSplitTile } from "@/components/detail-split-host";
 import { MobileBottomTabs } from "@/components/mobile-bottom-tabs";
 import { Icon } from "@/lib/icon";
 import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
@@ -81,6 +82,10 @@ import {
   OPEN_IN_APP_BROWSER_EVENT,
   PENDING_IN_APP_BROWSER_URL_KEY,
 } from "@/lib/open-external";
+import {
+  addSecondaryWorkspaceTile,
+  removeSecondaryWorkspaceTile,
+} from "@/lib/workspace-tiles";
 
 type WorkspaceMode = WorkspaceModeFromDaemon;
 
@@ -98,6 +103,14 @@ const SPLIT_COMPANION_TITLES: Record<Exclude<SplitTarget["kind"], "page">, strin
   memory: "Memory",
   browser: "Browser",
 };
+
+function splitTargetKey(target: SplitTarget): string {
+  return target.kind === "page" ? `page:${target.mode}` : target.kind;
+}
+
+function splitTargetTitle(target: SplitTarget): string {
+  return target.kind === "page" ? WORKSPACE_MODE_TITLES[target.mode] : SPLIT_COMPANION_TITLES[target.kind];
+}
 
 // CHAT-D13-05 (axe page-has-heading-one): the shell renders no visible page
 // title, so the detail pane carries a visually-hidden h1 naming the active
@@ -264,12 +277,16 @@ export function Workspace() {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
   const [codeRightView, setCodeRightView] = useState<"files" | "changes">("files");
-  // Drag-to-split: a second surface opened beside the primary one. The target
-  // is either a draggable page (a workspace mode) or a companion surface
-  // (Salem / Memory / Browser) that used to live in the removed right rail.
-  // `splitSide` is which half it occupies (modern-desktop snap).
-  const [splitTarget, setSplitTarget] = useState<SplitTarget | null>(null);
+  // Drag-to-split: up to three secondary surfaces opened beside the primary
+  // one (four visible pages total). Targets are draggable pages or companion
+  // surfaces (Salem / Memory / Browser) re-homed from the removed right rail.
+  // `splitSide` preserves the familiar 2-page left/right snap behavior.
+  const [splitTargets, setSplitTargets] = useState<SplitTarget[]>([]);
   const [splitSide, setSplitSide] = useState<"left" | "right">("right");
+  const addSplitTarget = useCallback((target: SplitTarget, side: "left" | "right" = "right") => {
+    setSplitSide(side);
+    setSplitTargets((prev) => addSecondaryWorkspaceTile(prev, target, splitTargetKey));
+  }, []);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -483,12 +500,11 @@ export function Workspace() {
     // Salem was re-homed from the (removed) right rail into the drag-to-split
     // pane — its launcher now opens Salem beside the current surface.
     const openSalem = () => {
-      setSplitSide("right");
-      setSplitTarget({ kind: "salem" });
+      addSplitTarget({ kind: "salem" });
     };
     window.addEventListener("cave:salem-open", openSalem);
     return () => window.removeEventListener("cave:salem-open", openSalem);
-  }, []);
+  }, [addSplitTarget]);
 
   // Cross-surface "create a familiar" bridge. The dock (and any deep surface
   // that can't reach openOnboarding directly) announces intent and the
@@ -1393,25 +1409,32 @@ export function Workspace() {
   const openSplitPage = useCallback(
     (m: string, side: "left" | "right") => {
       if (!m || m === mode) return;
-      setSplitSide(side);
-      setSplitTarget({ kind: "page", mode: m as WorkspaceMode });
+      addSplitTarget({ kind: "page", mode: m as WorkspaceMode }, side);
     },
-    [mode],
+    [addSplitTarget, mode],
   );
 
   const closeSplit = useCallback(() => {
     // Tell Salem it's undocking so it can pause, mirroring the old rail teardown.
-    setSplitTarget((prev) => {
-      if (prev?.kind === "salem") window.dispatchEvent(new CustomEvent("cave:salem-undock"));
-      return null;
+    setSplitTargets((prev) => {
+      if (prev.some((target) => target.kind === "salem")) window.dispatchEvent(new CustomEvent("cave:salem-undock"));
+      return [];
     });
   }, []);
 
-  // A page split showing the same page as the primary is redundant — clear it
-  // (e.g. the user navigated the primary surface to the page in the split).
+  const closeSplitTile = useCallback((id: string) => {
+    setSplitTargets((prev) => {
+      const closing = prev.find((target) => splitTargetKey(target) === id);
+      if (closing?.kind === "salem") window.dispatchEvent(new CustomEvent("cave:salem-undock"));
+      return removeSecondaryWorkspaceTile(prev, id, splitTargetKey);
+    });
+  }, []);
+
+  // Page splits showing the same page as the primary are redundant — clear them
+  // (e.g. the user navigated the primary surface to a page in the split).
   useEffect(() => {
-    if (splitTarget?.kind === "page" && splitTarget.mode === mode) setSplitTarget(null);
-  }, [splitTarget, mode]);
+    setSplitTargets((prev) => prev.filter((target) => target.kind !== "page" || target.mode !== mode));
+  }, [mode]);
 
   const onPaletteIntent = (intent: PaletteIntent) => {
     if (intent.kind === "switch-familiar") {
@@ -2151,35 +2174,33 @@ export function Workspace() {
     </div>
   );
 
-  // The split secondary, if any: a dragged-in page (heavy/stateful surfaces like
-  // terminal are excluded from drag, so renderSurface always has something) or a
-  // re-homed companion surface (Salem / Memory / Browser).
-  const splitDetail: ReactNode = !splitTarget
-    ? null
-    : splitTarget.kind === "page"
-      ? splitTarget.mode !== mode
-        ? (
-            <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
-              {renderSurface(splitTarget.mode)}
-            </div>
-          )
-        : null
-      : splitTarget.kind === "salem"
-        ? (
-            <SalemChatPanel
-              familiarId={active?.id ?? familiars.find((f) => f.id === "salem")?.id ?? "salem"}
-              model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
-            />
-          )
-        : splitTarget.kind === "memory"
-          ? <RailInspector familiar={active} onOpenFullView={() => setMode("agents")} />
-          : <BrowserPane label="companion" activeFamiliarId={active?.id ?? null} />;
+  // Split tiles: dragged-in pages (heavy/stateful surfaces like terminal are
+  // excluded from drag) or re-homed companion surfaces (Salem / Memory / Browser).
+  const renderSplitTargetContent = (target: SplitTarget): ReactNode =>
+    target.kind === "page" ? (
+      target.mode !== mode ? (
+        <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
+          {renderSurface(target.mode)}
+        </div>
+      ) : null
+    ) : target.kind === "salem" ? (
+      <SalemChatPanel
+        familiarId={active?.id ?? familiars.find((f) => f.id === "salem")?.id ?? "salem"}
+        model={active?.model ?? familiars.find((f) => f.id === "salem")?.model ?? null}
+      />
+    ) : target.kind === "memory" ? (
+      <RailInspector familiar={active} onOpenFullView={() => setMode("agents")} />
+    ) : (
+      <BrowserPane label="companion" activeFamiliarId={active?.id ?? null} />
+    );
 
-  const splitTitle = !splitTarget
-    ? ""
-    : splitTarget.kind === "page"
-      ? WORKSPACE_MODE_TITLES[splitTarget.mode]
-      : SPLIT_COMPANION_TITLES[splitTarget.kind];
+  const splitTiles: DetailSplitTile[] = splitTargets
+    .map((target) => ({
+      id: splitTargetKey(target),
+      title: splitTargetTitle(target),
+      content: renderSplitTargetContent(target),
+    }))
+    .filter((tile) => tile.content != null);
 
   const mobileTabs = (
     <MobileBottomTabs
@@ -2198,10 +2219,10 @@ export function Workspace() {
         mobileTabs={mobileTabs}
         // Drag-to-split: a sidebar page dropped into the main area opens beside
         // the current surface, resizable with desktop-style snapping.
-        split={splitDetail}
-        splitTitle={splitTitle}
+        splitTiles={splitTiles}
         splitSide={splitSide}
         onCloseSplit={closeSplit}
+        onCloseSplitTile={closeSplitTile}
         onDropSplitPage={openSplitPage}
         topBar={({ navDrawerOpen, listDrawerOpen }) => (
           <>
