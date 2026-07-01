@@ -320,6 +320,12 @@ export async function updateCard(
     startDate: "startDate" in patch ? normalizeBoardDate(patch.startDate) : current.startDate ?? null,
     endDate: "endDate" in patch ? normalizeBoardDate(patch.endDate) : current.endDate ?? null,
     steps: patch.steps ?? current.steps,
+    // Attachments patched from the inspector go through the same lean pipeline as
+    // createCard — normalize + strip base64 image payloads — so an edit can never
+    // fatten cave-board.json. An empty array clears them (field dropped).
+    attachments: "attachments" in patch
+      ? boardAttachments(patch.attachments ?? undefined)
+      : current.attachments,
   };
   if (next.lifecycle === "running" && !next.runningSince) {
     next.runningSince = next.updatedAt;

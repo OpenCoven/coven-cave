@@ -26,7 +26,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
 import { openExternalUrl } from "@/lib/open-external";
-import { attachmentIcon } from "@/lib/chat-attachments";
+import { attachmentIcon, fileToAttachment } from "@/lib/chat-attachments";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -630,6 +630,121 @@ function LinksSection({
   );
 }
 
+// ── Attachments ───────────────────────────────────────────────────────────────
+// Files staged in a composer ride onto a card at creation; this section lets you
+// add/remove them afterward. New files are converted client-side (fileToAttachment)
+// and PATCHed — the server re-normalizes them lean (base64 image payloads stripped),
+// so the same file → attachment pipeline as the composer, and an edit can't bloat
+// cave-board.json.
+const MAX_CARD_ATTACHMENTS = 10;
+
+function AttachmentsSection({
+  card,
+  onPatch,
+}: {
+  card: Card;
+  onPatch: (id: string, patch: Partial<Card>) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const attachments = card.attachments ?? [];
+  const atCap = attachments.length >= MAX_CARD_ATTACHMENTS;
+
+  async function addFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const room = Math.max(0, MAX_CARD_ATTACHMENTS - attachments.length);
+    if (room === 0) return;
+    setBusy(true);
+    try {
+      const picked = Array.from(files).slice(0, room);
+      const converted = await Promise.all(picked.map((file) => fileToAttachment(file)));
+      // Drop the composer-only `id`; the server re-normalizes to the lean shape.
+      const next = [...attachments, ...converted.map(({ id: _id, ...rest }) => rest)];
+      onPatch(card.id, { attachments: next });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function removeAt(index: number) {
+    onPatch(card.id, { attachments: attachments.filter((_, i) => i !== index) });
+  }
+
+  return (
+    <div className="board-drawer-field">
+      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <Icon name="ph:paperclip" width={12} />
+        Attachments
+        {attachments.length > 0 && (
+          <span style={{
+            fontSize: 10,
+            color: "var(--text-muted)",
+            background: "var(--bg-elevated)",
+            borderRadius: 8,
+            padding: "1px 6px",
+          }}>
+            {attachments.length}
+          </span>
+        )}
+      </div>
+      {attachments.length > 0 && (
+        <ul style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
+          {attachments.map((att, i) => (
+            <li
+              key={`${att.name}-${i}`}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "5px 8px",
+                borderRadius: 6,
+                background: "var(--bg-elevated)",
+                border: "1px solid var(--border-hairline)",
+              }}
+            >
+              <Icon name={attachmentIcon(att)} width={11} className="shrink-0 text-[var(--text-muted)]" />
+              <span style={{ flex: 1, fontSize: 12, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={att.name}>
+                {att.name}
+              </span>
+              <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>
+                {formatAttachmentSize(att.size)}
+              </span>
+              <button
+                type="button"
+                className="board-toolbar-btn"
+                style={{ padding: "1px 4px", color: "var(--color-danger)", flexShrink: 0 }}
+                onClick={() => removeAt(i)}
+                title={`Remove ${att.name}`}
+                aria-label={`Remove ${att.name}`}
+              >
+                <Icon name="ph:x-bold" width={9} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }}
+      />
+      <button
+        type="button"
+        className="board-toolbar-btn"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={busy || atCap}
+        style={{ padding: "4px 10px", fontSize: 11 }}
+        title={atCap ? `Attachment limit reached (${MAX_CARD_ATTACHMENTS})` : "Attach files to this task"}
+      >
+        <Icon name="ph:paperclip" width={11} />
+        {busy ? "Adding…" : atCap ? "Limit reached" : "Add files"}
+      </button>
+    </div>
+  );
+}
+
 // ── Steps ─────────────────────────────────────────────────────────────────────
 function StepsSection({
   card,
@@ -1136,47 +1251,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
 
           <GitHubAttachSection card={card} familiars={familiars} onPatch={onPatch} onOpenUrl={onOpenUrl} />
 
-          {(card.attachments?.length ?? 0) > 0 && (
-            <div className="board-drawer-field">
-              <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Icon name="ph:paperclip" width={12} />
-                Attachments
-                <span style={{
-                  fontSize: 10,
-                  color: "var(--text-muted)",
-                  background: "var(--bg-elevated)",
-                  borderRadius: 8,
-                  padding: "1px 6px",
-                }}>
-                  {card.attachments!.length}
-                </span>
-              </div>
-              <ul style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                {card.attachments!.map((att, i) => (
-                  <li
-                    key={`${att.name}-${i}`}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "5px 8px",
-                      borderRadius: 6,
-                      background: "var(--bg-elevated)",
-                      border: "1px solid var(--border-hairline)",
-                    }}
-                  >
-                    <Icon name={attachmentIcon(att)} width={11} className="shrink-0 text-[var(--text-muted)]" />
-                    <span style={{ flex: 1, fontSize: 12, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={att.name}>
-                      {att.name}
-                    </span>
-                    <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>
-                      {formatAttachmentSize(att.size)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <AttachmentsSection card={card} onPatch={onPatch} />
 
           <div className="board-drawer-field">
             <div className="board-drawer-field-label"><Icon name="ph:note-bold" width={11} /> Notes</div>
