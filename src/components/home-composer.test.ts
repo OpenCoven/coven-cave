@@ -129,6 +129,18 @@ assert.match(
 
 assert.match(
   source,
+  /fetch\("\/api\/board"[\s\S]*?attachments: attachments\.length \? attachments : undefined/,
+  "HomeComposer should carry staged attachments onto the created board/Task card",
+);
+
+assert.match(
+  source,
+  /if \(json\.ok\) \{ setText\(""\); setAttachments\(\[\]\); setEnhanceOriginal\(null\); onNavigateToBoard\(\); \}/,
+  "HomeComposer should clear staged attachments after a successful board card creation",
+);
+
+assert.match(
+  source,
   /onSetActiveFamiliar: \(id: string\) => void/,
   "HomeComposer should accept an active familiar setter for its home-screen agent selector",
 );

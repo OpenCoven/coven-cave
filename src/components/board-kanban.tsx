@@ -678,7 +678,8 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
   const statusLabel = COLUMNS.find((c) => c.id === card.status)?.label ?? card.status;
   const schedule = scheduleLabel(card.startDate, card.endDate);
   const urgency = scheduleUrgency(card.endDate, card.status, todayMs);
-  const hasChips = !!schedule || !!card.cwd || card.links.length > 0 || card.labels.length > 0 || !!session;
+  const attachmentCount = card.attachments?.length ?? 0;
+  const hasChips = !!schedule || !!card.cwd || card.links.length > 0 || card.labels.length > 0 || attachmentCount > 0 || !!session;
 
   return (
     <li draggable={!selectMode}
@@ -767,6 +768,12 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
             <span className="board-kanban-card-chip">
               <Icon name="ph:link-simple" width={9} />
               {card.links.length}
+            </span>
+          )}
+          {attachmentCount > 0 && (
+            <span className="board-kanban-card-chip" title={`${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`}>
+              <Icon name="ph:paperclip" width={9} />
+              {attachmentCount}
             </span>
           )}
           {card.labels.slice(0, 2).map((l) => (

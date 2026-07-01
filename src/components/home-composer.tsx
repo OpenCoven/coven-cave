@@ -606,10 +606,13 @@ export function HomeComposer({
               familiarId: activeFamiliarId ?? null,
               cwd: selectedProject?.root ?? null,
               projectId: selectedProject?.id ?? null,
+              // Files staged on the composer ride onto the task card. The route
+              // stores them lean (metadata + text; image data URLs stripped).
+              attachments: attachments.length ? attachments : undefined,
             }),
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
-          if (json.ok) { setText(""); onNavigateToBoard(); }
+          if (json.ok) { setText(""); setAttachments([]); setEnhanceOriginal(null); onNavigateToBoard(); }
           else onToast("Board card creation failed.");
           break;
         }

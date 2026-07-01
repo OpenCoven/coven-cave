@@ -26,8 +26,17 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
 import { openExternalUrl } from "@/lib/open-external";
+import { attachmentIcon } from "@/lib/chat-attachments";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
+function formatAttachmentSize(size?: number): string {
+  if (size == null) return "";
+  if (size < 1024) return `${size} B`;
+  const kb = size / 1024;
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
 const GITHUB_PAT_URL = "https://github.com/settings/tokens/new?scopes=read:user,repo,notifications&description=Cave+local";
 
 type LifecycleMove = { to: CardLifecycle; label: string; retry?: boolean };
@@ -1126,6 +1135,48 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
           <LinksSection card={card} onPatch={onPatch} onOpenUrl={onOpenUrl} />
 
           <GitHubAttachSection card={card} familiars={familiars} onPatch={onPatch} onOpenUrl={onOpenUrl} />
+
+          {(card.attachments?.length ?? 0) > 0 && (
+            <div className="board-drawer-field">
+              <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <Icon name="ph:paperclip" width={12} />
+                Attachments
+                <span style={{
+                  fontSize: 10,
+                  color: "var(--text-muted)",
+                  background: "var(--bg-elevated)",
+                  borderRadius: 8,
+                  padding: "1px 6px",
+                }}>
+                  {card.attachments!.length}
+                </span>
+              </div>
+              <ul style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {card.attachments!.map((att, i) => (
+                  <li
+                    key={`${att.name}-${i}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "5px 8px",
+                      borderRadius: 6,
+                      background: "var(--bg-elevated)",
+                      border: "1px solid var(--border-hairline)",
+                    }}
+                  >
+                    <Icon name={attachmentIcon(att)} width={11} className="shrink-0 text-[var(--text-muted)]" />
+                    <span style={{ flex: 1, fontSize: 12, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={att.name}>
+                      {att.name}
+                    </span>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)", flexShrink: 0 }}>
+                      {formatAttachmentSize(att.size)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="board-drawer-field">
             <div className="board-drawer-field-label"><Icon name="ph:note-bold" width={11} /> Notes</div>

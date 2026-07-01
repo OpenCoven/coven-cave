@@ -6,6 +6,7 @@ import {
   type CardStatus,
 } from "@/lib/cave-board";
 import type { CardGitHubLink } from "@/lib/cave-board-types";
+import type { ChatAttachment } from "@/lib/chat-attachments";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export async function POST(req: Request) {
     endDate?: string | null;
     template?: string | null;
     steps?: { text: string }[];
+    attachments?: ChatAttachment[];
   };
   try {
     body = await req.json();
@@ -56,6 +58,7 @@ export async function POST(req: Request) {
     endDate: body.endDate,
     template: body.template,
     steps: body.steps,
+    attachments: body.attachments,
   });
   return NextResponse.json({ ok: true, card });
 }

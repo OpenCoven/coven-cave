@@ -1,3 +1,5 @@
+import type { ChatAttachment } from "@/lib/chat-attachments";
+
 export type CardStatus = "backlog" | "inbox" | "running" | "review" | "blocked" | "done";
 export type CardPriority = "low" | "medium" | "high" | "urgent";
 export type CardLifecycle =
@@ -63,6 +65,10 @@ export type Card = {
   retryCount: number;
   maxRetries: number;
   steps: CardStep[];
+  /** Files carried in from the composer when the card was created. Stored lean:
+   * metadata + inlined text, but image `dataUrl`/`mimeType` are stripped so the
+   * board JSON doesn't bloat with base64 payloads. Absent when none were staged. */
+  attachments?: ChatAttachment[];
 };
 
 export const STATUSES: CardStatus[] = ["backlog", "inbox", "running", "review", "blocked", "done"];
