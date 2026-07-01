@@ -605,7 +605,7 @@ assert.match(
 
 // — CHAT-D1-03: drag-and-drop attach on the chat surface —
 assert.match(
-  source,
+  attachmentsLib,
   /function hasDraggedFiles\(types: DataTransfer\["types"\]\): boolean \{[\s\S]*Array\.from\(types\)\.includes\("Files"\)/,
   "Drag file detection must normalize DataTransfer.types before calling includes for WebKit/WebView DOMStringList compatibility",
 );

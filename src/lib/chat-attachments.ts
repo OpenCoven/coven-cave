@@ -212,6 +212,12 @@ export function buildPromptWithAttachments(
 /** A composer-staged attachment: a ChatAttachment plus a local id for the UI. */
 export type ComposerAttachment = ChatAttachment & { id: string };
 
+/** True when a drag carries files (vs. a text selection), so a composer only
+ *  arms its drop affordance for actual file drops. */
+export function hasDraggedFiles(types: DataTransfer["types"]): boolean {
+  return Array.from(types).includes("Files");
+}
+
 /** Files we inline as text (captured into `.text`) vs. keep as metadata/image. */
 export function isTextLike(file: File): boolean {
   if (file.type.startsWith("text/")) return true;

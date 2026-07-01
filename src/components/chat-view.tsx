@@ -39,6 +39,7 @@ import {
   attachmentIcon,
   extractAgentAttachmentMarkers,
   fileToAttachment,
+  hasDraggedFiles,
   stripPreviewOnlyAttachmentFieldsKeepingImages,
   type ChatAttachment,
   type ComposerAttachment,
@@ -736,10 +737,6 @@ function fmtBytes(size?: number): string {
     value /= 1024;
   }
   return `${size} B`;
-}
-
-function hasDraggedFiles(types: DataTransfer["types"]): boolean {
-  return Array.from(types).includes("Files");
 }
 
 /**

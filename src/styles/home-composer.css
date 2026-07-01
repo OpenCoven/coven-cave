@@ -89,6 +89,7 @@
 
 /* ── Composer card ───────────────────────────────────────────────────────── */
 .home-composer-card {
+  position: relative;
   width: 100%;
   max-width: 100%;
   background: color-mix(in oklch, var(--bg-raised) 70%, var(--bg-base));
@@ -98,6 +99,30 @@
   box-shadow: 0 12px 40px color-mix(in oklch, var(--text-primary) 14%, transparent),
               0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.home-composer-card.is-drop-active {
+  border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-strong));
+}
+
+/* Drag-and-drop overlay — covers the card while a file drag hovers it. */
+.hc-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-base) 88%);
+  border: 2px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  pointer-events: none;
+}
+.hc-drop-overlay-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 .home-composer-card:focus-within {

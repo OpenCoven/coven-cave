@@ -446,3 +446,20 @@ assert.match(
   /enhanceOriginal != null &&[\s\S]*?onClick=\{revertEnhance\}/,
   "a one-tap Undo reverts an enhancement",
 );
+
+// ── Drag-and-drop attachments ───────────────────────────────────────────────
+assert.match(
+  source,
+  /onDrop=\{\(e\) => \{[\s\S]*?hasDraggedFiles\(e\.dataTransfer\.types\)[\s\S]*?void addFiles\(e\.dataTransfer\.files\)/,
+  "dropping files onto the composer card routes through addFiles",
+);
+assert.match(
+  source,
+  /onDragEnter=\{\(e\) => \{[\s\S]*?setDropActive\(true\)/,
+  "a file drag arms the drop overlay",
+);
+assert.match(
+  source,
+  /dropActive \? \([\s\S]*?hc-drop-overlay[\s\S]*?Drop files to attach/,
+  "an overlay prompts to drop files while dragging",
+);

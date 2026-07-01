@@ -39,6 +39,7 @@ import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
 import {
   attachmentIcon,
   fileToAttachment,
+  hasDraggedFiles,
   type ChatAttachment,
   type ComposerAttachment,
 } from "@/lib/chat-attachments";
@@ -153,6 +154,10 @@ export function HomeComposer({
   // Attachments staged in the composer; handed to the opened chat on submit.
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Drag-and-drop onto the composer card. dragDepthRef counts enter/leave pairs
+  // so moving across child elements doesn't flicker the overlay.
+  const [dropActive, setDropActive] = useState(false);
+  const dragDepthRef = useRef(0);
   // Prompt enhancement (mirrors the chat composer's Enhance): the pre-enhance
   // text is kept so the user can revert in one tap.
   const [enhanceStatus, setEnhanceStatus] = useState<"idle" | "loading" | "error">("idle");
@@ -871,7 +876,39 @@ export function HomeComposer({
           </div>
         ) : null}
 
-        <div className="home-composer-card">
+        <div
+          className={`home-composer-card${dropActive ? " is-drop-active" : ""}`}
+          onDragEnter={(e) => {
+            if (!hasDraggedFiles(e.dataTransfer.types)) return;
+            e.preventDefault();
+            dragDepthRef.current += 1;
+            setDropActive(true);
+          }}
+          onDragOver={(e) => {
+            if (!hasDraggedFiles(e.dataTransfer.types)) return;
+            e.preventDefault();
+          }}
+          onDragLeave={(e) => {
+            if (!hasDraggedFiles(e.dataTransfer.types)) return;
+            dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+            if (dragDepthRef.current === 0) setDropActive(false);
+          }}
+          onDrop={(e) => {
+            dragDepthRef.current = 0;
+            setDropActive(false);
+            if (!hasDraggedFiles(e.dataTransfer.types)) return;
+            e.preventDefault();
+            void addFiles(e.dataTransfer.files);
+          }}
+        >
+          {dropActive ? (
+            <div className="hc-drop-overlay" aria-hidden="true">
+              <div className="hc-drop-overlay-inner">
+                <Icon name="ph:paperclip" width={16} aria-hidden />
+                <span>Drop files to attach</span>
+              </div>
+            </div>
+          ) : null}
 
         {/* Mode strip — the composer's primary intent switch (Chat vs Task)
             leads the card, above the textarea, so it reads as the top-level
