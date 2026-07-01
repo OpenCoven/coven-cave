@@ -68,8 +68,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /<HomeComposer[\s\S]*?onStartChat=\{\(prompt, fid, projectRoot, opts\) =>\s*startFamiliarChat\(fid, projectRoot, prompt, opts\?\.initialControls \?\? null\)\s*\}/,
-  "Workspace HomeComposer handoff should forward initial controls into startFamiliarChat",
+  /<HomeComposer[\s\S]*?onStartChat=\{\(prompt, fid, projectRoot, opts\) =>\s*startFamiliarChat\(fid, projectRoot, prompt, opts\?\.initialControls \?\? null, opts\?\.initialAttachments \?\? null\)\s*\}/,
+  "Workspace HomeComposer handoff should forward initial controls + attachments into startFamiliarChat",
 );
 
 assert.match(

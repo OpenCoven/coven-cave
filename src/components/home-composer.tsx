@@ -37,6 +37,12 @@ import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models"
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
 import {
+  attachmentIcon,
+  fileToAttachment,
+  type ChatAttachment,
+  type ComposerAttachment,
+} from "@/lib/chat-attachments";
+import {
   COMMAND_CONTROL_DEFAULTS,
   COMMAND_RESPONSE_SPEED_OPTIONS,
   COMMAND_THINKING_OPTIONS,
@@ -70,7 +76,11 @@ type Props = {
     prompt: string,
     familiarId: string,
     projectRoot: string | null,
-    opts?: { initialControls?: { thinkingEffort: CommandThinkingEffort; responseSpeed: CommandResponseSpeed } },
+    opts?: {
+      initialControls?: { thinkingEffort: CommandThinkingEffort; responseSpeed: CommandResponseSpeed };
+      /** Files staged in the home composer; the opened chat auto-sends with them. */
+      initialAttachments?: ChatAttachment[];
+    },
   ) => void;
   onNavigateToBoard: () => void;
   onToast: (msg: string) => void;
@@ -140,6 +150,13 @@ export function HomeComposer({
   // so ids must be unique across simultaneously mounted composers.
   const slashListboxId = useId();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Attachments staged in the composer; handed to the opened chat on submit.
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Prompt enhancement (mirrors the chat composer's Enhance): the pre-enhance
+  // text is kept so the user can revert in one tap.
+  const [enhanceStatus, setEnhanceStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [enhanceOriginal, setEnhanceOriginal] = useState<string | null>(null);
   const archivedFamiliars = useArchivedFamiliars();
   // Hide archived familiars from the "new session" picker. Starting a new
   // chat against an archived agent is a footgun — the user can't tell from
@@ -393,12 +410,6 @@ export function HomeComposer({
     setTimeout(() => textareaRef.current?.focus(), 80);
   }, []);
 
-  // The "＋" affordance reveals the slash-command menu (board/remind/model/…).
-  const openCommands = useCallback(() => {
-    setText((t) => (t.trim() ? t : "/"));
-    setTimeout(() => textareaRef.current?.focus(), 0);
-  }, []);
-
   // Maps a familiar id to its display name for the daily-summary carousel.
   const familiarNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -413,6 +424,63 @@ export function HomeComposer({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
+
+  // ── Attachments ──────────────────────────────────────────────────────────
+  // Paperclip stages picked files (cap 10, mirroring the chat composer); they
+  // ride along to the opened chat on submit. Slash commands still open by
+  // typing "/" in the composer, so the retired "+" launcher loses nothing.
+  const addFiles = useCallback(async (files: FileList | File[] | null) => {
+    if (!files?.length) return;
+    const room = Math.max(0, 10 - attachments.length);
+    const selected = Array.from(files).slice(0, room);
+    if (selected.length === 0) {
+      onToast("Attachment limit reached (10).");
+      return;
+    }
+    const next = await Promise.all(selected.map(fileToAttachment));
+    setAttachments((prev) => [...prev, ...next]);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, [attachments.length, onToast]);
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
+  // ── Enhance ──────────────────────────────────────────────────────────────
+  // Rewrite the draft via /api/prompt/enhance (mirrors the chat composer),
+  // stashing the original for a one-tap revert.
+  const enhancePrompt = useCallback(async () => {
+    const draft = text.trim();
+    if (!draft || sending || enhanceStatus === "loading") return;
+    setEnhanceStatus("loading");
+    try {
+      const res = await fetch("/api/prompt/enhance", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ draft, mode: "chat" }),
+      });
+      const json = (await res.json().catch(() => null)) as { ok?: boolean; enhanced?: string } | null;
+      if (!res.ok || !json?.ok || typeof json.enhanced !== "string" || !json.enhanced.trim()) {
+        setEnhanceStatus("error");
+        onToast("Couldn't enhance the prompt.");
+        return;
+      }
+      setEnhanceOriginal(text);
+      setText(json.enhanced);
+      setEnhanceStatus("idle");
+      setTimeout(() => { textareaRef.current?.focus(); autoGrow(); }, 0);
+    } catch {
+      setEnhanceStatus("error");
+      onToast("Couldn't enhance the prompt.");
+    }
+  }, [text, sending, enhanceStatus, onToast, autoGrow]);
+  const revertEnhance = useCallback(() => {
+    setEnhanceOriginal((original) => {
+      if (original == null) return null;
+      setText(original);
+      setTimeout(() => { textareaRef.current?.focus(); autoGrow(); }, 0);
+      return null;
+    });
+  }, [autoGrow]);
 
   // Destination pills behave as a single-select radiogroup: arrow/Home/End
   // move the selection and the roving focus, matching the ARIA radio pattern.
@@ -441,7 +509,9 @@ export function HomeComposer({
 
   const handleSubmit = useCallback(async () => {
     const prompt = text.trim();
-    if (!prompt || sending) return;
+    // Allow an attachments-only send (chat can carry files with no text); every
+    // other path still needs a prompt and is guarded per-destination below.
+    if ((!prompt && attachments.length === 0) || sending) return;
 
     // Slash commands bypass the destination model entirely — same contract
     // as the chat composer's slash dispatch.
@@ -509,13 +579,20 @@ export function HomeComposer({
           // the send here and canceling on the session event aborts the
           // request server-side — the harness is killed mid-run and the
           // transcript never saves, so the opened chat 404s.
+          // ComposerAttachment carries a local `id` (extra vs ChatAttachment);
+          // it's harmless downstream (normalized away before persistence).
+          const outgoing: ChatAttachment[] | undefined = attachments.length ? attachments : undefined;
           setText("");
+          setAttachments([]);
+          setEnhanceOriginal(null);
           onStartChat(prompt, selectedFamiliarId, selectedProject?.root ?? null, {
             initialControls: { thinkingEffort, responseSpeed },
+            initialAttachments: outgoing,
           });
           break;
         }
         case "board": {
+          if (!prompt) { onToast("Add a task title."); break; }
           const res = await fetch("/api/board", {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -546,6 +623,7 @@ export function HomeComposer({
     thinkingEffort,
     responseSpeed,
     sending,
+    attachments,
     handleSelectModel,
     onSlash,
     onStartChat,
@@ -831,7 +909,7 @@ export function HomeComposer({
           placeholder={PLACEHOLDERS[destination]}
           rows={3}
           value={text}
-          onChange={(e) => { setText(e.target.value); autoGrow(); }}
+          onChange={(e) => { setText(e.target.value); autoGrow(); if (enhanceOriginal != null) setEnhanceOriginal(null); }}
           onKeyDown={handleKeyDown}
           disabled={sending}
           aria-label="Ask anything"
@@ -846,17 +924,48 @@ export function HomeComposer({
           enterKeyHint="send"
         />
 
+        {/* Staged attachments — chips with a remove control (mirrors chat). */}
+        {attachments.length > 0 && (
+          <ul className="hc-attachments" aria-label="Attachments">
+            {attachments.map((att) => (
+              <li key={att.id} className="hc-attachment">
+                <Icon name={attachmentIcon(att)} width={12} className="hc-attachment-icon" aria-hidden />
+                <span className="hc-attachment-name" title={att.name}>{att.name}</span>
+                <button
+                  type="button"
+                  className="hc-attachment-remove"
+                  onClick={() => removeAttachment(att.id)}
+                  aria-label={`Remove ${att.name}`}
+                  title="Remove"
+                >
+                  <Icon name="ph:x" width={10} aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
         {/* Action bar */}
         <div className="hc-action-bar">
           <div className="hc-control-group hc-control-group--who">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hc-file-input"
+              onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }}
+              tabIndex={-1}
+              aria-hidden
+            />
             <button
               type="button"
               className="hc-add-btn"
-              onClick={openCommands}
-              aria-label="Commands"
-              title="Slash commands"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending}
+              aria-label="Attach files"
+              title="Attach files"
             >
-              <Icon name="ph:plus" width={15} aria-hidden />
+              <Icon name="ph:paperclip" width={15} aria-hidden />
             </button>
 
             <label className="hc-familiar-selector">
@@ -964,11 +1073,38 @@ export function HomeComposer({
               </>
             ) : null}
 
+            {enhanceOriginal != null && (
+              <button
+                type="button"
+                className="hc-enhance-undo"
+                onClick={revertEnhance}
+                disabled={sending}
+                title="Undo enhance"
+              >
+                Undo
+              </button>
+            )}
             <button
               type="button"
-              className={`hc-send-btn${sending ? " sending" : ""}${!text.trim() ? " empty" : ""}`}
+              className={`hc-enhance-btn${enhanceStatus === "loading" ? " loading" : ""}`}
+              onClick={() => void enhancePrompt()}
+              disabled={!text.trim() || sending || enhanceStatus === "loading"}
+              aria-label="Enhance prompt"
+              title="Enhance prompt"
+            >
+              {enhanceStatus === "loading" ? (
+                <span className="hc-spinner" />
+              ) : (
+                <Icon name="ph:sparkle" width={13} aria-hidden />
+              )}
+              <span className="hc-enhance-label">Enhance</span>
+            </button>
+
+            <button
+              type="button"
+              className={`hc-send-btn${sending ? " sending" : ""}${!text.trim() && attachments.length === 0 ? " empty" : ""}`}
               onClick={() => void handleSubmit()}
-              disabled={!text.trim() || sending}
+              disabled={(!text.trim() && attachments.length === 0) || sending}
               aria-label="Send"
             >
               {sending ? (

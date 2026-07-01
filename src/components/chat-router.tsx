@@ -14,6 +14,7 @@ import {
   normalizeChatProjectRoot,
 } from "@/lib/chat-projects";
 import { applyProjectOverrides } from "@/lib/chat-project-overrides";
+import type { ChatAttachment } from "@/lib/chat-attachments";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useProjects } from "@/lib/use-projects";
@@ -31,7 +32,7 @@ import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 
 type View =
   | { kind: "list" }
-  | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin };
+  | { kind: "chat"; sessionId: string | null; projectRoot?: string; initialPrompt?: string; initialAttachments?: ChatAttachment[]; initialControls?: InitialCommandControls; familiarId?: string | null; origin?: SessionOrigin };
 
 type Props = {
   familiar: Familiar | null;
@@ -65,7 +66,7 @@ type Props = {
 
 export type ChatRouterHandle = {
   goToList: () => void;
-  newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls) => void;
+  newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => void;
   openSession: (sessionId: string, findQuery?: string) => void;
   currentSessionId: () => string | null;
   clearTranscript: () => void;
@@ -263,6 +264,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
                 sessionId: null,
                 projectRoot: prev.projectRoot,
                 initialPrompt: prev.initialPrompt,
+                initialAttachments: prev.initialAttachments,
                 initialControls: prev.initialControls,
                 familiarId: nextFamiliarId,
                 origin: prev.origin,
@@ -275,13 +277,14 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
     ref,
     () => ({
       goToList: () => setView({ kind: "list" }),
-      newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls) => {
+      newChat: (projectRoot?: string, initialPrompt?: string, familiarId?: string | null, origin?: SessionOrigin, initialControls?: InitialCommandControls, initialAttachments?: ChatAttachment[]) => {
         const next = selectFamiliarForChat(familiarId);
         setView({
           kind: "chat",
           sessionId: null,
           projectRoot,
           initialPrompt,
+          initialAttachments,
           initialControls,
           familiarId: next?.id ?? familiarId ?? null,
           origin,
@@ -373,6 +376,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             sessionId: null,
             projectRoot: view.kind === "chat" ? view.projectRoot : undefined,
             initialPrompt: view.kind === "chat" ? view.initialPrompt : undefined,
+            initialAttachments: view.kind === "chat" ? view.initialAttachments : undefined,
             initialControls: view.kind === "chat" ? view.initialControls : undefined,
             origin: view.kind === "chat" ? view.origin : undefined,
             familiarId: next?.id ?? familiarId,
@@ -434,6 +438,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             session={activeSession}
             projectRoot={view.kind === "chat" ? view.projectRoot : undefined}
             initialPrompt={view.kind === "chat" ? view.initialPrompt : undefined}
+            initialAttachments={view.kind === "chat" ? view.initialAttachments : undefined}
             initialControls={view.kind === "chat" ? view.initialControls : undefined}
             origin={view.kind === "chat" ? view.origin : undefined}
             openFindQuery={pendingFind?.query}

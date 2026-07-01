@@ -174,7 +174,7 @@
   margin-left: auto;
 }
 
-/* ── "＋" command launcher ───────────────────────────────────────────────── */
+/* ── Attach button (paperclip) ───────────────────────────────────────────── */
 .hc-add-btn {
   display: inline-flex;
   align-items: center;
@@ -189,10 +189,112 @@
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
-.hc-add-btn:hover {
+.hc-add-btn:hover:not(:disabled) {
   background: var(--bg-base);
   border-color: var(--border-hairline);
   color: var(--text-secondary);
+}
+.hc-add-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Hidden native file input driven by the paperclip button. */
+.hc-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Attachment chips ────────────────────────────────────────────────────── */
+.hc-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 8px 14px 0;
+}
+.hc-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  padding: 3px 6px 3px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-hairline);
+  background: var(--bg-base);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.hc-attachment-icon { color: var(--text-muted); flex-shrink: 0; }
+.hc-attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hc-attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.hc-attachment-remove:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* ── Enhance button ──────────────────────────────────────────────────────── */
+.hc-enhance-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border-hairline);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.hc-enhance-btn:hover:not(:disabled) {
+  background: var(--bg-base);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.hc-enhance-btn:disabled { opacity: 0.5; cursor: default; }
+.hc-enhance-btn.loading { color: var(--accent-presence); }
+.hc-enhance-label { line-height: 1; }
+.hc-enhance-undo {
+  flex-shrink: 0;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.hc-enhance-undo:hover:not(:disabled) { background: var(--bg-base); color: var(--text-secondary); }
+.hc-enhance-undo:disabled { opacity: 0.5; cursor: default; }
+
+@media (max-width: 640px) {
+  .hc-enhance-label { display: none; }
 }
 
 /* ── Model chip ──────────────────────────────────────────────────────────── */

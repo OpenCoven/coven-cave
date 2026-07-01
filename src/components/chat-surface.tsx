@@ -403,6 +403,7 @@ export function ChatSurface({
           pendingChatAction.familiarId,
           undefined,
           pendingChatAction.initialControls ?? undefined,
+          pendingChatAction.initialAttachments ?? undefined,
         ),
         0,
       );

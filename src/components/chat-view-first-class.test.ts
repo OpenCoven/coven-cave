@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
+// attachmentIcon (and fileToAttachment/isTextLike) moved to the shared lib so
+// the home composer can reuse the exact same capture + glyph logic.
+const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
 
 assert.match(
   source,
@@ -90,7 +93,7 @@ assert.match(
 );
 
 assert.match(
-  source,
+  attachmentsLib,
   /function attachmentIcon[\s\S]*startsWith\("image\/"\)[\s\S]*"ph:camera"[\s\S]*startsWith\("video\/"\)[\s\S]*"ph:video"[\s\S]*"ph:paperclip"/,
   "Attachment chips should distinguish images and videos from generic files",
 );

@@ -31,8 +31,8 @@ assert.match(
 
 assert.match(
   surface,
-  /newChat\(\s*pendingChatAction\.projectRoot \?\? undefined,\s*pendingChatAction\.initialPrompt \?\? undefined,\s*pendingChatAction\.familiarId,\s*undefined,\s*pendingChatAction\.initialControls \?\? undefined,\s*\)/s,
-  "ChatSurface should forward the pending initialPrompt into ChatRouter.newChat",
+  /newChat\(\s*pendingChatAction\.projectRoot \?\? undefined,\s*pendingChatAction\.initialPrompt \?\? undefined,\s*pendingChatAction\.familiarId,\s*undefined,\s*pendingChatAction\.initialControls \?\? undefined,\s*pendingChatAction\.initialAttachments \?\? undefined,\s*\)/s,
+  "ChatSurface should forward the pending initialPrompt + attachments into ChatRouter.newChat",
 );
 
 assert.match(
