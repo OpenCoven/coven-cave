@@ -947,6 +947,19 @@ export function HomeComposer({
           rows={3}
           value={text}
           onChange={(e) => { setText(e.target.value); autoGrow(); if (enhanceOriginal != null) setEnhanceOriginal(null); }}
+          onPaste={(e) => {
+            // Paste-to-attach: clipboard files (screenshots, copied files) stage
+            // as attachments. Only preventDefault when files were consumed so a
+            // plain-text paste is untouched.
+            const pastedFiles = Array.from(e.clipboardData.items)
+              .filter((item) => item.kind === "file")
+              .map((item) => item.getAsFile())
+              .filter((file): file is File => file !== null);
+            if (pastedFiles.length > 0) {
+              e.preventDefault();
+              void addFiles(pastedFiles);
+            }
+          }}
           onKeyDown={handleKeyDown}
           disabled={sending}
           aria-label="Ask anything"

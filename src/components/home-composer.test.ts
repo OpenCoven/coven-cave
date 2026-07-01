@@ -463,3 +463,10 @@ assert.match(
   /dropActive \? \([\s\S]*?hc-drop-overlay[\s\S]*?Drop files to attach/,
   "an overlay prompts to drop files while dragging",
 );
+
+// ── Paste-to-attach ─────────────────────────────────────────────────────────
+assert.match(
+  source,
+  /onPaste=\{\(e\) => \{[\s\S]*?e\.clipboardData\.items[\s\S]*?item\.kind === "file"[\s\S]*?void addFiles\(pastedFiles\)/,
+  "pasting files into the composer stages them as attachments",
+);
