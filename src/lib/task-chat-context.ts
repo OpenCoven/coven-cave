@@ -1,3 +1,5 @@
+import { buildPromptWithAttachments, type ChatAttachment } from "@/lib/chat-attachments";
+
 type TaskContextCard = {
   title: string;
   notes?: string | null;
@@ -6,6 +8,9 @@ type TaskContextCard = {
   labels?: string[] | null;
   links?: string[] | null;
   github?: Array<{ title: string; url: string }> | null;
+  /** Files carried onto the card at creation. Folded into the initial dispatch
+   * prompt so the familiar working the task can read them. */
+  attachments?: ChatAttachment[] | null;
 };
 
 function linesForList(title: string, values: string[]): string[] {
@@ -52,7 +57,12 @@ export function buildTaskAwarePrompt(prompt: string, taskContext: string | null)
 }
 
 export function buildInitialTaskChatPrompt(card: TaskContextCard): string {
-  return `${buildTaskContext(card)}\n\nUse this session as the working thread for the task.`;
+  const base = `${buildTaskContext(card)}\n\nUse this session as the working thread for the task.`;
+  const attachments = card.attachments ?? [];
+  // Board attachments are stored lean (text inlined; image dataUrls stripped),
+  // so buildPromptWithAttachments renders text bodies in full and images as a
+  // metadata line — exactly the once-at-dispatch delivery the composer uses.
+  return attachments.length ? buildPromptWithAttachments(base, attachments) : base;
 }
 
 export async function taskContextForSession(sessionId?: string | null): Promise<string | null> {
