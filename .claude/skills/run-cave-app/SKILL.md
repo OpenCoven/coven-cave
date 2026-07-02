@@ -73,7 +73,7 @@ Key moves:
 - **Suppress onboarding**: `localStorage["cave:onboarding:dismissed"]="1"` via `addInitScript` (runs before page scripts).
 - **Jump to a surface**: after load, `window.dispatchEvent(new CustomEvent("cave:navigate-mode",{detail:{mode:"<mode>"}}))`.
 - **Wait** with `waitUntil:"domcontentloaded"` (NOT networkidle — the app holds connections open).
-- **Wait for DATA, not time.** A fresh prod server's FIRST hit on an API route can take seconds (route compile/warm-up), so data-dependent UI renders its empty/loading state first — a fixed `waitForTimeout` probe reads that and reports a FALSE NEGATIVE ("feature broken" when it's just cold). Assert on the data being present:
+- **Wait for DATA, not time.** A fresh prod server's FIRST hit on an API route can take seconds (route compile/warm-up), so data-dependent UI renders its empty/loading state first — a fixed `page.waitForTimeout(...)` probe reads that and reports a FALSE NEGATIVE ("feature broken" when it's just cold). Assert on the data being present:
   ```js
   await page.waitForFunction(() => {
     const sel = document.querySelector('.some-surface select');
