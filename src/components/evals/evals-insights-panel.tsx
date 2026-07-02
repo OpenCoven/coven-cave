@@ -7,8 +7,9 @@ import type { EvalRun, EvalSuite } from "@/lib/evals/eval-model";
 
 /**
  * Insights tab body. Shows, for the selected suite's run history: a pass-rate
- * trend (with the SLA floor as a threshold line + a breach/ok badge) and a
- * failure-frequency bar with a flaky-case list. Empty until the suite has runs.
+ * trend (with the SLA floor as a threshold line + a breach/ok badge), a
+ * per-case failure breakdown as labeled bars (name · count · proportional
+ * track), and a flaky-case list. Empty until the suite has runs.
  */
 export function EvalsInsightsPanel({ suite, runs }: { suite: EvalSuite | null; runs: EvalRun[] }) {
   const suiteRuns = useMemo(
