@@ -2427,6 +2427,7 @@ export function Workspace() {
       <QuickChatOverlay
         open={quickChatOpen}
         onClose={() => setQuickChatOpen(false)}
+        activeFamiliarId={activeId}
         onOpenFullSession={(sid, fid) => {
           setQuickChatOpen(false);
           openFamiliarSession(sid, fid);

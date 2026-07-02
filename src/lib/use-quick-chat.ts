@@ -40,9 +40,24 @@ export type UseQuickChat = {
   cancel: () => void;
 };
 
-export function useQuickChat(): UseQuickChat {
+export type UseQuickChatOptions = {
+  /** Prefer this familiar (e.g. the workspace's active scope) over the
+   *  last-used/first fallback. The user's manual pick in the popover still
+   *  wins once made. */
+  preferredFamiliarId?: string | null;
+};
+
+export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
+  const preferredFamiliarId = options?.preferredFamiliarId ?? null;
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [selectedFamiliarId, setSelectedFamiliarId] = useState<string | null>(null);
+  // Once the user explicitly picks a familiar in the UI, stop following the
+  // preferred (workspace-active) familiar — their choice is stickier.
+  const userPickedRef = useRef(false);
+  const pickFamiliar = useCallback((id: string | null) => {
+    userPickedRef.current = true;
+    setSelectedFamiliarId(id);
+  }, []);
   const [draft, setDraft] = useState("");
   const [answer, setAnswer] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +72,9 @@ export function useQuickChat(): UseQuickChat {
   );
 
   const abortRef = useRef<AbortController | null>(null);
+  // Latest preferred id for the one-shot roster load below (no effect re-run).
+  const preferredRef = useRef<string | null>(preferredFamiliarId);
+  preferredRef.current = preferredFamiliarId;
 
   useEffect(() => {
     let alive = true;
@@ -70,9 +88,13 @@ export function useQuickChat(): UseQuickChat {
           typeof window !== "undefined"
             ? window.localStorage.getItem(LAST_FAMILIAR_KEY)
             : null;
+        const preferred = preferredRef.current;
         setFamiliars(next);
+        // Default priority: the workspace's active familiar, then the last
+        // familiar used in quick chat, then the first in the roster.
         setSelectedFamiliarId(
-          (stored && next.some((familiar) => familiar.id === stored) ? stored : null) ??
+          (preferred && next.some((familiar) => familiar.id === preferred) ? preferred : null) ??
+            (stored && next.some((familiar) => familiar.id === stored) ? stored : null) ??
             next[0]?.id ??
             null,
         );
@@ -86,6 +108,14 @@ export function useQuickChat(): UseQuickChat {
       alive = false;
     };
   }, []);
+
+  // Follow the workspace's active familiar as it changes — until the user has
+  // explicitly picked one in the popover (their choice then sticks).
+  useEffect(() => {
+    if (!preferredFamiliarId || userPickedRef.current) return;
+    if (!familiars.some((familiar) => familiar.id === preferredFamiliarId)) return;
+    setSelectedFamiliarId(preferredFamiliarId);
+  }, [preferredFamiliarId, familiars]);
 
   // Abort any in-flight stream when the consumer unmounts.
   useEffect(() => {
@@ -136,7 +166,9 @@ export function useQuickChat(): UseQuickChat {
   return {
     familiars,
     selectedFamiliarId,
-    setSelectedFamiliarId,
+    // Manual picks flow through pickFamiliar so they override the
+    // workspace-active default from then on.
+    setSelectedFamiliarId: pickFamiliar,
     selectedFamiliar,
     draft,
     setDraft,
