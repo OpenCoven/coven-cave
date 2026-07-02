@@ -1682,6 +1682,23 @@
 .evals-diff__row--regressed .evals-diff__status { color: var(--color-danger); }
 .evals-diff__row--fixed .evals-diff__status { color: var(--color-success); }
 
+/* Compare verdict chips: the headline of the diff before the row detail. */
+.evals-compare__summary { display: flex; flex-wrap: wrap; gap: 6px; }
+.evals-compare__chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+.evals-compare__chip.is-regressed { color: var(--color-danger); background: color-mix(in oklch, var(--color-danger) 14%, transparent); }
+.evals-compare__chip.is-fail { color: var(--color-danger); background: color-mix(in oklch, var(--color-danger) 9%, transparent); }
+.evals-compare__chip.is-fixed { color: var(--color-success); background: color-mix(in oklch, var(--color-success) 14%, transparent); }
+.evals-compare__chip.is-clean { color: var(--color-success); background: color-mix(in oklch, var(--color-success) 10%, transparent); }
+.evals-compare__none { margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
+
 @media (max-width: 720px) {
   .evals-insights,
   .evals-compare {
