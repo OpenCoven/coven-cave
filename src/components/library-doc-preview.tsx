@@ -422,9 +422,17 @@ async function getMdFn(): Promise<MdFn> {
 // Rendered markdown (docs, extracted articles, GitHub READMEs) embeds images.
 // We enhance every <img> after render: lazy-load + async decode so a heavy
 // README doesn't block paint, a graceful placeholder when a src 404s (common
-// with moved repo assets), and click-to-zoom into a lightbox — except for
-// images wrapped in a link (badges/shields), where the link must win.
+// with moved repo assets), and click-to-zoom into a lightbox. GitHub's rendered
+// README HTML wraps each content image in a link to its full-size version — we
+// intercept those so the image zooms in-app instead of navigating away, while
+// badges/shields and links that point at a page keep their link.
 type ZoomTarget = { src: string; alt: string };
+
+/** Does this href point at an image (so a wrapping <a> is a "view full size"
+ *  link we can turn into an in-app zoom rather than a navigation)? */
+function hrefLooksLikeImage(href: string): boolean {
+  return /camo\.githubusercontent\.com|raw\.githubusercontent\.com|\.(?:png|jpe?g|gif|svg|webp|avif|bmp)(?:[?#]|$)/i.test(href);
+}
 
 function wireMarkdownImages(container: HTMLElement, onZoom: (t: ZoomTarget) => void): void {
   const imgs = container.querySelectorAll<HTMLImageElement>("img:not([data-cave-img])");
@@ -446,17 +454,35 @@ function wireMarkdownImages(container: HTMLElement, onZoom: (t: ZoomTarget) => v
       img.replaceWith(ph);
     }, { once: true });
 
-    // Linked images and badges/shields keep their inline role; only standalone
-    // content images open the zoom lightbox.
+    // Badges/shields keep their inline role (and their link, if any).
     const src = img.getAttribute("src") || "";
-    if (img.closest("a") || /shields\.io|\/badges?\/|[?&]badge/i.test(src)) continue;
+    if (/shields\.io|\/badges?\/|[?&]badge/i.test(src)) continue;
+
+    const open = (fullSrc: string) =>
+      onZoom({ src: fullSrc || img.currentSrc || img.src, alt: img.getAttribute("alt") || "" });
+
+    // Image wrapped in a link: if the link is a "view full size" image URL
+    // (GitHub's pattern), intercept it to zoom in-app; a link to a real page
+    // is left untouched so navigation still works.
+    const anchor = img.closest("a");
+    if (anchor) {
+      const href = anchor.getAttribute("href") || "";
+      if (!hrefLooksLikeImage(href)) continue;
+      img.classList.add("cave-md-img--zoomable");
+      anchor.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); open(href); });
+      anchor.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); open(href); }
+      });
+      continue;
+    }
+
+    // Standalone content image (docs, research, raw-README fallback).
     img.classList.add("cave-md-img--zoomable");
     img.setAttribute("role", "button");
     img.setAttribute("tabindex", "0");
-    const open = () => onZoom({ src: img.currentSrc || img.src, alt: img.getAttribute("alt") || "" });
-    img.addEventListener("click", open);
+    img.addEventListener("click", () => open(img.currentSrc || img.src));
     img.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(img.currentSrc || img.src); }
     });
   }
 }
