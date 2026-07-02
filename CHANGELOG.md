@@ -7,6 +7,23 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.132] - 2026-07-02
+
+Patch release on top of v0.0.131. Headline: GitHub README images can be
+inspected without leaving Cave, the board UI gets a focused audit pass, and the
+desktop TypeScript toolchain is aligned with the Node 24 runtime.
+
+### Changed
+
+- **Library** - zoom GitHub README images in Cave instead of following GitHub's
+  image link.
+- **Toolchain** - aligned TypeScript and `@types/node` with the Node 24 runtime.
+
+### Fixed
+
+- **Board** - tightened card inspector remount behavior, polling guards, hoisted
+  resolution state, undo snapshots, chips, and dead board UI paths.
+
 ## [0.0.131] - 2026-07-02
 
 Patch release on top of v0.0.130. Headline: eval analysis is easier to scan,
