@@ -24,6 +24,9 @@ own workspace.
 - **Board attachments** - drop files directly onto the inspector's Attachments
   section to stage them on a card.
 - **Library** - show language and license icons in GitHub repository rows.
+- **Library** - render GitHub README images, repo-relative links, owner avatars,
+  homepage chips, social previews, and image lightboxes in the inline repo
+  reader.
 
 ### Changed
 
