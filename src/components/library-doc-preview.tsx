@@ -26,7 +26,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { formatDate, readDateTimePrefs } from "@/lib/datetime-format";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { LibraryChatPanel } from "@/components/library-chat-panel";
-import { formatCount, type GitHubRepoMeta } from "@/lib/github-repo";
+import { formatCount, absolutizeGitHubReadme, type GitHubRepoMeta } from "@/lib/github-repo";
 import type { ExtractedArticle } from "@/lib/article-extract";
 import { openExternalUrl } from "@/lib/open-external";
 
@@ -418,6 +418,91 @@ async function getMdFn(): Promise<MdFn> {
   return mdFnCached;
 }
 
+// ── README / doc image wiring + zoom ─────────────────────────────
+// Rendered markdown (docs, extracted articles, GitHub READMEs) embeds images.
+// We enhance every <img> after render: lazy-load + async decode so a heavy
+// README doesn't block paint, a graceful placeholder when a src 404s (common
+// with moved repo assets), and click-to-zoom into a lightbox — except for
+// images wrapped in a link (badges/shields), where the link must win.
+type ZoomTarget = { src: string; alt: string };
+
+function wireMarkdownImages(container: HTMLElement, onZoom: (t: ZoomTarget) => void): void {
+  const imgs = container.querySelectorAll<HTMLImageElement>("img:not([data-cave-img])");
+  for (const img of Array.from(imgs)) {
+    img.dataset.caveImg = "1";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.classList.add("cave-md-img");
+
+    // Graceful failure: swap a broken image for an inline placeholder chip so
+    // the reader doesn't stare at a browser's broken-image glyph.
+    img.addEventListener("error", () => {
+      if (img.dataset.caveImgBroken) return;
+      img.dataset.caveImgBroken = "1";
+      const ph = document.createElement("span");
+      ph.className = "cave-md-img-broken";
+      ph.textContent = (img.getAttribute("alt") || "Image unavailable").trim() || "Image unavailable";
+      ph.title = img.currentSrc || img.src;
+      img.replaceWith(ph);
+    }, { once: true });
+
+    // Linked images and badges/shields keep their inline role; only standalone
+    // content images open the zoom lightbox.
+    const src = img.getAttribute("src") || "";
+    if (img.closest("a") || /shields\.io|\/badges?\/|[?&]badge/i.test(src)) continue;
+    img.classList.add("cave-md-img--zoomable");
+    img.setAttribute("role", "button");
+    img.setAttribute("tabindex", "0");
+    const open = () => onZoom({ src: img.currentSrc || img.src, alt: img.getAttribute("alt") || "" });
+    img.addEventListener("click", open);
+    img.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+    });
+  }
+}
+
+function ImageLightbox({ target, onClose }: { target: ZoomTarget; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (typeof document === "undefined") return null;
+  const canOpen = /^https?:\/\//i.test(target.src);
+  return createPortal(
+    <div
+      className="cave-img-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label={target.alt || "Image preview"}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="cave-img-lightbox__bar" onClick={(e) => e.stopPropagation()}>
+        {target.alt && <span className="cave-img-lightbox__caption">{target.alt}</span>}
+        <span className="cave-img-lightbox__spacer" />
+        {canOpen && (
+          <button
+            type="button"
+            className="cave-img-lightbox__btn"
+            onClick={() => openExternalUrl(target.src)}
+            title="Open original"
+            aria-label="Open original image"
+          >
+            <Icon name="ph:arrow-square-out" width={15} />
+          </button>
+        )}
+        <button type="button" className="cave-img-lightbox__btn" onClick={onClose} title="Close (Esc)" aria-label="Close">
+          <Icon name="ph:x" width={16} />
+        </button>
+      </div>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="cave-img-lightbox__img" src={target.src} alt={target.alt} onClick={onClose} />
+    </div>,
+    document.body,
+  );
+}
+
 interface RenderedMarkdownProps {
   text: string;
   html?: string | null;
@@ -428,6 +513,7 @@ interface RenderedMarkdownProps {
 function RenderedMarkdown({ text, html: renderedHtml, repo, containerRef }: RenderedMarkdownProps) {
   const [html, setHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [zoom, setZoom] = useState<ZoomTarget | null>(null);
   const internalRef = useRef<HTMLDivElement | null>(null);
   const ref = containerRef ?? internalRef;
 
@@ -451,13 +537,17 @@ function RenderedMarkdown({ text, html: renderedHtml, repo, containerRef }: Rend
   }, [text, renderedHtml, repo]);
 
   // Colorize any ```diff fenced blocks (e.g. a README's changelog) into a real
-  // diff once the markdown lands. Idempotent + observed so a late syntax
-  // highlighter pass is caught too.
+  // diff, and enhance images (lazy/decode/zoom/broken-fallback) once the
+  // markdown lands. Idempotent + observed so a late render pass is caught too.
   useEffect(() => {
     const el = ref.current;
     if (!html || !el) return;
     wireDiffBlocks(el);
-    const observer = new MutationObserver(() => wireDiffBlocks(el));
+    wireMarkdownImages(el, setZoom);
+    const observer = new MutationObserver(() => {
+      wireDiffBlocks(el);
+      wireMarkdownImages(el, setZoom);
+    });
     observer.observe(el, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, [html, ref]);
@@ -470,7 +560,12 @@ function RenderedMarkdown({ text, html: renderedHtml, repo, containerRef }: Rend
     </div>
   );
   if (!html) return null;
-  return <div ref={ref} className="cave-md library-preview-md" dangerouslySetInnerHTML={{ __html: html }} />;
+  return (
+    <>
+      <div ref={ref} className="cave-md library-preview-md" dangerouslySetInnerHTML={{ __html: html }} />
+      {zoom && <ImageLightbox target={zoom} onClose={() => setZoom(null)} />}
+    </>
+  );
 }
 
 // ── ToC panel ────────────────────────────────────────────────────
@@ -538,6 +633,31 @@ type RepoState =
   | { phase: "error"; error: string }
   | { phase: "ready"; meta: GitHubRepoMeta; readme: string | null; readmeHtml: string | null };
 
+/** Stable per-language hue for the little dot beside the language chip. */
+function langHue(lang: string): number {
+  let h = 0;
+  for (let i = 0; i < lang.length; i += 1) h = (h * 31 + lang.charCodeAt(i)) % 360;
+  return h;
+}
+
+/** Compact "3 days ago" / "just now" relative time from an ISO timestamp. */
+function relativeFromNow(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const sec = Math.round((Date.now() - then) / 1000);
+  if (sec < 60) return "just now";
+  const units: Array<[number, string]> = [
+    [60, "min"], [3600, "hr"], [86400, "day"], [604800, "wk"], [2592000, "mo"], [31536000, "yr"],
+  ];
+  let label = "yr";
+  let div = 31536000;
+  for (let i = units.length - 1; i >= 0; i -= 1) {
+    if (sec >= units[i][0]) { div = units[i][0]; label = units[i][1]; break; }
+  }
+  const n = Math.floor(sec / div);
+  return `${n} ${label}${n === 1 ? "" : "s"} ago`;
+}
+
 function GitHubRepoViewer({ item }: { item: LibraryGitHubItem }) {
   const [state, setState] = useState<RepoState>({ phase: "loading" });
   const mdRef = useRef<HTMLDivElement | null>(null);
@@ -588,22 +708,54 @@ function GitHubRepoViewer({ item }: { item: LibraryGitHubItem }) {
   return (
     <div className="library-preview">
       <div className="library-preview-header">
-        <div className="library-preview-title">
-          <Icon name="ph:github-logo" width={16} className="inline-block mr-2 align-[-2px] text-[var(--text-muted)]" />
-          {meta?.fullName ?? item.repo}
+        <div className="library-preview-title library-repo-title">
+          {meta?.ownerAvatar ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              className="library-repo-avatar"
+              src={meta.ownerAvatar}
+              alt=""
+              width={22}
+              height={22}
+              loading="lazy"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+          ) : (
+            <Icon name="ph:github-logo" width={16} className="align-[-2px] text-[var(--text-muted)]" />
+          )}
+          <span className="library-repo-fullname">{meta?.fullName ?? item.repo}</span>
         </div>
         <div className="library-preview-meta library-preview-meta--with-actions">
           <span className="library-preview-meta-left library-repo-chips">
-            {meta && (
+            {meta ? (
               <>
                 <span className="library-repo-chip"><span aria-hidden>★</span>{formatCount(meta.stars)}</span>
                 <span className="library-repo-chip"><Icon name="ph:git-fork" width={12} />{formatCount(meta.forks)}</span>
-                {meta.language && <span className="library-repo-chip"><Icon name="ph:code" width={12} />{meta.language}</span>}
-                {meta.license && <span className="library-repo-chip"><Icon name="ph:scales" width={12} />{meta.license}</span>}
+                {meta.language && (
+                  <span className="library-repo-chip">
+                    <span className="library-repo-langdot" style={{ background: `hsl(${langHue(meta.language)} 62% 52%)` }} aria-hidden />
+                    {meta.language}
+                  </span>
+                )}
+                {meta.license && <span className="library-repo-chip">{meta.license}</span>}
+                {meta.updatedAt && relativeFromNow(meta.updatedAt) && (
+                  <span className="library-repo-chip"><Icon name="ph:clock" width={12} />{relativeFromNow(meta.updatedAt)}</span>
+                )}
+                {meta.homepage && (
+                  <button
+                    type="button"
+                    className="library-repo-chip library-repo-chip--link"
+                    onClick={() => openExternalUrl(meta.homepage!)}
+                    title={meta.homepage}
+                  >
+                    <Icon name="ph:globe" width={12} />{hostnameLabel(meta.homepage)}
+                  </button>
+                )}
                 {meta.archived && <span className="library-repo-chip library-repo-chip--warn">archived</span>}
               </>
+            ) : (
+              <span className="library-preview-date">Loading repository…</span>
             )}
-            {!meta && <span className="library-preview-date">Loading repository…</span>}
           </span>
           <span className="library-preview-meta-actions">
             <OpenBtn url={meta?.url ?? item.url} label="Open on GitHub" kind="github" />
@@ -625,7 +777,27 @@ function GitHubRepoViewer({ item }: { item: LibraryGitHubItem }) {
             ))}
           </div>
         ) : readme || readmeHtml ? (
-          <RenderedMarkdown text={readme ?? ""} html={readmeHtml} repo={item.repo} containerRef={mdRef} />
+          // Rendered HTML from GitHub already has absolute image URLs; the raw
+          // markdown fallback needs repo-relative images/links absolutized so
+          // they load. `RenderedMarkdown` prefers `html` when present.
+          <RenderedMarkdown
+            text={readme ? absolutizeGitHubReadme(readme, { owner: meta?.owner ?? item.repo.split("/")[0], repo: meta?.repo ?? item.repo.split("/")[1], branch: meta?.defaultBranch }) : ""}
+            html={readmeHtml}
+            repo={item.repo}
+            containerRef={mdRef}
+          />
+        ) : meta?.openGraphImage ? (
+          <div className="library-repo-social">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              className="library-repo-social__img"
+              src={meta.openGraphImage}
+              alt={`${meta.fullName} social preview`}
+              loading="lazy"
+              onError={(e) => { const el = e.currentTarget.parentElement; if (el) el.style.display = "none"; }}
+            />
+            <p className="library-reading-detail__empty">This repository has no README.</p>
+          </div>
         ) : (
           <p className="library-reading-detail__empty">This repository has no README.</p>
         )}
