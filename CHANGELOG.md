@@ -7,6 +7,19 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS titlebar drag** - the seamless overlay titlebar now actually drags the
+  window. The webview loads from an external `http://127.0.0.1` URL, and WebKit
+  only honors the `-webkit-app-region: drag` CSS hint on the native `tauri://`
+  scheme — so the CSS-only approach (four prior attempts) was silently inert.
+  The shell now calls the Tauri window API's `startDragging()` on pointer-down
+  over empty titlebar chrome, which drives AppKit directly regardless of URL
+  scheme, while interactive controls still fall through as no-drag. Also fixed
+  the platform check that gated the whole titlebar mode: `navigator.platform` is
+  deprecated and empty on newer WebKit, so it now prefers
+  `navigator.userAgentData.platform` before falling back to the UA string.
+
 ### Added
 
 - **Supply chain** - guard against `sharp` version skew with Next's pinned copy

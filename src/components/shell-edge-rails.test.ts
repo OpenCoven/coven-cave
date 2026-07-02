@@ -32,13 +32,18 @@ assert.match(
 );
 assert.match(
   shell,
-  /<div className="shell-top" data-tauri-drag-region="">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="">\{renderedTopBar\}<\/div>/,
+  /<div className="shell-top" data-tauri-drag-region=""(?: onPointerDown=\{onTitlebarPointerDown\})?>[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="">\{renderedTopBar\}<\/div>/,
   "the top bar row leads with the nav toggle before the rendered top bar",
 );
 assert.equal(
-  shell.match(/<div className="shell-top" data-tauri-drag-region="">/g)?.length,
+  shell.match(/<div className="shell-top" data-tauri-drag-region=""(?: onPointerDown=\{onTitlebarPointerDown\})?>/g)?.length,
   2,
-  "both shell top bars should expose the Tauri drag region on the titlebar container",
+  "both shell top bars (placeholder + desktop) should expose the Tauri drag region on the titlebar container",
+);
+assert.equal(
+  shell.match(/onPointerDown=\{onTitlebarPointerDown\}/g)?.length,
+  2,
+  "every shell-top wires the native startDragging handler so the window drags on external-URL webviews",
 );
 assert.equal(
   shell.match(/<div className="shell-top__bar" data-tauri-drag-region="">/g)?.length,

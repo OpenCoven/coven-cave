@@ -162,17 +162,66 @@ function ShellInner({
   // mark <html> to reserve room for the traffic lights and make the top bar a
   // drag handle (see [data-tauri-titlebar] in globals.css). Browser, Windows,
   // Linux, and Tauri-mobile keep their normal chrome.
+  //
+  // We track this in state (not just the <html> dataset) because the CSS
+  // `-webkit-app-region: drag` hint is INERT here: the webview loads from an
+  // external `http://127.0.0.1` URL (see lib.rs WebviewUrl::External), and
+  // WebKit only bridges `app-region: drag` into a real NSWindow drag on the
+  // native `tauri://` scheme. On external URLs the hint is silently ignored,
+  // which is why the CSS-only approach never actually dragged the window.
+  // So when `tauriTitlebar` is on we also attach a mousedown handler that calls
+  // the Tauri window API's startDragging(), which drives AppKit directly and
+  // works regardless of URL scheme. The CSS stays as a progressive-
+  // enhancement fallback for any bundled-scheme build.
+  const [tauriTitlebar, setTauriTitlebar] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const isTauri = "__TAURI_INTERNALS__" in window;
-    const isMac = /Mac/i.test(navigator.platform || navigator.userAgent || "");
+    // navigator.platform is deprecated and empty on newer WebKit, which made
+    // isMac fall through to false and skip the titlebar mode entirely. Prefer
+    // the modern userAgentData.platform, then fall back to the UA string.
+    const platform =
+      (navigator as unknown as { userAgentData?: { platform?: string } })
+        .userAgentData?.platform ||
+      navigator.userAgent ||
+      navigator.platform ||
+      "";
+    const isMac = /Mac/i.test(platform);
     if (!isTauri || !isMac) return;
     const root = document.documentElement;
     root.dataset.tauriTitlebar = "";
+    setTauriTitlebar(true);
     return () => {
       delete root.dataset.tauriTitlebar;
+      setTauriTitlebar(false);
     };
   }, []);
+
+  // Native window drag for the macOS overlay titlebar. Fires only in the Tauri
+  // macOS shell (tauriTitlebar). Ignores anything but a primary-button press
+  // that lands on empty chrome — clicks on interactive controls fall through
+  // so buttons/inputs keep working. Double-click still zooms the window via
+  // the OS, so we only handle single-press drags.
+  const onTitlebarPointerDown = useMemo(() => {
+    if (!tauriTitlebar) return undefined;
+    return (event: import("react").PointerEvent<HTMLElement>) => {
+      if (event.button !== 0) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          "button, a, input, select, textarea, kbd, label, [role='button'], [role='textbox'], [contenteditable], .menu-bar__search, .top-bar__search, .top-bar__account",
+        )
+      ) {
+        return;
+      }
+      void import("@tauri-apps/api/window")
+        .then(({ getCurrentWindow }) => getCurrentWindow().startDragging())
+        .catch(() => {
+          // Best-effort: if the API isn't available we simply fall back to the
+          // CSS app-region hint (a no-op on external URLs, but harmless).
+        });
+    };
+  }, [tauriTitlebar]);
   const mobileChromeState: ShellMobileChromeState = {
     navDrawerOpen: isMobile && mobileDrawer === "nav",
     listDrawerOpen: isMobile && mobileDrawer === "list",
@@ -361,7 +410,7 @@ function ShellInner({
   if (!mounted) {
     return (
       <div className="shell-frame flex h-full w-full flex-col">
-        <div className="shell-top" data-tauri-drag-region="">
+        <div className="shell-top" data-tauri-drag-region="" onPointerDown={onTitlebarPointerDown}>
           <div className="shell-titlebar-drag-lane" data-tauri-drag-region="" aria-hidden="true" />
           <div className="shell-top__bar" data-tauri-drag-region="">{renderedTopBar}</div>
         </div>
@@ -491,7 +540,7 @@ function ShellInner({
       {/* Keyboard/SR users can jump straight past the chrome to the active
           surface. Visually hidden until focused (see .skip-link in globals). */}
       <a className="skip-link" href="#shell-main-content">Skip to main content</a>
-      <div className="shell-top" data-tauri-drag-region="">
+      <div className="shell-top" data-tauri-drag-region="" onPointerDown={onTitlebarPointerDown}>
         <div className="shell-titlebar-drag-lane" data-tauri-drag-region="" aria-hidden="true" />
         {navToggle}
         <div className="shell-top__bar" data-tauri-drag-region="">{renderedTopBar}</div>
