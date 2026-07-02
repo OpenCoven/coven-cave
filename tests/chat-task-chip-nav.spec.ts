@@ -95,13 +95,13 @@ async function setup(page: Page) {
 test("task chip navigates to the board card inspector, not the chat list", async ({ page }) => {
   await setup(page);
 
-  // Open the task chat from the rail.
-  const rail = page.locator(".chat-thread-rail");
-  await rail.getByText("Review Version Control in Cave", { exact: false }).first().click();
+  // Open the task chat from the chat-mode sidebar (session navigator).
+  const sidebar = page.locator(".chat-sidebar");
+  await sidebar.getByText("Review Version Control in Cave", { exact: false }).first().click();
 
   // The linked-task chip appears in the chat header. Its accessible name is
   // the chip's own text content ("Task … backlog medium"), which the status/
-  // priority suffix distinguishes from the rail's session button.
+  // priority suffix distinguishes from the sidebar's session button.
   const chip = page.getByRole("button", { name: /Review Version Control in Cave backlog medium/ });
   await expect(chip).toBeVisible({ timeout: 30_000 });
 
