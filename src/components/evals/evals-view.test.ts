@@ -100,8 +100,12 @@ assert.match(source, /id="evals-rail" className="evals-rail"/, "the rail is the 
 assert.match(source, /evals--rail-open/, "root reflects the drawer open state");
 assert.match(source, /setRailOpen\(false\); \/\/ close the drawer after picking a suite/, "picking a suite closes the drawer");
 const css = readFileSync(new URL("../../styles/evals.css", import.meta.url), "utf8");
-assert.match(css, /@media \(max-width: 720px\)[\s\S]*?\.evals-rail \{[\s\S]*?transform: translateX\(-101%\)/, "the rail slides off-canvas under the narrow breakpoint");
+// The narrow layout is keyed to the surface's own width (@container evals) so it
+// also engages inside a narrow drag-to-split pane on a wide viewport.
+assert.match(css, /\.evals-host \{[\s\S]*?container: evals \/ inline-size/, "the surface root establishes the evals query container");
+assert.match(source, /className="evals-host"/, "the view renders inside the evals-host query container");
+assert.match(css, /@container evals \(max-width: 720px\)[\s\S]*?\.evals-rail \{[\s\S]*?transform: translateX\(-101%\)/, "the rail slides off-canvas under the narrow breakpoint");
 assert.match(css, /\.evals--rail-open \.evals-rail \{ transform: translateX\(0\)/, "opening the drawer slides the rail in");
-assert.doesNotMatch(css, /@media \(max-width: 720px\)[\s\S]*?\.evals-rail \{ display: none;/, "the rail no longer just vanishes on small screens");
+assert.doesNotMatch(css, /@container evals \(max-width: 720px\)[\s\S]*?\.evals-rail \{ display: none;/, "the rail no longer just vanishes on small screens");
 
 console.log("evals-view.test.ts OK");

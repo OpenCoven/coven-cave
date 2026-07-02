@@ -148,10 +148,13 @@ export function MarketplaceViewSurface() {
   }, [setInstalled]);
 
   return (
-    <section className="marketplace-view flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
+    // @container/marketplace — layout responds to the PANE width, not the
+    // viewport, so the surface also adapts inside a narrow drag-to-split pane
+    // on a wide screen (same pattern as chat's chatlist/composer containers).
+    <section className="marketplace-view @container/marketplace flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
       {/* Hero header — title, stats, search, and the kind/sort controls. */}
-      <header className="border-b border-[var(--border-hairline)] px-4 py-4 sm:px-6 sm:py-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <header className="border-b border-[var(--border-hairline)] px-4 py-4 @min-[560px]/marketplace:px-6 @min-[560px]/marketplace:py-5">
+        <div className="flex flex-col gap-4 @min-[840px]/marketplace:flex-row @min-[840px]/marketplace:items-start @min-[840px]/marketplace:justify-between">
           <div className="min-w-0">
             <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
               Marketplace
@@ -175,7 +178,7 @@ export function MarketplaceViewSurface() {
             onValueChange={setQuery}
             onClear={() => setQuery("")}
             placeholder="Search the marketplace"
-            containerClassName="lg:w-96"
+            containerClassName="@min-[840px]/marketplace:w-96"
             aria-label="Search the marketplace"
           />
         </div>
@@ -216,7 +219,7 @@ export function MarketplaceViewSurface() {
       {/* Body — vertical category rail (desktop) beside the results column. */}
       <div className="flex min-h-0 flex-1">
         <aside
-          className="hidden w-56 shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] px-3 py-4 lg:block"
+          className="hidden w-56 shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] px-3 py-4 @min-[840px]/marketplace:block"
           aria-label="Browse by category"
         >
           <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
@@ -252,9 +255,9 @@ export function MarketplaceViewSurface() {
           </nav>
         </aside>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-          {/* Category chips — the mobile stand-in for the desktop rail. */}
-          <div className="-mx-4 mb-4 flex gap-1 overflow-x-auto px-4 pb-1 lg:hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 @min-[560px]/marketplace:px-6">
+          {/* Category chips — the stand-in for the rail in narrow panes/screens. */}
+          <div className="-mx-4 mb-4 flex gap-1 overflow-x-auto px-4 pb-1 @min-[840px]/marketplace:hidden">
             {categories.map((cat) => (
               <button
                 key={cat}
@@ -330,7 +333,7 @@ export function MarketplaceViewSurface() {
               subtitle={query || category !== "All" || kind !== "all" || activeCollection ? "Try a different search, type, or category." : "The catalog is empty."}
             />
           ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 @min-[560px]/marketplace:grid-cols-2 @min-[1200px]/marketplace:grid-cols-3">
               {filtered.map((plugin) => (
                 <MarketplaceCard
                   key={plugin.id}
