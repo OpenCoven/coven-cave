@@ -2016,6 +2016,30 @@ function MobileChatActionStrip({
   );
 }
 
+async function chatBridgeFailureMessage(res: Response): Promise<string> {
+  const base = `request failed (${res.status})`;
+  let detail = "";
+  try {
+    const raw = (await res.text()).trim();
+    if (raw) {
+      try {
+        const json = JSON.parse(raw) as { error?: unknown; message?: unknown };
+        detail =
+          typeof json.error === "string"
+            ? json.error
+            : typeof json.message === "string"
+              ? json.message
+              : raw;
+      } catch {
+        detail = raw;
+      }
+    }
+  } catch {
+    // Keep the status-only fallback if the response body cannot be read.
+  }
+  return detail ? `${base}: ${detail}` : base;
+}
+
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
@@ -3420,16 +3444,30 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }),
         signal: controller.signal,
       });
-      if (!res.ok || !res.body) {
-        setError(`request failed (${res.status})`);
+      if (!res.ok) {
+        const message = await chatBridgeFailureMessage(res);
+        setError(message);
         setLastFailedSend(request);
         upsertTurnProgress(assistantId, {
           id: "connect",
-          label: "Chat bridge rejected the request",
+          label: `Chat bridge rejected the request: ${message}`,
           status: "error",
         }, liveGeneration.sessionId);
         markAssistantError(assistantId, liveGeneration.sessionId);
         raiseDebugError({ turnId: assistantId, code: `HTTP ${res.status}` });
+        return;
+      }
+      if (!res.body) {
+        const message = "Chat bridge response did not include a stream";
+        setError(message);
+        setLastFailedSend(request);
+        upsertTurnProgress(assistantId, {
+          id: "connect",
+          label: message,
+          status: "error",
+        }, liveGeneration.sessionId);
+        markAssistantError(assistantId, liveGeneration.sessionId);
+        raiseDebugError({ turnId: assistantId, code: "NO_STREAM" });
         return;
       }
 

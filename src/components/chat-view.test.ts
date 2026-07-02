@@ -42,6 +42,24 @@ assert.match(
 
 assert.match(
   source,
+  /async function chatBridgeFailureMessage\(res: Response\): Promise<string>/,
+  "ChatView should read non-OK chat bridge response bodies before reporting send failures",
+);
+
+assert.match(
+  source,
+  /const message = await chatBridgeFailureMessage\(res\);[\s\S]*setError\(message\);[\s\S]*label: `Chat bridge rejected the request: \$\{message\}`/,
+  "ChatView should surface the server's chat bridge rejection reason in the visible failed turn",
+);
+
+assert.match(
+  source,
+  /raiseDebugError\(\{ turnId: assistantId, code: "NO_STREAM" \}\)/,
+  "ChatView should distinguish a missing SSE body from an HTTP rejection",
+);
+
+assert.match(
+  source,
   /HeaderReflectButton[\s\S]*Reflect on this thread[\s\S]*ph:brain-bold/,
   "ChatView should expose a Reflect action in the chat header",
 );
