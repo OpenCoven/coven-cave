@@ -399,6 +399,16 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                                 </span>
                               )}
                               <span className="board-table-title" title={card.title}>{card.title}</span>
+                              {(card.attachments?.length ?? 0) > 0 && (
+                                <span
+                                  className="board-table-attach-count"
+                                  title={`${card.attachments!.length} attachment${card.attachments!.length === 1 ? "" : "s"}`}
+                                  style={{ display: "inline-flex", alignItems: "center", gap: 2, flexShrink: 0, fontSize: 10, color: "var(--text-muted)" }}
+                                >
+                                  <Icon name="ph:paperclip" width={10} />
+                                  {card.attachments!.length}
+                                </span>
+                              )}
                             </span>
                           );
                           break;

@@ -30,6 +30,24 @@ assert.match(context, /Labels: chat, tasks/);
 assert.match(context, /Notes:\nFollow-up chat turns need the task details\./);
 assert.match(context, /Links:\n- https:\/\/github\.com\/OpenCoven\/coven-cave\/pull\/1/);
 assert.match(context, /GitHub:\n- Task chat bug: https:\/\/github\.com\/OpenCoven\/coven-cave\/issues\/2/);
+// No attachments on this card → no summary line.
+assert.doesNotMatch(context, /Attachments:/);
+
+// Follow-up-turn context names the card's attachments (content rides only on the
+// initial dispatch prompt — this keeps later turns aware without the bulk).
+const contextWithAttachments = buildTaskContext({
+  title: "Ship the onboarding flow",
+  attachments: [
+    { name: "spec.md", type: "text/markdown", size: 24, text: "# Onboarding" },
+    { name: "mockup.png", type: "image/png", size: 4096 },
+  ],
+});
+assert.match(contextWithAttachments, /Attachments: spec\.md, mockup\.png/);
+assert.doesNotMatch(
+  contextWithAttachments,
+  /# Onboarding/,
+  "the summary line must not inline attachment content",
+);
 
 const prompt = buildTaskAwarePrompt("What should I do next?", context);
 assert.match(prompt, /^Task context:/);
