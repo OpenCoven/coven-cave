@@ -9,13 +9,17 @@ breaking config changes; patch releases stay additive.
 
 ## [0.0.131] - 2026-07-01
 
-Patch release on top of v0.0.130. Headline: eval failure analysis is easier
-to read, and quick chat now opens on the workspace's active familiar.
+Patch release on top of v0.0.130. Headline: eval analysis is easier to scan,
+board attachments are clearer in follow-up task context, and quick chat opens
+on the workspace's active familiar.
 
 ### Added
 
 - **Quick-chat** - default the popover to the active familiar for the current
   workspace, so `⌘J` lands on the familiar already in focus.
+- **Board attachments** - show attachment counts in board table rows and carry
+  attachment names into follow-up task-chat context without inlining file
+  bodies.
 
 ### Changed
 
@@ -23,6 +27,10 @@ to read, and quick chat now opens on the workspace's active familiar.
   rows, untruncated stat cards, and readable failure counts.
 - **Evals runs** - added pass-rate delta chips to run rows and quieted the
   attention queue styling so regressions and improvements are easier to scan.
+- **Evals compare** - added verdict chips, guided empty states, and an
+  only-changes empty hint to the compare tab.
+- **Marketplace** - defaulted non-sensitive Netdata and Nuxt MCP URL fields in
+  the setup modal while keeping sensitive API keys unset.
 
 ### Fixed
 
