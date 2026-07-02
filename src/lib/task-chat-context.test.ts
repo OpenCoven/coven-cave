@@ -82,3 +82,9 @@ assert.match(promptWithAttachments, /Attached files:/);
 assert.match(promptWithAttachments, /1\. spec\.md/);
 assert.match(promptWithAttachments, /# Onboarding\n- step one/);
 assert.match(promptWithAttachments, /2\. mockup\.png/);
+assert.match(
+  promptWithAttachments,
+  /\(image attached as metadata only — task cards don't store image content\)/,
+  "board images use the by-design metadata-only note, not the delivery-failure wording",
+);
+assert.doesNotMatch(promptWithAttachments, /was not delivered/);

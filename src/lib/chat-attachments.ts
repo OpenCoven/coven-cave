@@ -8,6 +8,8 @@ export const IMAGE_ATTACHMENTS_UNSUPPORTED_NOTE =
   "(image attachments are not supported by this harness)";
 const IMAGE_NOT_DELIVERED_NOTE =
   "(image attachment was not delivered — payload missing or over the size limit)";
+const IMAGE_METADATA_ONLY_NOTE =
+  "(image attached as metadata only — task cards don't store image content)";
 const VIDEO_METADATA_ONLY_NOTE =
   "(video attached as metadata only — frames and audio are not decoded yet)";
 const FILE_METADATA_ONLY_NOTE =
@@ -163,6 +165,10 @@ export type AttachmentPromptOptions = {
   /** When false, image entries render an explicit unsupported notice (e.g. a
    * bridge harness with no access to this machine's filesystem). */
   imagesSupported?: boolean;
+  /** When true, undelivered images render a by-design metadata-only note
+   * instead of the "not delivered" failure wording — board cards strip image
+   * payloads at storage, so their absence at dispatch is expected. */
+  imagesMetadataOnly?: boolean;
 };
 
 export function buildPromptWithAttachments(
@@ -190,6 +196,8 @@ export function buildPromptWithAttachments(
         body = IMAGE_ATTACHMENTS_UNSUPPORTED_NOTE;
       } else if (savedPath) {
         body = `Image saved to ${savedPath} — open it with the Read tool to view.`;
+      } else if (options.imagesMetadataOnly) {
+        body = IMAGE_METADATA_ONLY_NOTE;
       } else {
         body = IMAGE_NOT_DELIVERED_NOTE;
       }
