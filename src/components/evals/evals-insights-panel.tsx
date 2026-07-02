@@ -2,7 +2,6 @@
 
 import { useMemo } from "react";
 import { TrendChart } from "@/components/ui/charts/trend-chart";
-import { BarChart } from "@/components/ui/charts/bar-chart";
 import { suitePassRateTrend, failureClusters } from "@/lib/evals/eval-analytics";
 import type { EvalRun, EvalSuite } from "@/lib/evals/eval-model";
 
@@ -31,7 +30,8 @@ export function EvalsInsightsPanel({ suite, runs }: { suite: EvalSuite | null; r
   const failBars = clusters.byCase
     .filter((c) => c.failures > 0)
     .slice(0, 8)
-    .map((c) => ({ label: c.name, value: c.failures, color: "var(--color-danger)" }));
+    .map((c) => ({ label: c.name, failures: c.failures, runs: c.runs }));
+  const maxFailures = Math.max(1, ...failBars.map((c) => c.failures));
 
   return (
     <div className="evals-insights">
@@ -58,7 +58,26 @@ export function EvalsInsightsPanel({ suite, runs }: { suite: EvalSuite | null; r
           <div className="evals-insights__head">
             <span className="evals-insights__title">Failures by case</span>
           </div>
-          <BarChart data={failBars} height={150} />
+          {/* Labeled horizontal bars — with only a handful of categories, the
+              unlabeled SVG bar chart read as a solid color block. Real text
+              rows (name · count · proportional track) stay legible at any
+              count and are screen-reader accessible. */}
+          <ul className="evals-fail-bars">
+            {failBars.map((c) => (
+              <li key={c.label} className="evals-fail-bar">
+                <span className="evals-fail-bar__name" title={c.label}>{c.label}</span>
+                <span className="evals-fail-bar__count">
+                  {c.failures}/{c.runs} run{c.runs === 1 ? "" : "s"}
+                </span>
+                <span className="evals-fail-bar__track" aria-hidden>
+                  <span
+                    className="evals-fail-bar__fill"
+                    style={{ width: `${Math.round((c.failures / maxFailures) * 100)}%` }}
+                  />
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
