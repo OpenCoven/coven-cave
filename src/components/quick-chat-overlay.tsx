@@ -146,7 +146,9 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold">Quick chat</h2>
               <p className="truncate text-xs text-[var(--fg-muted)]">
-                {selectedFamiliar ? `@${selectedFamiliar.id}` : "No familiar selected"}
+                {/* While the roster loads, say so — "No familiar selected" reads
+                    as an error/empty state when it's really just cold. */}
+                {loading ? "Loading familiars…" : selectedFamiliar ? `@${selectedFamiliar.id}` : "No familiar selected"}
               </p>
             </div>
           </div>
@@ -170,6 +172,7 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
             className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             aria-label="Familiar"
           >
+            {loading && familiars.length === 0 ? <option value="">Loading…</option> : null}
             {familiars.map((familiar) => (
               <option key={familiar.id} value={familiar.id}>
                 {familiar.display_name}

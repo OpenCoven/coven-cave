@@ -135,3 +135,18 @@ assert.match(
 );
 
 console.log("quick-chat-overlay.test.ts OK");
+
+// ── Loading state: cold roster reads as "loading", not "no familiar" ──────────
+const tray = readFileSync(new URL("./tray-quick-chat.tsx", import.meta.url), "utf8");
+for (const [name, src] of [["overlay", source], ["tray", tray]]) {
+  assert.match(
+    src,
+    /loading \? "Loading familiars…" : selectedFamiliar \? `@\$\{selectedFamiliar\.id\}` : "No familiar selected"/,
+    `${name} header shows a loading state while the roster loads`,
+  );
+}
+assert.match(
+  source,
+  /loading && familiars\.length === 0 \? <option value="">Loading…<\/option> : null/,
+  "the familiar select shows a Loading placeholder while empty",
+);

@@ -72,7 +72,8 @@ export function TrayQuickChat() {
             <div className="min-w-0">
               <h1 className="truncate text-sm font-semibold">Quick Chat</h1>
               <p className="truncate text-xs text-[var(--fg-muted)]">
-                {selectedFamiliar ? `@${selectedFamiliar.id}` : "No familiar selected"}
+                {/* Mirror the in-app overlay: loading is not "no familiar". */}
+                {loading ? "Loading familiars…" : selectedFamiliar ? `@${selectedFamiliar.id}` : "No familiar selected"}
               </p>
             </div>
           </div>
