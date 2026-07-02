@@ -9,7 +9,6 @@ import { arrayContentEqual } from "@/lib/array-content-equal";
 import type { ChatRouterHandle } from "@/components/chat-router";
 import type { WorkspaceMode as WorkspaceModeFromDaemon } from "@/lib/workspace-mode";
 import { CommandPalette, type PaletteIntent } from "@/components/command-palette";
-import { BoardView } from "@/components/board-view";
 import { JournalView } from "@/components/journal/journal-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
@@ -43,6 +42,7 @@ import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
 // their chunks (and deps like @xyflow/react, @uiw/react-codemirror) load on
 // first open instead of shipping in the main bundle. See lazy-surfaces.tsx.
 import {
+  BoardView,
   CalendarView,
   ComuxView,
   EvalsView,

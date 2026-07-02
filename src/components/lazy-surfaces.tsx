@@ -64,6 +64,11 @@ export const CalendarView = dynamic(
   { ssr: false, loading: SurfaceFallback },
 );
 
+export const BoardView = dynamic(
+  timed("board", () => import("@/components/board-view").then((m) => m.BoardView)),
+  { ssr: false, loading: SurfaceFallback },
+);
+
 export const MarketplaceView = dynamic(
   timed("marketplace", () => import("@/components/marketplace-view").then((m) => m.MarketplaceViewSurface)),
   { ssr: false, loading: SurfaceFallback },
