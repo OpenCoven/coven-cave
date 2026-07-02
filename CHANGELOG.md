@@ -21,6 +21,8 @@ to read, and quick chat now opens on the workspace's active familiar.
 
 - **Evals** - replaced the failures-by-case SVG block with labeled horizontal
   rows, untruncated stat cards, and readable failure counts.
+- **Evals runs** - added pass-rate delta chips to run rows and quieted the
+  attention queue styling so regressions and improvements are easier to scan.
 
 ### Fixed
 
