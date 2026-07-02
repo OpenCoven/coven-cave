@@ -598,8 +598,8 @@ function GitHubRepoViewer({ item }: { item: LibraryGitHubItem }) {
               <>
                 <span className="library-repo-chip"><span aria-hidden>★</span>{formatCount(meta.stars)}</span>
                 <span className="library-repo-chip"><Icon name="ph:git-fork" width={12} />{formatCount(meta.forks)}</span>
-                {meta.language && <span className="library-repo-chip">{meta.language}</span>}
-                {meta.license && <span className="library-repo-chip">{meta.license}</span>}
+                {meta.language && <span className="library-repo-chip"><Icon name="ph:code" width={12} />{meta.language}</span>}
+                {meta.license && <span className="library-repo-chip"><Icon name="ph:scales" width={12} />{meta.license}</span>}
                 {meta.archived && <span className="library-repo-chip library-repo-chip--warn">archived</span>}
               </>
             )}

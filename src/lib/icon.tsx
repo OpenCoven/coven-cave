@@ -107,6 +107,7 @@ export const ICON_NAMES = [
   "ph:x",
   "ph:x-bold",
   "ph:x-circle-fill",
+  "ph:scales",
   "ph:seal-check",
   "ph:seal-check-fill",
   "ph:warning-circle-fill",
