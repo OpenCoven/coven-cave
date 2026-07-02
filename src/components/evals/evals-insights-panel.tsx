@@ -30,7 +30,7 @@ export function EvalsInsightsPanel({ suite, runs }: { suite: EvalSuite | null; r
   const failBars = clusters.byCase
     .filter((c) => c.failures > 0)
     .slice(0, 8)
-    .map((c) => ({ label: c.name, failures: c.failures, runs: c.runs }));
+    .map((c) => ({ caseId: c.caseId, label: c.name, failures: c.failures, runs: c.runs }));
   const maxFailures = Math.max(1, ...failBars.map((c) => c.failures));
 
   return (
@@ -64,7 +64,7 @@ export function EvalsInsightsPanel({ suite, runs }: { suite: EvalSuite | null; r
               count and are screen-reader accessible. */}
           <ul className="evals-fail-bars">
             {failBars.map((c) => (
-              <li key={c.label} className="evals-fail-bar">
+              <li key={c.caseId} className="evals-fail-bar">
                 <span className="evals-fail-bar__name" title={c.label}>{c.label}</span>
                 <span className="evals-fail-bar__count">
                   {c.failures}/{c.runs} run{c.runs === 1 ? "" : "s"}
@@ -72,7 +72,7 @@ export function EvalsInsightsPanel({ suite, runs }: { suite: EvalSuite | null; r
                 <span className="evals-fail-bar__track" aria-hidden>
                   <span
                     className="evals-fail-bar__fill"
-                    style={{ width: `${Math.round((c.failures / maxFailures) * 100)}%` }}
+                    style={{ width: `${(c.failures / maxFailures) * 100}%` }}
                   />
                 </span>
               </li>
