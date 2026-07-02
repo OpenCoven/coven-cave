@@ -575,16 +575,17 @@
 .evals-insight-list {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 4px;
   color: var(--text-secondary);
   font-size: var(--text-sm);
 }
+/* Quiet list rows: a slim left accent on a faint wash. The previous full
+   1px border box made these read as a stack of input fields. */
 .evals-insight-list li {
-  padding: 9px 10px;
-  border: 1px solid var(--border-hairline);
-  border-left: 3px solid color-mix(in oklch, var(--accent-presence) 48%, var(--border));
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--bg-base) 74%, transparent);
+  padding: 7px 10px;
+  border-left: 2px solid color-mix(in oklch, var(--accent-presence) 42%, transparent);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in oklch, var(--foreground) 3%, transparent);
 }
 .evals-analysis-copy {
   margin: 0;
@@ -1290,6 +1291,19 @@
 .evals-run-rate.is-fail { color: var(--color-danger); border: 1px solid color-mix(in oklch, var(--color-danger) 40%, transparent); }
 .evals-run-meta { display: flex; flex-direction: column; gap: 1px; margin-right: auto; min-width: 0; }
 .evals-run-count { font-size: var(--text-sm); font-weight: 600; }
+/* Pass-rate delta vs the previous run, inline after the passed count. */
+.evals-run-delta {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  vertical-align: 1px;
+}
+.evals-run-delta.is-up { color: var(--color-success); background: color-mix(in oklch, var(--color-success) 14%, transparent); }
+.evals-run-delta.is-down { color: var(--color-danger); background: color-mix(in oklch, var(--color-danger) 14%, transparent); }
+.evals-run-delta.is-flat { color: var(--text-muted); background: color-mix(in oklch, var(--foreground) 7%, transparent); }
 .evals-run-sub { font-size: var(--text-2xs); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---- Result list -------------------------------------------------------- */
