@@ -26,6 +26,10 @@ export type GitHubRepoMeta = {
   updatedAt: string | null;
   license: string | null;
   archived: boolean;
+  /** Owner avatar (organization or user) — shown beside the repo name. */
+  ownerAvatar: string | null;
+  /** GitHub's rendered social-preview card for the repo (opengraph). */
+  openGraphImage: string;
 };
 
 export type GitHubRepoOverview = {
@@ -134,6 +138,16 @@ export async function fetchRepoOverview(
         ? ((raw.license as Record<string, unknown>).spdx_id as string)
         : null,
     archived: raw.archived === true,
+    ownerAvatar:
+      raw.owner && typeof raw.owner === "object" && typeof (raw.owner as Record<string, unknown>).avatar_url === "string"
+        ? ((raw.owner as Record<string, unknown>).avatar_url as string)
+        : null,
+    // opengraph.githubassets.com renders the repo's social card. The leading
+    // path segment is a cache key GitHub ignores for routing — derive it from
+    // the last push so the card refreshes when the repo changes (fallback "1").
+    openGraphImage: `https://opengraph.githubassets.com/${
+      (typeof raw.pushed_at === "string" ? raw.pushed_at.replace(/\D/g, "").slice(0, 14) : "") || "1"
+    }/${slug.owner}/${slug.repo}`,
   };
 
   // README is best-effort: a repo without one still returns a useful overview.
@@ -173,4 +187,110 @@ export function formatCount(n: number): string {
   }
   const m = n / 1_000_000;
   return `${m >= 100 ? Math.round(m) : m.toFixed(1).replace(/\.0$/, "")}M`;
+}
+
+// ── Relative-asset resolution for README markdown ────────────────────────────
+// A repo README constantly uses repo-relative paths — `![logo](docs/logo.png)`,
+// `<img src="./assets/banner.svg">`, `[CONTRIBUTING](CONTRIBUTING.md)`. GitHub's
+// own HTML rendering rewrites those to absolute URLs, but when we fall back to
+// rendering the *raw* markdown through our own pipeline they resolve against the
+// app origin and 404. `absolutizeGitHubReadme` rewrites relative image sources
+// (→ raw.githubusercontent.com) and relative links (→ github.com/blob) so images
+// actually load and links still work. Absolute URLs, protocol-relative `//…`,
+// `data:` URIs, and in-page `#anchor`s are left untouched.
+
+/** A URL is repo-relative when it has no scheme, no `//` prefix, and isn't a bare anchor. */
+function isRelativeAsset(url: string): boolean {
+  const u = url.trim();
+  if (!u) return false;
+  if (u.startsWith("#")) return false; // in-page anchor
+  if (u.startsWith("//")) return false; // protocol-relative
+  if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return false; // has a scheme (http:, data:, mailto:…)
+  return true;
+}
+
+/** Resolve a repo-relative path against a raw/blob base. Leading `/` is treated
+ *  as repo-root-relative (GitHub's behaviour), not app-host-absolute. */
+function resolveAsset(url: string, base: string): string {
+  const path = url.trim().replace(/^\/+/, "");
+  try {
+    return new URL(path, base).toString();
+  } catch {
+    return url;
+  }
+}
+
+/** File extensions we treat as images when a reference-style definition is
+ *  ambiguous between a link and an image target. */
+const IMAGE_EXT = /\.(?:png|jpe?g|gif|svg|webp|avif|bmp|ico|apng)(?:[?#]|$)/i;
+
+export type AbsolutizeOptions = { owner: string; repo: string; branch?: string | null };
+
+/**
+ * Rewrite repo-relative image sources and links in README markdown to absolute
+ * GitHub URLs so the inline reader renders images and honours doc links even
+ * when we render the raw markdown (rather than GitHub's pre-rendered HTML).
+ */
+export function absolutizeGitHubReadme(md: string, opts: AbsolutizeOptions): string {
+  if (!md) return md;
+  const branch = opts.branch && /^[\w./-]+$/.test(opts.branch) ? opts.branch : "HEAD";
+  const rawBase = `https://raw.githubusercontent.com/${opts.owner}/${opts.repo}/${branch}/`;
+  const blobBase = `https://github.com/${opts.owner}/${opts.repo}/blob/${branch}/`;
+
+  // Mask fenced + inline code so example snippets are never rewritten.
+  const masks: string[] = [];
+  const stash = (value: string): string => {
+    const token = ` GH${masks.length} `;
+    masks.push(value);
+    return token;
+  };
+  let out = md
+    .replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, stash) // fenced code
+    .replace(/`[^`\n]*`/g, stash); // inline code
+
+  const unwrap = (u: string) => (u.startsWith("<") && u.endsWith(">") ? u.slice(1, -1) : u);
+
+  // Markdown images: ![alt](src "title") → raw.githubusercontent.com
+  out = out.replace(
+    /(!\[[^\]]*\]\()\s*(<[^>\s]+>|[^)\s]+)((?:\s+(?:"[^"]*"|'[^']*'))?)\s*(\))/g,
+    (m, pre: string, url: string, title: string, post: string) => {
+      const bare = unwrap(url);
+      if (!isRelativeAsset(bare)) return m;
+      return `${pre}${resolveAsset(bare, rawBase)}${title}${post}`;
+    },
+  );
+
+  // Markdown links: [text](href "title") → github.com/blob (lookbehind skips images).
+  out = out.replace(
+    /(?<!!)(\[[^\]]*\]\()\s*(<[^>\s]+>|[^)\s]+)((?:\s+(?:"[^"]*"|'[^']*'))?)\s*(\))/g,
+    (m, pre: string, url: string, title: string, post: string) => {
+      const bare = unwrap(url);
+      if (!isRelativeAsset(bare)) return m;
+      return `${pre}${resolveAsset(bare, blobBase)}${title}${post}`;
+    },
+  );
+
+  // HTML <img src="…"> (READMEs use raw HTML for sizing/centering).
+  out = out.replace(/(<img\b[^>]*?\bsrc\s*=\s*)("[^"]*"|'[^']*')/gi, (m, pre: string, quoted: string) => {
+    const url = quoted.slice(1, -1);
+    if (!isRelativeAsset(url)) return m;
+    return `${pre}${quoted[0]}${resolveAsset(url, rawBase)}${quoted[0]}`;
+  });
+
+  // HTML <a href="…"> → blob view.
+  out = out.replace(/(<a\b[^>]*?\bhref\s*=\s*)("[^"]*"|'[^']*')/gi, (m, pre: string, quoted: string) => {
+    const url = quoted.slice(1, -1);
+    if (!isRelativeAsset(url)) return m;
+    return `${pre}${quoted[0]}${resolveAsset(url, blobBase)}${quoted[0]}`;
+  });
+
+  // Reference-style definitions: `[ref]: path` — image vs link inferred by ext.
+  out = out.replace(/^([ \t]*\[[^\]]+\]:[ \t]*)(<[^>\s]+>|\S+)(.*)$/gm, (m, pre: string, url: string, rest: string) => {
+    const bare = unwrap(url);
+    if (!isRelativeAsset(bare)) return m;
+    return `${pre}${resolveAsset(bare, IMAGE_EXT.test(bare) ? rawBase : blobBase)}${rest}`;
+  });
+
+  // Restore masked code spans.
+  return out.replace(/ GH(\d+) /g, (_m, i: string) => masks[Number(i)] ?? "");
 }

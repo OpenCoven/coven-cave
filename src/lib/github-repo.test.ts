@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { parseRepoSlug, fetchRepoOverview, formatCount } from "./github-repo.ts";
+import { parseRepoSlug, fetchRepoOverview, formatCount, absolutizeGitHubReadme } from "./github-repo.ts";
 
 // ── parseRepoSlug ───────────────────────────────────────────────
 assert.deepEqual(parseRepoSlug("vercel/next.js"), { owner: "vercel", repo: "next.js" }, "owner/name slug");
@@ -49,6 +49,7 @@ await (async () => {
       pushed_at: "2026-06-20T00:00:00Z",
       license: { spdx_id: "MIT" },
       archived: false,
+      owner: { avatar_url: "https://avatars.githubusercontent.com/u/14985020?v=4" },
     });
   };
   const out = await fetchRepoOverview("vercel/next.js", { fetchImpl: fakeFetch });
@@ -59,6 +60,8 @@ await (async () => {
   assert.equal(out.meta.defaultBranch, "canary");
   assert.equal(out.meta.license, "MIT");
   assert.deepEqual(out.meta.topics, ["react", "ssr"]);
+  assert.equal(out.meta.ownerAvatar, "https://avatars.githubusercontent.com/u/14985020?v=4", "carries owner avatar");
+  assert.match(out.meta.openGraphImage, /^https:\/\/opengraph\.githubassets\.com\/\d+\/vercel\/next\.js$/, "social card url with push-derived cache key");
   assert.equal(out.readme, "# Hello\n\n- [x] done");
   assert.match(out.readmeHtml, /contains-task-list/, "returns GitHub-rendered README HTML for GFM features");
   assert.equal(calls.length, 3, "fetched meta + rendered README HTML + raw README markdown");
@@ -98,5 +101,63 @@ await (async () => {
 })();
 
 assert.ok((await fetchRepoOverview("not a repo", { fetchImpl: async () => new Response("{}") })).error, "bad input -> error");
+
+// ── absolutizeGitHubReadme ──────────────────────────────────────
+{
+  const opts = { owner: "acme", repo: "widget", branch: "main" };
+  const abs = (md) => absolutizeGitHubReadme(md, opts);
+
+  // Relative image → raw.githubusercontent.com
+  assert.equal(
+    abs("![logo](docs/logo.png)"),
+    "![logo](https://raw.githubusercontent.com/acme/widget/main/docs/logo.png)",
+    "relative image -> raw host",
+  );
+  // ./ prefix and title are preserved
+  assert.equal(
+    abs('![banner](./assets/b.svg "Banner")'),
+    '![banner](https://raw.githubusercontent.com/acme/widget/main/assets/b.svg "Banner")',
+    "leading ./ and title preserved",
+  );
+  // Root-relative (leading /) is repo-root-relative, not host-absolute
+  assert.equal(
+    abs("![x](/img/x.png)"),
+    "![x](https://raw.githubusercontent.com/acme/widget/main/img/x.png)",
+    "leading slash treated as repo-root relative",
+  );
+  // Relative doc link → github.com/blob
+  assert.equal(
+    abs("[contributing](CONTRIBUTING.md)"),
+    "[contributing](https://github.com/acme/widget/blob/main/CONTRIBUTING.md)",
+    "relative link -> blob view",
+  );
+  // Absolute URLs, protocol-relative, and anchors are untouched
+  assert.equal(abs("![a](https://cdn.example.com/a.png)"), "![a](https://cdn.example.com/a.png)", "absolute image untouched");
+  assert.equal(abs("![a](//cdn.example.com/a.png)"), "![a](//cdn.example.com/a.png)", "protocol-relative untouched");
+  assert.equal(abs("[top](#intro)"), "[top](#intro)", "in-page anchor untouched");
+  assert.equal(abs("[mail](mailto:a@b.co)"), "[mail](mailto:a@b.co)", "mailto untouched");
+  // HTML <img> and <a> are rewritten
+  assert.match(abs('<img src="hero.png" width="600">'), /src="https:\/\/raw\.githubusercontent\.com\/acme\/widget\/main\/hero\.png"/, "html img src rewritten");
+  assert.match(abs('<a href="docs/guide.md">Guide</a>'), /href="https:\/\/github\.com\/acme\/widget\/blob\/main\/docs\/guide\.md"/, "html anchor href rewritten");
+  // Reference-style definitions: image ext -> raw, other -> blob
+  assert.match(abs("[logo]: images/logo.png"), /images\/logo\.png/, "ref def rewritten");
+  assert.match(abs("[logo]: images/logo.png"), /raw\.githubusercontent\.com/, "image ref def -> raw host");
+  assert.match(abs("[spec]: SPEC.md"), /github\.com\/acme\/widget\/blob/, "non-image ref def -> blob host");
+  // Code spans are never rewritten
+  assert.equal(abs("`![x](y.png)`"), "`![x](y.png)`", "inline code untouched");
+  assert.equal(
+    abs("```\n![x](y.png)\n```"),
+    "```\n![x](y.png)\n```",
+    "fenced code untouched",
+  );
+  // Missing branch falls back to HEAD
+  assert.match(
+    absolutizeGitHubReadme("![x](a.png)", { owner: "o", repo: "r" }),
+    /raw\.githubusercontent\.com\/o\/r\/HEAD\/a\.png/,
+    "missing branch -> HEAD",
+  );
+  // Empty input is a no-op
+  assert.equal(abs(""), "", "empty input");
+}
 
 console.log("github-repo.test.ts passed");

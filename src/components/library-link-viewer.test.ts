@@ -110,8 +110,8 @@ assert.match(
 
 assert.match(
   preview,
-  /<RenderedMarkdown text=\{readme \?\? ""\} html=\{readmeHtml\} repo=\{item\.repo\} containerRef=\{mdRef\} \/>/,
-  "Library GitHub repo viewer should render sanitized GitHub HTML and keep raw markdown as fallback",
+  /<RenderedMarkdown[\s\S]*?text=\{readme \? absolutizeGitHubReadme\(readme,[\s\S]*?html=\{readmeHtml\}[\s\S]*?repo=\{item\.repo\}[\s\S]*?containerRef=\{mdRef\}/,
+  "Library GitHub repo viewer should absolutize repo-relative README assets and keep GitHub-rendered HTML as the preferred source",
 );
 
 assert.doesNotMatch(
