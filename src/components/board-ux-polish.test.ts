@@ -73,10 +73,12 @@ assert.match(
   "Mobile BoardCardStack filters should reserve full touch-sized chip height instead of clipping to a scrollbar sliver",
 );
 
-assert.match(
+// The bespoke filter chips were replaced by the shared Tabs component (which
+// owns its own touch sizing); their orphaned CSS must stay deleted.
+assert.doesNotMatch(
   styles,
-  /\.board-card-stack__chip\s*\{[\s\S]*height:\s*var\(--touch-target\)/,
-  "Mobile BoardCardStack filter chips should meet the shared touch target",
+  /\.board-card-stack__chip\b/,
+  "dead BoardCardStack filter-chip CSS must not return (filters render via Tabs)",
 );
 
 assert.match(
@@ -87,10 +89,12 @@ assert.match(
 
 // The task inspector goes full-screen on phones, so its controls are primary
 // touch targets — the desktop-dense 24-28px close/action sizes must scale up.
+// (.board-drawer-path-open was dead CSS — no JSX renders it — and was removed
+// from this selector list in the 2026-07-02 board audit.)
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.board-drawer-close,\s*\n\s*\.board-drawer-path-open\s*\{[\s\S]*min-width:\s*var\(--touch-target\)[\s\S]*min-height:\s*var\(--touch-target\)/,
-  "Mobile inspector close/open-path controls should meet the shared touch target via min-* (so the 44px hit area wins the cascade over the earlier-in-file base width/height)",
+  /@media \(max-width: 767px\) \{[\s\S]*\.board-drawer-close\s*\{[\s\S]*min-width:\s*var\(--touch-target\)[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Mobile inspector close control should meet the shared touch target via min-* (so the 44px hit area wins the cascade over the earlier-in-file base width/height)",
 );
 assert.match(
   styles,
@@ -138,5 +142,43 @@ assert.match(kanban, /\{limit != null \? `\$\{count\}\/\$\{limit\}` : count\}/, 
 assert.match(styles, /\.board-kanban-column-count--over\s*\{[^}]*--color-danger/, "over-limit count badge turns danger");
 assert.match(view, /onSetWipLimit=\{setWipLimitFor\}/, "BoardView wires the WIP-limit setter");
 assert.match(view, /writeWipLimits\(next\)/, "WIP limits persist on change");
+
+// ── Board-audit fixes (2026-07-02) ───────────────────────────────────────────
+const gantt = await readFile(new URL("./board-gantt.tsx", import.meta.url), "utf8");
+const stack = await readFile(new URL("./board-card-stack.tsx", import.meta.url), "utf8");
+
+// 1. The inspector remounts per card: its title/notes are uncontrolled
+//    (defaultValue + save-on-blur), so switching cards while the drawer is open
+//    must reset them — otherwise a blur writes card A's text onto card B.
+assert.match(view, /key=\{selectedCard\.id\}/, "BoardInspector is keyed by card id so uncontrolled fields reset on card switch");
+
+// 2. Poll ticks keep the previous cards reference when content is unchanged —
+//    an idle board must not re-render every card/row/bar every 15s.
+assert.match(
+  view,
+  /setCards\(\(prev\) => \(arrayContentEqual\(prev, loaded\) \? prev : loaded\)\)/,
+  "the board poll guards setCards with arrayContentEqual",
+);
+
+// 3. A second reschedule inside the undo window must not clobber the snapshot —
+//    Undo restores the ORIGINAL dates, not the intermediate position.
+assert.match(
+  view,
+  /pending && pending\.id === id\s*\n?\s*\? pending/,
+  "a pending reschedule-undo for the same card is never re-armed",
+);
+
+// 4. The dead stats memo (computed every render, rendered nowhere) stays gone.
+assert.doesNotMatch(view, /const stats = useMemo/, "the unused stats memo must not return");
+
+// 5. Familiar resolution is hoisted — resolve once per view, never per card/row.
+assert.match(kanban, /const resolvedFamiliars = useResolvedFamiliars\(familiars, \{ includeArchived: true \}\)/, "kanban resolves familiars once at the board level");
+assert.doesNotMatch(kanban, /useResolvedFamiliars\(rawFamiliar/, "kanban must not resolve familiars per card");
+assert.match(stack, /const resolvedFamiliars = useResolvedFamiliars\(familiars, \{ includeArchived: true \}\)/, "card-stack resolves familiars once at the top");
+assert.doesNotMatch(stack, /familiars\.find\(/, "card-stack rows use O(1) map lookups, not per-row find()");
+
+// 6. Attachment count renders in ALL four views (kanban/table already pinned).
+assert.match(stack, /board-card-stack__row-attachments/, "the mobile stack shows an attachment count");
+assert.match(gantt, /cg-attach/, "the gantt task label shows an attachment count");
 
 console.log("board-ux-polish.test.ts: ok");

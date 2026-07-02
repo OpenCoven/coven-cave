@@ -26,18 +26,13 @@ assert.match(
   "BoardView filters by the multiselect scope set when provided",
 );
 
-// Stats must reflect the visible (filtered) set, not the full unfiltered
-// cards array — otherwise "Total: 2" would render next to "Running: 15".
-assert.match(
+// The header stats object these pins guarded was dead code (computed every
+// render, rendered nowhere — its board-header-stats CSS was orphaned too) and
+// was removed in the 2026-07-02 board audit. Keep it gone.
+assert.doesNotMatch(
   source,
-  /running:\s*filtered\.filter/,
-  "BoardView running count must derive from filtered, not cards",
-);
-
-assert.match(
-  source,
-  /blocked:\s*filtered\.filter/,
-  "BoardView blocked count must derive from filtered, not cards",
+  /const stats = useMemo/,
+  "the unused BoardView stats memo must not return",
 );
 
 assert.match(

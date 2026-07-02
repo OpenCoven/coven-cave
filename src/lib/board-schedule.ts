@@ -7,7 +7,7 @@ export type ScheduleUrgency = "overdue" | "due-soon" | "none";
  * Compact board date from an ISO date string ("2026-06-19"), ordered by the
  * user's date preference: "06/19" (month-first) or "19/06" (day-first).
  */
-export function formatBoardDate(value: string | null | undefined): string {
+function formatBoardDate(value: string | null | undefined): string {
   if (!value) return "";
   const [year, month, day] = value.split("-");
   if (!year || !month || !day) return value;

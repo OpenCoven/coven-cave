@@ -10,6 +10,7 @@ import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
+import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { UndoToast } from "@/components/ui/undo-toast";
@@ -127,7 +128,11 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
       const json = await res.json();
       if (json.ok) {
         const loaded = json.cards as Card[];
-        setCards(loaded);
+        // Poll ticks rebuild an identical array most of the time; keep the
+        // previous reference when content is unchanged so an idle board
+        // doesn't re-render every card/row/bar for nothing (same convention
+        // as workspace.tsx's poll over this endpoint).
+        setCards((prev) => (arrayContentEqual(prev, loaded) ? prev : loaded));
         setError(null);
       } else if (!quiet) {
         setCards([]);
@@ -242,12 +247,6 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     );
   }, [cards, familiarsById, searchQuery, activeFamiliarId, scopeFamiliarIds, deletePending]);
 
-  const stats = useMemo(() => ({
-    total: filtered.length,
-    running: filtered.filter((c) => c.status === "running").length,
-    blocked: filtered.filter((c) => c.status === "blocked" || c.needsHuman).length,
-  }), [filtered]);
-
   // Done cards in the CURRENT scope (the filtered set the user is viewing) —
   // the exact set "Clear done" operates on.
   const doneCards = useMemo(() => filtered.filter((c) => c.status === "done"), [filtered]);
@@ -299,11 +298,17 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     if (isReschedule) {
       const before = cards.find((c) => c.id === id);
       if (before) {
-        setRescheduleUndo({
-          id,
-          title: before.title,
-          prev: { startDate: before.startDate ?? null, endDate: before.endDate ?? null },
-        });
+        // A second reschedule of the same card inside the 5s banner window must
+        // NOT overwrite the snapshot — Undo should restore the ORIGINAL dates,
+        // not the intermediate position.
+        setRescheduleUndo((pending) =>
+          pending && pending.id === id
+            ? pending
+            : {
+                id,
+                title: before.title,
+                prev: { startDate: before.startDate ?? null, endDate: before.endDate ?? null },
+              });
       }
     }
     setCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -1040,7 +1045,12 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
 
       {/* Inspector drawer */}
       {selectedCard && (
-        <BoardInspector card={selectedCard} familiars={familiars} sessions={sessions} projects={projects}
+        <BoardInspector
+          // Remount per card: the drawer's title/notes are uncontrolled
+          // (defaultValue + save-on-blur), so switching cards while open must
+          // reset them — otherwise a blur writes card A's text onto card B.
+          key={selectedCard.id}
+          card={selectedCard} familiars={familiars} sessions={sessions} projects={projects}
           onClose={() => setSelectedCardId(null)}
           onPatch={patchCard}
           onMoveStatus={moveCardToStatus}

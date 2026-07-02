@@ -10,7 +10,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { Tabs, type TabItem } from "@/components/ui/tabs";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 
 // Order mirrors BoardKanban's COLUMNS so users get a consistent left-to-
 // right reading on desktop translating to top-to-bottom on phone.
@@ -59,6 +59,11 @@ export function BoardCardStack({
   chatLinkingId,
 }: Props) {
   const [filter, setFilter] = useState<FilterValue>("all");
+  // Resolve familiars ONCE (5 hook subscriptions) and use O(1) lookups per row —
+  // replaces the per-row linear familiar/session scans + per-row resolution.
+  const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
+  const familiarById = useMemo(() => new Map(resolvedFamiliars.map((f) => [f.id, f])), [resolvedFamiliars]);
+  const sessionById = useMemo(() => new Map(sessions.map((sess) => [sess.id, sess])), [sessions]);
   // Resolved after mount so schedule-urgency colors stay hydration-safe.
   const [todayMs, setTodayMs] = useState<number | null>(null);
   useEffect(() => setTodayMs(Date.now()), []);
@@ -126,8 +131,8 @@ export function BoardCardStack({
                 <BoardCardStackRow
                   key={card.id}
                   card={card}
-                  familiars={familiars}
-                  sessions={sessions}
+                  familiarById={familiarById}
+                  sessionById={sessionById}
                   isSelected={card.id === selectedCardId}
                   onSelect={() => onSelect(card.id)}
                   onMoveStatus={(status) => onMoveStatus(card.id, status)}
@@ -147,8 +152,8 @@ export function BoardCardStack({
 
 function BoardCardStackRow({
   card,
-  familiars,
-  sessions,
+  familiarById,
+  sessionById,
   isSelected,
   onSelect,
   onMoveStatus,
@@ -158,8 +163,8 @@ function BoardCardStackRow({
   chatLinking,
 }: {
   card: Card;
-  familiars: Familiar[];
-  sessions: SessionRow[];
+  familiarById: Map<string, ResolvedFamiliar>;
+  sessionById: Map<string, SessionRow>;
   isSelected: boolean;
   todayMs: number | null;
   onSelect: () => void;
@@ -171,13 +176,8 @@ function BoardCardStackRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  const rawFamiliar = familiars.find((f) => f.id === card.familiarId) ?? null;
-  const resolvedFamiliars = useResolvedFamiliars(
-    rawFamiliar ? [rawFamiliar] : [],
-    { includeArchived: true },
-  );
-  const resolvedFamiliar = resolvedFamiliars[0] ?? null;
-  const session = sessions.find((s) => s.id === card.sessionId) ?? null;
+  const resolvedFamiliar = card.familiarId ? familiarById.get(card.familiarId) ?? null : null;
+  const session = card.sessionId ? sessionById.get(card.sessionId) ?? null : null;
   const schedule = scheduleLabel(card.startDate, card.endDate);
   const urgency = scheduleUrgency(card.endDate, card.status, todayMs);
 
@@ -223,6 +223,15 @@ function BoardCardStackRow({
               {resolvedFamiliar?.display_name ?? "Unassigned"}
             </span>
           </span>
+          {(card.attachments?.length ?? 0) > 0 && (
+            <span
+              className="board-card-stack__row-attachments"
+              title={`${card.attachments!.length} attachment${card.attachments!.length === 1 ? "" : "s"}`}
+            >
+              <Icon name="ph:paperclip" width={11} />
+              {card.attachments!.length}
+            </span>
+          )}
           {schedule ? (
             <span
               className={`board-card-stack__row-schedule${

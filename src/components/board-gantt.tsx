@@ -37,6 +37,8 @@ type GanttRow = {
   category: GanttCategory;
   /** Per-familiar bar colour, set only when grouping by familiar. */
   color?: string;
+  /** Attachment count on the underlying card (task rows only). */
+  attachmentCount?: number;
   /**
    * Task mode only: the step had no dates of its own, so its position is an
    * equal slice of the task's range (a waterfall by step order) rather than a
@@ -399,6 +401,7 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
           end: cr.end,
           category: statusCategory(card.status),
           color: byFamiliar ? (familiarColor(card.familiarId) ?? "var(--text-muted)") : undefined,
+          attachmentCount: card.attachments?.length || undefined,
         });
         group.firstStart = Math.min(group.firstStart, cr.start.getTime());
       }
@@ -796,7 +799,15 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
                       title={`${row.label} · ${formatLabel(previewStart)}–${formatLabel(previewEnd)}${row.inferred ? " · inferred from task range — drag to set real dates" : ""}${draggable ? " · drag to move, drag edges to resize · ←/→ to reschedule" : ""}`}
                     >
                       <span className="cg-left">
-                        <span className="cg-c-task">{row.label}</span>
+                        <span className="cg-c-task">
+                          {row.label}
+                          {(row.attachmentCount ?? 0) > 0 && (
+                            <span className="cg-attach" title={`${row.attachmentCount} attachment${row.attachmentCount === 1 ? "" : "s"}`}>
+                              <Icon name="ph:paperclip" width={10} />
+                              {row.attachmentCount}
+                            </span>
+                          )}
+                        </span>
                         <span className="cg-c-date">{formatLabel(previewStart)}</span>
                         <span className="cg-c-date">{formatLabel(previewEnd)}</span>
                         <span className="cg-c-st"><span className={`cg-dot cg-dot--${cat}`} aria-hidden /></span>
