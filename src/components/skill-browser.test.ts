@@ -37,9 +37,26 @@ assert.match(src, /skill-browser__detail-path/, "detail shows the skill's path")
 // Selection is sticky-but-safe: first visible when the pick is filtered out.
 assert.match(src, /visible\.find\(\(s\) => skillKey\(s\) === selectedKey\) \?\? visible\[0\]/, "auto-selects the first visible skill");
 
+// ── Detail-pane actions: reveal folder + delete ─────────────────────────────
+assert.match(src, /className="skill-browser__actions"/, "detail head has an actions cluster");
+assert.match(src, /name="ph:folder-open"/, "reveal-folder action uses the folder-open icon");
+assert.match(src, /name="ph:trash"/, "delete action uses the trash icon");
+// Reveal shells out via Tauri and copies the path on the web.
+assert.match(src, /invoke\("shell_open", \{ url: dir \}\)/, "reveal opens the folder via Tauri shell_open on desktop");
+assert.match(src, /copyText\(dir\)/, "reveal copies the path to the clipboard as the web fallback");
+// Delete is a two-step confirm hitting the DELETE route, then re-scans.
+assert.match(src, /if \(!confirmingDelete\) \{[\s\S]*?setConfirmingDelete\(true\)/, "delete requires an explicit confirm step");
+assert.match(
+  src,
+  /fetch\(`\/api\/skills\/local\?path=\$\{encodeURIComponent\(selectedPath\)\}`,\s*\{\s*method: "DELETE"/,
+  "delete calls DELETE /api/skills/local with the selected path",
+);
+assert.match(src, /onChanged\?\.\(\)/, "a successful delete asks the parent to re-scan");
+
 // ── plugins-view wiring: Skills tab renders the browser (no old drawer path) ──
 assert.match(plugins, /import \{ SkillBrowser \}/, "plugins-view imports SkillBrowser");
 assert.match(plugins, /<SkillBrowser\s+skills=\{skills\}/, "SkillsTab renders SkillBrowser with the full skill list");
+assert.match(plugins, /onChanged=\{loadSkills\}/, "SkillsTab wires onChanged to re-scan after a delete");
 assert.doesNotMatch(plugins, /import \{ SkillCard \}/, "the old flat SkillCard list is retired from the Skills tab");
 // The Skills tab is full-bleed so the browser owns per-column scrolling.
 assert.match(

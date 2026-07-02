@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { MarkdownBlock } from "@/components/message-bubble";
+import { copyText } from "@/lib/clipboard";
 
 export type SkillBrowserEntry = {
   id: string;
@@ -71,22 +72,45 @@ function displayPath(path: string): string {
   return dir.replace(/^\/(?:Users|home)\/[^/]+/, "~");
 }
 
+// Reveal a directory in the OS file manager. On desktop this shells out via
+// Tauri; on the web there is no filesystem bridge, so we copy the path to the
+// clipboard instead and report which happened so the UI can say so.
+async function revealDir(dir: string): Promise<"revealed" | "copied"> {
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("shell_open", { url: dir });
+      return "revealed";
+    } catch {
+      // fall through to clipboard
+    }
+  }
+  await copyText(dir);
+  return "copied";
+}
+
 export function SkillBrowser({
   skills,
   loaded,
   query,
   onClearQuery,
   onCreateSkill,
+  onChanged,
 }: {
   skills: SkillBrowserEntry[];
   loaded: boolean;
   query: string;
   onClearQuery: () => void;
   onCreateSkill?: () => void;
+  /** Called after a skill is deleted so the parent can re-scan. */
+  onChanged?: () => void;
 }) {
   const [category, setCategory] = useState<Category>("all");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle", text: null, error: null });
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [busy, setBusy] = useState<"reveal" | "delete" | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const counts = useMemo(
     () => ({
@@ -137,6 +161,55 @@ export function SkillBrowser({
   }, [selectedPath]);
 
   const body = preview.text ? stripFrontmatter(preview.text) : "";
+
+  // Reset the transient action state whenever the selection changes so a stale
+  // "confirm delete" or notice never carries over to a different skill.
+  useEffect(() => {
+    setConfirmingDelete(false);
+    setNotice(null);
+  }, [selectedPath]);
+
+  async function handleReveal() {
+    if (!selectedPath || busy) return;
+    setBusy("reveal");
+    try {
+      const dir = selectedPath.replace(/\/SKILL\.md$/i, "");
+      const how = await revealDir(dir);
+      setNotice(how === "revealed" ? "Opened in file manager" : "Path copied to clipboard");
+    } catch {
+      setNotice("Could not open folder");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleDelete() {
+    if (!selectedPath || busy) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      setNotice(null);
+      return;
+    }
+    setBusy("delete");
+    try {
+      const res = await fetch(`/api/skills/local?path=${encodeURIComponent(selectedPath)}`, {
+        method: "DELETE",
+        cache: "no-store",
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !json.ok) {
+        setNotice(json.error ? `Delete failed: ${json.error}` : `Delete failed (${res.status})`);
+        return;
+      }
+      setConfirmingDelete(false);
+      setSelectedKey(null);
+      onChanged?.();
+    } catch (err) {
+      setNotice(err instanceof Error ? `Delete failed: ${err.message}` : "Delete failed");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <div className="skill-browser" role="group" aria-label="Skill browser">
@@ -215,7 +288,32 @@ export function SkillBrowser({
         {selected ? (
           <>
             <div className="skill-browser__detail-head">
-              <h2 className="skill-browser__detail-name">{selected.name}</h2>
+              <div className="skill-browser__detail-titlerow">
+                <h2 className="skill-browser__detail-name">{selected.name}</h2>
+                <div className="skill-browser__actions">
+                  <button
+                    type="button"
+                    className="skill-browser__action"
+                    onClick={handleReveal}
+                    disabled={busy != null}
+                    title="Reveal skill folder"
+                    aria-label="Reveal skill folder"
+                  >
+                    <Icon name="ph:folder-open" width={16} aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className={`skill-browser__action skill-browser__action--danger${confirmingDelete ? " is-confirming" : ""}`}
+                    onClick={handleDelete}
+                    disabled={busy != null}
+                    title={confirmingDelete ? "Confirm delete" : "Delete skill"}
+                    aria-label={confirmingDelete ? "Confirm delete skill" : "Delete skill"}
+                  >
+                    <Icon name="ph:trash" width={16} aria-hidden />
+                    {confirmingDelete ? <span className="skill-browser__action-label">Delete?</span> : null}
+                  </button>
+                </div>
+              </div>
               <p className="skill-browser__detail-path" title={selected.path}>
                 {displayPath(selected.path)}
               </p>
@@ -228,6 +326,11 @@ export function SkillBrowser({
                   </span>
                 ))}
               </div>
+              {notice ? (
+                <p className="skill-browser__notice" role="status">
+                  {notice}
+                </p>
+              ) : null}
             </div>
             <div className="skill-browser__detail-body">
               {preview.status === "loading" ? (
