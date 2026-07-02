@@ -680,28 +680,32 @@ function AttachmentsSection({
       data-drop-active={dropActive || undefined}
       style={dropActive ? { outline: "1.5px dashed var(--accent-presence)", outlineOffset: 2, borderRadius: 8 } : undefined}
       onDragEnter={(e) => {
-        if (atCap || !hasDraggedFiles(e.dataTransfer.types)) return;
+        if (!hasDraggedFiles(e.dataTransfer.types)) return;
         e.preventDefault();
         e.stopPropagation();
+        if (busy || atCap) return;
         dragDepthRef.current += 1;
         setDropActive(true);
       }}
       onDragOver={(e) => {
-        if (atCap || !hasDraggedFiles(e.dataTransfer.types)) return;
+        if (!hasDraggedFiles(e.dataTransfer.types)) return;
         e.preventDefault();
         e.stopPropagation();
+        if (busy || atCap) return;
       }}
       onDragLeave={(e) => {
         if (!hasDraggedFiles(e.dataTransfer.types)) return;
+        e.stopPropagation();
         dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
         if (dragDepthRef.current === 0) setDropActive(false);
       }}
       onDrop={(e) => {
         dragDepthRef.current = 0;
         setDropActive(false);
-        if (atCap || !hasDraggedFiles(e.dataTransfer.types)) return;
+        if (!hasDraggedFiles(e.dataTransfer.types)) return;
         e.preventDefault();
         e.stopPropagation();
+        if (busy || atCap) return;
         void addFiles(e.dataTransfer.files);
       }}
     >

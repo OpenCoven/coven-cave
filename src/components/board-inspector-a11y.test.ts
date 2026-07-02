@@ -62,18 +62,23 @@ assert.match(src, /disabled=\{busy \|\| atCap\}/, "the add-files button is disab
 // ── Drop-to-attach mirrors the home composer's guarded drag handling ─────────
 assert.match(
   src,
-  /if \(atCap \|\| !hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?dragDepthRef\.current \+= 1;/,
-  "drag-enter only arms for real file drags, never past the attachment cap",
+  /if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);[\s\S]*?if \(busy \|\| atCap\) return;[\s\S]*?dragDepthRef\.current \+= 1;/,
+  "drag-enter prevents browser navigation for file drags but only arms when not busy or at the cap",
 );
 assert.match(
   src,
-  /dragDepthRef\.current = Math\.max\(0, dragDepthRef\.current - 1\);\s*\n\s*if \(dragDepthRef\.current === 0\) setDropActive\(false\);/,
-  "drag-leave uses depth counting so crossing child elements doesn't flicker",
+  /onDragOver=\{\(e\) => \{[\s\S]*?if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);[\s\S]*?if \(busy \|\| atCap\) return;/,
+  "drag-over prevents browser navigation for file drags even while busy or capped",
 );
 assert.match(
   src,
-  /onDrop=\{\(e\) => \{[\s\S]*?void addFiles\(e\.dataTransfer\.files\);/,
-  "dropping files routes through the same addFiles path as the picker",
+  /onDragLeave=\{\(e\) => \{[\s\S]*?if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?e\.stopPropagation\(\);[\s\S]*?dragDepthRef\.current = Math\.max\(0, dragDepthRef\.current - 1\);[\s\S]*?if \(dragDepthRef\.current === 0\) setDropActive\(false\);/,
+  "drag-leave stops propagation and uses depth counting so crossing child elements doesn't flicker",
+);
+assert.match(
+  src,
+  /onDrop=\{\(e\) => \{[\s\S]*?if \(!hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?e\.preventDefault\(\);[\s\S]*?e\.stopPropagation\(\);[\s\S]*?if \(busy \|\| atCap\) return;[\s\S]*?void addFiles\(e\.dataTransfer\.files\);/,
+  "dropping files prevents browser navigation and routes through the same addFiles path only when enabled",
 );
 
 console.log("board-inspector-a11y.test.ts: ok");
