@@ -26,7 +26,7 @@ import { useFocusTrap } from "@/lib/use-focus-trap";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
 import { openExternalUrl } from "@/lib/open-external";
-import { attachmentIcon, fileToAttachment } from "@/lib/chat-attachments";
+import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-attachments";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -647,6 +647,10 @@ function AttachmentsSection({
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  // Drop-to-attach (parity with the home composer): dragDepthRef counts
+  // enter/leave pairs so crossing child elements doesn't flicker the armed state.
+  const [dropActive, setDropActive] = useState(false);
+  const dragDepthRef = useRef(0);
   const attachments = card.attachments ?? [];
   const atCap = attachments.length >= MAX_CARD_ATTACHMENTS;
 
@@ -671,7 +675,36 @@ function AttachmentsSection({
   }
 
   return (
-    <div className="board-drawer-field">
+    <div
+      className="board-drawer-field"
+      data-drop-active={dropActive || undefined}
+      style={dropActive ? { outline: "1.5px dashed var(--accent-presence)", outlineOffset: 2, borderRadius: 8 } : undefined}
+      onDragEnter={(e) => {
+        if (atCap || !hasDraggedFiles(e.dataTransfer.types)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        dragDepthRef.current += 1;
+        setDropActive(true);
+      }}
+      onDragOver={(e) => {
+        if (atCap || !hasDraggedFiles(e.dataTransfer.types)) return;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onDragLeave={(e) => {
+        if (!hasDraggedFiles(e.dataTransfer.types)) return;
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) setDropActive(false);
+      }}
+      onDrop={(e) => {
+        dragDepthRef.current = 0;
+        setDropActive(false);
+        if (atCap || !hasDraggedFiles(e.dataTransfer.types)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        void addFiles(e.dataTransfer.files);
+      }}
+    >
       <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <Icon name="ph:paperclip" width={12} />
         Attachments
@@ -736,10 +769,10 @@ function AttachmentsSection({
         onClick={() => fileInputRef.current?.click()}
         disabled={busy || atCap}
         style={{ padding: "4px 10px", fontSize: 11 }}
-        title={atCap ? `Attachment limit reached (${MAX_CARD_ATTACHMENTS})` : "Attach files to this task"}
+        title={atCap ? `Attachment limit reached (${MAX_CARD_ATTACHMENTS})` : "Attach files to this task — or drop them onto this section"}
       >
         <Icon name="ph:paperclip" width={11} />
-        {busy ? "Adding…" : atCap ? "Limit reached" : "Add files"}
+        {busy ? "Adding…" : atCap ? "Limit reached" : dropActive ? "Drop files to attach" : "Add files"}
       </button>
     </div>
   );

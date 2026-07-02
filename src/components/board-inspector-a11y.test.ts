@@ -59,4 +59,21 @@ assert.match(
 assert.match(src, /aria-label=\{`Remove \$\{att\.name\}`\}/, "each attachment's remove button is named for its file");
 assert.match(src, /disabled=\{busy \|\| atCap\}/, "the add-files button is disabled while busy or at the 10-file cap");
 
+// ── Drop-to-attach mirrors the home composer's guarded drag handling ─────────
+assert.match(
+  src,
+  /if \(atCap \|\| !hasDraggedFiles\(e\.dataTransfer\.types\)\) return;[\s\S]*?dragDepthRef\.current \+= 1;/,
+  "drag-enter only arms for real file drags, never past the attachment cap",
+);
+assert.match(
+  src,
+  /dragDepthRef\.current = Math\.max\(0, dragDepthRef\.current - 1\);\s*\n\s*if \(dragDepthRef\.current === 0\) setDropActive\(false\);/,
+  "drag-leave uses depth counting so crossing child elements doesn't flicker",
+);
+assert.match(
+  src,
+  /onDrop=\{\(e\) => \{[\s\S]*?void addFiles\(e\.dataTransfer\.files\);/,
+  "dropping files routes through the same addFiles path as the picker",
+);
+
 console.log("board-inspector-a11y.test.ts: ok");
