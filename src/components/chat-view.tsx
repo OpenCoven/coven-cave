@@ -85,8 +85,10 @@ import {
 import type { StreamEvent } from "@/lib/stream-events";
 import { extractNextPaths } from "@/lib/next-paths";
 import {
+  NO_PROJECT_ID,
   chatProjectById,
   projectIdForRoot,
+  resolveChatProjectSelection,
 } from "@/lib/chat-projects";
 import {
   COMMAND_CONTROL_DEFAULTS,
@@ -825,7 +827,10 @@ function ChatEmptyState({
   /** True when the chat knows a project root, so `@` opens the file picker (CHAT-D1-04). */
   fileMentions?: boolean;
 }) {
-  const project = (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
+  const project =
+    projectId === NO_PROJECT_ID
+      ? null
+      : (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
   // App-contextual starters; the last is project-aware when a root is known.
   const prompts = [
     ...STARTER_PROMPTS,
@@ -922,7 +927,10 @@ function SessionOverflowMenu({
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const activeProject = (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
+  const activeProject =
+    projectId === NO_PROJECT_ID
+      ? null
+      : (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
   const voiceConfigured = Boolean(familiar.voiceProvider);
 
   const close = () => setOpen(false);
@@ -960,9 +968,19 @@ function SessionOverflowMenu({
             Rename chat
           </PopoverItem>
           <PopoverSeparator />
-          {projects.length > 1 ? (
+          {projects.length > 0 ? (
             <>
               <PopoverLabel>Project</PopoverLabel>
+              <PopoverItem
+                icon={activeProject ? "ph:folder" : "ph:check"}
+                active={!activeProject}
+                onSelect={() => {
+                  onProjectChange(NO_PROJECT_ID);
+                  close();
+                }}
+              >
+                No project
+              </PopoverItem>
               {projects.map((entry) => (
                 <PopoverItem
                   key={entry.id}
@@ -2194,10 +2212,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const { projects } = useProjects();
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
-  const resolvedProjectId = projectIdDraft ?? projectIdForRoot(session?.project_root ?? projectRoot, projects);
-  const selectedProject = resolvedProjectId
-    ? chatProjectById(resolvedProjectId, projects) ?? firstProject
-    : firstProject;
+  // A session whose recorded cwd maps to no registered project resolves to
+  // NO_PROJECT_ID here — never to the first project, whose root would re-root
+  // the next turn's cwd and fork the harness session (`--continue` misses).
+  const projectSelection = resolveChatProjectSelection({
+    draftId: projectIdDraft,
+    hasSession: Boolean(session),
+    sessionProjectRoot: session?.project_root,
+    fallbackProjectRoot: projectRoot,
+    projects,
+  });
+  const resolvedProjectId = projectSelection.projectId;
+  const selectedProject = projectSelection.project;
   const activeProjectRoot = selectedProject?.root ?? session?.project_root ?? projectRoot ?? "";
   // Root asserted to the server on send. A session's recorded cwd is NOT an
   // explicit project choice: a no-project chat boots in the familiar's own
@@ -2210,7 +2236,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const requestProjectRoot =
     activeProjectRoot &&
     activeProjectRoot === session?.project_root &&
-    !projectIdForRoot(activeProjectRoot, projects)
+    (resolvedProjectId === NO_PROJECT_ID || !projectIdForRoot(activeProjectRoot, projects))
       ? ""
       : activeProjectRoot;
   useEffect(() => {
@@ -4133,8 +4159,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // delete confirm resets itself — HeaderDeleteButton is keyed on sessionId.)
   useEffect(() => {
     setProjectIdDraft((prev) => {
+      // Mirrors resolveChatProjectSelection: a registered project mapped from
+      // the session/opener root, then NO_PROJECT_ID for an existing session in
+      // an unregistered cwd, then the first project only for brand-new chats.
       const resolved =
-        projectIdForRoot(session?.project_root ?? projectRoot, projects) ??
+        resolveChatProjectSelection({
+          draftId: null,
+          hasSession: Boolean(session),
+          sessionProjectRoot: session?.project_root,
+          fallbackProjectRoot: projectRoot,
+          projects,
+        }).projectId ??
         firstProject?.id ??
         null;
       // Initialise when unset, or always resync on session switch.

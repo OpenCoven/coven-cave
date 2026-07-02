@@ -106,3 +106,96 @@ assert.deepEqual(
 }
 
 console.log("chat-projects.test.ts: ok");
+
+// ── resolveChatProjectSelection ───────────────────────────────────────────────
+// REGRESSION (2026-07-02): an existing session whose recorded cwd maps to no
+// registered project (typically the familiar's own workspace) must resolve to
+// "No project" — NOT default to the first registered project, whose root would
+// re-root the next turn's cwd and fork the harness session.
+{
+  const { NO_PROJECT_ID, resolveChatProjectSelection } = await import("./chat-projects.ts");
+  const roster = [
+    { id: "p1", name: "Alpha", root: "/work/alpha", createdAt: "", updatedAt: "" },
+    { id: "p2", name: "Beta", root: "/work/beta", createdAt: "", updatedAt: "" },
+  ];
+  const base = { draftId: null, fallbackProjectRoot: null, projects: roster };
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/Users/me/.coven/workspaces/familiars/cody",
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "a session in an unregistered cwd (familiar workspace) is No project — never the first project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({ ...base, hasSession: true, sessionProjectRoot: "" }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "a session with no recorded cwd is also No project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({ ...base, hasSession: true, sessionProjectRoot: "/work/beta" }),
+    { projectId: "p2", project: roster[1] },
+    "a session recorded in a registered project keeps resolving to that project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({ ...base, hasSession: false, sessionProjectRoot: undefined }),
+    { projectId: null, project: roster[0] },
+    "a brand-new chat still defaults to the first project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      fallbackProjectRoot: "/work/beta",
+    }),
+    { projectId: "p2", project: roster[1] },
+    "a new chat opened with a registered root scopes to that project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      draftId: "p2",
+      hasSession: true,
+      sessionProjectRoot: "/Users/me/.coven/workspaces/familiars/cody",
+    }),
+    { projectId: "p2", project: roster[1] },
+    "an explicit user pick overrides the No-project default",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      draftId: NO_PROJECT_ID,
+      hasSession: true,
+      sessionProjectRoot: "/work/beta",
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "an explicit No-project pick sticks even when the session cwd is registered",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({ ...base, draftId: "gone", hasSession: true, sessionProjectRoot: "/work/beta" }),
+    { projectId: "gone", project: roster[0] },
+    "a stale draft id keeps the legacy first-project display fallback",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      draftId: null,
+      hasSession: true,
+      sessionProjectRoot: "/Users/me/.coven/workspaces/familiars/cody",
+      fallbackProjectRoot: null,
+      projects: [],
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "an empty roster resolves existing sessions to No project, not undefined state",
+  );
+}

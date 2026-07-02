@@ -21,8 +21,21 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const resolvedProjectId = projectIdDraft \?\? projectIdForRoot\(session\?\.project_root \?\? projectRoot, projects\);[\s\S]*const selectedProject = resolvedProjectId\s*\?\s*chatProjectById\(resolvedProjectId, projects\) \?\? firstProject\s*:\s*firstProject/,
-  "ChatView resolves the selected project from the session/root before falling back to the first persisted project",
+  /const projectSelection = resolveChatProjectSelection\(\{\s*draftId: projectIdDraft,\s*hasSession: Boolean\(session\),\s*sessionProjectRoot: session\?\.project_root,\s*fallbackProjectRoot: projectRoot,\s*projects,\s*\}\);[\s\S]*const resolvedProjectId = projectSelection\.projectId;[\s\S]*const selectedProject = projectSelection\.project;/,
+  "ChatView resolves the selected project through resolveChatProjectSelection (sessions in unregistered cwds are No project — behaviorally pinned in chat-projects.test.ts)",
+);
+// REGRESSION (2026-07-02): a session in an unregistered cwd must NOT default
+// the picker to the first project — sending that root re-roots the next
+// turn's cwd and forks the harness session (`--continue` misses).
+assert.doesNotMatch(
+  chatView,
+  /const selectedProject = resolvedProjectId\s*\?\s*chatProjectById\(resolvedProjectId, projects\) \?\? firstProject\s*:\s*firstProject/,
+  "The unconditional first-project fallback for existing sessions must stay gone",
+);
+assert.match(
+  chatView,
+  /<PopoverLabel>Project<\/PopoverLabel>[\s\S]*?onProjectChange\(NO_PROJECT_ID\);[\s\S]*?No project[\s\S]*?projects\.map\(\(entry\) => \(/,
+  "The overflow menu offers an explicit No-project row so a workspace session can stay (or become) project-less",
 );
 assert.match(
   chatView,

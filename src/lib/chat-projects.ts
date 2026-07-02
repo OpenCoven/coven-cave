@@ -44,6 +44,54 @@ export function projectIdForRoot(
   return projectForRoot(projectRoot, projects)?.id ?? null;
 }
 
+/** Sentinel picker id for "this chat runs outside every registered project"
+ *  (typically the familiar's own workspace). A real id so it can live in the
+ *  same draft-state slot as project ids, distinct from null = "unresolved". */
+export const NO_PROJECT_ID = "__no-project__";
+
+export type ChatProjectSelection = {
+  /** NO_PROJECT_ID, a registered project id, or null (new chat, nothing picked yet). */
+  projectId: string | null;
+  /** The registered project the chat is scoped to; null for no-project. */
+  project: CaveProject | null;
+};
+
+/**
+ * Resolve which project a chat is scoped to, for both the picker display and
+ * the projectRoot asserted on send.
+ *
+ * A user-set draft wins. Otherwise the session's recorded cwd (or the opener
+ * surface's root) maps to its registered project. An EXISTING session whose
+ * recorded cwd maps to no registered project is "No project" — it runs in the
+ * familiar's own workspace or another unregistered dir, and defaulting it to
+ * the first registered project would re-root the next turn's cwd there and
+ * fork the harness session (`--continue` misses in the new dir). Only a brand
+ * new chat (no session yet) defaults to the first project.
+ */
+export function resolveChatProjectSelection(args: {
+  draftId: string | null;
+  hasSession: boolean;
+  sessionProjectRoot: string | null | undefined;
+  fallbackProjectRoot: string | null | undefined;
+  projects: CaveProject[];
+}): ChatProjectSelection {
+  const firstProject = args.projects[0] ?? null;
+  if (args.draftId === NO_PROJECT_ID) return { projectId: NO_PROJECT_ID, project: null };
+  if (args.draftId) {
+    return {
+      projectId: args.draftId,
+      project: chatProjectById(args.draftId, args.projects) ?? firstProject,
+    };
+  }
+  const mappedId = projectIdForRoot(
+    args.sessionProjectRoot ?? args.fallbackProjectRoot,
+    args.projects,
+  );
+  if (mappedId) return { projectId: mappedId, project: chatProjectById(mappedId, args.projects) };
+  if (args.hasSession) return { projectId: NO_PROJECT_ID, project: null };
+  return { projectId: null, project: firstProject };
+}
+
 function sessionTimestamp(session: SessionRow): string {
   return session.updated_at || session.created_at;
 }
