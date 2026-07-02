@@ -26,4 +26,11 @@ assert.match(
   "BoardView should wire BoardTable inline edits to the existing patchCard flow",
 );
 
+// ── Title cell shows a paperclip count when the card carries attachments ─────
+assert.match(
+  boardTable,
+  /className="board-table-attach-count"[\s\S]*?ph:paperclip[\s\S]*?card\.attachments!\.length/,
+  "the table's title cell surfaces a paperclip + attachment count (kanban parity)",
+);
+
 console.log("board table familiar select guard passed");

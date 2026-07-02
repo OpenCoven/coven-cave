@@ -47,6 +47,14 @@ export function buildTaskContext(card: TaskContextCard): string {
     ),
   );
 
+  // Name the card's attachments so follow-up turns know files exist. Only the
+  // initial dispatch prompt carries their full content (buildInitialTaskChatPrompt);
+  // here a summary line keeps every later turn's context small.
+  const attachmentNames = (card.attachments ?? [])
+    .map((attachment) => attachment.name.trim())
+    .filter(Boolean);
+  if (attachmentNames.length) lines.push(`Attachments: ${attachmentNames.join(", ")}`);
+
   return lines.join("\n");
 }
 
