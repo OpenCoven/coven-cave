@@ -11,7 +11,7 @@ import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import type { GroupBy } from "@/components/board-table";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
-import { useResolvedFamiliars } from "@/lib/familiar-resolve";
+import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Popover } from "@/components/ui/popover";
 import { type WipLimits, wipState } from "@/lib/board-wip";
@@ -276,7 +276,10 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
 
   const groups = useMemo(() => getGroups(cards, groupBy, familiars, projects), [cards, groupBy, familiars, projects]);
   // O(1) per-card lookups — replaces familiars.find()/sessions.find() inside every KanbanCard.
-  const familiarById = useMemo(() => new Map(familiars.map((f) => [f.id, f])), [familiars]);
+  // Resolution (overrides/images/glyphs — 5 hook subscriptions) runs ONCE here,
+  // not once per card: same pattern as board-table's resolvedByIdMap.
+  const resolvedFamiliars = useResolvedFamiliars(familiars, { includeArchived: true });
+  const familiarById = useMemo(() => new Map(resolvedFamiliars.map((f) => [f.id, f])), [resolvedFamiliars]);
   const sessionById = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions]);
   const showSwimlanes = true;
 
@@ -659,7 +662,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
 }
 
 function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSelected, isGrabbed, selectMode = false, onSelect, onDragStart, onDragEnd, onPointerDownTouch, onJumpToSession, onOpenTaskChat, chatLinking = false }: {
-  card: Card; familiarById: Map<string, Familiar>; sessionById: Map<string, SessionRow>; todayMs: number | null;
+  card: Card; familiarById: Map<string, ResolvedFamiliar>; sessionById: Map<string, SessionRow>; todayMs: number | null;
   isDragging: boolean; isSelected: boolean; isGrabbed: boolean; selectMode?: boolean;
   onSelect: () => void; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void;
   onPointerDownTouch?: (e: React.PointerEvent) => void;
@@ -668,9 +671,7 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
   chatLinking?: boolean;
 }) {
   const draggedRef = useRef(false);
-  const rawFamiliar = card.familiarId ? familiarById.get(card.familiarId) ?? null : null;
-  const resolvedFamiliars = useResolvedFamiliars(rawFamiliar ? [rawFamiliar] : [], { includeArchived: true });
-  const resolvedFamiliar = resolvedFamiliars[0] ?? null;
+  const resolvedFamiliar = card.familiarId ? familiarById.get(card.familiarId) ?? null : null;
   const session = card.sessionId ? sessionById.get(card.sessionId) ?? null : null;
   // Fallback rather than a non-null assertion: an unexpected priority value
   // must not crash the whole board render.

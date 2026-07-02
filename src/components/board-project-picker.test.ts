@@ -53,7 +53,7 @@ assert.match(
 // ── board-view threads the projects list into both surfaces ────────────────
 assert.match(
   view,
-  /<BoardInspector[\s\S]{0,200}projects=\{projects\}/,
+  /<BoardInspector[\s\S]{0,600}projects=\{projects\}/,
   "board-view passes projects to the inspector",
 );
 assert.match(

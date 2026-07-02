@@ -48,7 +48,7 @@ export function setWipLimit(limits: WipLimits, status: CardStatus, limit: number
   return next;
 }
 
-export type WipState = "none" | "ok" | "over";
+type WipState = "none" | "ok" | "over";
 
 /** Classify a column's count against its limit (for styling). Pure. */
 export function wipState(count: number, limit: number | undefined): WipState {
