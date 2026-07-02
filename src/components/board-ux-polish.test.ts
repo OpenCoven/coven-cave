@@ -181,4 +181,16 @@ assert.doesNotMatch(stack, /familiars\.find\(/, "card-stack rows use O(1) map lo
 assert.match(stack, /board-card-stack__row-attachments/, "the mobile stack shows an attachment count");
 assert.match(gantt, /cg-attach/, "the gantt task label shows an attachment count");
 
+// ── Board CRUD announces for AT (2026-07-02 audit follow-up) ─────────────────
+assert.match(view, /const \{ announce \} = useAnnouncer\(\)/, "BoardView consumes the shared announcer");
+assert.match(view, /announce\(`Created task '\$\{draft\.title\.trim\(\)\}'\.`\)/, "create announces");
+assert.match(view, /announce\(`Deleted \$\{toRemove\.length\} task/, "delete announces with undo hint");
+assert.match(view, /announce\(`Cleared \$\{cleared\.length\} done task/, "clear-done announces");
+assert.match(view, /announce\(`Moved '\$\{title\}' to /, "moveCardToStatus announces for every view");
+assert.match(view, /announce\(`Rescheduled '\$\{before\.title\}'\. Undo available\.`\)/, "reschedule announces");
+assert.match(view, /announce\(`Restored /, "undo paths announce restoration");
+// The final "Moved" message is BoardView's alone — kanban's drop paths must not
+// double-announce it (they keep their grab/over/cancel narration).
+assert.doesNotMatch(kanban, /announce\(`Moved '/, "kanban no longer announces the final move");
+
 console.log("board-ux-polish.test.ts: ok");

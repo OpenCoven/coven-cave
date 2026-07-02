@@ -199,11 +199,10 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
               ?.dataset?.kanbanColumn as CardStatus | undefined;
           const card = cards.find((c) => c.id === grabbedCardId);
           if (card && dropTargetStatus && card.status !== dropTargetStatus) {
-            const col = COLUMNS.find((c) => c.id === dropTargetStatus);
+            // The final "Moved …" announcement comes from BoardView's
+            // moveCardToStatus so every view (kanban/table/stack/inspector)
+            // announces identically and drops never announce twice.
             onMoveStatus(grabbedCardId, dropTargetStatus);
-            announce(
-              `Moved '${card.title}' to ${col?.label ?? dropTargetStatus}.`,
-            );
           } else if (card) {
             announce("Drop cancelled — same column.");
           }
@@ -436,9 +435,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
       setTouchDragId(null);
       setGhost(null);
       if (target && card.status !== target) {
-        const col = COLUMNS.find((c) => c.id === target);
-        onMoveStatus(card.id, target);
-        announce(`Moved '${card.title}' to ${col?.label ?? target}.`);
+        onMoveStatus(card.id, target); // BoardView announces the move
       } else {
         announce("Drop cancelled.");
       }

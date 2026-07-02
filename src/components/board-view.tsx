@@ -11,6 +11,7 @@ import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { arrayContentEqual } from "@/lib/array-content-equal";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
 import { UndoToast } from "@/components/ui/undo-toast";
@@ -115,6 +116,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const [clearedBanner, setClearedBanner] = useState<{ snapshot: Card[] } | null>(null);
   // Transient undo for a gantt drag/drop reschedule — snapshots the prior dates
   // so an accidental drag is one click to revert.
+  // Async CRUD results are announced for AT: the visual toasts/banners are
+  // aria-silent, and only kanban's drag flow had an announcer before.
+  const { announce } = useAnnouncer();
   const [rescheduleUndo, setRescheduleUndo] = useState<{ id: string; title: string; prev: Partial<Card> } | null>(null);
 
   // `quiet` is for background polls: a transient poll failure must not blank
@@ -309,6 +313,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 title: before.title,
                 prev: { startDate: before.startDate ?? null, endDate: before.endDate ?? null },
               });
+        announce(`Rescheduled '${before.title}'. Undo available.`);
       }
     }
     setCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -332,6 +337,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
   const moveCardToStatus = (id: string, status: CardStatus) => {
     const patch: Partial<Card> = { status, lifecycle: lifecycleForStatus(status), needsHuman: status === "blocked" };
     if (status === "running") (patch as Record<string, unknown>).runningSince = new Date().toISOString();
+    const title = cards.find((c) => c.id === id)?.title;
+    if (title) announce(`Moved '${title}' to ${status.charAt(0).toUpperCase()}${status.slice(1)}.`);
     void patchCard(id, patch);
   };
 
@@ -339,6 +346,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     const res = await fetch("/api/board", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error ?? "create failed");
+    announce(`Created task '${draft.title.trim()}'.`);
     await load();
   };
 
@@ -375,6 +383,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     const idSet = new Set(toRemove.map((c) => c.id));
     if (selectedCardId && idSet.has(selectedCardId)) setSelectedCardId(null);
     setClearedBanner(null); // one bottom undo affordance at a time
+    announce(`Deleted ${toRemove.length} task${toRemove.length === 1 ? "" : "s"}. Undo available.`);
     scheduleCardDelete(
       toRemove,
       `${toRemove.length} task${toRemove.length === 1 ? "" : "s"}`,
@@ -509,13 +518,17 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     } else {
       setActionError(null);
     }
-    if (cleared.length > 0) setClearedBanner({ snapshot: cleared });
+    if (cleared.length > 0) {
+      setClearedBanner({ snapshot: cleared });
+      announce(`Cleared ${cleared.length} done task${cleared.length === 1 ? "" : "s"}. Undo available.`);
+    }
   };
 
   const handleUndoClear = async () => {
     const banner = clearedBanner;
     if (!banner) return;
     setClearedBanner(null);
+    announce(`Restored ${banner.snapshot.length} cleared task${banner.snapshot.length === 1 ? "" : "s"}.`);
     try {
       await Promise.all(
         banner.snapshot.map((c) =>
@@ -553,6 +566,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     const u = rescheduleUndo;
     if (!u) return;
     setRescheduleUndo(null);
+    announce(`Restored '${u.title}' to its previous dates.`);
     void patchCard(u.id, u.prev, false);
   };
 
@@ -1073,7 +1087,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
           key={deletePending.id}
           message={`Deleted ${deletePending.label}`}
           undoAriaLabel="Undo delete"
-          onUndo={undoCardDelete}
+          onUndo={() => { announce(`Restored ${deletePending.label}.`); undoCardDelete(); }}
           onDismiss={commitCardDelete}
         />
       ) : null}
