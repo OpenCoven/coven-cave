@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { isAllowedSkillFilePath, MAX_SKILL_FILE_PREVIEW_BYTES } from "./skill-file-paths.ts";
+import { isAllowedSkillFilePath, isRemovableSkillDir, MAX_SKILL_FILE_PREVIEW_BYTES } from "./skill-file-paths.ts";
 
 const home = await mkdtemp(path.join(tmpdir(), "coven-skill-paths-"));
 
@@ -117,5 +117,44 @@ assert.equal(
 );
 
 assert.equal(MAX_SKILL_FILE_PREVIEW_BYTES, 512 * 1024, "skill previews have a bounded size");
+
+// ── isRemovableSkillDir (DELETE guard) ──────────────────────────────────────
+// The guard only clears an IMMEDIATE child directory of a scan root. Exercise
+// the ~/.claude/skills root (the coven root is env-derived and not the tmp home).
+const removableSkillDir = path.join(home, ".claude", "skills", "deep-research");
+const skillsRoot = path.join(home, ".claude", "skills");
+await mkdir(path.join(removableSkillDir, "nested"), { recursive: true });
+
+assert.equal(
+  await isRemovableSkillDir(removableSkillDir, home),
+  true,
+  "an immediate child directory of ~/.claude/skills is removable",
+);
+assert.equal(
+  await isRemovableSkillDir(skillsRoot, home),
+  false,
+  "the scan root itself is never removable",
+);
+assert.equal(
+  await isRemovableSkillDir(path.join(removableSkillDir, "nested"), home),
+  false,
+  "a directory nested deeper than an immediate child is rejected",
+);
+assert.equal(
+  await isRemovableSkillDir(claudeSkill, home),
+  false,
+  "a file path (SKILL.md, not a directory) is rejected",
+);
+assert.equal(
+  await isRemovableSkillDir(claudeSkillSymlink, home),
+  false,
+  "a symlinked skill directory is rejected (never follow a symlink to rm)",
+);
+assert.equal(
+  await isRemovableSkillDir(path.join(home, "secrets"), home),
+  false,
+  "a directory outside the scan roots is rejected",
+);
+assert.equal(await isRemovableSkillDir("", home), false, "empty path is rejected");
 
 console.log("skill-file-paths.test.ts: ok");

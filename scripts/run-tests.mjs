@@ -764,6 +764,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/session-rail-title.test.ts",
   "src/lib/server/familiar-contract-files.test.ts",
   "src/lib/server/project-paths.test.ts",
+  "src/lib/server/skill-file-paths.test.ts",
   "src/lib/server/agent-attachments.test.ts",
   "src/lib/server/session-project-roots.test.ts",
   "src/app/api/library/doc/route.test.ts",

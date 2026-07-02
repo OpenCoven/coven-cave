@@ -449,6 +449,7 @@ export function PluginsView({
               query={query}
               onClearQuery={() => setQuery("")}
               onCreateSkill={openCapabilities}
+              onChanged={loadSkills}
             />
           )}
         </div>
@@ -685,12 +686,14 @@ function SkillsTab({
   query,
   onClearQuery,
   onCreateSkill,
+  onChanged,
 }: {
   skills: LocalSkillEntry[];
   loaded: boolean;
   query: string;
   onClearQuery: () => void;
   onCreateSkill?: () => void;
+  onChanged?: () => void;
 }) {
   // Three-column browser: category rail · card list · rendered SKILL.md detail.
   return (
@@ -700,6 +703,7 @@ function SkillsTab({
       query={query}
       onClearQuery={onClearQuery}
       onCreateSkill={onCreateSkill}
+      onChanged={onChanged}
     />
   );
 }

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { homedir } from "node:os";
 import { lstat, realpath } from "node:fs/promises";
+import { covenHome } from "@/lib/coven-paths";
 
 /**
  * Allow-list for the Capabilities skill-preview reader (/api/skills/file).
@@ -62,5 +63,41 @@ export async function isAllowedSkillFilePath(fullPath: string, home = homedir())
     }
   }
 
+  return false;
+}
+
+/**
+ * Guard for DELETE /api/skills/local — removing a scanned skill's directory.
+ *
+ * Deleting a directory recursively from a user-supplied path is a destructive
+ * primitive, so it is constrained HARD: the target's realpath must be an
+ * IMMEDIATE child of one of the two skill scan roots (`covenHome()/skills` or
+ * `~/.claude/skills`), must be a real directory (not a symlink), and can never
+ * be a root itself or anything nested deeper/outside. This matches exactly what
+ * `/api/skills/local` enumerates, so you can only delete a skill you can see.
+ */
+export async function isRemovableSkillDir(dir: string, home = homedir()): Promise<boolean> {
+  if (!dir) return false;
+
+  let real: string;
+  try {
+    const st = await lstat(dir);
+    if (st.isSymbolicLink() || !st.isDirectory()) return false;
+    real = await realpath(dir);
+  } catch {
+    return false;
+  }
+
+  const parent = path.dirname(real);
+  const rootCandidates = [path.join(covenHome(), "skills"), path.join(home, ".claude", "skills")];
+  for (const root of rootCandidates) {
+    try {
+      const rootReal = await realpath(root);
+      // Must be a DIRECT child of a scan root — never the root itself, never nested.
+      if (parent === rootReal && real !== rootReal) return true;
+    } catch {
+      // Missing root → not a removable location.
+    }
+  }
   return false;
 }
