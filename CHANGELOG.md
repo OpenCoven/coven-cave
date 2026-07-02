@@ -36,6 +36,8 @@ on the workspace's active familiar.
 
 - **Evals** - keyed failure rows by stable case id and preserved non-zero
   proportional bar widths for small failure ratios.
+- **Chat** - stopped `project access denied` 403s when a familiar continues
+  chatting from its own workspace in a no-project thread.
 
 ## [0.0.130] - 2026-07-01
 
