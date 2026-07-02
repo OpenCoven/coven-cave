@@ -70,7 +70,9 @@ export function buildInitialTaskChatPrompt(card: TaskContextCard): string {
   // Board attachments are stored lean (text inlined; image dataUrls stripped),
   // so buildPromptWithAttachments renders text bodies in full and images as a
   // metadata line — exactly the once-at-dispatch delivery the composer uses.
-  return attachments.length ? buildPromptWithAttachments(base, attachments) : base;
+  return attachments.length
+    ? buildPromptWithAttachments(base, attachments, { imagesMetadataOnly: true })
+    : base;
 }
 
 export async function taskContextForSession(sessionId?: string | null): Promise<string | null> {
