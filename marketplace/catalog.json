@@ -2615,6 +2615,7 @@
           "title": "Netdata MCP URL",
           "description": "MCP endpoint: a local agent/parent (http://YOUR_IP:19999/mcp, Netdata v2.7.2+) or Netdata Cloud (https://app.netdata.cloud/api/v1/mcp).",
           "required": true,
+          "default": "http://localhost:19999/mcp",
           "sensitive": false,
           "env": "NETDATA_MCP_URL"
         },
@@ -2866,6 +2867,7 @@
           "title": "Nuxt Dev MCP URL",
           "description": "SSE endpoint exposed by the nuxt-mcp-dev module or vite-plugin-mcp (e.g. http://localhost:3000/__mcp/sse).",
           "required": true,
+          "default": "http://localhost:3000/__mcp/sse",
           "sensitive": false,
           "env": "NUXT_MCP_URL"
         }

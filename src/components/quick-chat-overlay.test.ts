@@ -9,8 +9,8 @@ const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.me
 
 assert.match(
   source,
-  /useQuickChat\(\)/,
-  "overlay shares the quick-chat state/send logic via the useQuickChat hook",
+  /useQuickChat\(\{ preferredFamiliarId: activeFamiliarId \?\? null \}\)/,
+  "overlay shares the quick-chat state/send logic via useQuickChat, preferring the workspace's active familiar",
 );
 assert.match(
   source,
@@ -110,5 +110,28 @@ assert.match(
 );
 // Tooltips advertise the shortcut without polluting the accessible name.
 assert.match(topBar, /aria-label="Quick chat"\s*\n\s*title="Quick chat \(⌘J\)"/, "mobile trigger tooltip shows the shortcut, aria-label stays clean");
+
+// ── Familiar default: workspace-active > last-used > first ───────────────────
+const hook = readFileSync(new URL("../lib/use-quick-chat.ts", import.meta.url), "utf8");
+assert.match(
+  hook,
+  /\(preferred && next\.some\(\(familiar\) => familiar\.id === preferred\) \? preferred : null\) \?\?\s*\(stored && next\.some\(\(familiar\) => familiar\.id === stored\) \? stored : null\) \?\?\s*next\[0\]\?\.id/,
+  "the initial default prefers the workspace-active familiar, then last-used, then first",
+);
+assert.match(
+  hook,
+  /if \(!preferredFamiliarId \|\| userPickedRef\.current\) return;/,
+  "the popover follows the active familiar only until the user manually picks one",
+);
+assert.match(
+  hook,
+  /setSelectedFamiliarId: pickFamiliar/,
+  "manual picks flow through pickFamiliar so they override the active-familiar default",
+);
+assert.match(
+  workspace,
+  /<QuickChatOverlay[\s\S]*?activeFamiliarId=\{activeId\}/,
+  "workspace passes its active familiar to the quick-chat popover",
+);
 
 console.log("quick-chat-overlay.test.ts OK");

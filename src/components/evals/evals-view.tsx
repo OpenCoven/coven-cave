@@ -1359,15 +1359,30 @@ function RunsPanel({
 
   return (
     <div className="evals-runs">
-      {runs.map((r) => {
+      {runs.map((r, i) => {
         const open = r.id === expandedRunId;
         const passed = r.summary.passRate >= 0.999;
+        // Runs render newest-first, so the chronologically previous run is the
+        // NEXT list entry. Surfaces the trend at a glance without opening
+        // Insights; the oldest run has no baseline so it gets no chip.
+        const prev = runs[i + 1];
+        const deltaPts = prev ? Math.round((r.summary.passRate - prev.summary.passRate) * 100) : null;
         return (
           <article className={`evals-run${open ? " is-open" : ""}`} key={r.id}>
             <button type="button" className="evals-run-head" onClick={() => onToggle(r.id)} aria-expanded={open}>
               <span className={`evals-run-rate${passed ? " is-pass" : r.summary.passRate >= 0.5 ? " is-mid" : " is-fail"}`}>{pct(r.summary.passRate)}</span>
               <span className="evals-run-meta">
-                <span className="evals-run-count">{r.summary.passed}/{r.summary.total} passed</span>
+                <span className="evals-run-count">
+                  {r.summary.passed}/{r.summary.total} passed
+                  {deltaPts !== null ? (
+                    <span
+                      className={`evals-run-delta${deltaPts > 0 ? " is-up" : deltaPts < 0 ? " is-down" : " is-flat"}`}
+                      title="Pass-rate change vs the previous run"
+                    >
+                      {deltaPts > 0 ? `+${deltaPts}` : deltaPts} pts
+                    </span>
+                  ) : null}
+                </span>
                 <span className="evals-run-sub">{r.familiarName ?? r.familiarId} · {new Date(r.startedAt).toLocaleString()} · {Math.round(r.summary.avgLatencyMs)}ms avg</span>
               </span>
               <Icon name={open ? "ph:caret-up" : "ph:caret-down"} width={14} />

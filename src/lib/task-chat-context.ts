@@ -47,6 +47,14 @@ export function buildTaskContext(card: TaskContextCard): string {
     ),
   );
 
+  // Name the card's attachments so follow-up turns know files exist. Only the
+  // initial dispatch prompt carries their full content (buildInitialTaskChatPrompt);
+  // here a summary line keeps every later turn's context small.
+  const attachmentNames = (card.attachments ?? [])
+    .map((attachment) => attachment.name.trim())
+    .filter(Boolean);
+  if (attachmentNames.length) lines.push(`Attachments: ${attachmentNames.join(", ")}`);
+
   return lines.join("\n");
 }
 
@@ -62,7 +70,9 @@ export function buildInitialTaskChatPrompt(card: TaskContextCard): string {
   // Board attachments are stored lean (text inlined; image dataUrls stripped),
   // so buildPromptWithAttachments renders text bodies in full and images as a
   // metadata line — exactly the once-at-dispatch delivery the composer uses.
-  return attachments.length ? buildPromptWithAttachments(base, attachments) : base;
+  return attachments.length
+    ? buildPromptWithAttachments(base, attachments, { imagesMetadataOnly: true })
+    : base;
 }
 
 export async function taskContextForSession(sessionId?: string | null): Promise<string | null> {

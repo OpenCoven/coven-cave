@@ -73,6 +73,14 @@ Key moves:
 - **Suppress onboarding**: `localStorage["cave:onboarding:dismissed"]="1"` via `addInitScript` (runs before page scripts).
 - **Jump to a surface**: after load, `window.dispatchEvent(new CustomEvent("cave:navigate-mode",{detail:{mode:"<mode>"}}))`.
 - **Wait** with `waitUntil:"domcontentloaded"` (NOT networkidle — the app holds connections open).
+- **Wait for DATA, not time.** A fresh prod server's FIRST hit on an API route can take seconds (route compile/warm-up), so data-dependent UI renders its empty/loading state first — a fixed `page.waitForTimeout(...)` probe reads that and reports a FALSE NEGATIVE ("feature broken" when it's just cold). Assert on the data being present:
+  ```js
+  await page.waitForFunction(() => {
+    const sel = document.querySelector('.some-surface select');
+    return sel && sel.options.length > 0 && sel.value !== "";
+  }, { timeout: 20000 });
+  ```
+  Optionally prewarm with `curl` to the API route(s) before driving the browser.
 - **Frame canvas/graph nodes**: click `.react-flow__controls-fitview` after switching, then screenshot.
 
 ```js
@@ -155,6 +163,7 @@ git worktree list                                   # verify: only your $WT is g
 - Preview iframes are `sandbox="allow-scripts"` with **no** `allow-same-origin`; they still load `/sandbox/*.js` from our origin.
 - Tailwind v4 computes colors in **oklch**, not rgb — assert accordingly when checking styles.
 - Server "Ready on…" in the log can precede actual readiness by a second or two — poll the HTTP endpoint, don't trust the log line alone.
+- Even after the server answers, the FIRST request to each API route is slow (cold compile/warm-up) — probe data-dependent UI with `waitForFunction` on the data itself, not fixed sleeps (see "Wait for DATA, not time" in step 3). This has produced false "feature broken" verdicts.
 - A second `pnpm dev`/server on port 3000 collides — always use a unique PORT.
 - `node server.mjs` fails with *"Another next dev server is already running"* when a prior server left a stale `.next/dev` lock. `rm -rf .next/dev` before starting (step 2).
 - **Measuring top-bar elements:** the app renders TWO menubars — the desktop `.menu-bar` (`FamiliarMenuBar`, shown ≥1024px) and the mobile `.top-bar` (shown ≤1023px); only one is visible per viewport but BOTH can be in the DOM. `querySelector` may return the hidden one (0×0 rect). Select the VISIBLE instance: `[...document.querySelectorAll(sel)].find(el => el.getBoundingClientRect().width > 0)`. Some top-bar buttons also report 0×0 themselves — measure a leaf child (e.g. the icon `<svg>`) for a real box. Verify UI that lives in a menubar at the width where that menubar actually shows (desktop ≥1024, mobile ≤1023).

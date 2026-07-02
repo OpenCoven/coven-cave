@@ -44,6 +44,12 @@ assert.match(prompt, /2\. diagram\.png \(image\/png, 128 B\)\n\(image attachment
 assert.doesNotMatch(prompt, /2\. diagram\.png[^\n]*\n\(content unavailable\)/);
 assert.match(prompt, /3\. secret\.txt \(text\/plain, 12 B\)/);
 
+// Board dispatch opts into the by-design metadata-only wording: task cards strip
+// image payloads at storage, so their absence isn't a delivery failure.
+const boardPrompt = buildPromptWithAttachments("Work the task.", attachments, { imagesMetadataOnly: true });
+assert.match(boardPrompt, /2\. diagram\.png \(image\/png, 128 B\)\n\(image attached as metadata only — task cards don't store image content\)/);
+assert.doesNotMatch(boardPrompt, /was not delivered/);
+
 const mediaPrompt = buildPromptWithAttachments("Summarize these.", normalizeChatAttachments([
   {
     name: "demo.mp4",

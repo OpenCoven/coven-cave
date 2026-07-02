@@ -2223,6 +2223,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     ? chatProjectById(resolvedProjectId, projects) ?? firstProject
     : firstProject;
   const activeProjectRoot = selectedProject?.root ?? session?.project_root ?? projectRoot ?? "";
+  // Root asserted to the server on send. A session's recorded cwd is NOT an
+  // explicit project choice: a no-project chat boots in the familiar's own
+  // workspace and the daemon records that dir as project_root. Echoing it back
+  // as projectRoot makes the server treat the next turn as an
+  // unregistered-project request and fail closed (403 "project access
+  // denied"). Only assert a root that maps to a registered project or came
+  // from an explicit selection; the server derives the resume cwd from the
+  // conversation record when no root rides.
+  const requestProjectRoot =
+    activeProjectRoot &&
+    activeProjectRoot === session?.project_root &&
+    !projectIdForRoot(activeProjectRoot, projects)
+      ? ""
+      : activeProjectRoot;
   useEffect(() => {
     onProjectRootChange?.(activeProjectRoot || null);
   }, [activeProjectRoot, onProjectRootChange]);
@@ -3408,7 +3422,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           ...(origin ? { origin } : {}),
           sessionId: liveGeneration.sessionId,
-          projectRoot: activeProjectRoot,
+          projectRoot: requestProjectRoot,
           reasoningEffort: controlsOverride?.thinkingEffort ?? thinkingEffort,
           responseSpeed: controlsOverride?.responseSpeed ?? responseSpeed,
           // Advisory permission mode for the picked access level; the daemon may

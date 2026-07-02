@@ -596,6 +596,7 @@ export const SUITES = {
     "src/lib/openclaw-conversation.test.ts",
     "src/lib/session-initiator.test.ts",
     "src/lib/chat-runtime-scope.test.ts",
+    "src/lib/chat-project-access.test.ts",
     "src/lib/chat-history-fallback.test.ts",
     "src/lib/familiar-identity-scaffold.test.ts",
     "src/lib/session-list-merge.test.ts",

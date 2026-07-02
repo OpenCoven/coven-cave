@@ -15,6 +15,9 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onOpenFullSession?: (sessionId: string, familiarId?: string | null) => void;
+  /** The workspace's active familiar — the popover defaults to it (a manual
+   *  pick in the popover still wins once made). */
+  activeFamiliarId?: string | null;
 };
 
 function initials(familiar: Familiar): string {
@@ -26,7 +29,7 @@ function initials(familiar: Familiar): string {
     .toUpperCase();
 }
 
-export function QuickChatOverlay({ open, onClose, onOpenFullSession }: Props) {
+export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamiliarId }: Props) {
   const {
     familiars,
     selectedFamiliarId,
@@ -45,7 +48,7 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession }: Props) {
     setResponseSpeed,
     send,
     cancel,
-  } = useQuickChat();
+  } = useQuickChat({ preferredFamiliarId: activeFamiliarId ?? null });
 
   const sending = sendState === "sending";
 
