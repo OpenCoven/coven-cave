@@ -98,6 +98,7 @@ export function TrayQuickChat() {
             className="min-w-0 flex-1 bg-transparent text-sm outline-none"
             aria-label="Familiar"
           >
+            {loading && familiars.length === 0 ? <option value="">Loading…</option> : null}
             {familiars.map((familiar) => (
               <option key={familiar.id} value={familiar.id}>
                 {familiar.display_name}

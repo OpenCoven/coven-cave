@@ -150,3 +150,8 @@ assert.match(
   /loading && familiars\.length === 0 \? <option value="">Loading…<\/option> : null/,
   "the familiar select shows a Loading placeholder while empty",
 );
+assert.match(
+  tray,
+  /loading && familiars\.length === 0 \? <option value="">Loading…<\/option> : null/,
+  "the tray familiar select shows a Loading placeholder while empty",
+);
