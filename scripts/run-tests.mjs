@@ -129,6 +129,7 @@ export const SUITES = {
     "src/components/theme-color-editor.test.ts",
     "src/lib/theme-token-hex.test.ts",
     "src/components/roles-tools-navigation.test.ts",
+    "src/components/skill-browser.test.ts",
     "src/components/top-bar.test.ts",
     "src/components/command-palette.test.ts",
     "src/components/command-palette-a11y.test.ts",

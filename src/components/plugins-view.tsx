@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SkillCard } from "@/components/skill-card";
+import { SkillBrowser } from "@/components/skill-browser";
 import {
   SkillDetailDrawer,
   type FamiliarForSkill,
@@ -236,14 +236,6 @@ export function PluginsView({
     [roles, query],
   );
 
-  const filteredSkills = useMemo(
-    () =>
-      skills.filter((skill) =>
-        includesQuery([skill.id, skill.name, skill.description, skill.kind, skill.familiar, ...(skill.tags ?? [])], query),
-      ),
-    [skills, query],
-  );
-
   const filteredWorkflows = useMemo(
     () =>
       workflows.filter((workflow) =>
@@ -432,7 +424,9 @@ export function PluginsView({
           role="tabpanel"
           id={`plugins-panel-${tab}`}
           aria-labelledby={`plugins-tab-${tab}`}
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6"
+          // The Skills tab is a full-bleed 3-column browser that owns its own
+          // per-column scrolling; other tabs keep the padded scroll container.
+          className={`min-h-0 flex-1 ${tab === "skills" ? "overflow-hidden" : "overflow-y-auto px-4 py-4 sm:px-6"}`}
         >
           {tab === "roles" ? (
             <RolesTab
@@ -450,12 +444,11 @@ export function PluginsView({
             <WorkflowsTab workflows={filteredWorkflows} loaded={workflowsLoaded} query={query} onClearQuery={() => setQuery("")} onOpenWorkflow={onOpenWorkflow} />
           ) : (
             <SkillsTab
-              skills={filteredSkills}
+              skills={skills}
               loaded={skillsLoaded}
               query={query}
               onClearQuery={() => setQuery("")}
               onCreateSkill={openCapabilities}
-              onSelectSkill={(skill) => setSelectedSkill(toSkillDetail(skill))}
             />
           )}
         </div>
@@ -692,41 +685,22 @@ function SkillsTab({
   query,
   onClearQuery,
   onCreateSkill,
-  onSelectSkill,
 }: {
   skills: LocalSkillEntry[];
   loaded: boolean;
   query: string;
   onClearQuery: () => void;
   onCreateSkill?: () => void;
-  onSelectSkill: (skill: LocalSkillEntry) => void;
 }) {
-  if (!loaded) return <ListSkeleton />;
-  if (skills.length === 0) {
-    return query
-      ? <SearchEmpty kind="skills" query={query} onClear={onClearQuery} />
-      : <EmptyPanel icon={ICONS.tabSkills} title="No local skills found" body="Create or install skills to make them available to familiars." actionLabel="Open Capabilities" onAction={onCreateSkill} />;
-  }
-
+  // Three-column browser: category rail · card list · rendered SKILL.md detail.
   return (
-    <div className="flex flex-col gap-1.5">
-      {skills.map((skill) => (
-        <SkillCard
-          key={`${skill.familiar}:${skill.id}:${skill.path}`}
-          skill={{
-            id: skill.id,
-            name: skill.name,
-            description: skill.description,
-            version: skill.version,
-            category: skill.kind,
-            owner: skill.familiar,
-            tags: skill.tags,
-            source: skill.path,
-          }}
-          onClick={() => onSelectSkill(skill)}
-        />
-      ))}
-    </div>
+    <SkillBrowser
+      skills={skills}
+      loaded={loaded}
+      query={query}
+      onClearQuery={onClearQuery}
+      onCreateSkill={onCreateSkill}
+    />
   );
 }
 
