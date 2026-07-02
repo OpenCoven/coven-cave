@@ -476,9 +476,12 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
   }, [activeGroup, activeGroupStates]);
 
   return (
+    // .evals-host establishes the `evals` inline-size query container so the
+    // surface collapses by PANE width (drag-to-split) rather than viewport width.
+    <div className="evals-host">
     <div className={`evals evals-unified${railOpen ? " evals--rail-open" : ""}`}>
-      {/* Small-screen drawer toggle — reveals the suite rail (which collapses
-          off-canvas below the narrow breakpoint). Hidden on desktop via CSS. */}
+      {/* Narrow-pane drawer toggle — reveals the suite rail (which collapses
+          off-canvas below the narrow container breakpoint). Hidden on desktop via CSS. */}
       <button
         type="button"
         className="evals-rail-toggle"
@@ -708,6 +711,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
         onClose={() => setShowTemplates(false)}
         onPick={createFromTemplate}
       />
+    </div>
     </div>
   );
 }

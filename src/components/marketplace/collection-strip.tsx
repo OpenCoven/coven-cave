@@ -30,7 +30,8 @@ export function CollectionStrip({ collections, plugins, onOpen }: Props) {
       <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
         Featured collections
       </p>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {/* Container-query columns — track the marketplace pane, not the viewport. */}
+      <div className="grid grid-cols-1 gap-3 @min-[560px]/marketplace:grid-cols-2 @min-[1100px]/marketplace:grid-cols-3">
         {resolved.map(({ collection, members }) => {
           const added = members.filter((m) => m.installed).length;
           return (
