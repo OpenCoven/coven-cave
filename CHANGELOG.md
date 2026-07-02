@@ -7,6 +7,15 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Added
+
+- **Supply chain** - guard against `sharp` version skew with Next's pinned copy
+  in the dependency-policy test: the build now fails fast if `pnpm-lock.yaml`
+  resolves more than one `sharp` version, if `sharp` diverges from `package.json`,
+  or if any `@img/sharp-<native>` package drifts off it. This catches the skew
+  that silently breaks the Windows sidecar bundle on every OS, instead of only in
+  the Windows-only sidecar CI leg.
+
 ## [0.0.132] - 2026-07-02
 
 Patch release on top of v0.0.131. Headline: GitHub README images can be
