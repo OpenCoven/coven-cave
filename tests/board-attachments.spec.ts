@@ -48,14 +48,21 @@ test("home composer files ride onto a Task card and render on the board", async 
   await page.goto("/");
   await page.waitForSelector(".shell-frame", { timeout: 60000 });
 
-  // ── Stage a file on the home composer ──────────────────────────────────────
+  // ── Stage files on the home composer ───────────────────────────────────────
   await page.waitForSelector(".hc-textarea", { timeout: 60000 });
-  await page.locator(".hc-file-input").setInputFiles({
-    name: "spec.md",
-    mimeType: "text/markdown",
-    buffer: Buffer.from("# Spec\n- do the thing\n"),
-  });
-  await expect(page.locator(".hc-attachment-name")).toHaveText("spec.md");
+  await page.locator(".hc-file-input").setInputFiles([
+    {
+      name: "spec.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# Spec\n- do the thing\n"),
+    },
+    {
+      name: "shot.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("fake image bytes"),
+    },
+  ]);
+  await expect(page.locator(".hc-attachment-name")).toHaveText(["spec.md", "shot.png"]);
 
   // ── Send to the Task destination ───────────────────────────────────────────
   await page.getByRole("radio", { name: "Task" }).click();
@@ -65,6 +72,7 @@ test("home composer files ride onto a Task card and render on the board", async 
   // The POST body carries the staged attachment, content included.
   await expect.poll(() => boardPosts.length, { timeout: 15000 }).toBeGreaterThan(0);
   expect(boardPosts[0].title).toBe("Ship the spec");
+  expect(boardPosts[0].attachments?.map((a: { name?: string }) => a.name)).toEqual(["spec.md", "shot.png"]);
   expect(boardPosts[0].attachments?.[0]?.name).toBe("spec.md");
   expect(boardPosts[0].attachments?.[0]?.text).toContain("do the thing");
 
