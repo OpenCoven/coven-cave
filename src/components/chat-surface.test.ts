@@ -164,8 +164,13 @@ assert.match(
 );
 assert.match(
   chatSurface,
-  /<ChatRouter[\s\S]*?compact=\{isCodeSurface\}/,
-  "ChatSurface should suppress the in-chat project sidebar in the Code surface via compact",
+  /const compactRail = isCodeSurface \|\| hideThreadRail/,
+  "ChatSurface should fold hideThreadRail (chat mode's ChatSidebar owns threads) into the compact rail flag",
+);
+assert.match(
+  chatSurface,
+  /<ChatRouter[\s\S]*?compact=\{compactRail\}/,
+  "ChatSurface should suppress the in-chat project sidebar via compact (Code surface or chat-mode ChatSidebar)",
 );
 assert.match(
   chatSurface,

@@ -29,8 +29,8 @@ assert.match(
 //    Code surface (compact) path — without the familiar prop the list can't scope.
 assert.match(
   chatSurface,
-  /<ChatRouter[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?sessions=\{sessions\}[\s\S]*?compact=\{isCodeSurface\}/,
-  "ChatSurface must forward activeFamiliar + sessions into ChatRouter (compact on the Code surface)",
+  /<ChatRouter[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?sessions=\{sessions\}[\s\S]*?compact=\{compactRail\}/,
+  "ChatSurface must forward activeFamiliar + sessions into ChatRouter (compact on the Code surface / chat-mode ChatSidebar)",
 );
 
 // 3. ChatRouter scopes the sidebar/thread list to the familiar (null = show all,

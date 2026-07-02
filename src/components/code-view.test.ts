@@ -70,8 +70,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /nav=\{mode === "code" \? codeSidebar : sidebar\}/,
-  "Code mode replaces the primary nav slot instead of supplementing it",
+  /nav=\{mode === "code" \? codeSidebar : mode === "chat" \? chatSidebar : sidebar\}/,
+  "Code mode replaces the primary nav slot instead of supplementing it (chat mode swaps in its own ChatSidebar)",
 );
 assert.match(
   workspace,

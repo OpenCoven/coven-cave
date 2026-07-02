@@ -90,6 +90,7 @@ import {
   projectIdForRoot,
   resolveChatProjectSelection,
 } from "@/lib/chat-projects";
+import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 import {
   COMMAND_CONTROL_DEFAULTS,
   COMMAND_RESPONSE_SPEED_OPTIONS,
@@ -522,6 +523,9 @@ function ChatErrorStrip({
   onRetry,
   onOpenDebug,
   onDismiss,
+  addProjectLabel,
+  addingProject,
+  onAddProject,
 }: {
   message: string;
   code?: string;
@@ -532,6 +536,11 @@ function ChatErrorStrip({
   onRetry: () => void;
   onOpenDebug: () => void;
   onDismiss: () => void;
+  /** When set, this failure was a 403 project-access denial: render a primary
+   *  action that registers the chat's cwd as a project and retries. */
+  addProjectLabel?: string;
+  addingProject?: boolean;
+  onAddProject?: () => void;
 }) {
   const { copied, copy } = useCopy();
   const erroredTools = (failingTurn?.tools ?? []).filter((t) => t.status === "error");
@@ -592,6 +601,17 @@ function ChatErrorStrip({
             <Icon name="ph:bug-bold" width={11} aria-hidden />
             Debug
           </button>
+          {onAddProject ? (
+            <button
+              type="button"
+              onClick={onAddProject}
+              disabled={addingProject}
+              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md border border-[var(--accent-presence)]/50 bg-[color-mix(in_oklch,var(--accent-presence)_16%,transparent)] px-2 py-1 text-[11px] font-semibold text-[var(--accent-presence)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_24%,transparent)] disabled:opacity-40"
+            >
+              <Icon name={addingProject ? "ph:arrows-clockwise" : "ph:folders-bold"} width={11} className={addingProject ? "animate-spin" : undefined} aria-hidden />
+              {addingProject ? "Adding…" : (addProjectLabel ?? "Add project")}
+            </button>
+          ) : null}
           {canRetry ? (
             <button type="button" onClick={onRetry} disabled={busy} className={btn}>
               <Icon name="ph:arrow-clockwise" width={11} aria-hidden />
@@ -2226,6 +2246,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setDebugError({ seq: debugErrorSeqRef.current, ...ctx });
   }, []);
   const [lastFailedSend, setLastFailedSend] = useState<FailedSend | null>(null);
+  // The working directory of a send that failed the 403 project-access check —
+  // a chat whose cwd sits outside every registered project the familiar can
+  // reach. Drives the error strip's "Add project" recovery action.
+  const [projectAccessRoot, setProjectAccessRoot] = useState<string | null>(null);
+  const [addingProject, setAddingProject] = useState(false);
   const [voiceCallOpen, setVoiceCallOpen] = useState(false);
   const [expandedAvatarTurnId, setExpandedAvatarTurnId] = useState<string | null>(null);
   const expandedAvatarTurnIdRef = useRef<string | null>(null);
@@ -2233,7 +2258,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // Two-step delete via the header trash button: it opens a confirm popover and
   // only the explicit Delete commits (HeaderDeleteButton owns the armed state).
   const [deleting, setDeleting] = useState(false);
-  const { projects } = useProjects();
+  const { projects, createProject, reload: reloadProjects } = useProjects();
   const firstProject = projects[0] ?? null;
   const [projectIdDraft, setProjectIdDraft] = useState<string | null>(null);
   // A session whose recorded cwd maps to no registered project resolves to
@@ -3389,6 +3414,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setError(null);
     setDebugError(null);
     setLastFailedSend(null);
+    setProjectAccessRoot(null);
     const initialLiveSessionId = currentSessionRef.current;
     liveSessionIdRef.current = initialLiveSessionId;
     setHistoryState("loaded");
@@ -3489,6 +3515,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         const message = await chatBridgeFailureMessage(res);
         setError(message);
         setLastFailedSend(request);
+        // A 403 here is the project-access gate: the chat's cwd belongs to no
+        // registered project the familiar can reach. Capture that cwd so the
+        // error strip can offer a one-click "register + grant, then retry".
+        if (res.status === 403 && /project access denied|not registered/i.test(message)) {
+          const failingRoot = (activeProjectRoot || session?.project_root || projectRoot || "").trim();
+          setProjectAccessRoot(failingRoot || null);
+        }
         upsertTurnProgress(assistantId, {
           id: "connect",
           label: `Chat bridge rejected the request: ${message}`,
@@ -3591,6 +3624,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       lastFailedSend.mentionedFiles ?? [],
       lastFailedSend.promptOverride ? { promptOverride: lastFailedSend.promptOverride } : undefined,
     );
+  }
+
+  // Recovery for a 403 project-access failure: register the chat's cwd as a
+  // Cave project and grant it to this familiar (both user-initiated writes the
+  // server accepts), then retry the send. The daemon re-reads projects/grants
+  // from disk, so the same request now clears the gate.
+  async function handleAddProject() {
+    const root = projectAccessRoot;
+    if (!root || addingProject) return;
+    setAddingProject(true);
+    try {
+      const result = await addChatProject({
+        root,
+        familiarId: familiar?.id ?? null,
+        createProject,
+        existingProjectId: projectIdForRoot(root, projects),
+      });
+      if (result.ok) {
+        reloadProjects();
+        setProjectAccessRoot(null);
+        setError(null);
+        retryLastSend();
+      } else {
+        setError(`Could not add project: ${result.error}`);
+      }
+    } finally {
+      setAddingProject(false);
+    }
   }
 
   async function enhancePrompt() {
@@ -4675,9 +4736,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           busy={busy}
           onRetry={retryLastSend}
           onOpenDebug={openDebug}
+          addProjectLabel={
+            projectAccessRoot ? `Add "${projectNameForRoot(projectAccessRoot)}" as project` : undefined
+          }
+          addingProject={addingProject}
+          onAddProject={projectAccessRoot ? handleAddProject : undefined}
           onDismiss={() => {
             setError(null);
             setDebugError(null);
+            setProjectAccessRoot(null);
           }}
         />
       ) : null}

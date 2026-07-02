@@ -51,6 +51,7 @@ import {
   MarketplaceView,
 } from "@/components/lazy-surfaces";
 import { CodeSidebar } from "@/components/code-sidebar";
+import { ChatSidebar } from "@/components/chat-sidebar";
 import { CodeView } from "@/components/code-view";
 import { LibraryView } from "@/components/library-view";
 import { PluginsView } from "@/components/plugins-view";
@@ -263,6 +264,10 @@ export function Workspace() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
   const [lastNonCodeMode, setLastNonCodeMode] = useState<WorkspaceMode>("home");
+  // Chat mode swaps the left nav for the ChatSidebar (project-grouped threads),
+  // mirroring Code mode. Its back control returns to the surface the user came
+  // from — tracked here, same idiom as `lastNonCodeMode`.
+  const [lastNonChatMode, setLastNonChatMode] = useState<WorkspaceMode>("home");
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
   const [daemonStatusResolved, setDaemonStatusResolved] = useState(false);
@@ -358,6 +363,15 @@ export function Workspace() {
     setMode(lastNonCodeMode === "code" ? "home" : lastNonCodeMode);
     shellRef.current?.dismissNavMobile();
   }, [lastNonCodeMode]);
+
+  useEffect(() => {
+    if (mode !== "chat") setLastNonChatMode(mode);
+  }, [mode]);
+
+  const exitChatMode = useCallback(() => {
+    setMode(lastNonChatMode === "chat" ? "home" : lastNonChatMode);
+    shellRef.current?.dismissNavMobile();
+  }, [lastNonChatMode]);
 
   const [codeScheduledCount, setCodeScheduledCount] = useState<number | undefined>(undefined);
   useEffect(() => {
@@ -1916,6 +1930,28 @@ export function Workspace() {
     />
   );
 
+  const chatSidebar = (
+    <ChatSidebar
+      sessions={sessions}
+      activeFamiliarId={activeId}
+      activeSessionId={routerRef.current?.currentSessionId() ?? null}
+      onBack={exitChatMode}
+      onOpenSession={(session) => {
+        openFamiliarSession(session.id, session.familiarId);
+        shellRef.current?.dismissNavMobile();
+      }}
+      onNewChat={(projectRoot) => {
+        startFamiliarChat(activeId, projectRoot);
+        shellRef.current?.dismissNavMobile();
+      }}
+      onDeleteSession={async (session) => {
+        await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+        await loadSessions();
+      }}
+      userPlan="Pro"
+    />
+  );
+
   const list = undefined;
 
   const terminalDetail = (
@@ -1972,6 +2008,7 @@ export function Workspace() {
         activeFamiliarId={activeId}
         daemonRunning={daemonRunning}
         routerRef={routerRef}
+        hideThreadRail
         sessionsLoaded={sessionsLoaded}
         inboxItems={inboxItemsWithEphemeral}
         inspectorOpen={inspectorOpen}
@@ -2292,7 +2329,7 @@ export function Workspace() {
           />
           </>
         )}
-        nav={mode === "code" ? codeSidebar : sidebar}
+        nav={mode === "code" ? codeSidebar : mode === "chat" ? chatSidebar : sidebar}
         list={list}
         detail={detail}
       />

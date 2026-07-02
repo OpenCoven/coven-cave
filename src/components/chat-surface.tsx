@@ -90,6 +90,11 @@ type Props = {
    *  measure. Defaults to the standalone "chat" surface, which keeps the
    *  sidebar + the two-way Chat/Code toggle. */
   surface?: "chat" | "code";
+  /** Drop the in-surface project/thread rail even on the standalone "chat"
+   *  surface. Set when the left nav has been swapped for the ChatSidebar
+   *  (chat mode), which already owns the project-grouped thread list — so the
+   *  in-surface rail would duplicate it. Mirrors what `surface="code"` does. */
+  hideThreadRail?: boolean;
 };
 
 // ── Right panel (inspector / chat) ────────────────────────────────────────────
@@ -208,8 +213,12 @@ export function ChatSurface({
   onOpenTask,
   onOpenUrl,
   surface = "chat",
+  hideThreadRail = false,
 }: Props) {
   const isCodeSurface = surface === "code";
+  // The in-surface project/thread rail is dropped in code mode (comux owns
+  // navigation) and in chat mode (the ChatSidebar left nav owns it).
+  const compactRail = isCodeSurface || hideThreadRail;
   const [scope, setScope] = useState<FamiliarsScope>("conversation");
   // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
   // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
@@ -439,7 +448,7 @@ export function ChatSurface({
                   sessions={sessions}
                   daemonRunning={daemonRunning}
                   sessionsLoaded={sessionsLoaded}
-                  compact={isCodeSurface}
+                  compact={compactRail}
                   onSetActiveFamiliar={onSetActiveFamiliar}
                   onSessionStarted={onSessionStarted}
                   onSessionsChanged={onSessionsChanged}
