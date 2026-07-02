@@ -358,14 +358,14 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /async function chatProjectAccessId\([\s\S]*projectForRoot\(projectRoot, projects\)[\s\S]*projectForRoot\(args\.resolvedCwd, projects\)[\s\S]*return explicitRoot \? `unregistered:\$\{projectRoot\}` : null;/,
-  "Chat send should resolve explicit and resumed project roots to a project access id and fail unknown explicit roots closed",
+  /import \{ chatProjectAccessId \} from "@\/lib\/chat-project-access";/,
+  "Chat send should resolve project access ids through the shared chat-project-access helper (explicit and resumed roots resolve to a project id; unknown explicit roots fail closed; the familiar's own workspace is exempt — see chat-project-access.test.ts)",
 );
 
 assert.match(
   chatRoute,
-  /const chatProjectId = sshRuntime[\s\S]*await chatProjectAccessId\(\{[\s\S]*requestedProjectRoot: body\.projectRoot,[\s\S]*resumeCwd,[\s\S]*resolvedCwd: cwd,[\s\S]*\}\);[\s\S]*await assertProjectAccess\(\{ familiarId: body\.familiarId \}, chatProjectId, "chat"\);/,
-  "Local project-scoped chat must assert project access before building the harness prompt",
+  /const chatProjectId = sshRuntime[\s\S]*chatProjectAccessId\(\{[\s\S]*requestedProjectRoot: body\.projectRoot,[\s\S]*resumeCwd,[\s\S]*resolvedCwd: cwd,[\s\S]*familiarWorkspace: resolvedFamiliarWorkspace,[\s\S]*\}\);[\s\S]*await assertProjectAccess\(\{ familiarId: body\.familiarId \}, chatProjectId, "chat"\);/,
+  "Local project-scoped chat must assert project access — with the familiar's own workspace exempt — before building the harness prompt",
 );
 
 assert.doesNotMatch(

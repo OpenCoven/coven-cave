@@ -36,8 +36,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /projectRoot: activeProjectRoot/,
-  "Every send includes the selected project's root",
+  /projectRoot: requestProjectRoot/,
+  "Every send includes the selected project's root (vetted: an unregistered session-cwd echo is dropped so the server doesn't fail it closed)",
 );
 assert.match(
   chatView,

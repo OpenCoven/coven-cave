@@ -42,7 +42,8 @@ import {
 import { parseAgentAttachments } from "@/lib/server/agent-attachments";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { loadProjects, projectForRoot } from "@/lib/cave-projects";
+import { loadProjects } from "@/lib/cave-projects";
+import { chatProjectAccessId } from "@/lib/chat-project-access";
 import { openClawBin, openClawNeedsShell, openClawSpawnArgs, openClawSpawnEnv } from "@/lib/openclaw-bin";
 import {
   familiarWorkspacesRoot,
@@ -196,29 +197,6 @@ async function conversationCwd(sessionId?: string): Promise<string | undefined> 
     /* fall back to the caller's default */
   }
   return undefined;
-}
-
-async function chatProjectAccessId(args: {
-  projects: Awaited<ReturnType<typeof loadProjects>>;
-  requestedProjectRoot?: string;
-  resumeCwd?: string;
-  resolvedCwd: string;
-}): Promise<string | null> {
-  const explicitRoot = args.requestedProjectRoot?.trim() || undefined;
-  const resumedRoot = !explicitRoot ? args.resumeCwd?.trim() || undefined : undefined;
-  const projectRoot = explicitRoot ?? resumedRoot;
-  if (!projectRoot) return null;
-
-  const projects = args.projects;
-  const project =
-    projectForRoot(projectRoot, projects) ??
-    projectForRoot(args.resolvedCwd, projects);
-  if (project) return project.id;
-
-  // An explicit projectRoot that is not registered is still a project-scoped
-  // chat request. Fail it closed through the shared permission chokepoint so
-  // the decision is audited and only Supreme can proceed.
-  return explicitRoot ? `unregistered:${projectRoot}` : null;
 }
 
 /** Resolve the familiar's Coven workspace dir.
@@ -1059,13 +1037,17 @@ export async function POST(req: Request) {
     throw error;
   }
   const projects = sshRuntime ? [] : await loadProjects();
+  const resolvedFamiliarWorkspace = !sshRuntime
+    ? await resolveFamiliarWorkspace(body.familiarId)
+    : undefined;
   const chatProjectId = sshRuntime
     ? null
-    : await chatProjectAccessId({
+    : chatProjectAccessId({
         projects,
         requestedProjectRoot: body.projectRoot,
         resumeCwd,
         resolvedCwd: cwd,
+        familiarWorkspace: resolvedFamiliarWorkspace,
       });
   if (chatProjectId) {
     try {
@@ -1083,9 +1065,6 @@ export async function POST(req: Request) {
   const grantedProjectRoots = sshRuntime
     ? []
     : (await filterProjectsForFamiliar(projects, body.familiarId)).map((project) => project.root);
-  const resolvedFamiliarWorkspace = !sshRuntime
-    ? await resolveFamiliarWorkspace(body.familiarId)
-    : undefined;
   // Resolve familiar workspace for identity context. When a project root is
   // explicitly set, the harness boots there (and should have the familiar's
   // AGENTS.md injected separately). When there's no project root, boot in the

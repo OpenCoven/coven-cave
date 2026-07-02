@@ -797,8 +797,8 @@ assert.match(
 );
 assert.match(
   mentionSource,
-  /projectRoot: activeProjectRoot/,
-  "The send body must use the selected project root",
+  /projectRoot: requestProjectRoot/,
+  "The send body must use the vetted project root (selected project, minus unregistered session-cwd echoes)",
 );
 assert.match(
   mentionSource,

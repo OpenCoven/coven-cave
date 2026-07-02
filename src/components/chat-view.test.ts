@@ -117,3 +117,27 @@ assert.doesNotMatch(
   /native Cave chat only supports Codex, Claude Code, and Hermes right now/,
   "ChatView should allow OpenClaw familiars through native chat send",
 );
+
+// REGRESSION (2026-07-01): a no-project chat boots the harness in the
+// familiar's own workspace and the daemon records that dir as the session's
+// project_root. Echoing the recorded cwd back to /api/chat/send as an
+// explicit projectRoot made the server fail closed on the next turn
+// ("unregistered project" → 403 project access denied). The send body must
+// only assert a root that maps to a registered project or an explicit pick.
+assert.match(
+  source,
+  /const requestProjectRoot =[\s\S]{0,200}activeProjectRoot === session\?\.project_root &&[\s\S]{0,120}!projectIdForRoot\(activeProjectRoot, projects\)/,
+  "ChatView should drop a session-echoed cwd that maps to no registered project before sending",
+);
+
+assert.match(
+  source,
+  /projectRoot: requestProjectRoot,/,
+  "ChatView should send the vetted requestProjectRoot to /api/chat/send",
+);
+
+assert.doesNotMatch(
+  source,
+  /projectRoot: activeProjectRoot,/,
+  "ChatView must not echo the raw activeProjectRoot (session cwd) as an explicit projectRoot",
+);
