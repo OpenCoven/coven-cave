@@ -349,6 +349,7 @@ export const SUITES = {
     "src/lib/group-chat.test.ts",
     "src/components/chat-send-routes-links.test.ts",
     "src/components/chat-surface-polish.test.ts",
+    "src/components/project-picker.test.ts",
     "src/components/directory-picker.test.ts",
     "src/components/chat-view.test.ts",
     "src/components/drag-to-split.test.ts",
