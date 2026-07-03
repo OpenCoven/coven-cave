@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useMinuteTick } from "@/lib/use-minute-tick";
 import { Icon, type IconName } from "@/lib/icon";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
@@ -42,7 +43,7 @@ type Props = {
 
 const THREADS_PREVIEW = 6;
 
-function compactTime(iso: string): string {
+function bareTime(iso: string): string {
   return relativeTime(iso, Date.now(), "bare");
 }
 
@@ -122,7 +123,7 @@ function ThreadRow({
         <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
         {confirming ? null : (
           <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)] group-hover/thread:hidden">
-            {compactTime(session.updated_at || session.created_at)}
+            {bareTime(session.updated_at || session.created_at)}
           </span>
         )}
       </button>
@@ -189,6 +190,7 @@ export function ChatSidebar({
 }: Props) {
   const { projects, createProject, reload } = useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
+  const minuteTick = useMinuteTick();
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
@@ -255,11 +257,14 @@ export function ChatSidebar({
     return visibleSessions.filter((s) => sessionRailTitle(s).toLowerCase().includes(q));
   }, [visibleSessions, query]);
 
-  // Date.now() is fine here: sessions poll frequently, so buckets re-derive on
-  // every data refresh — a row won't sit in "Today" long past midnight.
+  // Buckets depend on wall-clock day boundaries, and the sessions poll bails
+  // out identity-unchanged when content is identical — so a data refresh alone
+  // will NOT re-derive after midnight. The minute tick keeps the day buckets
+  // (and the bare row times rendered each pass) on the same clock.
   const recentBuckets = useMemo(
     () => (view === "recent" ? deriveChatRecencyBuckets(recentSessions, Date.now()) : []),
-    [view, recentSessions],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- minuteTick is the clock dependency
+    [view, recentSessions, minuteTick],
   );
 
   const toggleCollapse = (key: string) => {
