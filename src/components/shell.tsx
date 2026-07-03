@@ -32,7 +32,9 @@ import {
 //   ⌘\   toggle list
 //   ⌃`   toggle bottom terminal
 
-const SHELL_GROUP_ID = "cave.shell.widths.v1";
+// v2: panels went percent → pixel (see shell-left-panels-fit.test.ts); v1
+// layouts hold percent widths chosen under the old monitor-scaled defaults.
+const SHELL_GROUP_ID = "cave.shell.widths.v2";
 const BOTTOM_GROUP_ID = "cave.shell.bottom.v1";
 
 const shellStorage = {
@@ -444,9 +446,9 @@ function ShellInner({
       <Panel
         id="nav"
         className={`shell-nav-panel${navOpen ? " shell-nav-panel--open" : ""}`}
-        defaultSize="24%"
-        minSize="14%"
-        maxSize="28%"
+        defaultSize="240px"
+        minSize="200px"
+        maxSize="420px"
         collapsible
         // Desktop collapses to an icons-only rail; mobile uses the slide-in
         // drawer (position is CSS-overridden there), so it still collapses to 0.
@@ -473,9 +475,9 @@ function ShellInner({
           <Panel
             id="list"
             className="shell-list-panel"
-            defaultSize="18%"
-            minSize="15%"
-            maxSize="33%"
+            defaultSize="260px"
+            minSize="220px"
+            maxSize="420px"
             collapsible
             collapsedSize={0}
             panelRef={listRef}

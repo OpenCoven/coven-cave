@@ -106,7 +106,10 @@
   --space-8: 32px;
   --space-10: 40px;
 
-  /* ---- Shell pane widths ---- */
+  /* ---- Shell pane widths ----
+     Mirrors of the nav/list Panel px props in components/shell.tsx (the
+     authoritative values — React props can't read CSS vars). Kept in sync
+     by shell-left-panels-fit.test.ts. */
   --shell-nav-width: 240px;
   --shell-list-width: 260px;
 

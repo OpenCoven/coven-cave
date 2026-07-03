@@ -187,6 +187,7 @@ export const SUITES = {
     "src/components/recent-activity-rollup.test.ts",
     "src/components/sidebar-familiar-filter.test.ts",
     "src/components/shell-edge-rails.test.ts",
+    "src/components/shell-left-panels-fit.test.ts",
     "src/components/workflows-view.test.ts",
     "src/components/projects-view.test.ts",
     "src/components/dnd-context-stable-ids.test.ts",
