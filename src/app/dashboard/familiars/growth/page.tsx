@@ -1,4 +1,3 @@
-import { CopyLinkButton } from "@/components/copy-link-button";
 import { FamiliarGrowthView } from "@/components/familiar-growth-view";
 import { Icon } from "@/lib/icon";
 
@@ -20,9 +19,6 @@ export default function FamiliarGrowthDashboardPage() {
           <span className="dr-crumb-sep" aria-hidden>/</span>
           <span className="dr-crumb-current">Growth</span>
         </nav>
-        <div className="dr-topbar__actions">
-          <CopyLinkButton />
-        </div>
       </div>
       <FamiliarGrowthView standalone />
     </main>

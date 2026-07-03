@@ -1,6 +1,5 @@
 import { loadInbox } from "@/lib/cave-inbox";
 import { Icon } from "@/lib/icon";
-import { CopyLinkButton } from "@/components/copy-link-button";
 import { EmptyState, ItemRow, MetricCard, QuickLink, SectionHead } from "@/components/daily-report-ui";
 import {
   breakdownForDay,
@@ -101,7 +100,6 @@ export default async function DailyReportPage({ params }: Props) {
           <span className="dr-crumb-current">{item.title}</span>
         </nav>
         <div className="dr-topbar__actions">
-          <CopyLinkButton />
           <a className="dr-btn dr-btn--sm" href="/">
             <Icon name="ph:house-bold" aria-hidden />
             Open CovenCave

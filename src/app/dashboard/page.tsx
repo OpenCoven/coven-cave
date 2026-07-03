@@ -1,6 +1,5 @@
 import { loadInbox } from "@/lib/cave-inbox";
 import { Icon } from "@/lib/icon";
-import { CopyLinkButton } from "@/components/copy-link-button";
 import { DashboardCockpit } from "@/components/dashboard/dashboard-cockpit";
 import { buildDashboardModel } from "@/lib/dashboard-model";
 
@@ -21,9 +20,6 @@ export default async function DashboardPage() {
           <span className="dr-crumb-sep" aria-hidden>/</span>
           <span className="dr-crumb-current">Dashboard</span>
         </nav>
-        <div className="dr-topbar__actions">
-          <CopyLinkButton />
-        </div>
       </div>
 
       <DashboardCockpit model={model} />
