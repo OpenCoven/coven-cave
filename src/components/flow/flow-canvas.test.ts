@@ -60,5 +60,13 @@ assert.match(view, /if \(dirty && !saving\) void save\(\)/, "Cmd+S saves only wh
 assert.match(view, /onDuplicateNode\(selectedNodeId\)/, "Cmd+D duplicates the selected node");
 assert.match(view, /catalogOpen \|\| templateGalleryOpen \|\| requiredInputsPrompt/, "shortcuts stand down while any dialog owns focus");
 assert.match(view, /target\.isContentEditable/, "shortcuts stand down while typing");
+// Multi-select: React Flow's marquee/shift-click selection must survive the
+// detail-panel selection — a plain override killed it.
+assert.match(canvas, /node\.selected === true \|\| node\.id === selectedNodeId/, "canvas selection is a union of internal multi-select and the detail-panel node");
+// Branch labels: fan-out edges (router/if/loop) name their branch on the wire.
+const edge = readFileSync(new URL("./flow-edge.tsx", import.meta.url), "utf8");
+assert.match(canvas, /sourceDef\.outputs\.length > 1/, "only true fan-outs get branch labels");
+assert.match(edge, /branchLabel/, "the edge renders its branch name");
+assert.match(styles, /\.flow-edge-branch-label/, "branch labels are styled");
 
 console.log("flow-canvas.test.ts OK");
