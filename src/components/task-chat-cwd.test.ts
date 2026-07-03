@@ -69,12 +69,12 @@ assert.match(
 );
 assert.match(
   chatView,
-  /projects\.map\(\(project\) => \([\s\S]*?<option key=\{project\.id\} value=\{project\.id\}>[\s\S]*?\{project\.name\}/,
-  "Empty state renders the live project list",
+  /<ProjectPicker[\s\S]*?value=\{projectId \?\? null\}[\s\S]*?onChange=\{onProjectChange\}[\s\S]*?allowNoProject/,
+  "Empty state renders the shared picker with an explicit No-project choice (a no-project chat is no longer a picker-less dead end)",
 );
 assert.match(
   chatView,
-  /aria-label="Project for this chat"/,
+  /ariaLabel="Project for this chat"/,
   "Empty state exposes a labeled project selector",
 );
 assert.doesNotMatch(

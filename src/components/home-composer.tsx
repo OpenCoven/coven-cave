@@ -33,6 +33,8 @@ import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
+import { NO_PROJECT_ID } from "@/lib/chat-projects";
+import { ADD_PROJECT_ID, useAddProjectFlow } from "@/components/project-picker";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
@@ -194,8 +196,16 @@ export function HomeComposer({
     [resolvedFamiliars, selectedFamiliarId],
   );
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
-  const { projects } = useProjects({ familiarId: selectedFamiliarId || null });
+  const { projects, createProject } = useProjects({ familiarId: selectedFamiliarId || null });
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  // Shared register+grant flow behind the select's "Add project…" option —
+  // the composer no longer dead-ends when the wanted root isn't registered.
+  const addProjectFlow = useAddProjectFlow({
+    familiarId: selectedFamiliarId || null,
+    createProject,
+    projects,
+    onAdded: setSelectedProjectId,
+  });
   const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
     COMMAND_CONTROL_DEFAULTS.thinkingEffort,
   );
@@ -203,7 +213,10 @@ export function HomeComposer({
     COMMAND_CONTROL_DEFAULTS.responseSpeed,
   );
   const selectedProject = useMemo(
-    () => projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null,
+    () =>
+      selectedProjectId === NO_PROJECT_ID
+        ? null
+        : projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null,
     [projects, selectedProjectId],
   );
   const selectedRuntime =
@@ -222,6 +235,7 @@ export function HomeComposer({
   const selectedRuntimeModelValue = runtimeModelValue(selectedRuntime, selectedModelId);
 
   useEffect(() => {
+    if (selectedProjectId === NO_PROJECT_ID) return; // an explicit No-project choice is valid
     if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) return;
     setSelectedProjectId(projects[0]?.id ?? "");
   }, [projects, selectedProjectId]);
@@ -1077,21 +1091,35 @@ export function HomeComposer({
                 aria-label="Choose project"
                 className="hc-familiar-select"
                 value={selectedProjectId}
-                onChange={(e) => setSelectedProjectId(e.currentTarget.value)}
-                disabled={projects.length === 0 || sending}
+                onChange={(e) => {
+                  const value = e.currentTarget.value;
+                  // The add row is an action, not a selection — keep the
+                  // current value and open the shared register+grant flow.
+                  if (value === ADD_PROJECT_ID) {
+                    addProjectFlow.beginAddProject();
+                    return;
+                  }
+                  setSelectedProjectId(value);
+                }}
+                disabled={sending}
               >
                 {projects.length === 0 ? (
-                  <option value="">No projects</option>
+                  <option value="">No projects yet</option>
                 ) : (
-                  projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))
+                  <>
+                    <option value={NO_PROJECT_ID}>No project</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </>
                 )}
+                <option value={ADD_PROJECT_ID}>＋ Add project…</option>
               </select>
               <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
             </label>
+            {addProjectFlow.addProjectModal}
           </div>
 
           <div className="hc-control-group hc-control-group--run">

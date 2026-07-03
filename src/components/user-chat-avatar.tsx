@@ -43,8 +43,8 @@ export function UserChatAvatar({ className, ariaLabel }: Props) {
           if (!file) return;
           setStatus(null);
           void prepareFamiliarImage(file)
-            .then((prepared) => {
-              const res = setUserAvatarImage(prepared);
+            .then(async (prepared) => {
+              const res = await setUserAvatarImage(prepared);
               setStatus(res.ok ? (prepared.downsized ? "Image was downsized for Cave." : "Chat avatar updated.") : res.reason);
             })
             .catch((err) => {

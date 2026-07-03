@@ -110,7 +110,7 @@ export function useFamiliarImageUpload(familiarId: string) {
       setToast(null);
       try {
         const prepared = await prepareFamiliarImage(file);
-        const res = setFamiliarImage(familiarId, prepared);
+        const res = await setFamiliarImage(familiarId, prepared);
         if (!res.ok) {
           setToast(res.reason);
           return;
@@ -123,7 +123,7 @@ export function useFamiliarImageUpload(familiarId: string) {
     [familiarId],
   );
 
-  const clear = useCallback(() => clearFamiliarImage(familiarId), [familiarId]);
+  const clear = useCallback(() => void clearFamiliarImage(familiarId), [familiarId]);
 
   return { onFile, clear, toast, setToast };
 }

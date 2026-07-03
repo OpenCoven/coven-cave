@@ -277,6 +277,7 @@ export const SUITES = {
     "src/components/comux-view-edit.test.ts",
     "src/components/comux-view-changes.test.ts",
     "src/components/comux-view-search-options.test.ts",
+    "src/components/comux-view-selected-project.test.ts",
     "src/components/code-editor.test.ts",
     "src/components/code-view.test.ts",
     "src/components/chat-prompt-enhance.test.ts",
@@ -348,6 +349,7 @@ export const SUITES = {
     "src/lib/group-chat.test.ts",
     "src/components/chat-send-routes-links.test.ts",
     "src/components/chat-surface-polish.test.ts",
+    "src/components/project-picker.test.ts",
     "src/components/directory-picker.test.ts",
     "src/components/chat-view.test.ts",
     "src/components/drag-to-split.test.ts",
@@ -742,6 +744,9 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/cave-familiar-images.test.ts",
+  "src/lib/user-avatar-image.test.ts",
+  "src/lib/familiar-resolve.test.ts",
   "src/lib/gh-review-html.test.ts",
   "src/lib/evals/eval-analytics.test.ts",
   "src/lib/home-digest.test.ts",

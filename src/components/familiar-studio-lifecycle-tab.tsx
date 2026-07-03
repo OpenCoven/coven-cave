@@ -53,7 +53,7 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
     }
     clearAllFamiliarOverrides(familiar.id);
     clearGlyphOverride(familiar.id);
-    clearFamiliarImage(familiar.id);
+    void clearFamiliarImage(familiar.id);
     void fetch("/api/config", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
