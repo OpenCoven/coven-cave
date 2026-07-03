@@ -204,6 +204,14 @@ function BoardCardStackRow({
             {card.priority}
           </span>
           <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
+          {!card.projectId && !card.cwd && (
+            <span
+              className="board-card-stack__row-no-project"
+              title="No project set — pick one in the card's Project field so task chats open in the right place"
+            >
+              No project
+            </span>
+          )}
         </div>
         <div className="board-card-stack__row-title">{card.title}</div>
         {card.notes ? (

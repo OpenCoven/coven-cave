@@ -194,4 +194,41 @@ assert.match(
   "The draft-init effect re-seeds when the linked task arrives (it loads async with the conversation)",
 );
 
+// ── Projectless task cards get a "set a project" nudge (2026-07-03) ──────────
+// A card with neither projectId nor cwd can't root its task chats: new starts
+// are refused (409) and linked chats can't inherit a project. Surface that on
+// the card face (desktop + mobile) and under the inspector's Project field.
+const boardKanban = readFileSync(new URL("./board-kanban.tsx", import.meta.url), "utf8");
+const boardCardStack = readFileSync(new URL("./board-card-stack.tsx", import.meta.url), "utf8");
+assert.match(
+  boardKanban,
+  /const missingProject = !card\.projectId && !card\.cwd;/,
+  "the kanban card derives its projectless state from both project fields",
+);
+assert.match(
+  boardKanban,
+  /board-kanban-card-chip--no-project/,
+  "a projectless kanban card shows a No-project chip",
+);
+assert.match(
+  boardKanban,
+  /missingProject \? "no project set" : null,/,
+  "the nudge is folded into the card's accessible name so AT users hear it",
+);
+assert.match(
+  boardCardStack,
+  /board-card-stack__row-no-project/,
+  "the mobile card face mirrors the No-project nudge",
+);
+assert.match(
+  boardInspector,
+  /projects\.length > 0 && !card\.projectId && !card\.cwd \? \(/,
+  "the inspector nudge shows only when a project could actually be picked (the empty-roster case has its own hint)",
+);
+assert.match(
+  boardInspector,
+  /board-drawer-field-hint--nudge/,
+  "the inspector Project field carries the set-a-project nudge",
+);
+
 console.log("task-chat-cwd.test.ts: ok");

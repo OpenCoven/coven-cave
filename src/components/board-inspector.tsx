@@ -1206,6 +1206,12 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   No projects yet. Open Projects to add one, then choose it here.
                 </p>
               ) : null}
+              {projects.length > 0 && !card.projectId && !card.cwd ? (
+                <p className="board-drawer-field-hint board-drawer-field-hint--nudge">
+                  No project set — task chats can't start, and linked chats won't open in the
+                  right project, until you pick one.
+                </p>
+              ) : null}
             </div>
           </div>
 
