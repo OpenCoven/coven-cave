@@ -149,10 +149,12 @@ export async function startFlowSession(
     // chat does. Passing `familiarId` makes some daemon setups try to run the
     // session *as* that familiar and reject it with "no familiar configured for
     // this harness" when the familiar isn't registered for that harness on the
-    // daemon. The familiar is already described in the compiled prompt and is
-    // mirrored into cave-state below via recordSessionFamiliar, so attribution
+    // daemon. Use non-interactive launch mode so the event stream contains the
+    // flow prompt's assistant output and progress markers, not a fullscreen
+    // harness TUI. The familiar is already described in the compiled prompt and
+    // is mirrored into cave-state below via recordSessionFamiliar, so attribution
     // and the run→familiar link survive.
-    body: { projectRoot, harness: binding.harness, prompt },
+    body: { projectRoot, harness: binding.harness, prompt, launchMode: "nonInteractive" },
     timeoutMs: 8000,
   });
 

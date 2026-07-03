@@ -18,6 +18,7 @@ assert.match(executor, /flowPartialExecutionOrder\(flow, options\.targetNodeId/,
 assert.match(executor, /options\.targetNodeId \? `Flow step:/, "partial runs get a step-specific session title");
 assert.match(executor, /flowSnapshot: flow/, "run records should persist the workflow snapshot used for retrying original executions");
 assert.match(executor, /mode: options\.mode \?\? "manual"/, "run records should persist whether execution used manual or production semantics");
+assert.match(executor, /launchMode: "nonInteractive"/, "flow sessions should launch with plain non-interactive harness output");
 assert.match(executor, /extractFlowCustomData/, "run records should persist saved custom execution data from Execution Data nodes");
 assert.match(executor, /flowRunRedactsData\(flow, options\.mode \?\? "manual"\)/, "run records should resolve execution-data redaction from the flow policy");
 assert.match(executor, /redacted: true/, "run records should mark redacted executions in history");

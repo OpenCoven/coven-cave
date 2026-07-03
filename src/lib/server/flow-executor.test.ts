@@ -10,9 +10,10 @@ const source = readFileSync(new URL("./flow-executor.ts", import.meta.url), "utf
 // the daemon body must NOT include familiarId.
 assert.match(
   source,
-  /body: \{ projectRoot, harness: binding\.harness, prompt \},/,
+  /body: \{ projectRoot, harness: binding\.harness, prompt, launchMode: "nonInteractive" \},/,
   "flow session spawn must not pass familiarId natively to the daemon",
 );
+assert.match(source, /launchMode: "nonInteractive"/, "flow session output should be plain assistant text, not harness TUI output");
 assert.match(source, /recordSessionFamiliar\(sessionId, familiarId\)/, "familiar is still mirrored into cave-state");
 assert.match(
   source,
