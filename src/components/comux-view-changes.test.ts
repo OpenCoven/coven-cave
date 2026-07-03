@@ -86,4 +86,8 @@ assert.match(
   "live diff polling keys off a running session in the selected project",
 );
 
+// ── 2026-07-03 code-surface audit (perf): changes poll content guard ─────────
+assert.match(changes, /import \{ arrayContentEqual \} from "@\/lib\/array-content-equal"/, "changes panel imports the content-equality guard");
+assert.match(changes, /setFiles\(\(prev\) => \(arrayContentEqual\(prev, nextFiles\) \? prev : nextFiles\)\)/, "the 5s changes poll keeps the previous reference when the diff is unchanged");
+
 console.log("comux-view-changes.test.ts: ok");

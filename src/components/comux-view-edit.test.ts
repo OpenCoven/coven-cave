@@ -52,4 +52,12 @@ assert.ok(source.includes("if (!previewPath || savingRef.current) return;"), "sa
 assert.ok(source.includes("savingRef.current = true;"), "saveEdit marks the in-flight ref synchronously");
 assert.ok(source.includes('<span role="alert" className="shrink-0 truncate text-[10px] text-[var(--color-danger,#f87171)]"'), "save error is announced via role=alert");
 
+// ── 2026-07-03 code-surface audit (correctness) ──────────────────────────────
+// A slow file load must not clobber a newer one (wrong file shown/edited).
+assert.match(source, /previewReqRef\.current = path;/, "openFilePreview records the latest requested path");
+assert.match(source, /if \(previewReqRef\.current !== path\) return;/, "a superseded file response is dropped");
+// Switching projects from the sidebar drops the previous project's open preview.
+assert.match(source, /if \(root !== selectedRootRef\.current\) clearFilePreview\(\);/, "a sidebar project switch clears the stale file preview");
+assert.match(source, /const clearFilePreview = useCallback/, "there is a shared file-preview reset");
+
 console.log("comux-view-edit.test.ts: ok");

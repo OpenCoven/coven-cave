@@ -477,6 +477,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   // flips once the user clicks a toggle or opens a file; prevChangeCount tracks
   // the 0→>0 edit transition so we surface the diff exactly once per project.
   const pinnedRightViewRef = useRef(false);
+  // Tracks the most-recent openFilePreview request so a slow response for an
+  // older file can't clobber a newer one (wrong file shown / edited).
+  const previewReqRef = useRef<string | null>(null);
   // Jump-to-diff target from a transcript edit tool (cave:open-file-diff). The
   // nonce re-triggers the focus even when the same path is clicked again.
   const [focusDiff, setFocusDiff] = useState<{ path: string; nonce: number } | null>(null);
@@ -503,6 +506,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const projectFilterRef = useRef<HTMLInputElement>(null);
   const projectListRef = useRef<HTMLDivElement>(null);
   const activeProjectRowRef = useRef<HTMLButtonElement | null>(null);
+  const selectedRootRef = useRef<string | undefined>(undefined);
   // Right-click context menu for a project row. `menuTarget` records which
   // project was right-clicked (one menu serves the whole list).
   const [projectMenu, setProjectMenu] = useState<ContextMenuState>(null);
@@ -949,6 +953,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   }, [view, active, terminalLayout, zoomedSessionId, visiblePaneSessionIds]);
 
   const openFilePreview = useCallback(async (path: string, line?: number) => {
+    previewReqRef.current = path;
     setPreviewPath(path);
     setPreviewLine(line);
     setFilePreviewCollapsed(false);
@@ -977,6 +982,9 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
         size?: number;
         error?: string;
       };
+      // A newer file was opened while this fetch was in flight — drop the stale
+      // response so it can't paint over the current file.
+      if (previewReqRef.current !== path) return;
       if (json.ok && json.kind === "image" && typeof json.dataUrl === "string" && typeof json.mimeType === "string") {
         setPreview({ kind: "image", dataUrl: json.dataUrl, mimeType: json.mimeType, size: json.size });
       } else if (json.ok && typeof json.content === "string") {
@@ -985,9 +993,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
         setPreview({ kind: "error", message: json.error ?? "Could not load this file." });
       }
     } catch (err) {
+      if (previewReqRef.current !== path) return;
       setPreview({ kind: "error", message: `Could not load this file. ${String(err)}` });
     } finally {
-      setPreviewLoading(false);
+      if (previewReqRef.current === path) setPreviewLoading(false);
     }
   }, [selectedProjectFamiliarId]);
 
@@ -1049,6 +1058,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     const onSelectProject = (event: Event) => {
       const root = (event as CustomEvent<{ root?: string }>).detail?.root;
       if (!root) return;
+      // Switching to a DIFFERENT project must drop the previous project's open
+      // file preview — otherwise it keeps showing (and offering Edit/Save on)
+      // a file from the old project, with a broken absolute-path breadcrumb.
+      if (root !== selectedRootRef.current) clearFilePreview();
       setSelectedProjectRoot(root);
       setProjectDetailCollapsed(false);
     };
@@ -1242,11 +1255,20 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     [searchRoot, openFilePreview],
   );
 
-  const selectProject = useCallback((project: ComuxProject) => {
-    setSelectedProjectRoot(project.root);
+  useEffect(() => { selectedRootRef.current = selectedProjectRoot; }, [selectedProjectRoot]);
+
+  const clearFilePreview = useCallback(() => {
+    previewReqRef.current = null;
     setPreviewPath(null);
     setPreview(null);
+    setEditing(false);
+    setSaveError(null);
   }, []);
+
+  const selectProject = useCallback((project: ComuxProject) => {
+    setSelectedProjectRoot(project.root);
+    clearFilePreview();
+  }, [clearFilePreview]);
 
   // Poll the diff while a familiar is actively working this project so the
   // Changes view reflects edits as they land.
