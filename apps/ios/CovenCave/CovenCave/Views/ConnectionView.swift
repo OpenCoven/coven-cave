@@ -69,6 +69,7 @@ struct ConnectionView: View {
                     trustNote
                 }
                 .padding(24)
+                .readableWidth(520)
             }
             .background(chrome.bgBase.ignoresSafeArea())
             .navigationTitle("Coven Cave")

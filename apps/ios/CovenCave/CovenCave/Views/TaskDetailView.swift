@@ -34,6 +34,7 @@ struct TaskDetailView: View {
                 metaCard
             }
             .padding(20)
+            .readableWidth(680)
         }
         .background(chrome.bgBase.ignoresSafeArea())
         .navigationTitle("Task")

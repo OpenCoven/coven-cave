@@ -33,6 +33,7 @@ struct SettingsView: View {
                 aboutSection
             }
             .themedListBackground()
+            .readableListWidth(680)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {

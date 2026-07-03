@@ -72,7 +72,9 @@ struct FamiliarThreadsView: View {
                 if entries.isEmpty && archivedLocalCount == 0 {
                     emptyState
                 } else {
-                    threadList
+                    // Align the thread column with ChatView's 740pt transcript
+                    // so drilling into a conversation doesn't shift the content.
+                    threadList.readableListWidth(740)
                 }
             case .feed:
                 FamiliarFeedView()

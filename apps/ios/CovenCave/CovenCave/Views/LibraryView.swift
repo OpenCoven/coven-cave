@@ -64,6 +64,7 @@ struct LibraryView: View {
             }
             .listStyle(.plain)
             .themedListBackground()
+            .readableListWidth(680)
         }
     }
 

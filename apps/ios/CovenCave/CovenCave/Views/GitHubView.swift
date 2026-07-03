@@ -216,6 +216,7 @@ struct GitHubItemDetailView: View {
                 }
             }
             .padding(16)
+            .readableWidth(720)
         }
         .background(chrome.bgBase.ignoresSafeArea())
         .navigationTitle(item.number.map { "#\($0)" } ?? "Item")
