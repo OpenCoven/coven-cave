@@ -37,7 +37,7 @@ assert.match(layout, /<ConfirmProvider>/, "layout mounts ConfirmProvider");
 // Surfaces still gated by the in-app confirm (non-delete actions like run-now,
 // discard-unsaved, workflow/sketch delete, clear-history).
 for (const rel of [
-  "../canvas-artifact-node.tsx",
+  "../journal/canvas-list.tsx",
   "../automations-view.tsx",
 ]) {
   const file = readFileSync(new URL(rel, import.meta.url), "utf8");

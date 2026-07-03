@@ -7,6 +7,8 @@ import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { DEFAULT_REFINE_SUGGESTIONS, generateRefineSuggestions } from "@/lib/refine-suggestions";
 import {
   buildPreviewSrcDoc,
@@ -52,6 +54,8 @@ export function CanvasList({
   activeFamiliarId: string | null;
 }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  const { announce } = useAnnouncer();
+  const confirm = useConfirm();
   const [artifacts, setArtifacts] = useState<CanvasArtifact[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<"preview" | "code">("preview");
@@ -138,6 +142,13 @@ export function CanvasList({
       });
       if (result.error || !result.code) {
         setError(result.error ?? "The familiar didn't return a renderable UI.");
+        // A brand-new sketch whose first generation failed never got real code
+        // (or a disk write — see createArtifact), so drop the placeholder rather
+        // than leave a permanent blank tile. A failed *refine* keeps its code.
+        if (!refineOf) {
+          setArtifacts((prev) => prev.filter((a) => a.id !== id));
+          setSelectedId((prev) => (prev === id ? null : prev));
+        }
         return;
       }
       const code = clampArtifactCode(result.code);
@@ -155,8 +166,9 @@ export function CanvasList({
         }),
       );
       setView("preview");
+      announce(refineOf ? "Sketch updated" : "Sketch generated");
     },
-    [activeFamiliarId, familiars, persist],
+    [activeFamiliarId, familiars, persist, announce],
   );
 
   const createArtifact = useCallback(
@@ -174,23 +186,35 @@ export function CanvasList({
         createdAt: now,
         updatedAt: now,
       };
+      // Don't persist yet — the code is empty until generation returns. Writing
+      // it now is what left a blank tile on disk when generation failed; the
+      // success path persists the filled-in artifact from runGeneration.
       setArtifacts((prev) => [...prev, art]);
       setSelectedId(id);
-      persist(art);
       void runGeneration(id, text);
     },
-    [persist, runGeneration],
+    [runGeneration],
   );
 
-  const removeArtifact = useCallback((id: string) => {
+  const removeArtifact = useCallback(async (id: string) => {
+    // Sketch deletion is destructive with no undo — gate it behind the shared
+    // in-app confirm like every other destructive action in the app.
+    const art = artifacts.find((a) => a.id === id);
+    if (!(await confirm({
+      title: "Delete sketch?",
+      body: `“${art?.title || "Untitled sketch"}” will be removed. This can’t be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    }))) return;
     setArtifacts((prev) => prev.filter((a) => a.id !== id));
     setSelectedId((prev) => (prev === id ? null : prev));
+    announce("Sketch deleted");
     void fetch("/api/canvas", {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id }),
     }).catch(() => undefined);
-  }, []);
+  }, [artifacts, confirm, announce]);
 
   const startRename = useCallback((artifact: CanvasArtifact) => {
     setSelectedId(artifact.id);
