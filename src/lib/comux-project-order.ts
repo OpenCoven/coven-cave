@@ -42,6 +42,29 @@ export function writePinnedProjects(pinned: readonly string[]): void {
   writeRoots(PINNED_KEY, pinned);
 }
 
+// Last-selected project root. Pins and drag order survived reloads but the
+// selection itself didn't, so the code surface always reopened on projects[0].
+// Same SSR-safe read-after-mount contract as the order/pins above.
+const SELECTED_KEY = "cave:comux:selectedProject";
+
+export function readSelectedProject(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(SELECTED_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function writeSelectedProject(root: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SELECTED_KEY, root);
+  } catch {
+    /* quota / private mode — non-fatal */
+  }
+}
+
 export function isProjectPinned(pinned: readonly string[], root: string): boolean {
   return pinned.includes(root);
 }

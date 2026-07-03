@@ -60,6 +60,8 @@ import {
   writeProjectOrder,
   readPinnedProjects,
   writePinnedProjects,
+  readSelectedProject,
+  writeSelectedProject,
   toggleProjectPin,
   isProjectPinned,
   orderProjects,
@@ -656,12 +658,19 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       setSelectedProjectRoot(undefined);
       return;
     }
-    setSelectedProjectRoot((current) =>
-      current && projects.some((project) => project.root === current)
-        ? current
-        : projects[0].root,
-    );
+    // Restore happens here rather than in a mount effect: projects arrive
+    // async, and the empty-list reset above would wipe a mount-time restore
+    // before the list ever populated.
+    setSelectedProjectRoot((current) => {
+      const stored = current ?? readSelectedProject() ?? undefined;
+      return stored && projects.some((project) => project.root === stored)
+        ? stored
+        : projects[0].root;
+    });
   }, [projects]);
+  useEffect(() => {
+    if (selectedProjectRoot) writeSelectedProject(selectedProjectRoot);
+  }, [selectedProjectRoot]);
 
   const addSession = useCallback((rootOverride?: string, placement: SessionPlacement = "replace") => {
     const id = uid();
