@@ -10228,6 +10228,48 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   min-width: 0;
 }
 
+/* ── Split divider: a calm hairline that reveals a grip on hover/drag ──────── */
+.split-host__sep {
+  position: relative;
+  /* Sit above the panes so the whole seam is grabbable — pane content otherwise
+     overlaps the hit strip on one side and steals the pointer. */
+  z-index: 5;
+}
+/* Widen the invisible grab strip so the seam is an easy target. */
+.split-host__sep .ui-sep-handle--col::after {
+  left: -7px;
+  right: -7px;
+}
+/* The grip: a short rounded bar centered on the seam, hidden until hover/drag,
+   then it fades and grows in. Pure affordance — no layout impact. */
+.split-host__grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scaleY(0.55);
+  width: 4px;
+  height: 36px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--text-muted) 60%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+.split-host__sep:hover .split-host__grip,
+.split-host__group[data-resizing] .split-host__grip {
+  opacity: 1;
+  transform: translate(-50%, -50%) scaleY(1);
+}
+.split-host__group[data-resizing] .split-host__grip {
+  background: var(--accent);
+  box-shadow: 0 0 10px color-mix(in oklch, var(--accent) 55%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .split-host__grip { transition: opacity var(--duration-fast) var(--ease-standard); }
+}
+
 /* Live snap guide drawn while dragging the divider. */
 .split-host__guide {
   position: absolute;

@@ -33,6 +33,20 @@ test("DetailSplitHost renders drop zones + a snapping divider", () => {
   assert.match(src, /split-host__guide--collapse/, "far-edge drag shows the fill guide");
 });
 
+test("the divider is seamless: no ratio buttons, magnetic even-split, double-click reset", () => {
+  const src = read("./detail-split-host.tsx");
+  // The clumsy ⅓ · ½ · ⅔ button row is gone — the divider itself is the control.
+  assert.doesNotMatch(src, /Snap to a third/, "no ⅓ button");
+  assert.doesNotMatch(src, /Snap to two thirds/, "no ⅔ button");
+  assert.doesNotMatch(src, /snapTo\(/, "no per-ratio snap button handler");
+  // Double-click the divider resets to an even split (replaces the ½ button).
+  assert.match(src, /addEventListener\("dblclick"/, "double-click handled");
+  assert.match(src, /closest\(".split-host__sep"\)[\s\S]*resize\(PCT\(SPLIT_DEFAULT_RATIO\)\)/, "double-click resets to even");
+  // A hover/drag grip affordance on the seam.
+  assert.match(src, /split-host__grip/, "divider shows a grip affordance");
+  assert.match(src, /data-resizing=/, "group flags an active resize for grip feedback");
+});
+
 test("DetailSplitHost supports optimized variants for up to four visible pages", () => {
   const src = read("./detail-split-host.tsx");
   assert.match(src, /secondaryTiles: DetailSplitTile\[\]/, "host receives multiple secondary tiles");

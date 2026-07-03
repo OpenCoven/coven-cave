@@ -182,11 +182,21 @@ export function DetailSplitHost({
         else secRef.current?.resize(PCT(SPLIT_MAX_RATIO));
       } else if (release.action === "snap") secRef.current?.resize(PCT(release.ratio));
     };
+    // Double-click the divider → reset to an even split (replaces the ½ button).
+    // Captured at the window so it fires even though RRP owns the separator.
+    const onDblClick = (e: MouseEvent) => {
+      const target = e.target;
+      if (target instanceof Element && target.closest(".split-host__sep")) {
+        secRef.current?.resize(PCT(SPLIT_DEFAULT_RATIO));
+      }
+    };
     window.addEventListener("pointerdown", onDown, true);
     window.addEventListener("pointerup", onUp, true);
+    window.addEventListener("dblclick", onDblClick, true);
     return () => {
       window.removeEventListener("pointerdown", onDown, true);
       window.removeEventListener("pointerup", onUp, true);
+      window.removeEventListener("dblclick", onDblClick, true);
     };
   }, [secondaryTiles, onClose, onPromoteTile, secRef]);
 
@@ -230,12 +240,14 @@ export function DetailSplitHost({
     };
   }, [secondaryTiles.length, secondarySide, secRef]);
 
-  // Keyboard / button snap helpers shown in the pane header.
-  const snapTo = (ratio: number) => secRef.current?.resize(PCT(ratio));
-
   const separator = (
     <Separator className="shell-separator split-host__sep">
-      <SeparatorHandle orientation="col" />
+      <SeparatorHandle
+        orientation="col"
+        title="Drag to resize · double-click for an even split"
+      >
+        <span className="split-host__grip" aria-hidden />
+      </SeparatorHandle>
     </Separator>
   );
 
@@ -275,33 +287,6 @@ export function DetailSplitHost({
             {legacySecondaryTile.title}
           </span>
           <span className="split-host__pane-actions">
-            <button
-              type="button"
-              className="split-host__pane-btn"
-              title="Snap to a third"
-              aria-label="Snap split to a third"
-              onClick={() => snapTo(1 / 3)}
-            >
-              ⅓
-            </button>
-            <button
-              type="button"
-              className="split-host__pane-btn"
-              title="Snap to half"
-              aria-label="Snap split to half"
-              onClick={() => snapTo(1 / 2)}
-            >
-              ½
-            </button>
-            <button
-              type="button"
-              className="split-host__pane-btn"
-              title="Snap to two thirds"
-              aria-label="Snap split to two thirds"
-              onClick={() => snapTo(2 / 3)}
-            >
-              ⅔
-            </button>
             <button
               type="button"
               className="split-host__pane-btn split-host__pane-close"
@@ -364,23 +349,25 @@ export function DetailSplitHost({
     );
   };
 
-  // Live snap guide while dragging the divider.
-  const snapPreview = dragRatio != null ? nearestSnap(dragRatio) : null;
+  // Live guide while dragging. Minimalist: the even-split detent is signalled by
+  // a soft accent glow on the line (no numeric chip); only the two edge zones
+  // surface a one-word pill (Close / Fill).
+  const atEvenSplit = dragRatio != null && nearestSnap(dragRatio) != null;
   const inCloseZone = dragRatio != null && dragRatio < SPLIT_CLOSE_RATIO;
   const inCollapseZone = dragRatio != null && dragRatio > SPLIT_COLLAPSE_RATIO;
-  const guideRatio = snapPreview ? snapPreview.ratio : dragRatio;
+  const guideRatio = atEvenSplit ? SPLIT_DEFAULT_RATIO : dragRatio;
   const guide =
     dragRatio != null && guideRatio != null ? (
       <div
-        className={`split-host__guide${snapPreview ? " split-host__guide--snap" : ""}${
+        className={`split-host__guide${atEvenSplit ? " split-host__guide--snap" : ""}${
           inCloseZone ? " split-host__guide--close" : ""
         }${inCollapseZone ? " split-host__guide--collapse" : ""}`}
         style={{ left: PCT(dividerOffset(guideRatio, secondarySide)) }}
         aria-hidden
       >
-        <span className="split-host__guide-chip">
-          {inCloseZone ? "Close" : inCollapseZone ? "Fill" : snapPreview ? snapPreview.label : null}
-        </span>
+        {inCloseZone || inCollapseZone ? (
+          <span className="split-host__guide-chip">{inCloseZone ? "Close" : "Fill"}</span>
+        ) : null}
       </div>
     ) : null;
 
@@ -394,7 +381,7 @@ export function DetailSplitHost({
         secondaryTiles.length === 1 ? (
           <>
             {mobileSwitcher}
-            <Group className="split-host__group" data-variant={variant} orientation="horizontal" elementRef={groupElRef}>
+            <Group className="split-host__group" data-variant={variant} data-resizing={dragRatio != null ? "" : undefined} orientation="horizontal" elementRef={groupElRef}>
               {secondarySide === "left" ? (
                 <>
                   {secondaryPanel}

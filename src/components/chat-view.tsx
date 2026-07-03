@@ -2476,6 +2476,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     controller: AbortController | null = abortRef.current,
     targetSessionId: string | null = currentSessionRef.current,
   ) {
+    // Background stream: the user navigated to a DIFFERENT thread while this
+    // session is still generating. Update that session's OWN registry snapshot
+    // (its turns, its controller) — calling setTurns here would splice the
+    // streaming session's messages into the thread now on screen AND persist
+    // the on-screen thread's turns back into the streaming session's snapshot
+    // (returning to it then shows the wrong conversation, stuck "Streaming…").
+    if (targetSessionId && targetSessionId !== currentSessionRef.current) {
+      const snap = readLiveChatGeneration(targetSessionId);
+      if (!snap) return; // stream already settled / snapshot evicted
+      recordLiveChatGeneration({
+        ...snap,
+        turns: updater(snap.turns),
+        activeLeafId: nextActiveLeafId,
+        updatedAt: Date.now(),
+      });
+      return;
+    }
     setTurns((prev) => {
       const next = updater(prev);
       turnsRef.current = next;
@@ -2946,6 +2963,12 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     currentSessionRef.current = sessionId;
     liveSessionIdRef.current = null;
+    // Thread switch: release streaming state owned by the PREVIOUS thread so its
+    // busy lock / Esc-cancel don't bleed onto this one. A background stream
+    // keeps running via its registry snapshot + controller; the live-snapshot
+    // branch below re-arms busy/abortRef if THIS thread is the one streaming.
+    setBusy(false);
+    abortRef.current = null;
     setLinkedContext(null);
     setFlowTranscriptFallback(null);
     if (!sessionId) {
