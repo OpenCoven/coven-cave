@@ -786,6 +786,79 @@ export function FlowView() {
     [onChangeSticky],
   );
 
+  // Stable handler identities for the always-mounted panels (FlowLibrary /
+  // FlowToolbar are memoized) — without these, every run-poll tick re-renders
+  // both rails even though nothing they show changed.
+  const onSelectFlow = useCallback((id: string) => void selectFlow(id), [selectFlow]);
+  const onCreateFlow = useCallback(() => void createFlow(), [createFlow]);
+  const onCreateFlowFromPrompt = useCallback((prompt: string) => void createFlowFromPrompt(prompt), [createFlowFromPrompt]);
+  const onDuplicateFlow = useCallback((id: string) => void duplicateFlow(id), [duplicateFlow]);
+  const onDeleteFlow = useCallback((id: string) => void removeFlow(id), [removeFlow]);
+  const openTemplates = useCallback(() => setTemplateGalleryOpen(true), []);
+  const onRename = useCallback((name: string) => mutate((d) => renameFlow(d, name)), [mutate]);
+  const onToggleActive = useCallback(() => mutate((d) => setActive(d, !d.active)), [mutate]);
+  const onUndo = useCallback(() => dispatchDraft({ type: "undo" }), [dispatchDraft]);
+  const onRedo = useCallback(() => dispatchDraft({ type: "redo" }), [dispatchDraft]);
+  const onSave = useCallback(() => void save(), [save]);
+  const onExecute = useCallback(() => void execute(), [execute]);
+  const onStop = useCallback(() => void stop(), [stop]);
+
+  // ── Keyboard shortcuts ──────────────────────────────────────────────────────
+  // Cmd/Ctrl+Z undo · Shift+Cmd/Ctrl+Z or Cmd/Ctrl+Y redo · Cmd/Ctrl+S save ·
+  // Cmd/Ctrl+D duplicate the selected node · N open the add-node catalog.
+  // Skipped while typing and while any dialog owns focus — those have their own
+  // key handling (focus traps, Escape), and undo inside a form would surprise.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!doc || tab !== "editor") return;
+      if (catalogOpen || templateGalleryOpen || requiredInputsPrompt) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const mod = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      if (mod && key === "z") {
+        event.preventDefault();
+        dispatchDraft({ type: event.shiftKey ? "redo" : "undo" });
+      } else if (mod && key === "y") {
+        event.preventDefault();
+        dispatchDraft({ type: "redo" });
+      } else if (mod && key === "s") {
+        event.preventDefault();
+        if (dirty && !saving) void save();
+      } else if (mod && key === "d") {
+        if (!selectedNodeId) return;
+        event.preventDefault();
+        onDuplicateNode(selectedNodeId);
+      } else if (!mod && !event.altKey && key === "n") {
+        event.preventDefault();
+        requestAdd({ x: 220, y: 180 });
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    doc,
+    tab,
+    catalogOpen,
+    templateGalleryOpen,
+    requiredInputsPrompt,
+    dirty,
+    saving,
+    dispatchDraft,
+    save,
+    selectedNodeId,
+    onDuplicateNode,
+    requestAdd,
+  ]);
+
   if (loaded && flows.length === 0 && !doc) {
     return (
       <div className="flow-view flow-view-onboarding">
@@ -839,12 +912,12 @@ export function FlowView() {
         flows={flows}
         selectedId={selectedId}
         loading={!loaded}
-        onSelect={(id) => void selectFlow(id)}
-        onCreate={() => void createFlow()}
-        onCreateFromPrompt={(prompt) => void createFlowFromPrompt(prompt)}
-        onDuplicate={(id) => void duplicateFlow(id)}
-        onDelete={(id) => void removeFlow(id)}
-        onTemplate={() => setTemplateGalleryOpen(true)}
+        onSelect={onSelectFlow}
+        onCreate={onCreateFlow}
+        onCreateFromPrompt={onCreateFlowFromPrompt}
+        onDuplicate={onDuplicateFlow}
+        onDelete={onDeleteFlow}
+        onTemplate={openTemplates}
       />
 
       {templateGalleryOpen && (
@@ -882,17 +955,17 @@ export function FlowView() {
               executing={executing}
               publishStatus={flowPublishStatus(doc)}
               publishBlockReason={publishBlock.ok ? undefined : publishBlock.reason}
-              onRename={(name) => mutate((d) => renameFlow(d, name))}
-              onToggleActive={() => mutate((d) => setActive(d, !d.active))}
+              onRename={onRename}
+              onToggleActive={onToggleActive}
               onPublish={publish}
               onUnpublish={unpublish}
               onTab={setTab}
-              onUndo={() => dispatchDraft({ type: "undo" })}
-              onRedo={() => dispatchDraft({ type: "redo" })}
-              onSave={() => void save()}
-              onExecute={() => void execute()}
+              onUndo={onUndo}
+              onRedo={onRedo}
+              onSave={onSave}
+              onExecute={onExecute}
               running={running}
-              onStop={() => void stop()}
+              onStop={onStop}
             />
 
             {notice && <div className="flow-notice" role="status">{notice}</div>}
@@ -921,6 +994,23 @@ export function FlowView() {
                   onStickyText={onStickyText}
                   onStickySize={onStickySize}
                 />
+                {doc.edges.length === 0 && doc.nodes.filter((n) => n.type !== "sticky").length <= 1 && (
+                  <div className="flow-canvas-coach" role="note">
+                    <p className="flow-canvas-coach-title">Start building</p>
+                    <p className="flow-canvas-coach-sub">
+                      Drag from a node&apos;s port to wire the next step, press <kbd>N</kbd> to add a node,
+                      or double-click anywhere on the canvas.
+                    </p>
+                    <div className="flow-canvas-coach-actions">
+                      <button type="button" className="flow-toolbar-execute" onClick={() => requestAdd({ x: 220, y: 180 })}>
+                        <Icon name="ph:plus" width={13} /> Add node
+                      </button>
+                      <button type="button" className="flow-toolbar-save" onClick={openTemplates}>
+                        <Icon name="ph:squares-four" width={13} /> Templates
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {activeRun && activeRun.steps.length > 0 && (
                   <FlowRunSteps
                     doc={doc}

@@ -72,6 +72,7 @@ export const SUITES = {
     "src/lib/env-file.test.ts",
     "src/lib/workflow-graph.test.ts",
     "src/lib/flow/flow-doc.test.ts",
+    "src/lib/flow/flow-node-summary.test.ts",
     "src/lib/flow/flow-prompt.test.ts",
     "src/lib/flow/flow-catalog.test.ts",
     "src/lib/flow/flow-compile.test.ts",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { memo, useMemo, useState, type FormEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { FlowDoc } from "@/lib/flows";
@@ -18,7 +18,7 @@ export type FlowLibraryProps = {
   onTemplate: () => void;
 };
 
-export function FlowLibrary(props: FlowLibraryProps) {
+function FlowLibraryImpl(props: FlowLibraryProps) {
   const [query, setQuery] = useState("");
   const [promptDraft, setPromptDraft] = useState("");
   const filtered = useMemo(() => {
@@ -46,7 +46,7 @@ export function FlowLibrary(props: FlowLibraryProps) {
             onClick={props.onTemplate}
             title="Browse templates"
           >
-            <Icon name="ph:squares-four" width={13} />
+            <Icon name="ph:squares-four" width={13} /> Templates
           </button>
           <button type="button" className="flow-library-new" onClick={props.onCreate} title="New flow">
             <Icon name="ph:plus" width={14} /> New
@@ -129,3 +129,7 @@ export function FlowLibrary(props: FlowLibraryProps) {
     </aside>
   );
 }
+
+// Memoized: the flows array and handlers from FlowView are stable between
+// list changes, so canvas edits and run ticks skip the whole left rail.
+export const FlowLibrary = memo(FlowLibraryImpl);

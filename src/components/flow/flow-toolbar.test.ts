@@ -38,4 +38,9 @@ assert.match(view, /publishBlockReason=\{publishBlock\.ok \? undefined : publish
 assert.match(view, /onPublish=\{publish\}/, "FlowView should wire toolbar publish action");
 assert.match(view, /onUnpublish=\{unpublish\}/, "FlowView should wire toolbar unpublish action");
 
+// The always-mounted header row is memoized behind stable FlowView handlers so
+// a 2.5s run-poll tick doesn't re-render it (2026-07-03 world-class pass).
+assert.match(source, /export const FlowToolbar = memo\(FlowToolbarImpl\)/, "FlowToolbar is memoized");
+assert.match(view, /onUndo=\{onUndo\}/, "the toolbar receives a stable undo handler (inline lambdas would defeat the memo)");
+
 console.log("flow-toolbar.test.ts OK");

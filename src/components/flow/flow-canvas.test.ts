@@ -38,4 +38,27 @@ assert.match(styles, /\.flow-node\.is-disabled[^}]*filter:/, "Disabled Flow node
 assert.match(styles, /\.flow-node\.is-stale[^}]*border-color:/, "Stale Flow nodes should have a distinct dirty canvas treatment");
 assert.match(styles, /\.flow-node-stale-badge/, "Stale Flow nodes should render a dedicated dirty marker");
 
+// ── 2026-07-03 world-class pass ──────────────────────────────────────────────
+// Cards say what they'll DO, not just what they are: a one-line config summary
+// (familiar, cron, URL…) renders under the type, yielding to a displayed note.
+assert.match(node, /flowNodeSummary\(node\)/, "node cards derive a config summary from the shared pure helper");
+assert.match(node, /displayedNote \? null : flowNodeSummary/, "a user-authored displayed note outranks the config summary");
+assert.match(node, /flow-node-summary/, "the config summary renders on the card");
+assert.match(node, /phase === "failed" && \(/, "a failed step is called out in words on the card, not just a red dot");
+assert.match(node, /flow-node-failed-badge/, "the failed badge has a dedicated class");
+assert.match(styles, /\.flow-node-summary/, "the summary line is styled");
+assert.match(styles, /\.flow-node-failed-badge/, "the failed badge is styled");
+// Empty-graph coaching: a canvas with nothing wired offers the next action
+// instead of bare dots.
+assert.match(view, /doc\.edges\.length === 0 && doc\.nodes\.filter\(\(n\) => n\.type !== "sticky"\)\.length <= 1/, "the coach shows only while nothing is wired yet");
+assert.match(view, /flow-canvas-coach/, "FlowView renders the empty-canvas coach");
+assert.match(styles, /\.flow-canvas-coach/, "the coach card is styled");
+// Keyboard shortcuts: undo/redo/save/duplicate/add-node work from the keyboard,
+// and never fire while typing or while a dialog owns focus.
+assert.match(view, /dispatchDraft\(\{ type: event\.shiftKey \? "redo" : "undo" \}\)/, "Cmd+Z / Shift+Cmd+Z drive the draft history");
+assert.match(view, /if \(dirty && !saving\) void save\(\)/, "Cmd+S saves only when there is something to save");
+assert.match(view, /onDuplicateNode\(selectedNodeId\)/, "Cmd+D duplicates the selected node");
+assert.match(view, /catalogOpen \|\| templateGalleryOpen \|\| requiredInputsPrompt/, "shortcuts stand down while any dialog owns focus");
+assert.match(view, /target\.isContentEditable/, "shortcuts stand down while typing");
+
 console.log("flow-canvas.test.ts OK");
