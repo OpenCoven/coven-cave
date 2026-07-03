@@ -8,6 +8,7 @@ import { SyntaxBlock } from "@/components/message-bubble";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { openExternalUrl } from "@/lib/open-external";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 /**
  * "Changes" right-panel tab (CHAT-D8-01): a per-session review surface for the
@@ -440,6 +441,7 @@ export function SessionChangesInner({
   const [committing, setCommitting] = useState(false);
   // Set after a successful commit so the "Create PR" affordance persists even
   // though the file list is now empty.
+  const { announce } = useAnnouncer();
   const [postCommit, setPostCommit] = useState<
     { sha: string; branch: string; onDefaultBranch: boolean } | null
   >(null);
@@ -702,6 +704,7 @@ export function SessionChangesInner({
         // refresh the checkpoint list so the new snapshot shows up.
         if (json.checkpointPath) {
           setCheckpointMessage("Reverted — a checkpoint was saved first, so you can undo it below.");
+          announce("File reverted — a checkpoint was saved first.");
         }
         await Promise.all([load(), loadCheckpoints()]);
       } catch (err) {
@@ -730,6 +733,7 @@ export function SessionChangesInner({
       };
       if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
       setPostCommit({ sha: json.sha ?? "", branch: json.branch ?? "", onDefaultBranch: json.onDefaultBranch === true });
+      announce("Changes committed.");
       setPrTitle(message.split("\n")[0].slice(0, 72));
       setPrBody("");
       setPrOpen(false);
@@ -758,6 +762,7 @@ export function SessionChangesInner({
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
       if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
       setPrUrl(json.url ?? null);
+      if (json.url) announce("Pull request opened.");
       setPrOpen(false);
       setPostCommit(null);
     } catch (err) {
