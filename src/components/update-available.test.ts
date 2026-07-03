@@ -36,6 +36,13 @@ assert.match(src, /resolveDownloadUrl\(fb\)/, "fallback download URL is the reso
 assert.match(src, /export function UpdateBannerTrigger/, "exports the banner trigger");
 assert.match(src, /export function UpdateSettingsRow/, "exports the settings row");
 assert.match(src, /async function resolveUpdate/, "resolves native-first, then fallback");
+assert.match(src, /kind:\s*"native-unavailable"/, "preserves native updater check failures as a distinct update state");
+assert.match(src, /message:\s*native\.message/, "native updater check failures carry the underlying error message");
+assert.doesNotMatch(
+  src,
+  /async function checkNativeUpdate\([\s\S]*?catch\s*\{\s*return null;[\s\S]*?async function installNativeUpdate/,
+  "native updater check failures must not be silently collapsed into the browser fallback path",
+);
 
 // Banner: dismissible CTA, persisted per version.
 assert.match(src, /pushBanner\(/, "pushes a shell banner when an update is available");
@@ -52,6 +59,8 @@ assert.match(src, /Install &amp; restart/, "native path offers install + restart
 assert.match(src, /Downloading…/, "shows download progress");
 assert.match(src, /Check for updates/, "settings row offers a manual re-check");
 assert.match(src, /Open installer in Browser/, "fallback keeps installer recovery inside Cave's Browser surface");
+assert.match(src, /Native updater unavailable/, "settings row distinguishes native updater failure from a normal installer fallback");
+assert.match(src, /Retry native update/, "settings row makes retrying native update the primary recovery action");
 
 // A failed native install must not dead-end: it captures the reason and offers
 // in-app recovery plus a retry, so the update is always reachable even when
