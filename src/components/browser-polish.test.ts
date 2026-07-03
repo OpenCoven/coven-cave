@@ -101,6 +101,55 @@ assert.match(
   "Mobile browser address input should meet the shared touch target",
 );
 
+// ───────── Native webview yields to DOM overlays ─────────
+// The embedded browser webview is an OS-level layer above the whole DOM, so
+// the pane must hide it whenever an overlay renders (onboarding covered by a
+// stuck white webview was the reported bug).
+assert.match(
+  pane,
+  /function surfaceIsCovered\(surface: HTMLElement, rect: DOMRect\): boolean/,
+  "pane has an occlusion detector for the native overlay",
+);
+assert.match(
+  pane,
+  /querySelectorAll\('\[role="dialog"\], \[aria-modal="true"\]'\)/,
+  "any visible dialog (Modal, onboarding, palette, quick chat) counts as cover",
+);
+assert.match(
+  pane,
+  /dialog\.getClientRects\(\)\.length > 0/,
+  "hidden-but-mounted dialogs must not count as cover",
+);
+assert.match(
+  pane,
+  /document\.elementFromPoint\(x, y\)/,
+  "the pane rect is point-sampled for non-dialog overlays",
+);
+assert.match(
+  pane,
+  /closest\('\[role="status"\], \[role="alert"\], \[aria-live\]'\)/,
+  "transient live regions (toasts) don't blank the page",
+);
+assert.match(
+  pane,
+  /toolbarOpenRef\.current \|\|\s*\n\s*rect\.width <= 1 \|\|\s*\n\s*rect\.height <= 1 \|\|\s*\n\s*surfaceIsCovered\(surface, rect\)/,
+  "the bounds loop hides all webviews while the pane is covered",
+);
+// browser_navigate repositions/creates the webview at the given bounds, and
+// the bounds loop only issues IPC on transitions — navigating while covered
+// must therefore target the offscreen position or the webview reappears over
+// the overlay and never re-hides (the onboarding screenshot bug).
+assert.match(
+  pane,
+  /const WEBVIEW_OFFSCREEN = -10000;/,
+  "offscreen constant mirrors OFFSCREEN_X/Y in src-tauri/src/browser.rs",
+);
+assert.match(
+  pane,
+  /const covered = toolbarOpenRef\.current \|\| surfaceIsCovered\(surface, rect\);[\s\S]{0,320}x: covered \? WEBVIEW_OFFSCREEN : rect\.left,\s*\n\s*y: covered \? WEBVIEW_OFFSCREEN : rect\.top,/,
+  "navigate loads covered webviews offscreen; the bounds loop re-seats them when the cover lifts",
+);
+
 // ───────── Task 4: Quick-open backdrop ─────────
 const qo = await readFile(new URL("./browser-quick-open.tsx", import.meta.url), "utf8");
 assert.match(qo, /bg-black\/40 backdrop-blur-sm/, "Backdrop must use bg-black/40 + backdrop-blur-sm");
