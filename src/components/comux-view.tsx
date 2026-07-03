@@ -25,6 +25,7 @@ import {
 } from "@/lib/code-layout-preset";
 import type { SearchResult } from "@/lib/project-search";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -448,6 +449,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
   const [saveError, setSaveError] = useState<string | null>(null);
   // Brief "Saved" confirmation after a successful write (auto-clears).
   const [justSaved, setJustSaved] = useState(false);
+  const { announce } = useAnnouncer();
   const [tabDropTargetId, setTabDropTargetId] = useState<string | null>(null);
   const [sessionsCollapsed, setSessionsCollapsed] = useState(false);
   // Projects list (the 200px column) visibility, driven by the Code workspace
@@ -1159,8 +1161,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
       setPreview({ kind: "text", content: editValue, size: json.size });
       setEditing(false);
       setJustSaved(true);
+      announce("File saved.");
     } catch (err) {
       setSaveError(String(err));
+      announce(`Couldn't save the file: ${String(err)}`, "assertive");
     } finally {
       setSaving(false);
       savingRef.current = false;
@@ -2172,9 +2176,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       top-level tabs); shown for the standalone surface. */}
                   {!isControlledRightView && (
                   <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-1.5">
-                    <div className="flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
+                    <div role="group" aria-label="Right pane view" className="flex items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
                       <button
                         type="button"
+                        aria-pressed={rightView === "files"}
                         onClick={() => { pinnedRightViewRef.current = true; setRightView("files"); }}
                         className={`flex items-center gap-1 rounded-[4px] px-2 py-0.5 transition-colors ${rightView === "files" ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
                       >
@@ -2183,6 +2188,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       </button>
                       <button
                         type="button"
+                        aria-pressed={rightView === "changes"}
                         onClick={() => { pinnedRightViewRef.current = true; setRightView("changes"); }}
                         className={`flex items-center gap-1 rounded-[4px] px-2 py-0.5 transition-colors ${rightView === "changes" ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
                       >
@@ -2260,9 +2266,10 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                           </span>
                         )}
                         {!editing && previewIsMarkdown && (
-                          <div className="flex shrink-0 items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
+                          <div role="group" aria-label="Preview format" className="flex shrink-0 items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)]/40 p-0.5 text-[10px]">
                             <button
                               type="button"
+                              aria-pressed={!previewRaw}
                               onClick={() => setPreviewRaw(false)}
                               className={`rounded-[4px] px-1.5 py-0.5 transition-colors ${!previewRaw ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
                             >
@@ -2270,6 +2277,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                             </button>
                             <button
                               type="button"
+                              aria-pressed={previewRaw}
                               onClick={() => setPreviewRaw(true)}
                               className={`rounded-[4px] px-1.5 py-0.5 transition-colors ${previewRaw ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
                             >

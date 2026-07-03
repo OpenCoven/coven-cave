@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { filterFileMentions } from "@/lib/file-mention";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 /**
  * Quick-open file picker (⌘P) for the Code workspace. Fuzzy-jumps to any file
@@ -55,6 +56,11 @@ export function CodeQuickOpen({
     };
   }, [open, root, familiarId]);
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Trap focus in the palette, restore it to the trigger on close, and close on
+  // Escape (shared dialog convention) — the bare autofocus let Tab escape to the
+  // page behind the backdrop and lost the return point.
+  useFocusTrap(open, dialogRef, { onEscape: onClose, focusFirst: false });
   useEffect(() => {
     if (open) requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
@@ -79,6 +85,7 @@ export function CodeQuickOpen({
       style={{ animation: "ui-modal-fade-in var(--duration-fast) var(--ease-decelerate)" }}
     >
       <div
+        ref={dialogRef}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

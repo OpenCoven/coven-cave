@@ -89,5 +89,14 @@ assert.match(
 // ── 2026-07-03 code-surface audit (perf): changes poll content guard ─────────
 assert.match(changes, /import \{ arrayContentEqual \} from "@\/lib\/array-content-equal"/, "changes panel imports the content-equality guard");
 assert.match(changes, /setFiles\(\(prev\) => \(arrayContentEqual\(prev, nextFiles\) \? prev : nextFiles\)\)/, "the 5s changes poll keeps the previous reference when the diff is unchanged");
+// ── 2026-07-03 code a11y batch ────────────────────────────────────────────────
+assert.match(comux, /const \{ announce \} = useAnnouncer\(\)/, "comux consumes the announcer");
+assert.match(comux, /announce\("File saved\."\)/, "saving a file announces");
+assert.match(comux, /role="group" aria-label="Right pane view"[\s\S]*?aria-pressed=\{rightView === "files"\}/, "Files/Changes toggle is a group with aria-pressed");
+assert.match(comux, /role="group" aria-label="Preview format"[\s\S]*?aria-pressed=\{!previewRaw\}/, "Rendered/Raw toggle is a group with aria-pressed");
+assert.match(changes, /const \{ announce \} = useAnnouncer\(\)/, "the changes panel consumes the announcer");
+assert.match(changes, /announce\("Changes committed\."\)/, "committing announces");
+assert.match(changes, /announce\("Pull request opened\."\)/, "opening a PR announces");
+assert.match(changes, /announce\("File reverted/, "reverting announces");
 
 console.log("comux-view-changes.test.ts: ok");
