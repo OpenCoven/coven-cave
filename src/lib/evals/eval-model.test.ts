@@ -68,6 +68,10 @@ function mkCase(over: Partial<EvalCase> = {}): EvalCase {
   assert.equal(judged.pass, true, "judge verdict >= 0.5 passes");
   assert.equal(judged.score, 0.8);
   assert.equal(applyJudgeVerdict(g, 0.3, "rude").pass, false, "judge verdict < 0.5 fails");
+  // An explicit judge boolean wins over the score threshold (a judge may return
+  // a high score but pass:false, or vice-versa).
+  assert.equal(applyJudgeVerdict(g, 0.9, "high score, explicit fail", false).pass, false, "explicit pass:false overrides a >=0.5 score");
+  assert.equal(applyJudgeVerdict(g, 0.2, "low score, explicit pass", true).pass, true, "explicit pass:true overrides a <0.5 score");
   assert.equal(graderNeedsModel({ kind: "contains", value: "x" }), false, "deterministic graders need no model");
 }
 

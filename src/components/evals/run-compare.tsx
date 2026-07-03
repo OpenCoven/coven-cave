@@ -51,7 +51,7 @@ export function RunCompare({ runs }: { runs: EvalRun[] }) {
     .map((s) => ({ status: s, count: counts.get(s)! }));
 
   const label = (r: EvalRun) =>
-    `${new Date(r.startedAt).toLocaleString()} · ${Math.round(r.summary.passRate * 100)}%`;
+    `${new Date(r.startedAt).toLocaleString()} · ${r.summary.passRate >= 1 ? 100 : Math.min(99, Math.round(r.summary.passRate * 100))}%`;
 
   return (
     <div className="evals-compare">

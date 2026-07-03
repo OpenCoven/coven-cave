@@ -119,7 +119,7 @@ async function gradeCase(
       continue;
     }
     const verdict = parseJudgeVerdict(text);
-    out.push(applyJudgeVerdict(g, verdict.score, verdict.reason));
+    out.push(applyJudgeVerdict(g, verdict.score, verdict.reason, verdict.pass));
   }
   return out;
 }

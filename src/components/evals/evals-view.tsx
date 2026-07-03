@@ -26,6 +26,7 @@ import {
 } from "@/lib/evals/eval-model";
 import { runSuite, type RunProgress } from "@/lib/evals/eval-runner";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import {
   instantiateTemplate,
@@ -297,19 +298,36 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       if (r.status !== "fulfilled") return null;
       try { return await r.value.json(); } catch { return null; }
     };
+    // Each poll rebuilds fresh arrays from JSON; guard every setter with a
+    // structural equality check so an unchanged snapshot returns the previous
+    // reference and doesn't re-render the whole surface + re-aggregate every
+    // tick (this poll runs every 30s even when idle).
     const runsData = (await readJson(runsR)) as { ok?: boolean; runs?: EvalRun[] } | null;
-    if (runsData?.ok && Array.isArray(runsData.runs)) setAllRuns(runsData.runs);
+    if (runsData?.ok && Array.isArray(runsData.runs)) {
+      const next = runsData.runs;
+      setAllRuns((prev) => (arrayContentEqual(prev, next) ? prev : next));
+    }
     const groupsData = (await readJson(groupsR)) as { ok?: boolean; groups?: EvalGroup[] } | null;
-    if (groupsData?.ok && Array.isArray(groupsData.groups)) setGroups(groupsData.groups);
+    if (groupsData?.ok && Array.isArray(groupsData.groups)) {
+      const next = groupsData.groups;
+      setGroups((prev) => (arrayContentEqual(prev, next) ? prev : next));
+    }
     const threadsData = (await readJson(threadsR)) as { ok?: boolean; snapshots?: ThreadEvalSnapshot[] } | null;
-    if (threadsData?.ok && Array.isArray(threadsData.snapshots)) setThreadSnapshots(threadsData.snapshots);
+    if (threadsData?.ok && Array.isArray(threadsData.snapshots)) {
+      const next = threadsData.snapshots;
+      setThreadSnapshots((prev) => (arrayContentEqual(prev, next) ? prev : next));
+    }
     const queueData = (await readJson(queueR)) as { ok?: boolean; queue?: ManualEvalQueueItem[] } | null;
-    if (queueData?.ok && Array.isArray(queueData.queue)) setQueue(queueData.queue);
+    if (queueData?.ok && Array.isArray(queueData.queue)) {
+      const next = queueData.queue;
+      setQueue((prev) => (arrayContentEqual(prev, next) ? prev : next));
+    }
     const retroData = (await readJson(retroR)) as RetroApiResponse | null;
     if (retroData?.ok && retroData.snapshot) setRetroSnapshot(retroData.snapshot);
     const sessionsData = (await readJson(sessionsR)) as { ok?: boolean; sessions?: SessionRow[] } | null;
     if (sessionsData?.ok && Array.isArray(sessionsData.sessions)) {
-      setEvalThreads(sessionsData.sessions.filter((s) => s.origin === "eval"));
+      const next = sessionsData.sessions.filter((s) => s.origin === "eval");
+      setEvalThreads((prev) => (arrayContentEqual(prev, next) ? prev : next));
     }
   }, []);
 
@@ -444,6 +462,9 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
         signal: controller.signal,
         onProgress: setProgress,
       });
+      // A stopped run is a truncated/partial result — don't record it or its
+      // depressed pass rate into history (trends / compare / insights).
+      if (controller.signal.aborted) return;
       setRuns((prev) => [result, ...prev]);
       setAllRuns((prev) => [result, ...prev.filter((run) => run.id !== result.id)]);
       setExpandedRunId(result.id);
@@ -1321,7 +1342,9 @@ function GraderRow({ grader, onChange, onRemove }: { grader: Grader; onChange: (
 // ---- Runs ------------------------------------------------------------------
 
 function pct(n: number): string {
-  return `${Math.round(n * 100)}%`;
+  // Only show 100% when it truly is: Math.round would render 99.5% as "100%"
+  // on a run that actually failed a case.
+  return `${n >= 1 ? 100 : Math.min(99, Math.round(n * 100))}%`;
 }
 
 function RunsPanel({

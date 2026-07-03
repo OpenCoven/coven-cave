@@ -406,11 +406,19 @@ export async function deleteRun(id: string): Promise<boolean> {
   }
 }
 
-/** Keep the newest EVAL_RUNS_CAP run files; drop the rest. */
+/** Keep the newest EVAL_RUNS_CAP run files *per suite*; drop the rest. Capping
+ *  globally let one busy suite silently evict another suite's run history. */
 async function pruneRuns(): Promise<void> {
-  const all = await listRuns();
-  if (all.length <= EVAL_RUNS_CAP) return;
-  for (const run of all.slice(EVAL_RUNS_CAP)) {
-    await rm(path.join(runsDir(), fileName(run.id, "run")), { force: true }).catch(() => {});
+  const bySuite = new Map<string, EvalRun[]>();
+  for (const run of await listRuns()) {
+    const list = bySuite.get(run.suiteId);
+    if (list) list.push(run);
+    else bySuite.set(run.suiteId, [run]);
+  }
+  for (const list of bySuite.values()) {
+    // listRuns is newest-first, so slice(CAP) is the oldest beyond the per-suite cap.
+    for (const run of list.slice(EVAL_RUNS_CAP)) {
+      await rm(path.join(runsDir(), fileName(run.id, "run")), { force: true }).catch(() => {});
+    }
   }
 }

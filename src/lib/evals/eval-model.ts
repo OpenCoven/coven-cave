@@ -314,14 +314,18 @@ export function graderNeedsModel(g: Grader): boolean {
  * Fold a judge verdict (produced by the client via the chat pipeline) into a
  * judge grader result. `verdictScore` is 0..1; pass threshold is 0.5.
  */
-export function applyJudgeVerdict(g: Grader, verdictScore: number, detail: string): GraderResult {
+export function applyJudgeVerdict(g: Grader, verdictScore: number, detail: string, pass?: boolean): GraderResult {
   const score = clamp01(verdictScore);
+  // Honor the judge's explicit boolean when it gave one; only fall back to the
+  // score threshold when it didn't. A judge can legitimately return score 0.9
+  // with pass:false (or vice-versa) and its own decision must win.
+  const passed = pass ?? score >= 0.5;
   return {
     kind: "llm_judge",
     label: graderLabel(g),
-    pass: score >= 0.5,
+    pass: passed,
     score,
-    detail: detail || (score >= 0.5 ? "judge passed" : "judge failed"),
+    detail: detail || (passed ? "judge passed" : "judge failed"),
   };
 }
 
@@ -359,10 +363,6 @@ export function summarizeResults(results: EvalCaseResult[]): EvalRunSummary {
     avgScore: mean(results.map((r) => r.score)),
     avgLatencyMs: mean(results.map((r) => r.latencyMs)),
   };
-}
-
-export function emptySummary(): EvalRunSummary {
-  return { ...EMPTY_SUMMARY };
 }
 
 /** Reasons a suite cannot be run, for surfacing a disabled Run button. */

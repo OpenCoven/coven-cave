@@ -26,7 +26,7 @@ export function EvalsInsightsPanel({ suite, runs }: { suite: EvalSuite | null; r
   const sla = suite?.slaMinPassRate;
   const latest = trend.length ? trend[trend.length - 1].y : null;
   const breached = sla != null && latest != null && latest < sla;
-  const pct = (n: number) => `${Math.round(n * 100)}%`;
+  const pct = (n: number) => `${n >= 1 ? 100 : Math.min(99, Math.round(n * 100))}%`;
 
   const failBars = clusters.byCase
     .filter((c) => c.failures > 0)
