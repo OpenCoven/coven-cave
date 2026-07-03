@@ -17,6 +17,17 @@
             "statusMessage": "Checking surface claims…"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/worktree-guard.mjs\"",
+            "timeout": 15,
+            "statusMessage": "Checking worktree/branch safety…"
+          }
+        ]
       }
     ]
   }
