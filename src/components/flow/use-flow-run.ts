@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { parseFlowRunProgress, type FlowRunProgress } from "@/lib/flow/flow-progress";
 import type { FlowRunRecord } from "@/lib/flows";
 
@@ -58,6 +58,12 @@ export function useFlowRun(run: FlowRunRecord | null): FlowRunProgress {
     };
   }, [sessionId, live]);
 
-  if (!run) return EMPTY;
-  return parseFlowRunProgress(transcript, run.steps);
+  // Memoize: parseFlowRunProgress regex-scans the whole transcript and mints a
+  // fresh object each call. Without this it re-ran on *every* FlowView render
+  // (keystroke, notice tick, unrelated setState) — even with no active run —
+  // and its new object identity cascaded into re-deriving all canvas nodes.
+  return useMemo(
+    () => (run ? parseFlowRunProgress(transcript, run.steps) : EMPTY),
+    [run, transcript],
+  );
 }

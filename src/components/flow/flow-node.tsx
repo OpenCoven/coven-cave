@@ -1,7 +1,7 @@
 "use client";
 
 import { Handle, NodeResizer, Position, type NodeProps, type Node } from "@xyflow/react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { FlowNodeType } from "@/lib/flow/flow-catalog";
 import type { FlowLayoutOrientation, FlowNode } from "@/lib/flow/flow-doc";
@@ -34,7 +34,7 @@ function handleOffset(index: number, count: number): string {
 }
 
 /** The n8n-style node card: icon tile, name, type subtitle, port handles. */
-export function FlowNodeView({ data, selected }: NodeProps<FlowRFNode>) {
+function FlowNodeViewImpl({ data, selected }: NodeProps<FlowRFNode>) {
   const { node, def, phase, stale, orientation } = data;
   const accent = def?.accent ?? "#7b7f87";
   const inputs = def?.inputs ?? [];
@@ -132,7 +132,7 @@ export function FlowNodeView({ data, selected }: NodeProps<FlowRFNode>) {
 
 /** Sticky note — a non-executable canvas annotation. Double-click to edit its
  *  text inline; drag the corner handles (when selected) to resize. */
-export function FlowStickyView({ data, selected }: NodeProps<FlowStickyRFNode>) {
+function FlowStickyViewImpl({ data, selected }: NodeProps<FlowStickyRFNode>) {
   const sticky = data.node.sticky;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(sticky?.text ?? "");
@@ -196,3 +196,10 @@ export function FlowStickyView({ data, selected }: NodeProps<FlowStickyRFNode>) 
     </div>
   );
 }
+
+// Memoized so an unrelated FlowView re-render (a run tick, a notice, a
+// keystroke in the detail panel) doesn't re-render every node card — only nodes
+// whose `data`/`selected` actually changed. Relies on the canvas keeping node
+// `data` identities stable (see the stabilized sticky callbacks in flow-view).
+export const FlowNodeView = memo(FlowNodeViewImpl);
+export const FlowStickyView = memo(FlowStickyViewImpl);

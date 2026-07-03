@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import path from "node:path";
 import { writeJsonAtomic } from "./atomic-write.ts";
-import { FLOW_SCHEMA_VERSION, normalizeNodeSettings, type FlowDoc, type FlowNodeSettings } from "../flow/flow-doc.ts";
+import { FLOW_SCHEMA_VERSION, normalizeNodeSettings, type FlowDoc, type FlowEdge, type FlowNodeSettings } from "../flow/flow-doc.ts";
 import type { FlowRunRecord } from "../flows.ts";
 
 export const FLOW_RUNS_CAP = 200;
@@ -44,14 +44,15 @@ function isValidDoc(value: unknown): value is FlowDoc {
 function coerceDoc(value: unknown): FlowDoc | null {
   if (!isValidDoc(value)) return null;
   const now = new Date().toISOString();
+  const nodes = coerceFlowNodes(value.nodes);
   return {
     id: value.id,
     name: typeof value.name === "string" && value.name.trim() ? value.name : value.id,
     active: Boolean(value.active),
     published: coercePublished(value.published),
     executionData: coerceExecutionData(value.executionData),
-    nodes: coerceFlowNodes(value.nodes),
-    edges: value.edges,
+    nodes,
+    edges: coerceFlowEdges(value.edges, nodes),
     createdAt: typeof value.createdAt === "string" ? value.createdAt : now,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : now,
     schema: typeof value.schema === "number" ? value.schema : FLOW_SCHEMA_VERSION,
@@ -85,6 +86,28 @@ function coerceFlowNodes(value: unknown): FlowDoc["nodes"] {
     ));
 }
 
+// Edges are validated against the coerced node set: an edge whose shape is
+// malformed, or whose source/target references a node that didn't survive
+// coercion, is dropped rather than persisted as a dangling reference that the
+// canvas and executor would otherwise have to skip on every load.
+function coerceFlowEdges(value: unknown, nodes: FlowDoc["nodes"]): FlowEdge[] {
+  if (!Array.isArray(value)) return [];
+  const ids = new Set(nodes.map((node) => node.id));
+  return value.filter((edge): edge is FlowEdge => {
+    if (!edge || typeof edge !== "object" || Array.isArray(edge)) return false;
+    const e = edge as Record<string, unknown>;
+    return (
+      typeof e.id === "string" &&
+      typeof e.source === "string" &&
+      typeof e.sourceHandle === "string" &&
+      typeof e.target === "string" &&
+      typeof e.targetHandle === "string" &&
+      ids.has(e.source) &&
+      ids.has(e.target)
+    );
+  });
+}
+
 function coerceNodeSettings(value: unknown): FlowNodeSettings | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const raw = value as Partial<FlowNodeSettings>;
@@ -115,6 +138,7 @@ function coercePublished(value: unknown): FlowDoc["published"] {
   if (typeof published.publishedAt !== "string" || typeof doc.id !== "string") return undefined;
   if (!Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) return undefined;
   const now = new Date().toISOString();
+  const nodes = coerceFlowNodes(doc.nodes);
   return {
     publishedAt: published.publishedAt,
     snapshot: {
@@ -122,8 +146,8 @@ function coercePublished(value: unknown): FlowDoc["published"] {
       name: typeof doc.name === "string" && doc.name.trim() ? doc.name : doc.id,
       active: Boolean(doc.active),
       executionData: coerceExecutionData(doc.executionData),
-      nodes: coerceFlowNodes(doc.nodes),
-      edges: doc.edges,
+      nodes,
+      edges: coerceFlowEdges(doc.edges, nodes),
       createdAt: typeof doc.createdAt === "string" ? doc.createdAt : now,
       updatedAt: typeof doc.updatedAt === "string" ? doc.updatedAt : now,
       schema: typeof doc.schema === "number" ? doc.schema : FLOW_SCHEMA_VERSION,

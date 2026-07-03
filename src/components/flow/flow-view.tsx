@@ -770,6 +770,14 @@ export function FlowView() {
     (id: string, patch: Partial<FlowStickyData>) => mutate((d) => updateSticky(d, id, patch)),
     [mutate],
   );
+  // Stable identities so FlowCanvas's docNodes memo (keyed on these) doesn't
+  // rebuild every node object on every FlowView render — that rebuild mints a
+  // fresh `data` object per node and defeats the memoized node cards.
+  const onStickyText = useCallback((id: string, text: string) => onChangeSticky(id, { text }), [onChangeSticky]);
+  const onStickySize = useCallback(
+    (id: string, width: number, height: number) => onChangeSticky(id, { width, height }),
+    [onChangeSticky],
+  );
 
   if (loaded && flows.length === 0 && !doc) {
     return (
@@ -903,8 +911,8 @@ export function FlowView() {
                   onInsertEdge={requestInsertEdge}
                   onTidy={tidy}
                   onLayoutOrientation={setAndApplyLayoutOrientation}
-                  onStickyText={(id, text) => onChangeSticky(id, { text })}
-                  onStickySize={(id, width, height) => onChangeSticky(id, { width, height })}
+                  onStickyText={onStickyText}
+                  onStickySize={onStickySize}
                 />
                 {activeRun && activeRun.steps.length > 0 && (
                   <FlowRunSteps
