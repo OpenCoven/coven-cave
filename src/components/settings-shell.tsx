@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { SettingsGroup, settingsGroupId } from "@/components/ui/settings-group";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { SettingControlRow, Segmented } from "@/components/ui/settings-controls";
 import { SearchInput } from "@/components/ui/search-input";
 import { prefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
@@ -149,6 +150,13 @@ export function SettingsShell() {
         el.scrollIntoView({ block: "start", behavior: prefersReducedMotion() ? "auto" : "smooth" });
         el.classList.add("settings-group--found");
         window.setTimeout(() => el.classList.remove("settings-group--found"), 1600);
+        // Move focus/reading position to the jumped-to group so keyboard and SR
+        // users land on it, not just the sighted eye (the flash is visual-only).
+        const focusTarget = el.querySelector<HTMLElement>(
+          "input, select, textarea, button, [tabindex]",
+        ) ?? el;
+        if (focusTarget === el && !el.hasAttribute("tabindex")) el.setAttribute("tabindex", "-1");
+        focusTarget.focus({ preventScroll: true });
       }
       setScrollTarget(null);
     });
@@ -365,6 +373,7 @@ function WorkspacePathField() {
     <input
       value={path}
       readOnly
+      aria-label="Workspace path"
       className="w-full max-w-sm rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] outline-none"
     />
   );
@@ -394,6 +403,7 @@ function DaemonSection() {
   const [executorText, setExecutorText] = useState("");
   const [savingConnection, setSavingConnection] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
   const [savingTravel, setSavingTravel] = useState(false);
   const [travelError, setTravelError] = useState<string | null>(null);
 
@@ -434,9 +444,12 @@ function DaemonSection() {
         throw new Error(json?.error || `save failed (${res.status})`);
       }
       setMode(nextMode);
+      announce("Daemon connection saved.");
       refresh();
     } catch (err) {
-      setConnectionError(err instanceof Error ? err.message : "could not save daemon connection");
+      const msg = err instanceof Error ? err.message : "could not save daemon connection";
+      setConnectionError(msg);
+      announce(`Couldn't save daemon connection: ${msg}`, "assertive");
     } finally {
       setSavingConnection(false);
     }
@@ -525,6 +538,7 @@ function DaemonSection() {
             value={hubUrl}
             onChange={(event) => setHubUrl(event.target.value)}
             onBlur={() => void saveConnection()}
+            aria-label="Server hub URL"
             placeholder="http://server.tailnet:8787"
             disabled={mode !== "hub"}
             className="w-full min-w-[260px] max-w-md rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-1.5 font-mono text-[11px] text-[var(--text-primary)] outline-none disabled:opacity-50"
@@ -535,6 +549,7 @@ function DaemonSection() {
             value={executorText}
             onChange={(event) => setExecutorText(event.target.value)}
             onBlur={() => void saveConnection()}
+            aria-label="Executor addresses, one per line"
             placeholder={"executor-1.tailnet:8787\nexecutor-2.tailnet:8787"}
             disabled={mode !== "hub"}
             rows={3}
@@ -551,7 +566,7 @@ function DaemonSection() {
             <Icon name="ph:floppy-disk-bold" width={12} />
             {savingConnection ? "Saving..." : "Save connection"}
           </button>
-          {connectionError && <span className="text-[11px] text-[var(--color-danger)]">{connectionError}</span>}
+          {connectionError && <span role="alert" className="text-[11px] text-[var(--color-danger)]">{connectionError}</span>}
         </div>
       </SettingsGroup>
 
@@ -1377,6 +1392,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
   // colorEditorBase: the preset that seeds the color editor; null = editor hidden.
   const [colorEditorBase, setColorEditorBase] = useState<PresetTheme | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -1385,6 +1401,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
   const handleResync = async () => {
     setSyncing(true);
     const ok = await persistThemeTokens();
+    announce(ok ? "Theme synced to phone." : "Couldn't reach the daemon to sync.", ok ? "polite" : "assertive");
     setSyncing(false);
     setSyncResult({ ok, at: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) });
   };
@@ -1494,9 +1511,9 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
     setImportError(null);
     const canonical = normalizeTweakcnUrl(importUrl);
     if (!canonical) {
-      setImportError(
-        "Invalid tweakcn URL. Expected https://tweakcn.com/themes/{id}, /r/themes/{id}, or /editor/theme?theme={name}.",
-      );
+      const msg = "Invalid tweakcn URL. Expected https://tweakcn.com/themes/{id}, /r/themes/{id}, or /editor/theme?theme={name}.";
+      setImportError(msg);
+      announce(msg, "assertive");
       return;
     }
 
@@ -1530,8 +1547,11 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
       setCustomData(data);
       setActiveTheme("custom");
       setImportUrl("");
+      announce(`Imported theme "${data.name}".`);
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : "Import failed.");
+      const msg = err instanceof Error ? err.message : "Import failed.";
+      setImportError(msg);
+      announce(`Theme import failed: ${msg}`, "assertive");
     } finally {
       setImporting(false);
     }
@@ -1713,7 +1733,7 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
             </button>
           </div>
           {importError && (
-            <p className="flex items-start gap-1.5 text-[11px] text-[var(--color-danger)]">
+            <p role="alert" className="flex items-start gap-1.5 text-[11px] text-[var(--color-danger)]">
               <Icon name="ph:warning-circle" width={12} className="mt-px shrink-0" />
               {importError}
             </p>

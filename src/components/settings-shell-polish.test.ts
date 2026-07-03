@@ -313,4 +313,15 @@ assert.match(
   "Settings overview should collapse to one column on mobile",
 );
 
+// ── 2026-07-03 settings a11y batch ────────────────────────────────────────────
+assert.match(source, /const \{ announce \} = useAnnouncer\(\)/, "the settings surface consumes the shared announcer");
+assert.match(source, /announce\("Daemon connection saved\."\)/, "saving the daemon connection announces");
+assert.match(source, /announce\(ok \? "Theme synced to phone\." : "Couldn't reach the daemon to sync\.", ok \? "polite" : "assertive"\)/, "resync announces its result");
+assert.match(source, /announce\(`Imported theme/, "importing a theme announces");
+assert.match(source, /aria-label="Workspace path"/, "the workspace path field is labelled");
+assert.match(source, /aria-label="Server hub URL"/, "the hub URL input is labelled");
+assert.match(source, /aria-label="Executor addresses, one per line"/, "the executor textarea is labelled");
+assert.match(source, /focusTarget\.focus\(\{ preventScroll: true \}\)/, "a search/deep-link jump moves focus to the target group");
+assert.match(source, /connectionError && <span role="alert"/, "the daemon save error is a live alert");
+
 console.log("settings-shell-polish.test.ts OK");
