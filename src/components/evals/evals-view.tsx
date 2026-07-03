@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type 
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { RetroRunsView } from "@/components/retro-runs-view";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
@@ -446,6 +447,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     });
   }, [draft, selectSuite]);
 
+  const { announce } = useAnnouncer();
   const run = useCallback(async () => {
     if (!draft || blockReason) return;
     const controller = new AbortController();
@@ -453,6 +455,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
     setRunning(true);
     setTab("runs");
     setProgress({ index: 0, total: draft.cases.length, results: [], phase: "running" });
+    announce(`Running suite ${draft.name}, ${draft.cases.length} cases`);
     try {
       const famName = familiars.find((f) => f.id === familiarId)?.display_name;
       const result = await runSuite({
@@ -468,6 +471,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       setRuns((prev) => [result, ...prev]);
       setAllRuns((prev) => [result, ...prev.filter((run) => run.id !== result.id)]);
       setExpandedRunId(result.id);
+      announce(`Run complete: ${result.summary.passed} of ${result.summary.total} passed, ${pct(result.summary.passRate)}`);
       // Persist (best-effort; desktop-only route).
       void fetch("/api/evals/runs", {
         method: "POST",
@@ -479,7 +483,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
       setProgress(null);
       abortRef.current = null;
     }
-  }, [draft, blockReason, familiarId, familiars]);
+  }, [draft, blockReason, familiarId, familiars, announce]);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -550,6 +554,7 @@ export function EvalsView({ familiars, activeFamiliarId }: Props) {
                 <button
                   type="button"
                   className={`evals-suite-row${s.id === selectedId ? " is-active" : ""}`}
+                  aria-current={s.id === selectedId ? "true" : undefined}
                   onClick={() => selectSuite(s)}
                 >
                   <span className="evals-suite-name">{s.name}</span>
@@ -1367,7 +1372,7 @@ function RunsPanel({
           <div className="evals-progress-head">
             <span className="evals-spinner" aria-hidden /> Running case {Math.min(progress.index + 1, progress.total)} of {progress.total}
           </div>
-          <div className="evals-progress-bar" role="progressbar" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.results.length}>
+          <div className="evals-progress-bar" role="progressbar" aria-label="Suite run progress" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.results.length}>
             <span style={{ width: pct(progress.total ? progress.results.length / progress.total : 0) }} />
           </div>
           {progress.results.length > 0 && <ResultTable results={progress.results} />}
@@ -1440,7 +1445,7 @@ function ResultTable({ results }: { results: EvalRun["results"] }) {
               <ul className="evals-grader-results">
                 {res.graders.map((g, i) => (
                   <li key={i} className={g.pass ? "is-pass" : "is-fail"}>
-                    <Icon name={g.pass ? "ph:check" : "ph:x"} width={11} />
+                    <Icon name={g.pass ? "ph:check" : "ph:x"} width={11} aria-label={g.pass ? "passed" : "failed"} />
                     <span className="evals-grader-result-label">{g.label}</span>
                     <span className="evals-grader-result-detail">{g.detail}</span>
                   </li>

@@ -20,17 +20,21 @@ export function TrendChart({
   height = 160,
   threshold,
   fill = true,
+  ariaLabel,
 }: {
   series: TrendSeries[];
   height?: number;
   threshold?: number;
   fill?: boolean;
+  /** When set, the chart SVG is exposed to AT as role="img" with this label (a
+   *  text summary of the data). Without it the SVG stays aria-hidden. */
+  ariaLabel?: string;
 }) {
   return (
     <div className="cave-chart cave-chart--trend" style={{ height }}>
       <ParentSize>
         {({ width }) => (
-          <TrendInner width={width} height={height} series={series} threshold={threshold} fill={fill} />
+          <TrendInner width={width} height={height} series={series} threshold={threshold} fill={fill} ariaLabel={ariaLabel} />
         )}
       </ParentSize>
     </div>
@@ -43,12 +47,14 @@ function TrendInner({
   series,
   threshold,
   fill,
+  ariaLabel,
 }: {
   width: number;
   height: number;
   series: TrendSeries[];
   threshold?: number;
   fill: boolean;
+  ariaLabel?: string;
 }) {
   const margin = { top: 8, right: 8, bottom: 8, left: 8 };
   const iw = Math.max(0, width - margin.left - margin.right);
@@ -65,7 +71,7 @@ function TrendInner({
   const yScale = scaleLinear({ domain: [0, yMax], range: [ih, 0], nice: true });
 
   return (
-    <svg width={width} height={height} aria-hidden>
+    <svg width={width} height={height} {...(ariaLabel ? { role: "img", "aria-label": ariaLabel } : { "aria-hidden": true })}>
       <Group left={margin.left} top={margin.top}>
         {threshold != null ? (
           <line className="cave-chart__threshold" x1={0} x2={iw} y1={yScale(threshold)} y2={yScale(threshold)} />

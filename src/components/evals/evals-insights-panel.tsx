@@ -51,6 +51,11 @@ export function EvalsInsightsPanel({ suite, runs }: { suite: EvalSuite | null; r
           series={[{ id: suite?.id ?? "all", label: "Pass rate", color: "var(--accent-presence)", points: trend }]}
           threshold={sla}
           height={160}
+          ariaLabel={
+            trend.length
+              ? `Pass rate over ${trend.length} run${trend.length === 1 ? "" : "s"}: latest ${pct(latest ?? 0)}${trend.length > 1 ? `, ranging ${pct(Math.min(...trend.map((p) => p.y)))} to ${pct(Math.max(...trend.map((p) => p.y)))}` : ""}`
+              : "Pass rate over time: no runs yet"
+          }
         />
       </section>
 
