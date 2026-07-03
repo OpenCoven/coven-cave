@@ -742,6 +742,9 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/cave-familiar-images.test.ts",
+  "src/lib/user-avatar-image.test.ts",
+  "src/lib/familiar-resolve.test.ts",
   "src/lib/gh-review-html.test.ts",
   "src/lib/evals/eval-analytics.test.ts",
   "src/lib/home-digest.test.ts",
