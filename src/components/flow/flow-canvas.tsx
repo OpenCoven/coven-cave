@@ -179,6 +179,11 @@ if (syncedViewKey !== viewKey) {
     [nodes, phases, selectedNodeId, staleNodeIds],
   );
 
+  const nodeDefinitionsById = useMemo(
+    () => new Map(docNodes.map((node) => [node.id, node.data.def])),
+    [docNodes],
+  );
+
   const edges = useMemo<Edge[]>(
     () =>
       doc.edges.map((edge) => {
@@ -186,7 +191,7 @@ if (syncedViewKey !== viewKey) {
         // Branch label: when the source node fans out over several labeled
         // ports (router/if/loop), name the branch on the wire itself — the
         // tiny port badge alone doesn't survive a glance at a busy canvas.
-        const sourceDef = docNodes.find((node) => node.id === edge.source)?.data.def;
+        const sourceDef = nodeDefinitionsById.get(edge.source);
         const branchLabel =
           sourceDef && sourceDef.outputs.length > 1
             ? sourceDef.outputs.find((port) => port.id === edge.sourceHandle)?.label
@@ -204,7 +209,7 @@ if (syncedViewKey !== viewKey) {
           data: { onInsert: () => onInsertEdge(edge.id), branchLabel },
         } satisfies Edge;
       }),
-    [doc.edges, docNodes, activeNodeId, onInsertEdge],
+    [doc.edges, nodeDefinitionsById, activeNodeId, onInsertEdge],
   );
 
   const handleNodesChange = useCallback((changes: NodeChange<Node<FlowNodeData>>[]) => {
