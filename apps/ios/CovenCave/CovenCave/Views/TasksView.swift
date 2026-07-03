@@ -31,6 +31,7 @@ struct TasksView: View {
     /// A task awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: BoardCard?
     @State private var showReminders = false
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// How the task list is partitioned into sections.
     enum GroupBy: String, CaseIterable, Identifiable {
@@ -269,16 +270,30 @@ struct TasksView: View {
     /// reusing the same `sections` as the list — so group-by, sort, search, and
     /// filters all apply. Tap a card for its detail; long-press for the actions.
     private var kanbanBoard: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: 12) {
-                ForEach(sections) { section in kanbanColumn(section) }
+        GeometryReader { geo in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(sections) { section in
+                        kanbanColumn(section, width: kanbanColumnWidth(available: geo.size.width))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
         }
     }
 
-    @ViewBuilder private func kanbanColumn(_ section: TaskSection) -> some View {
+    /// Fit as many 280pt-minimum columns as the pane allows (capped at the
+    /// section count), then stretch them to consume the leftover width — no
+    /// dead right margin on iPad/Mac.
+    private func kanbanColumnWidth(available: CGFloat) -> CGFloat {
+        let inset: CGFloat = 32, spacing: CGFloat = 12, minWidth: CGFloat = 280
+        let usable = max(minWidth, available - inset)
+        let fit = max(1, min(CGFloat(sections.count), ((usable + spacing) / (minWidth + spacing)).rounded(.down)))
+        return max(minWidth, (usable - spacing * (fit - 1)) / fit)
+    }
+
+    @ViewBuilder private func kanbanColumn(_ section: TaskSection, width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 if let image = section.systemImage { Image(systemName: image).accessibilityHidden(true) }
@@ -294,7 +309,12 @@ struct TasksView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 8) {
                     ForEach(section.cards) { card in
-                        Button { boardDetail = card } label: {
+                        Button {
+                            // Regular width has a live detail column — use it,
+                            // matching the List path; compact keeps the sheet.
+                            if horizontalSizeClass == .regular { selection = card }
+                            else { boardDetail = card }
+                        } label: {
                             TaskRow(card: card)
                                 .padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -307,7 +327,7 @@ struct TasksView: View {
                 .padding(.bottom, 8)
             }
         }
-        .frame(width: 280)
+        .frame(width: width)
     }
 
     private var taskList: some View {
