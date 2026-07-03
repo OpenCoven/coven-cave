@@ -22,8 +22,13 @@ assert.match(
 );
 assert.match(
   src,
-  /func pasteHost\(\) \{[\s\S]*?UIPasteboard\.general\.string[\s\S]*?host = cleanHost\(pasted\)/,
-  "pasteHost should read the clipboard only on the explicit tap and clean it",
+  /func pasteHost\(\) \{[\s\S]*?UIPasteboard\.general\.string[\s\S]*?apply\(pasted\)/,
+  "pasteHost should read the clipboard only on the explicit tap and route it through the invite parser",
+);
+assert.match(
+  src,
+  /func apply\(_ input: String\) \{[\s\S]*?CaveInvite\.parse\(cleanHost\(input\)\)/,
+  "any input — typed, pasted, or scanned — is cleaned then parsed as an invite (host + optional credential)",
 );
 
 // --- Cleanup: trim + strip wrapping quotes/trailing slash, KEEP the scheme ----
@@ -32,7 +37,11 @@ assert.match(
   /func cleanHost\(_ raw: String\) -> String \{[\s\S]*?trimmingCharacters\(in: \.whitespacesAndNewlines\)[\s\S]*?hasSuffix\("\/"\)/,
   "cleanHost should trim whitespace and strip a trailing slash",
 );
-assert.match(src, /host = cleanHost\(host\)/, "connect should clean the host before configuring");
+assert.match(
+  src,
+  /CaveInvite\.parse\(cleanHost\(host\)\)/,
+  "connect should clean and invite-parse the host before configuring",
+);
 
 // --- Gentle, non-blocking malformed hint -------------------------------------
 assert.match(

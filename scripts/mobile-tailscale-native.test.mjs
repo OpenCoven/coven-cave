@@ -35,8 +35,8 @@ assert.match(libRs, /WebviewUrl::App\("index\.html"\.into\(\)\)/);
 const swiftRootView = read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
 assert.match(
   swiftRootView,
-  /case \.unreachable:\s*\n\s*ConnectionView\(\)/,
-  "native SwiftUI app should return unreachable saved hosts to the connection screen",
+  /case \.unreachable, \.needsAuth:\s*\n\s*ConnectionView\(\)/,
+  "native SwiftUI app should return unreachable AND pairing-required hosts to the connection screen",
 );
 
 const swiftChatThread = read("apps/ios/CovenCave/CovenCave/State/ChatThread.swift");
