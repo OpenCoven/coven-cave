@@ -707,6 +707,9 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
   const urgency = scheduleUrgency(card.endDate, card.status, todayMs);
   const attachmentCount = card.attachments?.length ?? 0;
   const hasChips = !!schedule || !!card.cwd || card.links.length > 0 || card.labels.length > 0 || attachmentCount > 0 || !!session;
+  // A card with neither a project nor a cwd can't root its task chats — new
+  // chat starts are refused and linked chats can't inherit a project. Nudge.
+  const missingProject = !card.projectId && !card.cwd;
   // The metadata chips below are visual-only (title-attribute spans); fold the
   // same state into the card's accessible name so AT users hear it.
   const ariaMeta = [
@@ -718,6 +721,7 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
         : `scheduled ${schedule}`
       : null,
     session ? "linked chat" : null,
+    missingProject ? "no project set" : null,
     attachmentCount > 0 ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}` : null,
     card.labels.length > 0 ? `labels ${card.labels.join(", ")}` : null,
   ].filter(Boolean).join(", ");
@@ -764,6 +768,14 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
       <div className="board-kanban-card-top">
         <span className={`board-kanban-priority-pill board-kanban-priority-pill--${card.priority}`}>{pri.label}</span>
         <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
+        {missingProject && (
+          <span
+            className="board-kanban-card-chip board-kanban-card-chip--no-project"
+            title="No project set — pick one in the card's Project field so task chats open in the right place"
+          >
+            <Icon name="ph:folder" width={9} aria-hidden /> No project
+          </span>
+        )}
       </div>
       <div className="board-kanban-card-title">{card.title}</div>
       {card.notes && <p className="board-kanban-card-notes">{card.notes}</p>}
