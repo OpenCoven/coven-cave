@@ -1194,9 +1194,12 @@ function DocDetail({ doc, docNav }: { doc: LibraryDocBody; docNav?: DocNav }) {
     });
   };
 
-  // Reading time estimate
-  const wordCount = doc.body.split(/\s+/).filter(Boolean).length;
-  const readMins = Math.max(1, Math.ceil(wordCount / 200));
+  // Reading time estimate — memoized so this full-body regex scan isn't rerun
+  // on every scroll-tick re-render (setScrollPct fires unthrottled).
+  const readMins = useMemo(
+    () => Math.max(1, Math.ceil(doc.body.split(/\s+/).filter(Boolean).length / 200)),
+    [doc.body],
+  );
 
   // Scroll progress
   const [scrollPct, setScrollPct] = useState(0);

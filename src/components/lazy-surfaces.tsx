@@ -78,3 +78,10 @@ export const AutomationsView = dynamic(
   timed("automations", () => import("@/components/automations-view").then((m) => m.AutomationsView)),
   { ssr: false, loading: SurfaceFallback },
 );
+
+// LibraryView statically pulls ComuxView → CodeMirror (+ dnd-kit,
+// react-resizable-panels); lazy-loading keeps all of it out of the boot bundle.
+export const LibraryView = dynamic(
+  timed("library", () => import("@/components/library-view").then((m) => m.LibraryView)),
+  { ssr: false, loading: SurfaceFallback },
+);
