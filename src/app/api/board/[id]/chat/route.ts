@@ -62,9 +62,9 @@ export async function POST(
 
   // The UI sends the root for card.projectId when present; prefer that explicit
   // project scope, then the card's own project association, then its cwd.
-  // NEVER fall back to process.cwd(): that roots the task chat in the app's
-  // own checkout, records the wrong project_root on the session, and the chat
-  // picker then displays the wrong project for the task.
+  // NEVER fall back to the app's own working directory: that roots the task
+  // chat in the coven-cave checkout, records the wrong project_root on the
+  // session, and the chat picker then displays the wrong project for the task.
   const cardProjectRoot = card.projectId
     ? (projectById(card.projectId, await loadProjects())?.root ?? null)
     : null;
