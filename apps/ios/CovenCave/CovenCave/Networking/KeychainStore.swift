@@ -25,7 +25,10 @@ enum KeychainStore {
         if status == errSecItemNotFound {
             var add = query
             add[kSecValueData as String] = data
-            SecItemAdd(add as CFDictionary, nil)
+            let addStatus = SecItemAdd(add as CFDictionary, nil)
+            if addStatus != errSecSuccess { assertionFailure("Keychain add failed: \(addStatus)") }
+        } else if status != errSecSuccess {
+            assertionFailure("Keychain update failed: \(status)")
         }
     }
 
