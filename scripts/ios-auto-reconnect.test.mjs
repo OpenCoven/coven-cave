@@ -22,7 +22,7 @@ assert.match(
 );
 assert.match(
   model,
-  /func connectWithRetry[\s\S]*?while connectionState != \.connected[\s\S]*?connectionState = \.checking[\s\S]*?Task\.sleep[\s\S]*?await refreshConnection\(\)/,
+  /func connectWithRetry[\s\S]*?while connectionState != \.connected[\s\S]*?connectionState = \.checking[\s\S]*?Task\.sleep[\s\S]*?await refreshConnection\(reloadLoadedSurfaces: shouldReloadLoadedSurfaces\)/,
   "connectWithRetry should retry refreshConnection while held at .checking (no unreachable flash)",
 );
 assert.match(

@@ -118,6 +118,11 @@ enum CaveError: LocalizedError {
     case decoding(String)
     case transport(String)
 
+    static func isAuthFailure(_ error: Error) -> Bool {
+        guard case CaveError.badResponse(let code) = error else { return false }
+        return code == 401 || code == 403
+    }
+
     var errorDescription: String? {
         switch self {
         case .notConfigured: return "No host configured."

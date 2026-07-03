@@ -8,7 +8,8 @@ extension CaveClient {
     private var devSession: URLSession {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 25
-        config.waitsForConnectivity = false
+        config.timeoutIntervalForResource = 60
+        config.waitsForConnectivity = true
         return URLSession(configuration: config)
     }
 

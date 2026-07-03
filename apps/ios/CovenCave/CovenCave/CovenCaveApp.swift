@@ -22,6 +22,7 @@ struct CovenCaveApp: App {
                 .tint(resolved.chrome.accent)
                 .preferredColorScheme(resolved.scheme)
                 .task {
+                    app.startConnectionSupervisor()
                     // Route notification taps to the reminders list, and show
                     // reminder banners while the app is foregrounded.
                     notificationDelegate.onOpen = { app.handleDeepLink($0) }

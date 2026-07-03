@@ -18,8 +18,37 @@ struct CaveClient {
     private var session: URLSession {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 20
-        config.waitsForConnectivity = false
+        config.timeoutIntervalForResource = 60
+        config.waitsForConnectivity = true
         return URLSession(configuration: config)
+    }
+
+    func data(for req: URLRequest) async throws -> (Data, URLResponse) {
+        let method = (req.httpMethod ?? "GET").uppercased()
+        let retryDelays: [Duration] = ["GET", "HEAD"].contains(method)
+            ? [.milliseconds(350), .seconds(1)]
+            : []
+        for attempt in 0...retryDelays.count {
+            do {
+                return try await session.data(for: req)
+            } catch {
+                guard attempt < retryDelays.count, Self.isTransient(error) else { throw error }
+                try await Task.sleep(for: retryDelays[attempt])
+            }
+        }
+        throw CaveError.transport("Network request failed.")
+    }
+
+    private static func isTransient(_ error: Error) -> Bool {
+        guard let urlError = error as? URLError else { return false }
+        switch urlError.code {
+        case .timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
+             .dnsLookupFailed, .notConnectedToInternet, .internationalRoamingOff,
+             .callIsActive, .dataNotAllowed:
+            return true
+        default:
+            return false
+        }
     }
 
     private func request(_ path: String, method: String = "GET", body: Data? = nil) throws -> URLRequest {
@@ -67,7 +96,7 @@ struct CaveClient {
     /// using what we have".
     func refreshAccessToken() async -> String? {
         guard let req = try? request("api/mobile-token/refresh", method: "POST") else { return nil }
-        guard let (data, resp) = try? await session.data(for: req),
+        guard let (data, resp) = try? await data(for: req),
               let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let decoded = try? JSONDecoder().decode(TokenRefreshResponse.self, from: data),
               decoded.ok, let token = decoded.token, !token.isEmpty
@@ -81,8 +110,8 @@ struct CaveClient {
     func ping() async -> Bool {
         guard let req = try? request("api/familiars") else { return false }
         do {
-            let (_, resp) = try await session.data(for: req)
-            return (resp as? HTTPURLResponse).map { (200..<500).contains($0.statusCode) } ?? false
+            let (_, resp) = try await data(for: req)
+            return (resp as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } ?? false
         } catch {
             return false
         }
@@ -92,7 +121,7 @@ struct CaveClient {
 
     func familiars() async throws -> [Familiar] {
         let req = try request("api/familiars")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(FamiliarsResponse.self, from: data).familiars
@@ -111,7 +140,7 @@ struct CaveClient {
 
     func sessions(includeArchived: Bool = false) async throws -> [SessionRow] {
         let req = try request("api/sessions/list\(includeArchived ? "?includeArchived=1" : "")")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(SessionsResponse.self, from: data).sessions
@@ -124,7 +153,7 @@ struct CaveClient {
 
     func tasks() async throws -> [BoardCard] {
         let req = try request("api/board")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(BoardResponse.self, from: data).cards
@@ -207,13 +236,13 @@ struct CaveClient {
     /// `DELETE /api/board/{id}` — remove a task.
     func deleteTask(cardId: String) async throws {
         let req = try request("api/board/\(cardId)", method: "DELETE")
-        let (_, resp) = try await session.data(for: req)
+        let (_, resp) = try await data(for: req)
         try Self.check(resp)
     }
 
     private func patchTask(cardId: String, payload: Data) async throws -> BoardCard {
         let req = try request("api/board/\(cardId)", method: "PATCH", body: payload)
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         let decoded = try JSONDecoder().decode(BoardPatchResponse.self, from: data)
         if let card = decoded.card { return card }
@@ -222,7 +251,7 @@ struct CaveClient {
 
     func conversation(sessionId: String) async throws -> Conversation? {
         let req = try request("api/chat/conversation/\(sessionId)")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ConversationResponse.self, from: data).conversation
@@ -242,7 +271,7 @@ struct CaveClient {
         var path = "api/chat/model-state?familiarId=\(urlQuery(familiarId))"
         if let sessionId, !sessionId.isEmpty { path += "&sessionId=\(urlQuery(sessionId))" }
         let req = try request(path)
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ChatModelStateResponse.self, from: data)
@@ -258,7 +287,7 @@ struct CaveClient {
         if let sessionId, !sessionId.isEmpty { body["sessionId"] = sessionId }
         let payload = try JSONEncoder().encode(body)
         let req = try request("api/chat/model-state", method: "PATCH", body: payload)
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ChatModelStateResponse.self, from: data)
@@ -347,7 +376,7 @@ struct CaveClient {
     /// `/daemon` — desktop daemon health (`GET /api/daemon/status`).
     func daemonStatus() async throws -> DaemonStatus {
         let req = try request("api/daemon/status")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         return try JSONDecoder().decode(DaemonStatus.self, from: data)
     }
@@ -375,7 +404,7 @@ struct CaveClient {
         let payload = try JSONEncoder().encode(["command": command])
         var req = try request("api/coven/exec", method: "POST", body: payload)
         req.timeoutInterval = 30
-        let (data, _) = try await session.data(for: req)
+        let (data, _) = try await data(for: req)
         return try JSONDecoder().decode(CovenExecResult.self, from: data)
     }
 
@@ -405,7 +434,7 @@ struct CaveClient {
     func routeLink(_ body: RouteLinkBody) async throws -> RouteLinkResult {
         let payload = try JSONEncoder().encode(body)
         let req = try request("api/library/route-link", method: "POST", body: payload)
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         return try JSONDecoder().decode(RouteLinkResult.self, from: data)
     }
@@ -417,7 +446,7 @@ struct CaveClient {
     /// `api/familiars` etc.
     func fetchTheme() async throws -> ThemeSnapshot {
         let req = try request("api/theme")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ThemeResponse.self, from: data).theme
@@ -437,7 +466,7 @@ struct CaveClient {
         struct Body: Encodable { let themeId: String; let mode: String }
         let payload = try JSONEncoder().encode(Body(themeId: themeId, mode: mode))
         let req = try request("api/theme", method: "PUT", body: payload)
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(ThemeResponse.self, from: data).theme
@@ -451,7 +480,7 @@ struct CaveClient {
     /// `GET /api/inbox` — the reminders/inbox feed, filtered to reminders.
     func reminders() async throws -> [Reminder] {
         let req = try request("api/inbox")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(InboxResponse.self, from: data).items
@@ -464,7 +493,7 @@ struct CaveClient {
     /// `GET /api/journal` — the list of days that have a reflection.
     func journalDays() async throws -> [JournalDay] {
         let req = try request("api/journal")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(JournalDaysResponse.self, from: data).days
@@ -476,7 +505,7 @@ struct CaveClient {
     /// `GET /api/journal?date=yyyy-MM-dd` — one day's reflection.
     func journalDay(date: String) async throws -> JournalEntry {
         let req = try request("api/journal?date=\(urlQuery(date))")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(JournalDayResponse.self, from: data).entry
@@ -488,7 +517,7 @@ struct CaveClient {
     /// `GET /api/library/reading` — saved reading list, mapped for display.
     func libraryReading() async throws -> [LibraryItem] {
         let req = try request("api/library/reading")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(LibraryReadingResponse.self, from: data).items.map {
@@ -504,7 +533,7 @@ struct CaveClient {
     /// `GET /api/library/bookmarks` — saved bookmarks, mapped for display.
     func libraryBookmarks() async throws -> [LibraryItem] {
         let req = try request("api/library/bookmarks")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(LibraryBookmarksResponse.self, from: data).items.map {
@@ -524,7 +553,7 @@ struct CaveClient {
             "kind": "reminder", "title": title, "fireAt": iso, "source": "user",
         ])
         let req = try request("api/inbox", method: "POST", body: payload)
-        let (_, resp) = try await session.data(for: req)
+        let (_, resp) = try await data(for: req)
         try Self.check(resp)
     }
 
@@ -532,7 +561,7 @@ struct CaveClient {
     func deleteReminder(id: String) async throws {
         let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
         let req = try request("api/inbox/\(escaped)", method: "DELETE")
-        let (_, resp) = try await session.data(for: req)
+        let (_, resp) = try await data(for: req)
         try Self.check(resp)
     }
 
@@ -544,7 +573,7 @@ struct CaveClient {
     private func inboxAction(_ id: String, _ action: String, body: Data? = nil) async throws -> Reminder? {
         let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
         let req = try request("api/inbox/\(escaped)/\(action)", method: "POST", body: body)
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         return try? JSONDecoder().decode(ReminderActionResponse.self, from: data).item
     }
@@ -593,7 +622,7 @@ struct CaveClient {
     /// desktop has no GitHub token yet (the list query needs one).
     func repos() async throws -> (items: [RepoFeedItem], configured: Bool) {
         let req = try request("api/github/repos")
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             let decoded = try JSONDecoder().decode(ReposResponse.self, from: data)
@@ -606,7 +635,7 @@ struct CaveClient {
     /// Latest OpenCoven posts. `refresh` bypasses the desktop's short cache.
     func homeTweets(refresh: Bool = false) async throws -> [TweetFeedItem] {
         let req = try request("api/home-tweets" + (refresh ? "?refresh=1" : ""))
-        let (data, resp) = try await session.data(for: req)
+        let (data, resp) = try await data(for: req)
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(TweetsResponse.self, from: data).items ?? []

@@ -694,6 +694,7 @@ export const SUITES = {
     "scripts/ios-github-comment-attach.test.mjs",
     "scripts/ios-theme.test.mjs",
     "scripts/ios-auto-reconnect.test.mjs",
+    "scripts/ios-self-healing-sync.test.mjs",
     "scripts/ios-connect-paste.test.mjs",
     "scripts/ios-theme-list-background.test.mjs",
     "scripts/ios-presence-dots.test.mjs",

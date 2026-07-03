@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Observation
 import WidgetKit
 
@@ -31,6 +32,9 @@ final class AppModel {
 
     var connection: CaveConnection?
     var connectionState: ConnectionState = .unconfigured
+    private let connectionMonitor = NWPathMonitor()
+    private let connectionMonitorQueue = DispatchQueue(label: "ai.opencoven.cave.connection-monitor")
+    private var connectionMonitorStarted = false
 
     var familiars: [Familiar] = []
     var familiarsError: String?
@@ -217,7 +221,7 @@ final class AppModel {
             tasks = try await client.tasks()
             tasksError = nil
         } catch {
-            tasksError = error.localizedDescription
+            tasksError = handleSurfaceError(error)
         }
         tasksLoaded = true
         // A task that finished on the desktop should drop its Lock Screen activity.
@@ -398,7 +402,7 @@ final class AppModel {
             projects = try await client.projects()
             projectsError = nil
         } catch {
-            projectsError = error.localizedDescription
+            projectsError = handleSurfaceError(error)
         }
         projectsLoaded = true
     }
@@ -411,7 +415,7 @@ final class AppModel {
             reminders = try await client.reminders()
             remindersError = nil
         } catch {
-            remindersError = error.localizedDescription
+            remindersError = handleSurfaceError(error)
         }
         remindersLoaded = true
         publishWidgetSnapshot()
@@ -483,7 +487,7 @@ final class AppModel {
             journalDays = try await client.journalDays()
             journalError = nil
         } catch {
-            journalError = error.localizedDescription
+            journalError = handleSurfaceError(error)
         }
         journalLoaded = true
     }
@@ -584,7 +588,52 @@ final class AppModel {
         connectionState = .unconfigured
     }
 
-    func refreshConnection() async {
+    func startConnectionSupervisor() {
+        guard !connectionMonitorStarted else { return }
+        connectionMonitorStarted = true
+        connectionMonitor.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.connection != nil else { return }
+                await self.recoverConnectionInBackground()
+            }
+        }
+        connectionMonitor.start(queue: connectionMonitorQueue)
+    }
+
+    func recoverConnectionInBackground() async {
+        guard connection != nil else { connectionState = .unconfigured; return }
+        await refreshConnection(reloadLoadedSurfaces: true)
+    }
+
+    private var shouldReloadLoadedSurfaces: Bool {
+        !familiars.isEmpty || sessionsLoaded || tasksLoaded || remindersLoaded || projectsLoaded || journalLoaded
+    }
+
+    private func pairingMessage() -> String {
+        CaveConnection.accessToken == nil
+            ? "This desktop requires pairing. Open Cave on the desktop → “Open on phone”, then scan the QR code or paste the invite link here."
+            : "Your pairing has expired. Open Cave on the desktop → “Open on phone” and scan the QR code (or paste the invite link) to pair again."
+    }
+
+    private func handleSurfaceError(_ error: Error) -> String {
+        if CaveError.isAuthFailure(error) {
+            connectionState = .needsAuth(pairingMessage())
+        }
+        return error.localizedDescription
+    }
+
+    private func refreshLoadedSurfaces() async {
+        await loadFamiliars()
+        if sessionsLoaded { await loadSessions() }
+        if tasksLoaded { await loadTasks() }
+        if remindersLoaded { await loadReminders() }
+        if projectsLoaded { await loadProjects() }
+        if journalLoaded { await loadJournal() }
+        await loadTheme()
+    }
+
+    func refreshConnection(reloadLoadedSurfaces: Bool = false) async {
         guard let connection else { connectionState = .unconfigured; return }
         connectionState = .checking
 
@@ -603,15 +652,15 @@ final class AppModel {
                 }
             }
             connectionState = .connected
-            await loadFamiliars()
-            await loadTheme()
             await refreshAccessTokenIfNeeded()
+            if reloadLoadedSurfaces {
+                await refreshLoadedSurfaces()
+            } else {
+                await loadFamiliars()
+                await loadTheme()
+            }
         case .unauthorized:
-            connectionState = .needsAuth(
-                CaveConnection.accessToken == nil
-                    ? "This desktop requires pairing. Open Cave on the desktop → “Open on phone”, then scan the QR code or paste the invite link here."
-                    : "Your pairing has expired. Open Cave on the desktop → “Open on phone” and scan the QR code (or paste the invite link) to pair again."
-            )
+            connectionState = .needsAuth(pairingMessage())
         case .none:
             connectionState = .unreachable("Couldn’t reach the desktop. Is it on the tailnet and running?")
         }
@@ -643,7 +692,7 @@ final class AppModel {
         guard connection != nil else { connectionState = .unconfigured; return }
         // Delays BETWEEN attempts (4 attempts total, ~7s before giving up).
         let backoffSeconds: [UInt64] = [1, 2, 4]
-        await refreshConnection()
+        await refreshConnection(reloadLoadedSurfaces: shouldReloadLoadedSurfaces)
         var attempt = 0
         while connectionState != .connected, attempt < backoffSeconds.count {
             connectionState = .checking
@@ -651,7 +700,7 @@ final class AppModel {
             if Task.isCancelled { return }
             // The user may have disconnected/reconfigured during the wait.
             guard connection != nil else { connectionState = .unconfigured; return }
-            await refreshConnection()
+            await refreshConnection(reloadLoadedSurfaces: shouldReloadLoadedSurfaces)
             attempt += 1
         }
     }
@@ -717,7 +766,7 @@ final class AppModel {
             seedFamiliarViews(familiars.map(\.id))
             familiarsError = nil
         } catch {
-            familiarsError = error.localizedDescription
+            familiarsError = handleSurfaceError(error)
         }
     }
 
@@ -788,7 +837,7 @@ final class AppModel {
             serverSessions = try await client.sessions()
             sessionsError = nil
         } catch {
-            sessionsError = error.localizedDescription
+            sessionsError = handleSurfaceError(error)
         }
         sessionsLoaded = true
     }
