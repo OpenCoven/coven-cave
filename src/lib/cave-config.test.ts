@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -156,4 +157,14 @@ try {
 } finally {
   if (previousHome === undefined) delete process.env.HOME;
   else process.env.HOME = previousHome;
+}
+
+// ── Config write-race mutex (2026-07-03 settings audit) ──────────────────────
+// All four cave-config.json writers serialize their read-modify-write through
+// one in-process lock, mirroring the state mutex — otherwise concurrent PATCHes
+// clobber each other's fields.
+{
+  const src = fs.readFileSync(new URL("./cave-config.ts", import.meta.url), "utf8");
+  assert.match(src, /async function withConfigLock<T>/, "cave-config has a config mutex helper");
+  assert.equal((src.match(/return withConfigLock\(async \(\) => \{/g) || []).length, 4, "all four config writers run under the lock");
 }

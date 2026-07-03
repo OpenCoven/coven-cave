@@ -305,7 +305,27 @@ function mergeFamiliarConfigs(
   return updated;
 }
 
+// In-process serialization of cave-config.json mutations. writeJsonAtomic makes
+// each write torn-read-safe, but two concurrent load→merge→write calls both read
+// the same snapshot and the second write drops the first patch's field. The
+// Settings surface fires overlapping config PATCHes (palette-by-familiar loops,
+// daemon + add-on toggles), so every config writer serializes its
+// read-modify-write here — same pattern as stateMutex for cave-state.json.
+let configMutex: Promise<unknown> = Promise.resolve();
+async function withConfigLock<T>(fn: () => Promise<T>): Promise<T> {
+  const previous = configMutex;
+  let release!: () => void;
+  configMutex = new Promise<void>((resolve) => { release = resolve; });
+  try {
+    await previous.catch(() => {});
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
 export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
+  return withConfigLock(async () => {
   const current = await loadConfig();
   const updated: CaveConfig = {
     ...current,
@@ -337,6 +357,7 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeJsonAtomic(CONFIG_PATH, updated);
   return updated;
+  });
 }
 
 export async function installMarketplacePlugin(
@@ -344,6 +365,7 @@ export async function installMarketplacePlugin(
   version: string,
   source: string,
 ): Promise<string> {
+  return withConfigLock(async () => {
   const cfg = await loadConfig();
   const installedAt = new Date().toISOString();
   const updated: CaveConfig = {
@@ -358,9 +380,11 @@ export async function installMarketplacePlugin(
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeJsonAtomic(CONFIG_PATH, updated);
   return installedAt;
+  });
 }
 
 export async function uninstallMarketplacePlugin(pluginName: string): Promise<void> {
+  return withConfigLock(async () => {
   const cfg = await loadConfig();
   const installed = { ...cfg.marketplace.installed };
   delete installed[pluginName];
@@ -370,6 +394,7 @@ export async function uninstallMarketplacePlugin(pluginName: string): Promise<vo
   };
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeJsonAtomic(CONFIG_PATH, updated);
+  });
 }
 
 export function bindingFor(config: CaveConfig, familiarId: string): FamiliarBinding {
@@ -635,6 +660,7 @@ export async function upsertRoleConfig(
   familiar: string,
   active: boolean,
 ): Promise<void> {
+  return withConfigLock(async () => {
   const cfg = await loadConfig();
   const now = new Date().toISOString();
   const idx = cfg.roles.findIndex(r => r.id === roleId && r.familiar === familiar);
@@ -645,4 +671,5 @@ export async function upsertRoleConfig(
   }
   await mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await writeJsonAtomic(CONFIG_PATH, cfg);
+  });
 }
