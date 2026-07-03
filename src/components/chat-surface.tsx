@@ -224,6 +224,24 @@ export function ChatSurface({
   // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
   // be unreachable. On mobile we render them in a right-edge sheet overlay instead.
   const isMobile = useIsMobile();
+  // A drag-to-split pane can be far narrower than the viewport, so the
+  // inline-vs-sheet decision also tracks the surface's own measured width —
+  // below ~680px the inline sidebar (200px min) would crush the chat thread's
+  // 45% minSize. Until the first measurement lands, fall back to the viewport
+  // heuristic so SSR and first paint agree with the CSS.
+  const surfaceRef = useRef<HTMLElement | null>(null);
+  const [paneWidth, setPaneWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? el.clientWidth;
+      setPaneWidth((prev) => (prev === width ? prev : width));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const paneNarrow = paneWidth === null ? isMobile : paneWidth < 680;
   const consumedPendingActionNonce = useRef<number | null>(null);
 
   // Right panel — prefer new prop, fall back to legacy bool
@@ -235,8 +253,9 @@ export function ChatSurface({
     onSetInspectorOpen(next === "inspector");
   }
 
-  // The inspector/debug/changes sidebar shares the chat thread's row on desktop.
-  const showRightSidebar = rightPanel !== null && !isMobile;
+  // The inspector/debug/changes sidebar shares the chat thread's row on desktop
+  // — only when the pane itself is wide enough to host both.
+  const showRightSidebar = rightPanel !== null && !isMobile && !paneNarrow;
 
   // Persist the chat / right-area split. panelIds tracks which panels are
   // actually mounted so the with-sidebar and bare layouts persist separately.
@@ -373,7 +392,7 @@ export function ChatSurface({
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <section className="chat-surface relative flex h-full min-w-0 bg-[var(--bg-base)]">
+    <section ref={surfaceRef} className="chat-surface relative flex h-full min-w-0 bg-[var(--bg-base)]">
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
@@ -493,14 +512,16 @@ export function ChatSurface({
           </Group>
         )}
       </div>
-      {/* Mobile: the inline 230px right sidebar can't fit beside the chat thread,
-          so the Inspector/Debug/Changes panels open in a right-edge sheet over a
-          dismissible scrim. Gated on isMobile so only one RightPanel mounts per
-          breakpoint — the InspectorPane won't double-fetch or duplicate DOM ids.
-          Scoped to the conversation tab to mirror the desktop placement. */}
-      {scope === "conversation" && rightPanel !== null && isMobile && (
+      {/* Narrow: the inline 230px right sidebar can't fit beside the chat thread
+          (phone viewport OR a narrow drag-to-split pane on a wide screen), so the
+          Inspector/Debug/Changes panels open in a right-edge sheet over a
+          dismissible scrim. The gate is the exact complement of showRightSidebar
+          so only one RightPanel mounts at a time — the InspectorPane won't
+          double-fetch or duplicate DOM ids. Scoped to the conversation tab to
+          mirror the desktop placement. */}
+      {scope === "conversation" && rightPanel !== null && (isMobile || paneNarrow) && (
         <div
-          className="chat-right-sheet fixed inset-0 z-[200] flex justify-end lg:hidden"
+          className="chat-right-sheet fixed inset-0 z-[200] flex justify-end"
           role="presentation"
           onKeyDown={(e) => {
             if (e.key === "Escape") setRightPanel(null);

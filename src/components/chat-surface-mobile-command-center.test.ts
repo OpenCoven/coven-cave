@@ -7,8 +7,8 @@ const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf
 
 assert.match(
   source,
-  /<section className="chat-surface /,
-  "ChatSurface should expose a mobile-targetable root class",
+  /<section ref=\{surfaceRef\} className="chat-surface /,
+  "ChatSurface should expose a mobile-targetable root class (and the ref that measures pane width)",
 );
 
 assert.match(
@@ -48,19 +48,22 @@ assert.match(
 );
 
 // The Inspector/Debug/Changes panels live in a 230px right sidebar that is
-// hidden below the desktop shell breakpoint (no room beside the chat thread).
-// On mobile they must remain reachable — rendered in a right-edge sheet over a
-// dismissible scrim — instead of silently vanishing.
+// hidden when there's no room beside the chat thread — a phone viewport OR a
+// narrow drag-to-split pane on a wide screen. In both cases they must remain
+// reachable — rendered in a right-edge sheet over a dismissible scrim —
+// instead of silently vanishing.
 assert.match(
   source,
-  /scope === "conversation" && rightPanel !== null && isMobile && \(/,
-  "ChatSurface should render the session panels as a mobile sheet when the inline sidebar is hidden",
+  /scope === "conversation" && rightPanel !== null && \(isMobile \|\| paneNarrow\) && \(/,
+  "ChatSurface should render the session panels as a sheet when the inline sidebar is hidden",
 );
 
+// The sheet's visibility is JS-gated (isMobile || paneNarrow) — a viewport
+// lg:hidden here would wrongly hide it inside a narrow split pane on desktop.
 assert.match(
   source,
-  /className="chat-right-sheet fixed inset-0 z-\[200\] flex justify-end lg:hidden"/,
-  "Mobile session-panel sheet should be a fixed right-edge overlay, hidden once the desktop sidebar fits (lg)",
+  /className="chat-right-sheet fixed inset-0 z-\[200\] flex justify-end"/,
+  "Session-panel sheet should be a fixed right-edge overlay without a viewport-gated lg:hidden",
 );
 
 assert.match(
@@ -69,12 +72,19 @@ assert.match(
   "Mobile session-panel sheet should close on scrim tap",
 );
 
-// Gate the inline desktop sidebar on !isMobile so only one RightPanel mounts per
-// breakpoint — otherwise InspectorPane double-fetches and duplicates DOM ids.
+// Gate the inline desktop sidebar as the exact complement of the sheet so only
+// one RightPanel mounts at a time — otherwise InspectorPane double-fetches and
+// duplicates DOM ids. paneNarrow tracks the surface's own measured width so a
+// narrow drag-to-split pane on a wide viewport also swaps to the sheet.
 assert.match(
   source,
-  /const showRightSidebar = rightPanel !== null && !isMobile/,
-  "Inline desktop right sidebar should not also mount on mobile (avoids duplicate RightPanel)",
+  /const showRightSidebar = rightPanel !== null && !isMobile && !paneNarrow/,
+  "Inline desktop right sidebar should not mount when the pane or viewport is narrow (avoids duplicate RightPanel)",
+);
+assert.match(
+  source,
+  /const paneNarrow = paneWidth === null \? isMobile : paneWidth < 680/,
+  "paneNarrow falls back to the viewport heuristic until the first ResizeObserver measurement",
 );
 
 console.log("chat-surface-mobile-command-center.test.ts: ok");

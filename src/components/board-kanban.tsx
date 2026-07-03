@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { Card, CardStatus, CardPriority } from "@/lib/cave-board-types";
 import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
@@ -666,15 +667,22 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
           </div>
         );
       })}
-      {ghost && (
-        <div
-          className="board-kanban-touch-ghost"
-          style={{ left: ghost.x, top: ghost.y }}
-          aria-hidden
-        >
-          {ghost.title}
-        </div>
-      )}
+      {/* Portaled like the task drawer (#537): .board-shell is a size query
+          container, whose layout containment would otherwise trap this
+          fixed-position clone inside the pane (wrong origin + clipped by the
+          shell's overflow:hidden). Ghost coords are viewport-based. */}
+      {ghost &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="board-kanban-touch-ghost"
+            style={{ left: ghost.x, top: ghost.y }}
+            aria-hidden
+          >
+            {ghost.title}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

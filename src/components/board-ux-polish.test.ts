@@ -38,10 +38,17 @@ assert.match(
   /\.board-search-wrap\s*\{[\s\S]*min-width:\s*0/,
   "Desktop board search should be allowed to shrink before forcing toolbar wrapping",
 );
+// The stacked layout is keyed to the surface's own width (@container board) so
+// it also engages inside a narrow drag-to-split pane on a wide viewport.
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.board-header\s*\{[\s\S]*flex-wrap:\s*wrap/,
-  "Mobile board header should keep its stacked layout",
+  /\.board-shell\s*\{[^}]*container:\s*board \/ inline-size/,
+  "the board shell establishes the board query container",
+);
+assert.match(
+  styles,
+  /@container board \(max-width: 767px\) \{[\s\S]*\.board-header\s*\{[\s\S]*flex-wrap:\s*wrap/,
+  "Narrow board header should keep its stacked layout",
 );
 
 // ───────── Crash-guard + card a11y ─────────
@@ -63,9 +70,13 @@ assert.match(kanban, /board-kanban-card--grabbed/, "Grabbed visual affordance pr
 // ───────── Mobile board chrome ─────────
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.board-search-input\s*\{[\s\S]*height:\s*44px[\s\S]*\.board-view-toggle\s*\{[\s\S]*display:\s*none[\s\S]*\.board-toolbar-btn,\s*\n\s*\.board-new-card-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
-  "Mobile board search and toolbar controls should meet thumb-sized touch targets",
+  /@container board \(max-width: 767px\) \{[\s\S]*\.board-search-input\s*\{[\s\S]*height:\s*44px[\s\S]*\.board-view-toggle\s*\{[\s\S]*display:\s*none[\s\S]*\.board-toolbar-btn,\s*\n\s*\.board-new-card-btn\s*\{[\s\S]*min-height:\s*var\(--touch-target\)/,
+  "Narrow board search and toolbar controls should meet thumb-sized touch targets",
 );
+
+// The touch ghost is fixed-position with viewport coords — the board container's
+// layout containment would trap it in the pane, so it portals to document.body.
+assert.match(kanban, /createPortal\(\s*<div\s*\n?\s*className="board-kanban-touch-ghost"/, "the kanban touch ghost renders through a portal");
 
 assert.match(
   styles,

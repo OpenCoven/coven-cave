@@ -6688,6 +6688,31 @@ a.mobile-handoff__link:hover {
   .top-bar__actions .notification-bell {
     position: static;
   }
+  /* Phone-width top bar: the labeled familiar trigger (chat mode adds the
+     quickswitch to the actions cluster) plus the full icon set overflow the
+     actions grid track — justify-self:end anchors the right edge, so the
+     cluster bleeds LEFT over the nav toggle and search. Compact the trigger
+     to its avatar and drop the secondary Enhance shortcut (still reachable
+     from the composer) so the cluster fits a 360px bar. */
+  @media (max-width: 480px) {
+    .top-bar__actions .familiar-switcher__trigger-label {
+      display: none;
+    }
+    .top-bar__actions .familiar-switcher__trigger--labeled {
+      justify-content: center;
+      width: var(--touch-target);
+      max-width: var(--touch-target);
+      padding: 0;
+    }
+    .top-bar__actions .familiar-switcher__trigger--labeled img {
+      width: 100%;
+      height: 100%;
+      border-radius: calc(var(--radius-control) - 1px);
+    }
+    .top-bar__actions .top-bar__tasks-enrich {
+      display: none;
+    }
+  }
   .notification-bell__popover {
     position: fixed;
     left: calc(8px + var(--sai-left));
@@ -6899,6 +6924,11 @@ a.mobile-handoff__link:hover {
   container-type: inline-size;
   container-name: chatlist;
 }
+/* The date reads as one unit — "Jul 3, 2026 · just now" must never break
+   word-by-word when the pane squeezes (drag-to-split); it truncates instead. */
+.chat-list-row-time {
+  white-space: nowrap;
+}
 @container chatlist (max-width: 520px) {
   .chat-list-row-meta {
     flex-direction: column;
@@ -6910,6 +6940,12 @@ a.mobile-handoff__link:hover {
   }
   .chat-list-row-time {
     width: auto;
+    max-width: 100%;
+  }
+  .chat-list-row-time > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 

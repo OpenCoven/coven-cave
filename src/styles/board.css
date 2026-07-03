@@ -5,7 +5,12 @@
 
 /* board.css — Board v2 */
 
-.board-shell { display:flex; flex-direction:column; height:100%; overflow:hidden; background:var(--bg-base); color:var(--text-primary); }
+/* container: board — the narrow-layout rules below query the surface's own
+   width instead of the viewport, so they also engage when the board sits in a
+   narrow drag-to-split pane on a wide screen (same pattern as evals /
+   marketplace, #2249). At phone widths the pane spans the viewport, so the
+   same rules fire there too. */
+.board-shell { display:flex; flex-direction:column; height:100%; overflow:hidden; background:var(--bg-base); color:var(--text-primary); container:board / inline-size; }
 
 .board-header { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--border-hairline); flex-shrink:0; flex-wrap:nowrap; }
 .board-header-title { flex:0 0 auto; font-size:14px; font-weight:600; color:var(--text-primary); }
@@ -49,7 +54,7 @@
 .board-new-card-btn:hover { background:color-mix(in oklch, var(--accent-presence) 85%, #000); transform:scale(1.02); }
 .board-new-card-btn:focus-visible { outline:var(--ring-width) solid var(--ring-focus); outline-offset:2px; }
 
-@media (max-width: 767px) {
+@container board (max-width: 767px) {
   .board-header {
     align-items: stretch;
     flex-wrap: wrap;
@@ -115,11 +120,15 @@
   .board-new-card-btn {
     flex: 0 0 auto;
   }
+}
 
+@media (max-width: 767px) {
   /* The task inspector goes full-screen on phones (.board-drawer is
      max-width:100vw), so its interactive controls are primary touch targets
      and must meet --touch-target — the desktop-dense 24-28px sizes are too
-     small to hit reliably with a thumb.
+     small to hit reliably with a thumb. It renders through a portal outside
+     .board-shell, where the board container query can't reach it — so these
+     rules stay keyed to the viewport.
      Use min-* (not width/height): this mobile block sits earlier in the file
      than the base .board-drawer-close rule, so an
      equal-specificity width/height would LOSE the cascade to them (verified:

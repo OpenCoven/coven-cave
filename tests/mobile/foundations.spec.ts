@@ -46,6 +46,40 @@ test.describe("mobile foundations", () => {
     expect(overflow, "no horizontal overflow at 360px viewport").toBeLessThanOrEqual(0);
   });
 
+  test("chat and tasks surfaces fit 360px without horizontal scroll", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 720 });
+    await page.goto("/");
+    await page.waitForSelector(".shell-frame");
+
+    // Re-dispatch navigate-mode inside the poll: on a cold mobile load the
+    // Workspace listener can attach AFTER .shell-frame appears, so a single
+    // early dispatch is silently dropped and the check would measure Home.
+    const targets: Array<[string, string]> = [
+      ["chat", ".chat-surface"],
+      ["board", ".board-shell"],
+    ];
+    for (const [surface, selector] of targets) {
+      await page.waitForFunction(
+        ({ mode, sel }) => {
+          window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode } }));
+          return document.querySelector(sel) !== null;
+        },
+        { mode: surface, sel: selector },
+        // Generous: the dev webServer compiles the chat/board chunks on first
+        // hit, which can take >15s under CI's parallel project load.
+        { timeout: 25000 },
+      );
+      await page.waitForTimeout(200);
+      const overflow = await page.evaluate(() => {
+        return (
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth
+        );
+      });
+      expect(overflow, `no horizontal overflow on ${surface} at 360px viewport`).toBeLessThanOrEqual(0);
+    }
+  });
+
   test("home route does not create window-level vertical scroll", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/");
