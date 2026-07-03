@@ -200,6 +200,7 @@ export function PopoverItem({
   active,
   danger,
   disabled,
+  checked,
 }: {
   icon?: IconName;
   children: ReactNode;
@@ -207,6 +208,9 @@ export function PopoverItem({
   active?: boolean;
   danger?: boolean;
   disabled?: boolean;
+  /** When set (true/false) the item is a menuitemradio with aria-checked and a
+   *  trailing check glyph — for mutually exclusive option groups. */
+  checked?: boolean;
 }) {
   const classes = [
     "ui-popover-item",
@@ -214,6 +218,7 @@ export function PopoverItem({
   ]
     .filter(Boolean)
     .join(" ");
+  const radio = checked !== undefined;
   return (
     <button
       type="button"
@@ -221,10 +226,14 @@ export function PopoverItem({
       onClick={onSelect}
       data-active={active || undefined}
       disabled={disabled}
-      role="menuitem"
+      role={radio ? "menuitemradio" : "menuitem"}
+      aria-checked={radio ? checked : undefined}
     >
       {icon ? <Icon name={icon} width={13} aria-hidden /> : null}
       <span>{children}</span>
+      {radio && checked ? (
+        <Icon name="ph:check" width={12} aria-hidden className="ml-auto" />
+      ) : null}
     </button>
   );
 }
