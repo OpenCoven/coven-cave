@@ -245,9 +245,23 @@ export function ThemeColorEditor({
     }
   }, [basePreset, mode]);
 
-  // Live-apply changes as user picks.
+  // Live-apply changes as the user picks. The color picker fires onChange on
+  // every pointer-move, and each apply rewrites ~15 root CSS vars (several
+  // color-mix(oklch)) that the whole app reads — so coalesce to at most one
+  // write per animation frame instead of one per move.
+  const applyFrameRef = useRef<number | null>(null);
   useEffect(() => {
-    applyColorsToDOM(colors, mode);
+    if (applyFrameRef.current !== null) cancelAnimationFrame(applyFrameRef.current);
+    applyFrameRef.current = requestAnimationFrame(() => {
+      applyFrameRef.current = null;
+      applyColorsToDOM(colors, mode);
+    });
+    return () => {
+      if (applyFrameRef.current !== null) {
+        cancelAnimationFrame(applyFrameRef.current);
+        applyFrameRef.current = null;
+      }
+    };
   }, [colors, mode]);
 
   const updateColor = (key: keyof ThreeColors, value: string) => {

@@ -135,3 +135,9 @@ describe("preset seed stability (swatch values are deterministic)", () => {
     }
   });
 });
+
+// ── Live color apply is rAF-throttled (2026-07-03 settings audit) ────────────
+// The picker fires onChange per pointer-move; each apply rewrites ~15 root CSS
+// vars the whole app reads — coalesce to one write per frame.
+assert.match(source, /requestAnimationFrame\(\(\) => \{[\s\S]*?applyColorsToDOM\(colors, mode\)/, "the live color apply is throttled to one write per animation frame");
+assert.match(source, /cancelAnimationFrame\(applyFrameRef\.current\)/, "a pending apply frame is cancelled before scheduling the next");
