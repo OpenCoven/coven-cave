@@ -269,7 +269,7 @@ assert.match(source, /\}, \[sorted\.length\]\);/, "row-nav listeners rebind when
 // the manual/⌘R refresh keeps the linked-task chips in sync.
 assert.match(source, /function schedulePoll\(ms: number\)[\s\S]{0,160}?document\.hidden\) return/, "polling is skipped while the tab is hidden");
 assert.match(source, /addEventListener\("visibilitychange", onVis\)/, "polling resumes when the tab returns to the foreground");
-assert.match(source, /void fetchActivity\(\);\s*\n\s*reloadCards\(\);/, "⌘R refreshes activity AND reloads the linked-task cards");
+assert.match(source, /refreshActivity\(\);\s*\n\s*reloadCards\(\);/, "⌘R refreshes activity (via refreshActivity) AND reloads the linked-task cards");
 
 // Memoised so a re-render doesn't re-filter the (potentially large) item set.
 assert.match(source, /const filtered = useMemo\(/, "the kind-filtered set is memoised");
@@ -356,5 +356,21 @@ assert.doesNotMatch(
   /href="https:\/\/github\.com\/settings\/tokens\/new/,
   "PAT setup no longer relies on a plain anchor that can stay inside localhost",
 );
+
+// ── 2026-07-03 GitHub audit fixes ─────────────────────────────────────────────
+// The activity poll is content-guarded — an unchanged response keeps the prior
+// reference so the whole table + detail panel don't re-render every 90s.
+assert.match(source, /setActivity\(\(prev\) =>[\s\S]*?arrayContentEqual\(prev\.items, nextActivity\.items\)[\s\S]*?\? prev/, "the activity poll guards setActivity with arrayContentEqual");
+// A manual refresh with data already on screen keeps the list mounted (so an
+// open composer draft isn't destroyed) — skeleton is initial-load only.
+assert.match(source, /if \(!silent && !activity\) setLoading\(true\)/, "non-silent refresh only skeletons the initial load, preserving the composer");
+// One refresh helper cancels the pending poll first, so Retry can't leak a
+// second timer chain.
+assert.match(source, /function refreshActivity\(\) \{[\s\S]*?clearTimeout\(timerRef\.current\)[\s\S]*?void fetchActivity\(\)/, "refreshActivity cancels the scheduled poll before refetching");
+assert.doesNotMatch(source, /onClick=\{\(\) => void fetchActivity\(\)\}/, "no manual site refetches without cancelling the pending poll (Retry leak fixed)");
+// CI status shows passing/pending, not only failing (a green PR was invisible).
+assert.match(source, /item\.checkStatus === "passing"/, "CI passing state renders a badge");
+assert.match(source, /item\.checkStatus === "pending"/, "CI pending state renders a badge");
+assert.match(boardCss, /\.gh-badge--success \{/, "the success badge has a style");
 
 console.log("github-view-polish.test.ts OK");

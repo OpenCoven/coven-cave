@@ -141,25 +141,7 @@ export type GitHubTask = {
   checkRunUrl?: string;
 };
 
-export type GitHubTasksResult = {
-  ok: true;
-  tasks: GitHubTask[];
-};
-
 type WireTask = Record<string, unknown>;
-
-export async function loadGitHubTasks(): Promise<GitHubTasksResult> {
-  const res = await fetch("/api/github/tasks", { cache: "no-store" });
-  const data = await res.json().catch(() => null);
-  if (!res.ok || !data || data.ok === false) {
-    throw new Error(
-      (data && typeof data.error === "string" && data.error) ||
-        `GitHub tasks unavailable (${res.status})`,
-    );
-  }
-
-  return { ok: true, tasks: normalizeGitHubTasks(data) };
-}
 
 export function normalizeGitHubTasks(data: unknown): GitHubTask[] {
   const rawTasks = Array.isArray(data)

@@ -7,6 +7,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useCopy } from "@/lib/use-copy";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
@@ -1409,7 +1410,9 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   }
 
   async function fetchActivity(silent = false) {
-    if (!silent) setLoading(true);
+    // Skeleton only on the first load — a manual refresh with data already on
+    // screen must not unmount the list (and any open composer draft with it).
+    if (!silent && !activity) setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/github/activity");
@@ -1429,9 +1432,13 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
         return;
       }
 
-      setActivity(data as ActivityResult);
+      const nextActivity = data as ActivityResult;
+      setActivity((prev) =>
+        prev && prev.authed === nextActivity.authed && arrayContentEqual(prev.items, nextActivity.items)
+          ? prev
+          : nextActivity);
       setError(null);
-      schedulePoll((data as ActivityResult).authed ? 90_000 : 120_000);
+      schedulePoll(nextActivity.authed ? 90_000 : 120_000);
     } catch (e) {
       if (!mountedRef.current) return;
       setError(e instanceof Error ? e.message : "Failed to load GitHub activity");
@@ -1439,6 +1446,14 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
     } finally {
       if (mountedRef.current) setLoading(false);
     }
+  }
+
+  // Manual refresh: cancel the pending scheduled poll first so we never spawn a
+  // second self-scheduling timer chain (the error-state Retry used to skip this
+  // and leak a chain, doubling the poll rate — and the GitHub rate-limit spend).
+  function refreshActivity() {
+    if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; }
+    void fetchActivity();
   }
 
   useEffect(() => {
@@ -1471,8 +1486,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
       const tag = target?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       e.preventDefault();
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-      void fetchActivity();
+      refreshActivity();
       reloadCards(); // keep the linked-task chips fresh too (parity with the toolbar refresh)
     };
     window.addEventListener("keydown", onKey);
@@ -1664,8 +1678,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
           onSaved={(login, hasPat) => {
             setPatStatus({ hasPat, login });
             setShowPatModal(false);
-            if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-            void fetchActivity();
+            refreshActivity();
           }}
           onClose={() => setShowPatModal(false)}
         />
@@ -1796,8 +1809,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
           <button
             type="button"
             onClick={() => {
-              if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-              void fetchActivity();
+              refreshActivity();
               reloadCards();
             }}
             title="Refresh (⌘R)"
@@ -1838,7 +1850,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
               headline="Couldn't load GitHub"
               subtitle={error}
               actions={
-                <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={() => void fetchActivity()}>
+                <Button variant="secondary" leadingIcon="ph:arrow-clockwise" onClick={refreshActivity}>
                   Retry
                 </Button>
               }
@@ -1979,6 +1991,26 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                             title="CI checks failing"
                           >
                             checks failed
+                          </span>
+                        )}
+                        {item.checkStatus === "passing" && (
+                          <span
+                            className="gh-badge gh-badge--success"
+                            role="img"
+                            aria-label="CI checks passing"
+                            title="CI checks passing"
+                          >
+                            checks pass
+                          </span>
+                        )}
+                        {item.checkStatus === "pending" && (
+                          <span
+                            className="gh-badge gh-badge--muted"
+                            role="img"
+                            aria-label="CI checks running"
+                            title="CI checks running"
+                          >
+                            checks…
                           </span>
                         )}
                       </td>
