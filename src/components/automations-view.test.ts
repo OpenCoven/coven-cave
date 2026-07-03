@@ -115,3 +115,15 @@ assert.match(source, /usePausablePoll\(\(\) => \{ void load\(\); \}, 15_000/, "t
 // reference would re-fire the form reset (cron) or is pointless churn (reminder).
 assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedCodex\)\) setSelectedCodex\(fresh\)/, "cron detail sync is content-guarded");
 assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedItem\)\) setSelectedItem\(fresh\)/, "reminder detail panel re-syncs after polls");
+
+// ── 2026-07-03 a11y batch ─────────────────────────────────────────────────────
+assert.match(source, /const \{ announce \} = useAnnouncer\(\)/, "AutomationsView consumes the shared announcer");
+assert.match(source, /announce\(`\$\{newStatus === "PAUSED" \? "Paused" : "Resumed"\} '\$\{auto\.name\}'\.`\)/, "cron pause/resume announces");
+assert.match(source, /announce\(`Run started for '\$\{auto\.name\}'\.`\)/, "run-now announces");
+assert.match(source, /announce\(`Created cron '\$\{input\.name\}'\.`\)/, "create announces");
+assert.match(source, /role="img" aria-label="Paused"/, "status dots carry accessible names");
+assert.match(source, /<section aria-labelledby=\{headingId\}/, "list sections are labelled landmarks with real headings");
+assert.match(source, /idPrefix="automations"/, "tabs get ids so the panel can reference them");
+assert.match(source, /role="tabpanel"[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}/, "the content region is a labelled tabpanel");
+assert.match(source, /if \(e\.key === "Escape"\) \{[\s\S]{0,120}setNewMenuOpen\(false\);[\s\S]{0,60}newBtnRef\.current\?\.focus\(\)/, "the New menu closes on Escape and returns focus to its trigger");
+assert.match(source, /window\.setTimeout\(\(\) => newBtnRef\.current\?\.focus\(\), 0\)/, "deletes hand focus somewhere stable instead of dropping it on <body>");

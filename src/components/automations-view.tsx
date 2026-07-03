@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useAnnouncer } from "@/components/ui/live-region";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
 import { groupInboxFeed, inboxKindLabel } from "@/lib/inbox-feed";
@@ -157,10 +158,13 @@ function StatusIcon({ item }: { item: InboxItem }) {
   const active = item.status === "pending" || item.status === "fired";
   const hasRun = !!item.firedAt;
 
+  // Each state carries an accessible name — the dots are otherwise the ONLY
+  // per-row signal for paused vs active (a paused recurring reminder still
+  // shows its human schedule as row text).
   if (paused) {
     // Pause icon — two vertical bars inside circle
     return (
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+      <span role="img" aria-label="Paused" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
         style={{ borderColor: "rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.35)" }}>
         <Icon name="ph:minus" width={8} />
       </span>
@@ -169,13 +173,13 @@ function StatusIcon({ item }: { item: InboxItem }) {
   if (active && hasRun) {
     // Filled purple circle — has fired before
     return (
-      <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
+      <span role="img" aria-label="Active, has fired" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
         style={{ background: "var(--accent-presence)" }} />
     );
   }
   // Hollow circle — active, never fired yet
   return (
-    <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+    <span role="img" aria-label="Active, not fired yet" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
       style={{ borderColor: "rgba(255,255,255,0.28)" }} />
   );
 }
@@ -517,13 +521,14 @@ function ReminderTaskSection({
 }) {
   if (items.length === 0) return null;
   const overdueCount = items.filter(isReminderOverdue).length;
+  const headingId = `reminder-section-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
-    <div className="mb-6">
+    <section aria-labelledby={headingId} className="mb-6">
       <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
         style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
-        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
+        <h3 id={headingId} className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
           {title}
-        </span>
+        </h3>
         {overdueCount > 0 && (
           <span
             className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
@@ -547,7 +552,7 @@ function ReminderTaskSection({
           />
         ))}
       </ul>
-    </div>
+    </section>
   );
 }
 
@@ -1008,10 +1013,10 @@ function AutomationScheduleRow({
       >
         {/* Status dot */}
         {isActive ? (
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
+          <span role="img" aria-label="Active" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full"
             style={{ background: "var(--accent-presence)" }} />
         ) : (
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
+          <span role="img" aria-label="Paused" className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border"
             style={{ borderColor: "rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.35)" }}>
             <Icon name="ph:minus" width={8} />
           </span>
@@ -1078,13 +1083,14 @@ function AutomationScheduleSection({
   onSelect: (auto: CodexAutomation) => void;
 }) {
   if (items.length === 0) return null;
+  const headingId = `cron-section-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
-    <div className="mb-6">
+    <section aria-labelledby={headingId} className="mb-6">
       <div className="flex items-center gap-3 mb-1 rounded-md px-3 py-1.5"
         style={{ background: "color-mix(in oklch, var(--bg-base) 86%, var(--foreground) 14%)", borderBottom: "1px solid var(--border-hairline)" }}>
-        <span className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
+        <h3 id={headingId} className="text-[12px] font-bold" style={{ color: "var(--text-primary)" }}>
           {title}
-        </span>
+        </h3>
         <span className="text-[10px] px-1.5 py-0.5 rounded"
           style={{ background: "var(--bg-raised)", color: "var(--text-muted)" }}>
           Codex
@@ -1102,7 +1108,7 @@ function AutomationScheduleSection({
           />
         ))}
       </ul>
-    </div>
+    </section>
   );
 }
 
@@ -1538,6 +1544,13 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Async CRUD results are announced for AT — errors already hit the
+  // role="alert" banner and deletes are voiced by UndoToast; everything else
+  // (pause/resume/run/create/save/restore) was silent.
+  const { announce } = useAnnouncer();
+  // Focus lands here after a delete unmounts the detail panel that held it —
+  // otherwise it falls to <body> and keyboard users lose their place.
+  const newBtnRef = useRef<HTMLButtonElement | null>(null);
   const [activeTab, setActiveTab] = useState<AutomationTab>(
     initialTab && (initialTab !== "calendar" || calendarSlot) ? initialTab : "all",
   );
@@ -1732,7 +1745,15 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     if (id.startsWith("eph:")) return;
     const target = items.find((i) => i.id === id);
     const label = target?.title ? `“${target.title}”` : "reminder";
-    setSelectedItem((prev) => prev?.id === id ? null : prev);
+    setSelectedItem((prev) => {
+      if (prev?.id === id) {
+        // The detail panel (which held focus) unmounts — hand focus somewhere
+        // stable instead of letting it fall to <body>.
+        window.setTimeout(() => newBtnRef.current?.focus(), 0);
+        return null;
+      }
+      return prev;
+    });
     scheduleDelete([id], label, async () => {
       setItems((prev) => prev.filter((i) => i.id !== id));
       try {
@@ -1744,11 +1765,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     });
   }, [items, scheduleDelete, load]);
 
-  const runNow = (id: string) =>
-    patchItem(id, { fireAt: new Date().toISOString(), status: "pending" });
+  const runNow = (id: string) => {
+    const target = items.find((i) => i.id === id);
+    announce(`Running ${target?.title ? `'${target.title}'` : "reminder"} now.`);
+    return patchItem(id, { fireAt: new Date().toISOString(), status: "pending" });
+  };
 
-  const togglePaused = (item: InboxItem) =>
-    patchItem(item.id, { status: item.status === "dismissed" ? "pending" : "dismissed" });
+  const togglePaused = (item: InboxItem) => {
+    const pausing = item.status !== "dismissed";
+    announce(`${pausing ? "Paused" : "Resumed"} '${item.title}'.`);
+    return patchItem(item.id, { status: pausing ? "dismissed" : "pending" });
+  };
 
   const stopRecurrence = (id: string) =>
     patchItem(id, { recurrence: { type: "none" } });
@@ -1764,6 +1791,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error(`http ${res.status}`);
+      announce(`${newStatus === "PAUSED" ? "Paused" : "Resumed"} '${auto.name}'.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex patch failed");
@@ -1783,6 +1811,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       if (json.automation) setSelectedCodex(json.automation);
+      announce(`Saved '${patch.name ?? auto.name}'.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "codex save failed");
@@ -1793,6 +1822,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   const deleteCodex = useCallback((auto: CodexAutomation) => {
     setSelectedCodex(null);
+    window.setTimeout(() => newBtnRef.current?.focus(), 0); // panel held focus
     scheduleDelete([auto.id], `automation “${auto.name}”`, async () => {
       setCodexAutos((prev) => prev.filter((a) => a.id !== auto.id));
       try {
@@ -1812,6 +1842,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const res = await fetch(`/api/codex-automations/${encodeURIComponent(auto.id)}/run`, { method: "POST" });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
+      announce(`Run started for '${auto.name}'.`);
       await refreshRuns(auto.id);
       await refreshLastRuns();
     } catch (err) {
@@ -1829,6 +1860,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error ?? `http ${res.status}`);
       setCreateOpen(false);
+      announce(`Created cron '${input.name}'.`);
       await load();
       if (json.automation) { setSelectedCodex(json.automation); setSelectedItem(null); }
     } catch (err) {
@@ -1846,6 +1878,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const res = await runFlow(flow.id);
       if (res.unavailable) { setError("Flows run through the Coven daemon — it isn't reachable right now."); return; }
       if (!res.ok) throw new Error(res.error ?? "run failed");
+      announce(`Run started for '${flow.name}'.`);
       if (res.sessionId) onOpenSession?.(res.sessionId, null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "flow run failed");
@@ -2118,7 +2151,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             )}
             {/* Typed "New" menu — one entry point for the automation types. */}
             <div className="relative">
-              <Button className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setNewMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={newMenuOpen}>
+              <Button ref={newBtnRef} className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setNewMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={newMenuOpen}>
                 New
                 <span style={{ display: "flex" }}><Icon name="ph:caret-down" width={11} /></span>
               </Button>
@@ -2129,6 +2162,25 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                     role="menu"
                     className="absolute right-0 z-50 mt-1.5 w-[260px] overflow-hidden rounded-xl py-1 shadow-xl"
                     style={{ background: "var(--bg-raised)", border: "1px solid var(--border-hairline)" }}
+                    // role=menu promises menu keyboard behavior: Escape closes
+                    // (focus returns to the trigger), arrows rove the items,
+                    // and focus moves into the menu on open (ref below).
+                    ref={(el) => { if (el && !el.contains(document.activeElement)) el.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')?.focus(); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        setNewMenuOpen(false);
+                        newBtnRef.current?.focus();
+                        return;
+                      }
+                      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+                      e.preventDefault();
+                      const menu = e.currentTarget;
+                      const focusable = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])')];
+                      const idx = focusable.indexOf(document.activeElement as HTMLElement);
+                      const next = focusable[(idx + (e.key === "ArrowDown" ? 1 : -1) + focusable.length) % focusable.length];
+                      next?.focus();
+                    }}
                   >
                     <NewMenuItem
                       icon={AUTOMATION_TYPE_META.reminder.icon}
@@ -2163,6 +2215,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           <Tabs
             variant="segment"
             ariaLabel="Automations tabs"
+            idPrefix="automations"
             value={activeTab}
             onChange={selectTab}
             items={[
@@ -2220,7 +2273,11 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         )}
 
         {/* List (or the Calendar surface when that tab is active) */}
-        <div className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto px-8 pb-8"}>
+        <div
+          role="tabpanel"
+          id={`automations-panel-${activeTab}`}
+          aria-labelledby={`automations-tab-${activeTab}`}
+          className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto px-8 pb-8"}>
           {activeTab === "calendar" ? (
             calendarSlot
           ) : !initialLoadDone ? (
@@ -2440,7 +2497,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           key={deletePending.id}
           message={`Deleted ${deletePending.label}`}
           undoAriaLabel="Undo delete"
-          onUndo={undoDelete}
+          onUndo={() => { announce(`Restored ${deletePending.label}.`); undoDelete(); }}
           onDismiss={commitDelete}
         />
       ) : null}
