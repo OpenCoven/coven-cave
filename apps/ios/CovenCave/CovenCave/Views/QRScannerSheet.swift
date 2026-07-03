@@ -42,6 +42,7 @@ struct QRScannerSheet: UIViewControllerRepresentable {
             for item in addedItems {
                 if case .barcode(let barcode) = item, let payload = barcode.payloadStringValue {
                     delivered = true
+                    try? dataScanner.stopScanning()
                     onScan(payload)
                     return
                 }
