@@ -10,7 +10,6 @@ import { LifecycleBadge, formatTimeoutBadge } from "@/components/ui/lifecycle-ba
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
-import type { CardStep } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import {
   mergeLinksWithGitHub,
@@ -27,6 +26,7 @@ import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { useDateTimePrefs, formatDate, formatClock } from "@/lib/datetime-format";
 import { openExternalUrl } from "@/lib/open-external";
 import { attachmentIcon, fileToAttachment, hasDraggedFiles } from "@/lib/chat-attachments";
+import type { CardPatch } from "@/lib/board-card-ops";
 
 const DEFAULT_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 
@@ -63,7 +63,7 @@ type Props = {
   sessions: SessionRow[];
   projects: CaveProject[];
   onClose: () => void;
-  onPatch: (id: string, patch: Partial<Card>) => void;
+  onPatch: (id: string, patch: CardPatch) => void;
   onMoveStatus: (id: string, status: CardStatus) => void;
   onDelete: (id: string) => Promise<void>;
   onCardReplaced: (card: Card) => void;
@@ -184,7 +184,7 @@ function GitHubAttachSection({
 }: {
   card: Card;
   familiars: Familiar[];
-  onPatch: (id: string, patch: Partial<Card>) => void;
+  onPatch: (id: string, patch: CardPatch) => void;
   onOpenUrl?: (url: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -425,7 +425,7 @@ function LinksSection({
   onOpenUrl,
 }: {
   card: Card;
-  onPatch: (id: string, patch: Partial<Card>) => void;
+  onPatch: (id: string, patch: CardPatch) => void;
   onOpenUrl?: (url: string) => void;
 }) {
   const [draft, setDraft] = useState("");
@@ -446,13 +446,13 @@ function LinksSection({
     const url = draft.trim();
     if (!url || !isValidUrl(url)) return;
     if (links.includes(url)) return;
-    onPatch(card.id, { links: [...links, url] });
+    onPatch(card.id, { ops: { linkOps: [{ op: "add", value: url }] } });
     setDraft("");
     inputRef.current?.focus();
   }
 
   function deleteLink(url: string) {
-    onPatch(card.id, { links: links.filter((l) => l !== url) });
+    onPatch(card.id, { ops: { linkOps: [{ op: "remove", value: url }] } });
   }
 
   async function saveToLibrary(url: string) {
@@ -643,7 +643,7 @@ function AttachmentsSection({
   onPatch,
 }: {
   card: Card;
-  onPatch: (id: string, patch: Partial<Card>) => void;
+  onPatch: (id: string, patch: CardPatch) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -663,15 +663,17 @@ function AttachmentsSection({
       const picked = Array.from(files).slice(0, room);
       const converted = await Promise.all(picked.map((file) => fileToAttachment(file)));
       // Drop the composer-only `id`; the server re-normalizes to the lean shape.
-      const next = [...attachments, ...converted.map(({ id: _id, ...rest }) => rest)];
-      onPatch(card.id, { attachments: next });
+      onPatch(card.id, {
+        ops: { attachmentOps: [{ op: "add", attachments: converted.map(({ id: _id, ...rest }) => rest) }] },
+      });
     } finally {
       setBusy(false);
     }
   }
 
   function removeAt(index: number) {
-    onPatch(card.id, { attachments: attachments.filter((_, i) => i !== index) });
+    const name = attachments[index]?.name;
+    if (name) onPatch(card.id, { ops: { attachmentOps: [{ op: "remove", name }] } });
   }
 
   return (
@@ -788,7 +790,7 @@ function StepsSection({
   onPatch,
 }: {
   card: Card;
-  onPatch: (id: string, patch: Partial<Card>) => void;
+  onPatch: (id: string, patch: CardPatch) => void;
 }) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -802,48 +804,30 @@ function StepsSection({
   function addStep() {
     const text = draft.trim();
     if (!text) return;
-    const now = new Date().toISOString();
-    const next: CardStep = {
-      id: crypto.randomUUID(),
-      text,
-      done: false,
-      addedAt: now,
-    };
-    onPatch(card.id, { steps: [...steps, next] });
+    // Pre-generate the id so the optimistic step and the persisted one match.
+    onPatch(card.id, { ops: { stepOps: [{ op: "add", text, id: crypto.randomUUID() }] } });
     setDraft("");
     inputRef.current?.focus();
   }
 
   function toggleStep(id: string) {
-    const now = new Date().toISOString();
-    onPatch(card.id, {
-      steps: steps.map((s) =>
-        s.id === id
-          ? { ...s, done: !s.done, doneAt: !s.done ? now : undefined }
-          : s
-      ),
-    });
+    onPatch(card.id, { ops: { stepOps: [{ op: "toggle", id }] } });
   }
 
   function deleteStep(id: string) {
-    onPatch(card.id, { steps: steps.filter((s) => s.id !== id) });
+    onPatch(card.id, { ops: { stepOps: [{ op: "remove", id }] } });
   }
 
   // Schedule a step on the Gantt (group-by-task). Empty string clears the date.
   function setStepDate(id: string, field: "startDate" | "endDate", value: string) {
-    onPatch(card.id, {
-      steps: steps.map((s) => (s.id === id ? { ...s, [field]: value || null } : s)),
-    });
+    onPatch(card.id, { ops: { stepOps: [{ op: "setDate", id, field, value: value || null }] } });
   }
 
   function reorderStep(id: string, dir: -1 | 1) {
     const idx = steps.findIndex((s) => s.id === id);
-    if (idx < 0) return;
-    const next = [...steps];
     const swap = idx + dir;
-    if (swap < 0 || swap >= next.length) return;
-    [next[idx], next[swap]] = [next[swap], next[idx]];
-    onPatch(card.id, { steps: next });
+    if (idx < 0 || swap < 0 || swap >= steps.length) return;
+    onPatch(card.id, { ops: { stepOps: [{ op: "reorder", id, dir }] } });
   }
 
   return (
@@ -1059,7 +1043,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
   const addLabel = () => {
     const l = newLabel.trim();
     if (!l || card.labels.includes(l)) return;
-    onPatch(card.id, { labels: [...card.labels, l] });
+    onPatch(card.id, { ops: { labelOps: [{ op: "add", value: l }] } });
     setNewLabel("");
   };
 
@@ -1311,7 +1295,7 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   <span key={l} className="board-label-chip">
                     {l}
                     <button type="button" className="board-label-chip-remove"
-                      onClick={() => onPatch(card.id, { labels: card.labels.filter((x) => x !== l) })}
+                      onClick={() => onPatch(card.id, { ops: { labelOps: [{ op: "remove", value: l }] } })}
                       aria-label={`Remove ${l}`}>
                       <Icon name="ph:x-bold" width={8} />
                     </button>
