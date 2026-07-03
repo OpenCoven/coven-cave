@@ -161,6 +161,46 @@ adversarial cases but adds latency to every commit and forces network/IPC
 plumbing. Mention here for completeness; don't build it unless the cheaper
 options have demonstrably failed.
 
+### 5. Destructive-op guard — `scripts/worktree-guard.mjs` ✅ IMPLEMENTED
+
+Duplicate and orphaned work are the *slow* failure modes. The fast one is
+**destroyed** work: on 2026-07-03 an actor found another session's in-progress
+worktree, pushed its (unpushed) commit, merged it as PR #2290, and ran the
+standard post-merge cleanup — `git worktree remove` + `git branch -D` — while
+the owning session was mid-edit. Every uncommitted change was lost. The same
+gutted-worktree "husk" pattern (only a `.next/` or `tsconfig.tsbuildinfo`
+recreated by a process still running inside) had already hit two other
+worktrees on prior days. A sibling incident (#2286) chained
+`git push origin --delete` after a merge that had actually *failed*, which
+auto-closed the still-open PR.
+
+The guard is a PreToolUse hook on **Bash** (wired next to the surface-claim
+guard in `.claude/settings.json`) and — unlike the claim guard — it **blocks**
+(exit 2), because these ops destroy unrecoverable state:
+
+- `git worktree remove <path>` / `rm -rf .worktrees/<name>` (the worktree
+  *root*; deeper paths are the owner's business) is blocked when the worktree
+  is **dirty** or its HEAD exists on **no remote ref**. Husks (no `.git` link)
+  and clean+pushed worktrees pass silently, so normal post-merge cleanup and
+  husk GC stay frictionless. `rm -rf .worktrees` (the whole container) checks
+  every child.
+- `git branch -D <name>` is blocked when the branch tip is contained in no
+  remote-tracking ref (deletion would orphan unpushed commits).
+- `git push <remote> --delete <branch>` (or `push <remote> :<branch>`) is
+  blocked while an **open PR** still has that head branch. Needs `gh`; fails
+  open offline.
+
+Deliberate destruction: prefix the command with `WT_GUARD_BYPASS=1 ` — the
+guard only ensures it can't happen *by accident*. The corollary discipline for
+sessions: **push your branch to origin after every commit.** The remote is the
+only store a local actor can't destroy, and an unpushed commit is both bait
+for premature merges and the only recoverable artifact afterward.
+
+Known hole: the guard only covers actors that run through Claude Code hooks.
+The 2026-07-03 actor left no session transcript (likely a familiar/automation
+running outside the hook system) — for those, the pushed-branch discipline and
+the branch-protection rules are the only backstops.
+
 ## Practical recommendations for sessions
 
 Until any of the above is built, sessions should:
