@@ -236,6 +236,10 @@ async function mobileHandoff(req: Request) {
     inviteUrl: invite.url,
     url: invite.url,
     appUrl: invite.url,
+    // Native-app pairing: covencave:// deep link with a long-lived token —
+    // shown beside the QR so the iOS/iPadOS app pairs without typing.
+    appInviteUrl: invite.appInviteUrl,
+    appTokenExpiresAt: invite.appTokenExpiresAt,
     discoverySource: discovery.source,
     expiresAt: invite.expiresAt,
     expiresAtIso: invite.expiresAtIso,

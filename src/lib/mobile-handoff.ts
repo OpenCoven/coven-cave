@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { signMobileAccessToken } from "./mobile-access-token.ts";
+import { appTokenTtlMs } from "./mobile-token-refresh.ts";
 
 export const MOBILE_INVITE_TTL_MS = 8 * 60 * 60 * 1000;
 
@@ -240,11 +241,27 @@ export function buildInviteUrl({
   return url.toString();
 }
 
+/** Deep link the native app registers (`covencave://connect`) — tapping it on
+ *  the device configures host + credential in one step, no typing. */
+export function buildAppInviteUrl({
+  host,
+  mobileAccessToken,
+}: {
+  host: string;
+  mobileAccessToken: string;
+}) {
+  const url = new URL("covencave://connect");
+  url.searchParams.set("host", host);
+  url.searchParams.set("token", mobileAccessToken);
+  return url.toString();
+}
+
 export async function createMobileInvite({
   baseUrl,
   accessSecret,
   sidecarToken,
   ttlMs = MOBILE_INVITE_TTL_MS,
+  appTtlMs,
   now = Date.now(),
   nonce,
 }: {
@@ -252,6 +269,9 @@ export async function createMobileInvite({
   accessSecret: string;
   sidecarToken?: string | null;
   ttlMs?: number;
+  /** Lifetime of the native-app deep-link token (defaults to the rolling
+   *  30-day app TTL — see mobile-token-refresh.ts). */
+  appTtlMs?: number;
   now?: number;
   nonce?: string;
 }) {
@@ -261,9 +281,22 @@ export async function createMobileInvite({
     expiresAt,
     nonce,
   });
+  // The app link carries its own longer-lived token: a QR on screen is easy
+  // to re-scan every 8h, but a paired device should renew silently instead.
+  const appTokenExpiresAt = now + (appTtlMs ?? appTokenTtlMs());
+  const appAccessToken = await signMobileAccessToken({
+    secret: accessSecret,
+    expiresAt: appTokenExpiresAt,
+    nonce: nonce ? `${nonce}-app` : undefined,
+  });
   return {
     expiresAt,
     expiresAtIso: new Date(expiresAt).toISOString(),
     url: buildInviteUrl({ baseUrl, mobileAccessToken, sidecarToken }),
+    appInviteUrl: buildAppInviteUrl({
+      host: new URL(baseUrl).host,
+      mobileAccessToken: appAccessToken,
+    }),
+    appTokenExpiresAt,
   };
 }

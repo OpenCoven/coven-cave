@@ -116,6 +116,21 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.ok(token);
   const verification = await verifyMobileAccessToken(token, signingKey, now);
   assert.equal(verification.ok, true);
+
+  // The native-app invite is a covencave:// deep link carrying the SERVE host
+  // and a LONG-lived token (30d default, not the 8h QR TTL) — tapping it on
+  // the device pairs with zero typing, and the device renews from there.
+  assert.ok(invite.appInviteUrl.startsWith("covencave://connect?"));
+  const app = new URL(invite.appInviteUrl);
+  assert.equal(app.searchParams.get("host"), "cave.tailnet.example.ts.net");
+  const appToken = app.searchParams.get("token");
+  assert.ok(appToken);
+  const appVerification = await verifyMobileAccessToken(appToken, signingKey, now);
+  assert.equal(appVerification.ok, true);
+  if (appVerification.ok) {
+    assert.equal(appVerification.expiresAt, invite.appTokenExpiresAt);
+    assert.ok(invite.appTokenExpiresAt > invite.expiresAt, "app token outlives the QR invite");
+  }
 }
 
 {
