@@ -71,6 +71,13 @@ test.describe("chat sidebar (session navigator)", () => {
     await menu.getByRole("menuitemradio", { name: "By project" }).click();
     await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
     await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) beta threads/ })).toBeVisible();
+
+    // The organize choice persists across a reload.
+    await page.reload();
+    await page.keyboard.press("Meta+2");
+    await page.waitForSelector(".chat-sidebar", { timeout: 30_000 });
+    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
+    await expect(sidebar.getByText("Today", { exact: true })).toHaveCount(0);
   });
 
   test("search filters threads to matches, with an empty state", async ({ page }) => {

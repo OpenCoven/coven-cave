@@ -206,7 +206,7 @@ export function PopoverBody({
 }
 
 export function PopoverLabel({ children }: { children: ReactNode }) {
-  return <div className="ui-popover-label">{children}</div>;
+  return <div className="ui-popover-label" role="presentation">{children}</div>;
 }
 
 export function PopoverSeparator() {

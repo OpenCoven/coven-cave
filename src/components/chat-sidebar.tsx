@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { Icon, type IconName } from "@/lib/icon";
 import { sessionRailTitle } from "@/lib/session-rail-title";
@@ -204,9 +205,15 @@ export function ChatSidebar({
   const [view, setView] = useState<ChatSidebarView>("recent");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchorRef = useRef<HTMLButtonElement>(null);
+  const menuBodyRef = useRef<HTMLDivElement>(null);
 
-  // Pins load after mount so SSR and first client render agree (same idiom as
-  // the chat list). The store is shared with the chat surface's other lists.
+  // Trap focus inside the Organize menu while it is open (same convention as
+  // the GitHub action popover, #2288). Also hydrates the organize-view preference.
+  useFocusTrap(menuOpen, menuBodyRef, { onEscape: () => setMenuOpen(false) });
+
+  // Pins and the organize-view preference load after mount so SSR and first
+  // client render agree (same idiom as the chat list). The store is shared
+  // with the chat surface's other lists.
   useEffect(() => {
     setPinnedIds(readPinnedSessions());
     setView(readChatSidebarView());
@@ -366,15 +373,17 @@ export function ChatSidebar({
             minWidth={190}
             ariaLabel="Sidebar options"
           >
-            <PopoverBody role="menu" ariaLabel="Organize sidebar">
-              <PopoverLabel>Organize sidebar</PopoverLabel>
-              <PopoverItem icon="ph:clock" checked={view === "recent"} onSelect={() => selectView("recent")}>
-                Recent chats
-              </PopoverItem>
-              <PopoverItem icon="ph:folder" checked={view === "projects"} onSelect={() => selectView("projects")}>
-                By project
-              </PopoverItem>
-            </PopoverBody>
+            <div ref={menuBodyRef} tabIndex={-1}>
+              <PopoverBody role="menu" ariaLabel="Organize sidebar">
+                <PopoverLabel>Organize sidebar</PopoverLabel>
+                <PopoverItem icon="ph:clock" checked={view === "recent"} onSelect={() => selectView("recent")}>
+                  Recent chats
+                </PopoverItem>
+                <PopoverItem icon="ph:folder" checked={view === "projects"} onSelect={() => selectView("projects")}>
+                  By project
+                </PopoverItem>
+              </PopoverBody>
+            </div>
           </Popover>
         </header>
 
