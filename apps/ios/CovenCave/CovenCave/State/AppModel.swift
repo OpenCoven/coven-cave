@@ -664,18 +664,20 @@ final class AppModel {
     }
 
     /// Probe candidate base URLs in order; adopt the first that answers as a
-    /// real Cave server. A 401/403 anywhere is remembered so a token-gated
-    /// desktop reads as "needs pairing" instead of "unreachable".
+    /// real Cave server. A 401/403 is TERMINAL, not a cue to keep walking:
+    /// it's a live Cave token gate talking, and the fix is pairing. Probing
+    /// past it can silently adopt a different instance on a sibling port
+    /// (e.g. a dev server on :3000) — the user thinks they're talking to the
+    /// desktop they paired with, but they aren't.
     static func discoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
-        var sawUnauthorized = false
         for base in candidates {
             switch await probe(base) {
             case .ok: return .found(base)
-            case .unauthorized: sawUnauthorized = true
+            case .unauthorized: return .unauthorized
             case .failed: continue
             }
         }
-        return sawUnauthorized ? .unauthorized : .none
+        return .none
     }
 
     private enum ProbeResult { case ok, unauthorized, failed }
