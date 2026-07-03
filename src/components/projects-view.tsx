@@ -6,6 +6,7 @@ import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-types";
+import { addChatProject } from "@/lib/chat-add-project";
 import type { SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { stripTaskPrefix } from "@/lib/projects/session-glyph";
@@ -269,6 +270,17 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     if (!name || !root) return;
     setCreating(true);
     const project = await createProject(name, root);
+    if (project && activeFamiliarId) {
+      // Register alone leaves the project 403ing in chat for this familiar —
+      // grant it here so "New project" is usable the moment it's created.
+      const granted = await addChatProject({
+        root,
+        familiarId: activeFamiliarId,
+        createProject,
+        existingProjectId: project.id,
+      });
+      if (!granted.ok) setSessionError(`Project created, but grant failed: ${granted.error}`);
+    }
     setCreating(false);
     if (!project) return;
     setNameDraft("");
