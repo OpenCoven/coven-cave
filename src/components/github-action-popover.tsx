@@ -11,6 +11,7 @@ import {
   itemToContext,
 } from "@/lib/github-tasks";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -326,14 +327,10 @@ export function GitHubActionPopover({
     };
   }, [onClose]);
 
-  // Close on Escape
-  useEffect(() => {
-    function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+  // Trap focus inside the popover, close on Escape, and return focus to the
+  // trigger on close (the shared dialog convention). Replaces a bare keydown
+  // listener that left Tab escaping into the page and lost the return point.
+  useFocusTrap(true, ref, { onEscape: onClose });
 
   const TITLES: Record<PopoverMode, string> = {
     board: "Add to board",
@@ -350,6 +347,10 @@ export function GitHubActionPopover({
   return (
     <div
       ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-label={TITLES[mode]}
+      tabIndex={-1}
       className="absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-3 shadow-xl"
       onClick={(e) => e.stopPropagation()}
     >

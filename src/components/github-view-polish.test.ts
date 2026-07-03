@@ -372,5 +372,12 @@ assert.doesNotMatch(source, /onClick=\{\(\) => void fetchActivity\(\)\}/, "no ma
 assert.match(source, /item\.checkStatus === "passing"/, "CI passing state renders a badge");
 assert.match(source, /item\.checkStatus === "pending"/, "CI pending state renders a badge");
 assert.match(boardCss, /\.gh-badge--success \{/, "the success badge has a style");
+// ── 2026-07-03 GitHub a11y batch ──────────────────────────────────────────────
+assert.match(source, /const \{ announce \} = useAnnouncer\(\)/, "the GitHub surface consumes the shared announcer");
+assert.match(source, /announce\("Comment posted\."\)/, "posting a comment announces");
+assert.match(source, /announce\(next \? "Thread resolved\." : "Thread unresolved\."\)/, "resolving a thread announces");
+assert.match(source, /announce\(`Worktree \$\{json\.created \? "created" : "reused"\} for the safe merge\.`\)/, "the safe-merge worktree announces");
+assert.match(source, /aria-label="Reply to this thread"/, "the comment composer textarea is labelled");
+assert.match(source, /className="gh-composer-error" role="alert"/, "a failed post is announced via role=alert");
 
 console.log("github-view-polish.test.ts OK");

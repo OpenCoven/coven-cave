@@ -9,6 +9,7 @@ const FILES = [
   "library-github-list.tsx",
   "onboarding-overlay.tsx",
   "github-view.tsx",
+  "github-action-popover.tsx",
   "new-reminder-modal.tsx",
 ];
 

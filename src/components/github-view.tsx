@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { arrayContentEqual } from "@/lib/array-content-equal";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { useCopy } from "@/lib/use-copy";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { Familiar } from "@/lib/types";
@@ -517,6 +518,7 @@ function SafeMergeAction({
   onJumpToSession?: (sessionId: string, familiarId?: string | null) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { announce } = useAnnouncer();
   const [error, setError] = useState<string | null>(null);
   if (item.kind !== "pr" && item.kind !== "review_request") return null;
 
@@ -553,6 +555,7 @@ function SafeMergeAction({
           throw new Error(json?.error ?? `worktree HTTP ${res.status}`);
         }
         worktreeLine = `Worktree: ${json.worktree} (${json.created ? "created" : "reused"}). Branch: ${json.branch}.`;
+        announce(`Worktree ${json.created ? "created" : "reused"} for the safe merge.`);
       }
 
       const context = [
@@ -838,6 +841,7 @@ function GitHubComments({
   const [tick, setTick] = useState(0);
   const [draft, setDraft] = useState("");
   const [posting, setPosting] = useState(false);
+  const { announce } = useAnnouncer();
   const [postError, setPostError] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
   const [familiarPickerOpen, setFamiliarPickerOpen] = useState(false);
@@ -890,6 +894,7 @@ function GitHubComments({
   async function toggleResolve(thread: GhReviewThread) {
     if (!canResolve || state.status !== "ready") return;
     const next = !thread.isResolved;
+    announce(next ? "Thread resolved." : "Thread unresolved.");
     // Optimistic flip — revert on failure.
     setState({
       status: "ready",
@@ -955,6 +960,7 @@ function GitHubComments({
       }
       setDraft("");
       setTick((n) => n + 1);
+      announce("Comment posted.");
     } catch (e) {
       setPostError(e instanceof Error ? e.message : "Network error");
     } finally {
@@ -1065,7 +1071,9 @@ function GitHubComments({
               <textarea
                 ref={textareaRef}
                 className="gh-composer-input"
-                placeholder="Reply… use @ to tag a familiar"
+                aria-label="Reply to this thread"
+                aria-keyshortcuts="Meta+Enter Control+Enter"
+                placeholder="Reply… use @ to tag a familiar (⌘↵ to send)"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -1076,7 +1084,7 @@ function GitHubComments({
                 }}
                 rows={2}
               />
-              {postError && <p className="gh-composer-error">{postError}</p>}
+              {postError && <p className="gh-composer-error" role="alert">{postError}</p>}
               <div className="gh-composer-actions">
                 <div className="gh-composer-tag">
                   <button
