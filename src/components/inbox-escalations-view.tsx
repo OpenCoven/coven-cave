@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { AutomationsView } from "@/components/automations-view";
+import { AutomationsView } from "@/components/lazy-surfaces";
 import type { Escalation } from "@/lib/escalations-types";
 import type { Familiar } from "@/lib/types";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";

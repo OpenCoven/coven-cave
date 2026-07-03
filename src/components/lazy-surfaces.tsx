@@ -73,3 +73,8 @@ export const MarketplaceView = dynamic(
   timed("marketplace", () => import("@/components/marketplace-view").then((m) => m.MarketplaceViewSurface)),
   { ssr: false, loading: SurfaceFallback },
 );
+
+export const AutomationsView = dynamic(
+  timed("automations", () => import("@/components/automations-view").then((m) => m.AutomationsView)),
+  { ssr: false, loading: SurfaceFallback },
+);

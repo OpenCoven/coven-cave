@@ -1,26 +1,24 @@
 // Unified automation model.
 //
-// Coven Cave grew four separate "make something happen later / automatically"
+// Coven Cave grew three separate "make something happen later / automatically"
 // primitives, each with its own surface, store, and vocabulary:
 //
 //   • reminder — a nudge (one-shot or recurring) in the inbox store
 //   • cron     — a familiar run on an rrule schedule (Codex automation, TOML)
-//   • workflow — a multi-step agent pipeline with an I/O contract (manifest)
 //   • flow     — a freeform node graph wired on a canvas
 //
 // To a user these are all just "automations": a thing that runs, on a trigger,
 // maybe on a schedule, maybe tied to a familiar. This module normalizes all
-// four into one `AutomationEntry` so a single surface can list, filter, count,
+// three into one `AutomationEntry` so a single surface can list, filter, count,
 // and route them together. It is pure / framework-free / client-safe (no node
 // imports) so the surface component and any server aggregator can share it.
 
 import type { InboxItem } from "../cave-inbox";
 import type { Recurrence } from "../inbox-recurrence";
 import type { CodexAutomation } from "../codex-automations-types";
-import type { WorkflowSummary } from "../workflows";
 import type { FlowDoc } from "../flow/flow-doc.ts";
 
-export type AutomationType = "reminder" | "cron" | "workflow" | "flow";
+export type AutomationType = "reminder" | "cron" | "flow";
 
 /** Whether the entry is armed, idle, or unfinished. */
 export type AutomationState = "active" | "paused" | "draft";
@@ -50,7 +48,7 @@ export type AutomationEntry = {
   nextFireAt?: string;
 };
 
-export const AUTOMATION_TYPES: AutomationType[] = ["reminder", "cron", "workflow", "flow"];
+export const AUTOMATION_TYPES: AutomationType[] = ["reminder", "cron", "flow"];
 
 export type AutomationTypeMeta = {
   /** Singular noun. */
@@ -64,7 +62,7 @@ export type AutomationTypeMeta = {
   /** One-line description for the "New" menu and empty states. */
   blurb: string;
   /** Which surface mode owns deep editing for this type (for "Open"). */
-  editorMode: "inbox" | "roles" | "flow";
+  editorMode: "inbox" | "flow";
 };
 
 export const AUTOMATION_TYPE_META: Record<AutomationType, AutomationTypeMeta> = {
@@ -83,14 +81,6 @@ export const AUTOMATION_TYPE_META: Record<AutomationType, AutomationTypeMeta> = 
     accent: "var(--color-success)",
     blurb: "Run a familiar on a recurring schedule",
     editorMode: "inbox",
-  },
-  workflow: {
-    label: "Workflow",
-    plural: "Workflows",
-    icon: "ph:graph",
-    accent: "var(--accent-presence)",
-    blurb: "Multi-step agent pipeline with an input/output contract",
-    editorMode: "roles",
   },
   flow: {
     label: "Flow",
@@ -186,22 +176,6 @@ export function cronToEntry(auto: CodexAutomation): AutomationEntry {
   };
 }
 
-export function workflowToEntry(wf: WorkflowSummary): AutomationEntry {
-  const blocked = wf.validation_state === "invalid";
-  return {
-    key: `workflow:${wf.id}`,
-    type: "workflow",
-    nativeId: wf.id,
-    name: wf.name || wf.id,
-    summary: wf.summary || undefined,
-    state: blocked ? "draft" : "active",
-    trigger: "Manual",
-    scheduled: false,
-    familiarId: wf.familiar ?? null,
-    sortAt: "",
-  };
-}
-
 export function flowToEntry(flow: FlowDoc): AutomationEntry {
   const { trigger, scheduled } = flowTrigger(flow);
   return {
@@ -221,20 +195,18 @@ export function flowToEntry(flow: FlowDoc): AutomationEntry {
 export type AutomationSources = {
   reminders?: InboxItem[];
   crons?: CodexAutomation[];
-  workflows?: WorkflowSummary[];
   flows?: FlowDoc[];
 };
 
 /**
- * Normalize the four native source lists into one recency-sorted entry list.
+ * Normalize the three native source lists into one recency-sorted entry list.
  * Entries with a `sortAt` timestamp sort newest-first ahead of the undated
- * ones (crons/workflows), which fall back to alphabetical by name.
+ * ones (crons), which fall back to alphabetical by name.
  */
 export function buildAutomationEntries(sources: AutomationSources): AutomationEntry[] {
   const entries: AutomationEntry[] = [
     ...(sources.reminders ?? []).map(reminderToEntry),
     ...(sources.crons ?? []).map(cronToEntry),
-    ...(sources.workflows ?? []).map(workflowToEntry),
     ...(sources.flows ?? []).map(flowToEntry),
   ];
   return entries.sort((a, b) => {
@@ -247,7 +219,7 @@ export function buildAutomationEntries(sources: AutomationSources): AutomationEn
 
 /** Count entries per type (for tab badges). */
 export function countByType(entries: AutomationEntry[]): Record<AutomationType, number> {
-  const counts: Record<AutomationType, number> = { reminder: 0, cron: 0, workflow: 0, flow: 0 };
+  const counts: Record<AutomationType, number> = { reminder: 0, cron: 0, flow: 0 };
   for (const e of entries) counts[e.type] += 1;
   return counts;
 }

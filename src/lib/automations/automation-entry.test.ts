@@ -37,7 +37,7 @@ assert.deepEqual(
   { trigger: "On webhook", scheduled: false },
 );
 
-// buildAutomationEntries normalizes all four sources into one typed list.
+// buildAutomationEntries normalizes all three sources into one typed list.
 const entries = buildAutomationEntries({
   reminders: [
     {
@@ -65,9 +65,6 @@ const entries = buildAutomationEntries({
       cwds: [], tags: [], skillPath: null,
     },
   ],
-  workflows: [
-    { id: "w1", version: "1", name: "Research brief", summary: "Fan out", validation_state: "invalid", familiar: "fam-c" },
-  ],
   flows: [
     {
       id: "f1",
@@ -82,7 +79,7 @@ const entries = buildAutomationEntries({
   ],
 });
 
-assert.equal(entries.length, 4);
+assert.equal(entries.length, 3);
 const byType = Object.fromEntries(entries.map((e) => [e.type, e]));
 
 assert.equal(byType.reminder.key, "reminder:r1");
@@ -100,27 +97,24 @@ assert.equal(byType.cron.trigger, "Every day at 7am");
 assert.equal(byType.cron.summary, "Summarize my inbox");
 assert.equal(byType.cron.familiarId, "fam-b");
 
-assert.equal(byType.workflow.state, "draft", "invalid workflow is a draft");
-assert.equal(byType.workflow.trigger, "Manual");
-
 assert.equal(byType.flow.state, "active");
 assert.equal(byType.flow.trigger, "On webhook");
 
-// Dated entries (reminder, flow) sort ahead of undated (cron, workflow).
+// Dated entries (reminder, flow) sort ahead of undated (cron).
 assert.ok(["reminder", "flow"].includes(entries[0].type));
-assert.ok(["cron", "workflow"].includes(entries[3].type));
+assert.equal(entries[2].type, "cron");
 
 // countByType + filterEntries.
-assert.deepEqual(countByType(entries), { reminder: 1, cron: 1, workflow: 1, flow: 1 });
-assert.equal(filterEntries(entries, "research").length, 1);
+assert.deepEqual(countByType(entries), { reminder: 1, cron: 1, flow: 1 });
+assert.equal(filterEntries(entries, "digest").length, 1, "matches on name");
 assert.equal(filterEntries(entries, "webhook").length, 1, "matches on trigger text");
-assert.equal(filterEntries(entries, "").length, 4);
+assert.equal(filterEntries(entries, "").length, 3);
 
 // Type metadata is complete and well-formed.
 for (const t of AUTOMATION_TYPES) {
   const meta = AUTOMATION_TYPE_META[t];
   assert.ok(meta.label && meta.plural && meta.icon && meta.accent && meta.blurb, `meta complete for ${t}`);
-  assert.ok(["inbox", "roles", "flow"].includes(meta.editorMode));
+  assert.ok(["inbox", "flow"].includes(meta.editorMode));
 }
 
 console.log("automation-entry.test.ts: ok");
