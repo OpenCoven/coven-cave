@@ -179,6 +179,10 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   const { announce } = useAnnouncer();
   const draggingIdRef = useRef<string | null>(null);
   const railRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  // Scopes the grab-and-move keydown handling to this board (the listener is
+  // on window; without containment a grab session captured Space/Escape/Arrows
+  // app-wide, even with focus in the sidebar or another surface).
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const columnIndex = useCallback(
     (id: string) => COLUMNS.findIndex((c) => c.id === id),
@@ -188,6 +192,17 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const target = document.activeElement as HTMLElement | null;
+      const inBoard = Boolean(target && rootRef.current?.contains(target));
+      // A grab is a focus-coupled mode: if focus leaves the board (Tab to the
+      // sidebar, a dialog opens), release it and let the key act normally
+      // instead of consuming Space/Escape/Arrows app-wide.
+      if (grabbedCardId && !inBoard) {
+        const card = cards.find((c) => c.id === grabbedCardId);
+        setGrabbedCardId(null);
+        announce(card ? `Cancelled moving '${card.title}'.` : "Cancelled.");
+        return;
+      }
+      if (!inBoard) return;
       const focusedCardId = target?.dataset?.cardId ?? null;
 
       // Toggle grab on Space.
@@ -203,6 +218,12 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
             // moveCardToStatus so every view (kanban/table/stack/inspector)
             // announces identically and drops never announce twice.
             onMoveStatus(grabbedCardId, dropTargetStatus);
+            // The card re-renders under its new column; without this, focus
+            // falls to <body> and the keyboard user is lost.
+            const movedId = grabbedCardId;
+            window.setTimeout(() => {
+              document.querySelector<HTMLElement>(`[data-card-id="${movedId}"]`)?.focus();
+            }, 0);
           } else if (card) {
             announce("Drop cancelled — same column.");
           }
@@ -459,7 +480,7 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
     setCollapsedGroups((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflowY: showSwimlanes ? "auto" : "hidden" }}>
+    <div ref={rootRef} style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflowY: showSwimlanes ? "auto" : "hidden" }}>
       {groups.map(({ key, label, cards: gc }) => {
         const isCollapsed = collapsedGroups.has(key);
         const grpGrouped = grouped(gc);
@@ -678,13 +699,27 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
   const urgency = scheduleUrgency(card.endDate, card.status, todayMs);
   const attachmentCount = card.attachments?.length ?? 0;
   const hasChips = !!schedule || !!card.cwd || card.links.length > 0 || card.labels.length > 0 || attachmentCount > 0 || !!session;
+  // The metadata chips below are visual-only (title-attribute spans); fold the
+  // same state into the card's accessible name so AT users hear it.
+  const ariaMeta = [
+    schedule
+      ? urgency === "overdue"
+        ? `overdue, was due ${schedule}`
+        : urgency === "due-soon"
+        ? `due soon, ${schedule}`
+        : `scheduled ${schedule}`
+      : null,
+    session ? "linked chat" : null,
+    attachmentCount > 0 ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}` : null,
+    card.labels.length > 0 ? `labels ${card.labels.join(", ")}` : null,
+  ].filter(Boolean).join(", ");
 
   return (
     <li draggable={!selectMode}
       data-card-id={card.id}
       role={selectMode ? "checkbox" : "button"}
       aria-checked={selectMode ? isSelected : undefined}
-      aria-label={`${card.title} — ${pri.label} priority, ${statusLabel}${isSelected ? ", selected" : ""}${isGrabbed ? ", grabbed" : ""}.${selectMode ? " Space to toggle selection." : " Enter to open; Space to move."}`}
+      aria-label={`${card.title} — ${pri.label} priority, ${statusLabel}${ariaMeta ? `, ${ariaMeta}` : ""}${isSelected ? ", selected" : ""}${isGrabbed ? ", grabbed" : ""}.${selectMode ? " Space to toggle selection." : " Enter to open; Space to move."}`}
       aria-keyshortcuts={selectMode ? undefined : "Enter Space"}
       onDragStart={(e) => { if (selectMode) { e.preventDefault(); return; } draggedRef.current = true; onDragStart(e); }}
       onDragEnd={() => { setTimeout(() => { draggedRef.current = false; }, 0); onDragEnd(); }}

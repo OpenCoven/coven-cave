@@ -314,7 +314,8 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
                 title: before.title,
                 prev: { startDate: before.startDate ?? null, endDate: before.endDate ?? null },
               });
-        announce(`Rescheduled '${before.title}'. Undo available.`);
+        const range = [patch.startDate, patch.endDate].filter(Boolean).join(" to ");
+        announce(`Rescheduled '${before.title}'${range ? ` — ${range}` : ""}. Undo available.`);
       }
     }
     setCards((prev) => prev.map((c) => {

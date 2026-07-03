@@ -5,6 +5,7 @@ import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { Familiar } from "@/lib/types";
 import { useDateTimePrefs, readDateTimePrefs } from "@/lib/datetime-format";
 import { Icon } from "@/lib/icon";
+import { useAnnouncer } from "@/components/ui/live-region";
 import type { CardPatch } from "@/lib/board-card-ops";
 
 type ProjectLike = { id: string; name: string };
@@ -150,6 +151,7 @@ function cardRange(card: Card): { start: Date; end: Date } | null {
 }
 
 export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelect, onPatch, groupMode = "project" }: Props) {
+  const { announce } = useAnnouncer();
   // Click a group header to focus it (hide the others); click again to show all.
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
   const [showUnscheduled, setShowUnscheduled] = useState(false);
@@ -257,6 +259,9 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
           ],
         },
       });
+      // Step reschedules bypass board-view's card-level reschedule announcement
+      // — without this, a keyboard ←/→ commit is silent for AT.
+      announce(`Rescheduled '${row.label}': ${formatLabel(addDays(row.start, mode === "resize-end" ? 0 : delta))} to ${formatLabel(addDays(row.end, mode === "resize-start" ? 0 : delta))}.`);
     } else {
       // Project mode: a move shifts whichever of the task's own dates are set;
       // a resize sets the dragged end explicitly.

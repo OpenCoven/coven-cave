@@ -194,7 +194,6 @@ function BoardCardStackRow({
         className="board-card-stack__row-main"
         role="button"
         tabIndex={0}
-        aria-pressed={isSelected}
         onClick={onSelect}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(); }

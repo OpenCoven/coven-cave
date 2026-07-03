@@ -187,7 +187,7 @@ assert.match(view, /announce\(`Created task '\$\{draft\.title\.trim\(\)\}'\.`\)/
 assert.match(view, /announce\(`Deleted \$\{toRemove\.length\} task/, "delete announces with undo hint");
 assert.match(view, /announce\(`Cleared \$\{cleared\.length\} done task/, "clear-done announces");
 assert.match(view, /announce\(`Moved '\$\{title\}' to /, "moveCardToStatus announces for every view");
-assert.match(view, /announce\(`Rescheduled '\$\{before\.title\}'\. Undo available\.`\)/, "reschedule announces");
+assert.match(view, /announce\(`Rescheduled '\$\{before\.title\}'\$\{range \? ` — \$\{range\}` : ""\}\. Undo available\.`\)/, "reschedule announces with the committed dates");
 assert.match(view, /announce\(`Restored /, "undo paths announce restoration");
 // The final "Moved" message is BoardView's alone — kanban's drop paths must not
 // double-announce it (they keep their grab/over/cancel narration).
@@ -203,5 +203,15 @@ assert.doesNotMatch(inspector, /onPatch\(card\.id, \{ steps: steps\.(map|filter)
 assert.match(gantt, /op: "setDate", id: row\.stepId/, "gantt step drag sends setDate ops, not the whole steps array");
 assert.match(view, /applyCardOps\(c, ops, new Date\(\)\.toISOString\(\)\)/, "the optimistic render resolves ops with the same shared function the server uses");
 assert.match(view, /if \(json\.card\) setCards\(\(prev\) => prev\.map\(\(c\) => \(c\.id === id \? \(json\.card as Card\) : c\)\)\)/, "a successful PATCH adopts the server card");
+
+// ── A11y batch (2026-07-03) ───────────────────────────────────────────────────
+const table = await readFile(new URL("./board-table.tsx", import.meta.url), "utf8");
+assert.match(kanban, /const ariaMeta = \[/, "kanban folds chip metadata into the card's accessible name");
+assert.match(kanban, /\$\{ariaMeta \? `, \$\{ariaMeta\}` : ""\}/, "the accessible name carries schedule/chat/attachments/labels");
+assert.match(table, /aria-label=\{selectMode \? `\$\{card\.title\}/, "table select-mode rows are named by their card title");
+assert.match(kanban, /rootRef\.current\?\.contains\(target\)/, "grab keydown handling is scoped to the board");
+assert.match(kanban, /if \(grabbedCardId && !inBoard\)/, "a grab releases when focus leaves the board");
+assert.match(kanban, /document\.querySelector<HTMLElement>\(`\[data-card-id="\$\{movedId\}"\]`\)\?\.focus\(\)/, "keyboard drop refocuses the moved card");
+assert.match(gantt, /announce\(`Rescheduled '\$\{row\.label\}':/, "gantt step reschedules announce the committed range");
 
 console.log("board-ux-polish.test.ts: ok");
