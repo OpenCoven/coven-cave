@@ -45,6 +45,24 @@ assert.match(
 
 assert.match(
   source,
+  /<option value=\{NO_PROJECT_ID\}>No project<\/option>/,
+  "HomeComposer should offer an explicit No-project choice, matching chat semantics",
+);
+
+assert.match(
+  source,
+  /value === ADD_PROJECT_ID[\s\S]{0,120}?beginAddProject\(\);/,
+  "The Add-project option should open the shared register+grant flow instead of changing the selection",
+);
+
+assert.match(
+  source,
+  /selectedProjectId === NO_PROJECT_ID\s*\?\s*null/,
+  "An explicit No-project selection should resolve to a null project (not fall back to projects[0])",
+);
+
+assert.match(
+  source,
   /onStartChat\(prompt, selectedFamiliarId, selectedProject\?\.root \?\? null, \{\s*initialControls: \{ thinkingEffort, responseSpeed \},[\s\S]*?\}\)/,
   "HomeComposer should hand the selected project root and initial command controls to chat start",
 );
