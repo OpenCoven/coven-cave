@@ -13,6 +13,9 @@ test("rrule daily round-trips", () => {
   assert.equal(p.mode, "daily");
   assert.equal(p.time, "09:30");
   assert.equal(buildCodexRrule("daily", "09:30", [], ""), "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=30");
+  // A cleared <input type=time> yields "" — must fall back to 9:00, not
+  // silently schedule at midnight (Number("") === 0).
+  assert.equal(buildCodexRrule("daily", "", [], ""), "RRULE:FREQ=DAILY;BYHOUR=9;BYMINUTE=0");
 });
 
 test("rrule weekly round-trips with days", () => {

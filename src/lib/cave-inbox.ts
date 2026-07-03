@@ -184,16 +184,6 @@ export async function deleteItem(id: string): Promise<boolean> {
   });
 }
 
-export async function listPending(): Promise<InboxItem[]> {
-  const file = await loadInbox();
-  return file.items.filter((i) => i.status === "pending");
-}
-
-export async function listFired(): Promise<InboxItem[]> {
-  const file = await loadInbox();
-  return file.items.filter((i) => i.status === "fired");
-}
-
 export async function snoozeItem(
   id: string,
   untilIso: string,

@@ -81,6 +81,16 @@ export async function updateRun(
   });
 }
 
+/** Drop all run records for an automation — called when it is deleted so a
+ * later automation that reuses the same id/slug doesn't inherit its history. */
+export async function purgeRuns(automationId: string): Promise<void> {
+  await withRunsLock(async () => {
+    const file = await loadRunsFile();
+    const runs = file.runs.filter((r) => r.automationId !== automationId);
+    if (runs.length !== file.runs.length) await persist({ ...file, runs });
+  });
+}
+
 export async function listRuns(automationId?: string): Promise<AutomationRunRecord[]> {
   const file = await loadRunsFile();
   return automationId ? file.runs.filter((r) => r.automationId === automationId) : file.runs;

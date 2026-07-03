@@ -63,8 +63,9 @@ assert.match(source, /\.filter\(\(id\) => !id\.startsWith\("eph:"\)\)/, "bulk ac
 // ── Polling pauses while hidden + async fetch guards ────────────────────────
 // The 15s list poll + 2.5s in-flight run poll otherwise keep firing in a
 // backgrounded tab; a refetch on return brings the surface current.
-assert.match(source, /const tick = \(\) => \{ if \(!document\.hidden\) void load\(\); \}/, "the 15s poll skips a hidden tab");
-assert.match(source, /addEventListener\("visibilitychange", onVis\)/, "polling resumes when the tab returns");
+// (Hidden-tab pause + refetch-on-return now come from the shared
+// usePausablePoll hook — the hand-rolled tick/visibilitychange pair is gone.)
+assert.doesNotMatch(source, /addEventListener\("visibilitychange"/, "no hand-rolled visibility handling remains for the list poll");
 assert.match(source, /if \(document\.hidden\) return;.*don't poll a backgrounded tab/, "the in-flight run poll skips a hidden tab");
 // All loaders guard against setState after unmount; refreshRuns also drops stale responses.
 assert.match(source, /const mountedRef = useRef\(true\)/, "tracks mounted state for async guards");
@@ -86,18 +87,31 @@ assert.match(source, /actions\.togglePauseReminder\(item\)/, "the reminder row e
 assert.match(source, /item\.kind !== "daily-summary"/, "daily-summary rows get no run/pause actions");
 assert.match(
   source,
-  /automation-entry-row__actions[\s\S]*?aria-label=\{`Run \$\{entry\.name\} now`\}/,
+  /entry\.name[\s\S]*?aria-label=\{`Run \$\{entry\.name\} now`\}/,
   "unified automation row actions render below the automation name",
 );
 assert.match(
   source,
-  /managed-automation-row__actions[\s\S]*?onClick=\{onRun\}[\s\S]*?onClick=\{onOpen\}/,
+  /\{name\}<\/span>[\s\S]*?onClick=\{onRun\}[\s\S]*?onClick=\{onOpen\}/,
   "managed automation row actions render below the automation name",
 );
 assert.match(
   source,
-  /managed-automation-row__actions[\s\S]*?aria-label=\{`Run \$\{name\} now`\}/,
+  /aria-label=\{`Run \$\{name\} now`\}/,
   "the managed row's Run button carries a distinct accessible name (not just \"Run\"/\"…\")",
 );
 
 console.log("automations-view.test.ts: ok");
+
+// ── 2026-07-03 audit fixes ────────────────────────────────────────────────────
+// Poll guards: unchanged responses keep previous references so the open detail
+// panel's form-reset effect doesn't wipe in-progress edits every 15s, and the
+// per-cron runs fan-out doesn't re-fire.
+assert.match(source, /setItems\(\(prev\) => \(arrayContentEqual\(prev, nextItems\) \? prev : nextItems\)\)/, "inbox poll is content-guarded");
+assert.match(source, /setCodexAutos\(\(prev\) => \(arrayContentEqual\(prev, nextAutos\) \? prev : nextAutos\)\)/, "codex poll is content-guarded");
+assert.match(source, /setFlows\(\(prev\) => \(arrayContentEqual\(prev, nextFlows\) \? prev : nextFlows\)\)/, "flows poll is content-guarded");
+assert.match(source, /usePausablePoll\(\(\) => \{ void load\(\); \}, 15_000/, "the 15s poll uses the shared pausable-poll hook");
+// Selected-detail syncs only adopt content changes — a new-but-identical
+// reference would re-fire the form reset (cron) or is pointless churn (reminder).
+assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedCodex\)\) setSelectedCodex\(fresh\)/, "cron detail sync is content-guarded");
+assert.match(source, /if \(JSON\.stringify\(fresh\) !== JSON\.stringify\(selectedItem\)\) setSelectedItem\(fresh\)/, "reminder detail panel re-syncs after polls");

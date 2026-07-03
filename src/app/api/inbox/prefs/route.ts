@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isLocalOrigin } from "@/lib/server/local-origin";
 import {
   loadPrefs,
   patchPrefs,
@@ -14,6 +15,9 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
+  if (!isLocalOrigin(req)) {
+    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  }
   let body: {
     mutedFamiliars?: string[];
     sound?: { mode?: SoundMode; name?: string };

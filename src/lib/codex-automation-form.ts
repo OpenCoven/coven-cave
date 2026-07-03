@@ -44,7 +44,12 @@ export function parseCodexRrule(rrule: string | null): {
 
 export function buildCodexRrule(mode: ScheduleMode, time: string, days: string[], raw: string): string {
   if (mode === "raw") return raw.trim();
-  const [hour = "9", minute = "0"] = time.split(":");
+  // A cleared <input type=time> yields "" — split gives [""], so the "9"
+  // default never applies and Number("") is 0: the cron silently lands at
+  // midnight. Fall back per-part instead.
+  const [rawHour, rawMinute] = time.split(":");
+  const hour = rawHour || "9";
+  const minute = rawMinute || "0";
   const parts = [
     "RRULE:FREQ=" + (mode === "daily" ? "DAILY" : "WEEKLY"),
     `BYHOUR=${Number(hour)}`,

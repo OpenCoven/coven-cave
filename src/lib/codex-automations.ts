@@ -10,6 +10,7 @@
  */
 
 import { readdir, readFile, writeFile, access, mkdir, rm, realpath } from "node:fs/promises";
+import { purgeRuns } from "@/lib/automation-runs";
 import path from "node:path";
 import { homedir } from "node:os";
 import { slugifyAutomationId } from "./codex-automation-form.ts";
@@ -384,6 +385,10 @@ export async function deleteCodexAutomation(id: string): Promise<boolean> {
       throw new Error("refusing to delete outside the automations dir");
     }
     await rm(dir, { recursive: true, force: true });
+    // Run history is keyed by automation id, and a re-created automation with
+    // the same name gets the same slug — purge so it can't inherit the deleted
+    // one's runs (whose logPaths point at removed worktrees).
+    await purgeRuns(id);
     return true;
   });
 }

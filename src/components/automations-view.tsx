@@ -3,6 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Familiar } from "@/lib/types";
+import { arrayContentEqual } from "@/lib/array-content-equal";
+import { usePausablePoll } from "@/lib/use-pausable-poll";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { Recurrence } from "@/lib/inbox-recurrence";
 import { groupInboxFeed, inboxKindLabel } from "@/lib/inbox-feed";
@@ -1387,7 +1389,7 @@ function AutomationEntryRow({
             {fam && <span className="truncate">· {fam}</span>}
           </span>
         </button>
-        <span className="automation-entry-row__actions mt-1.5 flex items-center gap-1">
+        <span className="mt-1.5 flex items-center gap-1">
           <button
             type="button"
             disabled={busy}
@@ -1460,7 +1462,7 @@ function ManagedAutomationRow({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-medium" style={{ color: "var(--text-primary)" }}>{name}</span>
         <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--text-muted)" }}>{meta}</span>
-        <span className="managed-automation-row__actions mt-1.5 flex items-center gap-1">
+        <span className="mt-1.5 flex items-center gap-1">
           <button
             type="button"
             disabled={busy}
@@ -1565,13 +1567,24 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       const inboxJson = await inboxRes.json();
       if (!mountedRef.current) return;
       if (!inboxJson.ok) { setError(inboxJson.error ?? "load failed"); return; }
-      setItems(inboxJson.items ?? []);
+      // Content-equality guards (codebase convention — see board-view/workspace):
+      // an unchanged poll keeps the previous references, so derived memos,
+      // the selected-detail sync effect, and the per-cron runs fan-out all
+      // stay quiet instead of re-firing every 15s.
+      const nextItems = inboxJson.items ?? [];
+      setItems((prev) => (arrayContentEqual(prev, nextItems) ? prev : nextItems));
       const codexJson = await codexRes.json();
       if (!mountedRef.current) return;
-      if (codexJson.ok) setCodexAutos(codexJson.automations ?? []);
+      if (codexJson.ok) {
+        const nextAutos = codexJson.automations ?? [];
+        setCodexAutos((prev) => (arrayContentEqual(prev, nextAutos) ? prev : nextAutos));
+      }
       // Flows are best-effort: a missing daemon/store shouldn't blank the whole
       // surface, just drop Flow rows from the list.
-      if (flowRes.ok) setFlows(flowRes.flows ?? []);
+      if (flowRes.ok) {
+        const nextFlows = flowRes.flows ?? [];
+        setFlows((prev) => (arrayContentEqual(prev, nextFlows) ? prev : nextFlows));
+      }
       setError(null);
     } catch (err) {
       if (mountedRef.current) setError(err instanceof Error ? err.message : "fetch failed");
@@ -1617,24 +1630,33 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // Background polling pauses while the tab is hidden — Schedules otherwise kept
   // hitting /api/inbox + /api/codex-automations every 15s with nobody looking.
   // A refetch on return brings it current immediately.
+  useEffect(() => { void load(); }, [load]);
+  usePausablePoll(() => { void load(); }, 15_000, { pauseWhileInputActive: true });
+
+  // Keep the open reminder detail panel in sync after polls — without this it
+  // renders the snapshot captured at selection time until reselected.
   useEffect(() => {
-    void load();
-    const tick = () => { if (!document.hidden) void load(); };
-    const t = setInterval(tick, 15000);
-    const onVis = () => { if (!document.hidden) void load(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      clearInterval(t);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, [load]);
+    if (!selectedItem) return;
+    const fresh = items.find((it) => it.id === selectedItem.id);
+    if (fresh) {
+      if (JSON.stringify(fresh) !== JSON.stringify(selectedItem)) setSelectedItem(fresh);
+    } else {
+      setSelectedItem(null);
+    }
+  }, [items, selectedItem?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep selectedCodex in sync after reload
   useEffect(() => {
     if (!selectedCodex) return;
     const fresh = codexAutos.find((a) => a.id === selectedCodex.id);
-    if (fresh) setSelectedCodex(fresh);
-    else setSelectedCodex(null);
+    // Adopt the fresh object only when its content actually changed —
+    // a new-but-identical reference re-fires CodexDetailPanel's form reset
+    // and wipes whatever the user is typing.
+    if (fresh) {
+      if (JSON.stringify(fresh) !== JSON.stringify(selectedCodex)) setSelectedCodex(fresh);
+    } else {
+      setSelectedCodex(null);
+    }
   }, [codexAutos, selectedCodex?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refresh runs for the selected automation when it changes
