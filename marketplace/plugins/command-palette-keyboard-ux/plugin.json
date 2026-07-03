@@ -1,0 +1,74 @@
+{
+  "name": "command-palette-keyboard-ux",
+  "version": "0.1.0",
+  "description": "Build a command palette (\u2318K / Ctrl+K command bar) and keyboard-driven UX in React \u2014 the Superhuman/Linear/Vercel/Raycast/Notion pattern. Covers cmdk as the canonical unstyled command-menu primitive, the pages-stack nested/back-navigation pattern, fuzzy ranking (command-score/fzf vs Fuse.js), global-vs-contextual shortcut architecture (tinykeys/react-hotkeys-hook/mousetrap/kbar), shortcut philosophy and conflict handling, recents/pinned/frecency empty states, WAI-ARIA combobox accessibility (aria-activedescendant virtual focus, live-region announcements), mobile degradation, and the top palette failure modes \u2014 with a concrete recipe library.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "command-palette",
+    "cmdk",
+    "keyboard-shortcuts",
+    "hotkeys",
+    "combobox",
+    "fuzzy-search",
+    "accessibility",
+    "react",
+    "ui",
+    "productivity"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/command-palette-keyboard-ux",
+  "x-coven": {
+    "displayName": "Command Palette & Keyboard UX (\u2318K)",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://cmdk.paco.me/",
+      "https://www.npmjs.com/package/cmdk",
+      "https://www.npmjs.com/package/command-score",
+      "https://www.npmjs.com/package/kbar",
+      "https://github.com/jamiebuilds/tinykeys",
+      "https://github.com/JohannesKlauss/react-hotkeys-hook",
+      "https://www.w3.org/WAI/ARIA/apg/patterns/combobox/",
+      "https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-autocomplete-list/",
+      "https://linear.app/changelog/2019-12-18-new-command-menu",
+      "https://blog.superhuman.com/how-to-build-a-remarkable-command-palette/",
+      "https://github.com/junegunn/fzf/blob/master/ADVANCED.md"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "frontend"
+        ]
+      },
+      {
+        "familiar": "charm",
+        "roles": [
+          "copywriter"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

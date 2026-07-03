@@ -1102,5 +1102,184 @@
         "researcher"
       ]
     }
+  ],
+  "shadcn-ui-and-radix": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer"
+      ]
+    },
+    {
+      "familiar": "kitty",
+      "roles": [
+        "general-helper"
+      ]
+    }
+  ],
+  "tailwind-design-tokens": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "librarian",
+        "researcher"
+      ]
+    }
+  ],
+  "framer-motion-patterns": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "frontend"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher"
+      ]
+    }
+  ],
+  "wcag-a11y-audit": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "librarian",
+        "researcher"
+      ]
+    },
+    {
+      "familiar": "charm",
+      "roles": [
+        "copywriter"
+      ]
+    }
+  ],
+  "form-ux-patterns": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer"
+      ]
+    },
+    {
+      "familiar": "charm",
+      "roles": [
+        "copywriter"
+      ]
+    }
+  ],
+  "dataviz-dashboard-ux": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "librarian",
+        "researcher"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator"
+      ]
+    }
+  ],
+  "command-palette-keyboard-ux": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "frontend"
+      ]
+    },
+    {
+      "familiar": "charm",
+      "roles": [
+        "copywriter"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher"
+      ]
+    }
+  ],
+  "empty-loading-error-states": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer"
+      ]
+    },
+    {
+      "familiar": "charm",
+      "roles": [
+        "copywriter"
+      ]
+    }
+  ],
+  "mobile-touch-ux": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer",
+        "frontend"
+      ]
+    },
+    {
+      "familiar": "sage",
+      "roles": [
+        "researcher"
+      ]
+    }
+  ],
+  "design-system-landscape": [
+    {
+      "familiar": "sage",
+      "roles": [
+        "librarian",
+        "researcher"
+      ]
+    },
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer"
+      ]
+    },
+    {
+      "familiar": "astra",
+      "roles": [
+        "strategic-navigator"
+      ]
+    }
   ]
 }

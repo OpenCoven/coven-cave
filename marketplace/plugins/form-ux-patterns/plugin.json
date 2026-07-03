@@ -1,0 +1,68 @@
+{
+  "name": "form-ux-patterns",
+  "version": "0.1.0",
+  "description": "Build and review accessible React forms with react-hook-form + zod: validation timing, error UX, progressive disclosure, password/save-state patterns, and WCAG 2.2 compliance.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "forms",
+    "react-hook-form",
+    "zod",
+    "validation",
+    "accessibility",
+    "shadcn",
+    "ux",
+    "wcag"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/form-ux-patterns",
+  "x-coven": {
+    "displayName": "Form UX Patterns",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://react-hook-form.com/docs/useform",
+      "https://react-hook-form.com/docs/usecontroller/controller",
+      "https://zod.dev/",
+      "https://ui.shadcn.com/docs/forms/react-hook-form",
+      "https://www.nngroup.com/articles/errors-forms-design-guidelines/",
+      "https://www.nngroup.com/articles/required-fields/",
+      "https://www.nngroup.com/articles/error-message-guidelines/",
+      "https://adrianroselli.com/2019/02/avoid-default-field-validation.html",
+      "https://www.w3.org/WAI/WCAG22/Understanding/error-identification.html",
+      "https://www.w3.org/WAI/WCAG22/Understanding/error-suggestion.html",
+      "https://www.w3.org/WAI/WCAG22/Understanding/redundant-entry.html",
+      "https://www.w3.org/WAI/WCAG22/Understanding/accessible-authentication-minimum.html",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/autocomplete"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer"
+        ]
+      },
+      {
+        "familiar": "charm",
+        "roles": [
+          "copywriter"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

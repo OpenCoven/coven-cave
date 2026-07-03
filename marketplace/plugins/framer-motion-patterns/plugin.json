@@ -1,0 +1,69 @@
+{
+  "name": "framer-motion-patterns",
+  "version": "0.1.0",
+  "description": "Implement production UI motion in React with Motion (formerly Framer Motion): spring vs tween transitions, layout & shared-element transitions, AnimatePresence, gestures, scroll-linked motion, motion values, reduced-motion accessibility, and transform-only performance \u2014 with a concrete recipe library.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "motion",
+    "framer-motion",
+    "animation",
+    "react",
+    "gestures",
+    "accessibility",
+    "prefers-reduced-motion",
+    "ui"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/framer-motion-patterns",
+  "x-coven": {
+    "displayName": "Motion (Framer Motion) Patterns",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://motion.dev/docs/react",
+      "https://motion.dev/docs/react-animation",
+      "https://motion.dev/docs/react-transitions",
+      "https://motion.dev/docs/react-layout-animations",
+      "https://motion.dev/docs/react-animate-presence",
+      "https://motion.dev/docs/react-gestures",
+      "https://motion.dev/docs/react-scroll-animations",
+      "https://motion.dev/docs/react-use-animate",
+      "https://motion.dev/docs/react-use-transform",
+      "https://motion.dev/docs/stagger",
+      "https://motion.dev/docs/react-accessibility",
+      "https://motion.dev/docs/gsap-vs-motion",
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion",
+      "https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "frontend"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

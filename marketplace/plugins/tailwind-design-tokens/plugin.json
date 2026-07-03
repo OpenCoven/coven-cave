@@ -1,0 +1,65 @@
+{
+  "name": "tailwind-design-tokens",
+  "version": "0.1.0",
+  "description": "Theme Tailwind CSS v4 UIs with a two-tier design token system: OKLCH primitive scales in @theme, semantic background/foreground tokens bridged via @theme inline, class/media/data-theme dark mode, safe dynamic classes, and v3-to-v4 migration.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "tailwind",
+    "design-tokens",
+    "theming",
+    "dark-mode",
+    "oklch",
+    "shadcn",
+    "css-variables",
+    "frontend"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/tailwind-design-tokens",
+  "x-coven": {
+    "displayName": "Tailwind Design Tokens & Theming",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://tailwindcss.com/docs/theme",
+      "https://tailwindcss.com/docs/dark-mode",
+      "https://tailwindcss.com/docs/functions-and-directives",
+      "https://tailwindcss.com/docs/detecting-classes-in-source-files",
+      "https://tailwindcss.com/docs/upgrade-guide",
+      "https://tailwindcss.com/blog/tailwindcss-v4",
+      "https://ui.shadcn.com/docs/theming",
+      "https://oklch.com",
+      "https://www.designtokens.org/tr/drafts/format/"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "librarian",
+          "researcher"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

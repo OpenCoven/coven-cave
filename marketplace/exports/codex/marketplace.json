@@ -1299,6 +1299,126 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Databases"
+    },
+    {
+      "name": "shadcn-ui-and-radix",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/shadcn-ui-and-radix"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design & UI"
+    },
+    {
+      "name": "tailwind-design-tokens",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/tailwind-design-tokens"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design & UI"
+    },
+    {
+      "name": "framer-motion-patterns",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/framer-motion-patterns"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design & UI"
+    },
+    {
+      "name": "wcag-a11y-audit",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/wcag-a11y-audit"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design & UI"
+    },
+    {
+      "name": "form-ux-patterns",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/form-ux-patterns"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design & UI"
+    },
+    {
+      "name": "dataviz-dashboard-ux",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/dataviz-dashboard-ux"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design & UI"
+    },
+    {
+      "name": "command-palette-keyboard-ux",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/command-palette-keyboard-ux"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design & UI"
+    },
+    {
+      "name": "empty-loading-error-states",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/empty-loading-error-states"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design & UI"
+    },
+    {
+      "name": "mobile-touch-ux",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/mobile-touch-ux"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design & UI"
+    },
+    {
+      "name": "design-system-landscape",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/design-system-landscape"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design & UI"
     }
   ]
 }

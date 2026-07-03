@@ -1,0 +1,31 @@
+{
+  "name": "mobile-touch-ux",
+  "version": "0.1.0",
+  "description": "Framework-agnostic mobile web & PWA checklist: touch-target sizing (WCAG 24px / 44pt / 48dp), the svh/lvh/dvh dynamic viewport, safe-area insets for notch/Dynamic-Island/home-bar, pointer-adaptive UI (@media hover/pointer), container queries as the modern responsive answer, native nav idioms (bottom-tab vs hamburger, sheet vs modal, FAB, snackbar, predictive-back), mobile input (inputmode/enterkeyhint/autocomplete), Pointer-Events gestures with touch-action + WCAG dragging alternatives, and mobile Core Web Vitals (LCP/INP/CLS) via responsive images and code-splitting.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Mobile Touch UX & Responsive Patterns",
+    "shortDescription": "Framework-agnostic mobile web & PWA checklist: touch-target sizing (WCAG 24px / 44pt / 48dp), the svh/lvh/dvh dynamic viewport, safe-area insets for notch/Dynamic-Island/home-bar, pointer-adaptive UI (@media hover/pointer), container queries as the modern responsive answer, native nav idioms (bottom-tab vs hamburger, sheet vs modal, FAB, snackbar, predictive-back), mobile input (inputmode/enterkeyhint/autocomplete), Pointer-Events gestures with touch-action + WCAG dragging alternatives, and mobile Core Web Vitals (LCP/INP/CLS) via responsive images and code-splitting.",
+    "longDescription": "Use when building, reviewing, or debugging any mobile/responsive web UI (or a PWA / web view meant to feel native) \u2014 sizing touch targets, fixing the 100vh/notch/on-screen-keyboard bugs, making layouts adapt with container queries instead of device-pixel breakpoints, choosing bottom-nav vs hamburger / sheet vs modal / action-sheet vs dropdown, wiring the right mobile keyboard (inputmode/enterkeyhint/autocomplete), handling touch gestures with Pointer Events + touch-action, honoring hover-vs-touch, or hitting mobile Core Web Vitals (LCP/INP/CLS) with responsive images and lazy-loading. Reach for it on any cue like \"mobile\", \"touch\", \"responsive\", \"breakpoint\", \"safe area / notch / Dynamic Island\", \"svh/dvh\", \"container query\", \"tap target\", \"hamburger vs tab bar\", \"PWA/offline\", \"keyboard covers input\", \"swipe/drag\", or a PR that ships a phone layout. Framework-agnostic; pairs with wcag-a11y-audit and framer-motion-patterns.",
+    "developerName": "OpenCoven",
+    "category": "Design & UI",
+    "capabilities": [
+      "mobile",
+      "touch",
+      "responsive",
+      "container-queries",
+      "safe-area",
+      "viewport",
+      "dvh",
+      "pwa",
+      "core-web-vitals",
+      "pointer-events",
+      "accessibility",
+      "ui"
+    ],
+    "defaultPrompt": "Help me use Mobile Touch UX & Responsive Patterns safely."
+  }
+}

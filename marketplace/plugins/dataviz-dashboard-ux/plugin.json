@@ -1,0 +1,85 @@
+{
+  "name": "dataviz-dashboard-ux",
+  "version": "0.1.0",
+  "description": "Chart-type selection, dashboard layout, data-safe colour, interaction, time-series, states, accessibility, export, and React charting-library choice (Recharts/Nivo/Victory/visx/D3/Observable Plot) \u2014 grounded in Cleveland-McGill, Tufte, Few, and Munzner.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "dataviz",
+    "charts",
+    "dashboard",
+    "visualization",
+    "color-palette",
+    "recharts",
+    "accessibility",
+    "kpi"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/dataviz-dashboard-ux",
+  "x-coven": {
+    "displayName": "Data-Viz & Dashboard UX",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "http://euclid.psych.yorku.ca/www/psy6135/papers/ClevelandMcGill1984.pdf",
+      "https://www.cs.ubc.ca/~tmm/vadbook/",
+      "https://www.edwardtufte.com/tufte/books_vdqi",
+      "https://www.perceptualedge.com/",
+      "https://www.datawrapper.de/academy/",
+      "https://www.datawrapper.de/academy/why-our-column-and-bar-charts-start-at-zero",
+      "https://ft-interactive.github.io/visual-vocabulary/",
+      "https://www.data-to-viz.com/",
+      "https://colorbrewer2.org/",
+      "https://www.nature.com/articles/nmeth.1618",
+      "https://matplotlib.org/stable/users/explain/colors/colormaps.html",
+      "https://help.tableau.com/current/pro/desktop/en-us/actions_filter.htm",
+      "https://learn.microsoft.com/en-us/power-bi/create-reports/service-reports-visual-interactions",
+      "https://recharts.org/",
+      "https://ui.shadcn.com/charts",
+      "https://github.com/plouc/nivo",
+      "https://commerce.nearform.com/open-source/victory/",
+      "https://airbnb.io/visx/",
+      "https://d3js.org/",
+      "https://observablehq.com/plot/",
+      "https://observablehq.com/plot/features/accessibility",
+      "https://www.highcharts.com/docs/accessibility/accessibility-module",
+      "https://www.w3.org/WAI/tutorials/images/complex/"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "librarian",
+          "researcher"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

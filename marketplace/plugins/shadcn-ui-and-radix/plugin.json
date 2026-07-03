@@ -1,0 +1,66 @@
+{
+  "name": "shadcn-ui-and-radix",
+  "version": "0.1.0",
+  "description": "Build and edit React UI with the shadcn/ui \"open code\" pattern over Radix Primitives and Tailwind \u2014 cva + tailwind-merge + clsx styling, headless a11y, and copy-paste component recipes you own.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "shadcn",
+    "radix",
+    "tailwind",
+    "react",
+    "components",
+    "cva",
+    "accessibility",
+    "design-system"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/shadcn-ui-and-radix",
+  "x-coven": {
+    "displayName": "shadcn/ui + Radix + Tailwind",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://ui.shadcn.com/docs",
+      "https://ui.shadcn.com/docs/cli",
+      "https://ui.shadcn.com/docs/registry",
+      "https://github.com/shadcn-ui/ui",
+      "https://www.radix-ui.com/primitives/docs/overview/introduction",
+      "https://www.radix-ui.com/primitives/docs/overview/accessibility",
+      "https://www.radix-ui.com/primitives/docs/guides/composition",
+      "https://github.com/radix-ui/primitives",
+      "https://cva.style/docs",
+      "https://github.com/lukeed/clsx",
+      "https://github.com/dcastil/tailwind-merge"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer"
+        ]
+      },
+      {
+        "familiar": "kitty",
+        "roles": [
+          "general-helper"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

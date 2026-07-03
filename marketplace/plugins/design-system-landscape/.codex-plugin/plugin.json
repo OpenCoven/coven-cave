@@ -1,0 +1,27 @@
+{
+  "name": "design-system-landscape",
+  "version": "0.1.0",
+  "description": "A map and decision guide to the 2025-2026 design-system ecosystem (Material 3, Fluent 2, Apple HIG, Primer, Carbon, Ant, Chakra v3, Mantine, HeroUI, Radix + shadcn/ui, Adobe Spectrum/React Aria and more) \u2014 classify each into platform/product/community/headless tiers, compare license, framework support, token architecture and a11y, and decide which DS to reach for or borrow from.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Design-System Landscape",
+    "shortDescription": "A map and decision guide to the 2025-2026 design-system ecosystem (Material 3, Fluent 2, Apple HIG, Primer, Carbon, Ant, Chakra v3, Mantine, HeroUI, Radix + shadcn/ui, Adobe Spectrum/React Aria and more) \u2014 classify each into platform/product/community/headless tiers, compare license, framework support, token architecture and a11y, and decide which DS to reach for or borrow from.",
+    "longDescription": "Use when choosing, comparing, or borrowing from an existing design system rather than building components from scratch: a map + decision guide covering Material 3, Fluent 2, Apple HIG, GitHub Primer, IBM Carbon, Ant Design, Chakra UI v3, Mantine, HeroUI (ex-NextUI), Radix + shadcn/ui, and Adobe Spectrum / React Aria (plus SLDS, Atlassian, Polaris, Base Web). Classifies each into four tiers (platform language you conform to / product DS / installable community kit / headless own-code substrate) and states its license, framework support, token architecture, and a11y posture, with a \"reach for which DS when\" flow and live adoption signals (npm/stars; Polaris repo archived; NextUI to HeroUI; Ant agent docs). Encodes the CovenCave matrix: borrow semantic-first tokens (Primer), a11y discipline (Carbon), and the ownership model (Radix/shadcn); avoid Material dynamic color, Ant density, light-mode-first defaults, and vendor skins. Hands-on building belongs to sibling skills.",
+    "developerName": "OpenCoven",
+    "category": "Design & UI",
+    "capabilities": [
+      "design-system",
+      "ui-library",
+      "material",
+      "fluent",
+      "carbon",
+      "ant-design",
+      "react",
+      "comparison"
+    ],
+    "defaultPrompt": "Help me use Design-System Landscape safely."
+  }
+}

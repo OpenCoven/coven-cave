@@ -1,0 +1,27 @@
+{
+  "name": "dataviz-dashboard-ux",
+  "version": "0.1.0",
+  "description": "Chart-type selection, dashboard layout, data-safe colour, interaction, time-series, states, accessibility, export, and React charting-library choice (Recharts/Nivo/Victory/visx/D3/Observable Plot) \u2014 grounded in Cleveland-McGill, Tufte, Few, and Munzner.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Data-Viz & Dashboard UX",
+    "shortDescription": "Chart-type selection, dashboard layout, data-safe colour, interaction, time-series, states, accessibility, export, and React charting-library choice (Recharts/Nivo/Victory/visx/D3/Observable Plot) \u2014 grounded in Cleveland-McGill, Tufte, Few, and Munzner.",
+    "longDescription": "Use when building or reviewing any chart, graph, KPI card, dashboard, or analytics view \u2014 to pick the right chart type (bar/line/area/scatter/histogram/heatmap/sparkline/small-multiples), lay out KPIs (overview-then-detail, F-pattern), colour data safely (sequential/diverging/categorical, Okabe-Ito & Viridis, never colour-only), design hover/brush/drill-down/cross-filter interactions, handle time-series (zero baseline, time zones, aggregation, missing data), cover loading/empty/error + real-time refresh states, make charts accessible (alt text, data tables, keyboard series nav), export to PNG/PDF/CSV, and choose a React charting library (Recharts vs Nivo vs Victory vs visx vs D3 vs Observable Plot). Reach for it on any request mentioning \"chart\", \"graph\", \"dashboard\", \"data viz\", \"KPI\", \"metric\", \"plot\", \"which chart\", \"colour palette\", or when a PR adds a visualization.",
+    "developerName": "OpenCoven",
+    "category": "Design & UI",
+    "capabilities": [
+      "dataviz",
+      "charts",
+      "dashboard",
+      "visualization",
+      "color-palette",
+      "recharts",
+      "accessibility",
+      "kpi"
+    ],
+    "defaultPrompt": "Help me use Data-Viz & Dashboard UX safely."
+  }
+}

@@ -2663,6 +2663,325 @@
           ]
         }
       ]
+    },
+    {
+      "name": "shadcn-ui-and-radix",
+      "displayName": "shadcn/ui + Radix + Tailwind",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/shadcn-ui-and-radix"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tailwind-design-tokens",
+      "displayName": "Tailwind Design Tokens & Theming",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/tailwind-design-tokens"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "librarian",
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "framer-motion-patterns",
+      "displayName": "Motion (Framer Motion) Patterns",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/framer-motion-patterns"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "frontend"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wcag-a11y-audit",
+      "displayName": "WCAG 2.2 AA Accessibility Audit",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/wcag-a11y-audit"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "librarian",
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "form-ux-patterns",
+      "displayName": "Form UX Patterns",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/form-ux-patterns"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dataviz-dashboard-ux",
+      "displayName": "Data-Viz & Dashboard UX",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/dataviz-dashboard-ux"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "librarian",
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "command-palette-keyboard-ux",
+      "displayName": "Command Palette & Keyboard UX (\u2318K)",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/command-palette-keyboard-ux"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "frontend"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "empty-loading-error-states",
+      "displayName": "Empty, Loading & Error States",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/empty-loading-error-states"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "mobile-touch-ux",
+      "displayName": "Mobile Touch UX & Responsive Patterns",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mobile-touch-ux"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer",
+            "frontend"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "design-system-landscape",
+      "displayName": "Design-System Landscape",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/design-system-landscape"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "librarian",
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ]
     }
   ]
 }

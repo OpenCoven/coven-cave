@@ -1,0 +1,27 @@
+{
+  "name": "form-ux-patterns",
+  "version": "0.1.0",
+  "description": "Build and review accessible React forms with react-hook-form + zod: validation timing, error UX, progressive disclosure, password/save-state patterns, and WCAG 2.2 compliance.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Form UX Patterns",
+    "shortDescription": "Build and review accessible React forms with react-hook-form + zod: validation timing, error UX, progressive disclosure, password/save-state patterns, and WCAG 2.2 compliance.",
+    "longDescription": "Use when building or reviewing web forms (sign-up, checkout, settings, listing/create flows) in React with react-hook-form + zod (or Vue/Svelte equivalents) \u2014 covers validation timing (onBlur/onChange/onSubmit/onTouched), field-level error UX and wording, required-vs-optional indicators, progressive disclosure (multi-step, accordions, show-more), input-type/keyboard selection (inputmode, autocomplete tokens), password UX (reveal toggle, strength meter, allow paste), save-state/autosave indicators, server-error surfacing back to fields, and WCAG 2.2 form accessibility (aria-invalid, aria-describedby, role=\"alert\", fieldset/legend, SC 3.3.1/3.3.3/3.3.7/3.3.8). Flags common anti-patterns like reset-next-to-submit, disabled-submit-hiding-errors, validate-on-every-keystroke, and blocking paste in password fields.",
+    "developerName": "OpenCoven",
+    "category": "Design & UI",
+    "capabilities": [
+      "forms",
+      "react-hook-form",
+      "zod",
+      "validation",
+      "accessibility",
+      "shadcn",
+      "ux",
+      "wcag"
+    ],
+    "defaultPrompt": "Help me use Form UX Patterns safely."
+  }
+}

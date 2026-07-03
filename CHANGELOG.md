@@ -16,6 +16,16 @@ sidecar CI leg.
 
 ### Added
 
+- **Marketplace** - ten hand-authored UI/UX skill packs under the "Design & UI"
+  category: shadcn/ui + Radix, Tailwind design tokens & theming, Motion (Framer
+  Motion) patterns, WCAG 2.2 AA accessibility audit, data-viz dashboard UX,
+  design-system landscape, form UX patterns, empty/loading/error states,
+  mobile touch UX, and command-palette keyboard UX. Each ships a long-form,
+  source-referenced `SKILL.md`. `sync-marketplace.py` now honors a
+  `skill.managed: "manual"` flag so these authored skill bodies stay the source
+  of truth while their manifests and exports are still generated from
+  `catalog.json`.
+
 - **Supply chain** - guard against `sharp` version skew with Next's pinned copy
   in the dependency-policy test: the build now fails fast if `pnpm-lock.yaml`
   resolves more than one `sharp` version, if `sharp` diverges from `package.json`,

@@ -1,0 +1,72 @@
+{
+  "name": "wcag-a11y-audit",
+  "version": "0.1.0",
+  "description": "Framework-agnostic WCAG 2.2 Level AA accessibility audit checklist and manual-testing playbook: ARIA vs semantic HTML, focus management, keyboard nav, screen readers, contrast, target size, reduced motion, and automated a11y testing.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "accessibility",
+    "wcag",
+    "a11y",
+    "aria",
+    "keyboard",
+    "screen-reader",
+    "audit",
+    "compliance"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/wcag-a11y-audit",
+  "x-coven": {
+    "displayName": "WCAG 2.2 AA Accessibility Audit",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://www.w3.org/TR/WCAG22/",
+      "https://www.w3.org/WAI/WCAG22/quickref/",
+      "https://www.w3.org/WAI/standards-guidelines/wcag/new-in-22/",
+      "https://www.w3.org/WAI/ARIA/apg/",
+      "https://www.w3.org/TR/using-aria/",
+      "https://developer.mozilla.org/en-US/docs/Web/Accessibility",
+      "https://www.deque.com/axe/",
+      "https://github.com/dequelabs/axe-core",
+      "https://playwright.dev/docs/accessibility-testing",
+      "https://github.com/jsx-eslint/eslint-plugin-jsx-a11y"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "librarian",
+          "researcher"
+        ]
+      },
+      {
+        "familiar": "charm",
+        "roles": [
+          "copywriter"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "name": "mobile-touch-ux",
+  "version": "0.1.0",
+  "description": "Framework-agnostic mobile web & PWA checklist: touch-target sizing (WCAG 24px / 44pt / 48dp), the svh/lvh/dvh dynamic viewport, safe-area insets for notch/Dynamic-Island/home-bar, pointer-adaptive UI (@media hover/pointer), container queries as the modern responsive answer, native nav idioms (bottom-tab vs hamburger, sheet vs modal, FAB, snackbar, predictive-back), mobile input (inputmode/enterkeyhint/autocomplete), Pointer-Events gestures with touch-action + WCAG dragging alternatives, and mobile Core Web Vitals (LCP/INP/CLS) via responsive images and code-splitting.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "mobile",
+    "touch",
+    "responsive",
+    "container-queries",
+    "safe-area",
+    "viewport",
+    "dvh",
+    "pwa",
+    "core-web-vitals",
+    "pointer-events",
+    "accessibility",
+    "ui"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/mobile-touch-ux",
+  "x-coven": {
+    "displayName": "Mobile Touch UX & Responsive Patterns",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html",
+      "https://www.w3.org/TR/WCAG22/",
+      "https://developer.apple.com/design/human-interface-guidelines/layout",
+      "https://developer.apple.com/design/human-interface-guidelines/accessibility",
+      "https://m3.material.io/foundations/layout/breakpoints",
+      "https://m3.material.io/foundations/interaction/gestures",
+      "https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events",
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/env",
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/length",
+      "https://web.dev/blog/viewport-units",
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_containment/Container_queries",
+      "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/hover",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/input",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/enterkeyhint",
+      "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/autocomplete",
+      "https://web.dev/articles/lcp",
+      "https://web.dev/articles/inp"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer",
+          "frontend"
+        ]
+      },
+      {
+        "familiar": "sage",
+        "roles": [
+          "researcher"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

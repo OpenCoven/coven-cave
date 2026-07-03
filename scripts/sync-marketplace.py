@@ -121,7 +121,12 @@ def package_files(catalog: dict[str, Any]) -> dict[Path, str]:
     for plugin in catalog["plugins"]:
         package_dir = PLUGIN_ROOT / plugin["name"]
         files[package_dir / "plugin.json"] = dump_json(coven_manifest(plugin))
-        files[package_dir / "skills" / plugin["name"] / "SKILL.md"] = skill_markdown(plugin)
+        # Some marketplace skill packs carry hand-authored, long-form SKILL.md
+        # files that should remain the source of truth. Their manifests and
+        # exports are still generated from catalog.json, but sync must not
+        # replace the authored skill body with the compact fallback template.
+        if plugin.get("skill", {}).get("managed") != "manual":
+            files[package_dir / "skills" / plugin["name"] / "SKILL.md"] = skill_markdown(plugin)
         files[package_dir / ".codex-plugin" / "plugin.json"] = dump_json(codex_manifest(plugin))
     return files
 

@@ -1,0 +1,73 @@
+{
+  "name": "empty-loading-error-states",
+  "version": "0.1.0",
+  "description": "Enforce the three-states discipline (loading, empty, error \u2014 plus partial and ideal) on every data-bound component: indicator selection, empty-state types, error taxonomy, retries, and WCAG 2.2 state-change announcements.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "empty-states",
+    "loading",
+    "error-states",
+    "skeleton",
+    "suspense",
+    "retry",
+    "accessibility",
+    "ux"
+  ],
+  "capabilities": [
+    "read_files"
+  ],
+  "marketplaceId": "opencoven/empty-loading-error-states",
+  "x-coven": {
+    "displayName": "Empty, Loading & Error States",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://react.dev/reference/react/Suspense",
+      "https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary",
+      "https://react.dev/reference/react/useOptimistic",
+      "https://github.com/bvaughn/react-error-boundary",
+      "https://tanstack.com/query/latest/docs/framework/react/guides/query-retries",
+      "https://tanstack.com/query/latest/docs/framework/react/guides/optimistic-updates",
+      "https://www.nngroup.com/articles/response-times-3-important-limits/",
+      "https://www.nngroup.com/articles/progress-indicators/",
+      "https://www.nngroup.com/articles/skeleton-screens/",
+      "https://www.nngroup.com/articles/empty-state-interface-design/",
+      "https://www.nngroup.com/articles/search-no-results-serp/",
+      "https://www.nngroup.com/articles/error-message-guidelines/",
+      "https://m3.material.io/components/progress-indicators/guidelines",
+      "https://m2.material.io/design/communication/empty-states.html",
+      "https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html",
+      "https://www.w3.org/WAI/ARIA/apg/patterns/alert/",
+      "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Guides/Live_regions",
+      "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/status_role",
+      "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-busy"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer"
+        ]
+      },
+      {
+        "familiar": "charm",
+        "roles": [
+          "copywriter"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}

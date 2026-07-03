@@ -5782,6 +5782,797 @@
           "Bound result sets with LIMIT"
         ]
       }
+    },
+    {
+      "name": "shadcn-ui-and-radix",
+      "displayName": "shadcn/ui + Radix + Tailwind",
+      "version": "0.1.0",
+      "description": "Build and edit React UI with the shadcn/ui \"open code\" pattern over Radix Primitives and Tailwind \u2014 cva + tailwind-merge + clsx styling, headless a11y, and copy-paste component recipes you own.",
+      "category": "Design & UI",
+      "keywords": [
+        "shadcn",
+        "radix",
+        "tailwind",
+        "react",
+        "components",
+        "cva",
+        "accessibility",
+        "design-system"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://ui.shadcn.com/docs",
+        "https://ui.shadcn.com/docs/cli",
+        "https://ui.shadcn.com/docs/registry",
+        "https://github.com/shadcn-ui/ui",
+        "https://www.radix-ui.com/primitives/docs/overview/introduction",
+        "https://www.radix-ui.com/primitives/docs/overview/accessibility",
+        "https://www.radix-ui.com/primitives/docs/guides/composition",
+        "https://github.com/radix-ui/primitives",
+        "https://cva.style/docs",
+        "https://github.com/lukeed/clsx",
+        "https://github.com/dcastil/tailwind-merge"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "kitty",
+          "roles": [
+            "general-helper"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when building or editing React UI with shadcn/ui, Radix Primitives, and Tailwind \u2014 the \"open code\" pattern where components are copied into your repo (components/ui/*) via the shadcn CLI and owned/edited by you, not installed as a runtime package. Covers the cva + tailwind-merge + clsx (cn) styling stack, the Radix headless a11y substrate (focus management, ARIA, keyboard nav, portals) exposed through asChild/Slot and data-slot/data-state, and concrete recipes for Button, Dialog, AlertDialog, DropdownMenu, Popover, Tooltip, Combobox (Popover+Command), Select, DataTable (TanStack Table), Sheet, Drawer (Vaul), and Form (react-hook-form + zod). Also decides when to prefer shadcn vs React Aria Components, HeroUI, Base UI, Chakra v3, Mantine, MUI, or Ant. Do NOT use for non-React frameworks (use shadcn-vue/svelte ports), deep design-token theming (tailwind-design-tokens), rich motion (framer-motion-patterns), or form UX depth (form-ux-patterns).",
+        "useCases": [
+          "Building/editing UI in a **React + Tailwind** app (esp. Next.js App Router).",
+          "The repo already has `components/ui/*` and `lib/utils.ts` (a shadcn project), or you're initializing one.",
+          "You need an **accessible** interactive component (dialog, menu, popover, combobox, select, tabs, tooltip, form) and want a11y handled for you.",
+          "You want to **own and customize** component source rather than depend on a black-box library.",
+          "An AI/coding familiar must read and edit real component source (the OpenCoven default stack)."
+        ],
+        "guardrails": [
+          "**No runtime install.** There is no `shadcn` component package \u2014 use `npx shadcn@latest add <name>` (or copy source). Treat `components/ui/*` as owned source you may edit freely.",
+          "**Import from unified `radix-ui`** in new code (`import { Dialog as DialogPrimitive } from \"radix-ui\"`, `import { Slot } from \"radix-ui\"`), not the legacy `@radix-ui/react-*` scoped packages.",
+          "**`className` goes LAST inside `cn(...)`** so consumer overrides win via tailwind-merge. Never plain string-concatenate Tailwind classes (conflicts won't resolve).",
+          "**Dialog/Sheet must render a `DialogTitle`** (wrap in Radix `VisuallyHidden` if not visually wanted) and ideally a `DialogDescription`, or Radix logs an a11y warning.",
+          "**`asChild` takes exactly ONE element child** and you must forward the ref; use it instead of nesting interactive elements (`<Button asChild><Link/></Button>`, never `<button><a/></button>`).",
+          "**Tooltip content must be non-interactive**; use Popover/HoverCard for focusable content. Mount one `TooltipProvider` near the app root.",
+          "**AlertDialog for destructive confirms** (no overlay-dismiss; explicit action/cancel) \u2014 not plain Dialog.",
+          "**Combobox/Command are compositions** (Popover + cmdk `Command`), and **DataTable = shadcn table primitives + TanStack Table v8** \u2014 don't hunt for a monolithic component.",
+          "**Radix ships behavior only.** Every visual class is yours; unstyled Radix looks unstyled by design.",
+          "Prefer **plain function components** with `React.ComponentProps<...>` typing (current shadcn style) over `forwardRef` boilerplate unless a ref passthrough is required."
+        ]
+      }
+    },
+    {
+      "name": "tailwind-design-tokens",
+      "displayName": "Tailwind Design Tokens & Theming",
+      "version": "0.1.0",
+      "description": "Theme Tailwind CSS v4 UIs with a two-tier design token system: OKLCH primitive scales in @theme, semantic background/foreground tokens bridged via @theme inline, class/media/data-theme dark mode, safe dynamic classes, and v3-to-v4 migration.",
+      "category": "Design & UI",
+      "keywords": [
+        "tailwind",
+        "design-tokens",
+        "theming",
+        "dark-mode",
+        "oklch",
+        "shadcn",
+        "css-variables",
+        "frontend"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://tailwindcss.com/docs/theme",
+        "https://tailwindcss.com/docs/dark-mode",
+        "https://tailwindcss.com/docs/functions-and-directives",
+        "https://tailwindcss.com/docs/detecting-classes-in-source-files",
+        "https://tailwindcss.com/docs/upgrade-guide",
+        "https://tailwindcss.com/blog/tailwindcss-v4",
+        "https://ui.shadcn.com/docs/theming",
+        "https://oklch.com",
+        "https://www.designtokens.org/tr/drafts/format/"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "librarian",
+            "researcher"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when building or theming a Tailwind CSS v4 (or migrating a v3) UI with design tokens, dark mode, or multi-theme support \u2014 covers the CSS-first `@theme` model, OKLCH color scales, the two-tier primitive/semantic token architecture (shadcn `background`/`foreground` pairs bridged with `@theme inline`), class vs media vs `data-theme` dark mode with FOUC-safe toggling, arbitrary values, `@source inline` safelisting, and v3\u2192v4 migration; framework-agnostic (React/Vue/Svelte/Astro/HTML) with shadcn-specific glue called out.",
+        "useCases": [
+          "Setting up or restructuring a Tailwind **v4** project's token layer (colors, spacing, type, radii, shadows, motion).",
+          "Adding **dark mode** or **multiple themes** (brand, high-contrast) to a Tailwind app.",
+          "Working in a **shadcn/ui** codebase and touching `--background`, `--primary`, `--ring`, `.dark`, or `components.json`.",
+          "A dynamic class (`bg-${x}-500`) \"isn't generating\" and you need the correct fix.",
+          "**Migrating v3 \u2192 v4**: `tailwind.config.js` \u2192 `@theme`, `content` \u2192 auto-detection, `safelist` \u2192 `@source inline`.",
+          "Authoring or converting a color palette to **OKLCH**."
+        ],
+        "guardrails": [
+          "**Components use semantic utilities, never raw primitives or hex.** Write `bg-card text-muted-foreground`, not `bg-zinc-900` or `bg-[#18181b]`. Retheming must be possible by editing only the `:root`/`.dark` token block.",
+          "**`@theme` maps tokens to utilities; `:root` does not.** Use `@theme` when you want `bg-*`/`text-*` to appear; use plain `:root` for variables that shouldn't spawn utilities.",
+          "**Semantic tokens must be bridged with `@theme inline`** (`--color-primary: var(--primary)`), not plain `@theme`, or CSS-variable resolution can pick the wrong value.",
+          "**Author colors in OKLCH** (`oklch(L C H)`), not hex/HSL. Build scales by holding H/C and stepping L. Convert at oklch.com.",
+          "**JIT scans complete static strings only** \u2014 never interpolate class names. Prefer `bg-[var(--x)]` or a lookup map; use `@source inline(...)` sparingly (it bloats the bundle) and remember it takes no regex.",
+          "**Dark toggle runs inline in `<head>`** to avoid FOUC. Never let the theme class get set after first paint.",
+          "**Vue/Svelte scoped `<style>` and CSS modules** need `@reference \"app.css\";` before any `@apply`/`@variant`.",
+          "**Don't reintroduce `tailwind.config.js`** in a v4 project unless bridging a legacy config via `@config` during migration.",
+          "**Don't fabricate directives.** The real set is in the reference table below; if unsure, check the docs, don't guess."
+        ]
+      }
+    },
+    {
+      "name": "framer-motion-patterns",
+      "displayName": "Motion (Framer Motion) Patterns",
+      "version": "0.1.0",
+      "description": "Implement production UI motion in React with Motion (formerly Framer Motion): spring vs tween transitions, layout & shared-element transitions, AnimatePresence, gestures, scroll-linked motion, motion values, reduced-motion accessibility, and transform-only performance \u2014 with a concrete recipe library.",
+      "category": "Design & UI",
+      "keywords": [
+        "motion",
+        "framer-motion",
+        "animation",
+        "react",
+        "gestures",
+        "accessibility",
+        "prefers-reduced-motion",
+        "ui"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://motion.dev/docs/react",
+        "https://motion.dev/docs/react-animation",
+        "https://motion.dev/docs/react-transitions",
+        "https://motion.dev/docs/react-layout-animations",
+        "https://motion.dev/docs/react-animate-presence",
+        "https://motion.dev/docs/react-gestures",
+        "https://motion.dev/docs/react-scroll-animations",
+        "https://motion.dev/docs/react-use-animate",
+        "https://motion.dev/docs/react-use-transform",
+        "https://motion.dev/docs/stagger",
+        "https://motion.dev/docs/react-accessibility",
+        "https://motion.dev/docs/gsap-vs-motion",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-reduced-motion",
+        "https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "frontend"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when implementing UI motion in React with Motion (formerly Framer Motion; npm `motion`, import from `motion/react`): declarative animate/initial/exit, spring-vs-tween transitions, layout & shared-element transitions (layout / layoutId / LayoutGroup), AnimatePresence enter/exit, staggering and imperative sequences (useAnimate / useAnimationControls), cross-device keyboard-aware gestures (hover/tap/focus/pan/drag/Reorder), scroll-linked & scroll-triggered motion (useScroll / useInView / useTransform), motion values as a no-re-render reactive primitive (useMotionValue / useTransform), and production concerns: prefers-reduced-motion a11y (MotionConfig reducedMotion / useReducedMotion), transform-only hardware-accelerated performance, and choosing Motion vs CSS vs React Spring vs GSAP vs the Web Animations API. Includes recipes: modal, drawer/sheet, toast stack, list reorder, page transitions, shared-element hero image, spinner, scroll progress, parallax, stagger-in lists.",
+        "useCases": [
+          "Animating React UI that is tied to **state or props** (toggles, tabs, modals, route changes).",
+          "You need **layout** or **shared-element** transitions (expand card \u2192 modal, magic-move tab indicator, reorderable list, image \u2192 lightbox).",
+          "You need **app-like gestures**: drag, tap, hover, pan, drag-to-reorder \u2014 that behave correctly on touch, mouse, and pen, and stay keyboard-accessible.",
+          "You need **scroll-linked** motion (parallax, progress bar, reveal-on-scroll) that runs on the compositor.",
+          "You need enter/exit animation for conditionally rendered components (`AnimatePresence`).",
+          "You want 60/120fps animation without per-frame React re-renders (**motion values**)."
+        ],
+        "guardrails": [
+          "**Respect `prefers-reduced-motion` \u2014 non-negotiable.** Wrap the app in `<MotionConfig reducedMotion=\"user\">` (auto-disables transform/layout motion, keeps opacity/color) and branch decorative/large motion with `useReducedMotion()`. Large-distance translate/scale and parallax trigger nausea for users with vestibular disorders; the reduced-motion fallback should be an **opacity crossfade or an instant state change**, never a smaller version of the same big move.",
+          "**Never gate essential information behind motion.** If an animation is the *only* signal a state changed, users with reduced motion or assistive tech miss it \u2014 always provide a static/textual state.",
+          "**Animate only compositor-friendly properties:** `opacity`, `transform` (`x`/`y`/`scale`/`rotate`), `filter`, `clipPath`. Never animate `width`/`height`/`top`/`left`/`margin` directly \u2014 use `x`/`scale` or the **`layout`** prop (converts a layout change into a scale-corrected transform).",
+          "**Give `AnimatePresence` children a stable, unique `key`.** Missing/duplicate keys break exit tracking.",
+          "**Preserve keyboard focus order.** Animated layout changes must not steal or scramble focus. Use `whileFocus` for focus feedback; never strip focus outlines without a replacement. `whileTap` fires on **Enter** for focusable elements, so it doubles as keyboard-activation feedback.",
+          "**Don't blanket `will-change` in CSS.** Permanent layer promotion wastes GPU memory. Let the animation lifecycle manage it (Motion sets it during animation).",
+          "**Import from `motion/react`.** If you see `from \"framer-motion\"` in older code it still works, but standardize on `motion`.",
+          "**Keep UI feedback short** (~100\u2013300ms). Provide a pause affordance for any motion running > 5s (WCAG 2.2.2)."
+        ]
+      }
+    },
+    {
+      "name": "wcag-a11y-audit",
+      "displayName": "WCAG 2.2 AA Accessibility Audit",
+      "version": "0.1.0",
+      "description": "Framework-agnostic WCAG 2.2 Level AA accessibility audit checklist and manual-testing playbook: ARIA vs semantic HTML, focus management, keyboard nav, screen readers, contrast, target size, reduced motion, and automated a11y testing.",
+      "category": "Design & UI",
+      "keywords": [
+        "accessibility",
+        "wcag",
+        "a11y",
+        "aria",
+        "keyboard",
+        "screen-reader",
+        "audit",
+        "compliance"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://www.w3.org/TR/WCAG22/",
+        "https://www.w3.org/WAI/WCAG22/quickref/",
+        "https://www.w3.org/WAI/standards-guidelines/wcag/new-in-22/",
+        "https://www.w3.org/WAI/ARIA/apg/",
+        "https://www.w3.org/TR/using-aria/",
+        "https://developer.mozilla.org/en-US/docs/Web/Accessibility",
+        "https://www.deque.com/axe/",
+        "https://github.com/dequelabs/axe-core",
+        "https://playwright.dev/docs/accessibility-testing",
+        "https://github.com/jsx-eslint/eslint-plugin-jsx-a11y"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "librarian",
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when auditing or building any web/desktop UI for accessibility, wiring up ARIA/keyboard/focus, choosing color-contrast and target-size values, fixing screen-reader or focus-management bugs, honoring reduced-motion, or setting up automated a11y tests (axe-core, Playwright, jest-axe, eslint-plugin-jsx-a11y). This is the framework-agnostic WCAG 2.2 Level AA checklist and manual-testing playbook \u2014 reach for it whenever someone says \"accessible\", \"a11y\", \"WCAG\", \"screen reader\", \"keyboard nav\", \"focus ring\", \"contrast\", \"ARIA\", \"compliance\", or when a PR adds interactive components (modals, menus, tabs, drag-and-drop, forms, toasts) that must work without a mouse and with assistive tech.",
+        "useCases": [
+          "Auditing an existing UI for accessibility, or gating a PR that adds interactive components.",
+          "Building modals, menus, tabs, comboboxes, drag-and-drop, forms, toasts, or any custom widget.",
+          "Deciding contrast values, target sizes, focus-ring styles, or ARIA usage.",
+          "Fixing screen-reader, keyboard, or focus-management bugs.",
+          "Wiring reduced-motion or setting up automated a11y tests (axe/Playwright/jest-axe/eslint-jsx-a11y)."
+        ],
+        "guardrails": [
+          "**First Rule of ARIA:** if native HTML gives the semantics + keyboard behaviour, use it \u2014 don't re-implement with `role=` on a `<div>`. `<button>` > `<div role=\"button\">`. **No ARIA is better than bad ARIA** (misused ARIA measurably *increases* AT errors).",
+          "ARIA adds **zero** behaviour \u2014 no keyboard handling, no focus, no styling. If you add `role`/`aria-*`, you own the keyboard model, focus, and states too.",
+          "**Automated tools catch only ~30\u201350% of issues.** Never claim \"WCAG AA compliant\" from a scan alone \u2014 always do the manual keyboard + screen-reader passes.",
+          "Every interactive element needs an **accessible name**, a correct **role**, and current **state/value** (SC 4.1.2). Never put `aria-hidden=\"true\"` or `role=\"presentation\"` on a focusable element.",
+          "Never ship `outline: none` without a visible replacement focus indicator (SC 2.4.7). Prefer `:focus-visible`.",
+          "Do **not** audit against 4.1.1 Parsing \u2014 it's removed in 2.2.",
+          "Color is never the *only* signal (SC 1.4.1). Contrast is a luminance ratio \u2014 measure it, don't eyeball it. (APCA is WCAG 3/future, not the 2.2 standard.)"
+        ]
+      }
+    },
+    {
+      "name": "form-ux-patterns",
+      "displayName": "Form UX Patterns",
+      "version": "0.1.0",
+      "description": "Build and review accessible React forms with react-hook-form + zod: validation timing, error UX, progressive disclosure, password/save-state patterns, and WCAG 2.2 compliance.",
+      "category": "Design & UI",
+      "keywords": [
+        "forms",
+        "react-hook-form",
+        "zod",
+        "validation",
+        "accessibility",
+        "shadcn",
+        "ux",
+        "wcag"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://react-hook-form.com/docs/useform",
+        "https://react-hook-form.com/docs/usecontroller/controller",
+        "https://zod.dev/",
+        "https://ui.shadcn.com/docs/forms/react-hook-form",
+        "https://www.nngroup.com/articles/errors-forms-design-guidelines/",
+        "https://www.nngroup.com/articles/required-fields/",
+        "https://www.nngroup.com/articles/error-message-guidelines/",
+        "https://adrianroselli.com/2019/02/avoid-default-field-validation.html",
+        "https://www.w3.org/WAI/WCAG22/Understanding/error-identification.html",
+        "https://www.w3.org/WAI/WCAG22/Understanding/error-suggestion.html",
+        "https://www.w3.org/WAI/WCAG22/Understanding/redundant-entry.html",
+        "https://www.w3.org/WAI/WCAG22/Understanding/accessible-authentication-minimum.html",
+        "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/autocomplete"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when building or reviewing web forms (sign-up, checkout, settings, listing/create flows) in React with react-hook-form + zod (or Vue/Svelte equivalents) \u2014 covers validation timing (onBlur/onChange/onSubmit/onTouched), field-level error UX and wording, required-vs-optional indicators, progressive disclosure (multi-step, accordions, show-more), input-type/keyboard selection (inputmode, autocomplete tokens), password UX (reveal toggle, strength meter, allow paste), save-state/autosave indicators, server-error surfacing back to fields, and WCAG 2.2 form accessibility (aria-invalid, aria-describedby, role=\"alert\", fieldset/legend, SC 3.3.1/3.3.3/3.3.7/3.3.8). Flags common anti-patterns like reset-next-to-submit, disabled-submit-hiding-errors, validate-on-every-keystroke, and blocking paste in password fields.",
+        "useCases": [
+          "Building a form: sign-up/login, checkout, settings, create/edit records, marketplace listing forms.",
+          "Reviewing a PR that adds/changes a form and you need a concrete checklist, not vibes.",
+          "Choosing validation timing, wiring server errors back to fields, or debugging noisy/aggressive validation.",
+          "Deciding input types, mobile keyboards (`inputmode`), and `autocomplete` tokens.",
+          "Implementing password fields, multi-step wizards, autosave, or \"unsaved changes\" guards."
+        ],
+        "guardrails": [
+          "**Zod is the single source of truth** for shape + rules + TS type (`z.infer<typeof schema>`). Don't duplicate rules in JSX. Validate on the server too \u2014 client validation is UX, not security.",
+          "**Default to `mode: \"onTouched\"` + `reValidateMode: \"onChange\"`.** Validate after the user finishes a field (first blur), then clear/re-check live as they fix it. Reserve `onChange` for live affordances (password strength). Avoid validating before a field is complete (NN/g).",
+          "**Never rely on color, tooltips, placeholders, or a disabled button alone.** Errors must be **text**, next to the field, and announced (`aria-invalid` + `aria-describedby` + `role=\"alert\"`). Placeholder \u2260 label.",
+          "**Always allow paste** in password/OTP fields; use `autocomplete=\"current-password\" | \"new-password\" | \"one-time-code\"`. Blocking paste can fail WCAG 3.3.8.",
+          "**Put \"required\" in text, not just an asterisk.** Cut optional fields first; if most are required, mark the few with literal \"(optional)\"; `aria-hidden` any decorative `*`.",
+          "**Add `noValidate` on `<form>`** and control messaging yourself \u2014 native HTML5 bubbles have poor SR support, auto-dismiss, and don't zoom (Roselli). Keep `type`/`pattern` as hints only.",
+          "**Never put a Reset/Clear button beside Submit.** Never disable Submit as the only error feedback \u2014 let it submit, then reveal errors and focus the first one (`shouldFocusError`).",
+          "Don't ask for the same info twice in one flow \u2014 prefill or offer \"same as\u2026\" (WCAG 3.3.7)."
+        ]
+      }
+    },
+    {
+      "name": "dataviz-dashboard-ux",
+      "displayName": "Data-Viz & Dashboard UX",
+      "version": "0.1.0",
+      "description": "Chart-type selection, dashboard layout, data-safe colour, interaction, time-series, states, accessibility, export, and React charting-library choice (Recharts/Nivo/Victory/visx/D3/Observable Plot) \u2014 grounded in Cleveland-McGill, Tufte, Few, and Munzner.",
+      "category": "Design & UI",
+      "keywords": [
+        "dataviz",
+        "charts",
+        "dashboard",
+        "visualization",
+        "color-palette",
+        "recharts",
+        "accessibility",
+        "kpi"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "http://euclid.psych.yorku.ca/www/psy6135/papers/ClevelandMcGill1984.pdf",
+        "https://www.cs.ubc.ca/~tmm/vadbook/",
+        "https://www.edwardtufte.com/tufte/books_vdqi",
+        "https://www.perceptualedge.com/",
+        "https://www.datawrapper.de/academy/",
+        "https://www.datawrapper.de/academy/why-our-column-and-bar-charts-start-at-zero",
+        "https://ft-interactive.github.io/visual-vocabulary/",
+        "https://www.data-to-viz.com/",
+        "https://colorbrewer2.org/",
+        "https://www.nature.com/articles/nmeth.1618",
+        "https://matplotlib.org/stable/users/explain/colors/colormaps.html",
+        "https://help.tableau.com/current/pro/desktop/en-us/actions_filter.htm",
+        "https://learn.microsoft.com/en-us/power-bi/create-reports/service-reports-visual-interactions",
+        "https://recharts.org/",
+        "https://ui.shadcn.com/charts",
+        "https://github.com/plouc/nivo",
+        "https://commerce.nearform.com/open-source/victory/",
+        "https://airbnb.io/visx/",
+        "https://d3js.org/",
+        "https://observablehq.com/plot/",
+        "https://observablehq.com/plot/features/accessibility",
+        "https://www.highcharts.com/docs/accessibility/accessibility-module",
+        "https://www.w3.org/WAI/tutorials/images/complex/"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "librarian",
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when building or reviewing any chart, graph, KPI card, dashboard, or analytics view \u2014 to pick the right chart type (bar/line/area/scatter/histogram/heatmap/sparkline/small-multiples), lay out KPIs (overview-then-detail, F-pattern), colour data safely (sequential/diverging/categorical, Okabe-Ito & Viridis, never colour-only), design hover/brush/drill-down/cross-filter interactions, handle time-series (zero baseline, time zones, aggregation, missing data), cover loading/empty/error + real-time refresh states, make charts accessible (alt text, data tables, keyboard series nav), export to PNG/PDF/CSV, and choose a React charting library (Recharts vs Nivo vs Victory vs visx vs D3 vs Observable Plot). Reach for it on any request mentioning \"chart\", \"graph\", \"dashboard\", \"data viz\", \"KPI\", \"metric\", \"plot\", \"which chart\", \"colour palette\", or when a PR adds a visualization.",
+        "useCases": [
+          "Picking or reviewing a chart type for a given data question.",
+          "Building a dashboard: KPI hierarchy, layout, small multiples, refresh cadence.",
+          "Choosing/auditing a colour palette (categorical vs sequential vs diverging; CVD-safe).",
+          "Designing chart interactions (tooltip, brush, linked views, drill-down, cross-filter).",
+          "Handling time-series (baseline, time zones, aggregation, gaps), or loading/empty/error/real-time states.",
+          "Making charts accessible or exportable (alt/data-table, keyboard, PNG/PDF/CSV).",
+          "Selecting a React charting library, or reviewing a PR that adds a visualization."
+        ],
+        "guardrails": [
+          "**Perceptual ranking is the law (Cleveland\u2013McGill):** position on a common scale > length > angle/slope > area > colour luminance/saturation. Map the *most important* attribute to the *most accurate* channel (Munzner's effectiveness principle). Prefer bars over pies; aligned axes over dual axes.",
+          "**Zero baseline for bars/area \u2014 always.** Length/area IS the encoding; truncating it lies (Datawrapper). Lines/scatter *may* start non-zero (slope carries meaning) \u2014 but label the axis honestly.",
+          "**Never use colour as the sole encoding** (WCAG 1.4.1). Pair with label, shape, line-style, texture, or position. Test with a CVD simulator.",
+          "**Right palette family:** sequential = ordered magnitude; diverging = signed/from-a-midpoint only; categorical = nominal (\u2264~7 hues). Default categorical = **Okabe\u2013Ito**; default continuous = **Viridis**. Never `jet`/rainbow; never Red-Green diverging.",
+          "**Maximise data-ink, don't fetishise it.** Kill chartjunk (3D, shadows, heavy gridlines, boxed everything) \u2014 but a little redundancy/labeling that aids reading is fine (the chartjunk debate). Clarity > asceticism.",
+          "**Overview \u2192 zoom/filter \u2192 details-on-demand** (Shneiderman). Keep resting charts clean; put precision in tooltips/tables. Every interaction needs an affordance + a reset; announce filter changes to AT.",
+          "**A chart is not accessible until it has a text alternative + (ideally) a data table.** Don't ship hover-only critical info. Defer the general a11y checklist to `wcag-a11y-audit`.",
+          "**Don't over-render.** SVG DOM grows with data; past ~1\u201310k points switch to Canvas (Nivo/Chart.js) or downsample (LTTB). Real-time = append, don't full-redraw; honour `prefers-reduced-motion`.",
+          "**Every tile has four states:** loading (skeleton in-footprint), empty (explain + action; 0 \u2260 empty), error (message + retry, isolated), stale/partial (badge \"as of <time>\")."
+        ]
+      }
+    },
+    {
+      "name": "command-palette-keyboard-ux",
+      "displayName": "Command Palette & Keyboard UX (\u2318K)",
+      "version": "0.1.0",
+      "description": "Build a command palette (\u2318K / Ctrl+K command bar) and keyboard-driven UX in React \u2014 the Superhuman/Linear/Vercel/Raycast/Notion pattern. Covers cmdk as the canonical unstyled command-menu primitive, the pages-stack nested/back-navigation pattern, fuzzy ranking (command-score/fzf vs Fuse.js), global-vs-contextual shortcut architecture (tinykeys/react-hotkeys-hook/mousetrap/kbar), shortcut philosophy and conflict handling, recents/pinned/frecency empty states, WAI-ARIA combobox accessibility (aria-activedescendant virtual focus, live-region announcements), mobile degradation, and the top palette failure modes \u2014 with a concrete recipe library.",
+      "category": "Design & UI",
+      "keywords": [
+        "command-palette",
+        "cmdk",
+        "keyboard-shortcuts",
+        "hotkeys",
+        "combobox",
+        "fuzzy-search",
+        "accessibility",
+        "react",
+        "ui",
+        "productivity"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://cmdk.paco.me/",
+        "https://www.npmjs.com/package/cmdk",
+        "https://www.npmjs.com/package/command-score",
+        "https://www.npmjs.com/package/kbar",
+        "https://github.com/jamiebuilds/tinykeys",
+        "https://github.com/JohannesKlauss/react-hotkeys-hook",
+        "https://www.w3.org/WAI/ARIA/apg/patterns/combobox/",
+        "https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-autocomplete-list/",
+        "https://linear.app/changelog/2019-12-18-new-command-menu",
+        "https://blog.superhuman.com/how-to-build-a-remarkable-command-palette/",
+        "https://github.com/junegunn/fzf/blob/master/ADVANCED.md"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "frontend"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when building a command palette (\u2318K / Ctrl+K command bar) or keyboard-driven UX in React \u2014 the Superhuman/Linear/Vercel/Raycast/Notion pattern. Covers cmdk (Paco Coursey/Vercel, MIT, v1.1.1) as the canonical unstyled command-menu primitive (Command.Input/List/Empty/Group/Item/Separator/Dialog/Loading, filter/shouldFilter/keywords/loop/value props, ~2\u20133k item perf ceiling), the pages-stack nested/back-navigation pattern (Escape + Backspace-on-empty), fuzzy ranking (command-score default with exact multipliers, fzf/fzy word-boundary scoring, when to use Fuse.js/Levenshtein instead), global-vs-contextual keyboard shortcut architecture (tinykeys vs react-hotkeys-hook vs mousetrap vs kbar), shortcut philosophy (single-key/sequence vim/Gmail style vs Cocoa modifier style; press-twice conflict resolution; ? cheat sheet; platform-aware <kbd> glyph rendering; avoiding browser/OS reserved combos), recents/pinned/frecency + \"did you mean\"/create-fallback empty states, the command-vs-search-vs-universal-search split (Linear separate triggers vs Notion type-filtered search), WAI-ARIA combobox accessibility (role=combobox, aria-autocomplete, aria-activedescendant virtual focus + self-managed scroll, aria-live result-count announcements, high-contrast focus, screen-reader quick-nav collisions), mobile/touch degradation (Raycast desktop-only; Linear collapses to search), focus restoration on close, and the top-10 palette failure modes. Recipes: \u2318K dialog wiring, nested pages, custom fuzzy filter, contextual shortcut scoping, kbd shortcut display, live-region announcements. Role affinity cody (implementer) + charm (verb-first command labels, keyword synonyms, <40-char help text). Category Design & UI / Productivity.",
+        "useCases": [
+          "Your app has **more actions than fit comfortably on screen**, and/or a **keyboard-first audience**.",
+          "You want to expose **long-tail features** that could never justify a dedicated button/menu.",
+          "You need **unified navigation + actions + search** behind one summonable input.",
+          "You're on **React 18+** and can render a client component (cmdk uses `useId`/`useSyncExternalStore`)."
+        ],
+        "guardrails": [
+          "**Never make a single-key shortcut the sole way to do something.** Single-key/sequence binds (`e`, `x`, `g i`) collide with screen-reader quick-nav keys (JAWS/NVDA use letters to jump by element) and are undiscoverable. Always provide a palette entry and/or a modifier-based equivalent for the same action.",
+          "**Scope shortcuts so they don't fire in text fields.** Single-key binds triggering while the user types is the #1 shortcut bug. Use `react-hotkeys-hook`'s `enableOnFormTags`, Mousetrap's default input-ignore, or gate `tinykeys` manually.",
+          "**Don't fight the browser/OS.** `Ctrl/Cmd+W, T, N, L, Q, F, S` are reserved. For the unavoidable conflict (editor `Cmd+K` = insert link), use **press-once = contextual action, press-twice = palette** (Superhuman).",
+          "**Restore focus on close.** Save the previously focused element before opening; restore it when the palette closes. `Command.Dialog` (composes Radix Dialog) does this for you; a hand-rolled overlay must not.",
+          "**Announce result changes.** Filtering silently is invisible to screen readers. Ship an `aria-live=\"polite\"` region reporting the count (\"42 results\" / \"No results\"). cmdk gives you combobox roles but **not** the live region \u2014 you own it.",
+          "**Discoverability is a feature, not polish.** Persistent \"Search\u2026 \u2318K\" hint; show each action's shortcut as `<kbd>` *inside* the palette (teach the fast path); `?` opens a full cheat sheet."
+        ]
+      }
+    },
+    {
+      "name": "empty-loading-error-states",
+      "displayName": "Empty, Loading & Error States",
+      "version": "0.1.0",
+      "description": "Enforce the three-states discipline (loading, empty, error \u2014 plus partial and ideal) on every data-bound component: indicator selection, empty-state types, error taxonomy, retries, and WCAG 2.2 state-change announcements.",
+      "category": "Design & UI",
+      "keywords": [
+        "empty-states",
+        "loading",
+        "error-states",
+        "skeleton",
+        "suspense",
+        "retry",
+        "accessibility",
+        "ux"
+      ],
+      "capabilities": [
+        "read_files"
+      ],
+      "sourceRefs": [
+        "https://react.dev/reference/react/Suspense",
+        "https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary",
+        "https://react.dev/reference/react/useOptimistic",
+        "https://github.com/bvaughn/react-error-boundary",
+        "https://tanstack.com/query/latest/docs/framework/react/guides/query-retries",
+        "https://tanstack.com/query/latest/docs/framework/react/guides/optimistic-updates",
+        "https://www.nngroup.com/articles/response-times-3-important-limits/",
+        "https://www.nngroup.com/articles/progress-indicators/",
+        "https://www.nngroup.com/articles/skeleton-screens/",
+        "https://www.nngroup.com/articles/empty-state-interface-design/",
+        "https://www.nngroup.com/articles/search-no-results-serp/",
+        "https://www.nngroup.com/articles/error-message-guidelines/",
+        "https://m3.material.io/components/progress-indicators/guidelines",
+        "https://m2.material.io/design/communication/empty-states.html",
+        "https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html",
+        "https://www.w3.org/WAI/ARIA/apg/patterns/alert/",
+        "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Guides/Live_regions",
+        "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Roles/status_role",
+        "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-busy"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "charm",
+          "roles": [
+            "copywriter"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when building or reviewing any component that renders async/remote data (lists, tables, dashboards, search results, detail pages, feeds) in React/Vue/Svelte. Enforces the \"every data component has five states\" discipline: loading, empty, partial, error, ideal. Covers loading-indicator selection (spinner vs skeleton vs progress vs shimmer) against Nielsen 0.1/1/10s limits and the spinner-flash rule; the four empty-state types (first-run, no-results, permission-denied, deleted) with distinct copy+CTA; the five-class error taxonomy (user/network/server/permission/not-found); retry patterns (backoff+jitter, TanStack retry:3/min(1000*2^n,30000), when NOT to retry); toast-vs-inline-vs-banner-vs-dialog placement; the 404/500/offline trio; optimistic UI + Suspense; and WCAG 2.2 SC 4.1.3 announcements (role=status, role=alert, aria-live, aria-busy) + focus. Flags happy-path-only components, blank loading, raw stack traces, blame-the-user copy, and critical errors in auto-dismissing toasts.",
+        "useCases": [
+          "Building any component bound to async/remote data: list, table, grid, dashboard, search results, detail page, feed, infinite scroll, uploader.",
+          "Reviewing a PR that adds/changes a data-bound view and you need a concrete checklist, not vibes.",
+          "Choosing a loading indicator, wiring retries, deciding toast-vs-inline, or writing 404/500/offline pages.",
+          "Debugging \"it flashes / it's blank / it dumped a stack trace / the screen reader said nothing.\""
+        ],
+        "guardrails": [
+          "**Enumerate all five states before you build: loading, empty, partial, error, ideal.** The \"ideal\" state is the only one built by default; the other four are found in production by users. Suspense handles *loading*, an error boundary handles *error* \u2014 **neither handles empty or partial** (that's your app logic: `if (items.length === 0) return <EmptyState \u2026 />`).",
+          "**Match the indicator to the wait (Nielsen 0.1/1/10s).** < ~300 ms \u2192 nothing/optimistic. ~1\u201310 s small region \u2192 spinner. Full-page first load with known layout \u2192 **skeleton** (shaped like the real content to avoid layout shift; never a frame-only skeleton). Known % or > 10 s \u2192 **determinate progress**. **Delay showing any indicator ~200\u2013500 ms and keep it a minimum ~300\u2013500 ms** to avoid the spinner flash.",
+          "**Never one empty state for all cases.** First-run (teach + one CTA), no-results (echo the query + clear-filters), permission-denied (explain access), deleted (confirm outcome) are different components.",
+          "**Errors answer four questions: what happened, why/scope, what to do, a support code.** Plain language, a real \"Try again\", and a short error code/correlation ID. **Never render raw stack traces / PII** \u2014 log server-side, surface the code. **Never blame the user.** Kill \"Invalid input\" / bare \"Something went wrong\".",
+          "**Retry only transient failures** (network/5xx) with **exponential backoff + jitter**; cap the delay (TanStack default: retry 3, `min(1000*2^n, 30000)`). **Don't retry 400/401/403/404/validation.** Try a silent background retry first so one-off blips never reach the user.",
+          "**Critical errors go inline or in a dialog, never in an auto-dismissing toast** (toasts auto-dismiss, don't take focus, are missed; auto-dismiss can fail WCAG 2.2.3/2.2.4). Toasts = transient/recoverable only.",
+          "**Announce every state change to assistive tech (WCAG 2.2 SC 4.1.3).** Loading/\"Searching\u2026\"/result-count/ \"No results\" \u2192 `role=\"status\"` (implicit `aria-live=\"polite\"`). **Errors \u2192 `role=\"alert\"`** (assertive). Use `aria-busy` for multi-part loads; `aria-hidden` the spinner glyph + a visually-hidden status text. Inject the live region **before** populating it. **Move focus** to the error heading/Try-again when content is *replaced*; **don't** steal focus for an appended non-blocking status."
+        ]
+      }
+    },
+    {
+      "name": "mobile-touch-ux",
+      "displayName": "Mobile Touch UX & Responsive Patterns",
+      "version": "0.1.0",
+      "description": "Framework-agnostic mobile web & PWA checklist: touch-target sizing (WCAG 24px / 44pt / 48dp), the svh/lvh/dvh dynamic viewport, safe-area insets for notch/Dynamic-Island/home-bar, pointer-adaptive UI (@media hover/pointer), container queries as the modern responsive answer, native nav idioms (bottom-tab vs hamburger, sheet vs modal, FAB, snackbar, predictive-back), mobile input (inputmode/enterkeyhint/autocomplete), Pointer-Events gestures with touch-action + WCAG dragging alternatives, and mobile Core Web Vitals (LCP/INP/CLS) via responsive images and code-splitting.",
+      "category": "Design & UI",
+      "keywords": [
+        "mobile",
+        "touch",
+        "responsive",
+        "container-queries",
+        "safe-area",
+        "viewport",
+        "dvh",
+        "pwa",
+        "core-web-vitals",
+        "pointer-events",
+        "accessibility",
+        "ui"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html",
+        "https://www.w3.org/TR/WCAG22/",
+        "https://developer.apple.com/design/human-interface-guidelines/layout",
+        "https://developer.apple.com/design/human-interface-guidelines/accessibility",
+        "https://m3.material.io/foundations/layout/breakpoints",
+        "https://m3.material.io/foundations/interaction/gestures",
+        "https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/env",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/length",
+        "https://web.dev/blog/viewport-units",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_containment/Container_queries",
+        "https://developer.mozilla.org/en-US/docs/Web/CSS/@media/hover",
+        "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/input",
+        "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Global_attributes/enterkeyhint",
+        "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/autocomplete",
+        "https://web.dev/articles/lcp",
+        "https://web.dev/articles/inp"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer",
+            "frontend"
+          ]
+        },
+        {
+          "familiar": "sage",
+          "roles": [
+            "researcher"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when building, reviewing, or debugging any mobile/responsive web UI (or a PWA / web view meant to feel native) \u2014 sizing touch targets, fixing the 100vh/notch/on-screen-keyboard bugs, making layouts adapt with container queries instead of device-pixel breakpoints, choosing bottom-nav vs hamburger / sheet vs modal / action-sheet vs dropdown, wiring the right mobile keyboard (inputmode/enterkeyhint/autocomplete), handling touch gestures with Pointer Events + touch-action, honoring hover-vs-touch, or hitting mobile Core Web Vitals (LCP/INP/CLS) with responsive images and lazy-loading. Reach for it on any cue like \"mobile\", \"touch\", \"responsive\", \"breakpoint\", \"safe area / notch / Dynamic Island\", \"svh/dvh\", \"container query\", \"tap target\", \"hamburger vs tab bar\", \"PWA/offline\", \"keyboard covers input\", \"swipe/drag\", or a PR that ships a phone layout. Framework-agnostic; pairs with wcag-a11y-audit and framer-motion-patterns.",
+        "useCases": [
+          "Building or reviewing a phone/tablet layout, or a PWA / web view meant to feel native.",
+          "Sizing tap targets; fixing `100vh` clipping, notch/Dynamic-Island bleed, or keyboard-covers-input bugs.",
+          "Choosing navigation (bottom-nav vs hamburger), sheet vs modal, action-sheet vs dropdown, drag-to-reorder.",
+          "Deciding breakpoint strategy, or replacing device-width media queries with container queries.",
+          "Wiring mobile inputs (`inputmode`/`enterkeyhint`/`autocomplete`), custom swipe/drag, or hover-vs-touch UI.",
+          "Hitting mobile Core Web Vitals (LCP/INP/CLS) or shipping offline/installable."
+        ],
+        "guardrails": [
+          "**Touch target floor is WCAG 2.5.8 = 24\u00d724 CSS px; ship the platform size: 44pt (iOS) / 48dp (Android).** Keep visuals small if you must, but expand the *hit area* (padding / `::after { inset: -12px }`). \u22658px apart.",
+          "**Never `100vh` for full-height on mobile.** Use `min-height: 100svh` (fallback `100vh`); use `dvh` only where live-tracking helps \u2014 it reflows on scroll, so don't animate layout with it.",
+          "**Never block pinch-zoom.** No `user-scalable=no` / `maximum-scale=1` (WCAG 1.4.4). Always ship `<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">`.",
+          "**Never hover-lock content.** Any \"reveal on hover\" needs a tap path; gate hover behind `@media (hover: hover) and (pointer: fine)`. Touch has no hover.",
+          "**Container queries for components; media queries for page/global** (layout scaffold, `prefers-*`, print). Breakpoints are **content-driven, mobile-first** \u2014 device-pixel breakpoints (`iPhone = 390px`) are an anti-pattern.",
+          "**Every drag needs a non-drag single-pointer alternative** (WCAG 2.5.7); every multipoint/path gesture needs a **single-tap alternative** (2.5.1); fire on the **up** event so users can slide off to abort (2.5.2).",
+          "**The LCP image is never lazy-loaded.** `loading=\"lazy\"` is for below-the-fold only; preload/`fetchpriority=high` the hero.",
+          "**Reserve image space** (`width`/`height` or `aspect-ratio`) or CLS tanks. Give **instant tap feedback** or INP tanks.",
+          "iOS auto-zooms inputs under **16px** font \u2014 keep form inputs \u226516px."
+        ]
+      }
+    },
+    {
+      "name": "design-system-landscape",
+      "displayName": "Design-System Landscape",
+      "version": "0.1.0",
+      "description": "A map and decision guide to the 2025-2026 design-system ecosystem (Material 3, Fluent 2, Apple HIG, Primer, Carbon, Ant, Chakra v3, Mantine, HeroUI, Radix + shadcn/ui, Adobe Spectrum/React Aria and more) \u2014 classify each into platform/product/community/headless tiers, compare license, framework support, token architecture and a11y, and decide which DS to reach for or borrow from.",
+      "category": "Design & UI",
+      "keywords": [
+        "design-system",
+        "ui-library",
+        "material",
+        "fluent",
+        "carbon",
+        "ant-design",
+        "react",
+        "comparison"
+      ],
+      "capabilities": [
+        "read_files"
+      ],
+      "sourceRefs": [
+        "https://m3.material.io/",
+        "https://m3.material.io/styles/color/system/how-the-system-works",
+        "https://fluent2.microsoft.design/",
+        "https://developer.apple.com/design/human-interface-guidelines",
+        "https://primer.style/",
+        "https://primer.style/foundations/primitives/color",
+        "https://carbondesignsystem.com/",
+        "https://carbondesignsystem.com/all-about-carbon/what-is-carbon/",
+        "https://ant.design/",
+        "https://ant.design/docs/react/customize-theme",
+        "https://chakra-ui.com/",
+        "https://mantine.dev/",
+        "https://www.heroui.com/",
+        "https://atlassian.design/",
+        "https://polaris.shopify.com/",
+        "https://spectrum.adobe.com/",
+        "https://baseweb.design/",
+        "https://github.com/shadcn-ui/ui",
+        "https://github.com/radix-ui/primitives",
+        "https://github.com/ant-design/ant-design",
+        "https://github.com/carbon-design-system/carbon",
+        "https://github.com/adobe/react-spectrum",
+        "https://github.com/mantinedev/mantine",
+        "https://github.com/heroui-inc/heroui",
+        "https://github.com/primer/react",
+        "https://github.com/chakra-ui/ark",
+        "https://github.com/microsoft/fluentui"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "sage",
+          "roles": [
+            "librarian",
+            "researcher"
+          ]
+        },
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer"
+          ]
+        },
+        {
+          "familiar": "astra",
+          "roles": [
+            "strategic-navigator"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when choosing, comparing, or borrowing from an existing design system rather than building components from scratch: a map + decision guide covering Material 3, Fluent 2, Apple HIG, GitHub Primer, IBM Carbon, Ant Design, Chakra UI v3, Mantine, HeroUI (ex-NextUI), Radix + shadcn/ui, and Adobe Spectrum / React Aria (plus SLDS, Atlassian, Polaris, Base Web). Classifies each into four tiers (platform language you conform to / product DS / installable community kit / headless own-code substrate) and states its license, framework support, token architecture, and a11y posture, with a \"reach for which DS when\" flow and live adoption signals (npm/stars; Polaris repo archived; NextUI to HeroUI; Ant agent docs). Encodes the CovenCave matrix: borrow semantic-first tokens (Primer), a11y discipline (Carbon), and the ownership model (Radix/shadcn); avoid Material dynamic color, Ant density, light-mode-first defaults, and vendor skins. Hands-on building belongs to sibling skills.",
+        "useCases": [
+          "Someone asks **\"which UI library / design system should we use?\"** or \"how does X compare to Y?\"",
+          "You're about to **borrow a pattern** (token naming, theming model, a11y approach) from an established DS.",
+          "You need to know a DS's **license, framework support, token architecture, or a11y posture** before adopting.",
+          "You must **map a request onto the OpenCoven house style** and decide adopt / study-only / reject.",
+          "You're deciding whether to **install a styled kit** vs **own component source** (shadcn) vs **conform to a platform language** (HIG/Material/Fluent)."
+        ],
+        "guardrails": [
+          "**Classify the tier first.** (A) *Platform language* you conform to on its native OS (Apple HIG, Material 3, Fluent 2) \u2014 never adopt as a web *skin*; (B) *product DS* (Primer/Carbon/SLDS/Atlassian/Polaris/Spectrum/Base Web) \u2014 usually *study*, rarely wholesale adopt; (C) *installable community kit* (Ant/MUI/Mantine/Chakra v3/HeroUI) \u2014 `npm i` + theme; (D) *headless own-code* (Radix+shadcn/ui, React Aria, Ark/Zag) \u2014 compose + own source. The tier dictates the whole decision.",
+          "**For OpenCoven work, default to Tier D (Radix + shadcn/ui).** Owning source is the only way to enforce the house style (dark-first, dense, minimal, symbolic, controlled purple, `--oc-*` tokens). See `shadcn-ui-and-radix` for the build, `opencoven-design` for the visual law.",
+          "**Take the *system*, never the *skin*.** You may borrow Primer's token *grammar*, Carbon's a11y *rigor*, Ant's token *algorithm* \u2014 but never ship the GitHub/IBM/Ant *look*. `opencoven-design` forbids vendor skins, light-mode-primary, dynamic/generated color, gradients, glass/blur, and blue/green/red as brand accents.",
+          "**Semantic-first tokens always.** Name color by intent (`accent`/`danger`/`muted` + `-emphasis`/`-subtle`), not by hue (Primer/Carbon/Atlassian model). Feed implementation to `tailwind-design-tokens`.",
+          "**Prefer CSS variables over runtime CSS-in-JS.** The 2025\u20132026 trend is away from Emotion/Styletron/Griffel toward CSS vars + Tailwind (RSC + perf). Weigh CIS lock-in as a cost.",
+          "**Escalate hard a11y to React Aria Components** (date pickers, complex tables, drag-drop, i18n/RTL) \u2014 deeper than Radix.",
+          "**Verify adoption claims against live APIs** (`api.npmjs.org` downloads, GitHub stars) before quoting numbers \u2014 they drift. Note stale facts: **Polaris `polaris-react` repo is archived**; **NextUI renamed to HeroUI**; **Radix consolidated to a single `radix-ui` package**; **Chakra v3 rebuilt on Ark UI/Zag.js**; **Ant v6 ships agent docs (`design.md`/`LLMs.txt`/MCP)**.",
+          "**This skill decides; siblings build.** Do not re-implement shadcn/Radix recipes, token code, motion, or a11y audits here \u2014 hand off."
+        ]
+      }
     }
   ]
 }

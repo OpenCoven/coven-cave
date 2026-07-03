@@ -1,0 +1,88 @@
+{
+  "name": "design-system-landscape",
+  "version": "0.1.0",
+  "description": "A map and decision guide to the 2025-2026 design-system ecosystem (Material 3, Fluent 2, Apple HIG, Primer, Carbon, Ant, Chakra v3, Mantine, HeroUI, Radix + shadcn/ui, Adobe Spectrum/React Aria and more) \u2014 classify each into platform/product/community/headless tiers, compare license, framework support, token architecture and a11y, and decide which DS to reach for or borrow from.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "design-system",
+    "ui-library",
+    "material",
+    "fluent",
+    "carbon",
+    "ant-design",
+    "react",
+    "comparison"
+  ],
+  "capabilities": [
+    "read_files"
+  ],
+  "marketplaceId": "opencoven/design-system-landscape",
+  "x-coven": {
+    "displayName": "Design-System Landscape",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://m3.material.io/",
+      "https://m3.material.io/styles/color/system/how-the-system-works",
+      "https://fluent2.microsoft.design/",
+      "https://developer.apple.com/design/human-interface-guidelines",
+      "https://primer.style/",
+      "https://primer.style/foundations/primitives/color",
+      "https://carbondesignsystem.com/",
+      "https://carbondesignsystem.com/all-about-carbon/what-is-carbon/",
+      "https://ant.design/",
+      "https://ant.design/docs/react/customize-theme",
+      "https://chakra-ui.com/",
+      "https://mantine.dev/",
+      "https://www.heroui.com/",
+      "https://atlassian.design/",
+      "https://polaris.shopify.com/",
+      "https://spectrum.adobe.com/",
+      "https://baseweb.design/",
+      "https://github.com/shadcn-ui/ui",
+      "https://github.com/radix-ui/primitives",
+      "https://github.com/ant-design/ant-design",
+      "https://github.com/carbon-design-system/carbon",
+      "https://github.com/adobe/react-spectrum",
+      "https://github.com/mantinedev/mantine",
+      "https://github.com/heroui-inc/heroui",
+      "https://github.com/primer/react",
+      "https://github.com/chakra-ui/ark",
+      "https://github.com/microsoft/fluentui"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "sage",
+        "roles": [
+          "librarian",
+          "researcher"
+        ]
+      },
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer"
+        ]
+      },
+      {
+        "familiar": "astra",
+        "roles": [
+          "strategic-navigator"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}
