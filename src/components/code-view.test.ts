@@ -102,7 +102,7 @@ assert.match(codeSidebar, /ph:git-pull-request|ph:git-branch/, "thread rows show
 assert.match(codeSidebar, /useSessionPins|toggleSessionPin/, "sidebar reads/writes session pins");
 assert.match(codeSidebar, /Pinned/, "sidebar renders a Pinned section header");
 assert.match(codeSidebar, /Show more|showAll|THREADS_PREVIEW/, "long thread lists collapse behind Show more");
-assert.match(codeSidebar, /New chat/, "sidebar nav has New chat");
+assert.match(codeSidebar, /New session|New chat/, "sidebar nav has a New session/chat action");
 assert.match(codeSidebar, /cave:navigate-mode/, "sidebar deep-links to other surfaces via the nav bus");
 assert.match(codeSidebar, /mode:\s*"inbox"/, "Scheduled deep-links to Automations (inbox mode)");
 assert.match(codeSidebar, /mode:\s*"marketplace"/, "Plugins deep-links to the Marketplace surface (its own mode after #2154)");
