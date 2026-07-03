@@ -21,8 +21,8 @@ assert.match(
 );
 assert.match(
   chatView,
-  /const projectSelection = resolveChatProjectSelection\(\{\s*draftId: projectIdDraft,\s*hasSession: Boolean\(session\),\s*sessionProjectRoot: session\?\.project_root,\s*fallbackProjectRoot: projectRoot,\s*projects,\s*\}\);[\s\S]*const resolvedProjectId = projectSelection\.projectId;[\s\S]*const selectedProject = projectSelection\.project;/,
-  "ChatView resolves the selected project through resolveChatProjectSelection (sessions in unregistered cwds are No project — behaviorally pinned in chat-projects.test.ts)",
+  /const projectSelection = resolveChatProjectSelection\(\{\s*draftId: projectIdDraft,\s*hasSession: Boolean\(session\),\s*sessionProjectRoot: session\?\.project_root,\s*fallbackProjectRoot: projectRoot,\s*taskProjectId: linkedContext\?\.task\?\.projectId,\s*taskCwd: linkedContext\?\.task\?\.cwd,\s*projects,\s*\}\);[\s\S]*const resolvedProjectId = projectSelection\.projectId;[\s\S]*const selectedProject = projectSelection\.project;/,
+  "ChatView resolves the selected project through resolveChatProjectSelection, feeding the linked task's project (sessions in unregistered cwds are No project — behaviorally pinned in chat-projects.test.ts)",
 );
 // REGRESSION (2026-07-02): a session in an unregistered cwd must NOT default
 // the picker to the first project — sending that root re-roots the next
@@ -87,8 +87,26 @@ assert.doesNotMatch(
 
 assert.match(
   taskChatRoute,
-  /body\.projectRoot \?\? card\.cwd \?\? process\.cwd\(\)/,
-  "Task chat sessions start in the assigned project root when one is supplied",
+  /body\.projectRoot \?\? cardProjectRoot \?\? card\.cwd/,
+  "Task chat sessions start in the assigned project root, then the card's own project, then its cwd",
+);
+// REGRESSION (2026-07-03): the route must never root a task chat in the app's
+// own process.cwd() — that records coven-cave as the session's project_root
+// and the chat picker then shows the wrong project for the task.
+assert.doesNotMatch(
+  taskChatRoute,
+  /process\.cwd\(\)/,
+  "The process.cwd() fallback for task-chat roots must stay gone",
+);
+assert.match(
+  taskChatRoute,
+  /projectById\(card\.projectId, await loadProjects\(\)\)/,
+  "A card's stable projectId resolves server-side when the UI didn't send a root",
+);
+assert.match(
+  taskChatRoute,
+  /assign a project to this task before starting chat/,
+  "A projectless task chat start is refused instead of silently mis-rooted",
 );
 assert.match(
   taskChatRoute,
@@ -149,6 +167,31 @@ assert.doesNotMatch(
   boardView,
   /TaskChatCwdPrompt|setCwdPromptCardId|aria-label="Select a project for this task chat"/,
   "Task chat project selection should live in the task CWD field, not a follow-up dialog",
+);
+
+// ── Chat side: the linked task's project drives the picker (2026-07-03) ──────
+// A chat tied to a board card must open in the card's project — not the first
+// registered project, and not whatever cwd the session happened to be recorded
+// in (a mis-rooted task chat displayed "Coven Cave" for a task belonging to a
+// different project).
+const linkedContextLib = readFileSync(
+  new URL("../lib/chat-linked-context.ts", import.meta.url),
+  "utf8",
+);
+assert.match(
+  linkedContextLib,
+  /projectId: card\.projectId \?\? null/,
+  "The linked-task context carries the card's stable projectId through to the chat",
+);
+assert.match(
+  chatView,
+  /taskProjectId: linkedContext\?\.task\?\.projectId,\s*taskCwd: linkedContext\?\.task\?\.cwd,\s*projects,\s*\}\)\.projectId \?\?/,
+  "The draft-init effect seeds the picker from the linked task's project once the context loads",
+);
+assert.match(
+  chatView,
+  /firstProject\?\.id, linkedContext\?\.task\?\.projectId, linkedContext\?\.task\?\.cwd\]/,
+  "The draft-init effect re-seeds when the linked task arrives (it loads async with the conversation)",
 );
 
 console.log("task-chat-cwd.test.ts: ok");

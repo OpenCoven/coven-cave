@@ -2265,11 +2265,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // A session whose recorded cwd maps to no registered project resolves to
   // NO_PROJECT_ID here — never to the first project, whose root would re-root
   // the next turn's cwd and fork the harness session (`--continue` misses).
+  // A linked task's project (card projectId/cwd) outranks the recorded cwd: a
+  // chat tied to a task opens in — and runs in — the task's project.
   const projectSelection = resolveChatProjectSelection({
     draftId: projectIdDraft,
     hasSession: Boolean(session),
     sessionProjectRoot: session?.project_root,
     fallbackProjectRoot: projectRoot,
+    taskProjectId: linkedContext?.task?.projectId,
+    taskCwd: linkedContext?.task?.cwd,
     projects,
   });
   const resolvedProjectId = projectSelection.projectId;
@@ -4292,15 +4296,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // delete confirm resets itself — HeaderDeleteButton is keyed on sessionId.)
   useEffect(() => {
     setProjectIdDraft((prev) => {
-      // Mirrors resolveChatProjectSelection: a registered project mapped from
-      // the session/opener root, then NO_PROJECT_ID for an existing session in
-      // an unregistered cwd, then the first project only for brand-new chats.
+      // Mirrors resolveChatProjectSelection: the linked task's project first
+      // (a task chat belongs in its task's project), then a registered project
+      // mapped from the session/opener root, then NO_PROJECT_ID for an
+      // existing session in an unregistered cwd, then the first project only
+      // for brand-new chats. linkedContext loads async with the conversation,
+      // so its deps re-seed the draft once the task arrives.
       const resolved =
         resolveChatProjectSelection({
           draftId: null,
           hasSession: Boolean(session),
           sessionProjectRoot: session?.project_root,
           fallbackProjectRoot: projectRoot,
+          taskProjectId: linkedContext?.task?.projectId,
+          taskCwd: linkedContext?.task?.cwd,
           projects,
         }).projectId ??
         firstProject?.id ??
@@ -4310,7 +4319,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     });
     setMentionedFiles([]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, session?.project_root, projectRoot, firstProject?.id]);
+  }, [sessionId, session?.project_root, projectRoot, firstProject?.id, linkedContext?.task?.projectId, linkedContext?.task?.cwd]);
 
   // Re-read the per-session dismiss flag whenever the active chat changes, so
   // dismissing one chat doesn't silently hide the nudge on a different chat.

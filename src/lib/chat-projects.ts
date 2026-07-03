@@ -60,19 +60,27 @@ export type ChatProjectSelection = {
  * Resolve which project a chat is scoped to, for both the picker display and
  * the projectRoot asserted on send.
  *
- * A user-set draft wins. Otherwise the session's recorded cwd (or the opener
- * surface's root) maps to its registered project. An EXISTING session whose
- * recorded cwd maps to no registered project is "No project" — it runs in the
- * familiar's own workspace or another unregistered dir, and defaulting it to
- * the first registered project would re-root the next turn's cwd there and
- * fork the harness session (`--continue` misses in the new dir). Only a brand
- * new chat (no session yet) defaults to the first project.
+ * A user-set draft wins. Then the linked task's project: a chat tied to a
+ * board card belongs in that card's project even when the session was first
+ * recorded elsewhere (a task chat mis-rooted in the app's own cwd otherwise
+ * displays — and keeps running in — the wrong project). Otherwise the
+ * session's recorded cwd (or the opener surface's root) maps to its
+ * registered project. An EXISTING session whose recorded cwd maps to no
+ * registered project is "No project" — it runs in the familiar's own
+ * workspace or another unregistered dir, and defaulting it to the first
+ * registered project would re-root the next turn's cwd there and fork the
+ * harness session (`--continue` misses in the new dir). Only a brand new chat
+ * (no session yet) defaults to the first project.
  */
 export function resolveChatProjectSelection(args: {
   draftId: string | null;
   hasSession: boolean;
   sessionProjectRoot: string | null | undefined;
   fallbackProjectRoot: string | null | undefined;
+  /** Project association of the chat's linked task (board card), when any:
+   *  the card's stable projectId, with its cwd as a fallback mapping. */
+  taskProjectId?: string | null;
+  taskCwd?: string | null;
   projects: CaveProject[];
 }): ChatProjectSelection {
   const firstProject = args.projects[0] ?? null;
@@ -83,6 +91,9 @@ export function resolveChatProjectSelection(args: {
       project: chatProjectById(args.draftId, args.projects) ?? firstProject,
     };
   }
+  const taskProject =
+    chatProjectById(args.taskProjectId, args.projects) ?? projectForRoot(args.taskCwd, args.projects);
+  if (taskProject) return { projectId: taskProject.id, project: taskProject };
   const mappedId = projectIdForRoot(
     args.sessionProjectRoot ?? args.fallbackProjectRoot,
     args.projects,

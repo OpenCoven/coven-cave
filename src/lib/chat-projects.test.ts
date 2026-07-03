@@ -198,4 +198,78 @@ console.log("chat-projects.test.ts: ok");
     { projectId: NO_PROJECT_ID, project: null },
     "an empty roster resolves existing sessions to No project, not undefined state",
   );
+
+  // ── Linked task project (2026-07-03) ────────────────────────────────────────
+  // A chat tied to a board card belongs in that card's project — even when the
+  // session was recorded elsewhere (a task chat mis-rooted in the app's own
+  // cwd displayed the wrong project in the picker).
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/work/alpha",
+      taskProjectId: "p2",
+    }),
+    { projectId: "p2", project: roster[1] },
+    "the linked task's projectId outranks the session's recorded cwd",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/work/alpha",
+      taskProjectId: null,
+      taskCwd: "/work/beta",
+    }),
+    { projectId: "p2", project: roster[1] },
+    "a task without a stable projectId still maps through its cwd",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: true,
+      sessionProjectRoot: "/work/alpha",
+      taskProjectId: "deleted-project",
+      taskCwd: "/somewhere/unregistered",
+    }),
+    { projectId: "p1", project: roster[0] },
+    "a task whose project no longer resolves falls through to the session mapping",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      draftId: "p1",
+      hasSession: true,
+      sessionProjectRoot: "/work/alpha",
+      taskProjectId: "p2",
+    }),
+    { projectId: "p1", project: roster[0] },
+    "an explicit user pick still beats the linked task's project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      draftId: NO_PROJECT_ID,
+      hasSession: true,
+      sessionProjectRoot: "/work/alpha",
+      taskProjectId: "p2",
+    }),
+    { projectId: NO_PROJECT_ID, project: null },
+    "an explicit No-project pick also beats the linked task's project",
+  );
+
+  assert.deepEqual(
+    resolveChatProjectSelection({
+      ...base,
+      hasSession: false,
+      sessionProjectRoot: undefined,
+      taskProjectId: "p2",
+    }),
+    { projectId: "p2", project: roster[1] },
+    "a brand-new task chat opens scoped to the task's project, not the first project",
+  );
 }
