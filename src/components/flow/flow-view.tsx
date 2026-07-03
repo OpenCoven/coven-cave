@@ -5,6 +5,8 @@ import "@/styles/flow.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useAnnouncer } from "@/components/ui/live-region";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { catalogNode, createNode } from "@/lib/flow/flow-catalog";
@@ -108,6 +110,8 @@ export function FlowView() {
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [skills, setSkills] = useState<string[]>([]);
   const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false);
+  const templateOverlayRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(templateGalleryOpen, templateOverlayRef, { onEscape: () => setTemplateGalleryOpen(false) });
   const [layoutOrientation, setLayoutOrientation] = useState<FlowLayoutOrientation>("horizontal");
   // The run currently overlaid on the canvas (live session, or a finished run
   // whose final state we keep painted until the user switches flows).
@@ -144,11 +148,14 @@ export function FlowView() {
     };
   }, []);
 
+  const { announce } = useAnnouncer();
   const showNotice = useCallback((message: string) => {
     setNotice(message);
+    announce(message); // the visual toast is conditionally mounted; route through
+                       // the always-present live region so AT actually hears it.
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     noticeTimer.current = setTimeout(() => setNotice(null), 6000);
-  }, []);
+  }, [announce]);
 
   const dispatchDraft = useCallback((action: FlowDraftAction) => {
     setDraftState((current) => {
@@ -841,7 +848,7 @@ export function FlowView() {
       />
 
       {templateGalleryOpen && (
-        <div className="flow-template-overlay" role="dialog" aria-modal aria-label="Flow templates">
+        <div className="flow-template-overlay" role="dialog" aria-modal aria-label="Flow templates" ref={templateOverlayRef} tabIndex={-1}>
           <div className="flow-template-overlay-backdrop" onClick={() => setTemplateGalleryOpen(false)} />
           <div className="flow-template-overlay-panel">
             <FlowTemplateGallery
