@@ -357,7 +357,12 @@ describe("FamiliarAnalyticsView", () => {
     const data = await loadFamiliarAnalyticsData("cody");
     const model = buildFamiliarAnalyticsModel(data);
 
-    assert.equal(model.healRequests.length, 1);
+    // The "trusted" fixture produces two heal requests from two distinct
+    // sources: an eval-loop REVERT iteration (cody:eval-loop:revert-1) and a
+    // growth-report session-gap signal (cody:growth-signal:session-gap:all:0).
+    // deriveHealRequests aggregates eval-loop + contract + growth sources, so
+    // both legitimately surface here.
+    assert.equal(model.healRequests.length, 2);
     assert.equal(model.threadReports.length, 1);
     assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
     assert.match(source, /healRequests\.length === 1 \? "request" : "requests"/);
