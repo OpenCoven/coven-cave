@@ -1851,6 +1851,9 @@ function LinkedContextRow({
       lifecycle: card.lifecycle,
       labels: card.labels,
       cwd: card.cwd,
+      // Carrying the card's project re-scopes the picker the moment a task is
+      // linked — the chat belongs in the task's project from then on.
+      projectId: card.projectId ?? null,
       notes: card.notes.trim() || null,
     };
     onLinkedContextChange?.((prev) => {
