@@ -98,8 +98,13 @@ export function FamiliarsView({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (selectedFamiliarId) window.localStorage.setItem(LAST_SELECTED_KEY, selectedFamiliarId);
-    else window.localStorage.removeItem(LAST_SELECTED_KEY);
+    try {
+      if (selectedFamiliarId) window.localStorage.setItem(LAST_SELECTED_KEY, selectedFamiliarId);
+      else window.localStorage.removeItem(LAST_SELECTED_KEY);
+    } catch {
+      // Full localStorage must not crash the surface; the selection just
+      // won't persist across reloads.
+    }
   }, [selectedFamiliarId]);
 
   // "/" jumps to the search (GitHub-style) while this surface is shown — but

@@ -5,7 +5,7 @@
  *
  * Images are stored as base64 data URLs in localStorage under
  * `cave:familiar-images:v1`. Each image is capped at 2MB pre-encode and the
- * whole store at ~20MB total. Larger uploads return `{ ok: false, reason }`
+ * whole store at ~4MB total. Larger uploads return `{ ok: false, reason }`
  * so the UI can surface a toast and refuse the write.
  */
 
@@ -13,7 +13,12 @@ import { useSyncExternalStore } from "react";
 
 const IMAGES_KEY = "cave:familiar-images:v1";
 export const MAX_FAMILIAR_IMAGE_DATAURL_BYTES = Math.floor(2 * 1024 * 1024 * 4 / 3) + 100; // ~2.8MB
-const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
+// Browsers give the whole origin ~5MB of localStorage (WKWebView in the
+// desktop app), shared with every other cave:* key — so this store's own cap
+// must sit below that or the pre-check passes while the write itself throws.
+// The write is still guarded (writeMap) for when other keys hold the quota.
+const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+const STORAGE_FULL_REASON = "Cave avatar storage full. Remove an image to free space.";
 const ALLOWED_MIMES = new Set([
   "image/png",
   "image/jpeg",
@@ -53,12 +58,20 @@ function getMap(): ImageMap {
   return cached;
 }
 
-function writeMap(next: ImageMap) {
-  cached = next;
+// Persist first, then commit to memory. A quota-exceeded setItem must not
+// leave the cache claiming an image that storage never accepted — the avatar
+// would render until the next reload, then silently vanish.
+function writeMap(next: ImageMap): boolean {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(IMAGES_KEY, JSON.stringify(next));
+    try {
+      window.localStorage.setItem(IMAGES_KEY, JSON.stringify(next));
+    } catch {
+      return false; // QuotaExceededError — the browser's cap is stricter than ours
+    }
   }
+  cached = next;
   notify();
+  return true;
 }
 
 function totalBytes(map: ImageMap): number {
@@ -79,13 +92,15 @@ export function setFamiliarImage(id: string, image: { dataUrl: string; mime: str
   const projected =
     totalBytes(curr) - (previousEntry?.dataUrl.length ?? 0) + image.dataUrl.length;
   if (projected > MAX_TOTAL_BYTES) {
-    return { ok: false, reason: "Cave avatar storage full. Remove an image to free space." };
+    return { ok: false, reason: STORAGE_FULL_REASON };
   }
   const next = {
     ...curr,
     [id]: { dataUrl: image.dataUrl, mime: image.mime, updatedAt: new Date().toISOString() },
   };
-  writeMap(next);
+  if (!writeMap(next)) {
+    return { ok: false, reason: STORAGE_FULL_REASON };
+  }
   return { ok: true };
 }
 
