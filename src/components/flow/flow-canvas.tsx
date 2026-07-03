@@ -108,6 +108,11 @@ function FlowCanvasInner(props: FlowCanvasProps) {
         return {
           id: node.id,
           type: isSticky ? "flowSticky" : "flowNode",
+          // Accessible name — without it every node announces only "node" and a
+          // screen-reader user can't tell them apart.
+          ariaLabel: isSticky
+            ? "Sticky note"
+            : `${node.name}, ${def?.label ?? node.type}${node.disabled ? ", disabled" : ""}`,
           position: node.position,
           data: isSticky
             ? {

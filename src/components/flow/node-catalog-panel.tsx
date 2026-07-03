@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { searchCatalog } from "@/lib/flow/flow-catalog";
 
 export type NodeCatalogPanelProps = {
@@ -14,6 +15,12 @@ export type NodeCatalogPanelProps = {
 export function NodeCatalogPanel({ open, onPick, onClose }: NodeCatalogPanelProps) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+
+  // Trap focus + Escape + restore focus to the trigger on close. Tab used to
+  // escape to the canvas behind this dialog. focusFirst:false keeps the search
+  // autofocus below in charge of the initial target.
+  useFocusTrap(open, panelRef, { onEscape: onClose, focusFirst: false });
 
   useEffect(() => {
     if (open) {
@@ -24,15 +31,6 @@ export function NodeCatalogPanel({ open, onPick, onClose }: NodeCatalogPanelProp
     }
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
   const groups = useMemo(() => searchCatalog(query), [query]);
   const empty = groups.length === 0;
 
@@ -41,9 +39,12 @@ export function NodeCatalogPanel({ open, onPick, onClose }: NodeCatalogPanelProp
   return (
     <div className="flow-catalog-scrim" onClick={onClose}>
       <aside
+        ref={panelRef}
         className="flow-catalog"
         role="dialog"
+        aria-modal="true"
         aria-label="Add a node"
+        tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flow-catalog-head">
