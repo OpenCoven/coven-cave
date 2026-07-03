@@ -767,7 +767,10 @@ tr[role="checkbox"]:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px var(--cnav-pad) 6px;
+  /* Extra right padding so the trailing options (⋯) button isn't jammed against
+     the panel edge; the left stays at --cnav-pad to align with the New-chat and
+     search fields below. */
+  padding: 12px 15px 6px var(--cnav-pad);
 }
 .cnav__back {
   display: grid;
