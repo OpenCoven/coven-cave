@@ -22,6 +22,11 @@ const globalsCss = readFileSync(new URL("../app/globals.css", import.meta.url), 
 assert.match(projectsView, /export function ProjectsView/, "ProjectsView should export the workspace surface");
 assert.match(projectsView, /useProjects\(\{ familiarId: activeFamiliarId \}\)/, "ProjectsView should scope the live projects hook to the active familiar");
 assert.match(projectsView, /createProject\(name, root\)/, "ProjectsView should create projects through the hook");
+assert.match(
+  projectsView,
+  /addChatProject\(\{[\s\S]{0,160}?familiarId: activeFamiliarId,[\s\S]{0,160}?existingProjectId: project\.id/,
+  "Creating a project should also grant it to the scoped familiar — register alone left it 403ing in chat",
+);
 assert.match(projectsView, /const rootInputRef = useRef<HTMLInputElement>\(null\)/, "new-project flow keeps a root input ref for quick focus");
 assert.match(projectsView, /function openCreateProjectForm/, "ProjectsView should centralize opening the quick-create form");
 assert.match(projectsView, /rootInputRef\.current\?\.focus\(\)/, "quick-create can focus the path field directly");
