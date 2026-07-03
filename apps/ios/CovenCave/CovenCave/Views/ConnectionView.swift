@@ -11,6 +11,7 @@ struct ConnectionView: View {
     /// READ the clipboard when the user taps Paste, so there's no surprise
     /// "pasted from" banner just for showing the button.
     @State private var canPaste = false
+    @State private var showScanner = false
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -53,6 +54,12 @@ struct ConnectionView: View {
                         Label(message, systemImage: "exclamationmark.triangle.fill")
                             .font(.footnote)
                             .foregroundStyle(.orange)
+                    } else if case .needsAuth(let message) = app.connectionState {
+                        // The desktop is alive but token-gated — say how to
+                        // pair instead of the generic unreachable shrug.
+                        Label(message, systemImage: "qrcode.viewfinder")
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
                     }
 
                     Button(action: connect) {
@@ -65,6 +72,18 @@ struct ConnectionView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
                     .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+
+                    if QRScannerSheet.isSupported {
+                        Button {
+                            showScanner = true
+                        } label: {
+                            Label("Scan pairing QR code", systemImage: "qrcode.viewfinder")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .disabled(busy)
+                    }
 
                     trustNote
                 }
@@ -83,6 +102,13 @@ struct ConnectionView: View {
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { canPaste = UIPasteboard.general.hasStrings }
             }
+            .sheet(isPresented: $showScanner) {
+                QRScannerSheet { payload in
+                    showScanner = false
+                    apply(payload)
+                }
+                .ignoresSafeArea()
+            }
         }
     }
 
@@ -93,7 +119,7 @@ struct ConnectionView: View {
                 .foregroundStyle(Color.accentColor)
             Text("Connect to your familiars")
                 .font(.title2.bold())
-            Text("Chat with your Coven familiars from anywhere on your Tailscale network. No password, no token — your tailnet is the key.")
+            Text("Pair with your desktop over your Tailscale network — scan the QR code from Cave’s “Open on phone” panel, paste its invite link, or type the address.")
                 .font(.subheadline).foregroundStyle(.secondary)
         }
     }
@@ -110,20 +136,37 @@ struct ConnectionView: View {
 
     private func connect() {
         focused = false
-        host = cleanHost(host)
+        guard let invite = CaveInvite.parse(cleanHost(host)) else { return }
+        host = invite.host
         busy = true
         Task {
-            await app.configure(host: host)
+            await app.configure(host: invite.host, token: invite.token)
             busy = false
         }
     }
 
-    /// Fill the field from the clipboard (only read on this explicit tap), cleaned.
+    /// Fill the field from the clipboard (only read on this explicit tap).
     private func pasteHost() {
         guard let pasted = UIPasteboard.general.string else { return }
-        host = cleanHost(pasted)
-        focused = true
+        apply(pasted)
         Haptics.tap()
+    }
+
+    /// Route any input — typed, pasted, or scanned — through the invite
+    /// parser. A credential-carrying invite connects immediately (the
+    /// seamless path); a bare host just fills the field for review.
+    private func apply(_ input: String) {
+        guard let invite = CaveInvite.parse(cleanHost(input)) else { return }
+        host = invite.host
+        if invite.token != nil {
+            busy = true
+            Task {
+                await app.configure(host: invite.host, token: invite.token)
+                busy = false
+            }
+        } else {
+            focused = true
+        }
     }
 
     /// Tidy a pasted/typed address: trim whitespace, drop wrapping quotes/brackets

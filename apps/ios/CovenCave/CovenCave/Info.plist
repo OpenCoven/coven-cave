@@ -44,6 +44,8 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Coven Cave uses the camera to scan the pairing QR code shown on your desktop.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Coven Cave connects to your desktop over your private Tailscale network to chat with your familiars.</string>
 	<key>NSMicrophoneUsageDescription</key>

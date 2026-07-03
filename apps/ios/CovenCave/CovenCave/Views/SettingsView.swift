@@ -246,6 +246,8 @@ struct SettingsView: View {
                 Label("Checking…", systemImage: "clock").foregroundStyle(.secondary)
             case .unreachable:
                 Label("Unreachable", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            case .needsAuth:
+                Label("Needs pairing", systemImage: "qrcode.viewfinder").foregroundStyle(.orange)
             case .unconfigured:
                 Label("Not set up", systemImage: "circle").foregroundStyle(.secondary)
             }

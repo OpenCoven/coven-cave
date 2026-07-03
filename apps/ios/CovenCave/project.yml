@@ -56,6 +56,23 @@ targets:
     dependencies:
       - target: CovenCaveWidgets
 
+  # Unit tests for the pure pairing logic (CaveInvite parsing, token-expiry
+  # extraction). CI doesn't build Swift, so these run locally:
+  #   xcodebuild test -project CovenCave.xcodeproj -scheme CovenCave \
+  #     -destination 'platform=iOS Simulator,name=<sim>'
+  CovenCaveTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: CovenCaveTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: ai.opencoven.cave.tests
+        IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    dependencies:
+      - target: CovenCave
+
   # Widget extension hosting the "task running" Live Activity (Lock Screen +
   # Dynamic Island) and the home-screen "Up Next" widget. Shares
   # TaskActivityAttributes.swift + WidgetSnapshot.swift with the app target;
@@ -76,3 +93,14 @@ targets:
         IPHONEOS_DEPLOYMENT_TARGET: "18.0"
         SKIP_INSTALL: YES
         CODE_SIGN_ENTITLEMENTS: CovenCaveWidgets/CovenCaveWidgets.entitlements
+
+schemes:
+  CovenCave:
+    build:
+      targets:
+        CovenCave: all
+    test:
+      targets:
+        - CovenCaveTests
+    run:
+      config: Debug

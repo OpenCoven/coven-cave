@@ -79,6 +79,7 @@ struct CaveConnection: Codable, Equatable {
     }
 
     static let storageKey = "cave.connection.host"
+    static let tokenKey = "cave.access-token"
 
     static func load() -> CaveConnection? {
         guard let host = UserDefaults.standard.string(forKey: storageKey),
@@ -92,6 +93,22 @@ struct CaveConnection: Codable, Equatable {
 
     static func clear() {
         UserDefaults.standard.removeObject(forKey: storageKey)
+        KeychainStore.remove(tokenKey)
+    }
+
+    /// The mobile access credential, when this desktop's API is token-gated
+    /// (COVEN_CAVE_ACCESS_TOKEN on the server). Kept in the Keychain — the
+    /// host string above is not a secret, this is.
+    static var accessToken: String? {
+        KeychainStore.string(forKey: tokenKey)
+    }
+
+    static func saveAccessToken(_ token: String?) {
+        if let token, !token.isEmpty {
+            KeychainStore.set(token, forKey: tokenKey)
+        } else {
+            KeychainStore.remove(tokenKey)
+        }
     }
 }
 

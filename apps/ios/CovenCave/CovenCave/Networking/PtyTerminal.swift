@@ -47,7 +47,13 @@ final class PtyTerminal {
         guard let url = comps.url else { error = "Bad terminal URL."; return }
 
         let session = URLSession(configuration: .default)
-        let ws = session.webSocketTask(with: url)
+        // Same credential as the REST client — the pty-ws upgrade passes
+        // through the token gate too on a paired desktop.
+        var wsRequest = URLRequest(url: url)
+        if let token = CaveConnection.accessToken {
+            wsRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let ws = session.webSocketTask(with: wsRequest)
         task = ws
         ws.resume()
         connected = true

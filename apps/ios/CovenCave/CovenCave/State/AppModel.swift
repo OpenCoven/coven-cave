@@ -23,6 +23,10 @@ final class AppModel {
         case checking
         case connected
         case unreachable(String)
+        /// The desktop answered but rejected our credential (401/403) — the
+        /// device needs pairing, not a different address. Distinct from
+        /// `unreachable` so onboarding can say what to actually do.
+        case needsAuth(String)
     }
 
     var connection: CaveConnection?
@@ -456,7 +460,16 @@ final class AppModel {
     var deepLink: DeepLink?
 
     func handleDeepLink(_ url: URL) {
-        guard url.scheme == "covencave", let target = DeepLink(rawValue: url.host ?? "") else { return }
+        guard url.scheme == "covencave" else { return }
+        // covencave://connect?host=…&token=… — the desktop's pairing invite.
+        // Tapping it (or scanning its QR) configures host + credential in one
+        // step, replacing any previous pairing.
+        if url.host == "connect" {
+            guard let invite = CaveInvite.parse(url.absoluteString) else { return }
+            Task { await configure(host: invite.host, token: invite.token) }
+            return
+        }
+        guard let target = DeepLink(rawValue: url.host ?? "") else { return }
         switch target {
         case .tasks, .reminders: selectedTab = .tasks
         case .calendar: selectedTab = .calendar
@@ -556,7 +569,8 @@ final class AppModel {
 
     // MARK: - Connection lifecycle
 
-    func configure(host: String) async {
+    func configure(host: String, token: String? = nil) async {
+        if let token { CaveConnection.saveAccessToken(token) }
         let conn = CaveConnection(host: host)
         connection = conn
         conn.save()
@@ -577,23 +591,45 @@ final class AppModel {
         // Try the configured endpoint first, then auto-relocate to a working
         // port (e.g. the user typed a `.ts.net` host without `:8443`).
         let configured = connection.baseURL
-        guard let working = await Self.discoverBaseURL(connection.candidateBaseURLs) else {
-            connectionState = .unreachable("Couldn’t reach the desktop. Is it on the tailnet and running?")
-            return
-        }
-
-        if working != configured {
-            // Relocate: persist the working URL so future launches connect directly.
-            let relocated = CaveConnection(host: working.absoluteString)
-            self.connection = relocated
-            relocated.save()
-            if let port = working.port {
-                showToast("Connected on port \(port)", systemImage: "antenna.radiowaves.left.and.right")
+        switch await Self.discoverBaseURL(connection.candidateBaseURLs) {
+        case .found(let working):
+            if working != configured {
+                // Relocate: persist the working URL so future launches connect directly.
+                let relocated = CaveConnection(host: working.absoluteString)
+                self.connection = relocated
+                relocated.save()
+                if let port = working.port {
+                    showToast("Connected on port \(port)", systemImage: "antenna.radiowaves.left.and.right")
+                }
             }
+            connectionState = .connected
+            await loadFamiliars()
+            await loadTheme()
+            await refreshAccessTokenIfNeeded()
+        case .unauthorized:
+            connectionState = .needsAuth(
+                CaveConnection.accessToken == nil
+                    ? "This desktop requires pairing. Open Cave on the desktop → “Open on phone”, then scan the QR code or paste the invite link here."
+                    : "Your pairing has expired. Open Cave on the desktop → “Open on phone” and scan the QR code (or paste the invite link) to pair again."
+            )
+        case .none:
+            connectionState = .unreachable("Couldn’t reach the desktop. Is it on the tailnet and running?")
         }
-        connectionState = .connected
-        await loadFamiliars()
-        await loadTheme()
+    }
+
+    /// Rolling renewal: when the stored signed token is within a week of
+    /// expiry, exchange it for a fresh 30-day one. Failures are non-fatal —
+    /// the current token keeps working until it actually expires, at which
+    /// point refreshConnection lands in `.needsAuth` with re-pair guidance.
+    private func refreshAccessTokenIfNeeded() async {
+        guard let client,
+              let token = CaveConnection.accessToken,
+              let expiry = CaveInvite.tokenExpiry(token) else { return }
+        let renewalWindow: TimeInterval = 7 * 24 * 3600
+        guard expiry.timeIntervalSinceNow < renewalWindow else { return }
+        if let fresh = await client.refreshAccessToken() {
+            CaveConnection.saveAccessToken(fresh)
+        }
     }
 
     /// Connect with a few backoff retries before surfacing the "unreachable" setup
@@ -619,31 +655,56 @@ final class AppModel {
         }
     }
 
-    /// Probe candidate base URLs in order; return the first that answers. Uses a
-    /// short per-candidate timeout so trying a few ports stays snappy.
-    static func discoverBaseURL(_ candidates: [URL]) async -> URL? {
-        for base in candidates where await probe(base) { return base }
-        return nil
+    enum DiscoveryOutcome: Equatable {
+        case found(URL)
+        /// At least one candidate was a live Cave server that rejected our
+        /// credential — pairing is the fix, not another address.
+        case unauthorized
+        case none
     }
+
+    /// Probe candidate base URLs in order; adopt the first that answers as a
+    /// real Cave server. A 401/403 anywhere is remembered so a token-gated
+    /// desktop reads as "needs pairing" instead of "unreachable".
+    static func discoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
+        var sawUnauthorized = false
+        for base in candidates {
+            switch await probe(base) {
+            case .ok: return .found(base)
+            case .unauthorized: sawUnauthorized = true
+            case .failed: continue
+            }
+        }
+        return sawUnauthorized ? .unauthorized : .none
+    }
+
+    private enum ProbeResult { case ok, unauthorized, failed }
 
     /// Reachability check that requires a *real* Cave API response — a 2xx whose
     /// body decodes as the familiars payload. A bare status check would accept
     /// the wrong endpoint: another `tailscale serve` target (e.g. `:443`) can
     /// answer `/api/familiars` with a 404 or some other app's 200, and the old
     /// `200..<500` test latched onto it. Decoding the payload guarantees we only
-    /// adopt an actual Cave server.
-    private static func probe(_ base: URL) async -> Bool {
+    /// adopt an actual Cave server. Sends the paired credential when one exists
+    /// and reports a 401/403 distinctly — that's a Cave token gate talking.
+    private static func probe(_ base: URL) async -> ProbeResult {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 6
         config.waitsForConnectivity = false
         var req = URLRequest(url: base.appendingPathComponent("api/familiars"))
         req.timeoutInterval = 6
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token = CaveConnection.accessToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         guard let (data, resp) = try? await URLSession(configuration: config).data(for: req),
-              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let http = resp as? HTTPURLResponse
+        else { return .failed }
+        if http.statusCode == 401 || http.statusCode == 403 { return .unauthorized }
+        guard (200..<300).contains(http.statusCode),
               (try? JSONDecoder().decode(FamiliarsResponse.self, from: data)) != nil
-        else { return false }
-        return true
+        else { return .failed }
+        return .ok
     }
 
     func loadFamiliars() async {

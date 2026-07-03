@@ -1,7 +1,10 @@
 import Foundation
 
 /// REST + streaming client for the Coven Cave desktop API.
-/// No auth header — trust is the Tailscale tailnet boundary.
+/// When the desktop is token-gated (COVEN_CAVE_ACCESS_TOKEN), every request —
+/// REST and SSE alike — carries the paired credential as a Bearer header; in
+/// tokenless tailnet-trust mode no header is sent and the tailnet boundary is
+/// the trust anchor, as before.
 struct CaveClient {
     var connection: CaveConnection
 
@@ -40,11 +43,36 @@ struct CaveClient {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token = CaveConnection.accessToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         if let body {
             req.httpBody = body
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         return req
+    }
+
+    // MARK: - Pairing
+
+    private struct TokenRefreshResponse: Decodable {
+        var ok: Bool
+        var token: String?
+        var expiresAt: Double?
+    }
+
+    /// Rolling renewal: exchange the current credential for a fresh 30-day
+    /// token. Returns the new token, or nil when the desktop runs tokenless
+    /// (503) or the credential can't refresh — callers treat nil as "keep
+    /// using what we have".
+    func refreshAccessToken() async -> String? {
+        guard let req = try? request("api/mobile-token/refresh", method: "POST") else { return nil }
+        guard let (data, resp) = try? await session.data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(TokenRefreshResponse.self, from: data),
+              decoded.ok, let token = decoded.token, !token.isEmpty
+        else { return nil }
+        return token
     }
 
     // MARK: - Health
