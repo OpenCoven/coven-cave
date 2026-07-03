@@ -25,6 +25,7 @@ struct GitHubView: View {
                 .searchable(text: $query, prompt: "Search issues & PRs")
                 .refreshable { await load() }
                 .task { await load() }
+                .sidebarColumn()
         } detail: {
             if let selection {
                 NavigationStack { GitHubItemDetailView(item: selection) }

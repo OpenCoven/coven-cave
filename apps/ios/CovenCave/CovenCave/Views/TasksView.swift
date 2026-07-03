@@ -121,6 +121,7 @@ struct TasksView: View {
                 // open the reminders sheet, then clear the pending link.
                 .onChange(of: app.deepLink) { _, link in consumeDeepLink(link) }
                 .onAppear { consumeDeepLink(app.deepLink) }
+                .sidebarColumn()
         } detail: {
             if let selection {
                 NavigationStack { TaskDetailView(card: selection) }

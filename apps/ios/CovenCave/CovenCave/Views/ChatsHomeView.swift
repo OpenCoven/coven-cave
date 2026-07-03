@@ -70,6 +70,7 @@ struct ChatsHomeView: View {
                 if lastThreadId != thread.id { open(.thread(thread)) }
                 app.threadToOpen = nil
             }
+            .sidebarColumn()
         } detail: {
             detailColumn
         }
