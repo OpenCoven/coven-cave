@@ -320,7 +320,7 @@ export function CodeSidebar({
                                       </button>
                                     </span>
                                   ) : (
-                                    <>
+                                    <span className="cnav__row-actions">
                                       <button
                                         type="button"
                                         title={isPinnedRow ? "Unpin thread" : "Pin thread"}
@@ -339,7 +339,7 @@ export function CodeSidebar({
                                       >
                                         <Icon name="ph:x-bold" width={10} aria-hidden />
                                       </button>
-                                    </>
+                                    </span>
                                   )}
                                 </div>
                               </li>
