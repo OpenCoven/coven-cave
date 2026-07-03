@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   resolveActivePath,
   siblingsOf,
+  buildSiblingIndex,
   childLeaf,
   linearizeLegacy,
   type TreeTurn,
@@ -97,4 +98,19 @@ test("linearizeLegacy on an empty array yields an empty path", () => {
   const r = linearizeLegacy([]);
   assert.deepEqual(r.turns, []);
   assert.equal(r.activeLeafId, "");
+});
+
+test("buildSiblingIndex agrees with siblingsOf for every turn (one pass)", () => {
+  const turns = [
+    t("u1", null, 1), t("a", "u1", 2), t("b", "u1", 3), t("c", "u1", 4),
+    t("u1b", null, 5), t("x", "u1b", 6),
+  ];
+  const index = buildSiblingIndex(turns);
+  for (const turn of turns) {
+    const viaScan = siblingsOf(turns, turn.id);
+    const viaIndex = index.get(turn.id);
+    assert.ok(viaIndex, `index has ${turn.id}`);
+    assert.deepEqual(viaIndex.siblings.map((s) => s.id), viaScan.siblings.map((s) => s.id), turn.id);
+    assert.equal(viaIndex.index, viaScan.index, turn.id);
+  }
 });

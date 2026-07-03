@@ -25,9 +25,15 @@ assert.match(src, /cave:navigate-mode/, "open-in-canvas navigates to the canvas 
 assert.match(src, /fullscreen,\s*setFullscreen/, "tracks fullscreen artifact state");
 assert.match(src, /aria-label=\{fullscreen \? "Exit fullscreen" : "Expand artifact fullscreen"\}/, "renders a fullscreen toggle action");
 assert.match(src, /Icon name=\{fullscreen \? "ph:arrows-in-simple" : "ph:arrows-out-simple"\}/, "fullscreen toggle uses expand/collapse icons");
-assert.match(src, /e\.key === "Escape"[\s\S]*?setFullscreen\(false\)/, "Escape exits fullscreen mode");
+assert.match(src, /useFocusTrap\(fullscreen, shellRef, \{ onEscape: \(\) => setFullscreen\(false\) \}\)/, "Escape exits fullscreen via the shared focus-trap hook");
 assert.match(src, /chat-artifact--fullscreen/, "fullscreen state applies the overlay class");
 assert.match(src, /import \{ createPortal \} from "react-dom"/, "imports createPortal");
 assert.match(src, /createPortal\(shell, document\.body\)/, "fullscreen overlay is portaled to document.body to escape the turn's containing block");
+
+
+// ── 2026-07-03: fullscreen artifact overlay is a proper modal dialog ─────────
+assert.match(src, /useFocusTrap\(fullscreen, shellRef, \{ onEscape: \(\) => setFullscreen\(false\) \}\)/, "fullscreen traps focus + closes on Escape + returns focus via the shared hook");
+assert.match(src, /role: "dialog" as const, "aria-modal": true/, "fullscreen overlay is a labelled modal dialog");
+assert.doesNotMatch(src, /addEventListener\("keydown"/, "the hand-rolled Escape listener is gone (the focus trap owns it)");
 
 console.log("chat-artifact-viewer source contract: ok");

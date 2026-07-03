@@ -5,6 +5,7 @@ import "@/styles/chat-artifact.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/lib/icon";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 import {
   buildPreviewSrcDoc,
@@ -42,6 +43,7 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [fullscreen, setFullscreen] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
   const refineRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Context-aware ideas derived from the artifact itself; recomputed only when
@@ -71,15 +73,9 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
     return () => window.removeEventListener("message", onMessage);
   }, [srcDoc]);
 
-  // Escape exits the expanded (fullscreen) artifact view.
-  useEffect(() => {
-    if (!fullscreen) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") setFullscreen(false);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [fullscreen]);
+  // Fullscreen is a modal dialog: trap focus inside it, restore focus to the
+  // Expand button on close, and close on Escape (shared convention).
+  useFocusTrap(fullscreen, shellRef, { onEscape: () => setFullscreen(false) });
 
   const copyCode = useCallback(() => {
     void navigator.clipboard?.writeText(code).catch(() => undefined);
@@ -176,7 +172,11 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
   }, []);
 
   const shell = (
-    <div className={`chat-artifact${fullscreen ? " chat-artifact--fullscreen" : ""}`}>
+    <div
+      ref={shellRef}
+      className={`chat-artifact${fullscreen ? " chat-artifact--fullscreen" : ""}`}
+      {...(fullscreen ? { role: "dialog" as const, "aria-modal": true, "aria-label": "Artifact (fullscreen)", tabIndex: -1 } : {})}
+    >
       <div className="chat-artifact__head">
         <span className="chat-artifact__dots" aria-hidden>
           <i style={{ background: "#e0666b" }} />

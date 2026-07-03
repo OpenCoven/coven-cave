@@ -939,7 +939,7 @@ function MarkdownContent({ text, pending, onOpenUrl }: { text: string; pending?:
       <span className="whitespace-pre-wrap break-words text-[14px] leading-relaxed">
         {text}
         {pending && text ? (
-          <span className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
+          <span aria-hidden className="ml-1 inline-block animate-pulse text-[var(--text-secondary)]">▌</span>
         ) : null}
       </span>
     );

@@ -114,7 +114,8 @@ import { diffStat } from "@/lib/tool-edit-stat";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
-import { resolveActivePath, siblingsOf, childLeaf } from "@/lib/conversation-tree";
+import { resolveActivePath, buildSiblingIndex, childLeaf } from "@/lib/conversation-tree";
+import { appendCollapsingNewlines } from "@/lib/stream-text";
 import { stripStepMarkers } from "@/lib/workflow-step-progress";
 import {
   buildReflectTranscript,
@@ -2887,6 +2888,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return resolveActivePath(turns, activeLeafId) as Turn[];
   }, [turns, activeLeafId]);
 
+  // Branch-nav siblings for EVERY turn, built once per `turns` change instead
+  // of scanning the whole array per rendered row (which ran on every stream
+  // chunk). Lookups are O(1).
+  const siblingIndex = useMemo(() => buildSiblingIndex(turns), [turns]);
+  const siblingsFor = useCallback(
+    (turnId: string) => siblingIndex.get(turnId) ?? { siblings: [] as Turn[], index: 0 },
+    [siblingIndex],
+  );
+
   // Voice-call grouping + a turn.id → index map for the timestamp-gap logic.
   // Memoized on `activePath` so it's rebuilt only when the visible transcript
   // changes — NOT on every composer keystroke / caret move / hover, which all
@@ -3786,7 +3796,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // restores the same branch. Optimistic — the in-memory switch is immediate;
   // the PATCH is best-effort (network errors are silently swallowed).
   async function switchBranch(turnId: string, dir: -1 | 1) {
-    const { siblings, index } = siblingsOf(turns, turnId);
+    const { siblings, index } = siblingsFor(turnId);
     const next = siblings[index + dir];
     if (!next) return;
     const leaf = childLeaf(turns, next.id);
@@ -3907,7 +3917,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             t.id === assistantId
               ? {
                   ...t,
-                  text: (t.text + ev.text).replace(/\n{3,}/g, "\n\n"),
+                  text: appendCollapsingNewlines(t.text, ev.text),
                   pending: true,
                   lifecycle: "streaming",
                   // CHAT-D12-01: settle the synthetic row the moment text is
@@ -4528,6 +4538,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           className="cave-chat-thread"
           role="log"
           aria-label="Conversation"
+          aria-busy={busy || undefined}
         >
           {turns.length === 0 ? (
             historyState === "loading" ? (
@@ -4597,7 +4608,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   return prev.role !== t.role;
                 })();
                 const singleBranchNav = (() => {
-                  const { siblings, index } = siblingsOf(turns, t.id);
+                  const { siblings, index } = siblingsFor(t.id);
                   if (siblings.length <= 1) return undefined;
                   return {
                     index,
@@ -4644,7 +4655,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       return prev.role !== t.role;
                     })();
                     const groupBranchNav = (() => {
-                      const { siblings, index } = siblingsOf(turns, t.id);
+                      const { siblings, index } = siblingsFor(t.id);
                       if (siblings.length <= 1) return undefined;
                       return {
                         index,
@@ -6173,6 +6184,7 @@ function RunActivityStrip({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [dismissedId, setDismissedId] = useState<string | null>(null);
+  const panelId = useId();
   const live = !!activeTurn;
   const turn = activeTurn ?? lastTurn;
   if (!turn) return null;
@@ -6213,6 +6225,7 @@ function RunActivityStrip({
           onClick={() => setExpanded((e) => !e)}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
           aria-expanded={expanded}
+          aria-controls={panelId}
           aria-label={live ? "Agent activity (running)" : "Last run summary"}
         >
           <Icon
@@ -6241,7 +6254,7 @@ function RunActivityStrip({
         ) : null}
       </div>
       {expanded ? (
-        <div className="mt-1.5">
+        <div id={panelId} className="mt-1.5">
           {progress.length ? <ProgressGroup progress={progress} pending={live} /> : null}
           {tools.length ? <ToolGroup tools={tools} /> : null}
         </div>

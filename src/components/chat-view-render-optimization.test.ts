@@ -139,4 +139,11 @@ assert.match(
   "the turn row sets content-visibility:auto with a contain-intrinsic-size estimate",
 );
 
+// ── 2026-07-03 chat perf/a11y batch ──────────────────────────────────────────
+assert.match(chatViewSource, /const siblingIndex = useMemo\(\(\) => buildSiblingIndex\(turns\), \[turns\]\)/, "branch-nav siblings are precomputed once per turns change, not scanned per row");
+assert.doesNotMatch(chatViewSource, /siblingsOf\(turns/, "no per-row siblingsOf(turns) scans remain in render");
+assert.match(chatViewSource, /text: appendCollapsingNewlines\(t\.text, ev\.text\)/, "streaming append collapses newlines incrementally, not by re-scanning the whole buffer");
+assert.match(chatViewSource, /role="log"[\s\S]{0,80}aria-busy=\{busy \|\| undefined\}/, "the transcript log is aria-busy while streaming so AT doesn't re-announce the growing message");
+assert.match(chatViewSource, /aria-controls=\{panelId\}/, "RunActivityStrip's disclosure references its panel");
+
 console.log("✓ All render optimization tests pass");

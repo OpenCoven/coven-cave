@@ -62,6 +62,31 @@ export function siblingsOf<T extends TreeTurn>(
 }
 
 /**
+ * Precompute siblingsOf for EVERY turn in one O(n log n) pass. The transcript
+ * calls siblingsOf per rendered row on every render (incl. every stream chunk);
+ * building this index once in a useMemo turns that O(rows × n) work into O(1)
+ * map lookups. Only turns with >1 sibling need branch-nav, but the index holds
+ * all of them so a lookup never falls back to a scan.
+ */
+export function buildSiblingIndex<T extends TreeTurn>(
+  turns: T[],
+): Map<string, { siblings: T[]; index: number }> {
+  const byParent = new Map<string | null, T[]>();
+  for (const turn of turns) {
+    const parentId = turn.parentId ?? null;
+    const group = byParent.get(parentId);
+    if (group) group.push(turn);
+    else byParent.set(parentId, [turn]);
+  }
+  const index = new Map<string, { siblings: T[]; index: number }>();
+  for (const group of byParent.values()) {
+    const siblings = byCreatedAt(group);
+    siblings.forEach((turn, i) => index.set(turn.id, { siblings, index: i }));
+  }
+  return index;
+}
+
+/**
  * Given a sibling turn the user switched to, the leaf to activate: descend
  * through the newest child at each level until a turn has no children. This
  * remembers the deepest branch under that sibling rather than truncating to it.
