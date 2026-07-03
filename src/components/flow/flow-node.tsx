@@ -5,6 +5,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import type { FlowNodeType } from "@/lib/flow/flow-catalog";
 import type { FlowLayoutOrientation, FlowNode } from "@/lib/flow/flow-doc";
+import { flowNodeSummary } from "@/lib/flow/flow-node-summary";
 import type { FlowNodePhase } from "@/lib/flow/flow-progress";
 
 /** Live run phase overlaid by the canvas while an execution/preview walks. */
@@ -46,6 +47,9 @@ function FlowNodeViewImpl({ data, selected }: NodeProps<FlowRFNode>) {
   const inputPosition = isVertical ? Position.Top : Position.Left;
   const outputPosition = isVertical ? Position.Bottom : Position.Right;
   const displayedNote = node.displayNote ? node.notes?.trim() : "";
+  // What the node is configured to do, at a glance — a user-authored displayed
+  // note outranks it (both would crowd the fixed-height card).
+  const summary = displayedNote ? null : flowNodeSummary(node);
   const classes = [
     "flow-node",
     `flow-node-${def?.category ?? "unknown"}`,
@@ -84,6 +88,11 @@ function FlowNodeViewImpl({ data, selected }: NodeProps<FlowRFNode>) {
             {displayedNote}
           </span>
         )}
+        {summary && (
+          <span className="flow-node-summary" title={summary}>
+            {summary}
+          </span>
+        )}
       </span>
 
       {node.disabled && (
@@ -108,6 +117,11 @@ function FlowNodeViewImpl({ data, selected }: NodeProps<FlowRFNode>) {
       {phase && (
         <span className={`flow-node-phase-dot flow-node-phase-dot-${phase}`} aria-label={phase}>
           {phase === "running" && <span className="flow-node-spinner" aria-hidden />}
+        </span>
+      )}
+      {phase === "failed" && (
+        <span className="flow-node-failed-badge" title="Step failed — open the run log for details">
+          failed
         </span>
       )}
 

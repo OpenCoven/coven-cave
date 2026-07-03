@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Icon } from "@/lib/icon";
 
 export type FlowTab = "editor" | "executions";
@@ -30,7 +30,7 @@ export type FlowToolbarProps = {
   onStop: () => void;
 };
 
-export function FlowToolbar(props: FlowToolbarProps) {
+function FlowToolbarImpl(props: FlowToolbarProps) {
   const publishLabel = props.publishStatus === "changed"
     ? "Publish changes"
     : props.publishStatus === "published"
@@ -167,3 +167,8 @@ function NameField({ value, onCommit }: { value: string; onCommit: (name: string
     />
   );
 }
+
+// Memoized: the toolbar's props are primitives + stable callbacks from
+// FlowView, so a run-poll tick or a detail-panel keystroke doesn't re-render
+// the whole header row.
+export const FlowToolbar = memo(FlowToolbarImpl);
