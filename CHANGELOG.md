@@ -7,6 +7,43 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.135] - 2026-07-03
+
+Patch release on top of v0.0.134. Continues the surface-hardening and
+accessibility sweep: the **Code** surface stops showing stale file responses and
+announces its save/revert/commit/PR actions, **Roles** folds into the
+Marketplace as one hub, the shell's left nav/list panels are now pixel-sized for
+full-width content, chat/board surfaces render at any pane or screen width, and
+**Automations** audit batch C brings a kind-aware detail panel with uniform run
+confirmation and action parity.
+
+### Added
+
+- **Shell** - the left nav and list panels are pixel-sized so content can use
+  the full available width (#2299).
+
+### Changed
+
+- **Marketplace** - Roles merged into the Marketplace as a single hub surface
+  instead of a separate view (#2295).
+- **Automations** - audit batch C: the detail panel is now kind-aware, run
+  confirmation is uniform across kinds, action parity across the list, and the
+  surface lazy-loads (#2294).
+
+### Fixed
+
+- **Code** - drop stale file responses, reset the preview on project switch, and
+  guard the changes poll so it can't race (#2296).
+- **Responsive** - chat and board surfaces stay viewable at any pane or screen
+  width (#2298).
+
+### Accessibility
+
+- **Settings** - announce async results, label the daemon inputs, and make the
+  search jump move focus (#2293).
+- **Code** - announce save/revert/commit/PR, focus-trap quick-open, and
+  `aria-pressed` the toggles (#2297).
+
 ## [0.0.134] - 2026-07-03
 
 Patch release on top of v0.0.133. A broad UI/UX + accessibility sweep: the
