@@ -69,6 +69,108 @@ function folderIcon(group: ChatProjectGroup, expanded: boolean): IconName {
   return "ph:folder-simple-dashed";
 }
 
+type ThreadRowProps = {
+  session: SessionRow;
+  active: boolean;
+  pinned: boolean;
+  confirming: boolean;
+  deleting: boolean;
+  /** "folder" indents under a project folder; "flat" aligns with section headers. */
+  indent: "folder" | "flat";
+  onOpen: () => void;
+  onTogglePin: () => void;
+  onRequestDelete: () => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: () => void;
+};
+
+function ThreadRow({
+  session,
+  active,
+  pinned,
+  confirming,
+  deleting,
+  indent,
+  onOpen,
+  onTogglePin,
+  onRequestDelete,
+  onCancelDelete,
+  onConfirmDelete,
+}: ThreadRowProps) {
+  const title = sessionRailTitle(session);
+  return (
+    <div
+      className={[
+        "group/thread flex min-h-[34px] w-full items-center gap-1.5 transition-colors",
+        active
+          ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
+          : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
+      ].join(" ")}
+    >
+      <button
+        type="button"
+        aria-current={active ? "page" : undefined}
+        onClick={onOpen}
+        className={`focus-ring flex min-h-[34px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 ${indent === "folder" ? "pl-4" : "pl-3"} pr-1 text-left text-[12px]`}
+      >
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} aria-hidden />
+        <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
+        {confirming ? null : (
+          <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)] group-hover/thread:hidden">
+            {compactTime(session.updated_at || session.created_at)}
+          </span>
+        )}
+      </button>
+      {confirming ? (
+        <span className="flex shrink-0 items-center gap-1 pr-1">
+          <button
+            type="button"
+            onClick={onCancelDelete}
+            className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={onConfirmDelete}
+            className="focus-ring rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+          >
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
+        </span>
+      ) : (
+        <>
+          <button
+            type="button"
+            title={pinned ? "Unpin thread" : "Pin thread"}
+            aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
+            aria-pressed={pinned}
+            onClick={onTogglePin}
+            className={[
+              "touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded transition-all hover:text-[var(--accent-presence)]",
+              pinned
+                ? "text-[var(--accent-presence)] opacity-100"
+                : "text-[var(--text-muted)] opacity-0 focus-visible:opacity-100 group-hover/thread:opacity-100",
+            ].join(" ")}
+          >
+            <Icon name={pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple"} width={12} aria-hidden />
+          </button>
+          <button
+            type="button"
+            title="Delete thread"
+            aria-label={`Delete thread ${title}`}
+            onClick={onRequestDelete}
+            className="touch-always-visible focus-ring mr-1 grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/thread:opacity-100"
+          >
+            <Icon name="ph:x-bold" width={10} aria-hidden />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function ChatSidebar({
   sessions,
   activeFamiliarId = null,
@@ -149,6 +251,16 @@ export function ChatSidebar({
   const togglePin = (sessionId: string) => {
     setPinnedIds((prev) => togglePinnedSession(prev, sessionId));
   };
+
+  async function handleDeleteSession(session: SessionRow) {
+    setDeletingSessionId(session.id);
+    try {
+      await onDeleteSession(session);
+      setConfirmingSessionId(null);
+    } finally {
+      setDeletingSessionId(null);
+    }
+  }
 
   async function handleRegister(group: ChatProjectGroup) {
     if (!group.projectRoot) return;
@@ -340,94 +452,23 @@ export function ChatSidebar({
                         <p className="py-1 pl-8 pr-3 text-[11px] text-[var(--text-muted)]">No threads yet.</p>
                       ) : (
                         <ul>
-                          {rows.map((session) => {
-                            const title = sessionRailTitle(session);
-                            const active = activeSessionId === session.id;
-                            const pinned = isSessionPinned(pinnedIds, session.id);
-                            const confirming = confirmingSessionId === session.id;
-                            const deleting = deletingSessionId === session.id;
-                            return (
-                              <li key={session.id}>
-                                <div
-                                  className={[
-                                    "group/thread flex min-h-[34px] w-full items-center gap-1.5 transition-colors",
-                                    active
-                                      ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
-                                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
-                                  ].join(" ")}
-                                >
-                                  <button
-                                    type="button"
-                                    aria-current={active ? "page" : undefined}
-                                    onClick={() => onOpenSession(session)}
-                                    className="focus-ring flex min-h-[34px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-4 pr-1 text-left text-[12px]"
-                                  >
-                                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} aria-hidden />
-                                    <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
-                                    {confirming ? null : (
-                                      <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)] group-hover/thread:hidden">
-                                        {compactTime(session.updated_at || session.created_at)}
-                                      </span>
-                                    )}
-                                  </button>
-                                  {confirming ? (
-                                    <span className="flex shrink-0 items-center gap-1 pr-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => setConfirmingSessionId(null)}
-                                        className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
-                                      >
-                                        Cancel
-                                      </button>
-                                      <button
-                                        type="button"
-                                        disabled={deleting}
-                                        onClick={async () => {
-                                          setDeletingSessionId(session.id);
-                                          try {
-                                            await onDeleteSession(session);
-                                            setConfirmingSessionId(null);
-                                          } finally {
-                                            setDeletingSessionId(null);
-                                          }
-                                        }}
-                                        className="focus-ring rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
-                                      >
-                                        {deleting ? "Deleting..." : "Delete"}
-                                      </button>
-                                    </span>
-                                  ) : (
-                                    <>
-                                      <button
-                                        type="button"
-                                        title={pinned ? "Unpin thread" : "Pin thread"}
-                                        aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
-                                        aria-pressed={pinned}
-                                        onClick={() => togglePin(session.id)}
-                                        className={[
-                                          "touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded transition-all hover:text-[var(--accent-presence)]",
-                                          pinned
-                                            ? "text-[var(--accent-presence)] opacity-100"
-                                            : "text-[var(--text-muted)] opacity-0 focus-visible:opacity-100 group-hover/thread:opacity-100",
-                                        ].join(" ")}
-                                      >
-                                        <Icon name={pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple"} width={12} aria-hidden />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        title="Delete thread"
-                                        aria-label={`Delete thread ${title}`}
-                                        onClick={() => setConfirmingSessionId(session.id)}
-                                        className="touch-always-visible focus-ring mr-1 grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/thread:opacity-100"
-                                      >
-                                        <Icon name="ph:x-bold" width={10} aria-hidden />
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </li>
-                            );
-                          })}
+                          {rows.map((session) => (
+                            <li key={session.id}>
+                              <ThreadRow
+                                session={session}
+                                active={activeSessionId === session.id}
+                                pinned={isSessionPinned(pinnedIds, session.id)}
+                                confirming={confirmingSessionId === session.id}
+                                deleting={deletingSessionId === session.id}
+                                indent="folder"
+                                onOpen={() => onOpenSession(session)}
+                                onTogglePin={() => togglePin(session.id)}
+                                onRequestDelete={() => setConfirmingSessionId(session.id)}
+                                onCancelDelete={() => setConfirmingSessionId(null)}
+                                onConfirmDelete={() => void handleDeleteSession(session)}
+                              />
+                            </li>
+                          ))}
                           {group.sessions.length > THREADS_PREVIEW && !showAllByKey.has(key) && !hasSearch ? (
                             <li>
                               <button
