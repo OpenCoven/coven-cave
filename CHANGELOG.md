@@ -7,6 +7,52 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.136] - 2026-07-03
+
+Patch release on top of v0.0.135. Headlined by the desktop browser fix — the
+embedded native webview no longer paints over onboarding, modals, or the
+command palette — plus avatar storage moving to IndexedDB (freeing the shared
+localStorage quota), a unified project picker across surfaces, a
+time-bucketed chat sidebar, and calendar/canvas hardening.
+
+### Added
+
+- **Chat** - the sidebar gains an Organize menu with a default time-bucketed
+  Recent view (#2310).
+- **Projects** - unified project picker: one selection UI and a one-step add
+  flow across surfaces (#2307).
+- **Sidebar** - the app version shows as the bottommost minimal-height line
+  (#2312).
+
+### Changed
+
+- **Avatars** - avatar images move from localStorage to IndexedDB with a
+  one-time migration, handing the shared ~5MB origin quota back to the rest of
+  the app (#2306).
+
+### Fixed
+
+- **Browser (desktop)** - the embedded native webview yields to DOM overlays:
+  it no longer paints over onboarding, modals, or the command palette, and
+  navigating while covered loads offscreen and re-seats when the overlay
+  closes (#2309).
+- **Familiars** - avatar saves report the friendly "storage full" message
+  instead of the raw browser quota error, and a refused write no longer leaves
+  a phantom avatar that vanishes on reload (#2302).
+- **Chat** - a task-linked chat opens in the task's project, not the first
+  project (#2308).
+- **Calendar** - timed events stay out of the all-day bucket, the add-day pin
+  holds, and the minute tick no longer re-packs every column (#2304).
+- **Canvas** - failed generations no longer leave blank tiles, sketch deletes
+  ask for confirmation, and the dead canvas.css/ArtifactNode pair is removed
+  (#2311).
+- **Shell** - the titlebar drag lane spans the full height again (#2301).
+
+### Accessibility
+
+- **Calendar** - view, date, and mutation changes are announced; times and
+  deadlines carry accessible names; the date popover traps focus (#2305).
+
 ## [0.0.135] - 2026-07-03
 
 Patch release on top of v0.0.134. Continues the surface-hardening and
