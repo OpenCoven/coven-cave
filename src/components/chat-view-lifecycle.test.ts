@@ -498,4 +498,20 @@ assert.match(
   "input history is persisted when it changes",
 );
 
+// ── Mid-stream thread switch must not cross wires (2026-07-03 audit P0) ───────
+// A background stream updates its OWN registry snapshot, never the displayed
+// transcript — otherwise switching threads renders/persists the wrong session.
+assert.match(
+  source,
+  /if \(targetSessionId && targetSessionId !== currentSessionRef\.current\) \{[\s\S]*?const snap = readLiveChatGeneration\(targetSessionId\);[\s\S]*?recordLiveChatGeneration\(\{[\s\S]*?turns: updater\(snap\.turns\)/,
+  "updateLiveTurns routes background-stream updates to the streaming session's snapshot, not setTurns",
+);
+// Switching threads releases the previous thread's streaming lock so its busy
+// state / Esc-cancel don't bleed onto the newly displayed thread.
+assert.match(
+  source,
+  /release streaming state owned by the PREVIOUS thread[\s\S]{0,400}?setBusy\(false\);\s*\n\s*abortRef\.current = null;/,
+  "the history-load effect clears streaming state inherited from the previous thread",
+);
+
 console.log("chat-view-lifecycle.test.ts: ok");
