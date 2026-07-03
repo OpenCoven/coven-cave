@@ -61,13 +61,23 @@ function getSnapshot(): UserAvatarImage | null {
   return cached;
 }
 
-function writeSnapshot(next: UserAvatarImage | null) {
-  cached = next;
+// Persist first, then commit to memory — a quota-exceeded setItem must not
+// leave the cache claiming an avatar that storage never accepted.
+function writeSnapshot(next: UserAvatarImage | null): boolean {
   if (typeof window !== "undefined") {
-    if (next) window.localStorage.setItem(USER_AVATAR_KEY, JSON.stringify(next));
-    else window.localStorage.removeItem(USER_AVATAR_KEY);
+    if (next) {
+      try {
+        window.localStorage.setItem(USER_AVATAR_KEY, JSON.stringify(next));
+      } catch {
+        return false; // QuotaExceededError — localStorage is full
+      }
+    } else {
+      window.localStorage.removeItem(USER_AVATAR_KEY);
+    }
   }
+  cached = next;
   notify();
+  return true;
 }
 
 export function setUserAvatarImage(image: { dataUrl: string; mime: string }): SetResult {
@@ -77,7 +87,9 @@ export function setUserAvatarImage(image: { dataUrl: string; mime: string }): Se
   if (image.dataUrl.length > MAX_FAMILIAR_IMAGE_DATAURL_BYTES) {
     return { ok: false, reason: "Image too large (max 2MB)." };
   }
-  writeSnapshot({ ...image, updatedAt: new Date().toISOString() });
+  if (!writeSnapshot({ ...image, updatedAt: new Date().toISOString() })) {
+    return { ok: false, reason: "Cave avatar storage full. Remove an image to free space." };
+  }
   return { ok: true };
 }
 

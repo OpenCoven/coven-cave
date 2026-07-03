@@ -2,10 +2,17 @@
 import assert from "node:assert/strict";
 
 const storage = new Map();
+// Simulates the browser refusing the write (QuotaExceededError) — the real
+// localStorage quota (~5MB, shared across all cave:* keys) is stricter than
+// the store's own cap, so the store must survive a throwing setItem.
+let denyWrites = false;
 globalThis.window = {
   localStorage: {
     getItem: (k) => (storage.has(k) ? storage.get(k) : null),
-    setItem: (k, v) => storage.set(k, v),
+    setItem: (k, v) => {
+      if (denyWrites) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      storage.set(k, v);
+    },
     removeItem: (k) => storage.delete(k),
   },
   addEventListener: () => {},
@@ -30,6 +37,20 @@ assert.equal(
   assert.equal(got.cody.mime, "image/png");
   assert.equal(got.cody.dataUrl, dataUrl);
   assert.ok(Number.isFinite(Date.parse(got.cody.updatedAt)));
+}
+
+// Browser quota stricter than our own cap: the setItem throws, the store
+// reports the friendly storage-full reason (never the raw browser message),
+// and the snapshot stays unchanged — no phantom avatar that vanishes on reload.
+{
+  denyWrites = true;
+  const dataUrl = "data:image/png;base64," + "B".repeat(1000);
+  const res = mod.setFamiliarImage("astra", { dataUrl, mime: "image/png" });
+  assert.equal(res.ok, false);
+  assert.match(res.reason, /storage full/i);
+  const got = mod.readFamiliarImagesSnapshot();
+  assert.equal(got.astra, undefined, "a refused write must not land in the in-memory cache");
+  denyWrites = false;
 }
 
 // Per-image size cap (2MB pre-encode ≈ 2*1024*1024 bytes ≈ ~2.8MB base64)
