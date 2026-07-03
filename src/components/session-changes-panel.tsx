@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { arrayContentEqual } from "@/lib/array-content-equal";
 import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -460,7 +461,11 @@ export function SessionChangesInner({
       if (!res.ok || !json.ok) throw new Error(json.error ?? `http ${res.status}`);
       setNotARepo(json.repo === false);
       setRepoRoot(json.repoRoot ?? null);
-      setFiles(json.files ?? []);
+      // Content-guard: an unchanged 5s poll keeps the previous reference so the
+      // whole diff panel (and the expanded file's diff refetch, gated by
+      // filesSig) doesn't churn while an agent is actively editing.
+      const nextFiles = json.files ?? [];
+      setFiles((prev) => (arrayContentEqual(prev, nextFiles) ? prev : nextFiles));
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
