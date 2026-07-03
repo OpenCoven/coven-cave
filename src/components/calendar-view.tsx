@@ -10,6 +10,7 @@ import type { IconName } from "@/lib/icon";
 import { formatClock, formatDate, readDateTimePrefs } from "@/lib/datetime-format";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { itemDate, packEventColumns } from "@/lib/calendar-layout";
 import { familiarInScope } from "@/lib/familiar-multiselect";
@@ -507,6 +508,7 @@ function DeadlineChip({
         e.stopPropagation();
         onOpen?.(deadline.id);
       }}
+      aria-label={`${deadline.title}, task deadline${done ? ", done" : ""}`}
       title={`${deadline.title} — task deadline`}
       style={accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined}
       className={`focus-ring-inset flex w-full items-center gap-1 truncate rounded border border-[var(--color-warning)]/35 bg-[var(--color-warning)]/12 px-1.5 py-0.5 text-left transition-colors hover:bg-[var(--color-warning)]/20 ${size === "xs" ? "text-[9px]" : "text-[10px]"}`}
@@ -719,8 +721,9 @@ function TimeGrid({
                 className="absolute left-0 right-0 flex items-center z-10"
                 style={{ top: nowTop }}
               >
-                <div className="h-2 w-2 rounded-full bg-[var(--accent-presence)] -ml-1 shrink-0" />
-                <div className="flex-1 h-px bg-[var(--accent-presence)]" />
+                <span className="sr-only">Current time, {fmtTime(now.toISOString())}</span>
+                <div className="h-2 w-2 rounded-full bg-[var(--accent-presence)] -ml-1 shrink-0" aria-hidden />
+                <div className="flex-1 h-px bg-[var(--accent-presence)]" aria-hidden />
               </div>
             )}
 
@@ -765,6 +768,7 @@ function TimeGrid({
                         }
                       : undefined
                   }
+                  aria-label={`${fmtTime((ev.item.fireAt ?? ev.item.firedAt)!)}, ${ev.item.title}${done ? ", done" : ""}`}
                   title={onReschedule ? `${ev.item.title} — drag, or Alt+↑/↓, to reschedule` : ev.item.title}
                   className={`focus-ring-inset absolute flex items-center gap-1 rounded px-1.5 py-0.5 text-left text-[10px] border transition-colors overflow-hidden ${
                     done
@@ -1100,6 +1104,7 @@ function MonthView({
                   key={i}
                   role="button"
                   tabIndex={0}
+                  aria-current={isToday ? "date" : undefined}
                   aria-label={`${canAdd ? `Add a reminder on ${fmtDateHeading(day)}` : fmtDateHeading(day)}${itemsSuffix}`}
                   onClick={onCell}
                   onKeyDown={(e) => {
@@ -1204,19 +1209,15 @@ function MiniMonthPopover({
   const ref = useRef<HTMLDivElement>(null);
   const today = new Date();
 
+  // Trap focus + Escape + restore focus to the trigger on close. Previously
+  // Tab fell straight through to the calendar behind this dialog.
+  useFocusTrap(true, ref, { onEscape: onClose });
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
     const onClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     };
-    window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onClick);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onClick);
-    };
+    return () => window.removeEventListener("mousedown", onClick);
   }, [onClose]);
 
   const monthStart = view;
@@ -1228,6 +1229,7 @@ function MiniMonthPopover({
       ref={ref}
       role="dialog"
       aria-label="Jump to date"
+      tabIndex={-1}
       className="absolute top-full left-0 z-20 mt-2 w-[260px] rounded-lg border border-[var(--border-strong)] bg-[var(--bg-elevated)] p-3 shadow-2xl"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -1264,6 +1266,8 @@ function MiniMonthPopover({
               key={i}
               type="button"
               onClick={() => onPick(day)}
+              aria-label={`${fmtDateHeading(day)}${isAnchor ? ", selected" : ""}`}
+              aria-current={isToday ? "date" : undefined}
               className={`focus-ring h-7 w-full rounded text-[11px] transition-colors ${
                 isAnchor
                   ? "bg-[var(--accent-presence)] text-white"
@@ -1328,6 +1332,7 @@ function ItemDetailPanel({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const { announce } = useAnnouncer();
   useFocusTrap(true, panelRef, { onEscape: onClose });
 
   const meta = (item as unknown as { comms?: { urgency?: string } }).comms;
@@ -1408,7 +1413,7 @@ function ItemDetailPanel({
           <div className="flex items-center gap-2">
             {!isDone && onComplete ? (
               <button
-                onClick={() => { onComplete(item.id); onClose(); }}
+                onClick={() => { onComplete(item.id); announce(`Marked "${item.title}" done`); onClose(); }}
                 className="focus-ring inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2 py-1.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
               >
                 <Icon name="ph:check" width={12} />
@@ -1418,12 +1423,12 @@ function ItemDetailPanel({
             {onSnooze ? (
               <SnoozeMenu
                 className="shrink-0"
-                onSnooze={(untilIso) => { onSnooze(item.id, untilIso); onClose(); }}
+                onSnooze={(untilIso) => { onSnooze(item.id, untilIso); announce(`Snoozed "${item.title}"`); onClose(); }}
               />
             ) : null}
             {onDismiss ? (
               <button
-                onClick={() => { onDismiss(item.id); onClose(); }}
+                onClick={() => { onDismiss(item.id); announce(`Dismissed "${item.title}"`); onClose(); }}
                 aria-label="Dismiss"
                 className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                 title="Dismiss"
@@ -1542,8 +1547,10 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
       const tag = target.tagName.toLowerCase();
       if (["input", "textarea", "select"].includes(tag) || target.isContentEditable) return;
       switch (e.key) {
-        case "ArrowLeft":  e.preventDefault(); navigate(-1); break;
-        case "ArrowRight": e.preventDefault(); navigate(1);  break;
+        // A focused grid event owns its own Arrow handling (roving nav +
+        // Alt+↑/↓ reschedule); don't also page the whole period out from under it.
+        case "ArrowLeft":  if (target.closest('[data-calendar-event="true"]')) break; e.preventDefault(); navigate(-1); break;
+        case "ArrowRight": if (target.closest('[data-calendar-event="true"]')) break; e.preventDefault(); navigate(1);  break;
         case "t": case "T": setAnchor(new Date()); break;
         case "d": case "D": setViewMode("day");    break;
         case "w": case "W": setViewMode("week");   break;
@@ -1596,6 +1603,18 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
     { id: "week", label: "Week" },
     { id: "month", label: "Month" },
   ];
+
+  // Announce view + period changes to screen readers — the grids convey the
+  // current view and date visually only. Skips the initial mount.
+  const { announce } = useAnnouncer();
+  const announcedRef = useRef(false);
+  useEffect(() => {
+    if (!announcedRef.current) { announcedRef.current = true; return; }
+    const label = VIEW_MODES.find((v) => v.id === viewMode)?.label ?? "";
+    announce(`${label} view, ${headingLabel()}`);
+    // headingLabel() reads viewMode + anchor; re-announce whenever either moves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, anchor, announce]);
 
   return (
     <FamiliarColorContext.Provider value={accentFor}>

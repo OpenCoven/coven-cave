@@ -9,8 +9,8 @@ const ws = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 for (const cb of ["onComplete", "onDismiss", "onSnooze"]) {
   assert.match(view, new RegExp(`${cb}\\?:\\s*\\(`), `Props must declare ${cb}`);
 }
-assert.match(view, /onComplete\(item\.id\); onClose\(\)/, "Done must call onComplete(id), not just close");
-assert.match(view, /onDismiss\(item\.id\); onClose\(\)/, "Dismiss must call onDismiss(id), not just close");
+assert.match(view, /onComplete\(item\.id\); announce\([\s\S]*?\); onClose\(\)/, "Done calls onComplete(id), announces, then closes");
+assert.match(view, /onDismiss\(item\.id\); announce\([\s\S]*?\); onClose\(\)/, "Dismiss calls onDismiss(id), announces, then closes");
 assert.match(view, /onSnooze\(item\.id, untilIso\)/, "Snooze must call onSnooze(id, untilIso)");
 assert.match(view, /import \{ SnoozeMenu \} from "@\/components\/snooze-menu"/, "Reuses the shared SnoozeMenu");
 assert.match(view, /onOpen\(item\); onClose\(\)/, "Open action must invoke onOpen and close");
@@ -91,5 +91,21 @@ assert.match(view, /if \(!e\.altKey \|\| \(e\.key !== "ArrowUp" && e\.key !== "A
 assert.match(view, /const step = \(e\.shiftKey \? 60 : 15\) \* \(e\.key === "ArrowDown" \? 1 : -1\)/, "Alt+↑/↓ nudges ±15min, Alt+Shift by an hour");
 assert.match(view, /onReschedule\(ev\.item\.id, slot\.toISOString\(\)\)/, "keyboard nudge persists through onReschedule");
 assert.match(view, /Alt\+↑↓ reschedule/, "the footer documents the keyboard reschedule");
+
+// ───────── a11y: announcements + non-visual affordances ─────────
+assert.match(view, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/, "CalendarView imports the shared announcer");
+assert.match(view, /announce\(`\$\{label\} view, \$\{headingLabel\(\)\}`\)/, "view + period changes are announced to screen readers");
+// The now-line carries a text alternative (it was a bare coloured rule before).
+assert.match(view, /<span className="sr-only">Current time, \{fmtTime\(now\.toISOString\(\)\)\}<\/span>/, "the now-indicator announces the current time");
+// Timed events name their time (position alone conveyed it before).
+assert.match(view, /aria-label=\{`\$\{fmtTime\(\(ev\.item\.fireAt \?\? ev\.item\.firedAt\)!\)\}, \$\{ev\.item\.title\}/, "grid events include their time in the accessible name");
+// Deadlines read as deadlines, not indistinguishable from events.
+assert.match(view, /aria-label=\{`\$\{deadline\.title\}, task deadline/, "deadline chips are distinguishable from events non-visually");
+// The jump-to-date popover traps focus + Escape (it leaked Tab before).
+assert.match(view, /function MiniMonthPopover[\s\S]*?useFocusTrap\(true, ref, \{ onEscape: onClose \}\)/, "MiniMonthPopover traps focus");
+// Today is conveyed with aria-current, not colour alone (month cell + mini-month).
+assert.ok((view.match(/aria-current=\{isToday \? "date" : undefined\}/g) ?? []).length >= 2, "today is marked with aria-current=\"date\"");
+// Horizontal arrows don't page the period out from under a focused grid event.
+assert.match(view, /if \(target\.closest\('\[data-calendar-event="true"\]'\)\) break;/, "a focused event keeps its own Arrow handling");
 
 console.log("calendar-actions.test.ts: ok");
