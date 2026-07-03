@@ -168,7 +168,11 @@ if (syncedViewKey !== viewKey) {
         const stale = staleNodeIds?.[node.id] === true;
         return {
           ...node,
-          selected: node.id === selectedNodeId,
+          // Union, not override: React Flow's own selection state (shift-drag
+          // marquee, shift-click multi) must survive alongside the detail-panel
+          // selection — forcing `selected` from selectedNodeId alone silently
+          // killed multi-select.
+          selected: node.selected === true || node.id === selectedNodeId,
           data: phase || stale ? { ...node.data, ...(phase ? { phase } : {}), ...(stale ? { stale } : {}) } : node.data,
         };
       }),
@@ -179,6 +183,14 @@ if (syncedViewKey !== viewKey) {
     () =>
       doc.edges.map((edge) => {
         const isActive = activeNodeId != null && edge.target === activeNodeId;
+        // Branch label: when the source node fans out over several labeled
+        // ports (router/if/loop), name the branch on the wire itself — the
+        // tiny port badge alone doesn't survive a glance at a busy canvas.
+        const sourceDef = docNodes.find((node) => node.id === edge.source)?.data.def;
+        const branchLabel =
+          sourceDef && sourceDef.outputs.length > 1
+            ? sourceDef.outputs.find((port) => port.id === edge.sourceHandle)?.label
+            : undefined;
         return {
           id: edge.id,
           source: edge.source,
@@ -189,10 +201,10 @@ if (syncedViewKey !== viewKey) {
           animated: isActive,
           className: isActive ? "flow-edge-active" : undefined,
           markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "#7d83a8" },
-          data: { onInsert: () => onInsertEdge(edge.id) },
+          data: { onInsert: () => onInsertEdge(edge.id), branchLabel },
         } satisfies Edge;
       }),
-    [doc.edges, activeNodeId, onInsertEdge],
+    [doc.edges, docNodes, activeNodeId, onInsertEdge],
   );
 
   const handleNodesChange = useCallback((changes: NodeChange<Node<FlowNodeData>>[]) => {

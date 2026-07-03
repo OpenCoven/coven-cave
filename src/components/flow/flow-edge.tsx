@@ -11,6 +11,9 @@ import {
 export type FlowEdgeData = {
   /** Open the node catalog to splice a node into this edge. */
   onInsert?: () => void;
+  /** Named branch this edge leaves from (router "a", if "true", loop "done") —
+   *  shown on the wire so fan-outs stay legible at a glance. */
+  branchLabel?: string;
 } & Record<string, unknown>;
 
 export type FlowRFEdge = Edge<FlowEdgeData, "flowEdge">;
@@ -43,6 +46,19 @@ export function FlowEdge({
   return (
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} />
+      {data?.branchLabel && (
+        <EdgeLabelRenderer>
+          <span
+            className="flow-edge-branch-label nodrag nopan"
+            style={{
+              position: "absolute",
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY - 16}px)`,
+            }}
+          >
+            {data.branchLabel}
+          </span>
+        </EdgeLabelRenderer>
+      )}
       {data?.onInsert && (
         <EdgeLabelRenderer>
           <button
