@@ -11,19 +11,20 @@ import {
   SPLIT_SNAP_THRESHOLD,
 } from "./split-snap.ts";
 
-test("nearestSnap returns the half point when dragged near the middle", () => {
+test("nearestSnap engages the even-split detent near the middle", () => {
   const snap = nearestSnap(0.5 + SPLIT_SNAP_THRESHOLD / 2);
   assert.ok(snap);
-  assert.equal(snap?.label, "½");
+  assert.equal(snap?.ratio, 0.5);
 });
 
-test("nearestSnap returns the third points within threshold", () => {
-  assert.equal(nearestSnap(1 / 3 + 0.01)?.label, "⅓");
-  assert.equal(nearestSnap(2 / 3 - 0.01)?.label, "⅔");
+test("the clumsy ⅓ / ⅔ ratios are no longer snap points", () => {
+  // The old three-button snap is gone — only the even split is magnetic now.
+  assert.equal(nearestSnap(1 / 3), null);
+  assert.equal(nearestSnap(2 / 3), null);
 });
 
-test("nearestSnap returns null in free space between snap points", () => {
-  // Midway between ⅓ (.333) and ½ (.5) is ~.417 — outside every threshold.
+test("nearestSnap returns null in free space away from the even split", () => {
+  // 0.42 is ~0.08 from ½ — outside the detent threshold, so free.
   assert.equal(nearestSnap(0.42), null);
 });
 

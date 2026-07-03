@@ -2,9 +2,9 @@
  * split-snap — pure geometry for the drag-to-split secondary pane.
  *
  * The detail area can host a second "page" beside the primary surface. The
- * secondary pane is resizable, and — like a modern desktop window manager —
- * the divider *snaps* to a set of clean ratios (a third, a half, two thirds)
- * when the user drags close to them. Dragging past *either* edge collapses the
+ * secondary pane resizes freely, with a single *magnetic* detent at the even
+ * split (½) so a balanced layout is effortless to find without cluttering the
+ * chrome with discrete ratio buttons. Dragging past *either* edge collapses the
  * pane on that side: past the near edge closes the secondary (the primary
  * fills), and past the far edge collapses the primary (the secondary fills).
  * All sizes are expressed as the **secondary pane's** fraction of the split
@@ -18,12 +18,12 @@ export type SnapPoint = {
   label: string;
 };
 
-/** The clean ratios the divider snaps to (secondary-pane fraction). */
-export const SPLIT_SNAP_POINTS: readonly SnapPoint[] = [
-  { ratio: 1 / 3, label: "⅓" },
-  { ratio: 1 / 2, label: "½" },
-  { ratio: 2 / 3, label: "⅔" },
-];
+/**
+ * The single magnetic detent: an even split. Free-dragging everywhere else,
+ * with a gentle pull toward ½ so a balanced layout falls into place on its own.
+ * (Replaces the old ⅓ · ½ · ⅔ button row — the divider itself is the control.)
+ */
+export const SPLIT_SNAP_POINTS: readonly SnapPoint[] = [{ ratio: 1 / 2, label: "Even" }];
 
 /** The ratio the secondary opens at when a page is first dropped in. */
 export const SPLIT_DEFAULT_RATIO = 1 / 2;
@@ -45,8 +45,12 @@ export const SPLIT_COLLAPSE_RATIO = 0.84;
  */
 export const SPLIT_MAX_RATIO = 0.9;
 
-/** Snap engages when the divider is within this fraction of a snap point. */
-export const SPLIT_SNAP_THRESHOLD = 0.04;
+/**
+ * Snap engages within this fraction of the even-split detent. A touch wider
+ * than a hairline so ½ feels magnetic — but narrow enough that off-center
+ * ratios still feel free.
+ */
+export const SPLIT_SNAP_THRESHOLD = 0.06;
 
 /** Clamp a secondary fraction into the open/usable range. */
 export function clampSplitRatio(ratio: number): number {
