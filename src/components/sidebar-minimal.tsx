@@ -21,6 +21,7 @@ import {
   isSplittablePage,
 } from "@/lib/page-drag";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
+import { APP_VERSION } from "@/lib/app-version";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { SessionRow } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -401,6 +402,11 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           </span>
           <span className="sidebar-foot-label">Settings</span>
         </button>
+      </div>
+
+      {/* Bottommost: app version — one minimal-height muted line. */}
+      <div className="sidebar-version" title={`CovenCave v${APP_VERSION}`}>
+        v{APP_VERSION}
       </div>
     </nav>
   );

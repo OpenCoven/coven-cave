@@ -364,4 +364,27 @@ assert.match(
   "title combines label + description (+ shortcut when present) + drag-to-split hint",
 );
 
+// The app version renders as the bottommost sidebar element — one
+// minimal-height muted line under the footer icon row, hidden in the rail.
+assert.match(
+  source,
+  /import \{ APP_VERSION \} from "@\/lib\/app-version"/,
+  "SidebarMinimal should read the version from the shared app-version module",
+);
+assert.match(
+  source,
+  /className="sidebar-version"[\s\S]{0,120}?v\{APP_VERSION\}[\s\S]{0,40}?<\/div>\s*<\/nav>/,
+  "The version line should be the bottommost element of the sidebar nav",
+);
+assert.match(
+  styles,
+  /\.sidebar-version \{[^}]*line-height: 1;[^}]*color: var\(--text-muted\)/,
+  "The version line should be minimal-height muted text",
+);
+assert.match(
+  styles,
+  /\.shell-nav--rail \.sidebar-version \{[^}]*display: none/,
+  "The 56px rail has no room for text — the version line hides there",
+);
+
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

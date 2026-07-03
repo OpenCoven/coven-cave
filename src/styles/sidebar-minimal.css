@@ -325,6 +325,18 @@
   transition: background 0.12s ease, color 0.12s ease;
 }
 
+/* Bottommost element: the app version. One minimal-height line — small,
+   muted, unselectable; the footer above keeps its calm hairline boundary. */
+.sidebar-version {
+  flex-shrink: 0;
+  padding: 3px 6px 4px;
+  font-size: 10.5px;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-muted);
+  user-select: none;
+}
+
 .sidebar-foot-bell:hover,
 .sidebar-foot-btn:hover,
 .sidebar-foot-icon-btn:hover {
@@ -1056,6 +1068,11 @@
 .shell-nav--rail .sidebar-foot {
   flex-direction: column;
   align-items: center;
+}
+
+/* No room for text in the 56px rail — the version returns when expanded. */
+.shell-nav--rail .sidebar-version {
+  display: none;
 }
 
 /* Every rail control is the same centered 40px rounded square — one shared
