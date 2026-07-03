@@ -10,6 +10,8 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { OriginChip } from "@/components/ui/origin-chip";
 import { SessionInitiatorChip } from "@/components/ui/session-initiator-chip";
 import { UndoToast } from "@/components/ui/undo-toast";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
@@ -929,38 +931,41 @@ export function ChatList({ familiar, familiars = [], sessions, daemonRunning, on
         ) : !hasAny ? (
           /* Empty state */
           <div className="flex h-full flex-col justify-between px-4 py-4">
-            <div className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 p-4">
-              <div className="flex items-start gap-3">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-muted)]">
-                  <Icon name="ph:sparkle" width={17} aria-hidden />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-[var(--text-primary)]">Ready for a new thread</p>
-                  <p className="mt-1 text-[12px] leading-5 text-[var(--text-muted)]">
+            <EmptyState
+              compact
+              className="rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35"
+              icon="ph:sparkle"
+              headline="Ready for a new thread"
+              subtitle={
+                <>
+                  <span>
                     Start a focused chat with {panelTitle}. The thread will inherit the selected
                     familiar's runtime and show up here once it starts.
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 divide-y divide-[var(--border-hairline)] border-y border-[var(--border-hairline)] text-left">
-                <div className="flex items-center justify-between gap-3 py-2">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Runtime</p>
-                  <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{panelRuntime}</p>
-                </div>
-                <div className="flex items-center justify-between gap-3 py-2">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Model</p>
-                  <p className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{familiar?.model ?? "default"}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => onNewChat(undefined, fallbackFamiliarId)}
-                disabled={!fallbackFamiliarId}
-                className="mt-4 flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-white transition-opacity hover:opacity-85"
-              >
-                <Icon name="ph:plus-bold" width={12} />
-                Start with context
-              </button>
-            </div>
+                  </span>
+                  <span className="mt-4 block divide-y divide-[var(--border-hairline)] border-y border-[var(--border-hairline)] text-left">
+                    <span className="flex items-center justify-between gap-3 py-2">
+                      <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Runtime</span>
+                      <span className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{panelRuntime}</span>
+                    </span>
+                    <span className="flex items-center justify-between gap-3 py-2">
+                      <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-[var(--text-muted)]">Model</span>
+                      <span className="min-w-0 truncate font-mono text-[11px] text-[var(--text-secondary)]">{familiar?.model ?? "default"}</span>
+                    </span>
+                  </span>
+                </>
+              }
+              actions={
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leadingIcon="ph:plus-bold"
+                  onClick={() => onNewChat(undefined, fallbackFamiliarId)}
+                  disabled={!fallbackFamiliarId}
+                >
+                  Start with context
+                </Button>
+              }
+            />
             <div className="rounded-md border border-dashed border-[var(--border-hairline)] px-3 py-2 text-[11px] leading-5 text-[var(--text-muted)]">
               <span className="font-medium text-[var(--text-secondary)]">Tip:</span> use {keys.mod}F
               to jump back to chat search after this list has history.
