@@ -7,6 +7,55 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.137] - 2026-07-03
+
+Patch release on top of v0.0.136. A big **Flow** and **mobile** slice: Flow gets
+a multi-pass world-class overhaul (config summaries, empty-canvas coaching,
+keyboard shortcuts, working multi-select, branch labels on fan-out edges, plus
+lifecycle accessibility and a ~1,600-line dead-code purge), the native iOS app
+gains iPad/macOS adaptive layouts and a self-healing connection with seamless
+QR/deep-link pairing, and the Library surface is faster and more accessible.
+The desktop Chat and Code sidebars also land their world-class redesign.
+
+### Added
+
+- **Flow** - world-class overhaul across two passes: config summaries, an
+  empty-canvas coach, keyboard shortcuts, memoized rails (#2327), plus working
+  multi-select and branch labels on fan-out edges (#2329).
+- **iOS** - iPad and macOS adaptive layouts across all tabs (#2317).
+- **Mobile** - seamless pairing: QR / deep-link invites, Bearer auth, and
+  rolling token renewal (#2320).
+- **Board** - nudge to set a project on projectless task cards (#2319).
+
+### Changed
+
+- **Chat / Code** - world-class redesign of the Chat and Code sidebars (#2313).
+- **Sidebar** - thread rows go full-width when not hovered (#2321).
+- **Flow** - sessions launch in non-interactive mode (#2324).
+
+### Fixed
+
+- **iOS** - the cave connection is now self-healing (#2328).
+- **Library** - fix reading-status rollback (#2325).
+
+### Performance
+
+- **Library** - lazy-load the surface (CodeMirror out of boot), memoize
+  read-time, drop a dead type (#2325).
+- **Flow** - index branch-label sources (#2330).
+
+### Accessibility
+
+- **Flow** - announce lifecycle events, name the nodes, and focus-trap the
+  add-node & template dialogs (#2316).
+- **Library** - name zoomable reader images, focus-trap the lightbox, mark
+  reading progress, and `aria-current` the doc list (#2326).
+
+### Removed
+
+- **Flow** - purge ~1,600 lines of dead superseded workflow libs and dead
+  flow-doc / workflow-graph exports (#2318).
+
 ## [0.0.136] - 2026-07-03
 
 Patch release on top of v0.0.135. Headlined by the desktop browser fix — the
