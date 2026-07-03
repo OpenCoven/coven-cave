@@ -131,6 +131,7 @@ export function DetailSplitHost({
   // pointerup: if the ratio moved while a pointer was held, that was a divider
   // drag — resolve it to snap / close / collapse.
   const secRef = usePanelRef();
+  const groupElRef = React.useRef<HTMLDivElement | null>(null);
   const ratioRef = React.useRef(SPLIT_DEFAULT_RATIO);
   const pointerDownRef = React.useRef(false);
   const dragStartRatioRef = React.useRef(SPLIT_DEFAULT_RATIO);
@@ -188,6 +189,46 @@ export function DetailSplitHost({
       window.removeEventListener("pointerup", onUp, true);
     };
   }, [secondaryTiles, onClose, onPromoteTile, secRef]);
+
+  // Re-fit guard: react-resizable-panels sizes its panes in pixels from a
+  // ResizeObserver on the group. In some embedded webviews (observed on the
+  // desktop app) that observer doesn't fire when the detail area changes width
+  // *without* a window resize — e.g. the nav collapsing to its rail, or a slow
+  // first layout — so the panes stay sized for the old, narrower width and
+  // leave dead space past the last pane. We observe the group ourselves and
+  // re-apply the current ratio, which forces RRP to recompute against the live
+  // width. Re-applying the same ratio is a no-op when the panes already fill,
+  // so this never fights the user's chosen split or the divider drag.
+  React.useEffect(() => {
+    if (secondaryTiles.length !== 1) return;
+    const el = groupElRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+
+    const refit = () => {
+      if (pointerDownRef.current) return; // don't interrupt an active divider drag
+      const r = ratioRef.current;
+      if (r > 0.02 && r < 0.98) secRef.current?.resize(PCT(r));
+    };
+
+    let raf = 0;
+    let lastW = Math.round(el.getBoundingClientRect().width);
+    const ro = new ResizeObserver((entries) => {
+      const w = Math.round(entries[0]?.contentRect.width ?? 0);
+      if (w === lastW || w === 0) return;
+      lastW = w;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(refit);
+    });
+    ro.observe(el);
+    // Initial correction for a stale/late first measurement in the webview.
+    const t = window.setTimeout(refit, 200);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(t);
+      ro.disconnect();
+    };
+  }, [secondaryTiles.length, secondarySide, secRef]);
 
   // Keyboard / button snap helpers shown in the pane header.
   const snapTo = (ratio: number) => secRef.current?.resize(PCT(ratio));
@@ -353,7 +394,7 @@ export function DetailSplitHost({
         secondaryTiles.length === 1 ? (
           <>
             {mobileSwitcher}
-            <Group className="split-host__group" data-variant={variant} orientation="horizontal">
+            <Group className="split-host__group" data-variant={variant} orientation="horizontal" elementRef={groupElRef}>
               {secondarySide === "left" ? (
                 <>
                   {secondaryPanel}
