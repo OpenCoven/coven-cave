@@ -1116,6 +1116,31 @@ tr[role="checkbox"]:focus-visible {
 .cnav__thread--flat .cnav__thread-main {
   padding-left: 13px;
 }
+/* Row actions overlay the right edge so they reserve NO layout width — the title
+   and timestamp use the full row when not hovered, then the actions fade in over
+   the (now-hidden) timestamp on hover. */
+.cnav__row-actions {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.cnav__thread:hover .cnav__row-actions,
+.cnav__row-actions:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Only when hovered does the title reserve room for the revealed actions; when
+   not hovered the row is full-width (no dead space for hidden buttons). */
+.cnav__thread:hover .cnav__thread-main {
+  padding-right: 52px;
+}
 .cnav__thread:hover {
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
   color: var(--text-primary);
