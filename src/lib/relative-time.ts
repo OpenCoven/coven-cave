@@ -10,7 +10,9 @@
 // Relative-time "density" preference. Read localStorage directly (not via the
 // "use client" datetime-format store) so this module stays pure and server-safe.
 // The key MUST match DATETIME_DENSITY_KEY in datetime-format.ts.
-type DensityFormat = "compact" | "verbose";
+// "bare" = compact thresholds without the " ago" suffix — used for dense row
+// timestamps (chat sidebar). Not user-selectable: readDensity() never returns it.
+type DensityFormat = "compact" | "verbose" | "bare";
 
 function readDensity(): DensityFormat {
   if (typeof window === "undefined") return "compact";
@@ -33,11 +35,12 @@ export function relativeTime(
   const mins = Math.round((nowMs - then) / 60000);
   if (mins < 1) return "just now";
   const verbose = density === "verbose";
-  if (mins < 60) return verbose ? `${mins} ${mins === 1 ? "minute" : "minutes"} ago` : `${mins}m ago`;
+  const suffix = density === "bare" ? "" : " ago";
+  if (mins < 60) return verbose ? `${mins} ${mins === 1 ? "minute" : "minutes"} ago` : `${mins}m${suffix}`;
   const hours = Math.round(mins / 60);
-  if (hours < 24) return verbose ? `${hours} ${hours === 1 ? "hour" : "hours"} ago` : `${hours}h ago`;
+  if (hours < 24) return verbose ? `${hours} ${hours === 1 ? "hour" : "hours"} ago` : `${hours}h${suffix}`;
   const days = Math.round(hours / 24);
-  if (days < 7) return verbose ? `${days} ${days === 1 ? "day" : "days"} ago` : `${days}d ago`;
+  if (days < 7) return verbose ? `${days} ${days === 1 ? "day" : "days"} ago` : `${days}d${suffix}`;
   // Past a week, show an absolute date. Long month when verbose; include the year
   // when it is not the current year, so e.g. "Jan 5, 2025" is not ambiguous.
   const sameYear = new Date(then).getFullYear() === new Date(nowMs).getFullYear();
@@ -52,6 +55,8 @@ export function relativeTime(
  * True when `relativeTime`'s output is a relative phrase ("just now" / "… ago")
  * rather than its ≥7-day absolute "Mon D" fallback. Lets a caller that already
  * shows an absolute date suppress the relative span when it would just repeat it.
+ * Bare-density output ("2m") is never fed here — bare is a row-timestamp
+ * format whose callers don't do phrase suppression.
  */
 export function isRelativePhrase(value: string): boolean {
   return value === "just now" || value.endsWith(" ago");
