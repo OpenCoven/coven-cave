@@ -11,7 +11,7 @@ import { LibraryGitHubList } from "@/components/library-github-list";
 import { LibraryDocPreview, type SelectedItem } from "@/components/library-doc-preview";
 import { LibraryQuickOpen, type LibraryQuickItem } from "@/components/library-quick-open";
 import { LibraryTimeline } from "@/components/library-timeline";
-import { ComuxView } from "@/components/comux-view";
+import { ComuxView } from "@/components/lazy-surfaces";
 import type { TimelineEntry } from "@/app/api/library/all/route";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type {

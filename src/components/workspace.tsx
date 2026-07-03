@@ -48,12 +48,12 @@ import {
   EvalsView,
   FlowView,
   GitHubView,
+  LibraryView,
   MarketplaceView,
 } from "@/components/lazy-surfaces";
 import { CodeSidebar } from "@/components/code-sidebar";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { CodeView } from "@/components/code-view";
-import { LibraryView } from "@/components/library-view";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";

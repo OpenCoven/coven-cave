@@ -284,7 +284,6 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
   }
 
   async function handleStatusChange(item: LibraryReadingItem, status: ReadingStatus) {
-    const previous = items;
     setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status } : i)));
     try {
       const res = await fetch("/api/library/reading", {
@@ -296,7 +295,10 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
       if (!json.ok) throw new Error("status update failed");
       setItems((prev) => prev.map((i) => (i.id === item.id ? json.item : i)));
     } catch {
-      setItems(previous);
+      // Roll back only this row functionally — restoring a whole snapshot
+      // captured at click time would clobber any other edit/delete that landed
+      // while this PATCH was in flight.
+      setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, status: item.status } : i)));
     }
   }
 

@@ -124,5 +124,3 @@ export function createLibraryStore(root: string = DEFAULT_ROOT) {
     paths,
   };
 }
-
-export type LibraryStore = ReturnType<typeof createLibraryStore>;
