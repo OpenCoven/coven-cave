@@ -167,8 +167,10 @@ export function ChatSidebar({
     }
   }
 
+  const initials = (userName ?? "You").split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+
   return (
-    <div className="chat-sidebar flex h-full min-h-0 flex-col bg-[color-mix(in_oklch,var(--bg-raised)_88%,transparent)]">
+    <div className="chat-sidebar flex h-full min-h-0 flex-col">
       {/* Collapsed rail — when the nav panel is collapsed the shell adds
           `.shell-nav--rail`, which hides the full sidebar and shows this
           vertical "Chats" label. Clicking it reopens the panel. */}
@@ -183,97 +185,80 @@ export function ChatSidebar({
         <span className="chat-sidebar__rail-label">Chats</span>
       </button>
 
-      <div className="chat-sidebar__full flex min-h-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-2 py-2">
+      <div className="chat-sidebar__full cnav">
+        <header className="cnav__header">
           <button
             type="button"
             aria-label="Back to previous surface"
             title="Back to previous surface"
             onClick={onBack}
-            className="focus-ring grid h-7 w-7 shrink-0 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            className="cnav__back focus-ring"
           >
-            <Icon name="ph:arrow-left-bold" width={13} aria-hidden />
+            <Icon name="ph:arrow-left" width={15} aria-hidden />
           </button>
           <div className="min-w-0">
-            <div className="truncate text-[12px] font-semibold text-[var(--text-primary)]">Chats</div>
-            <div className="truncate text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Projects</div>
+            <div className="cnav__title">Chats</div>
           </div>
         </header>
 
-        <nav aria-label="Chat navigation" className="shrink-0 border-b border-[var(--border-hairline)] px-1.5 py-1.5">
-          {[
-            { key: "new", label: "New chat", icon: "ph:pencil-simple" as IconName, onClick: () => onNewChat(null) },
-            { key: "search", label: "Search", icon: "ph:magnifying-glass" as IconName, onClick: () => searchRef.current?.focus() },
-          ].map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={item.onClick}
-              className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-            >
-              <Icon name={item.icon} width={14} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-              <span className="min-w-0 flex-1 truncate">{item.label}</span>
-            </button>
-          ))}
-        </nav>
+        <div className="cnav__quick">
+          <button type="button" onClick={() => onNewChat(null)} className="cnav__new focus-ring">
+            <Icon name="ph:pencil-simple" width={15} className="cnav__new-icon" aria-hidden />
+            <span className="cnav__new-label">New chat</span>
+            <span className="cnav__kbd" aria-hidden>⌘N</span>
+          </button>
+        </div>
 
-        <div className="shrink-0 border-b border-[var(--border-hairline)] px-2 py-2">
-          <label className="flex h-7 items-center gap-1.5 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)]/55 px-2 focus-within:border-[var(--border-strong)]">
-            <Icon name="ph:magnifying-glass" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+        <div className="cnav__search-wrap">
+          <label className="cnav__search">
+            <Icon name="ph:magnifying-glass" width={13} className="cnav__search-icon" aria-hidden />
             <input
               ref={searchRef}
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search projects or threads..."
+              placeholder="Search projects or threads…"
               aria-label="Search chat projects and threads"
-              className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
             />
             {query ? (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => setQuery("")}
-                className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-              >
-                <Icon name="ph:x-bold" width={10} aria-hidden />
+              <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="cnav__search-clear">
+                <Icon name="ph:x-bold" width={9} aria-hidden />
               </button>
             ) : null}
           </label>
         </div>
 
         {registerError ? (
-          <div
-            role="alert"
-            className="flex shrink-0 items-center gap-1.5 border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] px-3 py-1.5 text-[11px] text-[var(--color-danger)]"
-          >
-            <Icon name="ph:warning-circle" width={12} className="shrink-0" aria-hidden />
-            <span className="min-w-0 flex-1 truncate">{registerError}</span>
+          <div role="alert" className="cnav__error">
+            <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
+            <span className="cnav__error-text">{registerError}</span>
             <button type="button" onClick={() => setRegisterError(null)} aria-label="Dismiss" className="shrink-0">
               <Icon name="ph:x-bold" width={9} aria-hidden />
             </button>
           </div>
         ) : null}
 
-        <nav aria-label="Chat projects and threads" className="min-h-0 flex-1 overflow-y-auto pb-2">
+        <nav aria-label="Chat projects and threads" className="cnav__scroll">
           {!hasSearch && pinnedSessions.length > 0 ? (
-            <section aria-label="Pinned threads" className="border-b border-[var(--border-hairline)] py-1">
-              <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Pinned</div>
+            <section aria-label="Pinned threads">
+              <div className="cnav__label">Pinned</div>
               <ul>
                 {pinnedSessions.map((session) => {
                   const title = sessionRailTitle(session);
                   const active = activeSessionId === session.id;
                   return (
                     <li key={`pin-${session.id}`}>
-                      <button
-                        type="button"
-                        aria-current={active ? "page" : undefined}
-                        onClick={() => onOpenSession(session)}
-                        className={`focus-ring flex min-h-[32px] w-full items-center gap-1.5 py-1.5 pl-3 pr-2 text-left text-[12px] ${active ? "bg-[var(--bg-raised)] text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]"}`}
-                      >
-                        <Icon name="ph:bookmark-simple-fill" width={11} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
-                      </button>
+                      <div className={`cnav__thread${active ? " is-active" : ""}`}>
+                        <button
+                          type="button"
+                          aria-current={active ? "page" : undefined}
+                          onClick={() => onOpenSession(session)}
+                          className="cnav__thread-main focus-ring"
+                        >
+                          <Icon name="ph:bookmark-simple-fill" width={12} className="cnav__lead is-accent" aria-hidden />
+                          <span className="cnav__thread-title" title={title}>{title}</span>
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
@@ -282,7 +267,7 @@ export function ChatSidebar({
           ) : null}
 
           {visibleGroups.length === 0 ? (
-            <p className="px-3 py-4 text-center text-[11px] text-[var(--text-muted)]">
+            <p className="cnav__empty">
               {hasSearch ? "No threads match your search." : "No conversations yet."}
             </p>
           ) : (
@@ -297,21 +282,21 @@ export function ChatSidebar({
                   ? group.sessions
                   : group.sessions.slice(0, THREADS_PREVIEW);
                 return (
-                  <li key={key}>
-                    <div className="group relative flex items-center border-b border-[var(--border-hairline)] bg-[color-mix(in_oklch,var(--bg-base)_86%,var(--foreground)_14%)]">
+                  <li key={key} className={`cnav__group${expanded ? "" : " is-collapsed"}`}>
+                    <div className="cnav__group-head">
                       <button
                         type="button"
                         aria-expanded={expanded}
                         aria-label={`${expanded ? "Collapse" : "Expand"} ${label} threads`}
                         onClick={() => toggleCollapse(key)}
-                        className="focus-ring flex min-h-[38px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-2 pr-16 text-left text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                        className="cnav__group-toggle focus-ring"
                       >
-                        <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={10} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                        <Icon name={folderIcon(group, expanded)} width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-                        <span className="min-w-0 flex-1 truncate font-semibold text-[var(--text-primary)]" title={group.projectRoot ?? "Threads with no project"}>
+                        <Icon name="ph:caret-down" width={10} className="cnav__chev" aria-hidden />
+                        <Icon name={folderIcon(group, expanded)} width={14} className="cnav__folder" aria-hidden />
+                        <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
                           {label}
                         </span>
-                        <span className="shrink-0 font-mono text-[11px] text-[var(--text-muted)]">{group.sessions.length}</span>
+                        <span className="cnav__count">{group.sessions.length}</span>
                       </button>
                       {unregistered ? (
                         <button
@@ -320,7 +305,7 @@ export function ChatSidebar({
                           onClick={() => handleRegister(group)}
                           title={`Register ${label} as a project`}
                           aria-label={`Register ${label} as a project`}
-                          className="touch-always-visible focus-ring absolute right-7 grid h-5 w-5 place-items-center rounded text-[var(--accent-presence)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] focus-visible:opacity-100 group-hover:opacity-100 disabled:opacity-40"
+                          className="cnav__icon-btn is-accent focus-ring"
                         >
                           <Icon name={registering ? "ph:arrows-clockwise" : "ph:folders-bold"} width={13} className={registering ? "animate-spin" : undefined} aria-hidden />
                         </button>
@@ -330,14 +315,14 @@ export function ChatSidebar({
                         onClick={() => onNewChat(group.projectRoot)}
                         title={`New chat in ${label}`}
                         aria-label={`New chat in ${label}`}
-                        className="touch-always-visible focus-ring absolute right-1 grid h-5 w-5 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover:opacity-100"
+                        className="cnav__icon-btn focus-ring"
                       >
-                        <Icon name="ph:plus" width={11} aria-hidden />
+                        <Icon name="ph:plus" width={12} aria-hidden />
                       </button>
                     </div>
                     {expanded ? (
                       group.sessions.length === 0 ? (
-                        <p className="py-1 pl-8 pr-3 text-[11px] text-[var(--text-muted)]">No threads yet.</p>
+                        <p className="cnav__thread-empty">No threads yet.</p>
                       ) : (
                         <ul>
                           {rows.map((session) => {
@@ -348,35 +333,24 @@ export function ChatSidebar({
                             const deleting = deletingSessionId === session.id;
                             return (
                               <li key={session.id}>
-                                <div
-                                  className={[
-                                    "group/thread flex min-h-[34px] w-full items-center gap-1.5 transition-colors",
-                                    active
-                                      ? "bg-[var(--bg-raised)] text-[var(--text-primary)]"
-                                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]/50 hover:text-[var(--text-primary)]",
-                                  ].join(" ")}
-                                >
+                                <div className={`cnav__thread${active ? " is-active" : ""}`}>
                                   <button
                                     type="button"
                                     aria-current={active ? "page" : undefined}
                                     onClick={() => onOpenSession(session)}
-                                    className="focus-ring flex min-h-[34px] min-w-0 flex-1 items-center gap-1.5 rounded py-2 pl-4 pr-1 text-left text-[12px]"
+                                    className="cnav__thread-main focus-ring"
                                   >
-                                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass(session.status)}`} aria-hidden />
-                                    <span className="min-w-0 flex-1 truncate" title={title}>{title}</span>
+                                    <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+                                    <span className="cnav__thread-title" title={title}>{title}</span>
                                     {confirming ? null : (
-                                      <span className="shrink-0 font-mono text-[10px] text-[var(--text-muted)] group-hover/thread:hidden">
+                                      <span className="cnav__time">
                                         {compactTime(session.updated_at || session.created_at)}
                                       </span>
                                     )}
                                   </button>
                                   {confirming ? (
-                                    <span className="flex shrink-0 items-center gap-1 pr-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => setConfirmingSessionId(null)}
-                                        className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
-                                      >
+                                    <span className="cnav__confirm">
+                                      <button type="button" onClick={() => setConfirmingSessionId(null)} className="cnav__confirm-cancel focus-ring">
                                         Cancel
                                       </button>
                                       <button
@@ -391,9 +365,9 @@ export function ChatSidebar({
                                             setDeletingSessionId(null);
                                           }
                                         }}
-                                        className="focus-ring rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+                                        className="cnav__confirm-del focus-ring"
                                       >
-                                        {deleting ? "Deleting..." : "Delete"}
+                                        {deleting ? "Deleting…" : "Delete"}
                                       </button>
                                     </span>
                                   ) : (
@@ -404,12 +378,7 @@ export function ChatSidebar({
                                         aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
                                         aria-pressed={pinned}
                                         onClick={() => togglePin(session.id)}
-                                        className={[
-                                          "touch-always-visible focus-ring grid h-5 w-5 shrink-0 place-items-center rounded transition-all hover:text-[var(--accent-presence)]",
-                                          pinned
-                                            ? "text-[var(--accent-presence)] opacity-100"
-                                            : "text-[var(--text-muted)] opacity-0 focus-visible:opacity-100 group-hover/thread:opacity-100",
-                                        ].join(" ")}
+                                        className={`cnav__icon-btn focus-ring${pinned ? " is-on" : ""}`}
                                       >
                                         <Icon name={pinned ? "ph:bookmark-simple-fill" : "ph:bookmark-simple"} width={12} aria-hidden />
                                       </button>
@@ -418,7 +387,7 @@ export function ChatSidebar({
                                         title="Delete thread"
                                         aria-label={`Delete thread ${title}`}
                                         onClick={() => setConfirmingSessionId(session.id)}
-                                        className="touch-always-visible focus-ring mr-1 grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-0 transition-opacity hover:bg-[var(--bg-raised)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/thread:opacity-100"
+                                        className="cnav__icon-btn is-danger focus-ring"
                                       >
                                         <Icon name="ph:x-bold" width={10} aria-hidden />
                                       </button>
@@ -433,7 +402,7 @@ export function ChatSidebar({
                               <button
                                 type="button"
                                 onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
-                                className="focus-ring w-full py-1.5 pl-8 pr-3 text-left text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                                className="cnav__more focus-ring"
                               >
                                 Show {group.sessions.length - THREADS_PREVIEW} more
                               </button>
@@ -449,13 +418,11 @@ export function ChatSidebar({
           )}
         </nav>
 
-        <footer className="mt-auto flex shrink-0 items-center gap-2 border-t border-[var(--border-hairline)] px-3 py-2">
-          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[var(--bg-raised)] text-[11px] font-semibold text-[var(--text-primary)]" aria-hidden>
-            {(userName ?? "You").split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase()}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12px] font-medium text-[var(--text-primary)]">{userName ?? "You"}</span>
-            <span className="block truncate text-[10px] text-[var(--text-muted)]">{userPlan}</span>
+        <footer className="cnav__footer">
+          <span className="cnav__avatar" aria-hidden>{initials}</span>
+          <span className="cnav__user">
+            <span className="cnav__user-name">{userName ?? "You"}</span>
+            <span className="cnav__user-plan">{userPlan}</span>
           </span>
         </footer>
       </div>

@@ -748,6 +748,560 @@ tr[role="checkbox"]:focus-visible {
   text-transform: uppercase;
 }
 
+/* ══ Conversation navigator — shared world-class UI for the Chat + Code left
+   sidebars. Both render project-grouped threads; `.cnav` is the common visual
+   language (header · primary action · search · sticky groups · thread rows ·
+   footer) so the two surfaces feel like one considered product. ═══════════════ */
+.cnav {
+  --cnav-pad: 10px;
+  --cnav-indent: 24px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
+}
+
+/* Header */
+.cnav__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px var(--cnav-pad) 6px;
+}
+.cnav__back {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md, 8px);
+  color: var(--text-muted);
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.cnav__back:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.cnav__title {
+  font-size: 14px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  color: var(--text-primary);
+}
+.cnav__eyebrow {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Primary "New chat" + secondary quick actions */
+.cnav__quick {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 4px var(--cnav-pad) 8px;
+}
+.cnav__new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in oklch, var(--accent) 32%, var(--border-hairline));
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 560;
+  text-align: left;
+  transition: background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.cnav__new:hover {
+  background: color-mix(in oklch, var(--accent) 20%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 48%, transparent);
+}
+.cnav__new-icon {
+  flex-shrink: 0;
+  color: var(--accent-presence);
+}
+.cnav__new-label {
+  flex: 1;
+  min-width: 0;
+}
+.cnav__kbd {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+.cnav__mini-row {
+  display: flex;
+  gap: 4px;
+}
+.cnav__mini {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.cnav__mini:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.cnav__mini-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.cnav__mini-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cnav__mini-count {
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Search */
+.cnav__search-wrap {
+  padding: 2px var(--cnav-pad) 8px;
+}
+.cnav__search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 9px;
+  border-radius: 10px;
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 55%, transparent);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+.cnav__search:focus-within {
+  border-color: color-mix(in oklch, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 13%, transparent);
+}
+.cnav__search-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.cnav__search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+.cnav__search input::placeholder {
+  color: var(--text-muted);
+}
+.cnav__search-clear {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  color: var(--text-muted);
+}
+.cnav__search-clear:hover {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+/* Scroll area with a thin, hover-revealed scrollbar */
+.cnav__scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, var(--foreground) 13%, transparent) transparent;
+}
+.cnav__scroll::-webkit-scrollbar {
+  width: 9px;
+}
+.cnav__scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.cnav__scroll:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--foreground) 22%, transparent);
+  background-clip: padding-box;
+}
+
+/* Section label (Pinned) */
+.cnav__label {
+  padding: 10px var(--cnav-pad) 3px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Project group header — sticky so context stays while scrolling long lists */
+.cnav__group-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  padding: 0 6px 0 8px;
+  background: color-mix(in oklch, var(--bg-raised) 96%, var(--foreground) 4%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--text-secondary);
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+.cnav__group-head:hover {
+  color: var(--text-primary);
+}
+.cnav__group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  color: inherit;
+  text-align: left;
+}
+.cnav__chev {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+.cnav__group.is-collapsed .cnav__chev {
+  transform: rotate(-90deg);
+}
+.cnav__folder {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.cnav__group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cnav__count {
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Count hides to make room for hover actions on the group header */
+.cnav__group-head:hover .cnav__count {
+  display: none;
+}
+
+/* Reveal-on-hover icon buttons (group +new / register; thread pin / delete) */
+.cnav__icon-btn {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.cnav__group-head:hover .cnav__icon-btn,
+.cnav__thread:hover .cnav__icon-btn,
+.cnav__icon-btn:focus-visible {
+  opacity: 1;
+}
+.cnav__icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.cnav__icon-btn.is-accent {
+  color: var(--accent-presence);
+}
+.cnav__icon-btn.is-danger:hover {
+  color: var(--color-danger);
+}
+.cnav__icon-btn.is-on {
+  opacity: 1;
+  color: var(--accent-presence);
+}
+.cnav__icon-btn:disabled {
+  opacity: 0.4;
+}
+
+/* Thread row — a container so a main button + trailing actions can coexist */
+.cnav__thread {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 6px 0 0;
+  color: var(--text-secondary);
+  transition: background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+.cnav__thread-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 4px 0 var(--cnav-indent);
+  color: inherit;
+  text-align: left;
+}
+.cnav__thread:hover {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+  color: var(--text-primary);
+}
+.cnav__thread.is-active {
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
+  color: var(--text-primary);
+}
+.cnav__thread.is-active::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 7px;
+  bottom: 7px;
+  width: 2.5px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.cnav__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+.cnav__dot--running {
+  background: var(--color-success);
+  animation: cnav-pulse 1.6s ease-in-out infinite;
+}
+.cnav__dot--failed {
+  background: var(--color-danger);
+}
+.cnav__dot--queued {
+  background: var(--color-warning);
+}
+.cnav__dot--paused {
+  background: var(--accent-presence-soft);
+}
+@keyframes cnav-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cnav__dot--running {
+    animation: none;
+  }
+}
+.cnav__lead {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.cnav__thread-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.cnav__time {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* On hover / active-with-actions, the timestamp yields to the row actions */
+.cnav__thread:hover .cnav__time {
+  display: none;
+}
+
+/* Inline delete confirm */
+.cnav__confirm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding-right: 4px;
+}
+.cnav__confirm-cancel {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.cnav__confirm-cancel:hover {
+  background: var(--bg-hover);
+}
+.cnav__confirm-del {
+  font-size: 10.5px;
+  color: var(--color-danger);
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in oklch, var(--color-danger) 45%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 10%, transparent);
+}
+.cnav__confirm-del:hover {
+  background: color-mix(in oklch, var(--color-danger) 16%, transparent);
+}
+.cnav__confirm-del:disabled {
+  opacity: 0.5;
+}
+
+/* Show-more / empty states */
+.cnav__more {
+  display: block;
+  width: 100%;
+  padding: 7px 8px 7px var(--cnav-indent);
+  text-align: left;
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+.cnav__more:hover {
+  color: var(--text-secondary);
+}
+.cnav__empty {
+  padding: 22px 14px;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.cnav__thread-empty {
+  padding: 4px 8px 6px var(--cnav-indent);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Register-error strip */
+.cnav__error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 var(--cnav-pad) 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--color-danger) 12%, transparent);
+  color: var(--color-danger);
+  font-size: 11px;
+}
+.cnav__error-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Footer — user identity chip */
+.cnav__footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px var(--cnav-pad);
+  border-top: 1px solid var(--border-hairline);
+}
+.cnav__avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--accent) 42%, var(--bg-raised)),
+    var(--bg-raised)
+  );
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+.cnav__user {
+  min-width: 0;
+  flex: 1;
+}
+.cnav__user-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--text-primary);
+}
+.cnav__user-plan {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 .shell-nav-header {
   display: flex;
   align-items: center;
