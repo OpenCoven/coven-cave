@@ -7,6 +7,22 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.133] - 2026-07-03
+
+Patch release on top of v0.0.132. Headline: the macOS overlay titlebar drags the
+window again on external-URL webviews, and the build now fails fast on `sharp`
+version skew with Next's pinned copy instead of only tripping the Windows-only
+sidecar CI leg.
+
+### Added
+
+- **Supply chain** - guard against `sharp` version skew with Next's pinned copy
+  in the dependency-policy test: the build now fails fast if `pnpm-lock.yaml`
+  resolves more than one `sharp` version, if `sharp` diverges from `package.json`,
+  or if any `@img/sharp-<native>` package drifts off it. This catches the skew
+  that silently breaks the Windows sidecar bundle on every OS, instead of only in
+  the Windows-only sidecar CI leg.
+
 ### Fixed
 
 - **macOS titlebar drag** - the seamless overlay titlebar now actually drags the
@@ -19,15 +35,6 @@ breaking config changes; patch releases stay additive.
   the platform check that gated the whole titlebar mode: `navigator.platform` is
   deprecated and empty on newer WebKit, so it now prefers
   `navigator.userAgentData.platform` before falling back to the UA string.
-
-### Added
-
-- **Supply chain** - guard against `sharp` version skew with Next's pinned copy
-  in the dependency-policy test: the build now fails fast if `pnpm-lock.yaml`
-  resolves more than one `sharp` version, if `sharp` diverges from `package.json`,
-  or if any `@img/sharp-<native>` package drifts off it. This catches the skew
-  that silently breaks the Windows sidecar bundle on every OS, instead of only in
-  the Windows-only sidecar CI leg.
 
 ## [0.0.132] - 2026-07-02
 
