@@ -3962,35 +3962,10 @@ details[open] > .cave-tool-summary::before {
   animation: ui-modal-fade-in var(--duration-fast) var(--ease-decelerate);
 }
 
-.cave-cal-detail-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 280px;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-panel);
-  border-left: 1px solid var(--border-hairline);
-  box-shadow: -4px 0 16px oklch(0 0 0 / 20%);
-  z-index: 20;
-  animation: cave-slide-in-right 0.18s ease;
-}
-
-@keyframes cave-slide-in-right {
-  from { transform: translateX(20px); opacity: 0; }
-  to   { transform: translateX(0);    opacity: 1; }
-}
-
-.cave-cal-detail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-hairline);
-  min-height: 48px;
-}
+/* The .cave-cal-detail-panel / -header rules (and their slide keyframe) live in
+   globals.css, which is loaded after this file and wins at equal specificity —
+   the copies that used to sit here were dead. Only the backdrop above is unique
+   to this file. */
 
 .cave-chat-voice-call-group {
   border-left: 2px solid var(--accent-presence, #6aa);

@@ -50,7 +50,7 @@ assert.match(
 // ───────── Task 4: Today indicator ─────────
 assert.match(
   source,
-  /col\.isToday \? "bg-\[color-mix\(in_oklch,var\(--accent-presence\)_6%,transparent\)\]" : ""/,
+  /now && isSameDay\(col\.date, now\) \? "bg-\[color-mix\(in_oklch,var\(--accent-presence\)_6%,transparent\)\]" : ""/,
   "TimeGrid column body must tint today's column with accent-presence at 6%",
 );
 assert.match(

@@ -46,7 +46,7 @@ assert.doesNotMatch(view, /minHeight: 20/, "Old fixed 20px event height must be 
 // re-ticks each minute, so today-highlights + the now-line don't mismatch SSR
 // and the current-time indicator tracks the clock.
 assert.match(view, /function useNow\(\): Date \| null \{[\s\S]*?setInterval\(\(\) => setNow\(new Date\(\)\), 60_000\)/, "useNow ticks every minute");
-assert.match(view, /col\.isToday && now &&/, "the now-line only renders once `now` resolves");
+assert.match(view, /now && isSameDay\(col\.date, now\) &&/, "the now-line only renders once `now` resolves, derived from TimeGrid's own clock");
 // The grid sub-views derive "today" from useNow (hydration-safe + live), not a
 // render-time `new Date()` (Agenda, Day, Week, Month, TimeGrid).
 assert.ok((view.match(/const now = useNow\(\)/g) ?? []).length >= 5, "every grid sub-view uses useNow for today");
@@ -74,7 +74,7 @@ assert.match(view, /aria-pressed=\{viewMode === id\}/, "each view-mode button an
 assert.match(view, /target\.isContentEditable/, "Single-key shortcuts must not fire inside contenteditable");
 
 // ───────── No render-time array mutation in AgendaView ─────────
-assert.match(view, /\[\.\.\.groupItems\]\s*\n\s*\.sort/, "AgendaView must sort a copy, not the memoized array");
+assert.match(view, /\[\.\.\.groupItems\][\s\S]*?\.sort\(\(a, b\) => \(itemDate\(a\)\?\.getTime\(\) \?\? 0\) - \(itemDate\(b\)\?\.getTime\(\) \?\? 0\)\)/, "AgendaView sorts a copy by the itemDate key (fireAt ?? firedAt ?? createdAt), not the memoized array");
 
 // ───────── Workspace wires optimistic mutations to the inbox routes ─────────
 assert.match(ws, /\/api\/inbox\/\$\{id\}\/done/, "completeInboxItem must POST the done route");

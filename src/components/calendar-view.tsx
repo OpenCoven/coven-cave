@@ -157,11 +157,18 @@ function fmtHourLabel(h: number): string {
 function defaultEntryFireAt(day: Date): string {
   const target = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9, 0, 0, 0);
   const now = new Date();
+  // Future 9 AM on the clicked day → use it directly.
   if (target.getTime() > now.getTime()) return target.toISOString();
-
-  const fallback = new Date(now);
-  fallback.setMinutes(Math.ceil((fallback.getMinutes() + 5) / 15) * 15, 0, 0);
-  return fallback.toISOString();
+  // 9 AM has already passed. Keep the *clicked day* rather than silently
+  // jumping to today: when the day is today, round up to the next 15-min slot
+  // so the default isn't in the past; a past day keeps its 9 AM so the modal
+  // opens on the day the user actually clicked.
+  if (isSameDay(day, now)) {
+    const slot = new Date(now);
+    slot.setMinutes(Math.ceil((slot.getMinutes() + 5) / 15) * 15, 0, 0);
+    return slot.toISOString();
+  }
+  return target.toISOString();
 }
 
 // A reminder still pending after its fire time never fired — flag it so it
@@ -279,7 +286,6 @@ function AgendaView({
   anchor,
   onAddEntry,
   onOpenItem,
-  onReschedule,
   onOpenDeadline,
 }: {
   items: InboxItem[];
@@ -287,7 +293,6 @@ function AgendaView({
   anchor: Date;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onOpenItem?: (item: InboxItem) => void;
-  onReschedule?: (id: string, fireAtIso: string) => void;
   onOpenDeadline?: (id: string) => void;
 }) {
   const [showPast, setShowPast] = useState(false);
@@ -390,11 +395,10 @@ function AgendaView({
               <DeadlineChip key={d.id} deadline={d} onOpen={onOpenDeadline} />
             ))}
             {[...groupItems]
-              .sort((a, b) => {
-                const ta = new Date(a.fireAt ?? a.createdAt).getTime();
-                const tb = new Date(b.fireAt ?? b.createdAt).getTime();
-                return ta - tb;
-              })
+              // Order by the same key the day bucket uses (itemDate: fireAt ??
+              // firedAt ?? createdAt) so fired items with no fireAt stay in
+              // chronological order instead of falling back to createdAt.
+              .sort((a, b) => (itemDate(a)?.getTime() ?? 0) - (itemDate(b)?.getTime() ?? 0))
               .map((item) => (
                 <ItemChip
                   key={item.id}
@@ -573,6 +577,15 @@ function isAllDay(item: InboxItem): boolean {
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const HOUR_HEIGHT = 56;
+// Timed-grid interactions snap to 15-min slots. Floor to the first slot (and
+// cap at the last) so an event placed / dragged / nudged to the very top of the
+// day never lands on exact local midnight — isAllDay() treats 00:00:00 as an
+// all-day marker, which would yank the event out of the hourly grid into the
+// all-day strip.
+const SNAP_MIN = 15;
+const MAX_TIMED_MIN = 24 * 60 - SNAP_MIN;
+const clampTimedMinutes = (min: number) =>
+  Math.min(MAX_TIMED_MIN, Math.max(SNAP_MIN, min));
 
 function TimeGrid({
   columns,
@@ -580,7 +593,7 @@ function TimeGrid({
   onAddEntry,
   onReschedule,
 }: {
-  columns: { label: string; date: Date; isToday: boolean; items: InboxItem[] }[];
+  columns: { label: string; date: Date; items: InboxItem[] }[];
   onOpenItem?: (item: InboxItem) => void;
   onAddEntry?: (defaults?: { fireAt?: string; title?: string; whenText?: string }) => void;
   onReschedule?: (id: string, fireAtIso: string) => void;
@@ -647,7 +660,7 @@ function TimeGrid({
           <div
             key={ci}
             className={`flex-1 relative min-w-[80px] ${
-              col.isToday ? "bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]" : ""
+              now && isSameDay(col.date, now) ? "bg-[color-mix(in_oklch,var(--accent-presence)_6%,transparent)]" : ""
             } ${onAddEntry ? "cursor-pointer" : ""}`}
             style={{ height: totalHeight }}
             title={onAddEntry ? "Click an empty slot to add an event" : undefined}
@@ -659,7 +672,7 @@ function TimeGrid({
                     const rect = e.currentTarget.getBoundingClientRect();
                     const hour = Math.max(0, Math.min(23, Math.floor((e.clientY - rect.top) / HOUR_HEIGHT)));
                     const slot = new Date(col.date);
-                    slot.setHours(hour, 0, 0, 0);
+                    slot.setHours(0, clampTimedMinutes(hour * 60), 0, 0);
                     onAddEntry({ fireAt: slot.toISOString() });
                   }
                 : undefined
@@ -682,10 +695,7 @@ function TimeGrid({
                     const rect = e.currentTarget.getBoundingClientRect();
                     // Snap the block's start to the nearest 15 minutes at the drop.
                     const topPx = e.clientY - rect.top - drag.grabY;
-                    const minutes = Math.max(
-                      0,
-                      Math.min(24 * 60 - 15, Math.round((topPx / HOUR_HEIGHT) * 4) * 15),
-                    );
+                    const minutes = clampTimedMinutes(Math.round((topPx / HOUR_HEIGHT) * 4) * 15);
                     const slot = new Date(col.date);
                     slot.setHours(0, minutes, 0, 0);
                     onReschedule(drag.id, slot.toISOString());
@@ -703,7 +713,7 @@ function TimeGrid({
             ))}
 
             {/* Current time indicator (today's column only, once `now` resolves) */}
-            {col.isToday && now && (
+            {now && isSameDay(col.date, now) && (
               <div
                 ref={nowRef}
                 className="absolute left-0 right-0 flex items-center z-10"
@@ -747,7 +757,7 @@ function TimeGrid({
                           if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
                           e.preventDefault();
                           const step = (e.shiftKey ? 60 : 15) * (e.key === "ArrowDown" ? 1 : -1);
-                          const minutes = Math.max(0, Math.min(24 * 60 - 15, ev.start + step));
+                          const minutes = clampTimedMinutes(ev.start + step);
                           if (minutes === ev.start) return;
                           const slot = new Date(col.date);
                           slot.setHours(0, minutes, 0, 0);
@@ -830,12 +840,14 @@ function DayView({
     [deadlines, anchor],
   );
 
+  // `isToday` is derived inside TimeGrid from its own clock, so the 60s
+  // now-tick never invalidates this memo (which would otherwise re-pack the
+  // column every minute).
   const columns = useMemo(() => [{
     label: fmtDateHeading(anchor),
     date: anchor,
-    isToday: now ? isSameDay(anchor, now) : false,
     items: timedItems,
-  }], [anchor, timedItems, now]);
+  }], [anchor, timedItems]);
 
   const rel = now ? relDayWord(anchor, now) : null;
 
@@ -905,17 +917,20 @@ function WeekView({
     [weekStartMs],
   );
 
+  // `isToday` is derived per-column at render time (here for the header, in
+  // TimeGrid for the grid) rather than baked into this memo, so the 60s
+  // now-tick doesn't mint a new columns array and force TimeGrid to re-pack
+  // every column each minute.
   const columns = useMemo(() => {
     return days.map((day) => ({
       label: `${WEEKDAYS[day.getDay()]} ${day.getDate()}`,
       date: day,
-      isToday: now ? isSameDay(day, now) : false,
       items: items.filter((it) => {
         const d = itemDate(it);
         return d && isSameDay(d, day) && !isAllDay(it);
       }),
     }));
-  }, [items, days, now]);
+  }, [items, days]);
 
   const allDayColumns = useMemo(() => {
     return days.map((day) => ({
@@ -949,7 +964,7 @@ function WeekView({
             <div
               key={i}
               className={`group relative flex-1 min-w-[80px] px-2 py-2 text-center ${
-                col.isToday ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]" : ""
+                now && isSameDay(col.date, now) ? "bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)]" : ""
               }`}
             >
               {onAddEntry && (
@@ -968,7 +983,7 @@ function WeekView({
               </div>
               <div
                 className={`text-sm font-semibold ${
-                  col.isToday ? "text-[var(--accent-presence)]" : "text-[var(--text-primary)]"
+                  now && isSameDay(col.date, now) ? "text-[var(--accent-presence)]" : "text-[var(--text-primary)]"
                 }`}
               >
                 {col.date.getDate()}
@@ -1692,7 +1707,6 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
             deadlines={scopedDeadlines}
             anchor={anchor}
             onAddEntry={onAddEntry}
-            onReschedule={onReschedule}
             onOpenItem={(item) => setSelectedItem(item)}
             onOpenDeadline={onOpenDeadline}
           />
