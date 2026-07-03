@@ -582,9 +582,16 @@ export function LibraryReadingList({ selectedId, onSelect, onDelete }: Props) {
                       </td>
                       <td className="library-reading-col-progress">
                         {item.status === "done" ? (
-                          <span style={{ color: "var(--color-success)", display:"inline-flex", alignItems:"center" }}><Icon name="ph:check" width={13} /></span>
+                          <span aria-label="Read" style={{ color: "var(--color-success)", display:"inline-flex", alignItems:"center" }}><Icon name="ph:check" width={13} aria-hidden /></span>
                         ) : item.status === "reading" && item.progress != null ? (
-                          <div className="library-progress-bar library-progress-bar--lg">
+                          <div
+                            className="library-progress-bar library-progress-bar--lg"
+                            role="progressbar"
+                            aria-valuenow={item.progress}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
+                            aria-label={`Reading progress: ${item.progress}%`}
+                          >
                             <div className="library-progress-fill" style={{ width: `${item.progress}%` }} />
                           </div>
                         ) : (

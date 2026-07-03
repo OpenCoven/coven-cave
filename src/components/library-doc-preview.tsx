@@ -480,6 +480,10 @@ function wireMarkdownImages(container: HTMLElement, onZoom: (t: ZoomTarget) => v
     img.classList.add("cave-md-img--zoomable");
     img.setAttribute("role", "button");
     img.setAttribute("tabindex", "0");
+    // A role=button with no name is a WCAG 4.1.2 failure (an empty-alt image
+    // becomes a nameless button); name the zoom control from the alt.
+    const zoomAlt = (img.getAttribute("alt") || "").trim();
+    img.setAttribute("aria-label", zoomAlt ? `View image: ${zoomAlt}` : "View image");
     img.addEventListener("click", () => open(img.currentSrc || img.src));
     img.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(img.currentSrc || img.src); }
@@ -488,20 +492,21 @@ function wireMarkdownImages(container: HTMLElement, onZoom: (t: ZoomTarget) => v
 }
 
 function ImageLightbox({ target, onClose }: { target: ZoomTarget; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Trap focus + Escape + restore focus to the triggering image on close; the
+  // lightbox is aria-modal but previously leaked Tab to the page behind it.
+  useFocusTrap(true, dialogRef, { onEscape: onClose });
 
   if (typeof document === "undefined") return null;
   const canOpen = /^https?:\/\//i.test(target.src);
   return createPortal(
     <div
+      ref={dialogRef}
       className="cave-img-lightbox"
       role="dialog"
       aria-modal="true"
       aria-label={target.alt || "Image preview"}
+      tabIndex={-1}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="cave-img-lightbox__bar" onClick={(e) => e.stopPropagation()}>

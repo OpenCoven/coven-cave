@@ -199,6 +199,7 @@ export function LibraryDocList({
                 <button
                   type="button"
                   className="library-doclist-item-main"
+                  aria-current={doc.id === selectedId ? "true" : undefined}
                   onClick={() => onSelect(doc)}
                 >
                   <div className="library-doclist-item-header">
