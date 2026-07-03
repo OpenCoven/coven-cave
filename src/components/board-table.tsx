@@ -377,6 +377,7 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                     data-card-id={card.id}
                     role={selectMode ? "checkbox" : undefined}
                     aria-checked={selectMode ? rowChecked : undefined}
+                    aria-label={selectMode ? `${card.title}${rowChecked ? ", selected" : ""}. Space to toggle selection.` : undefined}
                     className={`${isSel ? "selected" : ""}${rowIdx % 2 === 1 ? " board-table-row--alt" : ""}`.trim()}
                     onClick={() => (selectMode ? onToggleSelect?.(card.id) : onSelect(card.id))}>
                     {orderedCols.map((col) => {

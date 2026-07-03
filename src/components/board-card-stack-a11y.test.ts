@@ -9,9 +9,12 @@ const src = readFileSync(new URL("./board-card-stack.tsx", import.meta.url), "ut
 // KanbanCard. Was: a <button> wrapping <div>/<p> and a tabIndex=-1 role=link.
 assert.match(
   src,
-  /className="board-card-stack__row-main"\s+role="button"\s+tabIndex=\{0\}\s+aria-pressed=\{isSelected\}/,
+  /className="board-card-stack__row-main"\s+role="button"\s+tabIndex=\{0\}/,
   "the card body is a keyboard-focusable role=button (not a <button> wrapping flow content)",
 );
+// Activating the row OPENS the inspector — it is not a toggle, so it must not
+// carry aria-pressed (which announced a pressed state that never matched).
+assert.doesNotMatch(src, /aria-pressed/, "the opener row does not claim toggle semantics");
 assert.match(
   src,
   /onKeyDown=\{\(e\) => \{\s*if \(e\.key === "Enter" \|\| e\.key === " "\) \{ e\.preventDefault\(\); onSelect\(\); \}/,
