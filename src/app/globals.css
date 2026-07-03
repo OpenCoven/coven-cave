@@ -7123,8 +7123,6 @@ a.mobile-handoff__link:hover {
     display: none;
   }
 
-  .plugins-view button,
-  .plugins-view [role="button"],
   .marketplace-view button,
   .marketplace-view [role="button"],
   .capabilities-view button,
@@ -7134,7 +7132,6 @@ a.mobile-handoff__link:hover {
     -webkit-tap-highlight-color: transparent;
   }
 
-  .plugins-view input,
   .marketplace-view input,
   .marketplace-view select,
   .capabilities-view input {

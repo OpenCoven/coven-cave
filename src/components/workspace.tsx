@@ -54,7 +54,6 @@ import { CodeSidebar } from "@/components/code-sidebar";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { CodeView } from "@/components/code-view";
 import { LibraryView } from "@/components/library-view";
-import { PluginsView } from "@/components/plugins-view";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
@@ -333,7 +332,6 @@ export function Workspace() {
     terminal?: boolean;
     browser?: boolean;
     flow?: boolean;
-    roles?: boolean;
     groupchat?: boolean;
     journal?: boolean;
     retro?: boolean;
@@ -2185,21 +2183,17 @@ export function Workspace() {
         onJumpToSession={openFamiliarSession}
         onFocusCard={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
       />
-    ) : mode === "roles" || mode === "capabilities" ? (
-      // Capabilities is the rightmost tab of the Roles page. The "capabilities"
-      // mode still resolves here (deep links / navigate-mode) but opens that
-      // tab; keying on the mode remounts so the deep link lands on it.
-      <PluginsView
+    ) : mode === "marketplace" || mode === "roles" || mode === "capabilities" ? (
+      // Roles and Marketplace merged into one hub. The "roles"/"capabilities"
+      // modes still resolve here (deep links / navigate-mode) but open the
+      // matching section; keying on the mode remounts so deep links land.
+      <MarketplaceView
         key={mode}
-        tabs={["roles", "skills", "capabilities"]}
-        initialTab={mode === "capabilities" ? "capabilities" : "roles"}
+        initialSection={mode === "roles" ? "roles" : mode === "capabilities" ? "capabilities" : "browse"}
         activeHarness={active?.harness ?? null}
         familiars={resolvedFamiliars}
         onOpenChat={(familiarId) => startFamiliarChat(familiarId)}
-        onCreateSkill={() => setMode("capabilities")}
       />
-    ) : mode === "marketplace" ? (
-      <MarketplaceView />
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
     ) : mode === "flow" ? (

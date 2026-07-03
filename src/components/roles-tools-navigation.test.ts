@@ -3,37 +3,41 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const palette = await readFile(new URL("./command-palette.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
-const pluginsView = await readFile(new URL("./plugins-view.tsx", import.meta.url), "utf8");
+const marketplaceView = await readFile(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
+const rolesSection = await readFile(new URL("./marketplace/roles-section.tsx", import.meta.url), "utf8");
 const rolesRoute = await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8");
 const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const shortcutsCatalog = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
 const shortcutsSheet = await readFile(new URL("./shortcuts-sheet.tsx", import.meta.url), "utf8");
 const slashCommands = await readFile(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
 
-assert.match(
-  workspaceMode,
-  /\|\s*"roles"/,
-  "Roles should be a first-class workspace mode",
-);
+// ── Roles + Marketplace are ONE merged hub surface ──────────────────────────
+// The store (Browse) and the familiars' setup (Roles / Skills / Capabilities)
+// live on a single Marketplace page with a section tablist. The old modes stay
+// in the WorkspaceMode union so deep links and navigate-mode events keep
+// working — they open the hub on the matching section.
 
-assert.match(
-  sidebar,
-  /\{ id: "roles", label: "Roles"[\s\S]*group: "tools"/,
-  "Roles should appear in the main sidebar Tools group",
-);
-
-assert.match(
-  sidebar,
-  /\{ id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description:/,
-  "Sidebar navigation should expose Roles as a tools surface",
-);
+assert.match(workspaceMode, /\|\s*"marketplace"/, "Marketplace should be a first-class workspace mode");
+assert.match(workspaceMode, /\|\s*"roles"/, "roles mode survives as a deep link into the hub's Roles section");
+assert.match(workspaceMode, /\|\s*"capabilities"/, "capabilities mode survives as a deep link into the hub's Capabilities section");
 
 assert.match(
   workspace,
-  /mode === "roles"[\s\S]*<PluginsView[\s\S]*tabs=\{\["roles", "skills", "capabilities"\]\}/,
-  "The Roles surface should expose roles, skills, and capabilities (Marketplace is now its own page)",
+  /mode === "marketplace" \|\| mode === "roles" \|\| mode === "capabilities"[\s\S]*?<MarketplaceView\s*\n\s*key=\{mode\}/,
+  "Workspace should render the merged Marketplace hub for the marketplace, roles, and capabilities modes (keyed so deep links remount onto their section)",
+);
+assert.match(
+  workspace,
+  /initialSection=\{mode === "roles" \? "roles" : mode === "capabilities" \? "capabilities" : "browse"\}/,
+  "Deep-link modes should map onto the hub's sections",
+);
+assert.doesNotMatch(
+  workspace,
+  /PluginsView/,
+  "The standalone Roles page (PluginsView) is retired — the hub owns roles, skills, and capabilities",
 );
 
 assert.doesNotMatch(
@@ -42,94 +46,89 @@ assert.doesNotMatch(
   "Workspace should not expose a top-level Workflows page",
 );
 
-// --- Marketplace is its own first-class page, not a tab of the Roles surface ---
-assert.match(
-  workspaceMode,
-  /\|\s*"marketplace"/,
-  "Marketplace should be a first-class workspace mode",
-);
-
+// ── Sidebar: one Tools entry for the merged hub ──────────────────────────────
 assert.match(
   sidebar,
-  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description:/,
-  "Sidebar navigation should expose Marketplace as its own tools surface",
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description: "Browse the store and manage your familiars' roles, skills, and capabilities" \},/,
+  "Sidebar navigation should expose the merged Marketplace hub with a description covering both halves",
 );
-
-assert.match(
-  workspace,
-  /mode === "marketplace" \? \(\s*<MarketplaceView \/>/,
-  "Workspace should render the standalone Marketplace surface for the marketplace mode",
-);
-
 assert.doesNotMatch(
-  pluginsView,
-  /MarketplaceViewSurface/,
-  "PluginsView should no longer embed the Marketplace surface — it lives on its own page",
+  sidebar,
+  /\{ id: "roles", label: "Roles"/,
+  "The separate Roles sidebar entry is retired — roles live inside the Marketplace hub",
 );
-
-assert.doesNotMatch(
-  settings,
-  /PluginsView/,
-  "Settings must not render PluginsView — plugins and skills live on the Roles page",
-);
-
-assert.doesNotMatch(
-  settings,
-  /"plugins"/,
-  "Settings must not declare a plugins section",
-);
-
+assert.doesNotMatch(sidebar, /addons\?\.roles/, "The roles add-on gate is retired from the sidebar");
+assert.doesNotMatch(palette, /addons\?\.roles/, "The roles add-on gate is retired from the command palette");
 assert.match(
-  pluginsView,
-  /tabs\?: Tab\[\]/,
-  "PluginsView should support caller-selected tab sets",
+  sidebar,
+  /fm\.id === "marketplace" && \(mode === "roles" \|\| mode === "capabilities"\)/,
+  "The Marketplace entry stays lit while a deep-linked roles/capabilities mode is active",
 );
 
+// Settings: no separate plugins section, and the roles add-on toggle is gone
+// (the hub is always visible, like the old Marketplace page was).
+assert.doesNotMatch(settings, /PluginsView/, "Settings must not render PluginsView");
+assert.doesNotMatch(settings, /"plugins"/, "Settings must not declare a plugins section");
+assert.doesNotMatch(settings, /key: "roles"/, "Settings must not offer a roles add-on toggle — the merged hub is not gated");
+
+// ── The hub composes the store and the setup views ───────────────────────────
+assert.match(marketplaceView, /import \{ RolesSection, type RoleEntry \} from "@\/components\/marketplace\/roles-section"/, "hub renders the Roles section");
+assert.match(marketplaceView, /import \{ SkillBrowser, type SkillBrowserEntry \} from "@\/components\/skill-browser"/, "hub renders the Skills browser");
+assert.match(marketplaceView, /SkillDetailDrawer,/, "hub mounts the skill detail drawer for role-card skill chips");
+assert.match(marketplaceView, /import \{ CapabilitiesViewSurface \} from "@\/components\/capabilities-view"/, "hub renders the Capabilities surface");
 assert.match(
-  rolesRoute,
-  /mcpServers:\s*string\[\]/,
-  "Roles API should expose mcpServers as a first-class role capability list",
+  marketplaceView,
+  /initialSection\?: MarketplaceSection/,
+  "hub accepts an initial section for workspace deep links",
 );
 
-assert.match(
-  rolesRoute,
-  /mcpServers:\s*parseRoleMcpServers\(text\)/,
-  "Roles API should read mcpServers plus supported MCP aliases from ROLE.md",
-);
+// Section tablist is an accessible tablist (not just styled buttons).
+assert.match(marketplaceView, /role="tablist"\s+aria-label="Marketplace sections"/, "the section bar is a labelled tablist");
+assert.match(marketplaceView, /role="tab"\s*\n\s*id=\{`marketplace-tab-\$\{s\.id\}`\}/, "each tab carries role=tab + a stable id");
+assert.match(marketplaceView, /aria-selected=\{section === s\.id\}/, "the active tab is aria-selected");
+assert.match(marketplaceView, /aria-controls=\{`marketplace-panel-\$\{s\.id\}`\}/, "tabs point at their panel via aria-controls");
+assert.match(marketplaceView, /tabIndex=\{section === s\.id \? 0 : -1\}/, "the tablist uses a roving tab stop");
+assert.match(marketplaceView, /e\.key === "ArrowRight"[\s\S]{0,80}?\(i \+ 1\) % SECTIONS\.length/, "Left/Right arrows move between tabs");
+for (const id of ["browse", "roles", "skills", "capabilities"]) {
+  assert.match(
+    marketplaceView,
+    new RegExp(`role="tabpanel"\\s*\\n\\s*id="marketplace-panel-${id}"\\s*\\n\\s*aria-labelledby="marketplace-tab-${id}"`),
+    `the ${id} panel is a tabpanel labelled by its tab`,
+  );
+}
 
-assert.match(
-  pluginsView,
-  /mcpServers:\s*string\[\]/,
-  "Roles view should type MCP servers alongside skills, tools, plugins, and workflows",
-);
+// One search field, scoped per section; the self-contained Capabilities
+// surface owns its own search so the hub hides the shared one there.
+assert.match(marketplaceView, /aria-label=\{SEARCH_LABEL\[section\]\}/, "the search input names the active section");
+assert.match(marketplaceView, /\{section !== "capabilities" \? \(\s*\n\s*<SearchInput/, "the shared search hides on the Capabilities section");
 
-assert.match(
-  pluginsView,
-  /\.\.\.role\.mcpServers/,
-  "Roles search should include MCP server names",
-);
+// The store rail cross-links into the setup sections, so Browse stays aware of
+// what your familiars already have.
+assert.match(marketplaceView, /Your setup/, "the Browse rail carries a Your-setup group");
+assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("roles"\)\}/, "the rail jumps to Roles");
+assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("skills"\)\}/, "the rail jumps to Skills");
+assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("capabilities"\)\}/, "the rail jumps to Capabilities");
 
+// ── Role cards keep their capability map (MCP servers first-class) ──────────
+assert.match(rolesRoute, /mcpServers:\s*string\[\]/, "Roles API should expose mcpServers as a first-class role capability list");
+assert.match(rolesRoute, /mcpServers:\s*parseRoleMcpServers\(text\)/, "Roles API should read mcpServers plus supported MCP aliases from ROLE.md");
+assert.match(rolesSection, /mcpServers:\s*string\[\]/, "Role cards should type MCP servers alongside skills, tools, plugins, and workflows");
+assert.match(rolesSection, /\.\.\.role\.mcpServers/, "Roles search should include MCP server names");
 assert.match(
-  pluginsView,
+  rolesSection,
   /label="MCP Servers"[\s\S]{0,160}items=\{role\.mcpServers\}/,
   "Role cards should render a dedicated MCP Servers row",
 );
-
 assert.match(
-  pluginsView,
+  rolesSection,
   /No MCP servers/,
   "Role cards should explain roles with no MCP server bindings instead of treating MCP as generic tools",
 );
-
-// --- Roles tab bar is an accessible tablist (not just styled buttons) ---
-assert.match(pluginsView, /role="tablist"\s+aria-label="Roles sections"/, "the tab bar is a labelled tablist");
-assert.match(pluginsView, /role="tab"\s*\n\s*id=\{`plugins-tab-\$\{nextTab\}`\}/, "each tab carries role=tab + a stable id");
-assert.match(pluginsView, /aria-selected=\{tab === nextTab\}/, "the active tab is aria-selected");
-assert.match(pluginsView, /aria-controls=\{`plugins-panel-\$\{nextTab\}`\}/, "tabs point at their panel via aria-controls");
-assert.match(pluginsView, /tabIndex=\{tab === nextTab \? 0 : -1\}/, "the tablist uses a roving tab stop");
-assert.match(pluginsView, /e\.key === "ArrowRight"[\s\S]{0,80}?\(i \+ 1\) % tabSet\.length/, "Left/Right arrows move between tabs");
-assert.match(pluginsView, /role="tabpanel"\s*\n\s*id=\{`plugins-panel-\$\{tab\}`\}\s*\n\s*aria-labelledby=\{`plugins-tab-\$\{tab\}`\}/, "the content panels are tabpanels labelled by their tab");
-assert.match(pluginsView, /aria-label=\{`Search \$\{TAB_LABEL\[tab\]\.toLowerCase\(\)\}`\}/, "the search input has an accessible name");
+assert.match(
+  rolesSection,
+  /Browse the marketplace/,
+  "The empty Roles section cross-sells the store — that's the point of the merge",
+);
 
 // --- Keyboard shortcuts sheet (CHAT-D11-03) ---
 
@@ -228,3 +227,5 @@ assert.match(
   "Shell list panel must carry a distinct accessible name (axe landmark-unique)",
 );
 // The right companion (agent) panel was removed with the drag-to-split change.
+
+console.log("roles-tools-navigation.test.ts OK");

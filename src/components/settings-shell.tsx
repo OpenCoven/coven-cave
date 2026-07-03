@@ -686,7 +686,6 @@ type AddonKey =
   | "terminal"
   | "browser"
   | "flow"
-  | "roles"
   | "groupchat"
   | "journal";
 
@@ -740,13 +739,6 @@ const ADDON_ROWS: Array<{
     icon: "ph:flow-arrow",
     group: "surfaces",
     description: "Freeform automation editor — wire nodes on a canvas.",
-  },
-  {
-    key: "roles",
-    label: "Roles",
-    icon: "ph:mask-happy",
-    group: "surfaces",
-    description: "Agent personas, skills, and capabilities.",
   },
   {
     key: "groupchat",

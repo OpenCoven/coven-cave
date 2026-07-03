@@ -55,7 +55,6 @@ export type AddonsConfig = {
   terminal?: boolean;
   browser?: boolean;
   flow?: boolean;
-  roles?: boolean;
   groupchat?: boolean;
   journal?: boolean;
 };
@@ -115,8 +114,7 @@ const FOLDER_MODES: Array<{
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘6", description: "Shell session in your project" },
   { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘7", description: "Chat with a familiar beside your files and terminal" },
   { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description: "Saved docs, links, and reading" },
-  { id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description: "Agent personas, skills, and the capabilities your familiars can use" },
-  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description: "Browse and add MCP servers and skills to your familiars" },
+  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description: "Browse the store and manage your familiars' roles, skills, and capabilities" },
   { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
   { id: "evals", label: "Evals", iconName: "ph:flask", group: "tools", description: "Run test-case eval suites against a familiar and track pass rates" },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
@@ -277,7 +275,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     if (fm.id === "terminal") return addons?.terminal === true;
     if (fm.id === "browser") return addons?.browser === true;
     if (fm.id === "flow") return addons?.flow === true;
-    if (fm.id === "roles") return addons?.roles === true;
     if (fm.id === "groupchat") return addons?.groupchat === true;
     if (fm.id === "journal") return addons?.journal === true;
     return true;
@@ -338,9 +335,9 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
                 id={fm.id}
                 label={fm.label}
                 iconName={fm.iconName}
-                // Capabilities now lives as a tab on the Roles page, so keep the
-                // Roles entry lit when that mode is active.
-                active={mode === fm.id || (fm.id === "roles" && mode === "capabilities")}
+                // Roles and Capabilities are sections of the Marketplace hub,
+                // so keep the Marketplace entry lit when those modes are active.
+                active={mode === fm.id || (fm.id === "marketplace" && (mode === "roles" || mode === "capabilities"))}
                 badge={fm.badge?.(props)}
                 kbd={fm.kbd}
                 description={fm.description}

@@ -162,8 +162,14 @@ assert.match(
 
 assert.match(
   source,
-  /\{ id: "roles", label: "Roles", iconName: "ph:mask-happy", group: "tools", description:/,
-  "Roles should appear as a Tools surface",
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description:/,
+  "The merged Marketplace hub should appear as a Tools surface",
+);
+
+assert.doesNotMatch(
+  source,
+  /\{ id: "roles", label: "Roles"/,
+  "Roles is no longer a standalone nav entry — it merged into the Marketplace hub",
 );
 
 assert.doesNotMatch(
@@ -181,7 +187,7 @@ assert.match(
 assert.doesNotMatch(
   source,
   /\{ id: "capabilities",/,
-  "Capabilities is no longer a standalone nav entry — it moved to the rightmost tab of the Roles page",
+  "Capabilities is no longer a standalone nav entry — it is a section of the Marketplace hub",
 );
 
 assert.doesNotMatch(
@@ -262,8 +268,8 @@ assert.match(
 );
 assert.match(
   source,
-  /id:\s*"roles"[^}]*group:\s*"tools"/,
-  "roles stays in Tools",
+  /id:\s*"marketplace"[^}]*group:\s*"tools"/,
+  "marketplace stays in Tools",
 );
 assert.match(
   source,
@@ -336,16 +342,16 @@ assert.match(
 
 // Every surface carries a one-line description, and FolderRow surfaces it as a
 // title (hover tooltip / touch long-press hint / AT description) — so the
-// look-alike surfaces (Roles vs Flow) are differentiated.
+// look-alike surfaces (Marketplace vs Flow) are differentiated.
 assert.match(
   source,
-  /id: "roles"[\s\S]*?description: "Agent personas/,
-  "Roles is described as personas, distinct from Flow",
+  /id: "marketplace"[\s\S]*?description: "Browse the store/,
+  "Marketplace is described as the store + setup hub, distinct from Flow",
 );
 assert.match(
   source,
   /id: "flow"[\s\S]*?description: "Freeform/,
-  "Flow is described as the automation editor, distinct from Roles",
+  "Flow is described as the automation editor, distinct from Marketplace",
 );
 assert.match(
   source,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("./skill-browser.tsx", import.meta.url), "utf8");
-const plugins = readFileSync(new URL("./plugins-view.tsx", import.meta.url), "utf8");
+const hub = readFileSync(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 // ── Three-column browser: rail · list · detail ───────────────────────────────
@@ -53,15 +53,15 @@ assert.match(
 );
 assert.match(src, /onChanged\?\.\(\)/, "a successful delete asks the parent to re-scan");
 
-// ── plugins-view wiring: Skills tab renders the browser (no old drawer path) ──
-assert.match(plugins, /import \{ SkillBrowser \}/, "plugins-view imports SkillBrowser");
-assert.match(plugins, /<SkillBrowser\s+skills=\{skills\}/, "SkillsTab renders SkillBrowser with the full skill list");
-assert.match(plugins, /onChanged=\{loadSkills\}/, "SkillsTab wires onChanged to re-scan after a delete");
-assert.doesNotMatch(plugins, /import \{ SkillCard \}/, "the old flat SkillCard list is retired from the Skills tab");
-// The Skills tab is full-bleed so the browser owns per-column scrolling.
+// ── Marketplace-hub wiring: the Skills section renders the browser ───────────
+assert.match(hub, /import \{ SkillBrowser, type SkillBrowserEntry \}/, "the Marketplace hub imports SkillBrowser");
+assert.match(hub, /<SkillBrowser\s+skills=\{skills\}/, "the Skills section renders SkillBrowser with the full skill list");
+assert.match(hub, /onChanged=\{loadSkills\}/, "the Skills section wires onChanged to re-scan after a delete");
+assert.doesNotMatch(hub, /import \{ SkillCard \}/, "the old flat SkillCard list stays retired");
+// The Skills section is full-bleed so the browser owns per-column scrolling.
 assert.match(
-  plugins,
-  /tab === "skills" \? "overflow-hidden" : "overflow-y-auto/,
+  hub,
+  /id="marketplace-panel-skills"[\s\S]{0,120}overflow-hidden/,
   "the Skills tabpanel is full-bleed (browser scrolls its own columns)",
 );
 
