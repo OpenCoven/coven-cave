@@ -23,6 +23,11 @@ struct QRScannerSheet: UIViewControllerRepresentable {
         return scanner
     }
 
+    static func dismantleUIViewController(_ controller: DataScannerViewController, coordinator: Coordinator) {
+        try? controller.stopScanning()
+        controller.delegate = nil
+    }
+
     func updateUIViewController(_ controller: DataScannerViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator { Coordinator(onScan: onScan) }
