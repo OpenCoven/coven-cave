@@ -1450,6 +1450,19 @@ export function Workspace() {
     });
   }, []);
 
+  // Promote a split tile to the sole surface (its divider was dragged past the
+  // far edge, collapsing the primary). Only page tiles map to a primary mode —
+  // switching to it makes the redundant-split effect below clear the tile.
+  // Companion tiles (Salem / Memory / Browser) have no primary mode, so they
+  // stay put (the host leaves them at max width instead).
+  const promoteSplitTile = useCallback(
+    (id: string) => {
+      const target = splitTargets.find((t) => splitTargetKey(t) === id);
+      if (target?.kind === "page") setMode(target.mode);
+    },
+    [splitTargets],
+  );
+
   // Page splits showing the same page as the primary are redundant — clear them
   // (e.g. the user navigated the primary surface to a page in the split).
   useEffect(() => {
@@ -2266,6 +2279,7 @@ export function Workspace() {
         splitSide={splitSide}
         onCloseSplit={closeSplit}
         onCloseSplitTile={closeSplitTile}
+        onPromoteSplitTile={promoteSplitTile}
         onDropSplitPage={openSplitPage}
         topBar={({ navDrawerOpen, listDrawerOpen }) => (
           <>

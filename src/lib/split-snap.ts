@@ -4,9 +4,11 @@
  * The detail area can host a second "page" beside the primary surface. The
  * secondary pane is resizable, and — like a modern desktop window manager —
  * the divider *snaps* to a set of clean ratios (a third, a half, two thirds)
- * when the user drags close to them, and the pane closes entirely when dragged
- * past the near edge. All sizes are expressed as the **secondary pane's**
- * fraction of the split group (0..1), independent of which side it sits on.
+ * when the user drags close to them. Dragging past *either* edge collapses the
+ * pane on that side: past the near edge closes the secondary (the primary
+ * fills), and past the far edge collapses the primary (the secondary fills).
+ * All sizes are expressed as the **secondary pane's** fraction of the split
+ * group (0..1), independent of which side it sits on.
  */
 
 export type SnapPoint = {
@@ -29,8 +31,19 @@ export const SPLIT_DEFAULT_RATIO = 1 / 2;
 /** Below this secondary fraction, releasing the drag closes the split. */
 export const SPLIT_CLOSE_RATIO = 0.16;
 
-/** Secondary cannot grow beyond this (the primary keeps a usable column). */
-export const SPLIT_MAX_RATIO = 0.84;
+/**
+ * Above this secondary fraction, releasing the drag collapses the *primary* and
+ * promotes the secondary to fill the surface — the mirror image of
+ * SPLIT_CLOSE_RATIO on the far edge (same 0.06 past-the-edge margin).
+ */
+export const SPLIT_COLLAPSE_RATIO = 0.84;
+
+/**
+ * Secondary cannot grow beyond this while resizing. It sits past
+ * SPLIT_COLLAPSE_RATIO so the divider can enter the collapse zone (mirroring
+ * how the 10% panel min lets it enter the close zone below SPLIT_CLOSE_RATIO).
+ */
+export const SPLIT_MAX_RATIO = 0.9;
 
 /** Snap engages when the divider is within this fraction of a snap point. */
 export const SPLIT_SNAP_THRESHOLD = 0.04;
@@ -63,16 +76,20 @@ export function nearestSnap(
 
 export type SplitRelease =
   | { action: "close" }
+  | { action: "collapse" }
   | { action: "snap"; ratio: number; label: string }
   | { action: "keep"; ratio: number };
 
 /**
  * Resolve what should happen when the user *releases* the divider at `ratio`:
- * close the split if it was dragged past the near edge, snap to the nearest
- * clean ratio if within the threshold, otherwise keep the freely-chosen size.
+ * close the split if it was dragged past the near edge, collapse the primary
+ * (promote the secondary to full) if dragged past the far edge, snap to the
+ * nearest clean ratio if within the threshold, otherwise keep the freely-chosen
+ * size.
  */
 export function resolveSplitRelease(ratio: number): SplitRelease {
   if (ratio < SPLIT_CLOSE_RATIO) return { action: "close" };
+  if (ratio > SPLIT_COLLAPSE_RATIO) return { action: "collapse" };
   const snap = nearestSnap(ratio);
   if (snap) return { action: "snap", ratio: snap.ratio, label: snap.label };
   return { action: "keep", ratio: clampSplitRatio(ratio) };

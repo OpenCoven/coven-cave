@@ -27,6 +27,7 @@ import {
   SPLIT_DEFAULT_RATIO,
   SPLIT_MAX_RATIO,
   SPLIT_CLOSE_RATIO,
+  SPLIT_COLLAPSE_RATIO,
   nearestSnap,
   resolveSplitRelease,
   dividerOffset,
@@ -50,6 +51,11 @@ export type DetailSplitHostProps = {
   onClose: () => void;
   /** Close one secondary tile. */
   onCloseTile: (id: string) => void;
+  /**
+   * Promote a secondary tile to the sole surface — invoked when its divider is
+   * dragged past the far edge (collapsing the primary).
+   */
+  onPromoteTile?: (id: string) => void;
   /** A page was dropped into the main area on the given side. */
   onDropPage: (mode: string, side: "left" | "right") => void;
   /** Enable the drag-to-split drop zone (desktop only). */
@@ -64,6 +70,7 @@ export function DetailSplitHost({
   secondarySide,
   onClose,
   onCloseTile,
+  onPromoteTile,
   onDropPage,
   enableDrop,
 }: DetailSplitHostProps) {
@@ -117,9 +124,16 @@ export function DetailSplitHost({
   };
 
   // ---- Resizable split with snapping -------------------------------------
+  // The divider is react-resizable-panels' own <Separator>, which owns the
+  // pointer drag and resizes freely. It swallows the pointerdown, so we can't
+  // hang a "drag started" handler off the visible handle. Instead we track the
+  // live ratio from RRP's onResize and detect the *release* from a global
+  // pointerup: if the ratio moved while a pointer was held, that was a divider
+  // drag — resolve it to snap / close / collapse.
   const secRef = usePanelRef();
   const ratioRef = React.useRef(SPLIT_DEFAULT_RATIO);
-  const draggingRef = React.useRef(false);
+  const pointerDownRef = React.useRef(false);
+  const dragStartRatioRef = React.useRef(SPLIT_DEFAULT_RATIO);
   const [dragRatio, setDragRatio] = React.useState<number | null>(null);
 
   // Reset the live divider tracking whenever a fresh split opens.
@@ -127,7 +141,7 @@ export function DetailSplitHost({
     if (secondaryTiles.length === 1) {
       ratioRef.current = SPLIT_DEFAULT_RATIO;
       setDragRatio(null);
-      draggingRef.current = false;
+      pointerDownRef.current = false;
     }
   }, [secondaryTiles.length, secondarySide]);
 
@@ -135,34 +149,52 @@ export function DetailSplitHost({
     (size: { asPercentage: number }) => {
       const ratio = size.asPercentage / 100;
       ratioRef.current = ratio;
-      if (draggingRef.current) setDragRatio(ratio);
+      // A live resize under a held pointer is a divider drag → show the guide.
+      if (pointerDownRef.current) setDragRatio(ratio);
     },
     [],
   );
 
-  const beginDividerDrag = React.useCallback(() => {
-    draggingRef.current = true;
-    setDragRatio(ratioRef.current);
-    const finish = () => {
-      window.removeEventListener("mouseup", finish);
-      window.removeEventListener("pointerup", finish);
-      if (!draggingRef.current) return;
-      draggingRef.current = false;
+  // Divider release detection for the 2-pane (snap-assisted) split. Capture
+  // pointer up/down at the window so it works regardless of RRP eating the
+  // event on the separator itself.
+  React.useEffect(() => {
+    if (secondaryTiles.length !== 1) return;
+    const onDown = () => {
+      pointerDownRef.current = true;
+      dragStartRatioRef.current = ratioRef.current;
+    };
+    const onUp = () => {
+      if (!pointerDownRef.current) return;
+      pointerDownRef.current = false;
       setDragRatio(null);
+      // Only a real divider drag moves the ratio; ignore unrelated clicks.
+      if (Math.abs(ratioRef.current - dragStartRatioRef.current) < 0.002) return;
       const release = resolveSplitRelease(ratioRef.current);
       if (release.action === "close") onClose();
-      else if (release.action === "snap") secRef.current?.resize(PCT(release.ratio));
+      else if (release.action === "collapse") {
+        // Dragged past the far edge — collapse the primary and let the secondary
+        // fill. If it can't be promoted (e.g. a companion with no primary mode),
+        // fall back to sitting at the max width rather than snapping shut.
+        const tile = secondaryTiles[0];
+        if (tile && onPromoteTile) onPromoteTile(tile.id);
+        else secRef.current?.resize(PCT(SPLIT_MAX_RATIO));
+      } else if (release.action === "snap") secRef.current?.resize(PCT(release.ratio));
     };
-    window.addEventListener("mouseup", finish);
-    window.addEventListener("pointerup", finish);
-  }, [onClose, secRef]);
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("pointerup", onUp, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("pointerup", onUp, true);
+    };
+  }, [secondaryTiles, onClose, onPromoteTile, secRef]);
 
   // Keyboard / button snap helpers shown in the pane header.
   const snapTo = (ratio: number) => secRef.current?.resize(PCT(ratio));
 
   const separator = (
     <Separator className="shell-separator split-host__sep">
-      <SeparatorHandle orientation="col" onMouseDown={beginDividerDrag} />
+      <SeparatorHandle orientation="col" />
     </Separator>
   );
 
@@ -250,7 +282,9 @@ export function DetailSplitHost({
       id="split-primary"
       className="split-host__tile-panel flex min-h-0 min-w-0"
       data-active={activeTileId === "primary"}
-      minSize="16%"
+      // Mirrors the secondary's 10% min so the divider can be dragged wide
+      // enough to enter the far-edge collapse zone (secondary → SPLIT_MAX_RATIO).
+      minSize="10%"
     >
       <div className="min-h-0 min-w-0 flex-1">{primary}</div>
     </Panel>
@@ -291,18 +325,20 @@ export function DetailSplitHost({
 
   // Live snap guide while dragging the divider.
   const snapPreview = dragRatio != null ? nearestSnap(dragRatio) : null;
+  const inCloseZone = dragRatio != null && dragRatio < SPLIT_CLOSE_RATIO;
+  const inCollapseZone = dragRatio != null && dragRatio > SPLIT_COLLAPSE_RATIO;
   const guideRatio = snapPreview ? snapPreview.ratio : dragRatio;
   const guide =
     dragRatio != null && guideRatio != null ? (
       <div
         className={`split-host__guide${snapPreview ? " split-host__guide--snap" : ""}${
-          dragRatio < SPLIT_CLOSE_RATIO ? " split-host__guide--close" : ""
-        }`}
+          inCloseZone ? " split-host__guide--close" : ""
+        }${inCollapseZone ? " split-host__guide--collapse" : ""}`}
         style={{ left: PCT(dividerOffset(guideRatio, secondarySide)) }}
         aria-hidden
       >
         <span className="split-host__guide-chip">
-          {dragRatio < SPLIT_CLOSE_RATIO ? "Close" : snapPreview ? snapPreview.label : null}
+          {inCloseZone ? "Close" : inCollapseZone ? "Fill" : snapPreview ? snapPreview.label : null}
         </span>
       </div>
     ) : null;

@@ -24,9 +24,13 @@ test("DetailSplitHost renders drop zones + a snapping divider", () => {
   assert.match(src, /onDropPage\(drag\.mode, side\)/, "drop opens the page on a side");
   // Snapping on divider release goes through the pure resolver.
   assert.match(src, /resolveSplitRelease\(ratioRef\.current\)/);
-  assert.match(src, /release\.action === "close"/, "drag past the edge closes the split");
+  assert.match(src, /release\.action === "close"/, "drag past the near edge closes the split");
   assert.match(src, /secRef\.current\?\.resize\(PCT\(release\.ratio\)\)/, "snaps via imperative resize");
   assert.match(src, /nearestSnap\(dragRatio\)/, "live snap guide");
+  // Dragging past the FAR edge collapses the primary and promotes the secondary.
+  assert.match(src, /release\.action === "collapse"/, "drag past the far edge collapses the primary");
+  assert.match(src, /onPromoteTile\(tile\.id\)/, "collapse promotes the secondary tile to the sole surface");
+  assert.match(src, /split-host__guide--collapse/, "far-edge drag shows the fill guide");
 });
 
 test("DetailSplitHost supports optimized variants for up to four visible pages", () => {
@@ -42,6 +46,7 @@ test("Shell hosts the split inside the detail main with a drop zone", () => {
   const src = read("./shell.tsx");
   assert.match(src, /import \{ DetailSplitHost, type DetailSplitTile \}/);
   assert.match(src, /<DetailSplitHost[\s\S]*?primary=\{detail\}[\s\S]*?secondaryTiles=\{splitTiles\}/);
+  assert.match(src, /onPromoteTile=\{\(id\) => onPromoteSplitTile\?\.\(id\)\}/, "forwards the promote handler");
   assert.match(src, /enableDrop=\{!isMobile\}/, "drop zone is desktop-only");
 });
 
@@ -55,6 +60,10 @@ test("workspace owns split state and the drop handler, and reuses renderSurface"
   assert.match(src, /renderSurface\(target\.mode\)/, "secondary tiles reuse the same machinery");
   assert.match(src, /onDropSplitPage=\{openSplitPage\}/);
   assert.match(src, /addSplitTarget\(\{ kind: "salem" \}\)/, "Salem re-homed into the split (not the removed rail)");
+  // Far-edge collapse promotes a page split to the primary via setMode.
+  assert.match(src, /const promoteSplitTile = useCallback/, "workspace owns the promote handler");
+  assert.match(src, /if \(target\?\.kind === "page"\) setMode\(target\.mode\)/, "promoting a page switches the primary mode");
+  assert.match(src, /onPromoteSplitTile=\{promoteSplitTile\}/, "promote handler is passed to Shell");
 });
 
 test("the right companion (agent) panel is no longer mounted", () => {

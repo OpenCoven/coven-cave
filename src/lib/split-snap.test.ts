@@ -6,6 +6,7 @@ import {
   clampSplitRatio,
   dividerOffset,
   SPLIT_CLOSE_RATIO,
+  SPLIT_COLLAPSE_RATIO,
   SPLIT_MAX_RATIO,
   SPLIT_SNAP_THRESHOLD,
 } from "./split-snap.ts";
@@ -29,6 +30,21 @@ test("nearestSnap returns null in free space between snap points", () => {
 test("resolveSplitRelease closes when dragged past the near edge", () => {
   const r = resolveSplitRelease(SPLIT_CLOSE_RATIO - 0.02);
   assert.equal(r.action, "close");
+});
+
+test("resolveSplitRelease collapses the primary when dragged past the far edge", () => {
+  const r = resolveSplitRelease(SPLIT_COLLAPSE_RATIO + 0.02);
+  assert.equal(r.action, "collapse");
+});
+
+test("the collapse edge mirrors the close edge (symmetric past-the-edge margins)", () => {
+  // The pane panels clamp to 10%/90% min/max. Close fires 0.06 above the 10%
+  // floor; collapse fires the same 0.06 below the 90% ceiling.
+  const PANEL_MIN = 0.1;
+  const closeMargin = SPLIT_CLOSE_RATIO - PANEL_MIN;
+  const collapseMargin = SPLIT_MAX_RATIO - SPLIT_COLLAPSE_RATIO;
+  assert.ok(Math.abs(closeMargin - collapseMargin) < 1e-9, "close and collapse margins match");
+  assert.ok(SPLIT_COLLAPSE_RATIO < SPLIT_MAX_RATIO, "the divider can enter the collapse zone before the max");
 });
 
 test("resolveSplitRelease snaps to a clean ratio near a snap point", () => {

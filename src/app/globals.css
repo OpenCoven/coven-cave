@@ -2300,10 +2300,15 @@ textarea.required-inputs-control {
 }
 .ui-sep-handle--col {
   width: 1px;
+  /* Fill the separator's height so the handle is actually clickable — a block
+     child otherwise collapses to 0 height, leaving the drag handler (and its
+     hover affordance / hit area) unreachable. */
+  height: 100%;
   cursor: col-resize;
 }
 .ui-sep-handle--row {
   height: 1px;
+  width: 100%;
   cursor: row-resize;
 }
 .ui-sep-handle::before {
@@ -10235,6 +10240,13 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
     0 0 12px color-mix(in oklch, var(--accent) 55%, transparent);
 }
 .split-host__guide--close { background: var(--color-danger, #e5484d); }
+/* Far-edge "Fill" state — promoting the secondary to the whole surface. Uses
+   the accent (a positive/constructive action) with a stronger glow than snap. */
+.split-host__guide--collapse {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 55%, transparent),
+    0 0 16px color-mix(in oklch, var(--accent) 70%, transparent);
+}
 .split-host__guide-chip {
   position: absolute;
   top: 10px;
