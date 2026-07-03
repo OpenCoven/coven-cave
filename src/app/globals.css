@@ -10100,11 +10100,16 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
  * ====================================================================== */
 .shell-detail { position: relative; }
 
-/* The resizable split group fills the detail panel like the solo surface. */
+/* The resizable split group fills the detail panel like the solo surface.
+ * `width: 100%` is belt-and-suspenders: react-resizable-panels normally sets
+ * it inline, but if that inline style is missing/late (observed in the desktop
+ * webview) the group must still span the full detail width so the panes never
+ * leave a trailing gap on the far edge. */
 .split-host__group {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
+  width: 100%;
 }
 
 .split-host__mobile-switcher {
@@ -10215,6 +10220,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .split-host__pane-body > * {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
 }
 
 /* Live snap guide drawn while dragging the divider. */

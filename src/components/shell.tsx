@@ -41,18 +41,28 @@ const shellStorage = {
     try {
       const raw = window.localStorage.getItem(key);
       if (raw) {
-        // Guard: clear corrupted layouts where detail panel (id="detail") is ≤5%.
+        // Guard against corrupt/stale saved layouts that would leave dead space
+        // in the detail area. react-resizable-panels v4 persists each group as a
+        // flat `{ "<panelId>": <percent>, … }` map (e.g. {"nav":26.5,"detail":73.5}).
+        // Drop the layout — falling back to the default — when a panel is
+        // collapsed to ~0 or the panels don't sum to ~100% (a leftover layout
+        // from an old panel set under-fills the group and never re-expands).
         try {
-          const parsed = JSON.parse(raw) as Record<string, { layout?: number[] }>;
-          for (const entry of Object.values(parsed)) {
-            if (!Array.isArray(entry?.layout)) continue;
-            // detail is last non-bottom panel; if any panel is suspiciously ≤2%, nuke the layout.
-            if (entry.layout.some((v, i) => i > 0 && v <= 2)) {
-              window.localStorage.removeItem(key);
-              return null;
+          const parsed = JSON.parse(raw) as unknown;
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const values = Object.values(parsed as Record<string, unknown>).filter(
+              (v): v is number => typeof v === "number" && Number.isFinite(v),
+            );
+            if (values.length >= 2) {
+              const sum = values.reduce((a, b) => a + b, 0);
+              const anyCollapsed = values.some((v) => v > 0 && v <= 2);
+              if (anyCollapsed || sum < 98 || sum > 102) {
+                window.localStorage.removeItem(key);
+                return null;
+              }
             }
           }
-        } catch { /* not JSON layout, pass through */ }
+        } catch { /* not a layout object, pass through */ }
       }
       return raw;
     } catch {
