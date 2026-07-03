@@ -626,7 +626,8 @@ final class AppModel {
               let token = CaveConnection.accessToken,
               let expiry = CaveInvite.tokenExpiry(token) else { return }
         let renewalWindow: TimeInterval = 7 * 24 * 3600
-        guard expiry.timeIntervalSinceNow < renewalWindow else { return }
+        let secondsUntilExpiry = expiry.timeIntervalSinceNow
+        guard secondsUntilExpiry > 0 && secondsUntilExpiry < renewalWindow else { return }
         if let fresh = await client.refreshAccessToken() {
             CaveConnection.saveAccessToken(fresh)
         }
