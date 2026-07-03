@@ -72,16 +72,18 @@ assert.match(source, /const mountedRef = useRef\(true\)/, "tracks mounted state 
 assert.match(source, /const runsReqRef = useRef\(0\)/, "refreshRuns tracks a request id");
 assert.match(source, /if \(reqId !== runsReqRef\.current \|\| !mountedRef\.current\) return/, "a stale/late runs fetch is dropped");
 
-// ── Per-row quick actions (run-now + pause/resume), revealed on hover ──
+// ── Per-row quick actions (run-now + pause/resume), always visible ──
 assert.match(source, /const ScheduleActionsContext = createContext/, "row actions are provided via context (no prop threading)");
 assert.match(source, /<ScheduleActionsContext\.Provider/, "AutomationsView provides the row actions");
 assert.match(source, /runReminder: runNow/, "reminder run-now is wired");
 assert.match(source, /togglePauseReminder: togglePaused/, "reminder pause/resume is wired");
 assert.match(source, /runAutomation: runCodexNow/, "automation run-now is wired");
 assert.match(source, /togglePauseAutomation: toggleCodex/, "automation pause/resume is wired");
-// Hidden actions must not steal clicks meant for the row's detail panel.
-assert.match(source, /pointer-events-none[\s\S]*?group-hover\/srow:pointer-events-auto/, "hidden row actions keep pointer-events:none until hover/focus");
-assert.match(source, /onClick=\{\(e\) => \{ e\.stopPropagation\(\); onClick\(\); \}\}/, "a row action stops the click from opening the detail panel");
+// Actions are labeled, always-visible siblings of the row button (never a
+// hover-revealed overlay, and never nested inside the row's own button).
+assert.doesNotMatch(source, /group-hover\/srow/, "row actions are always visible — no hover reveal remains");
+assert.match(source, /text=\{paused \? "Resume" : "Pause"\}/, "the reminder row's pause action is a labeled button");
+assert.match(source, /text=\{isActive \? "Pause" : "Resume"\}/, "the cron row's pause action is a labeled button");
 assert.match(source, /actions\.runAutomation\(auto\)/, "the automation row exposes run-now");
 assert.match(source, /actions\.togglePauseReminder\(item\)/, "the reminder row exposes pause/resume");
 assert.match(source, /item\.kind !== "daily-summary"/, "daily-summary rows get no run/pause actions");
@@ -127,3 +129,22 @@ assert.match(source, /idPrefix="automations"/, "tabs get ids so the panel can re
 assert.match(source, /role="tabpanel"[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}/, "the content region is a labelled tabpanel");
 assert.match(source, /if \(e\.key === "Escape"\) \{[\s\S]{0,120}setNewMenuOpen\(false\);[\s\S]{0,60}newBtnRef\.current\?\.focus\(\)/, "the New menu closes on Escape and returns focus to its trigger");
 assert.match(source, /window\.setTimeout\(\(\) => newBtnRef\.current\?\.focus\(\), 0\)/, "deletes hand focus somewhere stable instead of dropping it on <body>");
+
+// ── 2026-07-03 audit batch C ──────────────────────────────────────────────────
+// The Activity tab opens this panel for agent/response items too — those are
+// records, not schedules, so the run/pause/edit mutations are reminder-only.
+assert.match(source, /const isReminder = item\.kind === "reminder"/, "the detail panel derives the selected item's kind");
+assert.match(source, /isReminder \? "Reminder details" : "Activity details"/, "non-reminder activity gets an honest panel heading");
+assert.match(source, /\{onEdit && isReminder && \(/, "Edit only renders for reminders");
+assert.match(source, /\{isRecurring && isReminder && \(/, "Stop-repeating only renders for reminders");
+assert.doesNotMatch(source, /\{onEdit && !isDailySummary && \(/, "the old summary-only action gate is gone");
+// Reminder run-now confirms like crons and flows — identical Run buttons on the
+// All tab must not behave differently per type.
+assert.match(source, /This fires the reminder immediately\./, "reminder run-now is confirm-gated");
+assert.match(source, /every type confirms before running/, "runEntry documents the uniform confirm");
+// Pause/resume reaches every tab: flows gain a mutation, the All list dispatches.
+assert.match(source, /const toggleFlowActive = useCallback/, "flows have a pause/resume mutation");
+assert.match(source, /saveFlow\(setFlowActive\(flow, !pausing\)\)/, "flow pause persists via the editor's full-doc save convention");
+assert.match(source, /announce\(`\$\{pausing \? "Paused" : "Resumed"\} '\$\{flow\.name\}'\.`\)/, "flow pause/resume announces");
+assert.match(source, /const togglePauseEntry = useCallback/, "the All list dispatches pause per type");
+assert.match(source, /onTogglePause=\{pausable\(entry\) \? onTogglePause : undefined\}/, "non-pausable entries (daily summaries) hide the control");

@@ -35,7 +35,8 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 import { AutomationCreateDialog, type AutomationCreateInput } from "@/components/automation-create-dialog";
-import { listFlows, runFlow, type FlowDoc } from "@/lib/flows";
+import { listFlows, runFlow, saveFlow, type FlowDoc } from "@/lib/flows";
+import { setActive as setFlowActive } from "@/lib/flow/flow-doc";
 import {
   buildAutomationEntries,
   filterEntries,
@@ -211,6 +212,10 @@ function DetailPanel({
   const paused = item.status === "dismissed" && item.recurrence?.type !== "none";
   const isRecurring = item.recurrence && item.recurrence.type !== "none";
   const isDailySummary = item.kind === "daily-summary";
+  // Agent / response-needed items open this panel from the Activity tab too.
+  // Those are records, not schedules — the schedule fields and the
+  // Run/Pause/Edit mutations only make sense for actual reminders.
+  const isReminder = item.kind === "reminder";
   const busy = busyId === item.id;
 
   return (
@@ -220,7 +225,7 @@ function DetailPanel({
       <div className="flex items-center justify-between border-b px-5 py-3"
         style={{ borderColor: "var(--border-hairline)" }}>
         <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
-          {isDailySummary ? "Daily summary details" : "Reminder details"}
+          {isDailySummary ? "Daily summary details" : isReminder ? "Reminder details" : "Activity details"}
         </h2>
         <button type="button" onClick={onClose} aria-label="Close"
           className="focus-ring rounded p-1 transition-colors hover:bg-white/5"
@@ -250,7 +255,7 @@ function DetailPanel({
         )}
 
         <div className="grid grid-cols-1 gap-4">
-          {!isDailySummary && (
+          {isReminder && (
             <div>
               <FieldLabel>Schedule</FieldLabel>
               <p className="text-[12px]" style={{ color: "var(--text-primary)" }}>
@@ -264,7 +269,7 @@ function DetailPanel({
               {paused ? "Paused" : item.status}
             </p>
           </div>
-          {!isDailySummary && (
+          {isReminder && (
             <div>
               <FieldLabel>Next run</FieldLabel>
               <p
@@ -277,13 +282,13 @@ function DetailPanel({
             </div>
           )}
           <div>
-            <FieldLabel>{isDailySummary ? "Sent" : "Last run"}</FieldLabel>
+            <FieldLabel>{isDailySummary ? "Sent" : isReminder ? "Last run" : "Received"}</FieldLabel>
             <p
               className="text-[12px]"
               style={{ color: item.firedAt ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}
               title={item.firedAt ? formatTimestamp(item.firedAt, readDateTimePrefs()) : undefined}
             >
-              {item.firedAt ? relTime(item.firedAt) : "Never"}
+              {item.firedAt ? relTime(item.firedAt) : isReminder ? "Never" : "—"}
             </p>
           </div>
         </div>
@@ -319,7 +324,7 @@ function DetailPanel({
       {/* Actions */}
       <div className="border-t px-5 py-4 space-y-2"
         style={{ borderColor: "var(--border-hairline)" }}>
-        {onEdit && !isDailySummary && (
+        {onEdit && isReminder && (
           <button type="button" disabled={busy} onClick={() => onEdit(item)}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
             style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
@@ -327,7 +332,7 @@ function DetailPanel({
             Edit
           </button>
         )}
-        {!isDailySummary && (
+        {isReminder && (
           <>
             <button type="button" disabled={busy || paused} onClick={() => runNow(item.id)}
               className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
@@ -341,7 +346,7 @@ function DetailPanel({
             </button>
           </>
         )}
-        {isRecurring && !isDailySummary && (
+        {isRecurring && isReminder && (
           <button type="button" disabled={busy} onClick={() => stopRecurrence(item.id)}
             className="w-full rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
             style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
@@ -359,9 +364,9 @@ function DetailPanel({
 }
 
 // Row quick-actions (run-now, pause/resume) are wired once at the top of the
-// view and read by each leaf row — so the most-used actions are one hover away
-// instead of buried in the detail panel. Avoids threading callbacks through the
-// list/section components.
+// view and read by each leaf row — so the most-used actions sit right on the
+// row instead of buried in the detail panel. Avoids threading callbacks through
+// the list/section components.
 type ScheduleActions = {
   runReminder: (id: string) => void;
   togglePauseReminder: (item: InboxItem) => void;
@@ -370,32 +375,26 @@ type ScheduleActions = {
 };
 const ScheduleActionsContext = createContext<ScheduleActions | null>(null);
 
-function RowActionButton({ icon, label, onClick }: { icon: IconName; label: string; onClick: () => void }) {
+// Always-visible labeled row action — the same affordance the All/Flows rows
+// use, so every tab exposes identical controls. Rendered as a sibling of the
+// row's own button (never nested), so a click can't also open the detail panel.
+function RowActionButton({ icon, label, text, onClick }: { icon: IconName; label: string; text: string; onClick: () => void }) {
   return (
     <button
       type="button"
-      title={label}
       aria-label={label}
-      onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className="focus-ring grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-white/10 hover:text-[var(--text-primary)]"
+      onClick={onClick}
+      className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10"
+      style={{ color: "var(--text-secondary)" }}
     >
-      <Icon name={icon} width={12} />
+      <Icon name={icon} width={11} aria-hidden />
+      {text}
     </button>
   );
 }
 
-// Hover/focus-revealed action cluster pinned to the right of a schedule row.
-// Hidden rows keep `pointer-events:none` so a non-hover click still opens the
-// row's detail panel rather than landing on an invisible action.
 function RowActions({ children }: { children: ReactNode }) {
-  return (
-    <div
-      className="pointer-events-none absolute right-1.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md border border-[var(--border-hairline)] px-0.5 py-0.5 opacity-0 transition-opacity group-hover/srow:pointer-events-auto group-hover/srow:opacity-100 group-focus-within/srow:pointer-events-auto group-focus-within/srow:opacity-100 motion-reduce:transition-none"
-      style={{ background: "var(--bg-elevated)" }}
-    >
-      {children}
-    </div>
-  );
+  return <span className="flex shrink-0 items-center gap-0.5 pl-1">{children}</span>;
 }
 
 function ReminderTaskRow({
@@ -439,13 +438,13 @@ function ReminderTaskRow({
   const showActions = !selectMode && item.kind !== "daily-summary" && !!actions;
 
   return (
-    <li className="group/srow relative">
+    <li className="flex items-center">
       <button
         type="button"
         role={selectMode ? "checkbox" : undefined}
         aria-checked={selectMode ? checked : undefined}
         onClick={activate}
-        className="focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
+        className="focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors"
         style={{
           background: active ? "rgba(255,255,255,0.05)" : "transparent",
         }}
@@ -487,11 +486,12 @@ function ReminderTaskRow({
       {showActions && actions && (
         <RowActions>
           {!paused && (
-            <RowActionButton icon="ph:lightning-bold" label={`Run ${item.title} now`} onClick={() => actions.runReminder(item.id)} />
+            <RowActionButton icon="ph:play" label={`Run ${item.title} now`} text="Run" onClick={() => actions.runReminder(item.id)} />
           )}
           <RowActionButton
-            icon={paused ? "ph:play-fill" : "ph:pause-fill"}
+            icon={paused ? "ph:play" : "ph:pause"}
             label={`${paused ? "Resume" : "Pause"} ${item.title}`}
+            text={paused ? "Resume" : "Pause"}
             onClick={() => actions.togglePauseReminder(item)}
           />
         </RowActions>
@@ -1004,12 +1004,12 @@ function AutomationScheduleRow({
   const isActive = auto.status === "ACTIVE";
   const actions = useContext(ScheduleActionsContext);
   return (
-    <li className="group/srow relative">
+    <li className="flex items-center">
       <button
         type="button"
         onClick={() => onSelect(auto)}
         aria-current={selected ? "true" : undefined}
-        className={`focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-white/5" : "hover:bg-white/5"}`}
+        className={`focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-white/5" : "hover:bg-white/5"}`}
       >
         {/* Status dot */}
         {isActive ? (
@@ -1055,10 +1055,11 @@ function AutomationScheduleRow({
       </button>
       {actions && (
         <RowActions>
-          <RowActionButton icon="ph:lightning-bold" label={`Run ${auto.name} now`} onClick={() => actions.runAutomation(auto)} />
+          <RowActionButton icon="ph:play" label={`Run ${auto.name} now`} text="Run" onClick={() => actions.runAutomation(auto)} />
           <RowActionButton
-            icon={isActive ? "ph:pause-fill" : "ph:play-fill"}
-            label={`${isActive ? "Pause" : "Activate"} ${auto.name}`}
+            icon={isActive ? "ph:pause" : "ph:play"}
+            label={`${isActive ? "Pause" : "Resume"} ${auto.name}`}
+            text={isActive ? "Pause" : "Resume"}
             onClick={() => actions.togglePauseAutomation(auto)}
           />
         </RowActions>
@@ -1356,14 +1357,17 @@ function AutomationEntryRow({
   busy,
   onRun,
   onOpen,
+  onTogglePause,
 }: {
   entry: AutomationEntry;
   familiarLabel: (id?: string | null) => string | null;
   busy: boolean;
   onRun: (entry: AutomationEntry) => void;
   onOpen: (entry: AutomationEntry) => void;
+  onTogglePause?: (entry: AutomationEntry) => void;
 }) {
   const fam = familiarLabel(entry.familiarId);
+  const entryPaused = entry.state === "paused";
   // Next fire (reminders only, for now) as a friendly relative time alongside the
   // schedule string — so the unified list answers "when next?" at a glance.
   const nextFire = entry.state === "active" && entry.nextFireAt ? relTime(entry.nextFireAt) : null;
@@ -1407,6 +1411,19 @@ function AutomationEntryRow({
             <Icon name="ph:play" width={11} aria-hidden />
             {busy ? "…" : "Run"}
           </button>
+          {onTogglePause && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onTogglePause(entry)}
+              aria-label={`${entryPaused ? "Resume" : "Pause"} ${entry.name}`}
+              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <Icon name={entryPaused ? "ph:play" : "ph:pause"} width={11} aria-hidden />
+              {entryPaused ? "Resume" : "Pause"}
+            </button>
+          )}
         </span>
       </span>
       <StateDot state={entry.state} />
@@ -1420,12 +1437,16 @@ function AutomationAllList({
   familiarLabel,
   onRun,
   onOpen,
+  onTogglePause,
+  pausable,
 }: {
   entries: AutomationEntry[];
   busyId: string | null;
   familiarLabel: (id?: string | null) => string | null;
   onRun: (entry: AutomationEntry) => void;
   onOpen: (entry: AutomationEntry) => void;
+  onTogglePause: (entry: AutomationEntry) => void;
+  pausable: (entry: AutomationEntry) => boolean;
 }) {
   return (
     <div className="space-y-1.5 pt-1">
@@ -1437,6 +1458,7 @@ function AutomationAllList({
           busy={busyId === entryBusyKey(entry)}
           onRun={onRun}
           onOpen={onOpen}
+          onTogglePause={pausable(entry) ? onTogglePause : undefined}
         />
       ))}
     </div>
@@ -1449,15 +1471,19 @@ function ManagedAutomationRow({
   name,
   meta,
   busy,
+  paused,
   onRun,
   onOpen,
+  onTogglePause,
 }: {
   type: AutomationType;
   name: string;
   meta: string;
   busy: boolean;
+  paused?: boolean;
   onRun: () => void;
   onOpen: () => void;
+  onTogglePause?: () => void;
 }) {
   return (
     <div
@@ -1480,6 +1506,19 @@ function ManagedAutomationRow({
             <Icon name="ph:play" width={11} aria-hidden />
             {busy ? "…" : "Run"}
           </button>
+          {onTogglePause && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onTogglePause}
+              aria-label={`${paused ? "Resume" : "Pause"} ${name}`}
+              className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
+              style={{ color: "var(--text-secondary)" }}
+            >
+              <Icon name={paused ? "ph:play" : "ph:pause"} width={11} aria-hidden />
+              {paused ? "Resume" : "Pause"}
+            </button>
+          )}
           <button
             type="button"
             onClick={onOpen}
@@ -1501,12 +1540,14 @@ function FlowList({
   busyId,
   onRun,
   onOpen,
+  onTogglePause,
 }: {
   flows: FlowDoc[];
   query: string;
   busyId: string | null;
   onRun: (flow: FlowDoc) => void;
   onOpen: (flow: FlowDoc) => void;
+  onTogglePause: (flow: FlowDoc) => void;
 }) {
   const visible = flows.filter((f) => !query || (f.name || "").toLowerCase().includes(query));
   return (
@@ -1521,8 +1562,10 @@ function FlowList({
             name={flow.name || "Untitled flow"}
             meta={`${trigger} · ${nodeCount} node${nodeCount === 1 ? "" : "s"}${flow.active ? "" : " · paused"}`}
             busy={busyId === `flow:${flow.id}`}
+            paused={!flow.active}
             onRun={() => onRun(flow)}
             onOpen={() => onOpen(flow)}
+            onTogglePause={() => onTogglePause(flow)}
           />
         );
       })}
@@ -1765,9 +1808,13 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     });
   }, [items, scheduleDelete, load]);
 
-  const runNow = (id: string) => {
+  // Confirm before firing — crons and flows already do, and the identical Run
+  // buttons on the All tab must not behave differently per type.
+  const runNow = async (id: string) => {
     const target = items.find((i) => i.id === id);
-    announce(`Running ${target?.title ? `'${target.title}'` : "reminder"} now.`);
+    const name = target?.title;
+    if (!(await confirm({ title: name ? `Run “${name}” now?` : "Run reminder now?", body: "This fires the reminder immediately.", confirmLabel: "Run now" }))) return;
+    announce(`Running ${name ? `'${name}'` : "reminder"} now.`);
     return patchItem(id, { fireAt: new Date().toISOString(), status: "pending" });
   };
 
@@ -1887,6 +1934,23 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, [confirm, onOpenSession]);
 
+  // Pause/resume a flow. Production triggers only fire while `active`; the flow
+  // editor persists the same full-doc save, so this mirrors its convention.
+  const toggleFlowActive = useCallback(async (flow: FlowDoc) => {
+    const pausing = flow.active;
+    setBusyId(`flow:${flow.id}`);
+    try {
+      const res = await saveFlow(setFlowActive(flow, !pausing));
+      if (!res.ok || !res.flow) throw new Error(res.error ?? "save failed");
+      announce(`${pausing ? "Paused" : "Resumed"} '${flow.name}'.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "flow save failed");
+    } finally {
+      setBusyId(null);
+    }
+  }, [load]);
+
   // "Open" routes to each type's dedicated editor surface.
   const openEntry = useCallback((entry: AutomationEntry) => {
     if (entry.type === "flow") { navigateToMode("flow"); return; }
@@ -1901,7 +1965,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   }, [items, codexAutos]);
 
   // Run any entry straight from the unified "All" list, dispatching to the right
-  // per-type handler (crons + flows confirm first; reminders fire immediately).
+  // per-type handler (every type confirms before running).
   const runEntry = useCallback((entry: AutomationEntry) => {
     if (entry.type === "reminder") { void runNow(entry.nativeId); return; }
     if (entry.type === "cron") {
@@ -1914,6 +1978,31 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (flow) void runFlowNow(flow);
     }
   }, [codexAutos, flows, runNow, runCodexNow, runFlowNow]);
+
+  // Pause/resume any entry from the "All" list, mirroring runEntry's dispatch.
+  const togglePauseEntry = useCallback((entry: AutomationEntry) => {
+    if (entry.type === "reminder") {
+      const item = items.find((i) => i.id === entry.nativeId);
+      if (item) void togglePaused(item);
+      return;
+    }
+    if (entry.type === "cron") {
+      const auto = codexAutos.find((a) => a.id === entry.nativeId);
+      if (auto) void toggleCodex(auto);
+      return;
+    }
+    if (entry.type === "flow") {
+      const flow = flows.find((f) => f.id === entry.nativeId);
+      if (flow) void toggleFlowActive(flow);
+    }
+  }, [items, codexAutos, flows, togglePaused, toggleCodex, toggleFlowActive]);
+
+  // Daily summaries ride the reminder pipeline into the All list but aren't
+  // pausable (the Reminders tab applies the same gate) — hide the control.
+  const entryPausable = useCallback((entry: AutomationEntry) => {
+    if (entry.type !== "reminder") return true;
+    return items.find((i) => i.id === entry.nativeId)?.kind === "reminder";
+  }, [items]);
 
   // Ids whose delete is pending in the undo window — hidden everywhere until the
   // window lapses (committing the delete) or Undo restores them.
@@ -2355,6 +2444,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   familiarLabel={familiarLabel}
                   onRun={runEntry}
                   onOpen={openEntry}
+                  onTogglePause={togglePauseEntry}
+                  pausable={entryPausable}
                 />
               ) : activeTab === "reminders" ? (
                 <>
@@ -2421,6 +2512,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                   busyId={busyId}
                   onRun={runFlowNow}
                   onOpen={() => navigateToMode("flow")}
+                  onTogglePause={toggleFlowActive}
                 />
               ) : (
                 <>
