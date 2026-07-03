@@ -193,4 +193,15 @@ assert.match(view, /announce\(`Restored /, "undo paths announce restoration");
 // double-announce it (they keep their grab/over/cancel narration).
 assert.doesNotMatch(kanban, /announce\(`Moved '/, "kanban no longer announces the final move");
 
+// ── Intent ops replace full-array PATCHes (2026-07-03 merge-semantics fix) ───
+const inspector = await readFile(new URL("./board-inspector.tsx", import.meta.url), "utf8");
+assert.match(inspector, /ops: \{ stepOps: \[\{ op: "toggle", id \}\] \}/, "step toggle sends an intent op");
+assert.match(inspector, /ops: \{ stepOps: \[\{ op: "add", text, id: crypto\.randomUUID\(\) \}\] \}/, "step add pre-generates its id so optimistic and persisted steps match");
+assert.match(inspector, /ops: \{ labelOps: \[\{ op: "add", value: l \}\] \}/, "label add sends an intent op");
+assert.match(inspector, /ops: \{ linkOps: \[\{ op: "add", value: url \}\] \}/, "link add sends an intent op");
+assert.doesNotMatch(inspector, /onPatch\(card\.id, \{ steps: steps\.(map|filter)/, "no interactive editor PATCHes a full steps array computed from render state");
+assert.match(gantt, /op: "setDate", id: row\.stepId/, "gantt step drag sends setDate ops, not the whole steps array");
+assert.match(view, /applyCardOps\(c, ops, new Date\(\)\.toISOString\(\)\)/, "the optimistic render resolves ops with the same shared function the server uses");
+assert.match(view, /if \(json\.card\) setCards\(\(prev\) => prev\.map\(\(c\) => \(c\.id === id \? \(json\.card as Card\) : c\)\)\)/, "a successful PATCH adopts the server card");
+
 console.log("board-ux-polish.test.ts: ok");

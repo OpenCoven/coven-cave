@@ -23,6 +23,7 @@ import {
   stripPreviewOnlyAttachmentFields,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
+import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
 
 export {
   DEFAULT_MAX_RETRIES,
@@ -287,13 +288,21 @@ export async function createCard(input: NewCardInput): Promise<Card> {
 
 export async function updateCard(
   id: string,
-  patch: Partial<Omit<Card, "id" | "createdAt">>,
+  patchWithOps: CardPatch,
 ): Promise<Card | null> {
   return withBoardLock(async () => {
   const board = await loadBoard();
   const idx = board.cards.findIndex((c) => c.id === id);
   if (idx < 0) return null;
   const current = board.cards[idx];
+  // Intent ops resolve against the CURRENT card here, inside the write lock —
+  // a toggle/add/remove on one element can never clobber a concurrent edit to
+  // another (the full-array clobber the board audit flagged). The resolved
+  // arrays then flow through the exact same normalization as plain patches.
+  const { ops, ...plain } = patchWithOps;
+  const patch: Partial<Omit<Card, "id" | "createdAt">> = hasCardOps(ops)
+    ? { ...plain, ...applyCardOps(current, ops, new Date().toISOString()) }
+    : plain;
   const next: Card = {
     ...current,
     ...patch,

@@ -5,6 +5,7 @@ import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { Familiar } from "@/lib/types";
 import { useDateTimePrefs, readDateTimePrefs } from "@/lib/datetime-format";
 import { Icon } from "@/lib/icon";
+import type { CardPatch } from "@/lib/board-card-ops";
 
 type ProjectLike = { id: string; name: string };
 
@@ -15,7 +16,7 @@ type Props = {
   selectedCardId: string | null;
   onSelect: (id: string) => void;
   /** Persist a card change — used to drag a bar to reschedule its dates. */
-  onPatch?: (id: string, patch: Partial<Card>) => void;
+  onPatch?: (id: string, patch: CardPatch) => void;
   /**
    * "project" (default): one bar per scheduled task, grouped by project.
    * "task": one group per task, one bar per checklist step (using step dates,
@@ -248,10 +249,14 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     if (row.stepId) {
       // Task mode: write this step's dates (promoting a card-range fallback to
       // explicit dates), leaving the other steps untouched.
-      const steps = (card.steps ?? []).map((s) =>
-        s.id === row.stepId ? { ...s, ...next } : s,
-      );
-      onPatch(row.cardId, { steps });
+      onPatch(row.cardId, {
+        ops: {
+          stepOps: [
+            { op: "setDate", id: row.stepId, field: "startDate", value: next.startDate },
+            { op: "setDate", id: row.stepId, field: "endDate", value: next.endDate },
+          ],
+        },
+      });
     } else {
       // Project mode: a move shifts whichever of the task's own dates are set;
       // a resize sets the dragged end explicitly.

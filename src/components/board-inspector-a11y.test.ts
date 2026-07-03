@@ -53,8 +53,8 @@ assert.match(
 );
 assert.match(
   src,
-  /onPatch\(card\.id, \{ attachments: attachments\.filter\(\(_, i\) => i !== index\) \}\)/,
-  "removing an attachment PATCHes the filtered array",
+  /onPatch\(card\.id, \{ ops: \{ attachmentOps: \[\{ op: "remove", name \}\] \} \}\)/,
+  "removing an attachment sends an intent op (applied against the current card server-side)",
 );
 assert.match(src, /aria-label=\{`Remove \$\{att\.name\}`\}/, "each attachment's remove button is named for its file");
 assert.match(src, /disabled=\{busy \|\| atCap\}/, "the add-files button is disabled while busy or at the 10-file cap");

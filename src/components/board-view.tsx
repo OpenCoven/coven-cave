@@ -11,6 +11,7 @@ import { Icon } from "@/lib/icon";
 import { type Card, type CardStatus, type CardPriority, STATUSES, PRIORITIES } from "@/lib/cave-board-types";
 import { cardMatchesBoardSearch } from "@/lib/board-search";
 import { arrayContentEqual } from "@/lib/array-content-equal";
+import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
@@ -293,11 +294,11 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
     return "queued" as const;
   };
 
-  const patchCard = async (id: string, patch: Partial<Card>, armUndo = true) => {
+  const patchCard = async (id: string, patch: CardPatch, armUndo = true) => {
     if ("cwd" in patch || "projectId" in patch) setChatLinkError(null);
     // A date-only patch is a gantt reschedule — snapshot the prior dates so it
     // can be undone in one click (skipped when the patch IS an undo).
-    const keys = Object.keys(patch);
+    const keys = Object.keys(patch).filter((k) => k !== "ops");
     const isReschedule = armUndo && keys.length > 0 && keys.every((k) => k === "startDate" || k === "endDate");
     if (isReschedule) {
       const before = cards.find((c) => c.id === id);
@@ -316,7 +317,15 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         announce(`Rescheduled '${before.title}'. Undo available.`);
       }
     }
-    setCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    setCards((prev) => prev.map((c) => {
+      if (c.id !== id) return c;
+      const { ops, ...plain } = patch;
+      // Same resolution the server runs under its lock — optimistic view and
+      // persisted result can't drift.
+      return hasCardOps(ops)
+        ? { ...c, ...plain, ...applyCardOps(c, ops, new Date().toISOString()) }
+        : { ...c, ...plain };
+    }));
     try {
       const res = await fetch(`/api/board/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
       const json = await res.json();
@@ -327,6 +336,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
         await load();
       } else {
         setActionError(null);
+        if (json.card) setCards((prev) => prev.map((c) => (c.id === id ? (json.card as Card) : c)));
       }
     } catch {
       setActionError("Couldn't reach the server — your change was reverted.");
