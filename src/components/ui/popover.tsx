@@ -180,13 +180,33 @@ export function Popover({
   );
 }
 
-/** Common popover content scaffold. */
-export function PopoverBody({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={["ui-popover-body", className ?? ""].filter(Boolean).join(" ")}>{children}</div>;
+/** Common popover content scaffold. Pass role="menu" (with an ariaLabel) when the
+ *  body is a pure menu of menuitem/menuitemradio children, so the ARIA hierarchy
+ *  is menu > menuitemradio rather than items loose in the dialog. */
+export function PopoverBody({
+  children,
+  className,
+  role,
+  ariaLabel,
+}: {
+  children: ReactNode;
+  className?: string;
+  role?: "menu";
+  ariaLabel?: string;
+}) {
+  return (
+    <div
+      className={["ui-popover-body", className ?? ""].filter(Boolean).join(" ")}
+      role={role}
+      aria-label={ariaLabel}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function PopoverLabel({ children }: { children: ReactNode }) {
-  return <div className="ui-popover-label">{children}</div>;
+  return <div className="ui-popover-label" role="presentation">{children}</div>;
 }
 
 export function PopoverSeparator() {
@@ -200,6 +220,7 @@ export function PopoverItem({
   active,
   danger,
   disabled,
+  checked,
 }: {
   icon?: IconName;
   children: ReactNode;
@@ -207,6 +228,9 @@ export function PopoverItem({
   active?: boolean;
   danger?: boolean;
   disabled?: boolean;
+  /** When set (true/false) the item is a menuitemradio with aria-checked and a
+   *  trailing check glyph — for mutually exclusive option groups. */
+  checked?: boolean;
 }) {
   const classes = [
     "ui-popover-item",
@@ -214,6 +238,7 @@ export function PopoverItem({
   ]
     .filter(Boolean)
     .join(" ");
+  const radio = checked !== undefined;
   return (
     <button
       type="button"
@@ -221,10 +246,14 @@ export function PopoverItem({
       onClick={onSelect}
       data-active={active || undefined}
       disabled={disabled}
-      role="menuitem"
+      role={radio ? "menuitemradio" : "menuitem"}
+      aria-checked={radio ? checked : undefined}
     >
       {icon ? <Icon name={icon} width={13} aria-hidden /> : null}
       <span>{children}</span>
+      {radio && checked ? (
+        <Icon name="ph:check" width={12} aria-hidden className="ml-auto" />
+      ) : null}
     </button>
   );
 }

@@ -87,3 +87,13 @@ test("relativeTimeSigned handles past and future, compact + verbose", () => {
   // null
   assert.equal(relativeTimeSigned(null, now, "compact"), "");
 });
+
+test('bare density: compact thresholds without the " ago" suffix', () => {
+  assert.equal(relativeTime(ago(0), NOW, "bare"), "just now");
+  assert.equal(relativeTime(ago(2), NOW, "bare"), "2m");
+  assert.equal(relativeTime(ago(180), NOW, "bare"), "3h");
+  assert.equal(relativeTime(ago(60 * 24 * 3), NOW, "bare"), "3d");
+  // ≥7 days falls through to the same short date as compact.
+  const out = relativeTime(ago(60 * 24 * 8), NOW, "bare");
+  assert.match(out, /^[A-Za-z]{3} \d{1,2}$/, `expected a "Mon D" date, got "${out}"`);
+});

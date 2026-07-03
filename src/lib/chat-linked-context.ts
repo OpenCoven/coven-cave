@@ -9,6 +9,9 @@ type LinkedTask = {
   lifecycle: string;
   labels: string[];
   cwd: string | null;
+  /** Stable project id from the card — the task's project association, which
+   *  the chat picker prefers over the session's recorded cwd. */
+  projectId: string | null;
   notes: string | null;
 };
 
@@ -25,6 +28,7 @@ export type ChatLinkedContext = {
         lifecycle: string;
         labels: string[];
         cwd: string | null;
+        projectId: string | null;
         notes: string | null;
       }
     | null;
@@ -54,6 +58,7 @@ export async function linkedContextForSession(sessionId: string): Promise<ChatLi
     lifecycle: card.lifecycle,
     labels: card.labels,
     cwd: card.cwd,
+    projectId: card.projectId ?? null,
     notes: card.notes.trim() || null,
   }));
 

@@ -67,4 +67,26 @@ assert.match(
   "chat-view should wire the add-project action into the error strip",
 );
 
+// ── Organize sidebar: recency view (default) + by-project, via a header menu. ─
+assert.match(
+  chatSidebar,
+  /deriveChatRecencyBuckets\(/,
+  "ChatSidebar should derive time buckets for the Recent view",
+);
+assert.match(chatSidebar, /Organize sidebar/, "ChatSidebar should expose the Organize sidebar menu");
+assert.match(
+  chatSidebar,
+  /readChatSidebarView\(\)/,
+  "the organize mode should hydrate from the persisted preference",
+);
+assert.match(
+  chatSidebar,
+  /relativeTime\(iso, Date\.now\(\), "bare"\)/,
+  'sidebar row times should use the bare density (no "ago")',
+);
+assert.ok(
+  (chatSidebar.match(/<ThreadRow/g) ?? []).length >= 2,
+  "both view branches should render the shared ThreadRow",
+);
+
 console.log("chat-sidebar-wiring.test.ts passed");

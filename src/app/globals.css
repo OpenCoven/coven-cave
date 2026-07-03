@@ -1106,6 +1106,10 @@ tr[role="checkbox"]:focus-visible {
   color: inherit;
   text-align: left;
 }
+/* Recent/flat rows align with their section label instead of indenting under a folder. */
+.cnav__thread--flat .cnav__thread-main {
+  padding-left: 13px;
+}
 .cnav__thread:hover {
   background: color-mix(in oklch, var(--foreground) 5%, transparent);
   color: var(--text-primary);
@@ -1161,6 +1165,9 @@ tr[role="checkbox"]:focus-visible {
 .cnav__lead {
   flex-shrink: 0;
   color: var(--text-muted);
+}
+.cnav__lead.is-accent {
+  color: var(--accent-presence);
 }
 .cnav__thread-title {
   flex: 1;
@@ -11195,4 +11202,76 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 @media (max-width: 680px) {
   .skill-browser { flex-direction: column; }
   .skill-browser__list { flex: 0 0 auto; max-height: 42%; border-right: 0; border-bottom: 1px solid var(--border-hairline); }
+}
+
+/* ---- Shared project picker — one trigger-chip + popover treatment for
+   project selection across surfaces (chat empty state today; see
+   docs/specs/2026-07-03-unified-project-picker-design.md). ---- */
+.cave-project-picker__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  min-height: 26px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.cave-project-picker__trigger:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.cave-project-picker__trigger:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.cave-project-picker__trigger-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cave-project-picker__filter {
+  width: calc(100% - 12px);
+  margin: 6px 6px 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+.cave-project-picker__option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  text-align: left;
+}
+.cave-project-picker__option-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cave-project-picker__option-root {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+}
+.cave-project-picker__none {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.cave-project-picker__error {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--color-danger-soft);
 }

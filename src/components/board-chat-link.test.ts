@@ -49,8 +49,13 @@ assert.match(
 );
 assert.match(
   route,
-  /normalizeProjectRoot\(body\.projectRoot \?\? card\.cwd \?\? process\.cwd\(\)\)/,
-  "Board chat endpoint should prefer the explicitly assigned project root over stale card cwd",
+  /normalizeProjectRoot\(rawProjectRoot\)/,
+  "Board chat endpoint normalizes the resolved project root",
+);
+assert.match(
+  route,
+  /body\.projectRoot \?\? cardProjectRoot \?\? card\.cwd/,
+  "Board chat endpoint prefers the explicitly assigned root, then the card's project, then stale card cwd — never the app's own working directory",
 );
 assert.match(
   route,

@@ -242,6 +242,44 @@ function SaveToLibraryButton({
 }
 
 
+// ── Native-overlay occlusion ─────────────────────────────────────────
+// The embedded browser webview is an OS-level layer painted ABOVE the entire
+// DOM — no z-index puts onboarding, modals, or the command palette over it.
+// Detect "something renders above the pane" two ways and yield the native
+// layer while it holds:
+//   1. any visible dialog anywhere (role=dialog / aria-modal — the shared
+//      Modal, onboarding, ⌘K palette, quick chat, lightboxes), and
+//   2. point-sampling the pane rect — when the top hit-test element at the
+//      center or an inset corner isn't inside the pane, a non-dialog overlay
+//      (drag-to-split drop targets, custom covers) sits over it. Transient
+//      live regions (toasts) are ignored so a corner toast doesn't blank the
+//      page.
+function surfaceIsCovered(surface: HTMLElement, rect: DOMRect): boolean {
+  const dialogs = document.querySelectorAll('[role="dialog"], [aria-modal="true"]');
+  for (const dialog of dialogs) {
+    if (dialog.getClientRects().length > 0) return true;
+  }
+  const inset = 12;
+  const points: Array<[number, number]> = [
+    [rect.left + rect.width / 2, rect.top + rect.height / 2],
+    [rect.left + inset, rect.top + inset],
+    [rect.right - inset, rect.top + inset],
+    [rect.left + inset, rect.bottom - inset],
+    [rect.right - inset, rect.bottom - inset],
+  ];
+  for (const [x, y] of points) {
+    const hit = document.elementFromPoint(x, y);
+    if (!hit || surface.contains(hit)) continue;
+    if (hit.closest('[role="status"], [role="alert"], [aria-live]')) continue;
+    return true;
+  }
+  return false;
+}
+
+// Mirrors OFFSCREEN_X/OFFSCREEN_Y in src-tauri/src/browser.rs — the "hidden"
+// position for a native webview.
+const WEBVIEW_OFFSCREEN = -10000;
+
 export type BrowserPaneHandle = {
   navigateTo: (url: string) => void;
 };
@@ -398,10 +436,16 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
 
     const tick = () => {
       const rect = surface.getBoundingClientRect();
-      // Hide every webview when the panel is collapsed OR the toolbar is open.
-      // The toolbar is DOM and the webview is an OS-level overlay that would
-      // cover it, so the page yields the pane while the toolbar is showing.
-      if (toolbarOpenRef.current || rect.width <= 1 || rect.height <= 1) {
+      // Hide every webview when the panel is collapsed, the toolbar is open,
+      // OR a DOM overlay (onboarding, a modal, the palette…) renders above
+      // the pane. All of those are DOM and the webview is an OS-level overlay
+      // that would cover them, so the page yields while any of them shows.
+      if (
+        toolbarOpenRef.current ||
+        rect.width <= 1 ||
+        rect.height <= 1 ||
+        surfaceIsCovered(surface, rect)
+      ) {
         if (!hidden) {
           hidden = true;
           hideAll();
@@ -449,10 +493,18 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       const rect = surface.getBoundingClientRect();
       if (rect.width <= 1 || rect.height <= 1) return;
       setLoading(true);
+      // While an overlay covers the pane, create/load the webview OFFSCREEN:
+      // browser_navigate repositions an existing webview (and creates a new
+      // one at the given bounds), which would paint it back over the overlay
+      // — and the bounds loop above only issues IPC on transitions, so it
+      // would never re-hide it. The page still loads; the loop re-seats it
+      // at the live rect once the cover lifts.
+      const covered = toolbarOpenRef.current || surfaceIsCovered(surface, rect);
       void bridge.invoke("browser_navigate", {
         label: tabLabel(activeTab.id),
         url: activeTab.url,
-        x: rect.left, y: rect.top,
+        x: covered ? WEBVIEW_OFFSCREEN : rect.left,
+        y: covered ? WEBVIEW_OFFSCREEN : rect.top,
         w: rect.width, h: rect.height,
       });
       setAddressBar(activeTab.url);

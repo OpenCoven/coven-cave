@@ -1,26 +1,29 @@
 import { expect, test, type Page } from "@playwright/test";
 
 // Verifies the chat-mode left sidebar (ChatSidebar) — the desktop session
-// navigator that swaps into the nav slot when you enter Chat (⌘2), mirroring
-// how Code mode swaps in the CodeSidebar. It groups sessions under their
-// project folders (expanded by default) and filters them with a search box.
-// The in-surface thread rail is dropped in chat mode (the sidebar owns thread
-// navigation now). Desktop only. /api/familiars + /api/sessions/list are mocked.
+// navigator that swaps into the nav slot when you enter Chat (⌘2). Defaults
+// to a time-bucketed "Recent chats" view (Today / Yesterday / Previous 7 days /
+// Previous 30 days / Older). A ⋯ "Sidebar options" button opens an Organize
+// menu (role=dialog) with menuitemradio items to switch to "By project" folder
+// grouping. The sidebar owns thread navigation (no in-surface thread rail).
+// Desktop only. /api/familiars + /api/sessions/list are mocked.
 
-const ISO = "2026-06-12T10:00:00.000Z";
+// Timestamps are relative to the test run so bucket labels are deterministic:
+// s1 → Today, s2 → Yesterday, s3 → Previous 7 days, s4 → Older.
+const NOW = Date.now();
+const iso = (daysAgo: number) => new Date(NOW - daysAgo * 86_400_000).toISOString();
 const SESSIONS = [
-  { id: "s1", title: "Refactor auth flow", status: "running", origin: "chat", project_root: "/repo/alpha" },
-  { id: "s2", title: "Fix eslint config", status: "completed", origin: "board", project_root: "/repo/alpha" },
-  { id: "s3", title: "Write API docs", status: "completed", origin: "chat", project_root: "/repo/beta" },
-  { id: "s4", title: "Wire deploy pipeline", status: "running", origin: "board", project_root: "/repo/beta" },
+  { id: "s1", title: "Refactor auth flow", status: "running", origin: "chat", project_root: "/repo/alpha", updated_at: iso(0) },
+  { id: "s2", title: "Fix eslint config", status: "completed", origin: "board", project_root: "/repo/alpha", updated_at: iso(1) },
+  { id: "s3", title: "Write API docs", status: "completed", origin: "chat", project_root: "/repo/beta", updated_at: iso(4) },
+  { id: "s4", title: "Wire deploy pipeline", status: "running", origin: "board", project_root: "/repo/beta", updated_at: iso(40) },
 ].map((s) => ({
   ...s,
   harness: "codex",
   familiarId: "nova",
   exit_code: null,
   archived_at: null,
-  created_at: ISO,
-  updated_at: ISO,
+  created_at: s.updated_at,
 }));
 
 async function gotoChat(page: Page) {
@@ -44,23 +47,37 @@ async function gotoChat(page: Page) {
 }
 
 test.describe("chat sidebar (session navigator)", () => {
-  test("groups every session under its project folder, with a search box", async ({ page }) => {
+  test("defaults to the Recent view; Organize menu switches to project folders", async ({ page }) => {
     await gotoChat(page);
     const sidebar = page.locator(".chat-sidebar");
 
-    // Search control (an <input type="search"> → searchbox role).
+    // Search control survives in both views.
     await expect(sidebar.getByRole("searchbox", { name: "Search chat projects and threads" })).toBeVisible();
 
-    // One folder per project root (basename), expanded by default. Target the
-    // folder toggle (aria-label "Collapse/Expand <name> threads"), not the
-    // per-folder "New chat in <name>" button which also contains the name.
-    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
-    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) beta threads/ })).toBeVisible();
-
-    // Every session is visible in its project group — expanded by default.
+    // Recent is the default: time-bucket headers, no project folder toggles.
+    await expect(sidebar.getByText("Today", { exact: true })).toBeVisible();
+    await expect(sidebar.getByText("Older", { exact: true })).toBeVisible();
+    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toHaveCount(0);
     for (const s of SESSIONS) {
       await expect(sidebar.getByText(s.title, { exact: false }).first()).toBeVisible();
     }
+    // Bare row times — no "ago" suffix anywhere in the sidebar.
+    await expect(sidebar.getByText(/\bago\b/)).toHaveCount(0);
+
+    // Organize sidebar → By project restores the folder grouping.
+    await sidebar.getByRole("button", { name: "Sidebar options" }).click();
+    const menu = page.getByRole("dialog", { name: "Sidebar options" });
+    await expect(menu.getByRole("menuitemradio", { name: "Recent chats" })).toHaveAttribute("aria-checked", "true");
+    await menu.getByRole("menuitemradio", { name: "By project" }).click();
+    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
+    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) beta threads/ })).toBeVisible();
+
+    // The organize choice persists across a reload.
+    await page.reload();
+    await page.keyboard.press("Meta+2");
+    await page.waitForSelector(".chat-sidebar", { timeout: 30_000 });
+    await expect(sidebar.getByRole("button", { name: /(Collapse|Expand) alpha threads/ })).toBeVisible();
+    await expect(sidebar.getByText("Today", { exact: true })).toHaveCount(0);
   });
 
   test("search filters threads to matches, with an empty state", async ({ page }) => {

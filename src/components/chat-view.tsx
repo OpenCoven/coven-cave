@@ -105,6 +105,7 @@ import {
 } from "@/lib/command-controls";
 import type { CaveProject } from "@/lib/cave-projects";
 import { useProjects } from "@/lib/use-projects";
+import { ProjectPicker, useAddProjectFlow } from "@/components/project-picker";
 import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
@@ -836,6 +837,7 @@ function ChatEmptyState({
   projectId,
   onProjectChange,
   projects,
+  createProject,
   fileMentions = false,
 }: {
   familiar: Familiar;
@@ -845,6 +847,8 @@ function ChatEmptyState({
   /** Updates the project used for the next send. */
   onProjectChange?: (value: string) => void;
   projects: CaveProject[];
+  /** From useProjects() — enables the picker's "Add project…" row. */
+  createProject?: (name: string, root: string) => Promise<CaveProject | null>;
   /** True when the chat knows a project root, so `@` opens the file picker (CHAT-D1-04). */
   fileMentions?: boolean;
 }) {
@@ -876,28 +880,27 @@ function ChatEmptyState({
           </div>
         </div>
 
-        {onProjectChange && project && (
-          <label className="cave-chat-empty-project">
+        {onProjectChange && (
+          <div className="cave-chat-empty-project">
             <span className="cave-chat-empty-project-head">
               <Icon name="ph:folder-open" width={14} aria-hidden />
               <span className="cave-chat-empty-project-label">Project</span>
-              <select
-                value={project.id}
-                onChange={(e) => onProjectChange(e.target.value)}
-                aria-label="Project for this chat"
-                className="cave-chat-empty-project-select"
-              >
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
+              <ProjectPicker
+                projects={projects}
+                value={projectId ?? null}
+                onChange={onProjectChange}
+                allowNoProject
+                familiarId={familiar.id}
+                createProject={createProject}
+                ariaLabel="Project for this chat"
+              />
             </span>
-            <span className="cave-chat-empty-project-root">
-              {project.root}
-            </span>
-          </label>
+            {project ? (
+              <span className="cave-chat-empty-project-root">
+                {project.root}
+              </span>
+            ) : null}
+          </div>
         )}
 
         {onPrompt && (
@@ -933,6 +936,7 @@ function SessionOverflowMenu({
   projects,
   projectId,
   onProjectChange,
+  onAddProject,
   familiar,
   voiceActive,
   onOpenVoice,
@@ -941,6 +945,8 @@ function SessionOverflowMenu({
   projects: CaveProject[];
   projectId: string | null;
   onProjectChange: (value: string) => void;
+  /** Opens the shared add-project flow (register + grant) — proactive, not 403-recovery-only. */
+  onAddProject?: () => void;
   familiar: Familiar;
   voiceActive: boolean;
   onOpenVoice: () => void;
@@ -989,32 +995,47 @@ function SessionOverflowMenu({
             Rename chat
           </PopoverItem>
           <PopoverSeparator />
-          {projects.length > 0 ? (
+          {projects.length > 0 || onAddProject ? (
             <>
               <PopoverLabel>Project</PopoverLabel>
-              <PopoverItem
-                icon={activeProject ? "ph:folder" : "ph:check"}
-                active={!activeProject}
-                onSelect={() => {
-                  onProjectChange(NO_PROJECT_ID);
-                  close();
-                }}
-              >
-                No project
-              </PopoverItem>
-              {projects.map((entry) => (
+              {projects.length > 0 ? (
+                <>
+                  <PopoverItem
+                    icon={activeProject ? "ph:folder" : "ph:check"}
+                    active={!activeProject}
+                    onSelect={() => {
+                      onProjectChange(NO_PROJECT_ID);
+                      close();
+                    }}
+                  >
+                    No project
+                  </PopoverItem>
+                  {projects.map((entry) => (
+                    <PopoverItem
+                      key={entry.id}
+                      icon={entry.id === activeProject?.id ? "ph:check" : "ph:folder"}
+                      active={entry.id === activeProject?.id}
+                      onSelect={() => {
+                        onProjectChange(entry.id);
+                        close();
+                      }}
+                    >
+                      {entry.name}
+                    </PopoverItem>
+                  ))}
+                </>
+              ) : null}
+              {onAddProject ? (
                 <PopoverItem
-                  key={entry.id}
-                  icon={entry.id === activeProject?.id ? "ph:check" : "ph:folder"}
-                  active={entry.id === activeProject?.id}
+                  icon="ph:plus"
                   onSelect={() => {
-                    onProjectChange(entry.id);
+                    onAddProject();
                     close();
                   }}
                 >
-                  {entry.name}
+                  Add project…
                 </PopoverItem>
-              ))}
+              ) : null}
               <PopoverSeparator />
             </>
           ) : null}
@@ -1830,6 +1851,9 @@ function LinkedContextRow({
       lifecycle: card.lifecycle,
       labels: card.labels,
       cwd: card.cwd,
+      // Carrying the card's project re-scopes the picker the moment a task is
+      // linked — the chat belongs in the task's project from then on.
+      projectId: card.projectId ?? null,
       notes: card.notes.trim() || null,
     };
     onLinkedContextChange?.((prev) => {
@@ -2265,11 +2289,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // A session whose recorded cwd maps to no registered project resolves to
   // NO_PROJECT_ID here — never to the first project, whose root would re-root
   // the next turn's cwd and fork the harness session (`--continue` misses).
+  // A linked task's project (card projectId/cwd) outranks the recorded cwd: a
+  // chat tied to a task opens in — and runs in — the task's project.
   const projectSelection = resolveChatProjectSelection({
     draftId: projectIdDraft,
     hasSession: Boolean(session),
     sessionProjectRoot: session?.project_root,
     fallbackProjectRoot: projectRoot,
+    taskProjectId: linkedContext?.task?.projectId,
+    taskCwd: linkedContext?.task?.cwd,
     projects,
   });
   const resolvedProjectId = projectSelection.projectId;
@@ -2290,6 +2318,17 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     (resolvedProjectId === NO_PROJECT_ID || !projectIdForRoot(activeProjectRoot, projects))
       ? ""
       : activeProjectRoot;
+  // Shared add-project flow for the overflow menu: register + grant in one
+  // click, then make the new project this chat's next-send selection.
+  const overflowAddProject = useAddProjectFlow({
+    familiarId: familiar?.id ?? null,
+    createProject,
+    projects,
+    onAdded: (newProjectId) => {
+      setProjectIdDraft(newProjectId);
+      reloadProjects();
+    },
+  });
   useEffect(() => {
     onProjectRootChange?.(activeProjectRoot || null);
   }, [activeProjectRoot, onProjectRootChange]);
@@ -4292,15 +4331,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // delete confirm resets itself — HeaderDeleteButton is keyed on sessionId.)
   useEffect(() => {
     setProjectIdDraft((prev) => {
-      // Mirrors resolveChatProjectSelection: a registered project mapped from
-      // the session/opener root, then NO_PROJECT_ID for an existing session in
-      // an unregistered cwd, then the first project only for brand-new chats.
+      // Mirrors resolveChatProjectSelection: the linked task's project first
+      // (a task chat belongs in its task's project), then a registered project
+      // mapped from the session/opener root, then NO_PROJECT_ID for an
+      // existing session in an unregistered cwd, then the first project only
+      // for brand-new chats. linkedContext loads async with the conversation,
+      // so its deps re-seed the draft once the task arrives.
       const resolved =
         resolveChatProjectSelection({
           draftId: null,
           hasSession: Boolean(session),
           sessionProjectRoot: session?.project_root,
           fallbackProjectRoot: projectRoot,
+          taskProjectId: linkedContext?.task?.projectId,
+          taskCwd: linkedContext?.task?.cwd,
           projects,
         }).projectId ??
         firstProject?.id ??
@@ -4310,7 +4354,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     });
     setMentionedFiles([]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, session?.project_root, projectRoot, firstProject?.id]);
+  }, [sessionId, session?.project_root, projectRoot, firstProject?.id, linkedContext?.task?.projectId, linkedContext?.task?.cwd]);
 
   // Re-read the per-session dismiss flag whenever the active chat changes, so
   // dismissing one chat doesn't silently hide the nudge on a different chat.
@@ -4513,12 +4557,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 projects={projects}
                 projectId={projectIdDraft}
                 onProjectChange={setProjectIdDraft}
+                onAddProject={overflowAddProject.beginAddProject}
                 familiar={familiar}
                 voiceActive={voiceCallOpen}
                 onOpenVoice={() => setVoiceCallOpen(true)}
                 onOpenDebug={openDebug}
               />
             )}
+            {overflowAddProject.addProjectModal}
             {sessionId && familiar.id ? (
               <HeaderReflectButton reflecting={reflecting} onReflect={() => void reflectOnThread()} />
             ) : null}
@@ -4575,6 +4621,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 projectId={projectIdDraft}
                 onProjectChange={setProjectIdDraft}
                 projects={projects}
+                createProject={createProject}
                 fileMentions={Boolean(mentionRoot)}
               />
             )

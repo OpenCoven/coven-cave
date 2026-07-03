@@ -50,3 +50,32 @@ export function sortPinnedFirst(
   });
   return changed ? next : groups;
 }
+
+/** localStorage key for the sidebar organize mode ("Organize sidebar" menu). */
+export const CHAT_SIDEBAR_VIEW_KEY = "cave:chat:sidebar-view";
+
+export type ChatSidebarView = "recent" | "projects";
+
+/** Unknown/corrupt values fall back to the default ("recent"). */
+export function normalizeChatSidebarView(raw: unknown): ChatSidebarView {
+  return raw === "projects" ? "projects" : "recent";
+}
+
+/** Read the persisted organize mode; survives SSR and corrupt values. */
+export function readChatSidebarView(): ChatSidebarView {
+  if (typeof window === "undefined") return "recent";
+  try {
+    return normalizeChatSidebarView(window.localStorage.getItem(CHAT_SIDEBAR_VIEW_KEY));
+  } catch {
+    return "recent";
+  }
+}
+
+export function writeChatSidebarView(view: ChatSidebarView): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CHAT_SIDEBAR_VIEW_KEY, view);
+  } catch {
+    /* storage unavailable — the choice just won't persist */
+  }
+}

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bindingFor, loadConfig, recordSessionFamiliar, setSessionTitle } from "@/lib/cave-config";
 import { loadBoard, updateCard } from "@/lib/cave-board";
+import { loadProjects, projectById } from "@/lib/cave-projects";
 import { callDaemon, extractDaemonError } from "@/lib/coven-daemon";
 import { buildInitialTaskChatPrompt } from "@/lib/task-chat-context";
 import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
@@ -60,8 +61,21 @@ export async function POST(
   }
 
   // The UI sends the root for card.projectId when present; prefer that explicit
-  // project scope over any older cwd persisted on the card.
-  const projectRoot = normalizeProjectRoot(body.projectRoot ?? card.cwd ?? process.cwd());
+  // project scope, then the card's own project association, then its cwd.
+  // NEVER fall back to the app's own working directory: that roots the task
+  // chat in the coven-cave checkout, records the wrong project_root on the
+  // session, and the chat picker then displays the wrong project for the task.
+  const cardProjectRoot = card.projectId
+    ? (projectById(card.projectId, await loadProjects())?.root ?? null)
+    : null;
+  const rawProjectRoot = body.projectRoot ?? cardProjectRoot ?? card.cwd;
+  if (!rawProjectRoot) {
+    return NextResponse.json(
+      { ok: false, error: "assign a project to this task before starting chat" },
+      { status: 409 },
+    );
+  }
+  const projectRoot = normalizeProjectRoot(rawProjectRoot);
   if (!projectRoot) {
     return NextResponse.json({ ok: false, error: "invalid project root" }, { status: 400 });
   }
