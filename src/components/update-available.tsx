@@ -40,22 +40,31 @@ type DownloadEvent =
   | { event: "Progress"; data?: { chunkLength?: number } }
   | { event: "Finished" };
 
+type NativeCheckResult =
+  | { kind: "available"; update: TauriUpdate }
+  | { kind: "current" }
+  | { kind: "failed"; message: string };
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error && err.message ? err.message : fallback;
+}
+
 /**
- * Try the native Tauri updater. Returns the Update handle when a newer signed
- * release is available, or null when up to date / unavailable (no endpoint yet,
- * not a desktop build, plugin error). Never throws.
+ * Try the native Tauri updater. Preserves plugin errors so the UI can
+ * distinguish "native updater unavailable" from the intentional browser
+ * installer fallback.
  */
-async function checkNativeUpdate(): Promise<TauriUpdate | null> {
-  if (!isTauri()) return null;
+async function checkNativeUpdate(): Promise<NativeCheckResult> {
+  if (!isTauri()) return { kind: "current" };
   try {
     const { check } = await import("@tauri-apps/plugin-updater");
     const update = (await check()) as TauriUpdate | null;
-    if (!update) return null;
+    if (!update) return { kind: "current" };
     // Older plugin versions expose `.available`; newer return null when none.
-    if (update.available === false) return null;
-    return update;
-  } catch {
-    return null; // endpoint missing / not signed yet → caller falls back
+    if (update.available === false) return { kind: "current" };
+    return { kind: "available", update };
+  } catch (err) {
+    return { kind: "failed", message: errorMessage(err, "Native updater check failed") };
   }
 }
 
@@ -121,15 +130,21 @@ async function openFallbackUpdateInBrowser(): Promise<void> {
 type Resolved =
   | { kind: "current" }
   | { kind: "native"; version: string; update: TauriUpdate }
+  | { kind: "native-unavailable"; version: string; url: string; message: string }
   | { kind: "fallback"; version: string; url: string };
 
 /** Native-first, then fallback. Used by both the banner and the settings row. */
 async function resolveUpdate(): Promise<Resolved> {
   const native = await checkNativeUpdate();
-  if (native) return { kind: "native", version: native.version, update: native };
+  if (native.kind === "available") {
+    return { kind: "native", version: native.update.version, update: native.update };
+  }
   const fb = await fetchFallbackStatus();
   if (fb?.available && fb.latest) {
     const url = await resolveDownloadUrl(fb);
+    if (native.kind === "failed") {
+      return { kind: "native-unavailable", version: fb.latest, url, message: native.message };
+    }
     return { kind: "fallback", version: fb.latest, url };
   }
   return { kind: "current" };
@@ -152,8 +167,11 @@ export function UpdateBannerTrigger() {
 
       pushBanner({
         id: BANNER_ID,
-        severity: "info",
-        title: `Update available — v${r.version}`,
+        severity: r.kind === "native-unavailable" ? "warning" : "info",
+        title:
+          r.kind === "native-unavailable"
+            ? `Native updater unavailable — v${r.version}`
+            : `Update available — v${r.version}`,
         cta: {
           label: r.kind === "native" ? "Install & restart" : "Open installer in Browser",
           onClick: () => {
@@ -198,6 +216,7 @@ type RowState =
   | { phase: "checking" }
   | { phase: "current" }
   | { phase: "available"; r: Extract<Resolved, { kind: "native" | "fallback" }> }
+  | { phase: "native-unavailable"; r: Extract<Resolved, { kind: "native-unavailable" }> }
   | { phase: "downloading"; version: string; pct: number }
   | { phase: "failed"; version: string; message: string }
   | { phase: "ready"; version: string };
@@ -217,6 +236,7 @@ export function UpdateSettingsRow() {
     void resolveUpdate().then((r) => {
       if (!mounted.current) return;
       if (r.kind === "current") setState({ phase: "current" });
+      else if (r.kind === "native-unavailable") setState({ phase: "native-unavailable", r });
       else setState({ phase: "available", r });
     });
   }, []);
@@ -275,6 +295,29 @@ export function UpdateSettingsRow() {
             Open installer in Browser
           </button>
         )}
+      </>
+    );
+  } else if (state.phase === "native-unavailable") {
+    const r = state.r;
+    control = (
+      <>
+        <span
+          className="text-[12px] font-medium text-[var(--color-danger)]"
+          title={r.message}
+        >
+          Native updater unavailable
+        </span>
+        <button type="button" onClick={check} className={accentBtn}>
+          <Icon name="ph:arrow-clockwise-bold" width={12} />
+          Retry native update
+        </button>
+        <button
+          type="button"
+          onClick={() => openInAppBrowserUrl(r.url)}
+          className="rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        >
+          Open installer in Browser
+        </button>
       </>
     );
   } else if (state.phase === "failed") {
