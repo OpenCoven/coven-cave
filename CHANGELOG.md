@@ -7,6 +7,8 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.133] - 2026-07-03
+
 ### Fixed
 
 - **macOS titlebar drag** - the seamless overlay titlebar now actually drags the
