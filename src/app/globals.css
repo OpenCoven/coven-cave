@@ -4112,10 +4112,10 @@ button:active > .edge-rail-chip {
 
   :root[data-tauri-titlebar] .shell-titlebar-drag-lane {
     position: absolute;
-    inset: 0 0 auto 0;
+    inset: 0;
     z-index: 2;
     display: block;
-    height: 10px;
+    pointer-events: none;
     -webkit-app-region: drag;
     app-region: drag;
   }

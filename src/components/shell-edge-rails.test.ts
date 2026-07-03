@@ -111,8 +111,13 @@ assert.match(
 );
 assert.match(
   css,
-  /:root\[data-tauri-titlebar\]\s+\.shell-titlebar-drag-lane\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?height:\s*10px;[\s\S]*?-webkit-app-region:\s*drag;[\s\S]*?app-region:\s*drag;/,
-  "macOS Tauri titlebar mode should expose a fixed-height draggable lane above the controls",
+  /:root\[data-tauri-titlebar\]\s+\.shell-titlebar-drag-lane\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*-webkit-app-region:\s*drag;[^}]*app-region:\s*drag;/,
+  "macOS Tauri titlebar mode should make the full titlebar band draggable/clickable, not only a thin strip",
+);
+assert.match(
+  css,
+  /:root\[data-tauri-titlebar\]\s+\.shell-titlebar-drag-lane\s*\{[^}]*pointer-events:\s*none;/,
+  "the full-band drag lane must not intercept clicks meant for titlebar controls",
 );
 assert.match(
   css,
