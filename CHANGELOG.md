@@ -7,6 +7,63 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.134] - 2026-07-03
+
+Patch release on top of v0.0.133. A broad UI/UX + accessibility sweep: the
+detail split now fills and re-fits its full width reliably, the split divider
+gets a seamless magnetic even-split (no more ratio buttons), chat stops crossing
+wires when you switch threads mid-stream, and Board/Automations/GitHub get
+large accessibility batches. Also: the message action row swaps its redundant
+Share button for privacy-safe local thumbs analytics, and the Automations
+surface is lazy-loaded out of the boot shell.
+
+### Added
+
+- **Chat** - message action row mirrors 👍/👎 votes to a new local
+  `/api/feedback/message` store so votes can seed later quality analytics.
+  Whitelist-only fields, atomic writes, no message content ever egresses
+  (mirrors the Salem pathfinder-feedback privacy model) (#2289).
+- **Split view** - dragging a pane past the far edge collapses and promotes it;
+  the divider snaps magnetically to an even split (#2280, #2283).
+
+### Changed
+
+- **Chat** - removed the redundant Share button from the assistant action row
+  (it only copied text — the dedicated Copy button already does that) (#2289).
+- **Split divider** - dropped the ⅓·½·⅔ ratio buttons in favor of the magnetic
+  even-split gesture (#2283).
+- **Dashboard** - removed the "Copy link" button from report pages (#2281).
+- **Flow** - flow sessions launch in `nonInteractive` mode (#2287).
+
+### Fixed
+
+- **Shell** - the detail split now always fills the full width and re-fits when
+  its width changes, closing the desktop far-right gap (#2277, #2284).
+- **Chat** - switching threads mid-stream no longer crosses wires between
+  sessions (#2282).
+- **GitHub** - guarded the activity poll, stopped a manual refresh from eating
+  drafts, and surfaced CI passing/pending state (#2286).
+- **Board** - intent operations stop clobbering the full array on PATCH (#2275).
+- **Automations** - audit batch A: poll guards, edit-wipe fix, run-history
+  purge, and route hardening (#2278).
+
+### Performance
+
+- **Automations** - `AutomationsView` (~2500 lines) is now lazy-loaded like
+  `BoardView` instead of shipping in the boot shell; also dropped the dead
+  `workflow` automation kind (#2290).
+- **Chat** - killed per-row sibling scans and an O(n²) stream buffer, gated the
+  log, and made the artifact overlay a proper dialog (#2285).
+
+### Accessibility
+
+- **Board** - accessible names, focus restoration, scoped grab keys, and dated
+  reschedule announcements (#2276).
+- **Automations** - audit batch B: announcer, status labels, tab/menu
+  semantics, and focus handling (#2279).
+- **GitHub** - announce CRUD, label the composer, and focus-trap the action
+  popover (#2288).
+
 ## [0.0.133] - 2026-07-03
 
 Patch release on top of v0.0.132. Headline: the macOS overlay titlebar drags the
