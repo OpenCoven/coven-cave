@@ -17,6 +17,7 @@ assert.match(bubble, /const wireAll = \(\) => \{[\s\S]*?wireCopyButtons\(el\)[\s
 
 assert.match(bubble, /ph:thumbs-up/, "assistant action row has thumbs-up");
 assert.match(bubble, /ph:thumbs-down/, "assistant action row has thumbs-down");
-assert.match(bubble, /ph:share-network/, "assistant action row has share");
+assert.doesNotMatch(bubble, /ph:share-network/, "share action removed from assistant row");
+assert.match(bubble, /recordFeedbackAnalytics\(/, "thumbs votes are mirrored to the analytics store");
 
 console.log("message-bubble-rewire.test.ts: ok");

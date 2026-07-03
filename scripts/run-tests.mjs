@@ -537,6 +537,7 @@ export const SUITES = {
     "src/lib/server/automation-runner.test.ts",
     "src/lib/session-pins.test.ts",
     "src/lib/message-feedback.test.ts",
+    "src/lib/server/message-feedback-store.test.ts",
     "src/components/detail-split-host.test.ts",
   ],
   api: [
@@ -640,6 +641,7 @@ export const SUITES = {
     "src/app/api/library/doc/route.test.ts",
     "src/app/api/library/chat/chat-doc-path.test.ts",
     "src/app/api/salem/pathfinder/feedback/route.test.ts",
+    "src/app/api/feedback/message/route.test.ts",
     "src/app/api/launch/route.test.ts",
     "scripts/sidecar-bundle.test.mjs",
     "src/app/api/library/pdf/route.test.ts",
@@ -765,6 +767,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/cave-board-attachments.test.ts",
   "src/lib/cave-board-schedule.test.ts",
   "src/lib/salem/pathfinder-feedback.test.ts",
+  "src/lib/server/message-feedback-store.test.ts",
   "src/lib/session-rail-title.test.ts",
   "src/lib/server/familiar-contract-files.test.ts",
   "src/lib/server/project-paths.test.ts",

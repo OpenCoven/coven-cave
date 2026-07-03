@@ -30,7 +30,7 @@ import type { PreviewPlugin } from "@create-markdown/preview";
 import type { Highlighter } from "shiki";
 import moodCTheme from "@/styles/shiki/mood-c-dark.json";
 import { Icon } from "@/lib/icon";
-import { getFeedback, setFeedback, type Feedback } from "@/lib/message-feedback";
+import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type FeedbackContext } from "@/lib/message-feedback";
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -1027,8 +1027,9 @@ export type MessageBubbleProps = {
   /** Stable id for this message — enables local thumbs-up/down persistence
    *  (assistant role only). Without it the thumbs buttons are not rendered. */
   messageId?: string;
-  /** Share this turn — renders a Share action in the assistant action row. */
-  onShare?: () => void;
+  /** Non-identifying context (e.g. the familiar id) stamped alongside a thumbs
+   *  vote when it's mirrored to the local analytics store. */
+  feedbackContext?: FeedbackContext;
   /** CHAT-D4-01: ordered segments — prose spans interleaved with tool blocks
    *  at their chronological position. Assistant role only; when present they
    *  replace the single MarkdownContent render. `content` must still carry
@@ -1046,10 +1047,16 @@ export type MessageBubbleProps = {
   };
 };
 
-export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, onShare, segments, branchNav }: MessageBubbleProps) {
+export function MessageBubble({ role, content, timestamp, showTimestamp = true, pending, isError, label, onEdit, onRegenerate, onReply, onOpenUrl, messageId, feedbackContext, segments, branchNav }: MessageBubbleProps) {
   const [tsVisible, setTsVisible] = useState(false);
   const [vote, setVote] = useState<Feedback | null>(() => (messageId ? getFeedback(messageId) : null));
-  const applyVote = (v: Feedback) => { if (!messageId) return; setFeedback(messageId, v); setVote(getFeedback(messageId)); };
+  const applyVote = (v: Feedback) => {
+    if (!messageId) return;
+    setFeedback(messageId, v);
+    const next = getFeedback(messageId);
+    setVote(next);
+    recordFeedbackAnalytics(messageId, v, next === null, feedbackContext);
+  };
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = () => {
@@ -1235,16 +1242,6 @@ export function MessageBubble({ role, content, timestamp, showTimestamp = true, 
                 <Icon name="ph:thumbs-down" width={13} aria-hidden />
               </button>
             </>
-          ) : null}
-          {onShare ? (
-            <button
-              type="button"
-              aria-label="Share"
-              onClick={onShare}
-              className="cave-copy-btn cave-copy-btn-bubble cave-copy-btn--icon"
-            >
-              <Icon name="ph:share-network" width={13} aria-hidden />
-            </button>
           ) : null}
         </div>
       ) : null}

@@ -5580,13 +5580,7 @@ function TurnRowImpl({
                   isError={turn.error}
                   label={familiar.display_name}
                   messageId={turn.id}
-                  onShare={() => {
-                    try {
-                      void navigator.clipboard?.writeText(typeof visible === "string" ? visible : "");
-                    } catch {
-                      /* clipboard unavailable */
-                    }
-                  }}
+                  feedbackContext={{ familiarId: familiar.id }}
                   onRegenerate={onRegenerate}
                   onReply={onReply}
                   onOpenUrl={onOpenUrl}
