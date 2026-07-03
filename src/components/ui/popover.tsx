@@ -180,9 +180,29 @@ export function Popover({
   );
 }
 
-/** Common popover content scaffold. */
-export function PopoverBody({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={["ui-popover-body", className ?? ""].filter(Boolean).join(" ")}>{children}</div>;
+/** Common popover content scaffold. Pass role="menu" (with an ariaLabel) when the
+ *  body is a pure menu of menuitem/menuitemradio children, so the ARIA hierarchy
+ *  is menu > menuitemradio rather than items loose in the dialog. */
+export function PopoverBody({
+  children,
+  className,
+  role,
+  ariaLabel,
+}: {
+  children: ReactNode;
+  className?: string;
+  role?: "menu";
+  ariaLabel?: string;
+}) {
+  return (
+    <div
+      className={["ui-popover-body", className ?? ""].filter(Boolean).join(" ")}
+      role={role}
+      aria-label={ariaLabel}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function PopoverLabel({ children }: { children: ReactNode }) {

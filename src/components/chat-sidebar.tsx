@@ -18,7 +18,12 @@ import {
   isSessionPinned,
   readPinnedSessions,
   togglePinnedSession,
+  readChatSidebarView,
+  writeChatSidebarView,
+  type ChatSidebarView,
 } from "@/lib/chat-session-prefs";
+import { deriveChatRecencyBuckets } from "@/lib/chat-recency";
+import { Popover, PopoverBody, PopoverItem, PopoverLabel } from "@/components/ui/popover";
 import { addChatProject, projectNameForRoot } from "@/lib/chat-add-project";
 
 type Props = {
@@ -38,7 +43,7 @@ type Props = {
 const THREADS_PREVIEW = 6;
 
 function compactTime(iso: string): string {
-  return relativeTime(iso, Date.now(), "compact");
+  return relativeTime(iso, Date.now(), "bare");
 }
 
 function statusDotClass(status: string): string {
@@ -194,11 +199,15 @@ export function ChatSidebar({
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [registeringRoot, setRegisteringRoot] = useState<string | null>(null);
   const [registerError, setRegisterError] = useState<string | null>(null);
+  const [view, setView] = useState<ChatSidebarView>("recent");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuAnchorRef = useRef<HTMLButtonElement>(null);
 
   // Pins load after mount so SSR and first client render agree (same idiom as
   // the chat list). The store is shared with the chat surface's other lists.
   useEffect(() => {
     setPinnedIds(readPinnedSessions());
+    setView(readChatSidebarView());
     setHydrated(true);
   }, []);
   useEffect(() => {
@@ -239,6 +248,20 @@ export function ChatSidebar({
       );
   }, [groups, query]);
 
+  // Recent view: search filters rows (empty buckets drop out via derive).
+  const recentSessions = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return visibleSessions;
+    return visibleSessions.filter((s) => sessionRailTitle(s).toLowerCase().includes(q));
+  }, [visibleSessions, query]);
+
+  // Date.now() is fine here: sessions poll frequently, so buckets re-derive on
+  // every data refresh — a row won't sit in "Today" long past midnight.
+  const recentBuckets = useMemo(
+    () => (view === "recent" ? deriveChatRecencyBuckets(recentSessions, Date.now()) : []),
+    [view, recentSessions],
+  );
+
   const toggleCollapse = (key: string) => {
     setCollapsedKeys((cur) => {
       const next = new Set(cur);
@@ -250,6 +273,12 @@ export function ChatSidebar({
 
   const togglePin = (sessionId: string) => {
     setPinnedIds((prev) => togglePinnedSession(prev, sessionId));
+  };
+
+  const selectView = (next: ChatSidebarView) => {
+    setView(next);
+    writeChatSidebarView(next);
+    setMenuOpen(false);
   };
 
   async function handleDeleteSession(session: SessionRow) {
@@ -308,8 +337,40 @@ export function ChatSidebar({
           </button>
           <div className="min-w-0">
             <div className="truncate text-[12px] font-semibold text-[var(--text-primary)]">Chats</div>
-            <div className="truncate text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">Projects</div>
+            <div className="truncate text-[10px] uppercase tracking-[0.12em] text-[var(--text-muted)]">
+              {view === "recent" ? "Recent chats" : "Projects"}
+            </div>
           </div>
+          <button
+            ref={menuAnchorRef}
+            type="button"
+            aria-label="Sidebar options"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            title="Sidebar options"
+            onClick={() => setMenuOpen((cur) => !cur)}
+            className="focus-ring ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          >
+            <Icon name="ph:dots-three-bold" width={14} aria-hidden />
+          </button>
+          <Popover
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            anchorRef={menuAnchorRef}
+            placement="bottom-end"
+            minWidth={190}
+            ariaLabel="Sidebar options"
+          >
+            <PopoverBody role="menu" ariaLabel="Organize sidebar">
+              <PopoverLabel>Organize sidebar</PopoverLabel>
+              <PopoverItem icon="ph:clock" checked={view === "recent"} onSelect={() => selectView("recent")}>
+                Recent chats
+              </PopoverItem>
+              <PopoverItem icon="ph:folder" checked={view === "projects"} onSelect={() => selectView("projects")}>
+                By project
+              </PopoverItem>
+            </PopoverBody>
+          </Popover>
         </header>
 
         <nav aria-label="Chat navigation" className="shrink-0 border-b border-[var(--border-hairline)] px-1.5 py-1.5">
@@ -367,11 +428,12 @@ export function ChatSidebar({
           </div>
         ) : null}
 
-        <nav aria-label="Chat projects and threads" className="min-h-0 flex-1 overflow-y-auto pb-2">
+        <nav aria-label="Chat threads" className="min-h-0 flex-1 overflow-y-auto pb-2">
           {!hasSearch && pinnedSessions.length > 0 ? (
             <section aria-label="Pinned threads" className="border-b border-[var(--border-hairline)] py-1">
               <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">Pinned</div>
               <ul>
+                {/* Pinned rail uses a compact read-only row; ThreadRow is the full interactive row. */}
                 {pinnedSessions.map((session) => {
                   const title = sessionRailTitle(session);
                   const active = activeSessionId === session.id;
@@ -393,7 +455,58 @@ export function ChatSidebar({
             </section>
           ) : null}
 
-          {visibleGroups.length === 0 ? (
+          {view === "recent" ? (
+            recentBuckets.length === 0 ? (
+              <p className="px-3 py-4 text-center text-[11px] text-[var(--text-muted)]">
+                {hasSearch ? "No threads match your search." : "No conversations yet."}
+              </p>
+            ) : (
+              recentBuckets.map((bucket) => {
+                const key = `bucket:${bucket.key}`;
+                const rows =
+                  showAllByKey.has(key) || hasSearch
+                    ? bucket.sessions
+                    : bucket.sessions.slice(0, THREADS_PREVIEW);
+                return (
+                  <section key={bucket.key} aria-label={bucket.label} className="py-1">
+                    <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted)]">
+                      {bucket.label}
+                    </div>
+                    <ul>
+                      {rows.map((session) => (
+                        <li key={session.id}>
+                          <ThreadRow
+                            session={session}
+                            active={activeSessionId === session.id}
+                            pinned={isSessionPinned(pinnedIds, session.id)}
+                            confirming={confirmingSessionId === session.id}
+                            deleting={deletingSessionId === session.id}
+                            indent="flat"
+                            onOpen={() => onOpenSession(session)}
+                            onTogglePin={() => togglePin(session.id)}
+                            onRequestDelete={() => setConfirmingSessionId(session.id)}
+                            onCancelDelete={() => setConfirmingSessionId(null)}
+                            onConfirmDelete={() => void handleDeleteSession(session)}
+                          />
+                        </li>
+                      ))}
+                      {bucket.sessions.length > THREADS_PREVIEW && !showAllByKey.has(key) && !hasSearch ? (
+                        <li>
+                          <button
+                            type="button"
+                            onClick={() => setShowAllByKey((cur) => new Set(cur).add(key))}
+                            className="focus-ring w-full py-1.5 pl-7 pr-3 text-left text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                          >
+                            Show {bucket.sessions.length - THREADS_PREVIEW} more
+                          </button>
+                        </li>
+                      ) : null}
+                    </ul>
+                  </section>
+                );
+              })
+            )
+          ) : visibleGroups.length === 0 ? (
             <p className="px-3 py-4 text-center text-[11px] text-[var(--text-muted)]">
               {hasSearch ? "No threads match your search." : "No conversations yet."}
             </p>
