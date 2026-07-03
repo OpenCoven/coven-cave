@@ -10,7 +10,9 @@
  */
 
 import { readdir, readFile, writeFile, access, mkdir, rm, realpath } from "node:fs/promises";
-import { purgeRuns } from "@/lib/automation-runs";
+// Relative + explicit extension like the other local imports: this module is
+// exercised by a loaderless node:test run, where "@/" aliases don't resolve.
+import { purgeRuns } from "./automation-runs.ts";
 import path from "node:path";
 import { homedir } from "node:os";
 import { slugifyAutomationId } from "./codex-automation-form.ts";
