@@ -182,10 +182,6 @@ export function duplicateNode(
   return { doc: addNode(doc, duplicate), nodeId };
 }
 
-export function moveNode(doc: FlowDoc, id: string, position: FlowPosition): FlowDoc {
-  return mapNode(doc, id, (node) => ({ ...node, position }));
-}
-
 export function moveNodes(doc: FlowDoc, positions: Record<string, FlowPosition>): FlowDoc {
   let changed = false;
   const nodes = doc.nodes.map((node) => {
@@ -484,10 +480,6 @@ export function connect(
 export function disconnect(doc: FlowDoc, id: string): FlowDoc {
   if (!doc.edges.some((edge) => edge.id === id)) return doc;
   return { ...doc, edges: doc.edges.filter((edge) => edge.id !== id) };
-}
-
-export function disconnectEndpoints(doc: FlowDoc, source: string, target: string): FlowDoc {
-  return { ...doc, edges: doc.edges.filter((edge) => !(edge.source === source && edge.target === target)) };
 }
 
 export function nodeExecutionChangedSinceSnapshot(
