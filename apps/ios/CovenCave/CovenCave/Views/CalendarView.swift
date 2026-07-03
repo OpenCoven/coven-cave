@@ -8,13 +8,18 @@ import SwiftUI
 struct CalendarView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.chrome) private var chrome
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    /// Task shown in the split detail pane (regular width).
     @State private var taskSelection: BoardCard?
+    /// Task shown in a sheet (compact width — agenda rows are plain buttons,
+    /// so a collapsed split view wouldn't push a detail on its own).
+    @State private var compactTask: BoardCard?
     /// A reminder awaiting delete confirmation (swipe or context menu).
     @State private var pendingDelete: Reminder?
     @State private var showJournal = false
 
     var body: some View {
-        NavigationStack {
+        NavigationSplitView {
             content
                 .navigationTitle("Calendar")
                 .navigationBarTitleDisplayMode(.inline)
@@ -29,7 +34,7 @@ struct CalendarView: View {
                     if !app.remindersLoaded { await app.loadReminders() }
                     if !app.tasksLoaded { await app.loadTasks() }
                 }
-                .sheet(item: $taskSelection) { card in
+                .sheet(item: $compactTask) { card in
                     NavigationStack { TaskDetailView(card: card) }
                 }
                 .sheet(isPresented: $showJournal) { JournalView() }
@@ -42,7 +47,22 @@ struct CalendarView: View {
                     }
                     Button("Cancel", role: .cancel) {}
                 } message: { reminder in Text(reminder.title) }
+                .sidebarColumn()
+        } detail: {
+            // A tapped task fills the pane beside the agenda on iPad (it used
+            // to open a modal sheet even with a whole pane of dead space); on
+            // iPhone the collapsed split view pushes it, same as before.
+            if let card = taskSelection {
+                NavigationStack { TaskDetailView(card: card) }
+            } else {
+                ContentUnavailableView {
+                    Label("Select an item", systemImage: "calendar")
+                } description: {
+                    Text("Pick a task to see its details beside the agenda.")
+                }
+            }
         }
+        .navigationSplitViewStyle(.balanced)
     }
 
     private var deleteDialogBinding: Binding<Bool> {
@@ -121,7 +141,10 @@ struct CalendarView: View {
                     }
                 }
         case .task(let card):
-            Button { taskSelection = card } label: { AgendaTaskRow(card: card) }
+            Button {
+                if horizontalSizeClass == .regular { taskSelection = card }
+                else { compactTask = card }
+            } label: { AgendaTaskRow(card: card) }
                 .buttonStyle(.plain)
                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 .contextMenu {
