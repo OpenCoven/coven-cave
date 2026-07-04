@@ -1,4 +1,6 @@
 // Exported for the behavioral test; injected verbatim as an inline <script>.
+import Script from "next/script";
+
 export const SIDECAR_AUTH_BRIDGE = `
 (() => {
   const tokenParam = "covenCaveToken";
@@ -81,7 +83,9 @@ export function SidecarAuthBridge() {
     sidecarAuthRequired(),
   )};`;
   return (
-    <script
+    <Script
+      id="sidecar-auth-bridge"
+      strategy="beforeInteractive"
       dangerouslySetInnerHTML={{
         __html: `${authRequirementScript}\n${SIDECAR_AUTH_BRIDGE}`,
       }}
