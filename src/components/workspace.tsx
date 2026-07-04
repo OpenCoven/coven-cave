@@ -51,8 +51,7 @@ import {
   LibraryView,
   MarketplaceView,
 } from "@/components/lazy-surfaces";
-import { CodeSidebar } from "@/components/code-sidebar";
-import { ChatSidebar } from "@/components/chat-sidebar";
+import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { CodeView } from "@/components/code-view";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
@@ -1928,7 +1927,7 @@ export function Workspace() {
   );
 
   const codeSidebar = (
-    <CodeSidebar
+    <WorkspaceSidebar
       sessions={sessions}
       activeFamiliarId={activeId}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
@@ -1954,7 +1953,7 @@ export function Workspace() {
   );
 
   const chatSidebar = (
-    <ChatSidebar
+    <WorkspaceSidebar
       sessions={sessions}
       activeFamiliarId={activeId}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
