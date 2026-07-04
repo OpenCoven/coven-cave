@@ -6,6 +6,7 @@ import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { TerminalKeyBar } from "@/components/terminal-key-bar";
 import { PtyWsBridge } from "@/lib/pty-ws-bridge";
 import { Icon } from "@/lib/icon";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 // Bottom terminal pane — xterm.js in the browser, hooked up to a
 // portable-pty session on the Rust side (see src-tauri/src/pty.rs).
@@ -156,6 +157,10 @@ export function BottomTerminal({
   onUserInput?: (paneId: string, data: string) => void;
 }) {
   const broadcastPaneId = paneId ?? threadId;
+  // Connection transitions are written into the terminal (and its polite
+  // mirror) as dim ANSI, where a disconnect can be buried under output — mirror
+  // them to the shared assertive live region so AT interrupts with the status.
+  const { announce: srAnnounce } = useAnnouncer();
   // Writer set by whichever transport (Tauri / WS) is live; the registered
   // wrapper reads this ref at call time so registration can precede attach.
   const writerRef = useRef<((data: string) => void) | null>(null);
@@ -622,6 +627,7 @@ export function BottomTerminal({
           announce(
             "\r\n\x1b[2m[terminal reconnect failed — press any key to retry]\x1b[0m\r\n",
           );
+          srAnnounce("Terminal reconnect failed; press any key to retry", "assertive");
         } finally {
           reconnecting = false;
         }
@@ -633,6 +639,7 @@ export function BottomTerminal({
           announce(
             "\r\n\x1b[2m[this terminal was opened in another window — view detached]\x1b[0m\r\n",
           );
+          srAnnounce("This terminal was opened in another window; this view is detached", "assertive");
           return;
         }
         if (reason === "pty exit") {
@@ -640,6 +647,7 @@ export function BottomTerminal({
           return;
         }
         announce("\r\n\x1b[2m[terminal disconnected — reconnecting…]\x1b[0m\r\n");
+        srAnnounce("Terminal disconnected, reconnecting", "assertive");
         void attemptReconnect();
       });
 
