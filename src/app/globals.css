@@ -4947,50 +4947,6 @@ button:active > .edge-rail-chip {
   border-color: color-mix(in oklch, var(--accent-presence) 55%, var(--border-hairline));
 }
 
-/* Code mode crowds the tab row (familiar scope + Sessions/Memory tabs +
-   Code/Changes switch), so tighten its padding/gaps. */
-:root[data-code-inline-toolbar] .chat-scope-tabs--minimal {
-  padding-inline: 8px;
-  gap: 8px;
-}
-:root[data-code-inline-toolbar] .chat-scope-tabs--minimal > div:first-child {
-  gap: 8px;
-}
-
-/* Inline Code/Changes segmented toggle on the Code surface tab row. */
-.code-mode-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  height: 28px;
-  padding: 2px;
-  border-radius: 18px;
-  border: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-base) 52%, transparent);
-}
-
-.code-mode-toggle__button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 22px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
-}
-.code-mode-toggle__button:hover {
-  color: var(--text-secondary);
-}
-.code-mode-toggle__button[aria-pressed="true"] {
-  color: var(--text-primary);
-  background: color-mix(in oklch, var(--bg-raised) 92%, var(--foreground) 8%);
-}
-
 /* ────────────────────────────────────────────────
    Rail-pane empty + memory styles
    (Phase 2, shell-ia-redesign)

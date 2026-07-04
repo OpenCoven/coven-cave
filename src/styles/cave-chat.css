@@ -46,14 +46,6 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* Code surface (mode === "code"): the chat pane is transcript-only, so it can
-   get wide. Cap the measure at a readable ~90ch by default so agent prose
-   doesn't stretch to 200-char lines. An explicit Settings reading-width still
-   wins (the var), and standalone chat (no data-surface="code") keeps `none`. */
-[data-surface="code"] .cave-md {
-  max-width: var(--cave-reading-width, 90ch);
-}
-
 /* Chat message prose reads in Inter — a neutral grotesque for the ChatGPT/Codex
    look — instead of the rounder geometric UI sans (Geist). Scoped to chat bubbles
    so library-doc and memory prose (which also use .cave-md) keep the app font.

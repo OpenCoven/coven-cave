@@ -41,9 +41,9 @@ export const CODE_PRESET_HINTS: Record<CodePreset, string> = {
 
 /**
  * A preset is more than a width: it sets up the whole Code workspace for a task.
- * These maps let the chat-pane toolbar (CodeInlineToolbar) and the coding surface
- * (comux-view) agree on the *context* each preset implies, dispatched over the
- * events below so neither component has to reach into the other.
+ * These maps let external controls and the coding surface (comux-view) agree on
+ * the *context* each preset implies, dispatched over the events below so neither
+ * component has to reach into the other.
  */
 
 /** Which comux right-pane a preset switches to, or null to leave it untouched. */

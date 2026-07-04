@@ -565,7 +565,6 @@ export function CommandPalette({
       : rank(FOLDER_MODES.filter((fm) => {
           if (fm.id === "github") return addons?.github === true;
           if (fm.id === "library") return addons?.library === true;
-          if (fm.id === "code") return addons?.code === true;
           if (fm.id === "terminal") return addons?.terminal === true;
           if (fm.id === "browser") return addons?.browser === true;
           if (fm.id === "flow") return addons?.flow === true;

@@ -285,9 +285,6 @@ type Props = {
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
   onProjectRootChange?: (projectRoot: string | null) => void;
-  /** Which surface embeds this ChatView ("code" for the Codex coding split).
-   *  Surface-aware composer copy and styling key off it. */
-  surface?: string;
 };
 
 export type ChatViewHandle = {
@@ -2110,7 +2107,7 @@ async function chatBridgeFailureMessage(res: Response): Promise<string> {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange, surface },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -5111,7 +5108,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 const text = e.clipboardData.getData("text/plain");
                 if (looksLikeCsv(text)) { setCsvRaw(text); }
               }}
-              placeholder={busy ? "Streaming… (esc to cancel)" : surface === "code" ? "Ask for follow-up changes" : `Message ${familiar.display_name}…  ↵ to send`}
+              placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…  ↵ to send`}
               rows={1}
               inputMode="text"
               enterKeyHint="send"

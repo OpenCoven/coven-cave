@@ -511,29 +511,6 @@ export function Workspace() {
     return () => window.removeEventListener("cave:onboarding-open", openCreate);
   }, []);
 
-  // Cross-surface navigation bridge: surfaces that don't own setMode (e.g. the
-  // chat rail's nav block) announce a target mode and the Workspace switches to
-  // it. Keeps those surfaces decoupled from the mode state owner.
-  useEffect(() => {
-    const onNavigate = (e: Event) => {
-      const targetMode = (e as CustomEvent<{ mode?: string }>).detail?.mode;
-      if (!targetMode) return;
-      // "code" was retired — redirect to the most-recent repo session in chat.
-      if (targetMode === "code") {
-        const repoSession = [...sessionsRef.current]
-          .filter((s) => s.project_root)
-          .sort((a, b) => (b.updated_at || b.created_at).localeCompare(a.updated_at || a.created_at))[0];
-        if (repoSession) {
-          openFamiliarSession(repoSession.id, repoSession.familiarId);
-        }
-        return;
-      }
-      setMode(targetMode as WorkspaceMode);
-    };
-    window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
-    return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
-  }, [openFamiliarSession]);
-
   // `?mode=<WorkspaceMode>` deep link: external links (e.g. /retro redirects,
   // dashboard buttons) can land directly on a surface. Runs once on mount,
   // mirrors the hash deep-link idiom — switch then strip the param so reloads
@@ -1162,6 +1139,31 @@ export function Workspace() {
     });
     setMode("chat");
   }, []);
+
+  // Cross-surface navigation bridge: surfaces that don't own setMode (e.g. the
+  // chat rail's nav block) announce a target mode and the Workspace switches to
+  // it. Keeps those surfaces decoupled from the mode state owner.
+  useEffect(() => {
+    const onNavigate = (e: Event) => {
+      const targetMode = (e as CustomEvent<{ mode?: string }>).detail?.mode;
+      if (!targetMode) return;
+      // "code" was retired — redirect to the most-recent repo session in chat.
+      if (targetMode === "code") {
+        const repoSession = [...sessionsRef.current]
+          .filter((s) => s.project_root)
+          .sort((a, b) => (b.updated_at || b.created_at).localeCompare(a.updated_at || a.created_at))[0];
+        if (repoSession) {
+          openFamiliarSession(repoSession.id, repoSession.familiarId);
+        } else {
+          setMode("chat");
+        }
+        return;
+      }
+      setMode(targetMode as WorkspaceMode);
+    };
+    window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
+    return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
+  }, [openFamiliarSession]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1915,6 +1917,7 @@ export function Workspace() {
         await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
         await loadSessions();
       }}
+      scheduledCount={scheduleNeedsCount}
     />
   );
 

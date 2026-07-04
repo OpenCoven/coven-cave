@@ -697,7 +697,6 @@ function DaemonSection() {
 type AddonKey =
   | "github"
   | "library"
-  | "code"
   | "terminal"
   | "browser"
   | "flow"
@@ -727,13 +726,6 @@ const ADDON_ROWS: Array<{
     description: "Save links, notes, and references for your familiars to draw from.",
   },
   // Sidebar surfaces — off by default to keep Cave simple; turn on what you need.
-  {
-    key: "code",
-    label: "Code",
-    icon: "ph:code",
-    group: "surfaces",
-    description: "Chat with a familiar beside your files and a terminal.",
-  },
   {
     key: "terminal",
     label: "Terminal",
