@@ -131,6 +131,25 @@ assert.match(
   "Unknown/stale deep-link ids must fall back to the chat list with the hash cleared — no crash",
 );
 
+// ── Deep-link loading hint (2026-07-04) ─────────────────────────────────────
+// The restore holds until the sessions fetch settles (~2s warm, longer under a
+// cold compile) — the shell must show intent for that beat, not flash Home.
+assert.match(
+  workspaceSource,
+  /const \[chatDeepLinkPending, setChatDeepLinkPending\] = useState<boolean>\(\s*\(\) => pendingChatDeepLinkRef\.current !== null,\s*\)/,
+  "the pending deep link mirrors into render state seeded from the mount-time hash",
+);
+assert.match(
+  restoreEffect,
+  /setChatDeepLinkPending\(false\)/,
+  "resolving the deep link (found or stale) clears the takeover",
+);
+assert.match(
+  workspaceSource,
+  /\{chatDeepLinkPending && \([\s\S]{0,200}workspace-deeplink-pending[\s\S]{0,120}role="status"[\s\S]{0,200}Opening chat…/,
+  "while pending, the shell renders an announced Opening-chat takeover",
+);
+
 const readChatHashHelper =
   workspaceSource.match(/function readChatHash\(\): string \| null \{[\s\S]*?\n\}/)?.[0] ?? "";
 

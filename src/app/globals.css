@@ -2296,6 +2296,32 @@ textarea.required-inputs-control {
   to { transform: rotate(360deg); }
 }
 
+/* Chat deep-link takeover: `#chat-<id>` holds until the sessions fetch
+   settles — show intent instead of flashing Home for that beat. */
+.workspace-deeplink-pending {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.workspace-deeplink-pending__spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in oklch, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  animation: ui-btn-spin 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-deeplink-pending__spinner { animation: none; }
+}
+
 /* ---- IconButton --------------------------------------------- */
 .ui-icon-btn {
   display: inline-flex;
