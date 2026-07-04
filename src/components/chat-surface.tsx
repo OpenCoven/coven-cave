@@ -9,6 +9,8 @@ import { InspectorPane } from "@/components/inspector-pane";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
 import { DebugPane } from "@/components/debug-pane";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
+import { WorkspaceRail } from "@/components/workspace-rail";
+import { useCodeRail } from "@/lib/use-code-rail";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
 import { Tabs } from "@/components/ui/tabs";
@@ -257,11 +259,98 @@ export function ChatSurface({
   // — only when the pane itself is wide enough to host both.
   const showRightSidebar = rightPanel !== null && !isMobile && !paneNarrow;
 
+  // ── Code rail (PR 1) ────────────────────────────────────────────────────────
+  // The active chat is reflected in the URL as `#chat-<sessionId>` (ChatRouter
+  // owns the write via syncUrlHash). Track that hash and resolve it against the
+  // sessions list to recover the active session's project_root + running status
+  // — the signals the code rail needs. Standalone chat surface only; code mode
+  // (comux) owns its own file/changes navigation.
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  useEffect(() => {
+    if (isCodeSurface || typeof window === "undefined") return;
+    const CHAT_HASH_PREFIX = "#chat-";
+    const read = () => {
+      const hash = window.location.hash;
+      if (!hash.startsWith(CHAT_HASH_PREFIX)) { setActiveSessionId(null); return; }
+      try {
+        setActiveSessionId(decodeURIComponent(hash.slice(CHAT_HASH_PREFIX.length)) || null);
+      } catch {
+        setActiveSessionId(null);
+      }
+    };
+    read();
+    // The router mutates the hash via pushState/replaceState (no hashchange
+    // event fires for those), so also poll on the same cadence the shell uses
+    // to re-read app hashes — cheap string compare, no fetch.
+    window.addEventListener("hashchange", read);
+    window.addEventListener("popstate", read);
+    const id = window.setInterval(read, 400);
+    return () => {
+      window.removeEventListener("hashchange", read);
+      window.removeEventListener("popstate", read);
+      window.clearInterval(id);
+    };
+  }, [isCodeSurface]);
+
+  const activeSession = useMemo(
+    () => (activeSessionId ? sessions.find((s) => s.id === activeSessionId) ?? null : null),
+    [activeSessionId, sessions],
+  );
+  const railProjectRoot = activeSession?.project_root ?? null;
+  const sessionRunning = activeSession?.status === "running";
+
+  // changeCount = number of pending working-tree files for the active session's
+  // project root. Mirrors session-changes-panel's /api/changes fetch (files
+  // length), re-polled on the `cave:changes-refresh` edit signal and, while the
+  // session is running, a light 5s interval gated on document visibility.
+  const [changeCount, setChangeCount] = useState(0);
+  const changeFetchInFlight = useRef(false);
+  useEffect(() => {
+    if (isCodeSurface || !railProjectRoot) { setChangeCount(0); return; }
+    const root = railProjectRoot;
+    let cancelled = false;
+    const load = async () => {
+      if (changeFetchInFlight.current) return;
+      changeFetchInFlight.current = true;
+      try {
+        const res = await fetch(`/api/changes?projectRoot=${encodeURIComponent(root)}`, { cache: "no-store" });
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; files?: unknown[] };
+        if (cancelled) return;
+        setChangeCount(res.ok && json.ok ? (json.files?.length ?? 0) : 0);
+      } catch {
+        if (!cancelled) setChangeCount(0);
+      } finally {
+        changeFetchInFlight.current = false;
+      }
+    };
+    void load();
+    const onRefresh = () => { void load(); };
+    window.addEventListener("cave:changes-refresh", onRefresh);
+    let intervalId: number | undefined;
+    if (sessionRunning) {
+      intervalId = window.setInterval(() => {
+        if (document.visibilityState === "visible") void load();
+      }, 5000);
+    }
+    return () => {
+      cancelled = true;
+      window.removeEventListener("cave:changes-refresh", onRefresh);
+      if (intervalId !== undefined) window.clearInterval(intervalId);
+    };
+  }, [isCodeSurface, railProjectRoot, sessionRunning]);
+
+  const rail = useCodeRail({ projectRoot: railProjectRoot, changeCount, terminalActive: false });
+  const showCodeRail = !isCodeSurface && rail.available && rail.open && !isMobile && !paneNarrow;
+
   // Persist the chat / right-area split. panelIds tracks which panels are
   // actually mounted so the with-sidebar and bare layouts persist separately.
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: CHAT_GROUP_ID,
-    panelIds: showRightSidebar ? ["chat-main", "right-sidebar"] : ["chat-main"],
+    panelIds: [
+      "chat-main",
+      ...(showRightSidebar ? ["right-sidebar"] : []),
+      ...(showCodeRail ? ["code-rail"] : []),
+    ],
     storage: chatStorage,
   });
 
@@ -509,9 +598,46 @@ export function ChatSurface({
                 </Panel>
               </>
             )}
+            {showCodeRail && (
+              <>
+                <Separator className="shell-separator hidden lg:flex">
+                  <SeparatorHandle orientation="col" />
+                </Separator>
+                <Panel
+                  id="code-rail"
+                  className="hidden min-h-0 min-w-0 lg:flex"
+                  defaultSize="320px"
+                  minSize="240px"
+                  maxSize="560px"
+                >
+                  <WorkspaceRail
+                    changeCount={changeCount}
+                    activeTab={rail.activeTab}
+                    pinned={rail.pinned}
+                    onSelectTab={rail.setActiveTab}
+                    onTogglePin={rail.togglePin}
+                    onCollapse={rail.collapse}
+                  />
+                </Panel>
+              </>
+            )}
           </Group>
         )}
       </div>
+      {/* Collapsed code rail: a slim reopen strip on the right edge. Shown when
+          the rail is available for the active repo session but has been
+          collapsed (or auto-hidden between edit batches). Same desktop-only /
+          wide-enough gate as the mounted rail. */}
+      {!isCodeSurface && rail.available && !rail.open && !isMobile && !paneNarrow && (
+        <button
+          type="button"
+          aria-label="Show code rail"
+          className="workspace-rail-reopen"
+          onClick={rail.reopen}
+        >
+          <Icon name="ph:caret-left" width={13} aria-hidden />
+        </button>
+      )}
       {/* Narrow: the inline 230px right sidebar can't fit beside the chat thread
           (phone viewport OR a narrow drag-to-split pane on a wide screen), so the
           Inspector/Debug/Changes panels open in a right-edge sheet over a
