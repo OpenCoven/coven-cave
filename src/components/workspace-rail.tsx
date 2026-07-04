@@ -19,6 +19,7 @@ export function WorkspaceRail({
   projectRoot,
   familiarId,
   sessionId,
+  hidePin = false,
   onSelectTab,
   onTogglePin,
   onCollapse,
@@ -29,6 +30,10 @@ export function WorkspaceRail({
   projectRoot: string | null;
   familiarId?: string | null;
   sessionId: string | null;
+  /** Hide the pin toggle (e.g. when hosted in a mobile sheet, where pinning a
+   *  transient overlay open is meaningless). Defaults to false — desktop keeps
+   *  the pin control. */
+  hidePin?: boolean;
   onSelectTab: (tab: CodeRailTab) => void;
   onTogglePin: () => void;
   onCollapse: () => void;
@@ -78,15 +83,17 @@ export function WorkspaceRail({
         <header className="workspace-rail__head">
           <span className="workspace-rail__title">{TAB_TITLE[activeTab]}</span>
           <span className="workspace-rail__actions">
-            <button
-              type="button"
-              className={`workspace-rail__btn focus-ring${pinned ? " is-on" : ""}`}
-              aria-label={pinned ? "Unpin code rail" : "Pin code rail open"}
-              aria-pressed={pinned}
-              onClick={onTogglePin}
-            >
-              <Icon name={pinned ? "ph:push-pin-fill" : "ph:push-pin"} width={13} aria-hidden />
-            </button>
+            {!hidePin && (
+              <button
+                type="button"
+                className={`workspace-rail__btn focus-ring${pinned ? " is-on" : ""}`}
+                aria-label={pinned ? "Unpin code rail" : "Pin code rail open"}
+                aria-pressed={pinned}
+                onClick={onTogglePin}
+              >
+                <Icon name={pinned ? "ph:push-pin-fill" : "ph:push-pin"} width={13} aria-hidden />
+              </button>
+            )}
             <button
               type="button"
               className="workspace-rail__btn focus-ring"

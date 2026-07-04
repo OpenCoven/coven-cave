@@ -4242,6 +4242,75 @@ details[open] > .cave-tool-summary::before {
   }
 }
 
+/* ── Mobile code-rail toggle + slide-over sheet (PR 3, Task 3) ────────────────
+   Below the mobile/narrow breakpoint the rail is a right-edge sheet opened by a
+   compact toggle button in the scope-tabs header (a </> glyph with the pending
+   change-count badge). The sheet slides in from the right edge; reduced-motion
+   zeroes the slide (mirrors the workspace-rail entrance convention above). */
+.mobile-code-rail-toggle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.mobile-code-rail-toggle:hover {
+  color: var(--text-primary);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+}
+.mobile-code-rail-toggle[aria-expanded="true"] {
+  color: var(--composer-pill-gold, oklch(0.81 0.105 83));
+  border-color: color-mix(in oklch, var(--composer-pill-gold, oklch(0.81 0.105 83)) 42%, transparent);
+  background: color-mix(in oklch, var(--composer-pill-gold, oklch(0.81 0.105 83)) 12%, transparent);
+}
+.mobile-code-rail-toggle__badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--composer-pill-gold, oklch(0.81 0.105 83));
+  color: oklch(0.22 0.02 83);
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes mobile-code-rail-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.mobile-code-rail-sheet__panel {
+  animation: mobile-code-rail-sheet-in var(--duration-base, 180ms)
+    var(--ease-decelerate, ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-code-rail-sheet__panel {
+    animation: none;
+  }
+}
+
 .workspace-rail__strip {
   flex: 0 0 36px;
   display: flex;

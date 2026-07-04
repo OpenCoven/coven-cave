@@ -146,6 +146,28 @@ test.describe("code rail beside chat", () => {
     await expect(rail.locator(".workspace-rail__preview-name")).toContainText("README.md");
   });
 
+  // PR 3 / Task 3: below the mobile breakpoint there's no room for the
+  // third-column rail Panel, so the rail is presented as a right-edge
+  // slide-over sheet opened by an explicit toggle button. Desktop-project runs
+  // must NOT see the toggle (the Panel path owns the rail there); mobile
+  // projects (pixel-5 / iphone-13) must.
+  test("(g) desktop → no mobile rail toggle (third-column Panel path owns it)", async ({ page, isMobile }) => {
+    test.skip(!!isMobile, "desktop-only");
+    const filesRef = { count: 0 };
+    await routeChanges(page, filesRef);
+    await base(page, [REPO_SESSION]);
+    await openSession(page, "Refactor auth flow");
+    // Rail is the third-column Panel on desktop…
+    await expect(page.locator(".workspace-rail")).toBeVisible({ timeout: 30_000 });
+    // …and the mobile toggle affordance is absent.
+    await expect(page.locator(".mobile-code-rail-toggle")).toHaveCount(0);
+  });
+
+  // The mobile slide-over-sheet path lives in tests/mobile/code-rail-sheet.spec.ts
+  // because Playwright's mobile projects (pixel-5 / iphone-13) only match specs
+  // under tests/mobile/ (see playwright.config.ts testMatch). A mobile-only test
+  // placed here would only ever run under the desktop project and self-skip.
+
   test("(f) Terminal tab → lazy pty host (not mounted until first opened)", async ({ page }) => {
     const filesRef = { count: 0 };
     await routeChanges(page, filesRef);

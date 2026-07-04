@@ -14,6 +14,7 @@ import { useCodeRail } from "@/lib/use-code-rail";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
 import { CodeInlineToolbar } from "@/components/code-inline-toolbar";
@@ -345,6 +346,25 @@ export function ChatSurface({
   }, [snapshot.sessionId, terminalOpened]);
   const showCodeRail = !isCodeSurface && rail.available && rail.open && !isMobile && !paneNarrow;
 
+  // ── Mobile code rail (PR 3, Task 3) ─────────────────────────────────────────
+  // Below the mobile/narrow breakpoint there's no room for the third-column
+  // Panel, so the rail is presented as a right-edge slide-over sheet over the
+  // full-screen chat, opened by an explicit toggle button. Default closed —
+  // auto-opening an overlay on mobile is intrusive, so we do NOT mirror
+  // rail.open here.
+  const mobileRail = !isCodeSurface && (isMobile || paneNarrow) && rail.available;
+  const [mobileRailOpen, setMobileRailOpen] = useState(false);
+  const mobileRailSheetRef = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(mobileRailOpen, mobileRailSheetRef, {
+    onEscape: () => setMobileRailOpen(false),
+  });
+  // Can't get stuck open: close if there's nothing to show (rail no longer
+  // available) or when the layout leaves mobile/narrow (the desktop Panel path
+  // owns the rail there, so the overlay must not linger behind it).
+  useEffect(() => {
+    if (!rail.available || (!isMobile && !paneNarrow)) setMobileRailOpen(false);
+  }, [rail.available, isMobile, paneNarrow]);
+
   // Announce code-rail visibility to the shell so it can soft-collapse the left
   // nav to its icon rail while the rail is open (keeps chat centered). Directional
   // event — the shell owns the nav state and decides how to react. Runs on mount
@@ -537,6 +557,26 @@ export function ChatSurface({
                 { id: "projects", label: "Projects" },
               ]}
             />
+            {/* Mobile / narrow-pane code-rail toggle. On desktop the rail is a
+                third column; below the breakpoint there's no room, so it opens
+                as a right-edge slide-over sheet (below). Mirrors the mobile
+                right-sheet affordance placement. Scoped to the conversation tab
+                so it doesn't hover over the Projects list. */}
+            {mobileRail && scope === "conversation" && (
+              <button
+                type="button"
+                className="mobile-code-rail-toggle focus-ring"
+                aria-label="Show code rail"
+                aria-haspopup="dialog"
+                aria-expanded={mobileRailOpen}
+                onClick={() => setMobileRailOpen((v) => !v)}
+              >
+                <Icon name="ph:code" width={16} aria-hidden />
+                {changeCount > 0 ? (
+                  <span className="mobile-code-rail-toggle__badge">{changeCount}</span>
+                ) : null}
+              </button>
+            )}
           </div>
         ) : null}
 
@@ -686,6 +726,46 @@ export function ChatSurface({
               onCreateReminder={onCreateReminder}
               onOpenInboxItem={onOpenInboxItem}
               onInboxItemChanged={onInboxItemChanged}
+            />
+          </div>
+        </div>
+      )}
+      {/* Mobile / narrow code rail: same WorkspaceRail as desktop, but hosted in
+          a full-height right-edge slide-over sheet over the full-screen chat
+          instead of a third-column Panel. Opened by the toggle button in the
+          scope-tabs header; dismissed by backdrop tap, Escape (via useFocusTrap),
+          or the rail's own collapse control (which here means "close the
+          overlay"). The pin control is hidden — pinning a transient sheet open
+          is meaningless. */}
+      {mobileRail && mobileRailOpen && (
+        <div
+          className="mobile-code-rail-sheet fixed inset-0 z-[200] flex justify-end"
+          role="presentation"
+        >
+          <button
+            type="button"
+            aria-label="Close code rail"
+            className="absolute inset-0 bg-[var(--backdrop-scrim)]"
+            onClick={() => setMobileRailOpen(false)}
+          />
+          <div
+            ref={mobileRailSheetRef}
+            className="mobile-code-rail-sheet__panel relative flex h-full w-[min(92vw,420px)] flex-col bg-[var(--bg-raised)] shadow-[-8px_0_32px_rgba(0,0,0,0.2)] [padding-bottom:var(--sai-bottom)] [padding-top:var(--sai-top)]"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Code rail"
+          >
+            <WorkspaceRail
+              changeCount={changeCount}
+              activeTab={rail.activeTab}
+              pinned={rail.pinned}
+              projectRoot={railProjectRoot}
+              familiarId={snapshot.familiar?.id ?? null}
+              sessionId={snapshot.sessionId ?? null}
+              hidePin
+              onSelectTab={rail.setActiveTab}
+              onTogglePin={rail.togglePin}
+              onCollapse={() => setMobileRailOpen(false)}
             />
           </div>
         </div>
