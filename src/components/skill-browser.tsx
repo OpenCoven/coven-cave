@@ -16,38 +16,70 @@ export type SkillBrowserEntry = {
   description?: string;
   version?: string;
   kind?: string;
+  slug?: string;
+  owner?: string;
+  repo?: string;
+  packageName?: string;
   tags?: string[];
-  /** Absolute path to the skill's SKILL.md. */
-  path: string;
-  /** Scan scope: "user" (~/.claude/skills) or "global" (Coven shared skills). */
-  familiar: string;
+  topics?: string[];
+  agents?: string[];
+  trust?: {
+    official?: boolean;
+    audited?: boolean;
+    source?: "registry" | "local" | "daemon" | "fallback";
+  };
+  installed?: boolean;
+  installsAllTime?: number;
+  trendScore?: number;
+  hotScore?: number;
+  source?: "registry" | "local" | "daemon" | "fallback";
+  local?: {
+    installed: boolean;
+    path?: string;
+    version?: string;
+    scope?: "coven" | "claude-user" | "other-local";
+    source?: "local-match" | "local-scan";
+  };
+  /** Absolute path to the skill's SKILL.md (local entries only). */
+  path?: string;
+  /** Scan scope: "user" (~/.claude/skills), "global" (Coven shared skills),
+   * or omitted for directory-only entries.
+   */
+  familiar?: string;
 };
 
-type Category = "all" | "claude" | "generic";
+type Category = "all" | "installed" | "claude" | "generic";
 type PreviewState = {
   status: "idle" | "loading" | "loaded" | "error";
   text: string | null;
   error: string | null;
 };
 
-// The scan tags user skills (~/.claude/skills) as "user" and shared Coven skills
-// as "global"; surface those as "Claude Code" vs "Generic".
-function categoryOf(skill: SkillBrowserEntry): "claude" | "generic" {
+// The scan tags user skills (~/.claude/skills) as "user" and shared Coven
+// skills as "global"; directory entries without a local path are grouped with
+// Generic while installed entries get a first-class Installed tab.
+function categoryOf(skill: SkillBrowserEntry): "installed" | "claude" | "generic" {
+  if (skill.installed || skill.local?.installed) return "installed";
   return skill.familiar === "user" ? "claude" : "generic";
 }
-const CATEGORY_LABEL: Record<"claude" | "generic", string> = {
+const CATEGORY_LABEL: Record<"installed" | "claude" | "generic", string> = {
+  installed: "Installed",
   claude: "Claude Code",
   generic: "Generic",
 };
 
 const RAIL: { id: Category; label: string; icon: IconName }[] = [
   { id: "all", label: "All Skills", icon: "ph:squares-four" },
+  { id: "installed", label: "Installed", icon: "ph:check-circle" },
   { id: "claude", label: "Claude Code", icon: "ph:terminal-window" },
   { id: "generic", label: "Generic", icon: "ph:puzzle-piece" },
 ];
 
 function skillKey(skill: SkillBrowserEntry): string {
-  return `${skill.familiar}:${skill.id}:${skill.path}`;
+  const scope = skill.local ? "local" : "remote";
+  const base = skill.slug ?? skill.id;
+  const bucket = skill.path ?? `${skill.owner ?? ""}:${skill.repo ?? ""}`;
+  return `${scope}:${base}:${bucket}`;
 }
 
 // SKILL.md opens with a YAML frontmatter block (name/description/tags) already
@@ -58,7 +90,20 @@ function stripFrontmatter(text: string): string {
 
 function matchesQuery(skill: SkillBrowserEntry, query: string): boolean {
   if (!query) return true;
-  const hay = [skill.id, skill.name, skill.description, skill.kind, skill.familiar, ...(skill.tags ?? [])]
+  const hay = [
+    skill.id,
+    skill.name,
+    skill.description,
+    skill.kind,
+    skill.owner,
+    skill.repo,
+    skill.slug,
+    skill.packageName,
+    skill.familiar,
+    ...(skill.tags ?? []),
+    ...(skill.topics ?? []),
+    ...(skill.agents ?? []),
+  ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -115,6 +160,7 @@ export function SkillBrowser({
   const counts = useMemo(
     () => ({
       all: skills.length,
+      installed: skills.filter((s) => categoryOf(s) === "installed").length,
       claude: skills.filter((s) => categoryOf(s) === "claude").length,
       generic: skills.filter((s) => categoryOf(s) === "generic").length,
     }),
@@ -132,7 +178,8 @@ export function SkillBrowser({
     () => visible.find((s) => skillKey(s) === selectedKey) ?? visible[0] ?? null,
     [visible, selectedKey],
   );
-  const selectedPath = selected?.path ?? null;
+  const selectedPath = selected?.local?.path ?? selected?.path ?? null;
+  const selectedHasLocalPath = Boolean(selected?.local?.installed && selectedPath);
 
   // Load the selected skill's SKILL.md for the detail pane. Only paths under the
   // allow-listed roots return content; anything else 403s → fall back to the
@@ -243,7 +290,7 @@ export function SkillBrowser({
         ) : skills.length === 0 ? (
           <div className="skill-browser__empty">
             <Icon name="ph:puzzle-piece" width={22} aria-hidden />
-            <p>No local skills found.</p>
+            <p>No directory skills found.</p>
             {onCreateSkill ? (
               <button type="button" className="skill-browser__empty-action" onClick={onCreateSkill}>
                 Open Capabilities
@@ -290,35 +337,48 @@ export function SkillBrowser({
             <div className="skill-browser__detail-head">
               <div className="skill-browser__detail-titlerow">
                 <h2 className="skill-browser__detail-name">{selected.name}</h2>
-                <div className="skill-browser__actions">
-                  <button
-                    type="button"
-                    className="skill-browser__action"
-                    onClick={handleReveal}
-                    disabled={busy != null}
-                    title="Reveal skill folder"
-                    aria-label="Reveal skill folder"
-                  >
-                    <Icon name="ph:folder-open" width={16} aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className={`skill-browser__action skill-browser__action--danger${confirmingDelete ? " is-confirming" : ""}`}
-                    onClick={handleDelete}
-                    disabled={busy != null}
-                    title={confirmingDelete ? "Confirm delete" : "Delete skill"}
-                    aria-label={confirmingDelete ? "Confirm delete skill" : "Delete skill"}
-                  >
-                    <Icon name="ph:trash" width={16} aria-hidden />
-                    {confirmingDelete ? <span className="skill-browser__action-label">Delete?</span> : null}
-                  </button>
-                </div>
+                {selectedHasLocalPath ? (
+                  <div className="skill-browser__actions">
+                    <button
+                      type="button"
+                      className="skill-browser__action"
+                      onClick={handleReveal}
+                      disabled={busy != null}
+                      title="Reveal skill folder"
+                      aria-label="Reveal skill folder"
+                    >
+                      <Icon name="ph:folder-open" width={16} aria-hidden />
+                    </button>
+                    <button
+                      type="button"
+                      className={`skill-browser__action skill-browser__action--danger${confirmingDelete ? " is-confirming" : ""}`}
+                      onClick={handleDelete}
+                      disabled={busy != null}
+                      title={confirmingDelete ? "Confirm delete" : "Delete skill"}
+                      aria-label={confirmingDelete ? "Confirm delete skill" : "Delete skill"}
+                    >
+                      <Icon name="ph:trash" width={16} aria-hidden />
+                      {confirmingDelete ? <span className="skill-browser__action-label">Delete?</span> : null}
+                    </button>
+                  </div>
+                ) : null}
               </div>
-              <p className="skill-browser__detail-path" title={selected.path}>
-                {displayPath(selected.path)}
+              <p className="skill-browser__detail-path" title={selected.path ?? selected?.source ?? "directory"}>
+                {selected.path
+                  ? displayPath(selected.path)
+                  : selected.owner
+                    ? `${selected.owner}/${selected.repo ?? ""}`
+                    : "Directory listing"}
               </p>
               <div className="skill-browser__detail-meta">
                 <span className="skill-browser__badge">{CATEGORY_LABEL[categoryOf(selected)]}</span>
+                {selected.installsAllTime ? (
+                  <span className="skill-browser__badge">Installs: {selected.installsAllTime}</span>
+                ) : null}
+                {selected.trendScore ? <span className="skill-browser__badge">Trend: {selected.trendScore}</span> : null}
+                {selected.hotScore ? <span className="skill-browser__badge">Hot: {selected.hotScore}</span> : null}
+                {selected.trust?.official ? <span className="skill-browser__badge">Official</span> : null}
+                {selected.trust?.audited ? <span className="skill-browser__badge">Audited</span> : null}
                 {selected.version ? <span className="skill-browser__badge">v{selected.version}</span> : null}
                 {(selected.tags ?? []).slice(0, 6).map((t) => (
                   <span key={t} className="skill-browser__tag">
