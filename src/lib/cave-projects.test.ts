@@ -16,6 +16,7 @@ try {
     projectById,
     projectForRoot,
     seedDefaultProjectsIfEmpty,
+    sortProjectsAlphabetically,
   } = await import("./cave-projects.ts");
   const source = await readFile(new URL("./cave-projects.ts", import.meta.url), "utf8");
 
@@ -82,6 +83,16 @@ try {
   );
   await seedDefaultProjectsIfEmpty();
   assert.equal((await loadProjects()).length, 0, "calling seed twice remains a no-op");
+
+  assert.deepEqual(
+    sortProjectsAlphabetically([
+      { id: "z", name: "Zed", root: "/work/zed", createdAt: "", updatedAt: "" },
+      { id: "a2", name: "alpha", root: "/work/alpha-2", createdAt: "", updatedAt: "" },
+      { id: "a1", name: "Alpha", root: "/work/alpha-1", createdAt: "", updatedAt: "" },
+    ]).map((project) => project.id),
+    ["a1", "a2", "z"],
+    "shared project sorting is alphabetical by name, then root",
+  );
 
   console.log("cave-projects.test.ts: ok");
 } finally {

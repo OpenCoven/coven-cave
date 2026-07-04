@@ -19,3 +19,13 @@ export type CaveProject = {
 export function normalizeProjectRoot(root: string | null | undefined): string {
   return root?.trim().replace(/\\/g, "/").replace(/\/+$/, "") || "/";
 }
+
+export function compareProjectsAlphabetically(a: CaveProject, b: CaveProject): number {
+  const byName = a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true });
+  if (byName !== 0) return byName;
+  return a.root.localeCompare(b.root, undefined, { sensitivity: "base", numeric: true });
+}
+
+export function sortProjectsAlphabetically(projects: CaveProject[]): CaveProject[] {
+  return [...projects].sort(compareProjectsAlphabetically);
+}

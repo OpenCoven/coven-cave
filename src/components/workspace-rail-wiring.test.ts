@@ -70,6 +70,18 @@ assert.match(
 
 assert.match(
   source,
+  /const activeSession = snapshot\.session;[\s\S]{0,100}?const railProjectRoot = activeSession\?\.project_root \?\? null;/,
+  "standalone files/changes rail is scoped to the active session's project root",
+);
+
+assert.doesNotMatch(
+  source,
+  /const railProjectRoot = (?!activeSession\?\.project_root)/,
+  "standalone files/changes rail must not drift to a selected or fallback project root",
+);
+
+assert.match(
+  source,
   /json\.files\?\.length\s*\?\?\s*0/,
   "changeCount is derived from the /api/changes files length",
 );
@@ -92,6 +104,12 @@ assert.match(
   source,
   /<WorkspaceRail[\s\S]*?changeCount=\{changeCount\}[\s\S]*?activeTab=\{rail\.activeTab\}[\s\S]*?pinned=\{rail\.pinned\}[\s\S]*?onSelectTab=\{rail\.setActiveTab\}[\s\S]*?onTogglePin=\{rail\.togglePin\}[\s\S]*?onCollapse=\{rail\.collapse\}/,
   "WorkspaceRail receives changeCount + rail state/handlers",
+);
+
+assert.match(
+  source,
+  /<WorkspaceRail[\s\S]*?projectRoot=\{railProjectRoot\}/,
+  "WorkspaceRail Files tab receives the same active-session project root",
 );
 
 // Collapsed state renders a reopen strip.

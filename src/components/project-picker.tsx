@@ -13,7 +13,7 @@ import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { addChatProject } from "@/lib/chat-add-project";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
-import type { CaveProject } from "@/lib/cave-projects";
+import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import { isTauri } from "@/lib/tauri-platform";
 
 export type AddProjectFlow = {
@@ -123,21 +123,22 @@ export function ProjectPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const sortedProjects = useMemo(() => sortProjectsAlphabetically(projects), [projects]);
 
   const selected =
     value === NO_PROJECT_ID
       ? null
-      : (value ? projects.find((project) => project.id === value) ?? projects[0] : projects[0]) ??
+      : (value ? sortedProjects.find((project) => project.id === value) ?? sortedProjects[0] : sortedProjects[0]) ??
         null;
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter(
+    if (!q) return sortedProjects;
+    return sortedProjects.filter(
       (project) =>
         project.name.toLowerCase().includes(q) || project.root.toLowerCase().includes(q),
     );
-  }, [projects, query]);
+  }, [sortedProjects, query]);
 
   const close = () => {
     setOpen(false);

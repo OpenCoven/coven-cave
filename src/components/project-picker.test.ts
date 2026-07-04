@@ -25,6 +25,8 @@ assert.match(src, /Add project…/, "proactive add affordance (not 403-recovery-
 assert.match(src, /aria-label="Filter projects"/, "filter input for long lists");
 assert.match(src, /aria-haspopup="dialog"/, "trigger announces the popover");
 assert.match(src, /role="alert"/, "add-flow failures surface inline, not silently");
+assert.match(src, /sortProjectsAlphabetically\(projects\)/, "picker renders projects alphabetically");
+assert.doesNotMatch(src, /if \(!q\) return projects;/, "unfiltered picker must not expose raw API order");
 
 // ── Home composer uses the shared custom picker, not an OS-native select ────
 assert.match(homeComposer, /<ProjectPicker[\s\S]*?ariaLabel="Choose project"/, "home composer uses ProjectPicker");

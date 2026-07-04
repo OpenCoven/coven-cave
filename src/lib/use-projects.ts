@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { CaveProject } from "@/lib/cave-projects";
+import { sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 
 export type ProjectsState = {
   projects: CaveProject[];
@@ -51,7 +51,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
         if (data.ok === false) {
           setError(data.error ?? "Failed to load projects");
         } else {
-          setProjects(Array.isArray(data.projects) ? data.projects : []);
+          setProjects(sortProjectsAlphabetically(Array.isArray(data.projects) ? data.projects : []));
         }
       }
     } catch (err) {
@@ -83,7 +83,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
-      setProjects((prev) => [...prev, data.project as CaveProject]);
+      setProjects((prev) => sortProjectsAlphabetically([...prev, data.project as CaveProject]));
       return data.project as CaveProject;
     }
     return null;
@@ -97,7 +97,9 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
-      setProjects((prev) => prev.map((project) => (project.id === id ? data.project : project)));
+      setProjects((prev) =>
+        sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
+      );
       return true;
     }
     return false;
@@ -111,7 +113,9 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
-      setProjects((prev) => prev.map((project) => (project.id === id ? data.project : project)));
+      setProjects((prev) =>
+        sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
+      );
       return true;
     }
     return false;
@@ -125,7 +129,9 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     });
     const data = await res.json();
     if (data.ok && data.project) {
-      setProjects((prev) => prev.map((project) => (project.id === id ? data.project : project)));
+      setProjects((prev) =>
+        sortProjectsAlphabetically(prev.map((project) => (project.id === id ? data.project : project))),
+      );
       return true;
     }
     return false;

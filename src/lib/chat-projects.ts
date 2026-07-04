@@ -1,5 +1,6 @@
 import type { SessionRow } from "./types.ts";
 import type { CaveProject } from "./cave-projects.ts";
+import { compareProjectsAlphabetically } from "./cave-projects-types.ts";
 
 export type ChatProject = CaveProject;
 export type { CaveProject };
@@ -175,14 +176,16 @@ export function deriveChatProjectGroups(
       };
     })
     .sort((a, b) => {
-      if (a.updatedAt && b.updatedAt) return b.updatedAt.localeCompare(a.updatedAt);
-      if (a.updatedAt) return -1;
-      if (b.updatedAt) return 1;
-      const aKnown = a.projectId ? projects.findIndex((project) => project.id === a.projectId) : -1;
-      const bKnown = b.projectId ? projects.findIndex((project) => project.id === b.projectId) : -1;
-      if (aKnown >= 0 && bKnown >= 0) return aKnown - bKnown;
-      if (aKnown >= 0) return -1;
-      if (bKnown >= 0) return 1;
+      if (a.projectRoot === null && b.projectRoot === null) return 0;
+      if (a.projectRoot === null) return 1;
+      if (b.projectRoot === null) return -1;
+      const aProject = a.projectId ? projects.find((project) => project.id === a.projectId) : null;
+      const bProject = b.projectId ? projects.find((project) => project.id === b.projectId) : null;
+      if (aProject && bProject) return compareProjectsAlphabetically(aProject, bProject);
+      const aLabel = a.projectName ?? chatProjectName(a.projectRoot, projects);
+      const bLabel = b.projectName ?? chatProjectName(b.projectRoot, projects);
+      const byLabel = aLabel.localeCompare(bLabel, undefined, { sensitivity: "base", numeric: true });
+      if (byLabel !== 0) return byLabel;
       return (a.projectRoot ?? "").localeCompare(b.projectRoot ?? "");
     });
 }

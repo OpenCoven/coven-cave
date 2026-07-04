@@ -63,11 +63,11 @@ assert.deepEqual(
     sessionIds: group.sessions.map((s) => s.id),
   })),
   [
-    { root: null, defaultFamiliarId: "charm", sessionIds: ["scratch"] },
     { root: "/work/alpha", defaultFamiliarId: "cody", sessionIds: ["new-alpha", "old-alpha"] },
     { root: "/work/beta", defaultFamiliarId: "nova", sessionIds: ["beta"] },
+    { root: null, defaultFamiliarId: "charm", sessionIds: ["scratch"] },
   ],
-  "project groups should be ordered by recency and expose the latest familiar for project-scoped launch",
+  "project groups should be alphabetical by project label, with No project last, and expose the latest familiar for launch",
 );
 
 assert.equal(chatProjectName("/work/alpha", projects), "Alpha");
@@ -93,8 +93,8 @@ const worktreeGroups = deriveChatProjectGroups(
 );
 assert.deepEqual(
   worktreeGroups.map((group) => group.projectName),
-  ["feature-b/coven-cave", "feature-a/coven-cave"],
-  "duplicate worktree repo names should include the parent directory so branches are distinguishable",
+  ["feature-a/coven-cave", "feature-b/coven-cave"],
+  "duplicate worktree repo names should include the parent directory and sort alphabetically",
 );
 
 // Eval-discuss threads are migrated to the Evals page and hidden from the chat list.

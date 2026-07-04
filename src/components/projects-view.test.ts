@@ -243,9 +243,12 @@ assert.doesNotMatch(projectsView, /defaultExpanded/, "expansion is controlled by
 assert.match(projectsView, /aria-label="List density"/, "there is a labeled density toggle");
 assert.match(projectsView, /aria-pressed=\{density === opt\.value\}/, "the density toggle reflects the active option");
 
-// Projects are ordered by most-recent session activity, not API order.
+// Projects are ordered alphabetically by project name/root, not API order or
+// most-recent session activity. Sessions inside each project still keep their
+// own recency/manual ordering.
 assert.match(projectsView, /const sortedProjects = useMemo/, "projects are sorted before rendering");
-assert.match(projectsView, /function lastActiveMs/, "recency is derived from each project's latest session");
+assert.match(projectsView, /sortProjectsAlphabetically\(projects\)/, "Projects tab uses the shared alphabetical project order");
+assert.doesNotMatch(projectsView, /b\.score - a\.score/, "Projects tab must not sort project rows by session recency");
 
 // A filter box narrows the (sorted) list by name or path; the filtered list
 // drives the render and an empty result shows a no-match message.

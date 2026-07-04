@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { useMinuteTick } from "@/lib/use-minute-tick";
-import { normalizeProjectRoot, type CaveProject } from "@/lib/cave-projects-types";
+import { normalizeProjectRoot, sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import { addChatProject } from "@/lib/chat-add-project";
 import type { SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
@@ -39,7 +39,7 @@ import {
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 
 import { ProjectRow } from "./projects/project-row";
-import { lastActiveMs, shortRoot, openSessionById } from "./projects/projects-shared";
+import { shortRoot, openSessionById } from "./projects/projects-shared";
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { isTauri } from "@/lib/tauri-platform";
 
@@ -178,24 +178,14 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     return map;
   }, [chatsByRoot]);
 
-  // Surface the projects you're actually working in: order by most-recent
-  // session activity, falling back to the project's own updatedAt.
+  // Keep projects stable and scannable: alphabetical by project name/root.
+  // Session rows inside each project keep their own manual/recency ordering.
   const sortedProjects = useMemo(() => {
-    // Decorate-sort-undecorate: compute each score ONCE (each call runs
-    // lastActiveMs over the root's chats) instead of ~2x per comparison.
-    const scored = projects.map((p) => ({
-      p,
-      score:
-        lastActiveMs(chatsByRoot.get(normalizeProjectRoot(p.root)) ?? []) ||
-        new Date(p.updatedAt).getTime() ||
-        0,
-    }));
-    scored.sort((a, b) => b.score - a.score);
-    return scored.map((s) => s.p);
-  }, [projects, chatsByRoot]);
+    return sortProjectsAlphabetically(projects);
+  }, [projects]);
 
-  // Filter by name or path so the (recency-sorted) list stays scannable when
-  // there are many projects.
+  // Filter by name or path so the alphabetical list stays scannable when there
+  // are many projects.
   const visibleProjects = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return sortedProjects;
