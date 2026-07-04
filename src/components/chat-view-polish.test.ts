@@ -279,8 +279,13 @@ assert.match(
 );
 assert.match(
   source,
-  /label="Host"/,
+  /cave-composer-host-chip/,
   "composer has a host chip (remote execution picker)",
+);
+assert.match(
+  source,
+  /cave-host-status--\$\{optionStatus\}/,
+  "host rows carry live status dots (popover, not a native select)",
 );
 assert.match(
   source,
@@ -289,7 +294,7 @@ assert.match(
 );
 assert.match(
   source,
-  /CONNECT_HOST_OPTION/,
+  /Connect new host/,
   "the host chip offers the connect-new-host flow",
 );
 assert.match(

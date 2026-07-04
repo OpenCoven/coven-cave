@@ -4194,3 +4194,19 @@ details[open] > .cave-tool-summary::before {
 .cave-connect-host__field input:focus { border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent); }
 .cave-connect-host__error { margin: 0; font-size: 11px; line-height: 1.4; color: var(--color-danger); }
 .cave-connect-host__actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Host chip popover (composer) */
+.cave-composer-host-chip { cursor: pointer; background: none; border: none; font: inherit; }
+.cave-host-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.cave-host-dot--online { background: var(--color-success); }
+.cave-host-dot--offline { background: var(--color-danger); }
+.cave-host-dot--unknown { background: var(--text-muted); }
+.cave-host-row { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.cave-host-row__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cave-host-status { display: inline-flex; align-items: center; gap: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.cave-host-status--online { color: var(--color-success); }
+.cave-host-status--online .cave-host-dot--inline { background: var(--color-success); }
+.cave-host-status--offline { color: var(--color-danger); }
+.cave-host-status--offline .cave-host-dot--inline { background: var(--color-danger); }
+.cave-host-status--unknown { color: var(--text-muted); }
+.cave-host-status--unknown .cave-host-dot--inline { background: var(--text-muted); }

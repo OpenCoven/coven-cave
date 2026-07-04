@@ -327,8 +327,6 @@ type ComposerResponseSpeed = CommandResponseSpeed;
 // the .cave-composer-input rule (13 lines: 13*24 + 20px padding).
 const COMPOSER_MAX_HEIGHT = 332;
 const COMPOSER_PREFS_KEY = "cave:chat-composer-controls:v1";
-/** Sentinel option in the Host chip that opens the connect-new-host dialog. */
-const CONNECT_HOST_OPTION = "__connect-host__";
 // Persist the in-progress composer text so a page reload doesn't eat a
 // half-written message. The composer is a single shared input (it isn't
 // remounted per session), so one key mirrors the in-memory behaviour.
@@ -710,6 +708,96 @@ function ComposerControlSelect<T extends string>({
       </select>
       <Icon name="ph:caret-down-bold" width={10} aria-hidden className="cave-composer-select__chevron" />
     </label>
+  );
+}
+
+function hostStatusKind(option: ChatHostOption): "online" | "offline" | "unknown" {
+  if (option.kind === "local" || option.online === true) return "online";
+  return option.online === false ? "offline" : "unknown";
+}
+
+/** Composer Host chip: a popover picker with live status dots per host and a
+ *  connect-new-host row — a native select can't render either. */
+function ComposerHostChip({
+  value,
+  options,
+  disabled,
+  onOpen,
+  onPick,
+  onConnectNew,
+}: {
+  value: string;
+  options: ChatHostOption[];
+  disabled?: boolean;
+  onOpen: () => void;
+  onPick: (id: string) => void;
+  onConnectNew: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLButtonElement | null>(null);
+  const current = options.find((option) => option.id === value);
+  const label = current?.label ?? value;
+  const status = current ? hostStatusKind(current) : "unknown";
+  return (
+    <>
+      <button
+        ref={anchorRef}
+        type="button"
+        className="cave-composer-select cave-composer-host-chip"
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={`Host: ${label}`}
+        onClick={() => {
+          onOpen();
+          setOpen((v) => !v);
+        }}
+      >
+        <Icon name="ph:desktop" width={13} aria-hidden />
+        <span className="cave-composer-select__label">Host</span>
+        <span className={`cave-host-dot cave-host-dot--${status}`} aria-hidden />
+        <span className="cave-composer-select__value">{label}</span>
+        <Icon name="ph:caret-down-bold" width={10} aria-hidden className="cave-composer-select__chevron" />
+      </button>
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        anchorRef={anchorRef}
+        placement="top-start"
+        minWidth={240}
+        ariaLabel="Chat host"
+      >
+        <PopoverBody role="menu" ariaLabel="Chat host">
+          <PopoverLabel>Run this chat on</PopoverLabel>
+          {options.map((option) => {
+            const optionStatus = hostStatusKind(option);
+            return (
+              <PopoverItem
+                key={option.id}
+                checked={option.id === value}
+                onSelect={() => {
+                  onPick(option.id);
+                  setOpen(false);
+                }}
+              >
+                <span className="cave-host-row">
+                  <Icon name="ph:desktop" width={13} aria-hidden />
+                  <span className="cave-host-row__name">{option.label}</span>
+                  <span className={`cave-host-status cave-host-status--${optionStatus}`}>
+                    <span className="cave-host-dot cave-host-dot--inline" aria-hidden />
+                    {optionStatus === "online" ? "online" : optionStatus === "offline" ? "offline" : "checking"}
+                  </span>
+                </span>
+              </PopoverItem>
+            );
+          })}
+          <PopoverSeparator />
+          <PopoverItem icon="ph:plus" onSelect={() => { setOpen(false); onConnectNew(); }}>
+            Connect new host
+          </PopoverItem>
+        </PopoverBody>
+      </Popover>
+    </>
   );
 }
 
@@ -2374,27 +2462,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     return parsed?.kind === "ssh" ? parsed.host : null;
   }, [session?.runtime]);
   const composerHostValue = runtimeHost ?? sessionRuntimeHost ?? LOCAL_HOST_ID;
-  const composerHostOptions = useMemo(() => {
+  const hostChipOptions = useMemo<ChatHostOption[]>(() => {
     const base: ChatHostOption[] = hostOptions ?? [
       { id: LOCAL_HOST_ID, kind: "local", label: "This machine", online: true },
       ...(sessionRuntimeHost
         ? [{ id: sessionRuntimeHost, kind: "ssh" as const, label: sessionRuntimeHost, online: null }]
         : []),
     ];
-    const rows = base.map((option) => ({
-      value: option.id,
-      label:
-        option.kind === "ssh"
-          ? `${option.label}${option.online === true ? " — online" : option.online === false ? " — offline" : ""}`
-          : option.label,
-    }));
-    // A native select must contain its value — cover a stale pick or a host
+    // The current value must always be present — cover a stale pick or a host
     // recorded on the conversation that isn't (or is no longer) registered.
-    if (!rows.some((row) => row.value === composerHostValue)) {
-      rows.push({ value: composerHostValue, label: composerHostValue });
-    }
-    rows.push({ value: CONNECT_HOST_OPTION, label: "＋ Connect new host…" });
-    return rows;
+    return base.some((option) => option.id === composerHostValue)
+      ? base
+      : [...base, { id: composerHostValue, kind: "ssh", label: composerHostValue, online: null }];
   }, [hostOptions, sessionRuntimeHost, composerHostValue]);
   const [input, setInput] = useState(() => readComposerDraft());
   // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer pattern
@@ -5375,22 +5454,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       onChange={(id) => handleSelectModel(id)}
                     />
                   ) : null}
-                  <span onPointerDown={() => void loadHostOptions()} onFocusCapture={() => void loadHostOptions()}>
-                    <ComposerControlSelect
-                      label="Host"
-                      icon="ph:desktop"
-                      value={composerHostValue}
-                      options={composerHostOptions}
-                      disabled={busy}
-                      onChange={(id) => {
-                        if (id === CONNECT_HOST_OPTION) {
-                          setConnectHostOpen(true);
-                          return;
-                        }
-                        setRuntimeHost(id);
-                      }}
-                    />
-                  </span>
+                  <ComposerHostChip
+                    value={composerHostValue}
+                    options={hostChipOptions}
+                    disabled={busy}
+                    onOpen={() => void loadHostOptions()}
+                    onPick={setRuntimeHost}
+                    onConnectNew={() => setConnectHostOpen(true)}
+                  />
                 </div>
                 {connectHostOpen && (
                   <ConnectHostDialog
