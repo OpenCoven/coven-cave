@@ -3302,10 +3302,13 @@ textarea.required-inputs-control {
 .project-avatar {
   width: var(--pa-size, 20px);
   height: var(--pa-size, 20px);
+  min-width: var(--pa-size, 20px);
+  max-width: var(--pa-size, 20px);
+  flex: 0 0 var(--pa-size, 20px);
+  box-sizing: border-box;
   border-radius: calc(var(--pa-size, 20px) * 0.29);
   display: grid;
   place-items: center;
-  flex-shrink: 0;
   overflow: hidden;
   color: color-mix(in oklch, var(--tile, var(--accent-presence)) 65%, var(--text-primary));
   background: color-mix(in oklch, var(--tile, var(--accent-presence)) 14%, transparent);
@@ -11442,8 +11445,13 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   display: flex;
   flex-direction: column;
   gap: 1px;
+  width: 100%;
   min-width: 0;
   text-align: left;
+}
+.ui-popover.cave-project-picker__popover .ui-popover-item > span:not(.project-avatar) {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .cave-project-picker__option-name {
   overflow: hidden;

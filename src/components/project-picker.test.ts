@@ -31,5 +31,10 @@ assert.match(src, /export const ADD_PROJECT_ID = "__add-project__";/, "select se
 // ── Styled ──────────────────────────────────────────────────────────────────
 assert.match(css, /\.cave-project-picker__trigger/, "trigger styled");
 assert.match(css, /\.cave-project-picker__option-root/, "root subtitle styled");
+assert.match(
+  css,
+  /\.ui-popover\.cave-project-picker__popover \.ui-popover-item > span:not\(\.project-avatar\)/,
+  "project picker grows the text column without stretching avatar badges",
+);
 
 console.log("project-picker.test.ts OK");
