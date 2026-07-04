@@ -10,10 +10,12 @@ test("github library group header is keyboard-operable", async () => {
   assert.match(src, /role="button"[\s\S]{0,200}aria-expanded=\{!collapsed\.has\(key\)\}/);
 });
 
-test("browser tabs expose an accessible name and pressed state", async () => {
+test("browser tabs are a tablist exposing name + selected state", async () => {
   const src = await read("./browser-pane.tsx");
   assert.match(src, /aria-label=\{tabTitles\[tab\.id\] \?\? tab\.title \?\? tab\.url\}/);
-  assert.match(src, /aria-pressed=\{isActive\}/);
+  assert.match(src, /role="tablist" aria-orientation="vertical"/);
+  assert.match(src, /role="tab"/);
+  assert.match(src, /aria-selected=\{isActive\}/);
 });
 
 test("bulk-select rows are real keyboard checkboxes in select mode", async () => {
