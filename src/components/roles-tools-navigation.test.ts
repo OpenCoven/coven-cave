@@ -228,4 +228,22 @@ assert.match(
 );
 // The right companion (agent) panel was removed with the drag-to-split change.
 
+// ── Marketplace hub actions announce to the shared live region ───────────────
+// Install / remove / role-toggle surface their outcome as visual-only <p>
+// banners (not toasts), so they mirror to the assertive/polite live region —
+// otherwise these core actions are silent to screen-reader users.
+assert.match(
+  marketplaceView,
+  /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/,
+  "the marketplace hub wires the shared announcer",
+);
+assert.match(marketplaceView, /announce\("Added to your setup", "polite"\)/, "installing a plugin is announced");
+assert.match(marketplaceView, /announce\("Removed from your setup", "polite"\)/, "removing a plugin is announced");
+assert.match(
+  marketplaceView,
+  /announce\(next \? "Role enabled" : "Role disabled", "polite"\)/,
+  "toggling a role announces the new state",
+);
+assert.match(marketplaceView, /announce\(msg, "assertive"\)/, "a failed hub action is announced assertively");
+
 console.log("roles-tools-navigation.test.ts OK");

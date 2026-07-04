@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 type FieldStatus = {
   key: string;
@@ -36,6 +37,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
   type ValidationResult = { state: "idle" | "testing" | "valid" | "invalid"; message?: string };
   const [results, setResults] = useState<Record<string, ValidationResult>>({});
   const [error, setError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
 
   const load = useCallback(async (seedDefaults = false) => {
     setLoaded(false);
@@ -118,13 +120,16 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
       setDrafts((d) => ({ ...d, [field.key]: "" }));
       await load();
       onChanged();
+      announce(`${field.title} saved`, "polite");
       if (field.validatable) void validate(field);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "save failed");
+      const msg = err instanceof Error ? err.message : "save failed";
+      setError(msg);
+      announce(msg, "assertive");
     } finally {
       setBusyKey(null);
     }
-  }, [drafts, pluginId, load, onChanged, validate]);
+  }, [drafts, pluginId, load, onChanged, validate, announce]);
 
   return (
     <Modal
