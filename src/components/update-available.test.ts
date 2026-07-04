@@ -71,6 +71,21 @@ assert.match(src, /phase: "failed"/, "tracks a dedicated failed state for a thro
 assert.match(src, /message: err instanceof Error \? err\.message/, "captures the real failure reason instead of swallowing it");
 assert.match(src, /async function openFallbackUpdateInBrowser/, "centralizes in-app fallback recovery resolution");
 assert.match(src, /fetchFallbackStatus\(\)[\s\S]*resolveDownloadUrl/, "in-app recovery resolves a direct platform installer when release metadata is reachable");
+assert.match(
+  src,
+  /if \(r\.kind === "native-unavailable"\) \{\s*void openFallbackUpdateInBrowser\(\);\s*\}/,
+  "native-unavailable banner CTA re-resolves the installer at click time",
+);
+assert.match(
+  src,
+  /state\.phase === "native-unavailable"[\s\S]{0,900}?onClick=\{\(\) => void openFallbackUpdateInBrowser\(\)\}/,
+  "native-unavailable settings row opens the freshly resolved installer fallback",
+);
+assert.doesNotMatch(
+  src,
+  /state\.phase === "native-unavailable"[\s\S]{0,900}?openInAppBrowserUrl\(r\.url\)/,
+  "native-unavailable settings row must not reuse a stale installer URL from the initial check",
+);
 assert.match(src, /onClick=\{\(\) => void openFallbackUpdateInBrowser\(\)\}/, "failed state offers the same in-app installer path as fallback updates");
 assert.match(src, /openInAppBrowserUrl\(url\)/, "fallback recovery opens in Cave's Browser surface");
 assert.doesNotMatch(src, /download manually/i, "failed updater copy should not imply leaving the app for manual recovery");

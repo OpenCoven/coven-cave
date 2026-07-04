@@ -195,6 +195,8 @@ export function UpdateBannerTrigger() {
                   onDismiss: () => markDismissed(r.version),
                 });
               });
+            } else if (r.kind === "native-unavailable") {
+              void openFallbackUpdateInBrowser();
             } else {
               openInAppBrowserUrl(r.url);
             }
@@ -313,7 +315,7 @@ export function UpdateSettingsRow() {
         </button>
         <button
           type="button"
-          onClick={() => openInAppBrowserUrl(r.url)}
+          onClick={() => void openFallbackUpdateInBrowser()}
           className="rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
         >
           Open installer in Browser
