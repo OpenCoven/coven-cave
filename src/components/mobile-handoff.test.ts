@@ -82,6 +82,16 @@ assert.match(
 );
 assert.match(
   handoffRoute,
+  /nativeAppDiscoveryProof\(\{\s*selfStatus,\s*serveStatus,\s*backendUrl: backend\s*\}\)/,
+  "native mobile mode should use a native-specific fallback when MagicDNS is unavailable",
+);
+assert.match(
+  handoffRoute,
+  /`--http=\$\{backendPort\(backend\)\}`/,
+  "native mobile mode should ask Tailscale Serve for a plain HTTP port fallback",
+);
+assert.match(
+  handoffRoute,
   /status", "--self", "--json"/,
   "route reads self status as JSON to source the MagicDNS fallback host",
 );

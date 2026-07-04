@@ -17,73 +17,21 @@ struct ConnectionView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 22) {
                     header
+                    pairingSteps
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Desktop address").font(.subheadline.weight(.semibold))
-                            Spacer()
-                            if canPaste {
-                                Button(action: pasteHost) {
-                                    Label("Paste", systemImage: "doc.on.clipboard")
-                                        .font(.subheadline.weight(.medium))
-                                }
-                                .buttonStyle(.borderless)
-                                .accessibilityHint("Pastes the desktop address from the clipboard")
-                            }
-                        }
-                        TextField("my-mac.tailnet.ts.net", text: $host)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-                            .focused($focused)
-                            .padding(12)
-                            .glass(.control, cornerRadius: 12)
-                            .accentGlow(active: focused)
-                        if let hostHint {
-                            Label(hostHint, systemImage: "exclamationmark.circle")
-                                .font(.caption).foregroundStyle(.orange)
-                        } else {
-                            Text("Your desktop’s Tailscale MagicDNS name or 100.x address. Found in the Cave desktop app under “Open on phone”.")
-                                .font(.footnote).foregroundStyle(.secondary)
-                        }
-                    }
+                    addressField
 
                     if case .unreachable(let message) = app.connectionState {
-                        Label(message, systemImage: "exclamationmark.triangle.fill")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
+                        connectionRecoveryCallout(message: message, systemImage: "exclamationmark.triangle.fill")
                     } else if case .needsAuth(let message) = app.connectionState {
                         // The desktop is alive but token-gated — say how to
                         // pair instead of the generic unreachable shrug.
-                        Label(message, systemImage: "qrcode.viewfinder")
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
+                        connectionRecoveryCallout(message: message, systemImage: "qrcode.viewfinder")
                     }
 
-                    Button(action: connect) {
-                        HStack {
-                            if busy { ProgressView().tint(.white) }
-                            Text(busy ? "Connecting…" : "Connect")
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty || busy)
-
-                    if QRScannerSheet.isSupported {
-                        Button {
-                            showScanner = true
-                        } label: {
-                            Label("Scan pairing QR code", systemImage: "qrcode.viewfinder")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .disabled(busy)
-                    }
+                    actions
 
                     trustNote
                 }
@@ -113,25 +61,185 @@ struct ConnectionView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
+            heroBadge
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Connect to Cave")
+                    .font(.largeTitle.bold())
+                    .foregroundStyle(chrome.textPrimary)
+                Text("Pair this phone with the Cave desktop running on your private Tailscale network.")
+                    .font(.callout)
+                    .foregroundStyle(chrome.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private var heroBadge: some View {
+        ZStack(alignment: .bottomTrailing) {
+            Circle()
+                .fill(chrome.accent.opacity(0.16))
+                .frame(width: 72, height: 72)
+                .overlay {
+                    Circle()
+                        .strokeBorder(chrome.accent.opacity(0.35), lineWidth: 1)
+                }
             Image(systemName: "cat.fill")
-                .font(.system(size: 44))
-                .foregroundStyle(Color.accentColor)
-            Text("Connect to your familiars")
-                .font(.title2.bold())
-            Text("Pair with your desktop over your Tailscale network — scan the QR code from Cave’s “Open on phone” panel, paste its invite link, or type the address.")
-                .font(.subheadline).foregroundStyle(.secondary)
+                .font(.system(size: 38, weight: .semibold))
+                .foregroundStyle(chrome.accent)
+            Image(systemName: "wifi")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .padding(7)
+                .background(Circle().fill(Color.green))
+                .overlay {
+                    Circle().strokeBorder(chrome.bgBase.opacity(0.9), lineWidth: 2)
+                }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Cave familiar network")
+    }
+
+    private var pairingSteps: some View {
+        HStack(spacing: 8) {
+            stepChip("Scan", systemImage: "qrcode.viewfinder", highlighted: true)
+            stepChip("Paste", systemImage: "doc.on.clipboard", highlighted: false)
+            stepChip("Connect", systemImage: "bolt.horizontal.circle", highlighted: false)
+        }
+        .padding(8)
+        .glass(.raised, cornerRadius: 18)
+    }
+
+    private func stepChip(_ title: String, systemImage: String, highlighted: Bool) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(highlighted ? chrome.accent : chrome.textSecondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .padding(.horizontal, 6)
+            .background(
+                Capsule()
+                    .fill(highlighted ? chrome.accent.opacity(0.16) : chrome.bgElevated.opacity(0.55))
+            )
+            .overlay {
+                Capsule()
+                    .strokeBorder(highlighted ? chrome.accent.opacity(0.45) : chrome.border.opacity(0.25), lineWidth: 1)
+            }
+    }
+
+    private var addressField: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Desktop").font(.subheadline.weight(.semibold))
+                        .foregroundStyle(chrome.textPrimary)
+                    Text("Tailscale address or invite link")
+                        .font(.caption)
+                        .foregroundStyle(chrome.textMuted)
+                }
+                Spacer()
+                if canPaste {
+                    Button(action: pasteHost) {
+                        Label("Paste", systemImage: "doc.on.clipboard")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityHint("Pastes the desktop address from the clipboard")
+                }
+            }
+            TextField("Cave desktop or 100.x address", text: $host)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+                .focused($focused)
+                .font(.body.monospaced())
+                .padding(.vertical, 14)
+                .padding(.horizontal, 14)
+                .glass(.control, cornerRadius: 16)
+                .accentGlow(active: focused)
+            if let hostHint {
+                Label(hostHint, systemImage: "exclamationmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else {
+                Text("Find it in Cave on the desktop under “Open on phone”. QR invite links fill this automatically.")
+                    .font(.footnote)
+                    .foregroundStyle(chrome.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .glass(.raised, cornerRadius: 20)
+    }
+
+    private var actions: some View {
+        VStack(spacing: 12) {
+            Button(action: connect) {
+                Label(busy ? "Connecting…" : "Connect desktop", systemImage: busy ? "arrow.triangle.2.circlepath" : "bolt.horizontal.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(host.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+
+            if QRScannerSheet.isSupported {
+                Button {
+                    showScanner = true
+                } label: {
+                    Label("Scan QR", systemImage: "qrcode.viewfinder")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(busy)
+            }
         }
     }
 
-    private var trustNote: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "lock.shield.fill").foregroundStyle(.green)
-            Text("This device connects directly to your desktop over Tailscale’s encrypted mesh. Nothing is exposed to the public internet.")
-                .font(.caption).foregroundStyle(.secondary)
+    private func connectionRecoveryCallout(message: String, systemImage: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.orange)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Pairing needed")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(chrome.textPrimary)
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(chrome.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Open Cave on your desktop and scan the latest QR code.")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.orange)
+            }
         }
-        .padding(12)
-        .glass(.raised, cornerRadius: 12)
+        .padding(14)
+        .glass(.raised, cornerRadius: 16)
+    }
+
+    private var trustNote: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: "lock.shield.fill")
+                .font(.title3)
+                .foregroundStyle(Color.green)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Private Tailscale mesh")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(chrome.textPrimary)
+                Text("No public internet exposure. Traffic stays encrypted between this phone and your desktop.")
+                    .font(.footnote)
+                    .foregroundStyle(chrome.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .glass(.raised, cornerRadius: 16)
     }
 
     private func connect() {

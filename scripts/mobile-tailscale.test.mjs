@@ -43,6 +43,12 @@ test("mobile tailscale app mode serves the native client with no token", () => {
   assert.match(script, /PORT="\$PORT"/);
 });
 
+test("mobile tailscale app mode falls back to Tailscale IP HTTP when MagicDNS is missing", () => {
+  assert.match(script, /tailscale_ip_host\(\)/);
+  assert.match(script, /tailscale_cmd serve --bg --http="\$PORT" "\$TAILSCALE_BACKEND"/);
+  assert.match(script, /APP_URL="http:\/\/\$\{APP_IP_HOST\}:\$\{PORT\}\/"/);
+});
+
 test("mobile tailscale app mode records tokenless ownership separately from invite tokens", () => {
   assert.match(script, /MODE_FILE=/);
   assert.match(script, /write_server_mode app/);

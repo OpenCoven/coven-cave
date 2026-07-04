@@ -5,6 +5,7 @@ import { stripAnsi } from "@/lib/ansi";
 import {
   createMobileInvite,
   MOBILE_INVITE_TTL_MS,
+  nativeAppDiscoveryProof,
   tailnetDiscoveryProof,
   tailscaleBin,
   tailscaleSpawnEnv,
@@ -97,6 +98,14 @@ function backendUrl(req: Request) {
   return `http://127.0.0.1:${port}`;
 }
 
+function backendPort(backend: string) {
+  try {
+    return new URL(backend).port || process.env.PORT || "3000";
+  } catch {
+    return process.env.PORT || "3000";
+  }
+}
+
 async function ensureNativeAppServe(req: Request) {
   const self = await runTailscale(["status", "--self", "--json"]);
   if (!self.ok) {
@@ -120,14 +129,33 @@ async function ensureNativeAppServe(req: Request) {
     const parsed = parseServeStatus(status.stdout);
     if (!("error" in parsed)) serveStatus = parsed.value;
   }
-  const discovery = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+  const tailnetDiscovery = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+  let discovery: ReturnType<typeof nativeAppDiscoveryProof> = tailnetDiscovery;
+  let fallbackWarning: string | null = null;
+  if (!tailnetDiscovery.ok) {
+    const httpServe = await runTailscale(["serve", "--bg", `--http=${backendPort(backend)}`, backend]);
+    if (httpServe.ok) {
+      discovery = nativeAppDiscoveryProof({ selfStatus, serveStatus, backendUrl: backend });
+      if (discovery.ok && discovery.source === "tailscale-ip-http") {
+        fallbackWarning = serveWarning
+          ? `${serveWarning} Using the Tailscale IP fallback for the native app.`
+          : "Using the Tailscale IP fallback for the native app.";
+      }
+    } else if (!serveWarning) {
+      fallbackWarning = httpServe.stderr || "Tailscale HTTP Serve could not be started.";
+      discovery = {
+        ok: false,
+        reason: fallbackWarning,
+      };
+    }
+  }
 
   if (!discovery.ok) {
     return NextResponse.json(
       {
         ok: false,
-        error: serveWarning ?? discovery.reason,
-        stderr: serveWarning ?? status.stderr,
+        error: fallbackWarning ?? serveWarning ?? discovery.reason,
+        stderr: fallbackWarning ?? serveWarning ?? status.stderr,
         backendUrl: backend,
       },
       { status: 500 },
@@ -149,7 +177,7 @@ async function ensureNativeAppServe(req: Request) {
     nativeHost: discovery.host,
     discoverySource: discovery.source,
     qrSvg,
-    warning: serveWarning ?? undefined,
+    warning: fallbackWarning ?? serveWarning ?? undefined,
   });
 }
 

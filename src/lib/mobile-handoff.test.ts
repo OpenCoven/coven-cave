@@ -6,8 +6,10 @@ import {
   findServeUrl,
   magicDnsHost,
   magicDnsServeUrl,
+  nativeAppDiscoveryProof,
   resolveTailscaleBin,
   tailnetDiscoveryProof,
+  tailscaleIpHost,
 } from "./mobile-handoff.ts";
 import { verifyMobileAccessToken } from "./mobile-access-token.ts";
 
@@ -176,11 +178,34 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
 }
 
 {
+  const selfWithoutMagicDns = {
+    Self: {
+      TailscaleIPs: ["100.101.102.103", "fd7a:115c:a1e0::1"],
+    },
+  };
+  assert.equal(tailscaleIpHost(selfWithoutMagicDns), "100.101.102.103");
+  assert.deepEqual(
+    nativeAppDiscoveryProof({
+      selfStatus: selfWithoutMagicDns,
+      serveStatus: {},
+      backendUrl: "http://127.0.0.1:3000",
+    }),
+    {
+      ok: true,
+      host: "100.101.102.103:3000",
+      serveUrl: "http://100.101.102.103:3000/",
+      source: "tailscale-ip-http",
+    },
+  );
+}
+
+{
   // No DNSName → no fallback (caller then surfaces the serve error).
   assert.equal(magicDnsServeUrl(null), null);
   assert.equal(magicDnsServeUrl({}), null);
   assert.equal(magicDnsServeUrl({ Self: {} }), null);
   assert.equal(magicDnsHost({ Self: { DNSName: "  " } }), null);
+  assert.equal(tailscaleIpHost({ Self: { TailscaleIPs: ["fd7a:115c:a1e0::1"] } }), null);
 }
 
 console.log("mobile-handoff.test.ts OK");

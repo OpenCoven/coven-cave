@@ -396,6 +396,27 @@ const [backendUrl, input] = process.argv.slice(2);
 NODE
 }
 
+tailscale_ip_host() {
+  local self_json
+  if ! self_json="$(tailscale_capture status --self --json 2>/dev/null)"; then
+    return 1
+  fi
+
+  node - "$self_json" <<'NODE'
+const input = process.argv[2] || "";
+let status;
+try {
+  status = JSON.parse(input);
+} catch {
+  process.exit(1);
+}
+const ips = status?.Self?.TailscaleIPs ?? status?.TailscaleIPs ?? [];
+const ipv4 = ips.find((ip) => /^100\.\d+\.\d+\.\d+$/.test(ip));
+if (!ipv4) process.exit(1);
+console.log(ipv4);
+NODE
+}
+
 resolve_ios_device_name() {
   if [ "${CAVE_MOBILE_DEVICE:-0}" != "1" ]; then
     return 0
@@ -616,13 +637,15 @@ app_command() {
   CAVE_MOBILE_APP=1 start_next_server
 
   TAILSCALE_BACKEND="$(backend_url)"
-  tailscale_cmd serve --bg "$TAILSCALE_BACKEND" >/dev/null
-
-  status_json="$(tailscale_capture serve status --json)"
-  APP_URL="$(serve_url_from_status "$TAILSCALE_BACKEND" "$status_json")"
+  APP_URL=""
+  if tailscale_cmd serve --bg "$TAILSCALE_BACKEND" >/dev/null 2>&1; then
+    status_json="$(tailscale_capture serve status --json)"
+    APP_URL="$(serve_url_from_status "$TAILSCALE_BACKEND" "$status_json" 2>/dev/null || true)"
+  fi
   if [ -z "$APP_URL" ]; then
-    echo "Unable to resolve Tailscale Serve URL for ${TAILSCALE_BACKEND}." >&2
-    exit 1
+    APP_IP_HOST="$(tailscale_ip_host)"
+    tailscale_cmd serve --bg --http="$PORT" "$TAILSCALE_BACKEND" >/dev/null
+    APP_URL="http://${APP_IP_HOST}:${PORT}/"
   fi
 
   APP_HOST="$(node -e "process.stdout.write(new URL(process.argv[1]).host)" "$APP_URL")"

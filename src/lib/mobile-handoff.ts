@@ -136,7 +136,8 @@ export function tailscaleSpawnEnv(): NodeJS.ProcessEnv {
 }
 
 type TailscaleSelfStatus = {
-  Self?: { DNSName?: string };
+  TailscaleIPs?: string[];
+  Self?: { DNSName?: string; TailscaleIPs?: string[] };
 };
 
 // The device's MagicDNS name from `tailscale status --self --json`, with the
@@ -157,6 +158,30 @@ export function magicDnsHost(selfStatus: unknown): string | null {
 export function magicDnsServeUrl(selfStatus: unknown): string | null {
   const host = magicDnsHost(selfStatus);
   return host ? `https://${host}/` : null;
+}
+
+function selfTailscaleIps(selfStatus: unknown) {
+  const status = selfStatus as TailscaleSelfStatus | null;
+  return status?.Self?.TailscaleIPs ?? status?.TailscaleIPs ?? [];
+}
+
+export function tailscaleIpHost(selfStatus: unknown): string | null {
+  const ip = selfTailscaleIps(selfStatus).find((candidate) => /^100\.\d+\.\d+\.\d+$/.test(candidate));
+  return ip ?? null;
+}
+
+function backendPort(backendUrl: string) {
+  try {
+    return new URL(backendUrl).port || "3000";
+  } catch {
+    return "3000";
+  }
+}
+
+export function nativeHttpServeUrl(selfStatus: unknown, backendUrl: string): string | null {
+  const host = tailscaleIpHost(selfStatus);
+  if (!host) return null;
+  return `http://${host}:${backendPort(backendUrl)}/`;
 }
 
 export type TailnetDiscoveryProof =
@@ -204,6 +229,47 @@ export function tailnetDiscoveryProof({
   return {
     ok: false,
     reason: "tailscale serve URL not found and status --self had no MagicDNS DNSName",
+  };
+}
+
+export type NativeAppDiscoveryProof =
+  | {
+      ok: true;
+      host: string;
+      serveUrl: string;
+      source: "serve-status" | "magicdns-self-status" | "tailscale-ip-http";
+    }
+  | {
+      ok: false;
+      reason: string;
+    };
+
+export function nativeAppDiscoveryProof({
+  selfStatus,
+  serveStatus,
+  backendUrl,
+}: {
+  selfStatus: unknown;
+  serveStatus: unknown;
+  backendUrl: string;
+}): NativeAppDiscoveryProof {
+  const tailnet = tailnetDiscoveryProof({ selfStatus, serveStatus, backendUrl });
+  if (tailnet.ok) return tailnet;
+
+  const serveUrl = nativeHttpServeUrl(selfStatus, backendUrl);
+  const host = tailscaleIpHost(selfStatus);
+  if (serveUrl && host) {
+    return {
+      ok: true,
+      host: `${host}:${backendPort(backendUrl)}`,
+      serveUrl,
+      source: "tailscale-ip-http",
+    };
+  }
+
+  return {
+    ok: false,
+    reason: "tailscale serve URL not found and status --self had no MagicDNS DNSName or Tailscale IPv4",
   };
 }
 
