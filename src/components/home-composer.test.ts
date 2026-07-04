@@ -73,6 +73,12 @@ assert.match(
   "HomeComposer should attach the selected project to task creation, crediting the selector's resolved familiar (not the raw active id)",
 );
 
+assert.doesNotMatch(
+  source,
+  /\bselectedResolved\b/,
+  "HomeComposer should not reference the removed selectedResolved render local",
+);
+
 assert.match(
   source,
   /<HomeSelect[\s\S]*?value=\{selectedRuntimeModelValue\}[\s\S]*?ariaLabel="Choose runtime and model"/,
