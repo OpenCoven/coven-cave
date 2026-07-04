@@ -354,6 +354,7 @@ export const SUITES = {
     "src/components/drag-to-split.test.ts",
     "src/components/daemon-start-button.test.ts",
     "src/components/familiar-avatar.test.ts",
+    "src/components/project-avatar.test.ts",
     "src/components/familiar-glyph-picker-panel.test.ts",
     "src/components/familiar-studio-brain-tab.test.ts",
     "src/components/familiar-studio-identity-tab.test.ts",
