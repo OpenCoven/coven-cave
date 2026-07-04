@@ -320,6 +320,29 @@ export function ChatSurface({
   useEffect(() => {
     if (rail.activeTab === "terminal" && rail.open) setTerminalOpened(true);
   }, [rail.activeTab, rail.open]);
+  // When the active session changes, stop the rail shell that was started for
+  // the previous session and drop the terminal-held-open latch. The rail's pty
+  // uses a per-session thread id (`cave.rail.<id>`), and BottomTerminal never
+  // stops the shell on unmount (keepalive) — so without this, a session switch
+  // strands the old shell (desktop PTYs have no idle reaper; the WS bridge
+  // self-reaps) and keeps the rail forced-open on an unrelated session. Mirrors
+  // ComuxView.removeSession's desktop teardown.
+  const railTermSessionRef = useRef<string | null>(snapshot.sessionId ?? null);
+  useEffect(() => {
+    const id = snapshot.sessionId ?? null;
+    const prev = railTermSessionRef.current;
+    railTermSessionRef.current = id;
+    if (prev === id) return;
+    if (prev && terminalOpened) {
+      const internals = (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+      if (internals) {
+        void import("@tauri-apps/api/core")
+          .then(({ invoke }) => invoke("pty_stop", { threadId: `cave.rail.${prev}` }))
+          .catch(() => {});
+      }
+    }
+    setTerminalOpened(false);
+  }, [snapshot.sessionId, terminalOpened]);
   const showCodeRail = !isCodeSurface && rail.available && rail.open && !isMobile && !paneNarrow;
 
   // Persist the chat / right-area split. panelIds tracks which panels are

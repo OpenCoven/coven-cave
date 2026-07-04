@@ -42,6 +42,20 @@ assert.match(
   "WorkspaceRail receives the active session id",
 );
 
+// On session change the previous session's rail shell is stopped (desktop PTYs
+// have no idle reaper) and the terminal-held-open latch is reset so the rail is
+// not forced open on an unrelated session.
+assert.match(
+  source,
+  /pty_stop"?,\s*\{\s*threadId:\s*`cave\.rail\.\$\{prev\}`/,
+  "chat-surface stops the previous session's rail pty on session change",
+);
+assert.match(
+  source,
+  /railTermSessionRef[\s\S]*?setTerminalOpened\(false\)/,
+  "chat-surface resets the terminal-held-open latch when the session changes",
+);
+
 assert.match(
   source,
   /"cave:changes-refresh"/,
