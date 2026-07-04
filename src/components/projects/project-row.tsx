@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
+import { ProjectAvatar } from "@/components/project-avatar";
+import {
+  clearProjectImage,
+  moveProjectImage,
+  setProjectImage,
+  useProjectImages,
+} from "@/lib/cave-project-images";
+import { FAMILIAR_IMAGE_ACCEPT, prepareFamiliarImage } from "@/lib/familiar-image-upload";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { relativeTime } from "@/lib/relative-time";
 import type { CaveProject } from "@/lib/cave-projects-types";
@@ -158,6 +166,14 @@ export function ProjectRow({
   const [busy, setBusy] = useState<"name" | "root" | "delete" | null>(null);
   const [copiedRoot, setCopiedRoot] = useState(false);
   const [menu, setMenu] = useState<ContextMenuState>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const [imageStatus, setImageStatus] = useState<string | null>(null);
+  const projectImages = useProjectImages();
+  const hasImage = Boolean(projectImages[cardKey]);
+  const pickImage = () => {
+    setImageStatus(null);
+    imageInputRef.current?.click();
+  };
 
   const openTerminalHere = () => {
     window.dispatchEvent(new CustomEvent("cave:terminal-open", { detail: { projectRoot: project.root } }));
@@ -198,7 +214,9 @@ export function ProjectRow({
     }
     if (normalizeProjectRoot(next) !== normalizeProjectRoot(project.root)) {
       setBusy("root");
-      await onUpdateRoot(project.id, next);
+      const ok = await onUpdateRoot(project.id, next);
+      // The avatar is keyed by root — re-key it so it follows the project.
+      if (ok) void moveProjectImage(project.root, next);
       setBusy(null);
     }
     setEditingRoot(false);
@@ -206,7 +224,8 @@ export function ProjectRow({
 
   const deleteProject = async () => {
     setBusy("delete");
-    await onDelete(project.id);
+    const ok = await onDelete(project.id);
+    if (ok) void clearProjectImage(project.root);
     setBusy(null);
   };
 
@@ -246,15 +265,14 @@ export function ProjectRow({
         >
           <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={12} aria-hidden />
         </button>
-        <span
-          className="relative shrink-0"
-          style={{ color: project.color || "var(--accent-presence)" }}
+        <button
+          type="button"
+          onClick={pickImage}
+          className="focus-ring relative shrink-0 rounded-md"
+          title={imageStatus ?? (hasImage ? "Change project image" : "Set project image")}
+          aria-label={`${hasImage ? "Change" : "Set"} image for ${project.name}`}
         >
-          <Icon
-            name="ph:folder-open-bold"
-            width={15}
-            aria-hidden
-          />
+          <ProjectAvatar name={project.name} root={project.root} color={project.color} size="md" />
           {projectStatus ? (
             <span
               className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ring-2 ring-[var(--bg-base)] ${chatDotClass(
@@ -270,7 +288,30 @@ export function ProjectRow({
               aria-hidden
             />
           ) : null}
-        </span>
+        </button>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept={FAMILIAR_IMAGE_ACCEPT}
+          className="sr-only"
+          tabIndex={-1}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            event.currentTarget.value = "";
+            if (!file) return;
+            setImageStatus(null);
+            void prepareFamiliarImage(file)
+              .then(async (prepared) => {
+                const res = await setProjectImage(project.root, prepared);
+                setImageStatus(
+                  res.ok ? (prepared.downsized ? "Image was downsized for Cave." : null) : res.reason,
+                );
+              })
+              .catch((err) => {
+                setImageStatus(err instanceof Error ? err.message : "Could not read image.");
+              });
+          }}
+        />
         {editingName ? (
           <input
             autoFocus
@@ -397,6 +438,12 @@ export function ProjectRow({
           )}
         </div>
       </div>
+
+      {imageStatus ? (
+        <p role="status" className="mt-1 pl-8 text-[11px] text-[var(--text-muted)]">
+          {imageStatus}
+        </p>
+      ) : null}
 
       {expanded ? (
         <div className="projects-expand-enter">
@@ -543,6 +590,14 @@ export function ProjectRow({
         <PopoverItem icon="ph:pencil-simple-bold" onSelect={() => { setMenu(null); setNameDraft(project.name); setEditingName(true); }}>
           Rename
         </PopoverItem>
+        <PopoverItem icon="ph:image-bold" onSelect={() => { setMenu(null); pickImage(); }}>
+          {hasImage ? "Change image…" : "Set image…"}
+        </PopoverItem>
+        {hasImage ? (
+          <PopoverItem icon="ph:minus-circle" onSelect={() => { setMenu(null); void clearProjectImage(project.root); }}>
+            Remove image
+          </PopoverItem>
+        ) : null}
         <PopoverItem icon={copiedRoot ? "ph:check" : "ph:copy"} onSelect={() => { setMenu(null); void copyRoot(); }}>
           Copy path
         </PopoverItem>
