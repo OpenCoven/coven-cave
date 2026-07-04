@@ -108,5 +108,10 @@ assert.match(
   /project\.projectId \? \([\s\S]{0,160}<ProjectAvatar/,
   "a registered project renders a ProjectAvatar tile in the row",
 );
+assert.match(
+  chatSidebar,
+  /<span className="sr-only">, \{folderLabel\(project\)\}<\/span>/,
+  "the decorative tile is paired with a screen-reader-only project name",
+);
 
 console.log("chat-sidebar-wiring.test.ts passed");

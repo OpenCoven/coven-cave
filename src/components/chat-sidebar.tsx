@@ -131,6 +131,11 @@ function ThreadRow({
           )
         ) : null}
         <span className="cnav__thread-title" title={title}>{title}</span>
+        {project && (project.projectId || project.projectRoot) ? (
+          // The tile is decorative; name the project so a screen reader reading
+          // this flat, cross-project list still gets each thread's project.
+          <span className="sr-only">, {folderLabel(project)}</span>
+        ) : null}
         {confirming ? null : (
           <span className="cnav__time">{bareTime(session.updated_at || session.created_at)}</span>
         )}
