@@ -473,6 +473,18 @@ function ShellInner({
     }
   }, [navOpen]);
 
+  // Clear coupling bookkeeping when the viewport crosses into mobile: the nav
+  // becomes a drawer and the rail-close handler early-returns on mobile, so a
+  // mid-interaction desktop→mobile flip would otherwise strand
+  // railAutoCollapsedNavRef=true and cause a spurious nav expand on a later
+  // desktop session.
+  useEffect(() => {
+    if (isMobile) {
+      railAutoCollapsedNavRef.current = false;
+      userOverrodeNavRef.current = false;
+    }
+  }, [isMobile]);
+
   if (!mounted) {
     return (
       <div className="shell-frame flex h-full w-full flex-col">
