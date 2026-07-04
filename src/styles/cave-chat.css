@@ -2009,12 +2009,14 @@ details[open] > .cave-tool-summary::before {
 .cave-composer-select {
   position: relative;
   display: inline-flex;
-  flex: 1 1 142px;
+  /* Content-sized (compact) pill — icon · label · value · chevron sit snug, and
+     the row's spare width falls to the trailing edge before Send. */
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
-  min-width: 124px;
-  max-width: 190px;
-  padding: 0 9px;
+  min-width: 0;
+  max-width: 260px;
+  padding: 0 11px;
   font-size: 11px;
   line-height: 1;
   cursor: pointer;
@@ -2088,9 +2090,11 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-composer-select__chevron {
-  position: absolute;
-  right: 8px;
+  /* Inline (right after the value) so the pill hugs its content, matching the
+     reference — rather than pinned to a stretched pill's far edge. */
+  position: relative;
   z-index: 0;
+  margin-left: -1px;
   color: var(--text-muted) !important;
   pointer-events: none;
 }
