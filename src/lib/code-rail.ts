@@ -46,8 +46,9 @@ export function resolveCodeRail(
   let activeTab: CodeRailTab;
   if (newEdits) activeTab = "changes";
   else if (prev?.activeTab) activeTab = prev.activeTab;
-  else if (changeCount > 0) activeTab = "changes";
   else if (hasRepo) activeTab = "files";
+  // First-render fallback with no repo and no fresh edits: by the availability
+  // invariant above, terminalActive must be true here.
   else activeTab = "terminal";
 
   return { available, open, activeTab, changeCount };

@@ -60,3 +60,9 @@ test("terminal alone makes it available", () => {
   assert.equal(r.open, true);
   assert.equal(r.activeTab, "terminal");
 });
+
+test("activeTab persists when no signals change", () => {
+  const prev: CodeRailState = { available: true, open: true, activeTab: "changes", changeCount: 2 };
+  const r = resolveCodeRail({ ...base, hasRepo: true, changeCount: 2 }, prev);
+  assert.equal(r.activeTab, "changes");
+});
