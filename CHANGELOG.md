@@ -7,6 +7,55 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.138] - 2026-07-04
+
+Patch release on top of v0.0.137. The dashboard cockpit becomes truthful and
+navigable — the freshness pill reflects real data arrivals and doubles as a
+manual refresh, and every KPI, panel, agent row, and signal drills into the
+surface that owns it. Chat gains the **Host chip** arc for running sessions on
+registered remote servers, the composer's control pills get a compact pass with
+a warm gold accent, and browser/terminal/evals pick up fix + a11y hardening.
+
+### Added
+
+- **Chat** - Host chip: run chat sessions on registered remote servers, with a
+  live-status popover and a shared chip module on the home composer (#2337,
+  #2340, #2345).
+
+### Changed
+
+- **Dashboard** - the "Updated…" pill is stamped when fetched data actually
+  lands (it was pinned to render time) and doubles as a manual refresh; KPI
+  tiles, panel headers, agent/confidence rows, signals, and quick links all
+  deep-link to the surface that owns the number; KPI deltas are colored by
+  meaning (#2347).
+- **Composer** - compact, content-sized control pills with a warm gold icon
+  accent (#2341, #2343); the sidebar header gives the options button breathing
+  room (#2332).
+
+### Fixed
+
+- **Home** - new tasks credit the familiar shown on the composer, and sent
+  drafts no longer resurrect (#2344).
+- **Browser** - forward history survives navigation, the iframe fallback
+  sandbox is hardened, a listener race is fixed, and the reposition loop is
+  throttled (#2335).
+- **Evals** - the judge's pass/fail verdict is honored, stopped runs are not
+  recorded, runs are capped per-suite, and the poll is guarded (#2333).
+- **Terminal** - the screen-reader mirror stops re-rendering on hidden panes
+  and the decoder resets on reconnect (#2338).
+- **Mobile** - the Cave connection handoff is polished (#2342).
+
+### Accessibility
+
+- **Browser** - the tab strip is a real tablist with named controls, the
+  collapsed toolbar is inert, and quick-open traps focus (#2336).
+- **Evals** - the trend chart carries a text alternative, run lifecycle is
+  announced, grader outcomes are named, and suite/progress state is marked
+  (#2334).
+- **Terminal** - connection-status transitions are announced to the assertive
+  live region (#2339).
+
 ## [0.0.137] - 2026-07-03
 
 Patch release on top of v0.0.136. A big **Flow** and **mobile** slice: Flow gets
