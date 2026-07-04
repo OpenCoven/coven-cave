@@ -367,6 +367,12 @@ export function ChatSurface({
     if (!rail.available || (!isMobile && !paneNarrow) || scope !== "conversation")
       setMobileRailOpen(false);
   }, [rail.available, isMobile, paneNarrow, scope]);
+  // Reverse of the toggle's forward guard: if the right-panel sheet opens while
+  // the code-rail sheet is up, close the rail sheet so two z-[200] aria-modal
+  // overlays never coexist on the same edge (mutual exclusivity, both ways).
+  useEffect(() => {
+    if (rightPanel !== null) setMobileRailOpen(false);
+  }, [rightPanel]);
 
   // Announce code-rail visibility to the shell so it can soft-collapse the left
   // nav to its icon rail while the rail is open (keeps chat centered). Directional
