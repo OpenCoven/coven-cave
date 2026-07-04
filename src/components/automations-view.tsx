@@ -34,7 +34,8 @@ import { SkillSelect } from "@/components/automation-skill-select";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-resolve";
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
-import { AutomationCreateDialog, type AutomationCreateInput } from "@/components/automation-create-dialog";
+import { AutomationCreateDialog, type AutomationCreateInput, type AutomationCreateInitialValues } from "@/components/automation-create-dialog";
+import { AUTOMATION_TEMPLATES, TEMPLATE_CATEGORIES, type AutomationTemplate } from "@/lib/automation-templates";
 import { listFlows, runFlow, saveFlow, type FlowDoc } from "@/lib/flows";
 import { setActive as setFlowActive } from "@/lib/flow/flow-doc";
 import {
@@ -83,7 +84,7 @@ function linkLabel(link: LinkRef): string {
 // feed (the full inbox). "all" shows every automation in one list. "calendar"
 // (only present when a calendarSlot is supplied) hosts the Calendar surface so
 // the two former top-level pages share one schedule view.
-type AutomationTab = "all" | "reminders" | "crons" | "flows" | "activity" | "calendar";
+type AutomationTab = "all" | "reminders" | "crons" | "flows" | "activity" | "calendar" | "templates";
 
 // Fire a cross-surface navigation so "Open" on a flow jumps to its
 // dedicated editor surface (the Workspace owns setMode; see cave:navigate-mode).
@@ -1573,6 +1574,75 @@ function FlowList({
   );
 }
 
+// ── Templates panel ───────────────────────────────────────────────────────────
+function TemplatesPanel({
+  query,
+  onQueryChange,
+  onSelect,
+}: {
+  query: string;
+  onQueryChange: (q: string) => void;
+  onSelect: (tpl: AutomationTemplate) => void;
+}) {
+  const q = query.toLowerCase().trim();
+  const filtered = q
+    ? AUTOMATION_TEMPLATES.filter(
+        (t) => t.title.toLowerCase().includes(q) || t.scheduleLabel.toLowerCase().includes(q),
+      )
+    : AUTOMATION_TEMPLATES;
+
+  const byCategory = TEMPLATE_CATEGORIES.map((cat) => ({
+    cat,
+    templates: filtered.filter((t) => t.category === cat),
+  })).filter(({ templates }) => templates.length > 0);
+
+  return (
+    <div className="automation-templates-panel">
+      <div className="mb-5">
+        <SearchInput
+          value={query}
+          onValueChange={onQueryChange}
+          onClear={() => onQueryChange("")}
+          placeholder="Search templates…"
+          aria-label="Search templates"
+        />
+      </div>
+      {byCategory.length === 0 ? (
+        <EmptyState
+          className="mt-8"
+          icon="ph:magnifying-glass"
+          headline={`No templates match "${query.trim()}"`}
+          subtitle="Try a different search term."
+        />
+      ) : (
+        byCategory.map(({ cat, templates }) => (
+          <section key={cat} className="mb-6">
+            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+              {cat}
+            </h2>
+            <div className="automation-templates-grid">
+              {templates.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  className="automation-template-card focus-ring"
+                  onClick={() => onSelect(tpl)}
+                >
+                  <span className="automation-template-card__emoji" aria-hidden>
+                    {tpl.emoji}
+                  </span>
+                  <span className="automation-template-card__title">{tpl.title}</span>
+                  <span className="automation-template-card__schedule">{tpl.scheduleLabel}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))
+      )}
+    </div>
+  );
+}
+
 // ── Root ──────────────────────────────────────────────────────────────────────
 export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdit, onOpenLink, calendarSlot, initialTab }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
@@ -1602,6 +1672,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
   const [selectedCodex, setSelectedCodex] = useState<CodexAutomation | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [templateInitialValues, setTemplateInitialValues] = useState<AutomationCreateInitialValues | undefined>();
+  const [templatesQuery, setTemplatesQuery] = useState("");
   const [automationRuns, setAutomationRuns] = useState<AutomationRunRecord[]>([]);
   const [lastRunById, setLastRunById] = useState<Map<string, AutomationRunRecord>>(new Map());
   // Guards async setState after unmount; runsReqRef drops a stale per-automation
@@ -2211,7 +2283,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
               {activeTab === "calendar"
                 ? "Your reminders, crons, and deadlines on a calendar."
-                : "Reminders, crons, and flows — everything that runs for you, in one place."}
+                : activeTab === "templates"
+                  ? "Start with a scheduled task template."
+                  : "Reminders, crons, and flows — everything that runs for you, in one place."}
             </p>
             {activeTab !== "calendar" && initialLoadDone && summary.active + summary.paused > 0 && (
               <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -2314,6 +2388,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               { id: "crons", label: "Crons", count: typeCounts.cron },
               { id: "flows", label: "Flows", count: typeCounts.flow },
               { id: "activity", label: "Activity", count: items.length },
+              { id: "templates", label: "Templates" },
             ] satisfies TabItem<AutomationTab>[]}
           />
         </div>
@@ -2369,6 +2444,22 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto px-8 pb-8"}>
           {activeTab === "calendar" ? (
             calendarSlot
+          ) : activeTab === "templates" ? (
+            <TemplatesPanel
+              query={templatesQuery}
+              onQueryChange={setTemplatesQuery}
+              onSelect={(tpl) => {
+                setTemplateInitialValues({
+                  name: tpl.name,
+                  scheduleMode: tpl.scheduleMode,
+                  time: tpl.time,
+                  days: tpl.days,
+                  rawRrule: tpl.rawRrule,
+                  goals: tpl.goals,
+                });
+                setCreateOpen(true);
+              }}
+            />
           ) : !initialLoadDone ? (
             <div className="space-y-2 pt-2">
               {Array.from({ length: 5 }).map((_, index) => (
@@ -2578,8 +2669,10 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       {/* ── Create automation dialog ───────────────────────────────────────── */}
       {createOpen && (
         <AutomationCreateDialog
+          key={templateInitialValues?.name ?? "blank"}
           resolvedFamiliars={resolvedFamiliars}
-          onClose={() => setCreateOpen(false)}
+          initialValues={templateInitialValues}
+          onClose={() => { setCreateOpen(false); setTemplateInitialValues(undefined); }}
           onCreate={(i) => void createCodex(i)}
         />
       )}
