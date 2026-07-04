@@ -113,5 +113,6 @@ assert.match(
   /<span className="sr-only">\{project\.name\}<\/span>/,
   "the project name is announced, not just painted",
 );
+assert.doesNotMatch(chatSidebar, /cnav__footer|cnav__user-plan/, "ChatSidebar should not render the user plan footer");
 
 console.log("chat-sidebar-wiring.test.ts passed");

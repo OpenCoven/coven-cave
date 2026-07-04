@@ -21,8 +21,6 @@ type Props = {
   onOpenSession: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
-  userName?: string;
-  userPlan?: string;
   scheduledCount?: number;
 };
 
@@ -65,8 +63,6 @@ export function CodeSidebar({
   onOpenSession,
   onNewChat,
   onDeleteSession,
-  userName,
-  userPlan = "Pro",
   scheduledCount,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -118,8 +114,6 @@ export function CodeSidebar({
   const selectProject = (project: ComuxProject) => {
     window.dispatchEvent(new CustomEvent("cave:code-select-project", { detail: { root: project.root } }));
   };
-
-  const initials = (userName ?? "You").split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
   return (
     <div className="code-sidebar flex h-full min-h-0 flex-col">
@@ -366,13 +360,6 @@ export function CodeSidebar({
           )}
         </nav>
 
-        <footer className="code-sidebar__footer code-sidebar__user cnav__footer">
-          <span className="cnav__avatar" aria-hidden>{initials}</span>
-          <span className="cnav__user">
-            <span className="cnav__user-name">{userName ?? "You"}</span>
-            <span className="cnav__user-plan">{userPlan}</span>
-          </span>
-        </footer>
       </div>
     </div>
   );

@@ -106,7 +106,7 @@ assert.match(codeSidebar, /New session|New chat/, "sidebar nav has a New session
 assert.match(codeSidebar, /cave:navigate-mode/, "sidebar deep-links to other surfaces via the nav bus");
 assert.match(codeSidebar, /mode:\s*"inbox"/, "Scheduled deep-links to Automations (inbox mode)");
 assert.match(codeSidebar, /mode:\s*"marketplace"/, "Plugins deep-links to the Marketplace surface (its own mode after #2154)");
-assert.match(codeSidebar, /code-sidebar__footer|code-sidebar__user/, "sidebar has a user footer");
+assert.doesNotMatch(codeSidebar, /code-sidebar__footer|code-sidebar__user|cnav__user-plan/, "CodeSidebar should not render the user plan footer");
 assert.match(
   workspace,
   /onDeleteSession=\{async \(session\) => \{[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(session\.id\)\}`,[\s\S]*?method: "DELETE"[\s\S]*?loadSessions\(\)/,

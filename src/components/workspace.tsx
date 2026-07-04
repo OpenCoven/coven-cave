@@ -1950,7 +1950,6 @@ export function Workspace() {
         await loadSessions();
       }}
       scheduledCount={codeScheduledCount}
-      userPlan="Pro"
     />
   );
 
@@ -1972,7 +1971,6 @@ export function Workspace() {
         await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
         await loadSessions();
       }}
-      userPlan="Pro"
     />
   );
 

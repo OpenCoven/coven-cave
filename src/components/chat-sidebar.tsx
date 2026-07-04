@@ -39,8 +39,6 @@ type Props = {
   onOpenSession: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
-  userName?: string;
-  userPlan?: string;
 };
 
 const THREADS_PREVIEW = 6;
@@ -174,8 +172,6 @@ export function ChatSidebar({
   onOpenSession,
   onNewChat,
   onDeleteSession,
-  userName,
-  userPlan = "Pro",
 }: Props) {
   const { projects, createProject, reload } = useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
@@ -322,8 +318,6 @@ export function ChatSidebar({
       setRegisteringRoot(null);
     }
   }
-
-  const initials = (userName ?? "You").split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
   return (
     <div className="chat-sidebar flex h-full min-h-0 flex-col">
@@ -608,13 +602,6 @@ export function ChatSidebar({
           )}
         </nav>
 
-        <footer className="cnav__footer">
-          <span className="cnav__avatar" aria-hidden>{initials}</span>
-          <span className="cnav__user">
-            <span className="cnav__user-name">{userName ?? "You"}</span>
-            <span className="cnav__user-plan">{userPlan}</span>
-          </span>
-        </footer>
       </div>
     </div>
   );
