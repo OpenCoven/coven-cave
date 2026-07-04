@@ -70,6 +70,7 @@ export const SUITES = {
     "src/components/chat-sidebar-wiring.test.ts",
     "src/components/workspace-rail.test.ts",
     "src/components/workspace-rail-wiring.test.ts",
+    "src/components/nav-rail-coupling.test.ts",
     "src/components/rail-files-panel.test.ts",
     "src/components/rail-terminal-panel.test.ts",
     "src/lib/workflows.test.ts",

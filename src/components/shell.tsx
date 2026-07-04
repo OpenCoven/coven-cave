@@ -151,6 +151,13 @@ function ShellInner({
   const navRef = useRef<PanelImperativeHandle | null>(null);
   const listRef = useRef<PanelImperativeHandle | null>(null);
   const bottomRef = useRef<PanelImperativeHandle | null>(null);
+  // Code-rail ↔ nav coupling bookkeeping (desktop only). When the code rail
+  // opens we soft-collapse the nav to its icon rail and remember that WE did it
+  // (railAutoCollapsedNavRef); on rail close we restore it — unless the user
+  // re-expanded the nav in the meantime (userOverrodeNavRef), in which case
+  // their intent wins and we leave the nav alone.
+  const railAutoCollapsedNavRef = useRef(false);
+  const userOverrodeNavRef = useRef(false);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -420,6 +427,51 @@ function ShellInner({
       window.removeEventListener("cave:toggle-left-panel", onToggleLeft);
     };
   }, [twoPane, hasBottom, isMobile, panelShortcuts]);
+
+  // Couple the left nav to the code rail (desktop only — mobile nav is a
+  // drawer, so this must never touch it). When the rail opens we soft-collapse
+  // the nav to its icon rail so chat stays centered; when it closes we restore
+  // the nav UNLESS the user re-expanded it while the rail was open.
+  useEffect(() => {
+    const onRailVisibility = (e: Event) => {
+      const open = (e as CustomEvent<{ open?: boolean }>).detail?.open ?? false;
+      if (isMobile) return;
+      if (open) {
+        // Rail became visible: collapse the nav only if it's currently open,
+        // and remember we did it so we can restore later.
+        if (navOpen) {
+          navRef.current?.collapse();
+          railAutoCollapsedNavRef.current = true;
+          userOverrodeNavRef.current = false;
+        }
+        return;
+      }
+      // Rail hidden: restore the nav if we auto-collapsed it and the user
+      // didn't override in the meantime. Clear the auto-collapsed flag BEFORE
+      // expanding so the resulting navOpen→true transition isn't misread as a
+      // user override (which would wrongly suppress future restores).
+      const shouldRestore =
+        railAutoCollapsedNavRef.current && !userOverrodeNavRef.current && !isMobile;
+      railAutoCollapsedNavRef.current = false;
+      userOverrodeNavRef.current = false;
+      if (shouldRestore) navRef.current?.expand();
+    };
+    window.addEventListener("cave:code-rail-visibility", onRailVisibility);
+    return () => window.removeEventListener("cave:code-rail-visibility", onRailVisibility);
+  }, [isMobile, navOpen]);
+
+  // User-override detection: if the nav becomes open WHILE the rail had
+  // auto-collapsed it, that's the user deliberately re-expanding (via the
+  // reopen button, ⌘-shortcut, or a drag). Record it so the later rail-close
+  // restore is suppressed and we don't fight the user. Programmatic collapse
+  // sets navOpen→false (not true) so it never trips this; the programmatic
+  // restore-expand clears railAutoCollapsedNavRef first (above) so it doesn't
+  // either.
+  useEffect(() => {
+    if (navOpen && railAutoCollapsedNavRef.current) {
+      userOverrodeNavRef.current = true;
+    }
+  }, [navOpen]);
 
   if (!mounted) {
     return (

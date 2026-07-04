@@ -345,6 +345,16 @@ export function ChatSurface({
   }, [snapshot.sessionId, terminalOpened]);
   const showCodeRail = !isCodeSurface && rail.available && rail.open && !isMobile && !paneNarrow;
 
+  // Announce code-rail visibility to the shell so it can soft-collapse the left
+  // nav to its icon rail while the rail is open (keeps chat centered). Directional
+  // event — the shell owns the nav state and decides how to react. Runs on mount
+  // too, so a late-mounting shell listener still gets the initial state.
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("cave:code-rail-visibility", { detail: { open: showCodeRail } }),
+    );
+  }, [showCodeRail]);
+
   // Persist the chat / right-area split. panelIds tracks which panels are
   // actually mounted so the with-sidebar and bare layouts persist separately.
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
