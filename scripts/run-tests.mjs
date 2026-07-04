@@ -389,6 +389,7 @@ export const SUITES = {
     "src/lib/cave-familiar-archive.test.ts",
     "src/lib/cave-familiar-images.test.ts",
     "src/lib/cave-familiar-overrides.test.ts",
+    "src/lib/cave-project-images.test.ts",
     "src/lib/chat-assistant-filter.test.ts",
     "src/lib/chat-attachments.test.ts",
     "src/lib/codex-automations.test.ts",
@@ -747,6 +748,7 @@ const STRIP_TYPES_MJS = new Set([
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
   "src/lib/cave-familiar-images.test.ts",
+  "src/lib/cave-project-images.test.ts",
   "src/lib/user-avatar-image.test.ts",
   "src/lib/familiar-resolve.test.ts",
   "src/lib/gh-review-html.test.ts",

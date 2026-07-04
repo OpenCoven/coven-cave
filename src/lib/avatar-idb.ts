@@ -15,7 +15,7 @@
 
 export type AvatarRecord = { dataUrl: string; mime: string; updatedAt: string };
 
-export type AvatarStore = "familiarImages" | "userAvatar";
+export type AvatarStore = "familiarImages" | "userAvatar" | "projectAvatars";
 
 export type AvatarStorageDriver = {
   getAll(store: AvatarStore): Promise<Record<string, AvatarRecord>>;
@@ -24,8 +24,8 @@ export type AvatarStorageDriver = {
 };
 
 const DB_NAME = "cave-avatars";
-const DB_VERSION = 1;
-const STORES: readonly AvatarStore[] = ["familiarImages", "userAvatar"];
+const DB_VERSION = 2; // v2: + projectAvatars
+const STORES: readonly AvatarStore[] = ["familiarImages", "userAvatar", "projectAvatars"];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
