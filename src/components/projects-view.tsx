@@ -66,6 +66,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     createProject,
     renameProject,
     updateRoot,
+    updateColor,
     deleteProject,
     reload,
   } = useProjects({ familiarId: activeFamiliarId });
@@ -635,6 +636,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
                     chats={chatsByRoot.get(normalizeProjectRoot(project.root)) ?? []}
                     onRename={renameProject}
                     onUpdateRoot={updateRoot}
+                    onUpdateColor={updateColor}
                     onDelete={deleteProject}
                     onNewChat={onNewChat}
                     onOpenSession={openSessionById}

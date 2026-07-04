@@ -37,6 +37,20 @@ try {
   assert.equal(patched?.name, "New");
   assert.equal(patched?.root, "/tmp/test");
 
+  // color: string sets, undefined leaves untouched, null clears (back to the
+  // auto root-hash tint — the field disappears rather than persisting null).
+  const colored = await patchProject(created.id, { color: "oklch(0.74 0.12 250)" });
+  assert.equal(colored?.color, "oklch(0.74 0.12 250)");
+  const rootPatchKeepsColor = await patchProject(created.id, { root: "/tmp/test" });
+  assert.equal(rootPatchKeepsColor?.color, "oklch(0.74 0.12 250)", "untouched patch keeps the color");
+  const cleared = await patchProject(created.id, { color: null });
+  assert.equal(cleared?.color, undefined, "null clears the explicit color");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(cleared ?? {}, "color"),
+    false,
+    "cleared color is removed from the record, not persisted as null",
+  );
+
   const slashHeavy = await createProject({
     name: "Slash heavy",
     root: `  C:\\tmp\\slash-heavy${"/".repeat(5000)}  `,

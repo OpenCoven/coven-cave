@@ -26,14 +26,31 @@ import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
+import { projectTint } from "@/lib/comux-projects";
+
 import { ProjectChatRow } from "./session-row";
 import { CHAT_CAP, chatDotClass, shortRoot, type MoveTarget } from "./projects-shared";
+
+/** Preset tile tints — the same oklch recipe projectTint() hashes into, at
+ *  fixed hues, so a hand-picked color sits naturally next to auto-tinted
+ *  tiles. Stored verbatim in CaveProject.color. */
+const PROJECT_COLOR_SWATCHES: { name: string; value: string }[] = [
+  { name: "Clay", value: "oklch(0.74 0.12 25)" },
+  { name: "Amber", value: "oklch(0.74 0.12 70)" },
+  { name: "Fern", value: "oklch(0.74 0.12 145)" },
+  { name: "Teal", value: "oklch(0.74 0.12 200)" },
+  { name: "Sky", value: "oklch(0.74 0.12 250)" },
+  { name: "Violet", value: "oklch(0.74 0.12 300)" },
+  { name: "Rose", value: "oklch(0.74 0.12 340)" },
+];
 
 type ProjectRowProps = {
   project: CaveProject;
   chats: SessionRow[];
   onRename: (id: string, name: string) => Promise<boolean>;
   onUpdateRoot: (id: string, root: string) => Promise<boolean>;
+  /** Set an explicit tile tint, or null to restore the auto root-hash tint. */
+  onUpdateColor: (id: string, color: string | null) => Promise<boolean>;
   onDelete: (id: string) => Promise<boolean>;
   onNewChat?: (projectRoot: string) => void;
   onOpenSession?: (sessionId: string) => void;
@@ -51,6 +68,7 @@ export function ProjectRow({
   chats,
   onRename,
   onUpdateRoot,
+  onUpdateColor,
   onDelete,
   onNewChat,
   onOpenSession,
@@ -163,7 +181,7 @@ export function ProjectRow({
   const [nameDraft, setNameDraft] = useState(project.name);
   const [rootDraft, setRootDraft] = useState(project.root);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [busy, setBusy] = useState<"name" | "root" | "delete" | null>(null);
+  const [busy, setBusy] = useState<"name" | "root" | "color" | "delete" | null>(null);
   const [copiedRoot, setCopiedRoot] = useState(false);
   const [menu, setMenu] = useState<ContextMenuState>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
@@ -226,6 +244,12 @@ export function ProjectRow({
     setBusy("delete");
     const ok = await onDelete(project.id);
     if (ok) void clearProjectImage(project.root);
+    setBusy(null);
+  };
+
+  const setColor = async (color: string | null) => {
+    setBusy("color");
+    await onUpdateColor(project.id, color);
     setBusy(null);
   };
 
@@ -494,6 +518,43 @@ export function ProjectRow({
             <Icon name={copiedRoot ? "ph:check" : "ph:copy"} width={12} aria-hidden />
           </button>
         )}
+      </div>
+
+      <div className="mt-2 flex min-w-0 items-center gap-2 pl-6">
+        <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+          Color
+        </span>
+        <div className="flex items-center gap-1.5" role="group" aria-label={`Tile color for ${project.name}`}>
+          <button
+            type="button"
+            onClick={() => void setColor(null)}
+            disabled={busy === "color"}
+            aria-pressed={!project.color}
+            title="Auto — tinted from the project path"
+            aria-label="Auto color"
+            className={`focus-ring h-4 w-4 shrink-0 rounded-full border border-dashed border-[var(--border-strong)] ${
+              !project.color ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]" : ""
+            }`}
+            style={{ background: `color-mix(in oklch, ${projectTint(project.root)} 45%, transparent)` }}
+          />
+          {PROJECT_COLOR_SWATCHES.map((swatch) => (
+            <button
+              key={swatch.value}
+              type="button"
+              onClick={() => void setColor(swatch.value)}
+              disabled={busy === "color"}
+              aria-pressed={project.color === swatch.value}
+              title={swatch.name}
+              aria-label={`${swatch.name} color`}
+              className={`focus-ring h-4 w-4 shrink-0 rounded-full ${
+                project.color === swatch.value
+                  ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]"
+                  : ""
+              }`}
+              style={{ background: swatch.value }}
+            />
+          ))}
+        </div>
       </div>
 
       {chats.length > 0 ? (

@@ -1730,7 +1730,11 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <Icon name="ph:folder-open" width={15} className="shrink-0 text-[var(--text-muted)]" />
+                            <ProjectAvatar
+                              name={selectedProject.name}
+                              root={selectedProject.root}
+                              size="md"
+                            />
                             <h2 className="truncate text-sm font-semibold text-[var(--text-primary)]">
                               {selectedProject.name}
                             </h2>

@@ -12,6 +12,8 @@ export type ProjectsState = {
   createProject: (name: string, root: string) => Promise<CaveProject | null>;
   renameProject: (id: string, name: string) => Promise<boolean>;
   updateRoot: (id: string, root: string) => Promise<boolean>;
+  /** Set an explicit tile tint, or pass null to restore the auto root-hash tint. */
+  updateColor: (id: string, color: string | null) => Promise<boolean>;
   deleteProject: (id: string) => Promise<boolean>;
 };
 
@@ -115,6 +117,20 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     return false;
   }, []);
 
+  const updateColor = useCallback(async (id: string, color: string | null): Promise<boolean> => {
+    const res = await fetch(`/api/projects/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ color }),
+    });
+    const data = await res.json();
+    if (data.ok && data.project) {
+      setProjects((prev) => prev.map((project) => (project.id === id ? data.project : project)));
+      return true;
+    }
+    return false;
+  }, []);
+
   const deleteProject = useCallback(async (id: string): Promise<boolean> => {
     const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     const data = await res.json();
@@ -133,6 +149,7 @@ export function useProjects({ enabled = true, familiarId = null }: UseProjectsOp
     createProject,
     renameProject,
     updateRoot,
+    updateColor,
     deleteProject,
   };
 }
