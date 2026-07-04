@@ -83,7 +83,7 @@ export function remoteUrlFromManifest(manifest: PluginManifest): string | undefi
 
 export type InstalledMap = Record<string, { version: string; source: string; installedAt: string }>;
 
-export type PluginKind = "mcp" | "skill";
+export type PluginKind = "api" | "mcp" | "skill";
 
 export type MarketplacePlugin = {
   id: string;
@@ -110,12 +110,16 @@ export type MarketplacePlugin = {
 
 /**
  * "mcp" when the manifest declares any MCP server (stdio command or remote
- * url); otherwise "skill" — a first-party capability that runs inside Coven
- * Cave without an external server.
+ * url); "api" when it represents an HTTP/API-backed integration without an
+ * MCP server; otherwise "skill" — a first-party procedure that runs inside
+ * Coven Cave without an external server.
  */
 export function deriveKind(manifest: PluginManifest): PluginKind {
   const servers = manifest.mcpServers ?? {};
-  return Object.keys(servers).length > 0 ? "mcp" : "skill";
+  if (Object.keys(servers).length > 0) return "mcp";
+  const tags = [...(manifest.capabilities ?? []), ...(manifest.keywords ?? [])]
+    .map((value) => value.toLowerCase());
+  return tags.includes("api") ? "api" : "skill";
 }
 
 export function deriveRequiresSetup(userConfig: PluginManifest["userConfig"]): boolean {
@@ -127,6 +131,33 @@ function authorName(author: PluginManifest["author"]): string {
   if (typeof author === "string" && author.trim()) return author;
   if (author && typeof author === "object" && author.name) return author.name;
   return "OpenCoven";
+}
+
+const FAMILIAR_MARKETPLACE_NAMES = new Set(["nova", "kitty", "cody", "charm", "sage", "astra", "echo"]);
+const FAMILIAR_PLUGIN_RE = /^coven-(nova|kitty|cody|charm|sage|astra|echo)$/i;
+const FAMILIAR_NAME_RE = /\b(nova|kitty|cody|charm|sage|astra|echo)\b/i;
+
+function hasHardcodedFamiliarName(value: string): boolean {
+  return FAMILIAR_MARKETPLACE_NAMES.has(value.trim().toLowerCase());
+}
+
+export function sanitizeMarketplacePlugins(
+  marketplacePlugins: MarketplaceJsonPlugin[],
+): MarketplaceJsonPlugin[] {
+  return marketplacePlugins
+    .filter((plugin) => !FAMILIAR_PLUGIN_RE.test(plugin.name))
+    .map((plugin) => ({
+      ...plugin,
+      roleAffinity: (plugin.roleAffinity ?? []).filter(
+        (entry) => !hasHardcodedFamiliarName(entry.familiar),
+      ),
+    }));
+}
+
+export function sanitizeMarketplaceCatalogCards(
+  plugins: MarketplacePlugin[],
+): MarketplacePlugin[] {
+  return plugins.filter((plugin) => !FAMILIAR_NAME_RE.test(JSON.stringify(plugin)));
 }
 
 export function mergeCatalog(
@@ -235,14 +266,16 @@ export function sortPlugins(plugins: MarketplacePlugin[], sort: SortKey): Market
   );
 }
 
-export function countByKind(plugins: MarketplacePlugin[]): { mcp: number; skill: number } {
+export function countByKind(plugins: MarketplacePlugin[]): { api: number; mcp: number; skill: number } {
+  let api = 0;
   let mcp = 0;
   let skill = 0;
   for (const p of plugins) {
-    if (p.kind === "mcp") mcp += 1;
+    if (p.kind === "api") api += 1;
+    else if (p.kind === "mcp") mcp += 1;
     else skill += 1;
   }
-  return { mcp, skill };
+  return { api, mcp, skill };
 }
 
 export type Collection = {

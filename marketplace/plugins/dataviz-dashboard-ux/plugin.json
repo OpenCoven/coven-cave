@@ -52,34 +52,13 @@
       "https://www.highcharts.com/docs/accessibility/accessibility-module",
       "https://www.w3.org/WAI/tutorials/images/complex/"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer",
-          "code-reviewer"
-        ]
-      },
-      {
-        "familiar": "sage",
-        "roles": [
-          "librarian",
-          "researcher"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "strategic-navigator"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": false,
-      "rolePatch": true
+      "rolePatch": false
     }
   }
 }

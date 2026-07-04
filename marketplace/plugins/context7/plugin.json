@@ -28,28 +28,13 @@
       "https://github.com/upstash/context7",
       "https://github.com/mcp-use/mcp-use"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer",
-          "debugger"
-        ]
-      },
-      {
-        "familiar": "sage",
-        "roles": [
-          "researcher",
-          "librarian"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

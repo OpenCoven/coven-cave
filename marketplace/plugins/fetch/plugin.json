@@ -27,34 +27,13 @@
     "sourceRefs": [
       "https://github.com/modelcontextprotocol/servers"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "sage",
-        "roles": [
-          "researcher",
-          "librarian"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "copywriter",
-          "devrel-liaison"
-        ]
-      },
-      {
-        "familiar": "cody",
-        "roles": [
-          "debugger"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

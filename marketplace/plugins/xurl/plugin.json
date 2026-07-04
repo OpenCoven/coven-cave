@@ -1,7 +1,7 @@
 {
   "name": "xurl",
   "version": "0.1.0",
-  "description": "X/Twitter drafting, lookup, and approved-post workflows for Charm's social voice lane.",
+  "description": "X/Twitter drafting, lookup, and approved-post workflows for social publishing lanes.",
   "author": {
     "name": "OpenCoven"
   },
@@ -25,21 +25,13 @@
     "category": "Social",
     "trust": "local-tool",
     "sourceRefs": [],
-    "roleAffinity": [
-      {
-        "familiar": "charm",
-        "roles": [
-          "social-voice",
-          "devrel-liaison"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": false,
-      "rolePatch": true
+      "rolePatch": false
     }
   }
 }

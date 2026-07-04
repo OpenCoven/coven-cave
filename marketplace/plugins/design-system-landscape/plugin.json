@@ -55,34 +55,13 @@
       "https://github.com/chakra-ui/ark",
       "https://github.com/microsoft/fluentui"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "sage",
-        "roles": [
-          "librarian",
-          "researcher"
-        ]
-      },
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer",
-          "code-reviewer"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "strategic-navigator"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": false,
-      "rolePatch": true
+      "rolePatch": false
     }
   }
 }

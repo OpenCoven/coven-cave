@@ -10,7 +10,7 @@ Run both the skill-structure gate and the CodeQL SDK security scan, then report 
 ## Use When
 - Validate skill structure with openclaw skills check and package_skill.py before scanning
 - Run the codeql-sdk audit with --fail-on-high and emit JSON plus optional SARIF reports for CI/ClawHub
-- Produce a handoff summary (structure, package, scan status, report path, ready-to-submit) for Cody or ClawHub
+- Produce a handoff summary (structure, package, scan status, report path, ready-to-submit) for maintainers or ClawHub
 
 ## Guardrails
 - If CodeQL finds no analyzable source, mark the scan not applicable rather than passed; never substitute weaker checks

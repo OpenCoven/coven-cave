@@ -42,27 +42,13 @@
       "https://www.w3.org/WAI/WCAG22/Understanding/accessible-authentication-minimum.html",
       "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/autocomplete"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer",
-          "code-reviewer"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "copywriter"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": false,
-      "rolePatch": true
+      "rolePatch": false
     }
   }
 }

@@ -3,7 +3,7 @@
 The "why this exists / trade-offs / when NOT to use" appendix. Read alongside `SKILL.md`.
 
 ## Why this skill exists
-Coding familiars (Cody, coven-code, cast-codes) repeatedly get asked to "add a ⌘K bar." The palette *UI*
+Coding agents repeatedly get asked to "add a ⌘K bar." The palette *UI*
 is the easy 20%; the failure modes cluster in the other 80%: (1) **shortcut registration** that fires
 inside text inputs, fights the browser, or collides with screen readers; (2) **accessibility** — a palette
 that's a `<div>` soup instead of a combobox, with silent filtering SR users can't perceive; and (3)
@@ -18,7 +18,7 @@ It **complements, not duplicates**, sibling marketplace plugins:
   implementation layer (aria-activedescendant, live-region counts, SR quick-nav collisions).
 - `framer-motion-patterns` — motion/enter-exit for the overlay; this skill owns the *behaviour/ranking/
   keyboard* layer, not the animation.
-- `charm` copy plugins — this skill defers command *labels/help-text/keyword synonyms* to charm and just
+- copy-focused plugins — this skill defers command *labels/help-text/keyword synonyms* to copy guidance and just
   states the conventions.
 
 ## The tool split people get wrong

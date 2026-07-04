@@ -24,7 +24,7 @@ Accessibility is the one UI concern that is simultaneously (a) a legal obligatio
 - **`prefers-reduced-motion` vs SC 2.3.3:** honouring the media query is the expected modern default and prevents vestibular harm, even though SC 2.3.3 (Animation from Interactions) is technically AAA. Treat reduced-motion as table stakes regardless of level.
 
 ## When NOT to use
-- Pure content/copy work with no interactive UI (though readable-label + plain-language advice from the forms/auth section can still help — that's the `charm` roleAffinity hook).
+- Pure content/copy work with no interactive UI, though readable-label and plain-language advice from the forms/auth section can still help.
 - Backend/API/infra tasks with no rendered surface.
 - When the requester needs a *formal certified VPAT/ACR* — this skill informs one but isn't a substitute for a professional audit + user testing with people with disabilities.
 

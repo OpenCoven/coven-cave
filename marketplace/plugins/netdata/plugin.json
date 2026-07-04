@@ -27,26 +27,13 @@
     "sourceRefs": [
       "https://learn.netdata.cloud/docs/netdata-ai/mcp"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "debugger"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "coordination-layer"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

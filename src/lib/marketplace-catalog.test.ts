@@ -14,24 +14,32 @@ import {
   remoteUrlFromManifest,
   resolveCollection,
   COLLECTIONS,
+  sanitizeMarketplaceCatalogCards,
+  sanitizeMarketplacePlugins,
 } from "./marketplace-catalog.ts";
 
 const marketplacePlugins = [
   { name: "github", displayName: "GitHub", category: "Developer Tools", trust: "reference-local", policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" }, roleAffinity: [{ familiar: "cody", roles: ["implementer"] }] },
   { name: "fetch", displayName: "Fetch", category: "Developer Tools", trust: "reference-local", policy: { installation: "AVAILABLE", authentication: "NONE" } },
+  { name: "tinyfish-search", displayName: "TinyFish Search", category: "Web", trust: "reference-local", policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" } },
   { name: "legacy", displayName: "Legacy", category: "Other", trust: "preview-local", policy: { installation: "UNAVAILABLE", authentication: "NONE" } },
 ];
 const manifests = {
   github: { version: "0.1.0", description: "Repos, issues, PRs.", author: { name: "OpenCoven" }, keywords: ["git", "pull-requests"], capabilities: ["network", "mcp"], homepage: "https://opencoven.ai", mcpServers: { github: { command: "npx", type: "stdio" } }, userConfig: { github_token: { required: true, sensitive: true, env: "GITHUB_PERSONAL_ACCESS_TOKEN" } } },
   fetch: { version: "0.2.0", description: "HTTP fetch.", author: "Anthropic", keywords: ["http"], capabilities: ["network"], mcpServers: { fetch: { command: "npx", type: "stdio" } } },
+  "tinyfish-search": { version: "1.0.0", description: "Search the web with an API.", author: "TinyFish", keywords: ["search", "api"], capabilities: ["network", "api"], userConfig: { token: { required: true, sensitive: true, env: "TINYFISH_API_KEY" } } },
   // legacy: intentionally no manifest -> degraded card, no mcpServers -> kind "skill"
 };
-const installed = { fetch: { version: "0.2.0", source: "catalog", installedAt: "2026-06-24T00:00:00.000Z" } };
+const installed = {
+  fetch: { version: "0.2.0", source: "catalog", installedAt: "2026-06-24T00:00:00.000Z" },
+  "tinyfish-search": { version: "1.0.0", source: "catalog", installedAt: "2026-06-25T00:00:00.000Z" },
+};
 
 const merged = mergeCatalog(marketplacePlugins, manifests, installed);
+const safeMerged = mergeCatalog(sanitizeMarketplacePlugins(marketplacePlugins), manifests, installed);
 
-// Sorted by displayName: Fetch, GitHub, Legacy
-assert.deepEqual(merged.map((p) => p.id), ["fetch", "github", "legacy"]);
+// Sorted by displayName: Fetch, GitHub, Legacy, TinyFish Search
+assert.deepEqual(merged.map((p) => p.id), ["fetch", "github", "legacy", "tinyfish-search"]);
 
 const github = merged.find((p) => p.id === "github");
 assert.equal(github.displayName, "GitHub");
@@ -53,6 +61,20 @@ assert.equal(fetchP.author, "Anthropic"); // string author form
 assert.equal(fetchP.installed, true);
 assert.equal(fetchP.requiresSetup, false);
 
+const tinyfish = merged.find((p) => p.id === "tinyfish-search");
+assert.equal(tinyfish.kind, "api", "non-MCP configured API plugins should be first-class API entries");
+assert.equal(tinyfish.installed, true, "installed API entries should reflect Cave setup state");
+assert.equal(tinyfish.requiresSetup, true);
+
+assert.deepEqual(
+  sanitizeMarketplaceCatalogCards([
+    ...safeMerged,
+    { ...tinyfish, id: "xurl", displayName: "X URL", description: "Charm social voice lane" },
+  ]).map((p) => p.id),
+  ["fetch", "github", "legacy", "tinyfish-search"],
+  "rendered marketplace cards should drop manifest copy with hardcoded familiar names",
+);
+
 const legacy = merged.find((p) => p.id === "legacy");
 assert.equal(legacy.description, "");        // no manifest -> empty
 assert.equal(legacy.author, "OpenCoven");    // default author
@@ -73,10 +95,10 @@ assert.equal(pluginBadgeState({ available: true, installed: false, requiresSetup
 assert.deepEqual(filterPlugins(merged, { query: "repos" }).map((p) => p.id), ["github"]);
 assert.deepEqual(filterPlugins(merged, { query: "http" }).map((p) => p.id), ["fetch"]); // keyword match
 assert.deepEqual(filterPlugins(merged, { category: "Other" }).map((p) => p.id), ["legacy"]);
-assert.deepEqual(filterPlugins(merged, { query: "", category: "All" }).map((p) => p.id), ["fetch", "github", "legacy"]);
+assert.deepEqual(filterPlugins(merged, { query: "", category: "All" }).map((p) => p.id), ["fetch", "github", "legacy", "tinyfish-search"]);
 
 // categoriesFrom — "All" first, then by count desc then name
-assert.deepEqual(categoriesFrom(merged), ["All", "Developer Tools", "Other"]);
+assert.deepEqual(categoriesFrom(merged), ["All", "Developer Tools", "Other", "Web"]);
 
 // --- requiredConfig + configured + badge state (credential collection) ---
 const rcManifests = {
@@ -150,6 +172,8 @@ assert.equal(ghRow.remoteUrl, undefined); // command-only mcpServer (no url) -> 
 // --- deriveKind ---
 assert.equal(deriveKind({ mcpServers: { x: { command: "npx" } } }), "mcp");
 assert.equal(deriveKind({ mcpServers: { x: { url: "https://e.x/mcp" } } }), "mcp");
+assert.equal(deriveKind({ capabilities: ["network", "api"] }), "api");
+assert.equal(deriveKind({ keywords: ["api", "search"] }), "api");
 assert.equal(deriveKind({ mcpServers: {} }), "skill");
 assert.equal(deriveKind({}), "skill");
 assert.equal(merged.find((p) => p.id === "legacy").kind, "skill"); // no manifest -> skill
@@ -157,16 +181,17 @@ assert.equal(merged.find((p) => p.id === "legacy").kind, "skill"); // no manifes
 // --- filterPlugins: kind + ids ---
 assert.deepEqual(filterPlugins(merged, { kind: "mcp" }).map((p) => p.id), ["fetch", "github"]);
 assert.deepEqual(filterPlugins(merged, { kind: "skill" }).map((p) => p.id), ["legacy"]);
+assert.deepEqual(filterPlugins(merged, { kind: "api" }).map((p) => p.id), ["tinyfish-search"]);
 assert.deepEqual(filterPlugins(merged, { ids: ["github", "legacy"] }).map((p) => p.id), ["github", "legacy"]);
 assert.deepEqual(filterPlugins(merged, { ids: ["github"], kind: "skill" }).map((p) => p.id), []);
 
 // --- countByKind ---
-assert.deepEqual(countByKind(merged), { mcp: 2, skill: 1 });
+assert.deepEqual(countByKind(merged), { api: 1, mcp: 2, skill: 1 });
 
 // --- sortPlugins (returns a new array, never mutates) ---
 const before = merged.map((p) => p.id);
 const byName = sortPlugins(merged, "name");
-assert.deepEqual(byName.map((p) => p.id), ["fetch", "github", "legacy"]);
+assert.deepEqual(byName.map((p) => p.id), ["fetch", "github", "legacy", "tinyfish-search"]);
 assert.deepEqual(merged.map((p) => p.id), before); // input untouched
 // installed: fetch is installed -> first
 assert.equal(sortPlugins(merged, "installed")[0].id, "fetch");
@@ -193,20 +218,49 @@ assert.equal(COLLECTIONS.find((c) => c.id === "coven-native").category, "Coven")
 const productionMarketplace = JSON.parse(
   readFileSync(new URL("../../marketplace/marketplace.json", import.meta.url), "utf8"),
 );
-const prodNames = new Set(productionMarketplace.plugins.map((p) => p.name));
+const marketplaceRoute = readFileSync(new URL("../app/api/marketplace/route.ts", import.meta.url), "utf8");
+const marketplaceInstallRoute = readFileSync(new URL("../app/api/marketplace/install/route.ts", import.meta.url), "utf8");
+const marketplaceUninstallRoute = readFileSync(new URL("../app/api/marketplace/uninstall/route.ts", import.meta.url), "utf8");
+const marketplaceCatalogConfig = readFileSync(new URL("../app/api/marketplace/config/catalog-config.ts", import.meta.url), "utf8");
+const sanitizedProductionPlugins = sanitizeMarketplacePlugins(productionMarketplace.plugins);
+const productionManifests = Object.fromEntries(
+  productionMarketplace.plugins.map((p) => {
+    try {
+      return [p.name, JSON.parse(readFileSync(new URL(`../../marketplace/plugins/${p.name}/plugin.json`, import.meta.url), "utf8"))];
+    } catch {
+      return [p.name, {}];
+    }
+  }),
+);
+const sanitizedProductionCards = sanitizeMarketplaceCatalogCards(
+  mergeCatalog(sanitizedProductionPlugins, productionManifests, {}),
+);
+const prodNames = new Set(sanitizedProductionPlugins.map((p) => p.name));
+const prodCardNames = new Set(sanitizedProductionCards.map((p) => p.id));
 // the old bundled umbrella entry is gone — each OpenClaw skill is its own card now
 assert.ok(!prodNames.has("openclaw-skills"), "bundled OpenClaw Skills umbrella should be removed");
 // representative individual skills are present as their own cards
-for (const name of ["ocr", "higgsfield-generate", "coven-sage", "prompt-vault"]) {
+for (const name of ["ocr", "higgsfield-generate", "prompt-vault"]) {
   assert.ok(prodNames.has(name), `individual OpenClaw skill "${name}" should be a Cave marketplace card`);
 }
-// the coven-* familiar doctrine skills stay in the "Coven" category → coven-native collection
-const covenSage = productionMarketplace.plugins.find((p) => p.name === "coven-sage");
-assert.equal(covenSage.category, "Coven");
-assert.equal(
-  COLLECTIONS.find((c) => c.id === "coven-native").category,
-  covenSage.category,
-  "Coven doctrine skills should appear in the Cave Coven native collection",
-);
+for (const familiarSkill of ["coven-nova", "coven-kitty", "coven-cody", "coven-charm", "coven-sage", "coven-astra", "coven-echo"]) {
+  assert.ok(!prodNames.has(familiarSkill), `${familiarSkill} should not be exposed as a hardcoded familiar skill`);
+}
+	assert.ok(!prodNames.has("rollcall"), "rollcall should not be exposed as a hardcoded familiar skill");
+	assert.ok(prodCardNames.has("xurl"), "xurl should render after hardcoded familiar copy is removed");
+for (const plugin of sanitizedProductionPlugins) {
+  assert.deepEqual(plugin.roleAffinity ?? [], [], `${plugin.name} should not expose hardcoded familiar role affinity`);
+}
+for (const plugin of sanitizedProductionCards) {
+  assert.doesNotMatch(JSON.stringify(plugin).toLowerCase(), /\b(nova|kitty|cody|charm|sage|astra|echo)\b/, `${plugin.id} should not mention named familiars`);
+}
+for (const [label, source] of [
+  ["/api/marketplace", marketplaceRoute],
+  ["/api/marketplace/install", marketplaceInstallRoute],
+  ["/api/marketplace/uninstall", marketplaceUninstallRoute],
+  ["marketplace catalog-config", marketplaceCatalogConfig],
+]) {
+  assert.match(source, /sanitizeMarketplacePlugins/, `${label} should resolve ids through the familiar-safe marketplace catalog`);
+}
 
 console.log("marketplace-catalog.test.ts: ok");

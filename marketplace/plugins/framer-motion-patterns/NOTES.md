@@ -3,7 +3,7 @@
 The "why this exists / trade-offs / when NOT to use" appendix. Read alongside `SKILL.md`.
 
 ## Why this skill exists
-Coding familiars (Cody, coven-code, cast-codes) repeatedly need to add motion to React UIs, and the two
+Coding agents repeatedly need to add motion to React UIs, and the two
 common failure modes are (1) shipping inaccessible motion (no `prefers-reduced-motion` handling; motion
 as the *only* state signal) and (2) reaching for the wrong tool (heavy imperative GSAP inside React, or
 animating layout properties that thrash). This skill gives a decision tree + a verified recipe library so

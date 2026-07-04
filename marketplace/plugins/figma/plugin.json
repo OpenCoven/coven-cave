@@ -27,33 +27,13 @@
     "sourceRefs": [
       "https://help.figma.com/hc/en-us/articles/32132100833559-Guide-to-the-Figma-MCP-server"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "copywriter",
-          "social-voice"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "strategic-navigator"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

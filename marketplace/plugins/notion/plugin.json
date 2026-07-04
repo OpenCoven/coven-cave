@@ -28,39 +28,13 @@
       "https://github.com/makenotion/notion-mcp-server",
       "https://developers.notion.com/docs/mcp"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "sage",
-        "roles": [
-          "researcher",
-          "librarian"
-        ]
-      },
-      {
-        "familiar": "echo",
-        "roles": [
-          "archivist"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "copywriter"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "coordination-layer"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

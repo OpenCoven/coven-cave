@@ -21,7 +21,7 @@ description: Use when building or reviewing any component that renders async/rem
   region → spinner. Full-page first load with known layout → **skeleton** (shaped like the real content
   to avoid layout shift; never a frame-only skeleton). Known % or > 10 s → **determinate progress**.
   **Delay showing any indicator ~200–500 ms and keep it a minimum ~300–500 ms** to avoid the spinner flash.
-- **Never one empty state for all cases.** First-run (teach + one CTA), no-results (echo the query +
+- **Never one empty state for all cases.** First-run (teach + one CTA), no-results (repeat the query +
   clear-filters), permission-denied (explain access), deleted (confirm outcome) are different components.
 - **Errors answer four questions: what happened, why/scope, what to do, a support code.** Plain language,
   a real "Try again", and a short error code/correlation ID. **Never render raw stack traces / PII** — log
@@ -102,7 +102,7 @@ description: Use when building or reviewing any component that renders async/rem
   · `aria-live="assertive"` on everything · focus dropped when content replaced by error · frame-only
   skeleton · layout shift on load→content swap · page-level Suspense fallback blocking fast regions.
 
-## Copy (hand to charm for polish)
+## Copy polish
 - Empty first-run: "No projects yet. Create your first project to get started." + one CTA.
 - Empty no-results: "No results for 'xyz'. Try a different search or clear filters." (never the first-run CTA).
 - Loading: "Loading your projects…" / "Searching…" in a `role="status"`.

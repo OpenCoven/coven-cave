@@ -25,6 +25,18 @@ type Props = {
   onConfigure: (id: string) => void;
 };
 
+function kindIcon(kind: MarketplacePlugin["kind"]) {
+  if (kind === "mcp") return "ph:plug-bold";
+  if (kind === "api") return "ph:cloud-bold";
+  return "ph:sparkle-bold";
+}
+
+function kindLabel(kind: MarketplacePlugin["kind"]) {
+  if (kind === "mcp") return "MCP";
+  if (kind === "api") return "API";
+  return "Skill";
+}
+
 export const MarketplaceCard = memo(function MarketplaceCard({
   plugin,
   busy,
@@ -43,7 +55,7 @@ export const MarketplaceCard = memo(function MarketplaceCard({
           className="focus-ring flex min-w-0 items-center gap-3 rounded-md text-left"
         >
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-elevated)]">
-            <Icon name="ph:plug-bold" width={16} className="text-[var(--text-muted)]" />
+            <Icon name={kindIcon(plugin.kind)} width={16} className="text-[var(--text-muted)]" />
           </span>
           <span className="min-w-0">
             <span className="block truncate text-[14px] font-semibold text-[var(--text-primary)]">
@@ -73,8 +85,8 @@ export const MarketplaceCard = memo(function MarketplaceCard({
       <p className="line-clamp-2 text-[12px] text-[var(--text-muted)]">{plugin.description}</p>
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]">
         <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
-          <Icon name={plugin.kind === "mcp" ? "ph:plug-bold" : "ph:sparkle-bold"} width={11} aria-hidden />{" "}
-          {plugin.kind === "mcp" ? "MCP" : "Skill"}
+          <Icon name={kindIcon(plugin.kind)} width={11} aria-hidden />{" "}
+          {kindLabel(plugin.kind)}
         </span>
         <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
           <Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}

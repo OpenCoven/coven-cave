@@ -27,27 +27,13 @@
     "sourceRefs": [
       "https://github.com/tavily-ai/tavily-mcp"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "sage",
-        "roles": [
-          "researcher",
-          "librarian"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "strategic-navigator"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

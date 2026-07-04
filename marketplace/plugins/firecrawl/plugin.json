@@ -27,28 +27,13 @@
     "sourceRefs": [
       "https://github.com/firecrawl/firecrawl-mcp-server"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "sage",
-        "roles": [
-          "researcher",
-          "librarian"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "copywriter",
-          "devrel-liaison"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

@@ -9,6 +9,8 @@ import path from "node:path";
 import {
   requiredConfigFromManifest,
   remoteUrlFromManifest,
+  sanitizeMarketplacePlugins,
+  type MarketplaceJsonPlugin,
   type PluginManifest,
   type RequiredConfigField,
 } from "@/lib/marketplace-catalog";
@@ -19,7 +21,9 @@ export const MARKETPLACE_DIR = path.join(process.cwd(), "marketplace");
 export async function resolveCatalogName(id: string): Promise<string | null> {
   try {
     const raw = JSON.parse(await readFile(path.join(MARKETPLACE_DIR, "marketplace.json"), "utf8"));
-    const plugins = raw && Array.isArray(raw.plugins) ? raw.plugins : [];
+    const plugins = sanitizeMarketplacePlugins(
+      raw && Array.isArray(raw.plugins) ? (raw.plugins as MarketplaceJsonPlugin[]) : [],
+    );
     const match = plugins.find((p: { name?: string }) => p.name === id);
     return match && typeof match.name === "string" ? match.name : null;
   } catch {

@@ -40,27 +40,13 @@
       "https://github.com/lukeed/clsx",
       "https://github.com/dcastil/tailwind-merge"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer",
-          "code-reviewer"
-        ]
-      },
-      {
-        "familiar": "kitty",
-        "roles": [
-          "general-helper"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": false,
-      "rolePatch": true
+      "rolePatch": false
     }
   }
 }

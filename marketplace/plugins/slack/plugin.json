@@ -27,26 +27,13 @@
     "sourceRefs": [
       "https://github.com/modelcontextprotocol/servers"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "charm",
-        "roles": [
-          "devrel-liaison"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "coordination-layer"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

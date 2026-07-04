@@ -28,33 +28,13 @@
       "https://github.com/activepieces/activepieces",
       "https://www.activepieces.com/docs/mcp/overview"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "astra",
-        "roles": [
-          "strategic-navigator",
-          "coordination-layer"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "devrel-liaison"
-        ]
-      },
-      {
-        "familiar": "kitty",
-        "roles": [
-          "general-helper"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

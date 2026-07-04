@@ -39,34 +39,13 @@
       "https://playwright.dev/docs/accessibility-testing",
       "https://github.com/jsx-eslint/eslint-plugin-jsx-a11y"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer",
-          "code-reviewer"
-        ]
-      },
-      {
-        "familiar": "sage",
-        "roles": [
-          "librarian",
-          "researcher"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "copywriter"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": false,
-      "rolePatch": true
+      "rolePatch": false
     }
   }
 }

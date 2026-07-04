@@ -28,33 +28,13 @@
       "https://github.com/atlassian/atlassian-mcp-server",
       "https://support.atlassian.com/rovo/docs/getting-started-with-the-atlassian-remote-mcp-server/"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "astra",
-        "roles": [
-          "strategic-navigator",
-          "coordination-layer"
-        ]
-      },
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer"
-        ]
-      },
-      {
-        "familiar": "echo",
-        "roles": [
-          "archivist"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

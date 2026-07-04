@@ -27,51 +27,13 @@
       "https://github.com/google/mcp",
       "https://github.com/googleworkspace/cli"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "sage",
-        "roles": [
-          "researcher"
-        ]
-      },
-      {
-        "familiar": "charm",
-        "roles": [
-          "copywriter",
-          "devrel-liaison"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "coordination-layer"
-        ]
-      },
-      {
-        "familiar": "echo",
-        "roles": [
-          "archivist"
-        ]
-      },
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer"
-        ]
-      },
-      {
-        "familiar": "kitty",
-        "roles": [
-          "general-helper"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

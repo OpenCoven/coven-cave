@@ -10,8 +10,8 @@ it's not knowing **which** of several stacked standards applies and **what the a
 collapses that into one framework-agnostic pass: the touch-target floor vs. the platform size, the dynamic
 viewport, container-driven layout, native idioms, mobile input, gesture a11y, and the Core Web Vitals bar.
 
-Role affinity **cody (implementer, code-reviewer)**: it's written to be actionable in a PR — guardrails read
-as review comments, the Quick Reference is copy-adaptable, the decision table maps symptom → fix.
+Implementation affinity: it's written to be actionable in a PR — guardrails read as review comments,
+the Quick Reference is copy-adaptable, the decision table maps symptom → fix.
 
 ## Key trade-offs & judgment calls
 - **24px vs 44pt vs 48dp is not a contradiction — it's a stack.** 24×24 CSS px is the WCAG 2.2 *floor*;

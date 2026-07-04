@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { uninstallMarketplacePlugin } from "@/lib/cave-config";
+import { sanitizeMarketplacePlugins, type MarketplaceJsonPlugin } from "@/lib/marketplace-catalog";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,7 +19,9 @@ const MARKETPLACE_DIR = path.join(process.cwd(), "marketplace");
 async function catalogHasPlugin(id: string): Promise<boolean> {
   try {
     const raw = JSON.parse(await readFile(path.join(MARKETPLACE_DIR, "marketplace.json"), "utf8"));
-    const plugins = raw && Array.isArray(raw.plugins) ? raw.plugins : [];
+    const plugins = sanitizeMarketplacePlugins(
+      raw && Array.isArray(raw.plugins) ? (raw.plugins as MarketplaceJsonPlugin[]) : [],
+    );
     return plugins.some((p: { name?: string }) => p.name === id);
   } catch {
     return false;

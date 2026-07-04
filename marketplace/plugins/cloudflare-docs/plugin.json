@@ -27,27 +27,13 @@
     "sourceRefs": [
       "https://developers.cloudflare.com/agents/model-context-protocol/"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "sage",
-        "roles": [
-          "researcher",
-          "librarian"
-        ]
-      },
-      {
-        "familiar": "cody",
-        "roles": [
-          "implementer"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

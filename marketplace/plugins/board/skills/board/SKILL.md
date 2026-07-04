@@ -14,7 +14,7 @@ Use the bin/board CLI to add, claim, and complete tasks on BOARD.md rather than 
 
 ## Guardrails
 - Never rewrite the append-only activity log at the bottom of BOARD.md
-- Only roster agents (nova, kitty, cody, pi, codex, val) are valid --agent values; retired identities are rejected
+- Only configured roster agents are valid --agent values; retired identities are rejected
 - Substring matches for claim/done must be unique or the CLI exits non-zero; narrow the query and retry
 
 ## Default Flow

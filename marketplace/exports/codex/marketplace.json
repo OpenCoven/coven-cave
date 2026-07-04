@@ -569,18 +569,6 @@
       "category": "Agents & Harnesses"
     },
     {
-      "name": "coven-cody",
-      "source": {
-        "source": "local",
-        "path": "../../plugins/coven-cody"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Coven"
-    },
-    {
       "name": "coven-parallel-work",
       "source": {
         "source": "local",
@@ -713,30 +701,6 @@
       "category": "Agents & Harnesses"
     },
     {
-      "name": "coven-echo",
-      "source": {
-        "source": "local",
-        "path": "../../plugins/coven-echo"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Coven"
-    },
-    {
-      "name": "coven-sage",
-      "source": {
-        "source": "local",
-        "path": "../../plugins/coven-sage"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Coven"
-    },
-    {
       "name": "epub-to-pdf",
       "source": {
         "source": "local",
@@ -845,30 +809,6 @@
       "category": "Project Management"
     },
     {
-      "name": "coven-astra",
-      "source": {
-        "source": "local",
-        "path": "../../plugins/coven-astra"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Coven"
-    },
-    {
-      "name": "coven-identity-canon",
-      "source": {
-        "source": "local",
-        "path": "../../plugins/coven-identity-canon"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Coven"
-    },
-    {
       "name": "daily-dev-agentic",
       "source": {
         "source": "local",
@@ -941,18 +881,6 @@
       "category": "AI & ML"
     },
     {
-      "name": "rollcall",
-      "source": {
-        "source": "local",
-        "path": "../../plugins/rollcall"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Coven"
-    },
-    {
       "name": "threejs-animation",
       "source": {
         "source": "local",
@@ -987,30 +915,6 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Developer Tools"
-    },
-    {
-      "name": "coven-charm",
-      "source": {
-        "source": "local",
-        "path": "../../plugins/coven-charm"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Coven"
-    },
-    {
-      "name": "coven-kitty",
-      "source": {
-        "source": "local",
-        "path": "../../plugins/coven-kitty"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "category": "Coven"
     },
     {
       "name": "discrawl",

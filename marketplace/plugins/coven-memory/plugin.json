@@ -27,28 +27,13 @@
     "sourceRefs": [
       "https://github.com/OpenCoven/coven-cave"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "echo",
-        "roles": [
-          "archivist",
-          "retrospector"
-        ]
-      },
-      {
-        "familiar": "sage",
-        "roles": [
-          "researcher",
-          "librarian"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": false,
-      "rolePatch": true
+      "rolePatch": false
     }
   }
 }

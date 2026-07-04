@@ -19,49 +19,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "code-reviewer",
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist",
-            "retrospector"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "gmail",
@@ -76,45 +34,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "preview-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "google-calendar",
@@ -129,45 +49,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "preview-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "linear",
@@ -182,47 +64,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "canva",
@@ -237,34 +79,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "social-voice",
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "vercel",
@@ -279,33 +94,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "asana",
@@ -320,33 +109,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "xurl",
@@ -361,15 +124,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "local-tool",
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "social-voice",
-            "devrel-liaison"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "filesystem",
@@ -384,34 +139,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "git",
@@ -426,22 +154,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "code-reviewer",
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "fetch",
@@ -456,28 +169,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "memory",
@@ -492,27 +184,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist",
-            "retrospector"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "sequential-thinking",
@@ -527,28 +199,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "time",
@@ -563,27 +214,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "serena",
@@ -598,23 +229,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "context7",
@@ -629,22 +244,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "markitdown",
@@ -659,27 +259,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "playwright",
@@ -694,21 +274,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "chrome-devtools",
@@ -723,15 +289,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger",
-            "implementer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "firecrawl",
@@ -746,22 +304,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "devrel-liaison"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "tavily",
@@ -776,21 +319,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "brightdata",
@@ -805,20 +334,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "apify",
@@ -833,20 +349,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "searxng",
@@ -861,15 +364,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "local-tool",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "dbhub",
@@ -884,21 +379,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "supabase",
@@ -913,21 +394,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "mongodb",
@@ -942,21 +409,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "azure",
@@ -971,22 +424,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "azure-devops",
@@ -1001,21 +439,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "terraform",
@@ -1030,21 +454,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "notion",
@@ -1059,33 +469,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "atlassian",
@@ -1100,27 +484,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "figma",
@@ -1135,27 +499,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "social-voice"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "stripe",
@@ -1170,21 +514,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "microsoft-learn",
@@ -1199,21 +529,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "activepieces",
@@ -1228,27 +544,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "desktop-commander",
@@ -1263,15 +559,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "local-tool",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "netdata",
@@ -1286,20 +574,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "fabric",
@@ -1314,20 +589,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "unity",
@@ -1342,15 +604,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "nuget",
@@ -1365,15 +619,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "nuxt-dev",
@@ -1388,15 +634,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "stackql",
@@ -1411,21 +649,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "next-devtools",
@@ -1440,15 +664,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "coven-familiars",
@@ -1463,21 +679,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "1password",
@@ -1508,30 +710,6 @@
       },
       "trust": "official-local",
       "roleAffinity": []
-    },
-    {
-      "name": "coven-cody",
-      "displayName": "Cody \u2014 Code Familiar of the Coven",
-      "category": "Coven",
-      "source": {
-        "source": "local",
-        "path": "./plugins/coven-cody"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger",
-            "code-reviewer"
-          ]
-        }
-      ]
     },
     {
       "name": "coven-parallel-work",
@@ -1699,52 +877,6 @@
       "roleAffinity": []
     },
     {
-      "name": "coven-echo",
-      "displayName": "Echo \u2014 Memory and Reflection Familiar of the Coven",
-      "category": "Coven",
-      "source": {
-        "source": "local",
-        "path": "./plugins/coven-echo"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist",
-            "retrospector"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "coven-sage",
-      "displayName": "Sage \u2014 Research Familiar of the Coven",
-      "category": "Coven",
-      "source": {
-        "source": "local",
-        "path": "./plugins/coven-sage"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        }
-      ]
-    },
-    {
       "name": "epub-to-pdf",
       "displayName": "EPUB to PDF",
       "category": "Productivity",
@@ -1880,44 +1012,6 @@
       "roleAffinity": []
     },
     {
-      "name": "coven-astra",
-      "displayName": "Astra \u2014 Navigator of the Coven",
-      "category": "Coven",
-      "source": {
-        "source": "local",
-        "path": "./plugins/coven-astra"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "coven-identity-canon",
-      "displayName": "Coven Identity Canon",
-      "category": "Coven",
-      "source": {
-        "source": "local",
-        "path": "./plugins/coven-identity-canon"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "trust": "official-local",
-      "roleAffinity": []
-    },
-    {
       "name": "daily-dev-agentic",
       "displayName": "daily.dev Agentic Learning",
       "category": "Knowledge & Docs",
@@ -2008,21 +1102,6 @@
       "roleAffinity": []
     },
     {
-      "name": "rollcall",
-      "displayName": "rollcall",
-      "category": "Coven",
-      "source": {
-        "source": "local",
-        "path": "./plugins/rollcall"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "trust": "official-local",
-      "roleAffinity": []
-    },
-    {
       "name": "threejs-animation",
       "displayName": "Three.js Animation",
       "category": "Media & Creative",
@@ -2066,51 +1145,6 @@
       },
       "trust": "official-local",
       "roleAffinity": []
-    },
-    {
-      "name": "coven-charm",
-      "displayName": "Charm \u2014 Voice and Presence Familiar of the Coven",
-      "category": "Coven",
-      "source": {
-        "source": "local",
-        "path": "./plugins/coven-charm"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison",
-            "social-voice"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "coven-kitty",
-      "displayName": "Kitty \u2014 General Task Familiar of the Coven",
-      "category": "Coven",
-      "source": {
-        "source": "local",
-        "path": "./plugins/coven-kitty"
-      },
-      "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
-      },
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
     },
     {
       "name": "discrawl",
@@ -2260,21 +1294,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "coven-memory",
@@ -2289,22 +1309,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist",
-            "retrospector"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "coven-evals",
@@ -2319,20 +1324,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "echo",
-          "roles": [
-            "retrospector"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "coven-canvas",
@@ -2347,20 +1339,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "coven-automations",
@@ -2375,20 +1354,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "slack",
@@ -2403,20 +1369,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "postgres",
@@ -2431,21 +1384,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger",
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "sentry",
@@ -2460,20 +1399,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "retrospector"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "cloudflare-docs",
@@ -2488,21 +1414,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "huggingface",
@@ -2517,21 +1429,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "exa",
@@ -2546,21 +1444,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-remote",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "e2b",
@@ -2575,15 +1459,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "browserbase",
@@ -2598,20 +1474,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "elevenlabs",
@@ -2626,15 +1489,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "social-voice",
-            "devrel-liaison"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "sqlite",
@@ -2649,20 +1504,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "reference-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "shadcn-ui-and-radix",
@@ -2677,21 +1519,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "tailwind-design-tokens",
@@ -2706,22 +1534,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian",
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "framer-motion-patterns",
@@ -2736,21 +1549,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "frontend"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "wcag-a11y-audit",
@@ -2765,28 +1564,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian",
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "form-ux-patterns",
@@ -2801,21 +1579,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "dataviz-dashboard-ux",
@@ -2830,28 +1594,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian",
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "command-palette-keyboard-ux",
@@ -2866,27 +1609,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "frontend"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "empty-loading-error-states",
@@ -2901,21 +1624,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "mobile-touch-ux",
@@ -2930,22 +1639,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer",
-            "frontend"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "design-system-landscape",
@@ -2960,28 +1654,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian",
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ]
+      "roleAffinity": []
     },
     {
       "name": "pretext",
@@ -2996,16 +1669,7 @@
         "authentication": "ON_INSTALL"
       },
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer",
-            "debugger"
-          ]
-        }
-      ]
+      "roleAffinity": []
     }
   ]
 }

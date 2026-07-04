@@ -27,40 +27,13 @@
     "sourceRefs": [
       "https://www.canva.dev/docs/mcp/"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "charm",
-        "roles": [
-          "copywriter",
-          "social-voice",
-          "devrel-liaison"
-        ]
-      },
-      {
-        "familiar": "sage",
-        "roles": [
-          "librarian"
-        ]
-      },
-      {
-        "familiar": "astra",
-        "roles": [
-          "strategic-navigator"
-        ]
-      },
-      {
-        "familiar": "kitty",
-        "roles": [
-          "general-helper"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

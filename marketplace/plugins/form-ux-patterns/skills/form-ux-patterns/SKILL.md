@@ -73,7 +73,7 @@ description: Use when building or reviewing web forms (sign-up, checkout, settin
   no reveal toggle · asking same info twice without prefill · native HTML5 bubbles as the a11y strategy ·
   `useState`-per-field re-rendering the whole form.
 
-## Copy / microcopy (hand to charm for polish)
+## Copy / microcopy
 - Errors: explicit, polite, precise, constructive, and include the fix. "Enter a valid email like
   name@domain.com" > "Invalid email." Never blame the user.
 - Required marker: prefer the literal word where clutter allows; "(optional)" for the rare optional field.

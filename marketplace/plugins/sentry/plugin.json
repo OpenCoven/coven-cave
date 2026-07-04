@@ -27,26 +27,13 @@
     "sourceRefs": [
       "https://docs.sentry.io/product/sentry-mcp/"
     ],
-    "roleAffinity": [
-      {
-        "familiar": "cody",
-        "roles": [
-          "debugger"
-        ]
-      },
-      {
-        "familiar": "echo",
-        "roles": [
-          "retrospector"
-        ]
-      }
-    ],
+    "roleAffinity": [],
     "compatibility": {
       "covenCave": true,
       "covenCode": true,
       "codex": true,
       "mcp": true,
-      "rolePatch": true
+      "rolePatch": false
     }
   },
   "mcpServers": {

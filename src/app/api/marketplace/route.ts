@@ -16,6 +16,8 @@ import { canResolve } from "@/lib/vault";
 import { readEnvLocalValue } from "@/lib/env-file";
 import {
   mergeCatalog,
+  sanitizeMarketplaceCatalogCards,
+  sanitizeMarketplacePlugins,
   type MarketplaceJsonPlugin,
   type PluginManifest,
 } from "@/lib/marketplace-catalog";
@@ -49,14 +51,15 @@ export async function GET() {
   );
 
   const cfg = await loadConfig();
-  const merged = mergeCatalog(marketplacePlugins, manifests, cfg.marketplace.installed);
-  const plugins = merged.map((p) => ({
+  const marketplaceSafePlugins = sanitizeMarketplacePlugins(marketplacePlugins);
+  const merged = mergeCatalog(marketplaceSafePlugins, manifests, cfg.marketplace.installed);
+  const plugins = sanitizeMarketplaceCatalogCards(merged.map((p) => ({
     ...p,
     // configured = every required field's env var resolves (vault op:// or
     // process.env) or is present in .env.local (written but not yet loaded).
     configured: p.requiredConfig.every(
       (f) => readEnvLocalValue(f.env) !== undefined || canResolve(f.env),
     ),
-  }));
+  })));
   return NextResponse.json({ ok: true, plugins });
 }

@@ -50,49 +50,6 @@
           "env": "GITHUB_PERSONAL_ACCESS_TOKEN"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "code-reviewer",
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist",
-            "retrospector"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use GitHub context without leaking tokens or taking repository state changes without approval.",
         "useCases": [
@@ -148,45 +105,6 @@
           "sensitive": true
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Gmail for triage and drafting while keeping external sends behind explicit approval.",
         "useCases": [
@@ -242,45 +160,6 @@
           "sensitive": true
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use calendar context for scheduling and planning without creating or changing events silently.",
         "useCases": [
@@ -321,47 +200,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Linear issues and projects as planning context while keeping writes intentional.",
         "useCases": [
@@ -403,34 +241,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "social-voice",
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Canva for design work that needs brand-aware creation, search, edits, or exports.",
         "useCases": [
@@ -472,33 +282,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Vercel deployment and docs context for debugging and release planning.",
         "useCases": [
@@ -555,33 +338,6 @@
           "sensitive": true
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Asana for work graph lookup, task summaries, and project status without silently changing assignments.",
         "useCases": [
@@ -600,7 +356,7 @@
       "name": "xurl",
       "displayName": "xurl",
       "version": "0.1.0",
-      "description": "X/Twitter drafting, lookup, and approved-post workflows for Charm's social voice lane.",
+      "description": "X/Twitter drafting, lookup, and approved-post workflows for social publishing lanes.",
       "category": "Social",
       "keywords": [
         "x",
@@ -615,17 +371,8 @@
       ],
       "sourceRefs": [],
       "trust": "local-tool",
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "social-voice",
-            "devrel-liaison"
-          ]
-        }
-      ],
       "skill": {
-        "description": "Use xurl only for approved X/Twitter workflows and keep drafting separate from posting.",
+        "description": "Use X/Twitter safely: draft posts, look up public context, prepare approved-post workflows, and keep social publishing actions explicit.",
         "useCases": [
           "Draft posts",
           "Inspect approved post status",
@@ -681,34 +428,6 @@
           "env": "COVEN_MCP_FILESYSTEM_ROOT"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use filesystem MCP only with a narrow allowed root and explicit write intent.",
         "useCases": [
@@ -767,22 +486,6 @@
           "env": "COVEN_MCP_GIT_REPOSITORY"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "code-reviewer",
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Git MCP for repository understanding while preserving repo safety rules.",
         "useCases": [
@@ -827,28 +530,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Fetch for bounded source retrieval with primary-source preference.",
         "useCases": [
@@ -894,27 +575,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist",
-            "retrospector"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Memory MCP for explicit, curated recall rather than dumping raw private context.",
         "useCases": [
@@ -958,28 +618,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Sequential Thinking for complex reasoning, not as a substitute for evidence or tests.",
         "useCases": [
@@ -1034,27 +672,6 @@
           "sensitive": false
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Time MCP whenever relative dates, time zones, or scheduling precision matter.",
         "useCases": [
@@ -1107,23 +724,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Serena for symbol-level code navigation and edits instead of dumping whole files into context.",
         "useCases": [
@@ -1166,22 +766,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Context7 to fetch current, version-specific docs before writing code against a library.",
         "useCases": [
@@ -1226,27 +810,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Markitdown to turn binary documents into clean Markdown before reasoning over them.",
         "useCases": [
@@ -1293,21 +856,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Playwright to navigate and verify web pages through the accessibility tree, not screenshots alone.",
         "useCases": [
@@ -1354,15 +902,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger",
-            "implementer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Chrome DevTools MCP to inspect live pages, network, and performance during debugging.",
         "useCases": [
@@ -1421,22 +960,6 @@
           "env": "FIRECRAWL_API_KEY"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "devrel-liaison"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Firecrawl for bounded, structured web extraction with primary-source preference.",
         "useCases": [
@@ -1495,21 +1018,6 @@
           "env": "TAVILY_API_KEY"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Tavily for fast, agent-friendly web search with concise sourced answers.",
         "useCases": [
@@ -1568,20 +1076,6 @@
           "env": "BRIGHTDATA_API_TOKEN"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Bright Data for resilient large-scale web extraction with respect for source policies.",
         "useCases": [
@@ -1623,20 +1117,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Apify Actors for prebuilt scraping and automation tasks instead of hand-rolling crawlers.",
         "useCases": [
@@ -1696,15 +1176,6 @@
           "env": "SEARXNG_URL"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use SearXNG for privacy-respecting web search against a self-chosen instance.",
         "useCases": [
@@ -1764,21 +1235,6 @@
           "env": "DBHUB_DSN"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use DBHub for read-first database inspection with intentional, approved writes.",
         "useCases": [
@@ -1797,7 +1253,7 @@
       "name": "supabase",
       "displayName": "Supabase",
       "version": "0.1.0",
-      "description": "Manage and query Supabase projects \u2014 database, auth, storage, and edge functions.",
+      "description": "Manage and query Supabase projects — database, auth, storage, and edge functions.",
       "category": "Databases",
       "keywords": [
         "supabase",
@@ -1837,21 +1293,6 @@
           "env": "SUPABASE_ACCESS_TOKEN"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Supabase MCP for project inspection and approved changes, preferring read-only first.",
         "useCases": [
@@ -1910,21 +1351,6 @@
           "env": "MDB_MCP_CONNECTION_STRING"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use MongoDB MCP for read-first data inspection with approved, scoped writes.",
         "useCases": [
@@ -1973,22 +1399,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Azure MCP for cloud resource inspection and approved operations via your signed-in Azure context.",
         "useCases": [
@@ -2045,21 +1455,6 @@
           "env": "AZURE_DEVOPS_ORG"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Azure DevOps MCP for planning and review context without silently changing work state.",
         "useCases": [
@@ -2108,21 +1503,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Terraform MCP for provider-accurate IaC authoring and read-first workspace inspection.",
         "useCases": [
@@ -2165,33 +1545,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Notion for knowledge lookup and drafting while keeping page edits behind approval.",
         "useCases": [
@@ -2234,27 +1587,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Atlassian Rovo for Jira/Confluence context while keeping writes intentional and approved.",
         "useCases": [
@@ -2273,7 +1605,7 @@
       "name": "figma",
       "displayName": "Figma",
       "version": "0.1.0",
-      "description": "Bring Figma design context \u2014 frames, components, and variables \u2014 into agent workflows.",
+      "description": "Bring Figma design context — frames, components, and variables — into agent workflows.",
       "category": "Design",
       "keywords": [
         "figma",
@@ -2296,27 +1628,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter",
-            "social-voice"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Figma MCP to pull design context and specs into implementation without guessing values.",
         "useCases": [
@@ -2359,21 +1670,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Stripe MCP for read-first billing inspection; treat money-moving actions as approval-gated.",
         "useCases": [
@@ -2416,21 +1712,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Microsoft Learn MCP for authoritative, current Microsoft/Azure documentation.",
         "useCases": [
@@ -2483,27 +1764,6 @@
           "env": "ACTIVEPIECES_MCP_URL"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Activepieces to invoke prebuilt integrations and flows instead of wiring each API by hand.",
         "useCases": [
@@ -2551,15 +1811,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Desktop Commander for local shell and file work with explicit, narrow intent.",
         "useCases": [
@@ -2628,20 +1879,6 @@
           "env": "NETDATA_API_KEY"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Netdata to investigate live infrastructure health before drawing conclusions about incidents.",
         "useCases": [
@@ -2691,20 +1928,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Microsoft Fabric MCP for accurate Fabric API context when building against the platform.",
         "useCases": [
@@ -2723,7 +1946,7 @@
       "name": "unity",
       "displayName": "Unity",
       "version": "0.1.0",
-      "description": "Bridge AI assistants to the Unity Editor \u2014 assets, scenes, scripts, and task automation.",
+      "description": "Bridge AI assistants to the Unity Editor — assets, scenes, scripts, and task automation.",
       "category": "Developer Tools",
       "keywords": [
         "unity",
@@ -2754,15 +1977,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use the Unity MCP bridge to inspect and modify a running Unity project with explicit intent.",
         "useCases": [
@@ -2810,15 +2024,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use NuGet MCP for current package versions and vulnerability-aware dependency choices.",
         "useCases": [
@@ -2872,15 +2077,6 @@
           "env": "NUXT_MCP_URL"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Nuxt Dev MCP to ground frontend work in your actual running app structure.",
         "useCases": [
@@ -2928,21 +2124,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use StackQL for SQL-native cloud inspection, preferring read-only queries before provisioning.",
         "useCases": [
@@ -2961,7 +2142,7 @@
       "name": "next-devtools",
       "displayName": "Next.js DevTools",
       "version": "0.1.0",
-      "description": "Bridge agents to a running Next.js 16+ dev server \u2014 errors, logs, routes, and server actions.",
+      "description": "Bridge agents to a running Next.js 16+ dev server — errors, logs, routes, and server actions.",
       "category": "Developer Tools",
       "keywords": [
         "nextjs",
@@ -2989,15 +2170,6 @@
           "type": "stdio"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Next.js DevTools MCP to debug a running Next.js app against its real runtime state.",
         "useCases": [
@@ -3016,7 +2188,7 @@
       "name": "coven-familiars",
       "displayName": "Coven Familiars",
       "version": "0.1.0",
-      "description": "Spawn, configure, and roster-manage Coven familiars \u2014 identities, roles, glyphs, and lifecycle.",
+      "description": "Spawn, configure, and roster-manage Coven familiars — identities, roles, glyphs, and lifecycle.",
       "category": "Coven",
       "keywords": [
         "coven",
@@ -3033,27 +2205,12 @@
         "https://github.com/OpenCoven/coven-cave"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "description": "Create and tend familiars from inside Coven Cave without overwriting other familiars' config.",
         "useCases": [
           "Draft a new familiar with role, glyph, and SOUL scaffold",
           "Adjust an existing familiar's roles or pins",
-          "Archive or reorder the roster from Settings \u2192 Familiars"
+          "Archive or reorder the roster from Settings → Familiars"
         ],
         "guardrails": [
           "Never write default familiars over a user's saved config",
@@ -3130,52 +2287,6 @@
           "Review mode is read-only; never modify code, and push only to the PR head branch, never to main",
           "Modes cannot be skipped and each transition requires the checkpoint questions answered",
           "Verify the PR reaches MERGED state and squash-merge with Co-authored-by trailers for author and maintainer"
-        ]
-      }
-    },
-    {
-      "name": "coven-cody",
-      "displayName": "Cody \u2014 Code Familiar of the Coven",
-      "version": "0.1.0",
-      "description": "Cody's workhorse operating doctrine for the OpenMeow coding lane: inspect before changing, scope narrowly, verify with the smallest gate, and report like a PR.",
-      "category": "Coven",
-      "keywords": [
-        "cody",
-        "code",
-        "familiar",
-        "diff",
-        "verification"
-      ],
-      "capabilities": [
-        "read_files",
-        "write_files",
-        "shell"
-      ],
-      "sourceRefs": [
-        "https://github.com/OpenCoven/coven/tree/main/skills/coven-cody"
-      ],
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger",
-            "code-reviewer"
-          ]
-        }
-      ],
-      "skill": {
-        "description": "Read and understand code before editing, make small scoped patches, verify them, and hand off a PR-shaped summary.",
-        "useCases": [
-          "Diagnose a bug by inspecting relevant files, package scripts, tests, and repo state before touching code",
-          "Land a narrow, style-preserving patch and verify it with the smallest meaningful gate (tests, typecheck, lint, or build)",
-          "Produce a PR-shaped handoff covering what changed, why, files touched, verification run, and risks"
-        ],
-        "guardrails": [
-          "Never push, merge, publish, tag, or commit without explicit Val approval; for openclaw/openclaw main requires the exact phrase Enchant merge to main.",
-          "Do not modify files outside scope or claim success without verification; be honest about test failures and risk",
-          "Prefer trash over destructive deletion and never use --no-verify unless fixing the hook itself with approval"
         ]
       }
     },
@@ -3359,7 +2470,7 @@
     },
     {
       "name": "pr-agent",
-      "displayName": "PR Agent \u2014 Maintainer Workflow Orchestrator",
+      "displayName": "PR Agent — Maintainer Workflow Orchestrator",
       "version": "0.1.0",
       "description": "Orchestrates the OpenClaw three-phase maintainer PR workflow (review-pr, prepare-pr, merge-pr) via wrapper scripts, enforcing quality bars, artifacts, and checkpoint questions.",
       "category": "Agents & Harnesses",
@@ -3456,7 +2567,7 @@
         "useCases": [
           "Validate skill structure with openclaw skills check and package_skill.py before scanning",
           "Run the codeql-sdk audit with --fail-on-high and emit JSON plus optional SARIF reports for CI/ClawHub",
-          "Produce a handoff summary (structure, package, scan status, report path, ready-to-submit) for Cody or ClawHub"
+          "Produce a handoff summary (structure, package, scan status, report path, ready-to-submit) for maintainers or ClawHub"
         ],
         "guardrails": [
           "If CodeQL finds no analyzable source, mark the scan not applicable rather than passed; never substitute weaker checks",
@@ -3532,7 +2643,7 @@
           "Chain multi-step flows such as fetching an OAuth token then calling a protected endpoint, piping JSON through jq"
         ],
         "guardrails": [
-          "Never echo, log, or write tokens to files; use op read inline or op run and strip Authorization headers from history",
+          "Never print, log, or write tokens to files; use op read inline or op run and strip Authorization headers from history",
           "Always confirm before running POST, PUT, PATCH, or DELETE by showing the command first",
           "Set --max-time 30 on every request and warn on any non-HTTPS URL except localhost"
         ]
@@ -3570,93 +2681,6 @@
           "Inspect session state before acting; never assume progress from labels, memory, or guesses",
           "Require explicit user approval before instructing the agent to push, publish, merge, delete, or send external messages",
           "Do not interrupt an actively progressing agent unless clarification, safety, or drift correction is needed"
-        ]
-      }
-    },
-    {
-      "name": "coven-echo",
-      "displayName": "Echo \u2014 Memory and Reflection Familiar of the Coven",
-      "version": "0.1.0",
-      "description": "Echo Coven familiar doctrine for memory and reflection: summarize conversations, preserve decisions, reconstruct context, and run retrospectives on what happened and what mattered.",
-      "category": "Coven",
-      "keywords": [
-        "memory",
-        "reflection",
-        "retrospective",
-        "continuity",
-        "summary"
-      ],
-      "capabilities": [
-        "read_files"
-      ],
-      "sourceRefs": [
-        "https://github.com/OpenCoven/coven/tree/main/skills/coven-echo"
-      ],
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist",
-            "retrospector"
-          ]
-        }
-      ],
-      "skill": {
-        "description": "Adopt Echo's calm, precise voice to reflect what happened, preserve continuity, and name patterns while staying honest about what is known versus inferred.",
-        "useCases": [
-          "Turn a messy conversation into a clean 'where we left off' summary separating facts, decisions, feelings, and open loops",
-          "Run Retrospective Mode on a curated packet to surface memory candidates and one grounded reflection",
-          "Point out repeated blockers, project drift, or unfinished loops gently and concretely"
-        ],
-        "guardrails": [
-          "Never invent memory or pretend to remember without evidence; be clear when memory is uncertain",
-          "Do not expose private information or act externally without explicit approval",
-          "Avoid flattening important feelings into sterile bullets or over-summarizing away nuance"
-        ]
-      }
-    },
-    {
-      "name": "coven-sage",
-      "displayName": "Sage \u2014 Research Familiar of the Coven",
-      "version": "0.1.0",
-      "description": "Sage Coven familiar doctrine for research and understanding: read papers and docs, compare tools, separate evidence from speculation, and synthesize research briefs and knowledge maps.",
-      "category": "Coven",
-      "keywords": [
-        "research",
-        "synthesis",
-        "evidence",
-        "sources",
-        "comparison"
-      ],
-      "capabilities": [
-        "read_files",
-        "network"
-      ],
-      "sourceRefs": [
-        "https://github.com/OpenCoven/coven/tree/main/skills/coven-sage"
-      ],
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        }
-      ],
-      "skill": {
-        "description": "Adopt Sage's evidence-led, source-aware voice to gather primary sources, synthesize what matters versus what is uncertain, and connect findings back to the user's projects.",
-        "useCases": [
-          "Summarize a paper, spec, or repo and explain what matters, what is uncertain, and what conflicts",
-          "Compare tools, protocols, or frameworks and give a grounded recommendation with tracked sources",
-          "Produce a research brief, landscape map, or link digest and propose durable notes worth preserving"
-        ],
-        "guardrails": [
-          "Never fabricate sources or citations, and do not pretend to have read something you have not",
-          "Verify live when information may be current or unstable rather than relying on memory",
-          "Do not expose private information or act externally without explicit approval"
         ]
       }
     },
@@ -3950,7 +2974,7 @@
     },
     {
       "name": "board",
-      "displayName": "BOARD \u2014 Shared Task Board",
+      "displayName": "BOARD — Shared Task Board",
       "version": "0.1.0",
       "description": "Read and write the workspace BOARD.md shared task board via the bin/board Python CLI, which preserves the markdown schema and appends to the activity log automatically.",
       "category": "Project Management",
@@ -3979,87 +3003,8 @@
         ],
         "guardrails": [
           "Never rewrite the append-only activity log at the bottom of BOARD.md",
-          "Only roster agents (nova, kitty, cody, pi, codex, val) are valid --agent values; retired identities are rejected",
+          "Only configured roster agents are valid --agent values; retired identities are rejected",
           "Substring matches for claim/done must be unique or the CLI exits non-zero; narrow the query and retry"
-        ]
-      }
-    },
-    {
-      "name": "coven-astra",
-      "displayName": "Astra \u2014 Navigator of the Coven",
-      "version": "0.1.0",
-      "description": "Astra Coven familiar operating doctrine \u2014 the Navigator who clarifies goals, names priorities and tradeoffs, and turns scattered ideas into clear next moves for Val.",
-      "category": "Coven",
-      "keywords": [
-        "astra",
-        "navigator",
-        "strategy",
-        "planning",
-        "prioritization",
-        "coven"
-      ],
-      "capabilities": [
-        "read_files"
-      ],
-      "sourceRefs": [
-        "https://github.com/OpenCoven/coven/tree/main/skills/coven-astra"
-      ],
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        }
-      ],
-      "skill": {
-        "description": "Adopt Astra's navigator doctrine to map a situation, recommend 1-3 routes, and break the chosen direction into concrete next steps.",
-        "useCases": [
-          "Map a messy project: what Val is trying to do, constraints, and pending decisions",
-          "Name the best 1-3 directions with a clear recommendation, then break it into steps and lanes",
-          "Route work to the right familiar (Sage, Echo, Charm, Cody, Kitty, Nova) when useful"
-        ],
-        "guardrails": [
-          "Do not act externally without explicit approval, and protect private information",
-          "Do not pretend certainty; be honest about uncertainty and say so kindly when a plan is weak",
-          "When blocked, surface what is understood, what is unclear, and one concise question to unblock"
-        ]
-      }
-    },
-    {
-      "name": "coven-identity-canon",
-      "displayName": "Coven Identity Canon",
-      "version": "0.1.0",
-      "description": "Binding Coven court hierarchy and identity canon that every familiar must carry when asked about authority, origin, hierarchy, or court protocol.",
-      "category": "Coven",
-      "keywords": [
-        "identity",
-        "canon",
-        "hierarchy",
-        "court",
-        "coven",
-        "doctrine"
-      ],
-      "capabilities": [
-        "read_files"
-      ],
-      "sourceRefs": [
-        "https://github.com/OpenCoven/coven/tree/main/skills/coven-identity-canon"
-      ],
-      "trust": "official-local",
-      "skill": {
-        "description": "Preload this canon before user or task context so any familiar answers identity and court-protocol questions consistently.",
-        "useCases": [
-          "Answer who the sovereign and Queen of the Coven are: Valentina is the source, Nova is Queen/Orchestrator",
-          "State the binding hierarchy when a familiar lacks enough local context to answer a court-protocol question",
-          "Preserve consistent origin answers (created for Val, orchestrated by Nova, within Valentina's Coven)"
-        ],
-        "guardrails": [
-          "Role and Skill doctrine may extend a familiar's lane but must never override this canon",
-          "No familiar should answer from any surface that omits or contradicts this canon",
-          "State the binding canon rather than improvising when local context is insufficient"
         ]
       }
     },
@@ -4067,7 +3012,7 @@
       "name": "daily-dev-agentic",
       "displayName": "daily.dev Agentic Learning",
       "version": "0.1.0",
-      "description": "Autonomous continuous learning via daily.dev feeds \u2014 set up a personalized feed, run daily learning loops, note insights, and proactively share findings with the owner.",
+      "description": "Autonomous continuous learning via daily.dev feeds — set up a personalized feed, run daily learning loops, note insights, and proactively share findings with the owner.",
       "category": "Knowledge & Docs",
       "keywords": [
         "learning",
@@ -4125,7 +3070,7 @@
       ],
       "trust": "official-local",
       "skill": {
-        "description": "Route all HeyGen usage through MCP, the heygen CLI, or the OpenClaw plugin's v3 pipeline \u2014 never raw api.heygen.com calls.",
+        "description": "Route all HeyGen usage through MCP, the heygen CLI, or the OpenClaw plugin's v3 pipeline — never raw api.heygen.com calls.",
         "useCases": [
           "Create a digital-twin avatar from a photo and save its identity to AVATAR-<NAME>.md",
           "Produce a personalized identity-first video message from a vague idea via the Full Producer flow",
@@ -4140,7 +3085,7 @@
     },
     {
       "name": "lobster",
-      "displayName": "Lobster \u2014 Workflow Shell",
+      "displayName": "Lobster — Workflow Shell",
       "version": "0.1.0",
       "description": "Run deterministic typed pipelines, workflow files, and approval-gated automations via the Lobster CLI, replacing multi-step LLM re-planning with one-shot stateful pipeline calls.",
       "category": "Automation",
@@ -4171,7 +3116,7 @@
         ],
         "guardrails": [
           "Approval gates are hard stops; the pipeline cannot continue without an explicit resume token",
-          "Lobster never owns tokens \u2014 it relies on env vars or OpenClaw's existing auth",
+          "Lobster never owns tokens — it relies on env vars or OpenClaw's existing auth",
           "Persist cursors/checkpoints via state.set/state.get so reruns resume rather than reprocess"
         ]
       }
@@ -4218,7 +3163,7 @@
       "name": "opencoven-design",
       "displayName": "OpenCoven Design Skill",
       "version": "0.1.0",
-      "description": "Opinionated design constraints for OpenCoven harness cockpits, docs, and agent-built UI \u2014 dark-first, minimal, symbolic, with controlled purple and tokenized colors and typography.",
+      "description": "Opinionated design constraints for OpenCoven harness cockpits, docs, and agent-built UI — dark-first, minimal, symbolic, with controlled purple and tokenized colors and typography.",
       "category": "Design",
       "keywords": [
         "design",
@@ -4285,46 +3230,10 @@
       }
     },
     {
-      "name": "rollcall",
-      "displayName": "rollcall",
-      "version": "0.1.0",
-      "description": "Ping every Coven familiar (Sage, Echo, Charm, Astra, Kitty, Cody) in parallel to verify each can respond and report which lanes are healthy, slow, or down.",
-      "category": "Coven",
-      "keywords": [
-        "rollcall",
-        "health-check",
-        "familiars",
-        "coven",
-        "sessions",
-        "status"
-      ],
-      "capabilities": [
-        "read_files",
-        "network"
-      ],
-      "sourceRefs": [
-        "https://github.com/OpenCoven/coven/tree/main/skills/rollcall"
-      ],
-      "trust": "official-local",
-      "skill": {
-        "description": "Resolve each familiar's session key, fire parallel pings via sessions_send, and report a compact ok/timeout/error status block.",
-        "useCases": [
-          "Run a quick rollcall of the six familiars after a gateway or config change",
-          "Fire short parallel pings with a 45-60s timeout and collect ok/timeout/error per lane",
-          "Report a compact status block in America/Chicago time with a one-sentence verdict"
-        ],
-        "guardrails": [
-          "Read-only with respect to config; never modify models, fallbacks, or auth without asking Val first",
-          "Send one short ping per lane and never include private MEMORY.md content",
-          "Run pings in parallel, never serially, and re-check pending lanes once before declaring timeout"
-        ]
-      }
-    },
-    {
       "name": "threejs-animation",
       "displayName": "Three.js Animation",
       "version": "0.1.0",
-      "description": "Three.js animation \u2014 keyframe tracks, skeletal animation, morph targets, animation mixing and blending, GLTF clip playback, and procedural motion patterns.",
+      "description": "Three.js animation — keyframe tracks, skeletal animation, morph targets, animation mixing and blending, GLTF clip playback, and procedural motion patterns.",
       "category": "Media & Creative",
       "keywords": [
         "threejs",
@@ -4430,103 +3339,10 @@
       }
     },
     {
-      "name": "coven-charm",
-      "displayName": "Charm \u2014 Voice and Presence Familiar of the Coven",
-      "version": "0.1.0",
-      "description": "Charm's operating doctrine for communication, social posts, DevRel, and product copy \u2014 making words clear, warm, alive, and native to each platform while preserving Val's voice.",
-      "category": "Coven",
-      "keywords": [
-        "communication",
-        "social",
-        "devrel",
-        "copywriting",
-        "tone",
-        "voice"
-      ],
-      "capabilities": [
-        "read_files",
-        "write_files",
-        "shell",
-        "network"
-      ],
-      "sourceRefs": [
-        "https://github.com/OpenCoven/coven/tree/main/skills/coven-charm"
-      ],
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison",
-            "social-voice"
-          ]
-        }
-      ],
-      "skill": {
-        "description": "Establish the audience, platform, and desired outcome, then shape 2-3 tone options that sound human and preserve Val's voice rather than replacing it.",
-        "useCases": [
-          "Draft platform-native posts, announcements, and community replies tuned for Telegram, iMessage, Discord, GitHub, docs, or X/Twitter",
-          "Shape product framing and launch copy, offering concise, warmer, sharper, playful, or polished variants",
-          "Post approved X/Twitter copy for @OpenCvn via the xurl CLI once Val explicitly approves it in Charm's thread"
-        ],
-        "guardrails": [
-          "Do not impersonate Val without permission and do not send anything externally unless explicitly asked",
-          "Do not manufacture certainty or social proof, and keep private things private",
-          "Avoid corporate slop, fake sweetness, and over-polishing until the humanity disappears; flag cringe or vagueness honestly"
-        ]
-      }
-    },
-    {
-      "name": "coven-kitty",
-      "displayName": "Kitty \u2014 General Task Familiar of the Coven",
-      "version": "0.1.0",
-      "description": "Kitty's workhorse doctrine for general tasks, triage, lightweight planning, drafting, and synthesis \u2014 keeping momentum and routing to specialists when a better lane exists.",
-      "category": "Coven",
-      "keywords": [
-        "general-task",
-        "triage",
-        "planning",
-        "synthesis",
-        "routing",
-        "workhorse"
-      ],
-      "capabilities": [
-        "read_files",
-        "write_files",
-        "shell",
-        "network"
-      ],
-      "sourceRefs": [
-        "https://github.com/OpenCoven/coven/tree/main/skills/coven-kitty"
-      ],
-      "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
-      "skill": {
-        "description": "Triage the task, make the smallest meaningful next step, and route to the right specialist familiar when the work belongs to another lane.",
-        "useCases": [
-          "Triage an ambiguous OpenMeow toss and turn a vague 'can you handle this?' into concrete next actions",
-          "Do lightweight research and synthesis, rough drafts, checklists, and practical summaries",
-          "Route work to Cody (code), Sage (research), Echo (memory), Charm (comms), Astra (strategy), or Nova (orchestration) when a better lane exists"
-        ],
-        "guardrails": [
-          "Do not act externally without explicit approval and keep private information private",
-          "Do not claim specialist certainty outside Kitty's lane; hand off instead of pretending to be a specialist",
-          "Ask one concise question when blocked rather than stalling with vague 'happy to help' filler"
-        ]
-      }
-    },
-    {
       "name": "discrawl",
       "displayName": "Discrawl",
       "version": "0.1.0",
-      "description": "Query a local Discord archive \u2014 search, freshness sync, DMs, channel slices, and read-only SQL counts \u2014 via the discrawl CLI before hitting live Discord APIs.",
+      "description": "Query a local Discord archive — search, freshness sync, DMs, channel slices, and read-only SQL counts — via the discrawl CLI before hitting live Discord APIs.",
       "category": "Social",
       "keywords": [
         "discord",
@@ -4553,7 +3369,7 @@
         ],
         "guardrails": [
           "Never use --unsafe --confirm unless the user explicitly requests a reviewed DB mutation",
-          "Wiretap reads local Discord Desktop artifacts only \u2014 do not extract user tokens, call Discord as the user, or write to Discord storage",
+          "Wiretap reads local Discord Desktop artifacts only — do not extract user tokens, call Discord as the user, or write to Discord storage",
           "Git-share snapshots must not include secrets or @me DM rows; report date spans, channel names, counts, and known gaps"
         ]
       }
@@ -4591,13 +3407,13 @@
         "guardrails": [
           "Generation calls a paid external API and can be costly; submit without pre-estimating cost only unless the user asks otherwise",
           "Requires the higgsfield CLI installed and an authenticated session; on Session expired have the user run higgsfield auth login",
-          "Do not use this skill for Soul Character training, mode-specific product photoshoots, or text-only/chat/TTS tasks \u2014 route to the dedicated skill"
+          "Do not use this skill for Soul Character training, mode-specific product photoshoots, or text-only/chat/TTS tasks — route to the dedicated skill"
         ]
       }
     },
     {
       "name": "maintainer-bar",
-      "displayName": "MaintainerBar \u2014 Maintainer Menu Bar Skill",
+      "displayName": "MaintainerBar — Maintainer Menu Bar Skill",
       "version": "0.1.0",
       "description": "Operate the MaintainerBar SwiftUI menu bar app and its ghcrawl backend for GitHub issue clustering, semantic search, repo pulse, and data-pipeline coordination.",
       "category": "Developer Tools",
@@ -4626,7 +3442,7 @@
           "Build and run the MaintainerBar menu bar app with swift build and swift run MaintainerBar on the macOS node"
         ],
         "guardrails": [
-          "Secrets are never stored on disk \u2014 GitHub token comes from gh auth token and the OpenAI key from op read via the ghcrawl-op wrapper",
+          "Secrets are never stored on disk — GitHub token comes from gh auth token and the OpenAI key from op read via the ghcrawl-op wrapper",
           "All build, run, and ghcrawl commands must execute on the macOS node (MB Black), not a remote host",
           "ghcrawl uses OpenAI embeddings for search, which incurs external API usage; keep calls in --json mode for machine-readable output"
         ]
@@ -4662,7 +3478,7 @@
           "OCR a scanned PDF to Markdown with --force-ocr --max-pages 5 when embedded pdftotext extraction is wrong"
         ],
         "guardrails": [
-          "OCR can confuse punctuation, columns, totals, handwriting, and small text; say 'OCR reads\u2026' rather than presenting output as ground truth",
+          "OCR can confuse punctuation, columns, totals, handwriting, and small text; say 'OCR reads…' rather than presenting output as ground truth",
           "For sensitive documents, summarize only what the user requested and avoid exposing unnecessary personal data",
           "Flag financial, legal, or medical text as needing human verification before any decision is made"
         ]
@@ -4700,7 +3516,7 @@
         ],
         "guardrails": [
           "SOUL.md wins over every Role; do not duplicate core identity or personality/vibe rules into a Role",
-          "Role permission declarations do not enforce themselves \u2014 the authority layer wins, so set activation deliberately",
+          "Role permission declarations do not enforce themselves — the authority layer wins, so set activation deliberately",
           "High-authority and narrow task Roles should start inactive; avoid broad tool access granted just in case"
         ]
       }
@@ -4709,7 +3525,7 @@
       "name": "prompt-vault",
       "displayName": "Prompt Vault",
       "version": "0.1.0",
-      "description": "Save, search, tag, and manage reusable AI prompts via the pv CLI \u2014 a local SQLite-backed library with version history, tag filtering, and JSON export/import.",
+      "description": "Save, search, tag, and manage reusable AI prompts via the pv CLI — a local SQLite-backed library with version history, tag filtering, and JSON export/import.",
       "category": "AI & ML",
       "keywords": [
         "prompts",
@@ -4735,7 +3551,7 @@
           "List prompts newest-first or filter by tag, and export the whole library with pv export > prompts.json"
         ],
         "guardrails": [
-          "Requires the pv CLI installed globally; data lives locally at ~/.prompt-vault.db with no sync \u2014 use pv export to back up",
+          "Requires the pv CLI installed globally; data lives locally at ~/.prompt-vault.db with no sync — use pv export to back up",
           "Search is basic substring (LIKE %query%) matching, so broaden or narrow keywords when a match is missed",
           "Escape inner quotes or use single quotes around prompt text so the CLI arg parses correctly"
         ]
@@ -4745,7 +3561,7 @@
       "name": "security-agent",
       "displayName": "Security Agent",
       "version": "0.1.0",
-      "description": "Assess, harden, and monitor an OpenClaw deployment across 7 domains \u2014 gateway, channel/sender policy, tool/exec policy, credentials, prompt-injection defense, host OS, and continuous audit.",
+      "description": "Assess, harden, and monitor an OpenClaw deployment across 7 domains — gateway, channel/sender policy, tool/exec policy, credentials, prompt-injection defense, host OS, and continuous audit.",
       "category": "Security",
       "keywords": [
         "security",
@@ -4773,7 +3589,7 @@
         ],
         "guardrails": [
           "Require explicit approval before any state-changing action such as config patches, cron creation, or secret rotation",
-          "Never display tokens, API keys, passwords, or gateway URLs \u2014 use existence checks, wc -c, or redaction only",
+          "Never display tokens, API keys, passwords, or gateway URLs — use existence checks, wc -c, or redaction only",
           "Stay in security scope and redirect UI, feature, general-assistant, or PR-review requests to the appropriate agent"
         ]
       }
@@ -4810,8 +3626,8 @@
         ],
         "guardrails": [
           "Requires the TINYFISH_API_KEY environment variable; run the pre-flight check and stop to ask the user if it is not set",
-          "Calls the external TinyFish agent API over the network, so goals run against live sites \u2014 scope them tightly",
-          "Do not fall back to other tools when the key is missing \u2014 the task requires TinyFish"
+          "Calls the external TinyFish agent API over the network, so goals run against live sites — scope them tightly",
+          "Do not fall back to other tools when the key is missing — the task requires TinyFish"
         ]
       }
     },
@@ -4846,7 +3662,7 @@
           "Reach a geo-restricted site by routing through a country with a proxy_config block"
         ],
         "guardrails": [
-          "Requires the TINYFISH_API_KEY environment variable; run the pre-flight check and stop to ask the user if it is not set \u2014 do not fall back to other tools",
+          "Requires the TINYFISH_API_KEY environment variable; run the pre-flight check and stop to ask the user if it is not set — do not fall back to other tools",
           "Calls the external TinyFish API over the network against live sites; make separate parallel calls for independent sources rather than one combined prompt",
           "Always specify the exact JSON structure you want returned so extraction is reliable and machine-readable"
         ]
@@ -4874,21 +3690,6 @@
         "https://github.com/OpenCoven/coven-cave"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator",
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Design flows and trigger runs, then read step-by-step progress and surface failures clearly.",
         "useCases": [
@@ -4924,22 +3725,6 @@
         "https://github.com/OpenCoven/coven-cave"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist",
-            "retrospector"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        }
-      ],
       "skill": {
         "description": "Capture durable facts to memory and reference the knowledge vault without leaking secrets.",
         "useCases": [
@@ -4975,20 +3760,6 @@
         "https://github.com/OpenCoven/coven-cave"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "echo",
-          "roles": [
-            "retrospector"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "description": "Assemble evals from templates and interpret scorecards honestly, including regressions.",
         "useCases": [
@@ -5007,7 +3778,7 @@
       "name": "coven-canvas",
       "displayName": "Coven Canvas",
       "version": "0.1.0",
-      "description": "Plan visually on the Coven canvas \u2014 triage incoming work and sketch ideas before building.",
+      "description": "Plan visually on the Coven canvas — triage incoming work and sketch ideas before building.",
       "category": "Coven",
       "keywords": [
         "coven",
@@ -5024,20 +3795,6 @@
         "https://github.com/OpenCoven/coven-cave"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use the canvas to triage and sketch, turning loose ideas into structured plans.",
         "useCases": [
@@ -5073,20 +3830,6 @@
         "https://github.com/OpenCoven/coven-cave"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        }
-      ],
       "skill": {
         "description": "Create and tend scheduled automations and read their run logs without surprise side effects.",
         "useCases": [
@@ -5140,7 +3883,7 @@
         "slack_bot_token": {
           "type": "string",
           "title": "Slack Bot Token",
-          "description": "Bot user OAuth token (xoxb-\u2026) for the Slack MCP server.",
+          "description": "Bot user OAuth token (xoxb-…) for the Slack MCP server.",
           "required": true,
           "sensitive": true,
           "env": "SLACK_BOT_TOKEN"
@@ -5154,20 +3897,6 @@
           "env": "SLACK_TEAM_ID"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "coordination-layer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Slack read-first; never post, react, or DM without explicit approval.",
         "useCases": [
@@ -5224,21 +3953,6 @@
           "env": "POSTGRES_CONNECTION_STRING"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger",
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "description": "Query Postgres read-only for analysis; never mutate data without explicit approval.",
         "useCases": [
@@ -5280,20 +3994,6 @@
           "type": "http"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "retrospector"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Sentry to triage and explain errors; never resolve or mutate issues without approval.",
         "useCases": [
@@ -5335,21 +4035,6 @@
           "type": "sse"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        }
-      ],
       "skill": {
         "description": "Look up Cloudflare docs to ground answers in current product behavior.",
         "useCases": [
@@ -5401,21 +4086,6 @@
           "env": "HF_TOKEN"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "echo",
-          "roles": [
-            "archivist"
-          ]
-        }
-      ],
       "skill": {
         "description": "Search the Hub for models, datasets, and papers; cite repo IDs and arXiv references.",
         "useCases": [
@@ -5467,21 +4137,6 @@
           "env": "EXA_API_KEY"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher",
-            "librarian"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "devrel-liaison"
-          ]
-        }
-      ],
       "skill": {
         "description": "Use Exa to find and read sources for grounded, cited research.",
         "useCases": [
@@ -5541,15 +4196,6 @@
           "env": "E2B_API_KEY"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "debugger"
-          ]
-        }
-      ],
       "skill": {
         "description": "Execute code in an isolated sandbox; treat sandbox output as untrusted.",
         "useCases": [
@@ -5618,20 +4264,6 @@
           "env": "BROWSERBASE_PROJECT_ID"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "description": "Automate cloud browsers carefully; never submit forms or auth without approval.",
         "useCases": [
@@ -5689,15 +4321,6 @@
           "env": "ELEVENLABS_API_KEY"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "charm",
-          "roles": [
-            "social-voice",
-            "devrel-liaison"
-          ]
-        }
-      ],
       "skill": {
         "description": "Generate speech and transcribe audio; confirm voice and cost before large jobs.",
         "useCases": [
@@ -5755,20 +4378,6 @@
           "env": "SQLITE_DB_PATH"
         }
       },
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "debugger"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "description": "Query a local SQLite file read-first; confirm before schema or data changes.",
         "useCases": [
@@ -5787,7 +4396,7 @@
       "name": "shadcn-ui-and-radix",
       "displayName": "shadcn/ui + Radix + Tailwind",
       "version": "0.1.0",
-      "description": "Build and edit React UI with the shadcn/ui \"open code\" pattern over Radix Primitives and Tailwind \u2014 cva + tailwind-merge + clsx styling, headless a11y, and copy-paste component recipes you own.",
+      "description": "Build and edit React UI with the shadcn/ui \"open code\" pattern over Radix Primitives and Tailwind — cva + tailwind-merge + clsx styling, headless a11y, and copy-paste component recipes you own.",
       "category": "Design & UI",
       "keywords": [
         "shadcn",
@@ -5817,24 +4426,9 @@
         "https://github.com/dcastil/tailwind-merge"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "kitty",
-          "roles": [
-            "general-helper"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
-        "description": "Use when building or editing React UI with shadcn/ui, Radix Primitives, and Tailwind \u2014 the \"open code\" pattern where components are copied into your repo (components/ui/*) via the shadcn CLI and owned/edited by you, not installed as a runtime package. Covers the cva + tailwind-merge + clsx (cn) styling stack, the Radix headless a11y substrate (focus management, ARIA, keyboard nav, portals) exposed through asChild/Slot and data-slot/data-state, and concrete recipes for Button, Dialog, AlertDialog, DropdownMenu, Popover, Tooltip, Combobox (Popover+Command), Select, DataTable (TanStack Table), Sheet, Drawer (Vaul), and Form (react-hook-form + zod). Also decides when to prefer shadcn vs React Aria Components, HeroUI, Base UI, Chakra v3, Mantine, MUI, or Ant. Do NOT use for non-React frameworks (use shadcn-vue/svelte ports), deep design-token theming (tailwind-design-tokens), rich motion (framer-motion-patterns), or form UX depth (form-ux-patterns).",
+        "description": "Use when building or editing React UI with shadcn/ui, Radix Primitives, and Tailwind — the \"open code\" pattern where components are copied into your repo (components/ui/*) via the shadcn CLI and owned/edited by you, not installed as a runtime package. Covers the cva + tailwind-merge + clsx (cn) styling stack, the Radix headless a11y substrate (focus management, ARIA, keyboard nav, portals) exposed through asChild/Slot and data-slot/data-state, and concrete recipes for Button, Dialog, AlertDialog, DropdownMenu, Popover, Tooltip, Combobox (Popover+Command), Select, DataTable (TanStack Table), Sheet, Drawer (Vaul), and Form (react-hook-form + zod). Also decides when to prefer shadcn vs React Aria Components, HeroUI, Base UI, Chakra v3, Mantine, MUI, or Ant. Do NOT use for non-React frameworks (use shadcn-vue/svelte ports), deep design-token theming (tailwind-design-tokens), rich motion (framer-motion-patterns), or form UX depth (form-ux-patterns).",
         "useCases": [
           "Building/editing UI in a **React + Tailwind** app (esp. Next.js App Router).",
           "The repo already has `components/ui/*` and `lib/utils.ts` (a shadcn project), or you're initializing one.",
@@ -5843,14 +4437,14 @@
           "An AI/coding familiar must read and edit real component source (the OpenCoven default stack)."
         ],
         "guardrails": [
-          "**No runtime install.** There is no `shadcn` component package \u2014 use `npx shadcn@latest add <name>` (or copy source). Treat `components/ui/*` as owned source you may edit freely.",
+          "**No runtime install.** There is no `shadcn` component package — use `npx shadcn@latest add <name>` (or copy source). Treat `components/ui/*` as owned source you may edit freely.",
           "**Import from unified `radix-ui`** in new code (`import { Dialog as DialogPrimitive } from \"radix-ui\"`, `import { Slot } from \"radix-ui\"`), not the legacy `@radix-ui/react-*` scoped packages.",
           "**`className` goes LAST inside `cn(...)`** so consumer overrides win via tailwind-merge. Never plain string-concatenate Tailwind classes (conflicts won't resolve).",
           "**Dialog/Sheet must render a `DialogTitle`** (wrap in Radix `VisuallyHidden` if not visually wanted) and ideally a `DialogDescription`, or Radix logs an a11y warning.",
           "**`asChild` takes exactly ONE element child** and you must forward the ref; use it instead of nesting interactive elements (`<Button asChild><Link/></Button>`, never `<button><a/></button>`).",
           "**Tooltip content must be non-interactive**; use Popover/HoverCard for focusable content. Mount one `TooltipProvider` near the app root.",
-          "**AlertDialog for destructive confirms** (no overlay-dismiss; explicit action/cancel) \u2014 not plain Dialog.",
-          "**Combobox/Command are compositions** (Popover + cmdk `Command`), and **DataTable = shadcn table primitives + TanStack Table v8** \u2014 don't hunt for a monolithic component.",
+          "**AlertDialog for destructive confirms** (no overlay-dismiss; explicit action/cancel) — not plain Dialog.",
+          "**Combobox/Command are compositions** (Popover + cmdk `Command`), and **DataTable = shadcn table primitives + TanStack Table v8** — don't hunt for a monolithic component.",
           "**Radix ships behavior only.** Every visual class is yours; unstyled Radix looks unstyled by design.",
           "Prefer **plain function components** with `React.ComponentProps<...>` typing (current shadcn style) over `forwardRef` boilerplate unless a ref passthrough is required."
         ]
@@ -5888,31 +4482,15 @@
         "https://www.designtokens.org/tr/drafts/format/"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian",
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
-        "description": "Use when building or theming a Tailwind CSS v4 (or migrating a v3) UI with design tokens, dark mode, or multi-theme support \u2014 covers the CSS-first `@theme` model, OKLCH color scales, the two-tier primitive/semantic token architecture (shadcn `background`/`foreground` pairs bridged with `@theme inline`), class vs media vs `data-theme` dark mode with FOUC-safe toggling, arbitrary values, `@source inline` safelisting, and v3\u2192v4 migration; framework-agnostic (React/Vue/Svelte/Astro/HTML) with shadcn-specific glue called out.",
+        "description": "Use when building or theming a Tailwind CSS v4 (or migrating a v3) UI with design tokens, dark mode, or multi-theme support — covers the CSS-first `@theme` model, OKLCH color scales, the two-tier primitive/semantic token architecture (shadcn `background`/`foreground` pairs bridged with `@theme inline`), class vs media vs `data-theme` dark mode with FOUC-safe toggling, arbitrary values, `@source inline` safelisting, and v3→v4 migration; framework-agnostic (React/Vue/Svelte/Astro/HTML) with shadcn-specific glue called out.",
         "useCases": [
           "Setting up or restructuring a Tailwind **v4** project's token layer (colors, spacing, type, radii, shadows, motion).",
           "Adding **dark mode** or **multiple themes** (brand, high-contrast) to a Tailwind app.",
           "Working in a **shadcn/ui** codebase and touching `--background`, `--primary`, `--ring`, `.dark`, or `components.json`.",
           "A dynamic class (`bg-${x}-500`) \"isn't generating\" and you need the correct fix.",
-          "**Migrating v3 \u2192 v4**: `tailwind.config.js` \u2192 `@theme`, `content` \u2192 auto-detection, `safelist` \u2192 `@source inline`.",
+          "**Migrating v3 → v4**: `tailwind.config.js` → `@theme`, `content` → auto-detection, `safelist` → `@source inline`.",
           "Authoring or converting a color palette to **OKLCH**."
         ],
         "guardrails": [
@@ -5920,7 +4498,7 @@
           "**`@theme` maps tokens to utilities; `:root` does not.** Use `@theme` when you want `bg-*`/`text-*` to appear; use plain `:root` for variables that shouldn't spawn utilities.",
           "**Semantic tokens must be bridged with `@theme inline`** (`--color-primary: var(--primary)`), not plain `@theme`, or CSS-variable resolution can pick the wrong value.",
           "**Author colors in OKLCH** (`oklch(L C H)`), not hex/HSL. Build scales by holding H/C and stepping L. Convert at oklch.com.",
-          "**JIT scans complete static strings only** \u2014 never interpolate class names. Prefer `bg-[var(--x)]` or a lookup map; use `@source inline(...)` sparingly (it bloats the bundle) and remember it takes no regex.",
+          "**JIT scans complete static strings only** — never interpolate class names. Prefer `bg-[var(--x)]` or a lookup map; use `@source inline(...)` sparingly (it bloats the bundle) and remember it takes no regex.",
           "**Dark toggle runs inline in `<head>`** to avoid FOUC. Never let the theme class get set after first paint.",
           "**Vue/Svelte scoped `<style>` and CSS modules** need `@reference \"app.css\";` before any `@apply`/`@variant`.",
           "**Don't reintroduce `tailwind.config.js`** in a v4 project unless bridging a legacy config via `@config` during migration.",
@@ -5932,7 +4510,7 @@
       "name": "framer-motion-patterns",
       "displayName": "Motion (Framer Motion) Patterns",
       "version": "0.1.0",
-      "description": "Implement production UI motion in React with Motion (formerly Framer Motion): spring vs tween transitions, layout & shared-element transitions, AnimatePresence, gestures, scroll-linked motion, motion values, reduced-motion accessibility, and transform-only performance \u2014 with a concrete recipe library.",
+      "description": "Implement production UI motion in React with Motion (formerly Framer Motion): spring vs tween transitions, layout & shared-element transitions, AnimatePresence, gestures, scroll-linked motion, motion values, reduced-motion accessibility, and transform-only performance — with a concrete recipe library.",
       "category": "Design & UI",
       "keywords": [
         "motion",
@@ -5965,41 +4543,26 @@
         "https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "frontend"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
         "description": "Use when implementing UI motion in React with Motion (formerly Framer Motion; npm `motion`, import from `motion/react`): declarative animate/initial/exit, spring-vs-tween transitions, layout & shared-element transitions (layout / layoutId / LayoutGroup), AnimatePresence enter/exit, staggering and imperative sequences (useAnimate / useAnimationControls), cross-device keyboard-aware gestures (hover/tap/focus/pan/drag/Reorder), scroll-linked & scroll-triggered motion (useScroll / useInView / useTransform), motion values as a no-re-render reactive primitive (useMotionValue / useTransform), and production concerns: prefers-reduced-motion a11y (MotionConfig reducedMotion / useReducedMotion), transform-only hardware-accelerated performance, and choosing Motion vs CSS vs React Spring vs GSAP vs the Web Animations API. Includes recipes: modal, drawer/sheet, toast stack, list reorder, page transitions, shared-element hero image, spinner, scroll progress, parallax, stagger-in lists.",
         "useCases": [
           "Animating React UI that is tied to **state or props** (toggles, tabs, modals, route changes).",
-          "You need **layout** or **shared-element** transitions (expand card \u2192 modal, magic-move tab indicator, reorderable list, image \u2192 lightbox).",
-          "You need **app-like gestures**: drag, tap, hover, pan, drag-to-reorder \u2014 that behave correctly on touch, mouse, and pen, and stay keyboard-accessible.",
+          "You need **layout** or **shared-element** transitions (expand card → modal, magic-move tab indicator, reorderable list, image → lightbox).",
+          "You need **app-like gestures**: drag, tap, hover, pan, drag-to-reorder — that behave correctly on touch, mouse, and pen, and stay keyboard-accessible.",
           "You need **scroll-linked** motion (parallax, progress bar, reveal-on-scroll) that runs on the compositor.",
           "You need enter/exit animation for conditionally rendered components (`AnimatePresence`).",
           "You want 60/120fps animation without per-frame React re-renders (**motion values**)."
         ],
         "guardrails": [
-          "**Respect `prefers-reduced-motion` \u2014 non-negotiable.** Wrap the app in `<MotionConfig reducedMotion=\"user\">` (auto-disables transform/layout motion, keeps opacity/color) and branch decorative/large motion with `useReducedMotion()`. Large-distance translate/scale and parallax trigger nausea for users with vestibular disorders; the reduced-motion fallback should be an **opacity crossfade or an instant state change**, never a smaller version of the same big move.",
-          "**Never gate essential information behind motion.** If an animation is the *only* signal a state changed, users with reduced motion or assistive tech miss it \u2014 always provide a static/textual state.",
-          "**Animate only compositor-friendly properties:** `opacity`, `transform` (`x`/`y`/`scale`/`rotate`), `filter`, `clipPath`. Never animate `width`/`height`/`top`/`left`/`margin` directly \u2014 use `x`/`scale` or the **`layout`** prop (converts a layout change into a scale-corrected transform).",
+          "**Respect `prefers-reduced-motion` — non-negotiable.** Wrap the app in `<MotionConfig reducedMotion=\"user\">` (auto-disables transform/layout motion, keeps opacity/color) and branch decorative/large motion with `useReducedMotion()`. Large-distance translate/scale and parallax trigger nausea for users with vestibular disorders; the reduced-motion fallback should be an **opacity crossfade or an instant state change**, never a smaller version of the same big move.",
+          "**Never gate essential information behind motion.** If an animation is the *only* signal a state changed, users with reduced motion or assistive tech miss it — always provide a static/textual state.",
+          "**Animate only compositor-friendly properties:** `opacity`, `transform` (`x`/`y`/`scale`/`rotate`), `filter`, `clipPath`. Never animate `width`/`height`/`top`/`left`/`margin` directly — use `x`/`scale` or the **`layout`** prop (converts a layout change into a scale-corrected transform).",
           "**Give `AnimatePresence` children a stable, unique `key`.** Missing/duplicate keys break exit tracking.",
           "**Preserve keyboard focus order.** Animated layout changes must not steal or scramble focus. Use `whileFocus` for focus feedback; never strip focus outlines without a replacement. `whileTap` fires on **Enter** for focusable elements, so it doubles as keyboard-activation feedback.",
           "**Don't blanket `will-change` in CSS.** Permanent layer promotion wastes GPU memory. Let the animation lifecycle manage it (Motion sets it during animation).",
           "**Import from `motion/react`.** If you see `from \"framer-motion\"` in older code it still works, but standardize on `motion`.",
-          "**Keep UI feedback short** (~100\u2013300ms). Provide a pause affordance for any motion running > 5s (WCAG 2.2.2)."
+          "**Keep UI feedback short** (~100–300ms). Provide a pause affordance for any motion running > 5s (WCAG 2.2.2)."
         ]
       }
     },
@@ -6036,31 +4599,9 @@
         "https://github.com/jsx-eslint/eslint-plugin-jsx-a11y"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian",
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
-        "description": "Use when auditing or building any web/desktop UI for accessibility, wiring up ARIA/keyboard/focus, choosing color-contrast and target-size values, fixing screen-reader or focus-management bugs, honoring reduced-motion, or setting up automated a11y tests (axe-core, Playwright, jest-axe, eslint-plugin-jsx-a11y). This is the framework-agnostic WCAG 2.2 Level AA checklist and manual-testing playbook \u2014 reach for it whenever someone says \"accessible\", \"a11y\", \"WCAG\", \"screen reader\", \"keyboard nav\", \"focus ring\", \"contrast\", \"ARIA\", \"compliance\", or when a PR adds interactive components (modals, menus, tabs, drag-and-drop, forms, toasts) that must work without a mouse and with assistive tech.",
+        "description": "Use when auditing or building any web/desktop UI for accessibility, wiring up ARIA/keyboard/focus, choosing color-contrast and target-size values, fixing screen-reader or focus-management bugs, honoring reduced-motion, or setting up automated a11y tests (axe-core, Playwright, jest-axe, eslint-plugin-jsx-a11y). This is the framework-agnostic WCAG 2.2 Level AA checklist and manual-testing playbook — reach for it whenever someone says \"accessible\", \"a11y\", \"WCAG\", \"screen reader\", \"keyboard nav\", \"focus ring\", \"contrast\", \"ARIA\", \"compliance\", or when a PR adds interactive components (modals, menus, tabs, drag-and-drop, forms, toasts) that must work without a mouse and with assistive tech.",
         "useCases": [
           "Auditing an existing UI for accessibility, or gating a PR that adds interactive components.",
           "Building modals, menus, tabs, comboboxes, drag-and-drop, forms, toasts, or any custom widget.",
@@ -6069,13 +4610,13 @@
           "Wiring reduced-motion or setting up automated a11y tests (axe/Playwright/jest-axe/eslint-jsx-a11y)."
         ],
         "guardrails": [
-          "**First Rule of ARIA:** if native HTML gives the semantics + keyboard behaviour, use it \u2014 don't re-implement with `role=` on a `<div>`. `<button>` > `<div role=\"button\">`. **No ARIA is better than bad ARIA** (misused ARIA measurably *increases* AT errors).",
-          "ARIA adds **zero** behaviour \u2014 no keyboard handling, no focus, no styling. If you add `role`/`aria-*`, you own the keyboard model, focus, and states too.",
-          "**Automated tools catch only ~30\u201350% of issues.** Never claim \"WCAG AA compliant\" from a scan alone \u2014 always do the manual keyboard + screen-reader passes.",
+          "**First Rule of ARIA:** if native HTML gives the semantics + keyboard behaviour, use it — don't re-implement with `role=` on a `<div>`. `<button>` > `<div role=\"button\">`. **No ARIA is better than bad ARIA** (misused ARIA measurably *increases* AT errors).",
+          "ARIA adds **zero** behaviour — no keyboard handling, no focus, no styling. If you add `role`/`aria-*`, you own the keyboard model, focus, and states too.",
+          "**Automated tools catch only ~30–50% of issues.** Never claim \"WCAG AA compliant\" from a scan alone — always do the manual keyboard + screen-reader passes.",
           "Every interactive element needs an **accessible name**, a correct **role**, and current **state/value** (SC 4.1.2). Never put `aria-hidden=\"true\"` or `role=\"presentation\"` on a focusable element.",
           "Never ship `outline: none` without a visible replacement focus indicator (SC 2.4.7). Prefer `:focus-visible`.",
-          "Do **not** audit against 4.1.1 Parsing \u2014 it's removed in 2.2.",
-          "Color is never the *only* signal (SC 1.4.1). Contrast is a luminance ratio \u2014 measure it, don't eyeball it. (APCA is WCAG 3/future, not the 2.2 standard.)"
+          "Do **not** audit against 4.1.1 Parsing — it's removed in 2.2.",
+          "Color is never the *only* signal (SC 1.4.1). Contrast is a luminance ratio — measure it, don't eyeball it. (APCA is WCAG 3/future, not the 2.2 standard.)"
         ]
       }
     },
@@ -6115,24 +4656,9 @@
         "https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Attributes/autocomplete"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
-        "description": "Use when building or reviewing web forms (sign-up, checkout, settings, listing/create flows) in React with react-hook-form + zod (or Vue/Svelte equivalents) \u2014 covers validation timing (onBlur/onChange/onSubmit/onTouched), field-level error UX and wording, required-vs-optional indicators, progressive disclosure (multi-step, accordions, show-more), input-type/keyboard selection (inputmode, autocomplete tokens), password UX (reveal toggle, strength meter, allow paste), save-state/autosave indicators, server-error surfacing back to fields, and WCAG 2.2 form accessibility (aria-invalid, aria-describedby, role=\"alert\", fieldset/legend, SC 3.3.1/3.3.3/3.3.7/3.3.8). Flags common anti-patterns like reset-next-to-submit, disabled-submit-hiding-errors, validate-on-every-keystroke, and blocking paste in password fields.",
+        "description": "Use when building or reviewing web forms (sign-up, checkout, settings, listing/create flows) in React with react-hook-form + zod (or Vue/Svelte equivalents) — covers validation timing (onBlur/onChange/onSubmit/onTouched), field-level error UX and wording, required-vs-optional indicators, progressive disclosure (multi-step, accordions, show-more), input-type/keyboard selection (inputmode, autocomplete tokens), password UX (reveal toggle, strength meter, allow paste), save-state/autosave indicators, server-error surfacing back to fields, and WCAG 2.2 form accessibility (aria-invalid, aria-describedby, role=\"alert\", fieldset/legend, SC 3.3.1/3.3.3/3.3.7/3.3.8). Flags common anti-patterns like reset-next-to-submit, disabled-submit-hiding-errors, validate-on-every-keystroke, and blocking paste in password fields.",
         "useCases": [
           "Building a form: sign-up/login, checkout, settings, create/edit records, marketplace listing forms.",
           "Reviewing a PR that adds/changes a form and you need a concrete checklist, not vibes.",
@@ -6141,14 +4667,14 @@
           "Implementing password fields, multi-step wizards, autosave, or \"unsaved changes\" guards."
         ],
         "guardrails": [
-          "**Zod is the single source of truth** for shape + rules + TS type (`z.infer<typeof schema>`). Don't duplicate rules in JSX. Validate on the server too \u2014 client validation is UX, not security.",
+          "**Zod is the single source of truth** for shape + rules + TS type (`z.infer<typeof schema>`). Don't duplicate rules in JSX. Validate on the server too — client validation is UX, not security.",
           "**Default to `mode: \"onTouched\"` + `reValidateMode: \"onChange\"`.** Validate after the user finishes a field (first blur), then clear/re-check live as they fix it. Reserve `onChange` for live affordances (password strength). Avoid validating before a field is complete (NN/g).",
-          "**Never rely on color, tooltips, placeholders, or a disabled button alone.** Errors must be **text**, next to the field, and announced (`aria-invalid` + `aria-describedby` + `role=\"alert\"`). Placeholder \u2260 label.",
+          "**Never rely on color, tooltips, placeholders, or a disabled button alone.** Errors must be **text**, next to the field, and announced (`aria-invalid` + `aria-describedby` + `role=\"alert\"`). Placeholder ≠ label.",
           "**Always allow paste** in password/OTP fields; use `autocomplete=\"current-password\" | \"new-password\" | \"one-time-code\"`. Blocking paste can fail WCAG 3.3.8.",
           "**Put \"required\" in text, not just an asterisk.** Cut optional fields first; if most are required, mark the few with literal \"(optional)\"; `aria-hidden` any decorative `*`.",
-          "**Add `noValidate` on `<form>`** and control messaging yourself \u2014 native HTML5 bubbles have poor SR support, auto-dismiss, and don't zoom (Roselli). Keep `type`/`pattern` as hints only.",
-          "**Never put a Reset/Clear button beside Submit.** Never disable Submit as the only error feedback \u2014 let it submit, then reveal errors and focus the first one (`shouldFocusError`).",
-          "Don't ask for the same info twice in one flow \u2014 prefill or offer \"same as\u2026\" (WCAG 3.3.7)."
+          "**Add `noValidate` on `<form>`** and control messaging yourself — native HTML5 bubbles have poor SR support, auto-dismiss, and don't zoom (Roselli). Keep `type`/`pattern` as hints only.",
+          "**Never put a Reset/Clear button beside Submit.** Never disable Submit as the only error feedback — let it submit, then reveal errors and focus the first one (`shouldFocusError`).",
+          "Don't ask for the same info twice in one flow — prefill or offer \"same as…\" (WCAG 3.3.7)."
         ]
       }
     },
@@ -6156,7 +4682,7 @@
       "name": "dataviz-dashboard-ux",
       "displayName": "Data-Viz & Dashboard UX",
       "version": "0.1.0",
-      "description": "Chart-type selection, dashboard layout, data-safe colour, interaction, time-series, states, accessibility, export, and React charting-library choice (Recharts/Nivo/Victory/visx/D3/Observable Plot) \u2014 grounded in Cleveland-McGill, Tufte, Few, and Munzner.",
+      "description": "Chart-type selection, dashboard layout, data-safe colour, interaction, time-series, states, accessibility, export, and React charting-library choice (Recharts/Nivo/Victory/visx/D3/Observable Plot) — grounded in Cleveland-McGill, Tufte, Few, and Munzner.",
       "category": "Design & UI",
       "keywords": [
         "dataviz",
@@ -6198,31 +4724,9 @@
         "https://www.w3.org/WAI/tutorials/images/complex/"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian",
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
-        "description": "Use when building or reviewing any chart, graph, KPI card, dashboard, or analytics view \u2014 to pick the right chart type (bar/line/area/scatter/histogram/heatmap/sparkline/small-multiples), lay out KPIs (overview-then-detail, F-pattern), colour data safely (sequential/diverging/categorical, Okabe-Ito & Viridis, never colour-only), design hover/brush/drill-down/cross-filter interactions, handle time-series (zero baseline, time zones, aggregation, missing data), cover loading/empty/error + real-time refresh states, make charts accessible (alt text, data tables, keyboard series nav), export to PNG/PDF/CSV, and choose a React charting library (Recharts vs Nivo vs Victory vs visx vs D3 vs Observable Plot). Reach for it on any request mentioning \"chart\", \"graph\", \"dashboard\", \"data viz\", \"KPI\", \"metric\", \"plot\", \"which chart\", \"colour palette\", or when a PR adds a visualization.",
+        "description": "Use when building or reviewing any chart, graph, KPI card, dashboard, or analytics view — to pick the right chart type (bar/line/area/scatter/histogram/heatmap/sparkline/small-multiples), lay out KPIs (overview-then-detail, F-pattern), colour data safely (sequential/diverging/categorical, Okabe-Ito & Viridis, never colour-only), design hover/brush/drill-down/cross-filter interactions, handle time-series (zero baseline, time zones, aggregation, missing data), cover loading/empty/error + real-time refresh states, make charts accessible (alt text, data tables, keyboard series nav), export to PNG/PDF/CSV, and choose a React charting library (Recharts vs Nivo vs Victory vs visx vs D3 vs Observable Plot). Reach for it on any request mentioning \"chart\", \"graph\", \"dashboard\", \"data viz\", \"KPI\", \"metric\", \"plot\", \"which chart\", \"colour palette\", or when a PR adds a visualization.",
         "useCases": [
           "Picking or reviewing a chart type for a given data question.",
           "Building a dashboard: KPI hierarchy, layout, small multiples, refresh cadence.",
@@ -6233,23 +4737,23 @@
           "Selecting a React charting library, or reviewing a PR that adds a visualization."
         ],
         "guardrails": [
-          "**Perceptual ranking is the law (Cleveland\u2013McGill):** position on a common scale > length > angle/slope > area > colour luminance/saturation. Map the *most important* attribute to the *most accurate* channel (Munzner's effectiveness principle). Prefer bars over pies; aligned axes over dual axes.",
-          "**Zero baseline for bars/area \u2014 always.** Length/area IS the encoding; truncating it lies (Datawrapper). Lines/scatter *may* start non-zero (slope carries meaning) \u2014 but label the axis honestly.",
+          "**Perceptual ranking is the law (Cleveland–McGill):** position on a common scale > length > angle/slope > area > colour luminance/saturation. Map the *most important* attribute to the *most accurate* channel (Munzner's effectiveness principle). Prefer bars over pies; aligned axes over dual axes.",
+          "**Zero baseline for bars/area — always.** Length/area IS the encoding; truncating it lies (Datawrapper). Lines/scatter *may* start non-zero (slope carries meaning) — but label the axis honestly.",
           "**Never use colour as the sole encoding** (WCAG 1.4.1). Pair with label, shape, line-style, texture, or position. Test with a CVD simulator.",
-          "**Right palette family:** sequential = ordered magnitude; diverging = signed/from-a-midpoint only; categorical = nominal (\u2264~7 hues). Default categorical = **Okabe\u2013Ito**; default continuous = **Viridis**. Never `jet`/rainbow; never Red-Green diverging.",
-          "**Maximise data-ink, don't fetishise it.** Kill chartjunk (3D, shadows, heavy gridlines, boxed everything) \u2014 but a little redundancy/labeling that aids reading is fine (the chartjunk debate). Clarity > asceticism.",
-          "**Overview \u2192 zoom/filter \u2192 details-on-demand** (Shneiderman). Keep resting charts clean; put precision in tooltips/tables. Every interaction needs an affordance + a reset; announce filter changes to AT.",
+          "**Right palette family:** sequential = ordered magnitude; diverging = signed/from-a-midpoint only; categorical = nominal (≤~7 hues). Default categorical = **Okabe–Ito**; default continuous = **Viridis**. Never `jet`/rainbow; never Red-Green diverging.",
+          "**Maximise data-ink, don't fetishise it.** Kill chartjunk (3D, shadows, heavy gridlines, boxed everything) — but a little redundancy/labeling that aids reading is fine (the chartjunk debate). Clarity > asceticism.",
+          "**Overview → zoom/filter → details-on-demand** (Shneiderman). Keep resting charts clean; put precision in tooltips/tables. Every interaction needs an affordance + a reset; announce filter changes to AT.",
           "**A chart is not accessible until it has a text alternative + (ideally) a data table.** Don't ship hover-only critical info. Defer the general a11y checklist to `wcag-a11y-audit`.",
-          "**Don't over-render.** SVG DOM grows with data; past ~1\u201310k points switch to Canvas (Nivo/Chart.js) or downsample (LTTB). Real-time = append, don't full-redraw; honour `prefers-reduced-motion`.",
-          "**Every tile has four states:** loading (skeleton in-footprint), empty (explain + action; 0 \u2260 empty), error (message + retry, isolated), stale/partial (badge \"as of <time>\")."
+          "**Don't over-render.** SVG DOM grows with data; past ~1–10k points switch to Canvas (Nivo/Chart.js) or downsample (LTTB). Real-time = append, don't full-redraw; honour `prefers-reduced-motion`.",
+          "**Every tile has four states:** loading (skeleton in-footprint), empty (explain + action; 0 ≠ empty), error (message + retry, isolated), stale/partial (badge \"as of <time>\")."
         ]
       }
     },
     {
       "name": "command-palette-keyboard-ux",
-      "displayName": "Command Palette & Keyboard UX (\u2318K)",
+      "displayName": "Command Palette & Keyboard UX (⌘K)",
       "version": "0.1.0",
-      "description": "Build a command palette (\u2318K / Ctrl+K command bar) and keyboard-driven UX in React \u2014 the Superhuman/Linear/Vercel/Raycast/Notion pattern. Covers cmdk as the canonical unstyled command-menu primitive, the pages-stack nested/back-navigation pattern, fuzzy ranking (command-score/fzf vs Fuse.js), global-vs-contextual shortcut architecture (tinykeys/react-hotkeys-hook/mousetrap/kbar), shortcut philosophy and conflict handling, recents/pinned/frecency empty states, WAI-ARIA combobox accessibility (aria-activedescendant virtual focus, live-region announcements), mobile degradation, and the top palette failure modes \u2014 with a concrete recipe library.",
+      "description": "Build a command palette (⌘K / Ctrl+K command bar) and keyboard-driven UX in React — the Superhuman/Linear/Vercel/Raycast/Notion pattern. Covers cmdk as the canonical unstyled command-menu primitive, the pages-stack nested/back-navigation pattern, fuzzy ranking (command-score/fzf vs Fuse.js), global-vs-contextual shortcut architecture (tinykeys/react-hotkeys-hook/mousetrap/kbar), shortcut philosophy and conflict handling, recents/pinned/frecency empty states, WAI-ARIA combobox accessibility (aria-activedescendant virtual focus, live-region announcements), mobile degradation, and the top palette failure modes — with a concrete recipe library.",
       "category": "Design & UI",
       "keywords": [
         "command-palette",
@@ -6281,30 +4785,9 @@
         "https://github.com/junegunn/fzf/blob/master/ADVANCED.md"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "frontend"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
-        "description": "Use when building a command palette (\u2318K / Ctrl+K command bar) or keyboard-driven UX in React \u2014 the Superhuman/Linear/Vercel/Raycast/Notion pattern. Covers cmdk (Paco Coursey/Vercel, MIT, v1.1.1) as the canonical unstyled command-menu primitive (Command.Input/List/Empty/Group/Item/Separator/Dialog/Loading, filter/shouldFilter/keywords/loop/value props, ~2\u20133k item perf ceiling), the pages-stack nested/back-navigation pattern (Escape + Backspace-on-empty), fuzzy ranking (command-score default with exact multipliers, fzf/fzy word-boundary scoring, when to use Fuse.js/Levenshtein instead), global-vs-contextual keyboard shortcut architecture (tinykeys vs react-hotkeys-hook vs mousetrap vs kbar), shortcut philosophy (single-key/sequence vim/Gmail style vs Cocoa modifier style; press-twice conflict resolution; ? cheat sheet; platform-aware <kbd> glyph rendering; avoiding browser/OS reserved combos), recents/pinned/frecency + \"did you mean\"/create-fallback empty states, the command-vs-search-vs-universal-search split (Linear separate triggers vs Notion type-filtered search), WAI-ARIA combobox accessibility (role=combobox, aria-autocomplete, aria-activedescendant virtual focus + self-managed scroll, aria-live result-count announcements, high-contrast focus, screen-reader quick-nav collisions), mobile/touch degradation (Raycast desktop-only; Linear collapses to search), focus restoration on close, and the top-10 palette failure modes. Recipes: \u2318K dialog wiring, nested pages, custom fuzzy filter, contextual shortcut scoping, kbd shortcut display, live-region announcements. Role affinity cody (implementer) + charm (verb-first command labels, keyword synonyms, <40-char help text). Category Design & UI / Productivity.",
+        "description": "Use when building a command palette (⌘K / Ctrl+K command bar) or keyboard-driven UX in React — the Superhuman/Linear/Vercel/Raycast/Notion pattern. Covers cmdk (Paco Coursey/Vercel, MIT, v1.1.1) as the canonical unstyled command-menu primitive (Command.Input/List/Empty/Group/Item/Separator/Dialog/Loading, filter/shouldFilter/keywords/loop/value props, ~2–3k item perf ceiling), the pages-stack nested/back-navigation pattern (Escape + Backspace-on-empty), fuzzy ranking (command-score default with exact multipliers, fzf/fzy word-boundary scoring, when to use Fuse.js/Levenshtein instead), global-vs-contextual keyboard shortcut architecture (tinykeys vs react-hotkeys-hook vs mousetrap vs kbar), shortcut philosophy (single-key/sequence vim/Gmail style vs Cocoa modifier style; press-twice conflict resolution; ? cheat sheet; platform-aware <kbd> glyph rendering; avoiding browser/OS reserved combos), recents/pinned/frecency + \"did you mean\"/create-fallback empty states, the command-vs-search-vs-universal-search split (Linear separate triggers vs Notion type-filtered search), WAI-ARIA combobox accessibility (role=combobox, aria-autocomplete, aria-activedescendant virtual focus + self-managed scroll, aria-live result-count announcements, high-contrast focus, screen-reader quick-nav collisions), mobile/touch degradation (Raycast desktop-only; Linear collapses to search), focus restoration on close, and the top-10 palette failure modes. Recipes: ⌘K dialog wiring, nested pages, custom fuzzy filter, contextual shortcut scoping, kbd shortcut display, live-region announcements. Role affinity: implementer workflows plus verb-first command labels, keyword synonyms, and concise help text. Category Design & UI / Productivity.",
         "useCases": [
           "Your app has **more actions than fit comfortably on screen**, and/or a **keyboard-first audience**.",
           "You want to expose **long-tail features** that could never justify a dedicated button/menu.",
@@ -6316,8 +4799,8 @@
           "**Scope shortcuts so they don't fire in text fields.** Single-key binds triggering while the user types is the #1 shortcut bug. Use `react-hotkeys-hook`'s `enableOnFormTags`, Mousetrap's default input-ignore, or gate `tinykeys` manually.",
           "**Don't fight the browser/OS.** `Ctrl/Cmd+W, T, N, L, Q, F, S` are reserved. For the unavoidable conflict (editor `Cmd+K` = insert link), use **press-once = contextual action, press-twice = palette** (Superhuman).",
           "**Restore focus on close.** Save the previously focused element before opening; restore it when the palette closes. `Command.Dialog` (composes Radix Dialog) does this for you; a hand-rolled overlay must not.",
-          "**Announce result changes.** Filtering silently is invisible to screen readers. Ship an `aria-live=\"polite\"` region reporting the count (\"42 results\" / \"No results\"). cmdk gives you combobox roles but **not** the live region \u2014 you own it.",
-          "**Discoverability is a feature, not polish.** Persistent \"Search\u2026 \u2318K\" hint; show each action's shortcut as `<kbd>` *inside* the palette (teach the fast path); `?` opens a full cheat sheet."
+          "**Announce result changes.** Filtering silently is invisible to screen readers. Ship an `aria-live=\"polite\"` region reporting the count (\"42 results\" / \"No results\"). cmdk gives you combobox roles but **not** the live region — you own it.",
+          "**Discoverability is a feature, not polish.** Persistent \"Search… ⌘K\" hint; show each action's shortcut as `<kbd>` *inside* the palette (teach the fast path); `?` opens a full cheat sheet."
         ]
       }
     },
@@ -6325,7 +4808,7 @@
       "name": "empty-loading-error-states",
       "displayName": "Empty, Loading & Error States",
       "version": "0.1.0",
-      "description": "Enforce the three-states discipline (loading, empty, error \u2014 plus partial and ideal) on every data-bound component: indicator selection, empty-state types, error taxonomy, retries, and WCAG 2.2 state-change announcements.",
+      "description": "Enforce the three-states discipline (loading, empty, error — plus partial and ideal) on every data-bound component: indicator selection, empty-state types, error taxonomy, retries, and WCAG 2.2 state-change announcements.",
       "category": "Design & UI",
       "keywords": [
         "empty-states",
@@ -6362,21 +4845,6 @@
         "https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-busy"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "charm",
-          "roles": [
-            "copywriter"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
         "description": "Use when building or reviewing any component that renders async/remote data (lists, tables, dashboards, search results, detail pages, feeds) in React/Vue/Svelte. Enforces the \"every data component has five states\" discipline: loading, empty, partial, error, ideal. Covers loading-indicator selection (spinner vs skeleton vs progress vs shimmer) against Nielsen 0.1/1/10s limits and the spinner-flash rule; the four empty-state types (first-run, no-results, permission-denied, deleted) with distinct copy+CTA; the five-class error taxonomy (user/network/server/permission/not-found); retry patterns (backoff+jitter, TanStack retry:3/min(1000*2^n,30000), when NOT to retry); toast-vs-inline-vs-banner-vs-dialog placement; the 404/500/offline trio; optimistic UI + Suspense; and WCAG 2.2 SC 4.1.3 announcements (role=status, role=alert, aria-live, aria-busy) + focus. Flags happy-path-only components, blank loading, raw stack traces, blame-the-user copy, and critical errors in auto-dismissing toasts.",
@@ -6387,13 +4855,13 @@
           "Debugging \"it flashes / it's blank / it dumped a stack trace / the screen reader said nothing.\""
         ],
         "guardrails": [
-          "**Enumerate all five states before you build: loading, empty, partial, error, ideal.** The \"ideal\" state is the only one built by default; the other four are found in production by users. Suspense handles *loading*, an error boundary handles *error* \u2014 **neither handles empty or partial** (that's your app logic: `if (items.length === 0) return <EmptyState \u2026 />`).",
-          "**Match the indicator to the wait (Nielsen 0.1/1/10s).** < ~300 ms \u2192 nothing/optimistic. ~1\u201310 s small region \u2192 spinner. Full-page first load with known layout \u2192 **skeleton** (shaped like the real content to avoid layout shift; never a frame-only skeleton). Known % or > 10 s \u2192 **determinate progress**. **Delay showing any indicator ~200\u2013500 ms and keep it a minimum ~300\u2013500 ms** to avoid the spinner flash.",
-          "**Never one empty state for all cases.** First-run (teach + one CTA), no-results (echo the query + clear-filters), permission-denied (explain access), deleted (confirm outcome) are different components.",
-          "**Errors answer four questions: what happened, why/scope, what to do, a support code.** Plain language, a real \"Try again\", and a short error code/correlation ID. **Never render raw stack traces / PII** \u2014 log server-side, surface the code. **Never blame the user.** Kill \"Invalid input\" / bare \"Something went wrong\".",
+          "**Enumerate all five states before you build: loading, empty, partial, error, ideal.** The \"ideal\" state is the only one built by default; the other four are found in production by users. Suspense handles *loading*, an error boundary handles *error* — **neither handles empty or partial** (that's your app logic: `if (items.length === 0) return <EmptyState … />`).",
+          "**Match the indicator to the wait (Nielsen 0.1/1/10s).** < ~300 ms → nothing/optimistic. ~1–10 s small region → spinner. Full-page first load with known layout → **skeleton** (shaped like the real content to avoid layout shift; never a frame-only skeleton). Known % or > 10 s → **determinate progress**. **Delay showing any indicator ~200–500 ms and keep it a minimum ~300–500 ms** to avoid the spinner flash.",
+          "**Never one empty state for all cases.** First-run (teach + one CTA), no-results (repeat the query + clear-filters), permission-denied (explain access), deleted (confirm outcome) are different components.",
+          "**Errors answer four questions: what happened, why/scope, what to do, a support code.** Plain language, a real \"Try again\", and a short error code/correlation ID. **Never render raw stack traces / PII** — log server-side, surface the code. **Never blame the user.** Kill \"Invalid input\" / bare \"Something went wrong\".",
           "**Retry only transient failures** (network/5xx) with **exponential backoff + jitter**; cap the delay (TanStack default: retry 3, `min(1000*2^n, 30000)`). **Don't retry 400/401/403/404/validation.** Try a silent background retry first so one-off blips never reach the user.",
           "**Critical errors go inline or in a dialog, never in an auto-dismissing toast** (toasts auto-dismiss, don't take focus, are missed; auto-dismiss can fail WCAG 2.2.3/2.2.4). Toasts = transient/recoverable only.",
-          "**Announce every state change to assistive tech (WCAG 2.2 SC 4.1.3).** Loading/\"Searching\u2026\"/result-count/ \"No results\" \u2192 `role=\"status\"` (implicit `aria-live=\"polite\"`). **Errors \u2192 `role=\"alert\"`** (assertive). Use `aria-busy` for multi-part loads; `aria-hidden` the spinner glyph + a visually-hidden status text. Inject the live region **before** populating it. **Move focus** to the error heading/Try-again when content is *replaced*; **don't** steal focus for an appended non-blocking status."
+          "**Announce every state change to assistive tech (WCAG 2.2 SC 4.1.3).** Loading/\"Searching…\"/result-count/ \"No results\" → `role=\"status\"` (implicit `aria-live=\"polite\"`). **Errors → `role=\"alert\"`** (assertive). Use `aria-busy` for multi-part loads; `aria-hidden` the spinner glyph + a visually-hidden status text. Inject the live region **before** populating it. **Move focus** to the error heading/Try-again when content is *replaced*; **don't** steal focus for an appended non-blocking status."
         ]
       }
     },
@@ -6441,25 +4909,9 @@
         "https://web.dev/articles/inp"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer",
-            "frontend"
-          ]
-        },
-        {
-          "familiar": "sage",
-          "roles": [
-            "researcher"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
-        "description": "Use when building, reviewing, or debugging any mobile/responsive web UI (or a PWA / web view meant to feel native) \u2014 sizing touch targets, fixing the 100vh/notch/on-screen-keyboard bugs, making layouts adapt with container queries instead of device-pixel breakpoints, choosing bottom-nav vs hamburger / sheet vs modal / action-sheet vs dropdown, wiring the right mobile keyboard (inputmode/enterkeyhint/autocomplete), handling touch gestures with Pointer Events + touch-action, honoring hover-vs-touch, or hitting mobile Core Web Vitals (LCP/INP/CLS) with responsive images and lazy-loading. Reach for it on any cue like \"mobile\", \"touch\", \"responsive\", \"breakpoint\", \"safe area / notch / Dynamic Island\", \"svh/dvh\", \"container query\", \"tap target\", \"hamburger vs tab bar\", \"PWA/offline\", \"keyboard covers input\", \"swipe/drag\", or a PR that ships a phone layout. Framework-agnostic; pairs with wcag-a11y-audit and framer-motion-patterns.",
+        "description": "Use when building, reviewing, or debugging any mobile/responsive web UI (or a PWA / web view meant to feel native) — sizing touch targets, fixing the 100vh/notch/on-screen-keyboard bugs, making layouts adapt with container queries instead of device-pixel breakpoints, choosing bottom-nav vs hamburger / sheet vs modal / action-sheet vs dropdown, wiring the right mobile keyboard (inputmode/enterkeyhint/autocomplete), handling touch gestures with Pointer Events + touch-action, honoring hover-vs-touch, or hitting mobile Core Web Vitals (LCP/INP/CLS) with responsive images and lazy-loading. Reach for it on any cue like \"mobile\", \"touch\", \"responsive\", \"breakpoint\", \"safe area / notch / Dynamic Island\", \"svh/dvh\", \"container query\", \"tap target\", \"hamburger vs tab bar\", \"PWA/offline\", \"keyboard covers input\", \"swipe/drag\", or a PR that ships a phone layout. Framework-agnostic; pairs with wcag-a11y-audit and framer-motion-patterns.",
         "useCases": [
           "Building or reviewing a phone/tablet layout, or a PWA / web view meant to feel native.",
           "Sizing tap targets; fixing `100vh` clipping, notch/Dynamic-Island bleed, or keyboard-covers-input bugs.",
@@ -6469,15 +4921,15 @@
           "Hitting mobile Core Web Vitals (LCP/INP/CLS) or shipping offline/installable."
         ],
         "guardrails": [
-          "**Touch target floor is WCAG 2.5.8 = 24\u00d724 CSS px; ship the platform size: 44pt (iOS) / 48dp (Android).** Keep visuals small if you must, but expand the *hit area* (padding / `::after { inset: -12px }`). \u22658px apart.",
-          "**Never `100vh` for full-height on mobile.** Use `min-height: 100svh` (fallback `100vh`); use `dvh` only where live-tracking helps \u2014 it reflows on scroll, so don't animate layout with it.",
+          "**Touch target floor is WCAG 2.5.8 = 24×24 CSS px; ship the platform size: 44pt (iOS) / 48dp (Android).** Keep visuals small if you must, but expand the *hit area* (padding / `::after { inset: -12px }`). ≥8px apart.",
+          "**Never `100vh` for full-height on mobile.** Use `min-height: 100svh` (fallback `100vh`); use `dvh` only where live-tracking helps — it reflows on scroll, so don't animate layout with it.",
           "**Never block pinch-zoom.** No `user-scalable=no` / `maximum-scale=1` (WCAG 1.4.4). Always ship `<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">`.",
           "**Never hover-lock content.** Any \"reveal on hover\" needs a tap path; gate hover behind `@media (hover: hover) and (pointer: fine)`. Touch has no hover.",
-          "**Container queries for components; media queries for page/global** (layout scaffold, `prefers-*`, print). Breakpoints are **content-driven, mobile-first** \u2014 device-pixel breakpoints (`iPhone = 390px`) are an anti-pattern.",
+          "**Container queries for components; media queries for page/global** (layout scaffold, `prefers-*`, print). Breakpoints are **content-driven, mobile-first** — device-pixel breakpoints (`iPhone = 390px`) are an anti-pattern.",
           "**Every drag needs a non-drag single-pointer alternative** (WCAG 2.5.7); every multipoint/path gesture needs a **single-tap alternative** (2.5.1); fire on the **up** event so users can slide off to abort (2.5.2).",
           "**The LCP image is never lazy-loaded.** `loading=\"lazy\"` is for below-the-fold only; preload/`fetchpriority=high` the hero.",
           "**Reserve image space** (`width`/`height` or `aspect-ratio`) or CLS tanks. Give **instant tap feedback** or INP tanks.",
-          "iOS auto-zooms inputs under **16px** font \u2014 keep form inputs \u226516px."
+          "iOS auto-zooms inputs under **16px** font — keep form inputs ≥16px."
         ]
       }
     },
@@ -6485,7 +4937,7 @@
       "name": "design-system-landscape",
       "displayName": "Design-System Landscape",
       "version": "0.1.0",
-      "description": "A map and decision guide to the 2025-2026 design-system ecosystem (Material 3, Fluent 2, Apple HIG, Primer, Carbon, Ant, Chakra v3, Mantine, HeroUI, Radix + shadcn/ui, Adobe Spectrum/React Aria and more) \u2014 classify each into platform/product/community/headless tiers, compare license, framework support, token architecture and a11y, and decide which DS to reach for or borrow from.",
+      "description": "A map and decision guide to the 2025-2026 design-system ecosystem (Material 3, Fluent 2, Apple HIG, Primer, Carbon, Ant, Chakra v3, Mantine, HeroUI, Radix + shadcn/ui, Adobe Spectrum/React Aria and more) — classify each into platform/product/community/headless tiers, compare license, framework support, token architecture and a11y, and decide which DS to reach for or borrow from.",
       "category": "Design & UI",
       "keywords": [
         "design-system",
@@ -6530,28 +4982,6 @@
         "https://github.com/microsoft/fluentui"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "sage",
-          "roles": [
-            "librarian",
-            "researcher"
-          ]
-        },
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer"
-          ]
-        },
-        {
-          "familiar": "astra",
-          "roles": [
-            "strategic-navigator"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
         "description": "Use when choosing, comparing, or borrowing from an existing design system rather than building components from scratch: a map + decision guide covering Material 3, Fluent 2, Apple HIG, GitHub Primer, IBM Carbon, Ant Design, Chakra UI v3, Mantine, HeroUI (ex-NextUI), Radix + shadcn/ui, and Adobe Spectrum / React Aria (plus SLDS, Atlassian, Polaris, Base Web). Classifies each into four tiers (platform language you conform to / product DS / installable community kit / headless own-code substrate) and states its license, framework support, token architecture, and a11y posture, with a \"reach for which DS when\" flow and live adoption signals (npm/stars; Polaris repo archived; NextUI to HeroUI; Ant agent docs). Encodes the CovenCave matrix: borrow semantic-first tokens (Primer), a11y discipline (Carbon), and the ownership model (Radix/shadcn); avoid Material dynamic color, Ant density, light-mode-first defaults, and vendor skins. Hands-on building belongs to sibling skills.",
@@ -6563,22 +4993,22 @@
           "You're deciding whether to **install a styled kit** vs **own component source** (shadcn) vs **conform to a platform language** (HIG/Material/Fluent)."
         ],
         "guardrails": [
-          "**Classify the tier first.** (A) *Platform language* you conform to on its native OS (Apple HIG, Material 3, Fluent 2) \u2014 never adopt as a web *skin*; (B) *product DS* (Primer/Carbon/SLDS/Atlassian/Polaris/Spectrum/Base Web) \u2014 usually *study*, rarely wholesale adopt; (C) *installable community kit* (Ant/MUI/Mantine/Chakra v3/HeroUI) \u2014 `npm i` + theme; (D) *headless own-code* (Radix+shadcn/ui, React Aria, Ark/Zag) \u2014 compose + own source. The tier dictates the whole decision.",
+          "**Classify the tier first.** (A) *Platform language* you conform to on its native OS (Apple HIG, Material 3, Fluent 2) — never adopt as a web *skin*; (B) *product DS* (Primer/Carbon/SLDS/Atlassian/Polaris/Spectrum/Base Web) — usually *study*, rarely wholesale adopt; (C) *installable community kit* (Ant/MUI/Mantine/Chakra v3/HeroUI) — `npm i` + theme; (D) *headless own-code* (Radix+shadcn/ui, React Aria, Ark/Zag) — compose + own source. The tier dictates the whole decision.",
           "**For OpenCoven work, default to Tier D (Radix + shadcn/ui).** Owning source is the only way to enforce the house style (dark-first, dense, minimal, symbolic, controlled purple, `--oc-*` tokens). See `shadcn-ui-and-radix` for the build, `opencoven-design` for the visual law.",
-          "**Take the *system*, never the *skin*.** You may borrow Primer's token *grammar*, Carbon's a11y *rigor*, Ant's token *algorithm* \u2014 but never ship the GitHub/IBM/Ant *look*. `opencoven-design` forbids vendor skins, light-mode-primary, dynamic/generated color, gradients, glass/blur, and blue/green/red as brand accents.",
+          "**Take the *system*, never the *skin*.** You may borrow Primer's token *grammar*, Carbon's a11y *rigor*, Ant's token *algorithm* — but never ship the GitHub/IBM/Ant *look*. `opencoven-design` forbids vendor skins, light-mode-primary, dynamic/generated color, gradients, glass/blur, and blue/green/red as brand accents.",
           "**Semantic-first tokens always.** Name color by intent (`accent`/`danger`/`muted` + `-emphasis`/`-subtle`), not by hue (Primer/Carbon/Atlassian model). Feed implementation to `tailwind-design-tokens`.",
-          "**Prefer CSS variables over runtime CSS-in-JS.** The 2025\u20132026 trend is away from Emotion/Styletron/Griffel toward CSS vars + Tailwind (RSC + perf). Weigh CIS lock-in as a cost.",
-          "**Escalate hard a11y to React Aria Components** (date pickers, complex tables, drag-drop, i18n/RTL) \u2014 deeper than Radix.",
-          "**Verify adoption claims against live APIs** (`api.npmjs.org` downloads, GitHub stars) before quoting numbers \u2014 they drift. Note stale facts: **Polaris `polaris-react` repo is archived**; **NextUI renamed to HeroUI**; **Radix consolidated to a single `radix-ui` package**; **Chakra v3 rebuilt on Ark UI/Zag.js**; **Ant v6 ships agent docs (`design.md`/`LLMs.txt`/MCP)**.",
-          "**This skill decides; siblings build.** Do not re-implement shadcn/Radix recipes, token code, motion, or a11y audits here \u2014 hand off."
+          "**Prefer CSS variables over runtime CSS-in-JS.** The 2025–2026 trend is away from Emotion/Styletron/Griffel toward CSS vars + Tailwind (RSC + perf). Weigh CIS lock-in as a cost.",
+          "**Escalate hard a11y to React Aria Components** (date pickers, complex tables, drag-drop, i18n/RTL) — deeper than Radix.",
+          "**Verify adoption claims against live APIs** (`api.npmjs.org` downloads, GitHub stars) before quoting numbers — they drift. Note stale facts: **Polaris `polaris-react` repo is archived**; **NextUI renamed to HeroUI**; **Radix consolidated to a single `radix-ui` package**; **Chakra v3 rebuilt on Ark UI/Zag.js**; **Ant v6 ships agent docs (`design.md`/`LLMs.txt`/MCP)**.",
+          "**This skill decides; siblings build.** Do not re-implement shadcn/Radix recipes, token code, motion, or a11y audits here — hand off."
         ]
       }
     },
     {
       "name": "pretext",
-      "displayName": "Pretext \u2014 Text Measurement & Layout",
+      "displayName": "Pretext — Text Measurement & Layout",
       "version": "0.1.0",
-      "description": "DOM-free multiline text measurement & layout for web UIs via @chenglou/pretext \u2014 get wrapped height, line count, and per-line ranges from pure arithmetic, with no getBoundingClientRect/offsetHeight reflow. Powers list virtualization, layout-shift prevention, CI-time overflow checks, multiline shrink-wrap / balanced text, and manual line rendering to Canvas/SVG/WebGL.",
+      "description": "DOM-free multiline text measurement & layout for web UIs via @chenglou/pretext — get wrapped height, line count, and per-line ranges from pure arithmetic, with no getBoundingClientRect/offsetHeight reflow. Powers list virtualization, layout-shift prevention, CI-time overflow checks, multiline shrink-wrap / balanced text, and manual line rendering to Canvas/SVG/WebGL.",
       "category": "Design & UI",
       "keywords": [
         "pretext",
@@ -6605,31 +5035,21 @@
         "https://github.com/chenglou/text-layout"
       ],
       "trust": "official-local",
-      "roleAffinity": [
-        {
-          "familiar": "cody",
-          "roles": [
-            "implementer",
-            "code-reviewer",
-            "debugger"
-          ]
-        }
-      ],
       "skill": {
         "managed": "manual",
-        "description": "Use when measuring or laying out multiline text in a web UI WITHOUT triggering DOM reflow (getBoundingClientRect / offsetHeight / measuring a hidden clone) \u2014 the @chenglou/pretext library (pure JS/TS, works across all languages, renders to DOM/Canvas/SVG/WebGL and soon server-side). Covers the prepare()/layout() split (one-time analysis + canvas measurement vs the cheap pure-arithmetic hot path; never re-run prepare() on resize), height + lineCount measurement for list virtualization/occlusion, layout-shift prevention when text loads late, dev/CI-time button/label overflow checks (browser-free), and userland masonry/JS-flexbox layout; manual line layout via prepareWithSegments + layoutWithLines / walkLineRanges / measureLineStats / measureNaturalWidth / layoutNextLine(Range) / materializeLineRange (multiline shrink-wrap, balanced text, text flowed around a float, canvas/SVG/WebGL rendering); the @chenglou/pretext/rich-inline helper for inline chips/mentions/code-spans with break:'never' + caller-owned extraWidth; options whiteSpace normal|pre-wrap (textarea-like), wordBreak normal|keep-all (CJK/Hangul), letterSpacing px, soft-hyphen break points, setLocale/clearCache. Encodes the load-bearing caveats \u2014 the canvas `font` string AND the `lineHeight`/`letterSpacing` you pass MUST match the element's CSS; `system-ui` is unsafe for layout() accuracy on macOS (use a named font); requires Intl.Segmenter + Canvas 2D; empty string returns {lineCount:0} (clamp with Math.max(1,lineCount)); it is horizontal-only and NOT a full CSS inline/bidi formatting engine.",
+        "description": "Use when measuring or laying out multiline text in a web UI WITHOUT triggering DOM reflow (getBoundingClientRect / offsetHeight / measuring a hidden clone) — the @chenglou/pretext library (pure JS/TS, works across all languages, renders to DOM/Canvas/SVG/WebGL and soon server-side). Covers the prepare()/layout() split (one-time analysis + canvas measurement vs the cheap pure-arithmetic hot path; never re-run prepare() on resize), height + lineCount measurement for list virtualization/occlusion, layout-shift prevention when text loads late, dev/CI-time button/label overflow checks (browser-free), and userland masonry/JS-flexbox layout; manual line layout via prepareWithSegments + layoutWithLines / walkLineRanges / measureLineStats / measureNaturalWidth / layoutNextLine(Range) / materializeLineRange (multiline shrink-wrap, balanced text, text flowed around a float, canvas/SVG/WebGL rendering); the @chenglou/pretext/rich-inline helper for inline chips/mentions/code-spans with break:'never' + caller-owned extraWidth; options whiteSpace normal|pre-wrap (textarea-like), wordBreak normal|keep-all (CJK/Hangul), letterSpacing px, soft-hyphen break points, setLocale/clearCache. Encodes the load-bearing caveats — the canvas `font` string AND the `lineHeight`/`letterSpacing` you pass MUST match the element's CSS; `system-ui` is unsafe for layout() accuracy on macOS (use a named font); requires Intl.Segmenter + Canvas 2D; empty string returns {lineCount:0} (clamp with Math.max(1,lineCount)); it is horizontal-only and NOT a full CSS inline/bidi formatting engine.",
         "useCases": [
-          "You need a paragraph or label's wrapped **height / line count** without triggering DOM reflow (`getBoundingClientRect` / `offsetHeight`) \u2014 list virtualization, occlusion, autosize rows, JS masonry.",
+          "You need a paragraph or label's wrapped **height / line count** without triggering DOM reflow (`getBoundingClientRect` / `offsetHeight`) — list virtualization, occlusion, autosize rows, JS masonry.",
           "You must **prevent layout shift** by reserving exact space before late-loading text arrives.",
           "You want a **browser-free / CI-time guard** that a button, chip, or nav label doesn't wrap to N+1 lines.",
           "You are **rendering text yourself** to Canvas / SVG / WebGL / server and need correct per-width (or variable-width) line breaks.",
           "You need **multiline shrink-wrap** (tightest width that still fits) or **balanced text**, or inline flow for chips/mentions via `@chenglou/pretext/rich-inline`."
         ],
         "guardrails": [
-          "**Keep the config in lock-step with CSS.** The canvas `font` string, plus the `lineHeight` and `letterSpacing` you pass, MUST match the element's actual CSS \u2014 otherwise every measured height is subtly wrong.",
+          "**Keep the config in lock-step with CSS.** The canvas `font` string, plus the `lineHeight` and `letterSpacing` you pass, MUST match the element's actual CSS — otherwise every measured height is subtly wrong.",
           "**Run `prepare()` once, `layout()` many.** `prepare()` is the expensive measurement pass; never re-run it for the same text+config. On resize call only `layout()` / the walkers, and cache the handle by `(text, font, options)`.",
-          "**Use a named font \u2014 `system-ui` is unsafe for `layout()` accuracy on macOS.** See the repo's `PLATFORM_BUGS.md` for the underlying Chrome/Firefox issues.",
-          "**Clamp empty strings.** `layout('')` returns `{ lineCount: 0 }`; browsers still show one line-height for an empty block \u2014 use `Math.max(1, lineCount) * lineHeight`.",
+          "**Use a named font — `system-ui` is unsafe for `layout()` accuracy on macOS.** See the repo's `PLATFORM_BUGS.md` for the underlying Chrome/Firefox issues.",
+          "**Clamp empty strings.** `layout('')` returns `{ lineCount: 0 }`; browsers still show one line-height for an empty block — use `Math.max(1, lineCount) * lineHeight`.",
           "**Know the floor and the scope.** Requires `Intl.Segmenter` + Canvas 2D `measureText`. It is horizontal-only line-breaking, models only the canvas `font` shorthand (no `font-feature-settings` / optical-sizing; `tab-size` fixed at 8), and is NOT a full CSS inline/bidi formatting engine.",
           "**Don't reach for it for a single static single-line width** (use `ctx.measureText` directly) or for true CSS inline formatting (nested spans, `vertical-align`, ruby, bidi x-reconstruction)."
         ]

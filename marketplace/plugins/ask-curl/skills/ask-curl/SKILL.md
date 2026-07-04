@@ -13,7 +13,7 @@ Describe the HTTP request you want, review the generated cURL command, and run i
 - Chain multi-step flows such as fetching an OAuth token then calling a protected endpoint, piping JSON through jq
 
 ## Guardrails
-- Never echo, log, or write tokens to files; use op read inline or op run and strip Authorization headers from history
+- Never print, log, or write tokens to files; use op read inline or op run and strip Authorization headers from history
 - Always confirm before running POST, PUT, PATCH, or DELETE by showing the command first
 - Set --max-time 30 on every request and warn on any non-HTTPS URL except localhost
 

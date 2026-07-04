@@ -74,6 +74,7 @@ const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities">, string> 
 
 const KIND_TABS: ReadonlyArray<{ id: KindFilter; label: string }> = [
   { id: "all", label: "All" },
+  { id: "api", label: "APIs" },
   { id: "mcp", label: "MCP servers" },
   { id: "skill", label: "Skills" },
 ];
@@ -424,6 +425,7 @@ export function MarketplaceViewSurface({
               {section === "browse" ? (
                 <>
                   <StatPill icon="ph:plug-bold" label={`${kindCounts.mcp} MCP servers`} />
+                  <StatPill icon="ph:cloud-bold" label={`${kindCounts.api} APIs`} />
                   <StatPill icon="ph:sparkle-bold" label={`${kindCounts.skill} skills`} />
                   {installedCount > 0 ? (
                     <StatPill icon="ph:check-circle" label={`${installedCount} added`} accent />
