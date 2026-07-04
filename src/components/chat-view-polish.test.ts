@@ -279,23 +279,37 @@ assert.match(
 );
 assert.match(
   source,
-  /cave-composer-host-chip/,
-  "composer has a host chip (remote execution picker)",
+  /<ComposerHostChip value=\{composerHostValue\} disabled=\{busy\} onPick=\{setRuntimeHost\} \/>/,
+  "composer has a host chip (remote execution picker, shared with the home composer)",
 );
+// The chip internals moved to the shared module — pin them there.
+const hostChip = readFileSync(new URL("./composer-host-chip.tsx", import.meta.url), "utf8");
 assert.match(
-  source,
+  hostChip,
   /cave-host-status--\$\{optionStatus\}/,
   "host rows carry live status dots (popover, not a native select)",
 );
 assert.match(
-  source,
-  /\.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\)/,
-  "an explicit host pick rides the send body; auto stays absent",
+  hostChip,
+  /Connect new host/,
+  "the host chip offers the connect-new-host flow",
 );
 assert.match(
   source,
-  /Connect new host/,
-  "the host chip offers the connect-new-host flow",
+  /\(controlsOverride\?\.runtimeHost \?\? runtimeHost\)/,
+  "an explicit host pick (or the home composer's initial pick) rides the send body; auto stays absent",
+);
+// Home composer parity: the same chip, threading the pick into the opened chat.
+const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
+assert.match(
+  homeComposer,
+  /<ComposerHostChip[\s\S]{0,200}onPick=\{\(id\) => setRuntimeHost\(id === LOCAL_HOST_ID \? null : id\)\}/,
+  "the home composer renders the shared host chip (local pick = auto)",
+);
+assert.match(
+  homeComposer,
+  /initialControls: \{ thinkingEffort, responseSpeed, \.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\) \}/,
+  "the home composer threads the host pick into the opened chat's first send",
 );
 assert.match(
   source,

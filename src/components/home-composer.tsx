@@ -16,6 +16,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { ComposerHostChip } from "@/components/composer-host-chip";
+import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
 import { modelSlashOptions, resolveModelArg } from "@/lib/slash-model";
@@ -80,7 +82,7 @@ type Props = {
     familiarId: string,
     projectRoot: string | null,
     opts?: {
-      initialControls?: { thinkingEffort: CommandThinkingEffort; responseSpeed: CommandResponseSpeed };
+      initialControls?: { thinkingEffort: CommandThinkingEffort; responseSpeed: CommandResponseSpeed; runtimeHost?: string };
       /** Files staged in the home composer; the opened chat auto-sends with them. */
       initialAttachments?: ChatAttachment[];
     },
@@ -212,6 +214,9 @@ export function HomeComposer({
   const [responseSpeed, setResponseSpeed] = useState<CommandResponseSpeed>(
     COMMAND_CONTROL_DEFAULTS.responseSpeed,
   );
+  // Host chip: where the opened chat should execute. Per-composer state, not a
+  // sticky pref — mirrors the chat composer's Host chip (#2337/#2340).
+  const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
   const selectedProject = useMemo(
     () =>
       selectedProjectId === NO_PROJECT_ID
@@ -400,10 +405,10 @@ export function HomeComposer({
       }
       setText("");
       onStartChat(buildSkillPrompt(skill), selectedFamiliarId, selectedProject?.root ?? null, {
-        initialControls: { thinkingEffort, responseSpeed },
+        initialControls: { thinkingEffort, responseSpeed, ...(runtimeHost ? { runtimeHost } : {}) },
       });
     },
-    [selectedFamiliarId, selectedProject, thinkingEffort, responseSpeed, onStartChat, onToast],
+    [selectedFamiliarId, selectedProject, thinkingEffort, responseSpeed, runtimeHost, onStartChat, onToast],
   );
 
   useEffect(() => {
@@ -605,7 +610,7 @@ export function HomeComposer({
           setAttachments([]);
           setEnhanceOriginal(null);
           onStartChat(prompt, selectedFamiliarId, selectedProject?.root ?? null, {
-            initialControls: { thinkingEffort, responseSpeed },
+            initialControls: { thinkingEffort, responseSpeed, ...(runtimeHost ? { runtimeHost } : {}) },
             initialAttachments: outgoing,
           });
           break;
@@ -1173,6 +1178,12 @@ export function HomeComposer({
                   COMMAND_RESPONSE_SPEED_OPTIONS,
                   "Choose response speed",
                 )}
+
+                <ComposerHostChip
+                  value={runtimeHost ?? LOCAL_HOST_ID}
+                  disabled={sending}
+                  onPick={(id) => setRuntimeHost(id === LOCAL_HOST_ID ? null : id)}
+                />
               </>
             ) : null}
 
