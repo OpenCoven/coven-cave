@@ -26,6 +26,7 @@ export const SUITES = {
     "src/lib/tool-edit-stat.test.ts",
     "src/lib/split-snap.test.ts",
     "src/lib/code-rail.test.ts",
+    "src/lib/use-code-rail.test.ts",
     "src/lib/workspace-tiles.test.ts",
     "src/lib/page-drag.test.ts",
     "src/components/chat-view-render-cap.test.ts",
@@ -747,6 +748,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/use-code-rail.test.ts",
   "src/lib/cave-familiar-images.test.ts",
   "src/lib/user-avatar-image.test.ts",
   "src/lib/familiar-resolve.test.ts",
