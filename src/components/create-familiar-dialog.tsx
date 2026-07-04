@@ -367,7 +367,7 @@ export function CreateFamiliarDialog({
                 id="create-familiar-model"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="Default for this harness"
+                placeholder="Default for this runtime"
                 className={inputClass}
               />
             </div>

@@ -514,7 +514,7 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
               compact
               icon="ph:brain"
               headline={`No memories yet for ${selectedFamiliar?.display_name ?? "this familiar"}`}
-              subtitle="Familiar memories are saved during chats. Memory files appear when the familiar's harness writes to disk."
+              subtitle="Familiar memories are saved during chats. Memory files appear when the familiar's runtime writes to disk."
             />
           </div>
         ) : (

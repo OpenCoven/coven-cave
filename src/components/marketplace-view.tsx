@@ -62,7 +62,7 @@ const SECTION_COPY: Record<MarketplaceSection, { title: string; subtitle: string
   },
   capabilities: {
     title: "Capabilities",
-    subtitle: "What each harness supports — compare tools and features side by side.",
+    subtitle: "What each runtime supports — compare tools and features side by side.",
   },
 };
 

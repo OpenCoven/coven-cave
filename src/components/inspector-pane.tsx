@@ -1302,10 +1302,10 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
       </CapSection>
 
       {/* ── Section 3: Plugins ────────────────────────────────────────────── */}
-      <CapSection title="Plugins" scope={`${nonMcpPlugins.length} from harness`}>
+      <CapSection title="Plugins" scope={`${nonMcpPlugins.length} from runtime`}>
         {nonMcpPlugins.length === 0 ? (
           <p className="rounded border border-dashed border-[var(--border-hairline)] px-2 py-2 text-[var(--text-muted)]">
-            No plugins in harness capability scan. Run /refresh in the Capabilities page.
+            No plugins in runtime capability scan. Run /refresh in the Capabilities page.
           </p>
         ) : (
           <ul className="space-y-1.5">

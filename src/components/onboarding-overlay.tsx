@@ -1035,7 +1035,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       ) ?? null;
     if (!selectedHarness) {
       setSetupError(
-        "Pick an installed harness first, or choose an existing OpenClaw agent.",
+        "Pick an installed runtime first, or choose an existing OpenClaw agent.",
       );
       return;
     }
