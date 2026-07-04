@@ -89,4 +89,24 @@ assert.ok(
   "both view branches should render the shared ThreadRow",
 );
 
+// ── Recent (flat) view shows a per-row project tile ──────────────────────────
+// The grouped view conveys the project via its folder header; the flat Recent
+// list mixes projects, so each row leads with the project's avatar (or a dashed
+// folder for an unregistered cwd / no-project thread).
+assert.match(
+  chatSidebar,
+  /const groupBySession = useMemo\(/,
+  "sidebar builds a session→project-group lookup for the Recent view",
+);
+assert.match(
+  chatSidebar,
+  /project=\{groupBySession\.get\(session\.id\) \?\? null\}/,
+  "the Recent-view ThreadRow receives its thread's project group",
+);
+assert.match(
+  chatSidebar,
+  /project\.projectId \? \([\s\S]{0,160}<ProjectAvatar/,
+  "a registered project renders a ProjectAvatar tile in the row",
+);
+
 console.log("chat-sidebar-wiring.test.ts passed");

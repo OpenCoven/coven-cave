@@ -85,6 +85,9 @@ type ThreadRowProps = {
   deleting: boolean;
   /** "folder" indents under a project folder; "flat" aligns with section headers. */
   indent: "folder" | "flat";
+  /** The thread's project group (Recent view only). Renders a leading project
+   *  tile so a flat, cross-project list still shows each thread's project. */
+  project?: ChatProjectGroup | null;
   onOpen: () => void;
   onTogglePin: () => void;
   onRequestDelete: () => void;
@@ -99,6 +102,7 @@ function ThreadRow({
   confirming,
   deleting,
   indent,
+  project,
   onOpen,
   onTogglePin,
   onRequestDelete,
@@ -115,6 +119,17 @@ function ThreadRow({
         className="cnav__thread-main focus-ring"
       >
         <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+        {project ? (
+          project.projectId ? (
+            <span className="cnav__thread-project" title={folderLabel(project)}>
+              <ProjectAvatar name={folderLabel(project)} root={project.projectRoot} size="sm" />
+            </span>
+          ) : (
+            <span className="cnav__thread-project cnav__thread-project--dir" title={folderLabel(project)} aria-hidden>
+              <Icon name={folderIcon(project, false)} width={13} />
+            </span>
+          )
+        ) : null}
         <span className="cnav__thread-title" title={title}>{title}</span>
         {confirming ? null : (
           <span className="cnav__time">{bareTime(session.updated_at || session.created_at)}</span>
@@ -210,6 +225,15 @@ export function ChatSidebar({
     () => deriveChatProjectGroups(applyProjectOverrides(visibleSessions, overrides), projects),
     [visibleSessions, overrides, projects],
   );
+
+  // Map each session to its (override-resolved) project group so the flat Recent
+  // view can render a per-row project tile — the grouped view conveys the project
+  // through its header, but Recent mixes threads from every project together.
+  const groupBySession = useMemo(() => {
+    const map = new Map<string, ChatProjectGroup>();
+    for (const group of groups) for (const s of group.sessions) map.set(s.id, group);
+    return map;
+  }, [groups]);
 
   const pinnedSessions = useMemo(
     () =>
@@ -451,6 +475,7 @@ export function ChatSidebar({
                         <li key={session.id}>
                           <ThreadRow
                             session={session}
+                            project={groupBySession.get(session.id) ?? null}
                             active={activeSessionId === session.id}
                             pinned={isSessionPinned(pinnedIds, session.id)}
                             confirming={confirmingSessionId === session.id}

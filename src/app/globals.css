@@ -1039,6 +1039,16 @@ tr[role="checkbox"]:focus-visible {
   flex-shrink: 0;
   color: var(--text-muted);
 }
+/* Per-row project tile in the flat Recent view (avatar for a registered project,
+   dashed folder for an unregistered cwd / no-project thread). */
+.cnav__thread-project {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+.cnav__thread-project--dir {
+  color: var(--text-muted);
+}
 .cnav__group-name {
   flex: 1;
   min-width: 0;
