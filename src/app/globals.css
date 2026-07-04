@@ -1318,50 +1318,6 @@ tr[role="checkbox"]:focus-visible {
   white-space: nowrap;
 }
 
-/* Footer — user identity chip */
-.cnav__footer {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px var(--cnav-pad);
-  border-top: 1px solid var(--border-hairline);
-}
-.cnav__avatar {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  flex-shrink: 0;
-  border-radius: 999px;
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklch, var(--accent) 42%, var(--bg-raised)),
-    var(--bg-raised)
-  );
-  font-size: 11px;
-  font-weight: 650;
-  color: var(--text-primary);
-}
-.cnav__user {
-  min-width: 0;
-  flex: 1;
-}
-.cnav__user-name {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 550;
-  color: var(--text-primary);
-}
-.cnav__user-plan {
-  display: block;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
 .shell-nav-header {
   display: flex;
   align-items: center;
