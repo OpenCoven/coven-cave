@@ -8,6 +8,7 @@ import { scheduleLabel, scheduleUrgency } from "@/lib/board-schedule";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import type { CaveProject } from "@/lib/cave-projects";
+import { ProjectAvatar } from "@/components/project-avatar";
 import { LifecycleBadge } from "@/components/ui/lifecycle-badge";
 import { Icon } from "@/lib/icon";
 import type { GroupBy } from "@/components/board-table";
@@ -485,6 +486,12 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
       {groups.map(({ key, label, cards: gc }) => {
         const isCollapsed = collapsedGroups.has(key);
         const grpGrouped = grouped(gc);
+        // Project lanes lead with the project's identity tile (image/monogram);
+        // the "No project" lane and familiar/status grouping stay text-only.
+        const laneProject =
+          groupBy === "project" && key !== NO_PROJECT_KEY
+            ? projects.find((p) => p.id === key)
+            : undefined;
         const isStatusGroup = groupBy === "status"; // single-group, full-height
         const isMultiSwimlane = showSwimlanes && !isStatusGroup;
         return (
@@ -498,6 +505,14 @@ export function BoardKanban({ cards, familiars, projects, sessions, groupBy, sel
                   aria-expanded={!isCollapsed}
                 >
                   <Icon name={isCollapsed ? "ph:caret-right" : "ph:caret-down"} width={10} />
+                  {laneProject ? (
+                    <ProjectAvatar
+                      name={laneProject.name}
+                      root={laneProject.root}
+                      color={laneProject.color}
+                      size="sm"
+                    />
+                  ) : null}
                   {label}
                   <span className="board-swimlane-badge">{gc.length}</span>
                 </button>

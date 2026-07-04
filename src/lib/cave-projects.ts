@@ -95,7 +95,9 @@ export function createProject(input: {
 
 export function patchProject(
   id: string,
-  patch: Partial<Pick<CaveProject, "name" | "root" | "color">>,
+  // color: string sets an explicit tint; null clears it (back to the auto
+  // root-hash tint); undefined leaves it untouched.
+  patch: { name?: string; root?: string; color?: string | null },
 ): Promise<CaveProject | null> {
   return withWriteMutex(async () => {
     const projects = await loadProjects();
@@ -104,11 +106,14 @@ export function patchProject(
     const current = projects[idx];
     const updated: CaveProject = {
       ...current,
-      ...patch,
       name: patch.name !== undefined ? patch.name.trim() : current.name,
       root: patch.root !== undefined ? normalizeRoot(patch.root) : current.root,
       updatedAt: new Date().toISOString(),
     };
+    if (patch.color !== undefined) {
+      if (patch.color === null) delete updated.color;
+      else updated.color = patch.color;
+    }
     const next = [...projects];
     next[idx] = updated;
     await saveProjects(next);

@@ -13,7 +13,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
 
-  const patch: { name?: string; root?: string; color?: string } = {};
+  const patch: { name?: string; root?: string; color?: string | null } = {};
   if (typeof body.name === "string") {
     const trimmed = body.name.trim();
     if (trimmed.length === 0) {
@@ -28,7 +28,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
     patch.root = trimmed;
   }
-  if (typeof body.color === "string") patch.color = body.color;
+  if (typeof body.color === "string") {
+    const trimmed = body.color.trim();
+    if (trimmed.length === 0) {
+      return NextResponse.json({ ok: false, error: "color cannot be empty" }, { status: 400 });
+    }
+    patch.color = trimmed;
+  } else if (body.color === null) {
+    patch.color = null; // clear — the tile falls back to the auto root-hash tint
+  }
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ ok: false, error: "nothing to update" }, { status: 400 });
   }
