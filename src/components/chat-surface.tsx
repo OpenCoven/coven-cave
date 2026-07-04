@@ -17,7 +17,6 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 import { Icon } from "@/lib/icon";
-import { CodeInlineToolbar } from "@/components/code-inline-toolbar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
@@ -88,16 +87,9 @@ type Props = {
    *  routes back to the board with the linked card focused. */
   onOpenTask?: (cardId: string) => void;
   onOpenUrl?: (url: string) => void;
-  /** Which surface embeds this ChatSurface. In "code" mode the chat pane is
-   *  transcript-only (the comux pane owns project/file/session navigation), so
-   *  the in-chat project sidebar is dropped and the transcript gets a readable
-   *  measure. Defaults to the standalone "chat" surface, which keeps the
-   *  sidebar + the two-way Chat/Code toggle. */
-  surface?: "chat" | "code";
-  /** Drop the in-surface project/thread rail even on the standalone "chat"
-   *  surface. Set when the left nav has been swapped for the ChatSidebar
-   *  (chat mode), which already owns the project-grouped thread list — so the
-   *  in-surface rail would duplicate it. Mirrors what `surface="code"` does. */
+  /** Drop the in-surface project/thread rail. Set when the left nav has been
+   *  swapped for the ChatSidebar (chat mode), which already owns the
+   *  project-grouped thread list — so the in-surface rail would duplicate it. */
   hideThreadRail?: boolean;
 };
 
@@ -216,13 +208,11 @@ export function ChatSurface({
   onSessionsChanged,
   onOpenTask,
   onOpenUrl,
-  surface = "chat",
   hideThreadRail = false,
 }: Props) {
-  const isCodeSurface = surface === "code";
-  // The in-surface project/thread rail is dropped in code mode (comux owns
-  // navigation) and in chat mode (the ChatSidebar left nav owns it).
-  const compactRail = isCodeSurface || hideThreadRail;
+  // The in-surface project/thread rail is dropped in chat mode (the ChatSidebar
+  // left nav owns it).
+  const compactRail = hideThreadRail;
   const [scope, setScope] = useState<FamiliarsScope>("conversation");
   // Below the desktop shell breakpoint the inline 230px right sidebar is hidden
   // (no room beside the chat thread), so the Inspector/Debug/Changes panels would
@@ -266,10 +256,9 @@ export function ChatSurface({
   // rail needs. Read them from the reactive chat debug store — the single
   // publisher ChatView already feeds and that the sibling SessionChangesPanel
   // consumes — rather than tracking the `#chat-<id>` URL hash and resolving it
-  // against the sessions list. Standalone chat surface only; code mode (comux)
-  // owns its own file/changes navigation.
+  // against the sessions list.
   const snapshot = useChatDebugSnapshot();
-  const activeSession = isCodeSurface ? null : snapshot.session;
+  const activeSession = snapshot.session;
   const railProjectRoot = activeSession?.project_root ?? null;
   const sessionRunning = activeSession?.status === "running";
 
@@ -280,7 +269,7 @@ export function ChatSurface({
   const [changeCount, setChangeCount] = useState(0);
   const changeFetchInFlight = useRef(false);
   useEffect(() => {
-    if (isCodeSurface || !railProjectRoot) { setChangeCount(0); return; }
+    if (!railProjectRoot) { setChangeCount(0); return; }
     const root = railProjectRoot;
     let cancelled = false;
     const load = async () => {
@@ -311,7 +300,7 @@ export function ChatSurface({
       window.removeEventListener("cave:changes-refresh", onRefresh);
       if (intervalId !== undefined) window.clearInterval(intervalId);
     };
-  }, [isCodeSurface, railProjectRoot, sessionRunning]);
+  }, [railProjectRoot, sessionRunning]);
 
   // Once the Terminal tab has been opened, keep the rail available (terminalActive)
   // even if the session has no repo and no edits — otherwise switching away would
@@ -344,7 +333,7 @@ export function ChatSurface({
     }
     setTerminalOpened(false);
   }, [snapshot.sessionId, terminalOpened]);
-  const showCodeRail = !isCodeSurface && rail.available && rail.open && !isMobile && !paneNarrow;
+  const showCodeRail = rail.available && rail.open && !isMobile && !paneNarrow;
 
   // ── Mobile code rail (PR 3, Task 3) ─────────────────────────────────────────
   // Below the mobile/narrow breakpoint there's no room for the third-column
@@ -352,7 +341,7 @@ export function ChatSurface({
   // full-screen chat, opened by an explicit toggle button. Default closed —
   // auto-opening an overlay on mobile is intrusive, so we do NOT mirror
   // rail.open here.
-  const mobileRail = !isCodeSurface && (isMobile || paneNarrow) && rail.available;
+  const mobileRail = (isMobile || paneNarrow) && rail.available;
   const [mobileRailOpen, setMobileRailOpen] = useState(false);
   const mobileRailSheetRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(mobileRailOpen, mobileRailSheetRef, {
@@ -510,16 +499,6 @@ export function ChatSurface({
     return () => window.removeEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
   }, []);
 
-  // The Code surface hosts the companion-panel toggle inline (CodeInlineToolbar
-  // on the tab row), so flag the root to hide the shell's top-bar right toggle
-  // while this surface is mounted — otherwise there'd be two of them.
-  useEffect(() => {
-    if (!isCodeSurface) return;
-    const root = document.documentElement;
-    root.setAttribute("data-code-inline-toolbar", "");
-    return () => root.removeAttribute("data-code-inline-toolbar");
-  }, [isCodeSurface]);
-
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -527,73 +506,49 @@ export function ChatSurface({
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ── Header ──────────────────────────────────────────────────────
-            Standalone Chat keeps Projects discoverable as a first-class tab.
-            Code keeps its Sessions/Memory pair because the comux pane owns
-            project/file navigation there. */}
-        {isCodeSurface ? (
-          <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <Tabs<FamiliarsScope>
-                bordered={false}
-                value={scope}
-                onChange={(s) => {
-                  setScope(s);
-                  if (s === "conversation") {
-                    window.setTimeout(() => routerRef.current?.goToList(), 0);
-                  }
-                }}
-                items={[
-                  { id: "conversation", label: "Sessions" },
-                  { id: "memory", label: "Memory" },
-                ]}
-              />
-            </div>
-            <CodeInlineToolbar />
-          </div>
-        ) : !isCodeSurface ? (
-          <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
-            <Tabs<FamiliarsScope>
-              bordered={false}
-              value={scope}
-              onChange={(s) => {
-                setScope(s);
-                if (s === "conversation") {
-                  window.setTimeout(() => routerRef.current?.goToList(), 0);
-                }
+            Chat keeps Projects discoverable as a first-class tab. */}
+        <div className="chat-scope-tabs chat-scope-tabs--minimal flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border-hairline)] px-4">
+          <Tabs<FamiliarsScope>
+            bordered={false}
+            value={scope}
+            onChange={(s) => {
+              setScope(s);
+              if (s === "conversation") {
+                window.setTimeout(() => routerRef.current?.goToList(), 0);
+              }
+            }}
+            items={[
+              { id: "conversation", label: "Sessions" },
+              { id: "projects", label: "Projects" },
+            ]}
+          />
+          {/* Mobile / narrow-pane code-rail toggle. On desktop the rail is a
+              third column; below the breakpoint there's no room, so it opens
+              as a right-edge slide-over sheet (below). Mirrors the mobile
+              right-sheet affordance placement. Scoped to the conversation tab
+              so it doesn't hover over the Projects list. */}
+          {mobileRail && scope === "conversation" && (
+            <button
+              type="button"
+              className="mobile-code-rail-toggle focus-ring"
+              aria-label={mobileRailOpen ? "Hide code rail" : "Show code rail"}
+              aria-haspopup="dialog"
+              aria-expanded={mobileRailOpen}
+              onClick={() => {
+                // Mutually exclusive with the right-panel sheet: two z-[200]
+                // aria-modal overlays on the same edge would stack and confuse
+                // AT. Opening the code rail dismisses the other sheet.
+                if (!mobileRailOpen) onSetRightPanel?.(null);
+                setMobileRailOpen((v) => !v);
               }}
-              items={[
-                { id: "conversation", label: "Sessions" },
-                { id: "projects", label: "Projects" },
-              ]}
-            />
-            {/* Mobile / narrow-pane code-rail toggle. On desktop the rail is a
-                third column; below the breakpoint there's no room, so it opens
-                as a right-edge slide-over sheet (below). Mirrors the mobile
-                right-sheet affordance placement. Scoped to the conversation tab
-                so it doesn't hover over the Projects list. */}
-            {mobileRail && scope === "conversation" && (
-              <button
-                type="button"
-                className="mobile-code-rail-toggle focus-ring"
-                aria-label={mobileRailOpen ? "Hide code rail" : "Show code rail"}
-                aria-haspopup="dialog"
-                aria-expanded={mobileRailOpen}
-                onClick={() => {
-                  // Mutually exclusive with the right-panel sheet: two z-[200]
-                  // aria-modal overlays on the same edge would stack and confuse
-                  // AT. Opening the code rail dismisses the other sheet.
-                  if (!mobileRailOpen) onSetRightPanel?.(null);
-                  setMobileRailOpen((v) => !v);
-                }}
-              >
-                <Icon name="ph:code" width={16} aria-hidden />
-                {changeCount > 0 ? (
-                  <span className="mobile-code-rail-toggle__badge">{changeCount}</span>
-                ) : null}
-              </button>
-            )}
-          </div>
-        ) : null}
+            >
+              <Icon name="ph:code" width={16} aria-hidden />
+              {changeCount > 0 ? (
+                <span className="mobile-code-rail-toggle__badge">{changeCount}</span>
+              ) : null}
+            </button>
+          )}
+        </div>
 
         {scope === "memory" ? (
           <FamiliarsMemoryView
@@ -605,7 +560,7 @@ export function ChatSurface({
               window.location.hash = `memory:${encodeURIComponent(path)}`;
             }}
           />
-        ) : scope === "projects" && !isCodeSurface ? (
+        ) : scope === "projects" ? (
           <ProjectsView sessions={sessions} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
         ) : (
           <Group
@@ -615,10 +570,9 @@ export function ChatSurface({
             onLayoutChanged={onLayoutChanged}
           >
             <Panel id="chat-main" className="flex min-h-0 min-w-0" minSize="45%">
-              <div className="min-h-0 min-w-0 flex-1" data-surface={surface}>
+              <div className="min-h-0 min-w-0 flex-1">
                 <ChatRouter
                   ref={routerRef}
-                  surface={surface}
                   familiar={activeFamiliar}
                   familiars={familiars}
                   sessions={sessions}
@@ -700,7 +654,7 @@ export function ChatSurface({
           the rail is available for the active repo session but has been
           collapsed (or auto-hidden between edit batches). Same desktop-only /
           wide-enough gate as the mounted rail. */}
-      {!isCodeSurface && rail.available && !rail.open && !isMobile && !paneNarrow && (
+      {rail.available && !rail.open && !isMobile && !paneNarrow && (
         <button
           type="button"
           aria-label="Show code rail"

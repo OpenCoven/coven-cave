@@ -36,7 +36,6 @@ export type FolderMode =
   | "calendar"
   | "inbox"
   | "terminal"
-  | "code"
   | "browser"
   | "github"
   | "roles"
@@ -52,7 +51,6 @@ export type FolderMode =
 export type AddonsConfig = {
   github?: boolean;
   library?: boolean;
-  code?: boolean;
   terminal?: boolean;
   browser?: boolean;
   flow?: boolean;
@@ -113,7 +111,6 @@ const FOLDER_MODES: Array<{
   // Tools
   { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘5", description: "Built-in web browser" },
   { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘6", description: "Shell session in your project" },
-  { id: "code", label: "Code", iconName: "ph:code", group: "tools", kbd: "⌘7", description: "Chat with a familiar beside your files and terminal" },
   { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description: "Saved docs, links, and reading" },
   { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description: "Browse the store and manage your familiars' roles, skills, and capabilities" },
   { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
@@ -272,7 +269,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   const visibleFolderModes = FOLDER_MODES.filter((fm) => {
     if (fm.id === "github") return addons?.github === true;
     if (fm.id === "library") return addons?.library === true;
-    if (fm.id === "code") return addons?.code === true;
     if (fm.id === "terminal") return addons?.terminal === true;
     if (fm.id === "browser") return addons?.browser === true;
     if (fm.id === "flow") return addons?.flow === true;

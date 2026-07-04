@@ -9,7 +9,6 @@ export type WorkspaceMode =
   | "library"
   | "browser"
   | "terminal"
-  | "code"
   | "github"
   | "roles"
   | "marketplace"

@@ -52,7 +52,6 @@ import {
   MarketplaceView,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
-import { CodeView } from "@/components/code-view";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
 import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
@@ -125,7 +124,6 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   library: "Library",
   browser: "Browser",
   terminal: "Terminal",
-  code: "Code",
   github: "GitHub",
   roles: "Roles",
   marketplace: "Marketplace",
@@ -261,10 +259,8 @@ export function Workspace() {
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [mode, setMode] = useState<WorkspaceMode>("home");
-  const [lastNonCodeMode, setLastNonCodeMode] = useState<WorkspaceMode>("home");
-  // Chat mode swaps the left nav for the ChatSidebar (project-grouped threads),
-  // mirroring Code mode. Its back control returns to the surface the user came
-  // from — tracked here, same idiom as `lastNonCodeMode`.
+  // Chat mode swaps the left nav for the ChatSidebar (project-grouped threads).
+  // Its back control returns to the surface the user came from.
   const [lastNonChatMode, setLastNonChatMode] = useState<WorkspaceMode>("home");
   // Whether the first daemon status poll has resolved. Until it has, the daemon
   // state is *unknown* (not "offline"), so the offline banner must stay hidden.
@@ -279,7 +275,6 @@ export function Workspace() {
   const browserPaneRef = useRef<BrowserPaneHandle>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [rightPanel, setRightPanel] = useState<RightPanelKind | null>(null);
-  const [codeRightView, setCodeRightView] = useState<"files" | "changes">("files");
   // Drag-to-split: up to three secondary surfaces opened beside the primary
   // one (four visible pages total). Targets are draggable pages or companion
   // surfaces (Salem / Memory / Browser) re-homed from the removed right rail.
@@ -327,7 +322,6 @@ export function Workspace() {
   const [addons, setAddons] = useState<{
     github?: boolean;
     library?: boolean;
-    code?: boolean;
     terminal?: boolean;
     browser?: boolean;
     flow?: boolean;
@@ -365,15 +359,6 @@ export function Workspace() {
   activeIdRef.current = activeId;
 
   useEffect(() => {
-    if (mode !== "code") setLastNonCodeMode(mode);
-  }, [mode]);
-
-  const exitCodeMode = useCallback(() => {
-    setMode(lastNonCodeMode === "code" ? "home" : lastNonCodeMode);
-    shellRef.current?.dismissNavMobile();
-  }, [lastNonCodeMode]);
-
-  useEffect(() => {
     if (mode !== "chat") setLastNonChatMode(mode);
   }, [mode]);
 
@@ -381,20 +366,6 @@ export function Workspace() {
     setMode(lastNonChatMode === "chat" ? "home" : lastNonChatMode);
     shellRef.current?.dismissNavMobile();
   }, [lastNonChatMode]);
-
-  const [codeScheduledCount, setCodeScheduledCount] = useState<number | undefined>(undefined);
-  useEffect(() => {
-    if (mode !== "code") return;
-    let alive = true;
-    fetch("/api/codex-automations")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        const list = Array.isArray(d) ? d : d?.automations;
-        if (alive && Array.isArray(list)) setCodeScheduledCount(list.length);
-      })
-      .catch(() => {});
-    return () => { alive = false; };
-  }, [mode]);
 
   const setMobileModeEnabled = useCallback((enabled: boolean) => {
     writeMobileModeEnabled(enabled);
@@ -545,12 +516,23 @@ export function Workspace() {
   // it. Keeps those surfaces decoupled from the mode state owner.
   useEffect(() => {
     const onNavigate = (e: Event) => {
-      const mode = (e as CustomEvent<{ mode?: WorkspaceMode }>).detail?.mode;
-      if (mode) setMode(mode);
+      const targetMode = (e as CustomEvent<{ mode?: string }>).detail?.mode;
+      if (!targetMode) return;
+      // "code" was retired — redirect to the most-recent repo session in chat.
+      if (targetMode === "code") {
+        const repoSession = [...sessionsRef.current]
+          .filter((s) => s.project_root)
+          .sort((a, b) => (b.updated_at || b.created_at).localeCompare(a.updated_at || a.created_at))[0];
+        if (repoSession) {
+          openFamiliarSession(repoSession.id, repoSession.familiarId);
+        }
+        return;
+      }
+      setMode(targetMode as WorkspaceMode);
     };
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
     return () => window.removeEventListener("cave:navigate-mode", onNavigate as EventListener);
-  }, []);
+  }, [openFamiliarSession]);
 
   // `?mode=<WorkspaceMode>` deep link: external links (e.g. /retro redirects,
   // dashboard buttons) can land directly on a surface. Runs once on mount,
@@ -564,15 +546,15 @@ export function Workspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Click-to-open a file from chat: the comux pane (Code/Terminal) handles
-  // `cave:open-project-file` directly when it's showing. When neither is, switch
-  // to the Code workspace and re-emit so the freshly-mounted comux catches it.
+  // Click-to-open a file from chat: the comux pane (Terminal) handles
+  // `cave:open-project-file` directly when it's showing. When it isn't, switch
+  // to the Terminal workspace and re-emit so the freshly-mounted comux catches it.
   useEffect(() => {
     const onOpenFile = (e: Event) => {
       const m = modeRef.current;
-      if (m === "code" || m === "terminal") return;
+      if (m === "terminal") return;
       const detail = (e as CustomEvent).detail;
-      setMode("code");
+      setMode("terminal");
       window.setTimeout(
         () => window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail })),
         0,
@@ -1270,7 +1252,7 @@ export function Workspace() {
     // (Work group, then Tools group). ⌘9 is Projects and ⌘0 is Library (handled
     // below); Journal/Roles/Workflows are unshortcut.
     const SURFACE_ORDER: WorkspaceMode[] = [
-      "home", "chat", "board", "inbox", "browser", "terminal", "code",
+      "home", "chat", "board", "inbox", "browser", "terminal",
     ];
 
     const onKey = (e: KeyboardEvent) => {
@@ -1866,17 +1848,6 @@ export function Workspace() {
     startFamiliarChat(activeId, projectRoot);
   }, [activeId, startFamiliarChat]);
 
-  const openCodeProjectChat = useCallback((projectRoot: string | null) => {
-    setPendingProjectChatRoot(projectRoot ?? null);
-    setPendingChatAction({
-      kind: "new",
-      familiarId: activeId,
-      projectRoot,
-      nonce: Date.now(),
-    });
-    setMode("code");
-  }, [activeId]);
-
   const sidebar = (
     <SidebarMinimal
       mode={mode}
@@ -1926,32 +1897,6 @@ export function Workspace() {
     />
   );
 
-  const codeSidebar = (
-    <WorkspaceSidebar
-      sessions={sessions}
-      activeFamiliarId={activeId}
-      activeSessionId={routerRef.current?.currentSessionId() ?? null}
-      onBack={exitCodeMode}
-      onOpenSession={(session) => {
-        if (session.familiarId) setActiveId(session.familiarId);
-        setPendingChatAction({
-          kind: "open",
-          sessionId: session.id,
-          familiarId: session.familiarId,
-          nonce: Date.now(),
-        });
-        setMode("code");
-        shellRef.current?.dismissNavMobile();
-      }}
-      onNewChat={openCodeProjectChat}
-      onDeleteSession={async (session) => {
-        await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
-        await loadSessions();
-      }}
-      scheduledCount={codeScheduledCount}
-    />
-  );
-
   const chatSidebar = (
     <WorkspaceSidebar
       sessions={sessions}
@@ -1970,7 +1915,6 @@ export function Workspace() {
         await fetch(`/api/chat/conversation/${encodeURIComponent(session.id)}`, { method: "DELETE" });
         await loadSessions();
       }}
-      scheduledCount={codeScheduledCount}
     />
   );
 
@@ -2058,57 +2002,6 @@ export function Workspace() {
         familiars={resolvedFamiliars}
         onSessionStarted={loadSessions}
         onOpenUrl={openUrlInAppBrowser}
-      />
-    ) : mode === "code" ? (
-      <CodeView
-        chat={
-          <ChatSurface
-            surface="code"
-            familiars={familiars}
-            sessions={sessions}
-            activeFamiliar={active}
-            activeFamiliarId={activeId}
-            daemonRunning={daemonRunning}
-            routerRef={routerRef}
-            sessionsLoaded={sessionsLoaded}
-            inboxItems={inboxItemsWithEphemeral}
-            inspectorOpen={inspectorOpen}
-            rightPanel={rightPanel}
-            pendingProjectRoot={pendingProjectChatRoot}
-            pendingChatAction={pendingChatAction}
-            onSetInspectorOpen={setInspectorOpen}
-            onSetRightPanel={setRightPanel}
-            onSetActiveFamiliar={setActiveId}
-            onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
-            onPendingChatActionHandled={() => setPendingChatAction(null)}
-            onSessionStarted={loadSessions}
-            onSlashFromChat={handleSlashIntent}
-            onOpenOnboarding={openOnboarding}
-            onOpenInbox={() => setMode("inbox")}
-            onCreateReminder={openReminderForFamiliar}
-            onOpenInboxItem={openInspectorInboxItem}
-            onInboxItemChanged={refreshInbox}
-            onSessionsChanged={loadSessions}
-            onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-            onOpenUrl={openUrlInAppBrowser}
-          />
-        }
-        comux={
-          <ComuxView
-            view="projects"
-            active={mode === "code"}
-            storageNamespace=":code"
-            rightView={codeRightView}
-            onRightViewChange={setCodeRightView}
-            hideProjectNavigator
-            hideFileTree
-            sessions={sessions}
-            onOpenSession={(sessionId, familiarId) => {
-              openFamiliarSession(sessionId, familiarId);
-            }}
-            onNewChat={openCodeProjectChat}
-          />
-        }
       />
     ) : mode === "library" ? (
       <LibraryView
@@ -2348,7 +2241,7 @@ export function Workspace() {
           />
           </>
         )}
-        nav={mode === "code" ? codeSidebar : mode === "chat" ? chatSidebar : sidebar}
+        nav={mode === "chat" ? chatSidebar : sidebar}
         list={list}
         detail={detail}
       />
