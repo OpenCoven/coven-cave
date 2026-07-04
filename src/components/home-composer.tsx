@@ -602,6 +602,11 @@ export function HomeComposer({
           // it's harmless downstream (normalized away before persistence).
           const outgoing: ChatAttachment[] | undefined = attachments.length ? attachments : undefined;
           setText("");
+          // Clear the persisted draft synchronously: onStartChat unmounts this
+          // composer, which cancels the debounced draft-write effect before it
+          // can flush the empty text — otherwise the sent prompt resurrects on
+          // the next Home visit.
+          writeHomeDraft("");
           setAttachments([]);
           setEnhanceOriginal(null);
           onStartChat(prompt, selectedFamiliarId, selectedProject?.root ?? null, {
@@ -617,7 +622,11 @@ export function HomeComposer({
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               title: prompt,
-              familiarId: activeFamiliarId ?? null,
+              // Attribute the card to the familiar the selector actually shows
+              // (selectedFamiliarId falls through to the first visible familiar
+              // when the active one is unset or archived) — not the raw active
+              // id, which could be null or point at the hidden/archived one.
+              familiarId: selectedFamiliarId || null,
               cwd: selectedProject?.root ?? null,
               projectId: selectedProject?.id ?? null,
               // Files staged on the composer ride onto the task card. The route
@@ -626,7 +635,7 @@ export function HomeComposer({
             }),
           });
           const json = (await res.json().catch(() => ({ ok: false }))) as { ok: boolean };
-          if (json.ok) { setText(""); setAttachments([]); setEnhanceOriginal(null); onNavigateToBoard(); }
+          if (json.ok) { setText(""); writeHomeDraft(""); setAttachments([]); setEnhanceOriginal(null); onNavigateToBoard(); }
           else onToast("Board card creation failed.");
           break;
         }

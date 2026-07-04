@@ -69,8 +69,8 @@ assert.match(
 
 assert.match(
   source,
-  /body: JSON\.stringify\(\{[\s\S]*?title: prompt,[\s\S]*?familiarId: activeFamiliarId \?\? null,[\s\S]*?cwd: selectedProject\?\.root \?\? null,[\s\S]*?projectId: selectedProject\?\.id \?\? null,[\s\S]*?\}\)/,
-  "HomeComposer should attach the selected project to task creation",
+  /body: JSON\.stringify\(\{[\s\S]*?title: prompt,[\s\S]*?familiarId: selectedFamiliarId \|\| null,[\s\S]*?cwd: selectedProject\?\.root \?\? null,[\s\S]*?projectId: selectedProject\?\.id \?\? null,[\s\S]*?\}\)/,
+  "HomeComposer should attach the selected project to task creation, crediting the selector's resolved familiar (not the raw active id)",
 );
 
 assert.match(
@@ -153,8 +153,8 @@ assert.match(
 
 assert.match(
   source,
-  /if \(json\.ok\) \{ setText\(""\); setAttachments\(\[\]\); setEnhanceOriginal\(null\); onNavigateToBoard\(\); \}/,
-  "HomeComposer should clear staged attachments after a successful board card creation",
+  /if \(json\.ok\) \{ setText\(""\); writeHomeDraft\(""\); setAttachments\(\[\]\); setEnhanceOriginal\(null\); onNavigateToBoard\(\); \}/,
+  "HomeComposer should clear staged attachments (and the persisted draft) after a successful board card creation",
 );
 
 assert.match(
@@ -420,6 +420,15 @@ assert.match(
   source,
   /useEffect\(\(\) => \{\s*const timer = window\.setTimeout\(\(\) => \{\s*writeHomeDraft\(text\);\s*\}, HOME_DRAFT_WRITE_DELAY_MS\);\s*return \(\) => window\.clearTimeout\(timer\);\s*\}, \[text\]\)/,
   "the home draft is debounced so mobile typing does not write localStorage on every keystroke",
+);
+// A send unmounts the composer (mode switches to chat/board), which cancels the
+// debounced draft-write before it can flush the cleared text — so the submit
+// path must clear the persisted draft synchronously, or the sent prompt
+// resurrects on the next Home visit.
+assert.match(
+  source,
+  /setText\(""\);\s*(?:\/\/[^\n]*\n\s*)*writeHomeDraft\(""\);/,
+  "the chat send path clears the persisted draft synchronously (not only via the debounced effect)",
 );
 assert.match(
   source,
