@@ -28,6 +28,8 @@ function parseArgs(argv: string[]): Options {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     switch (arg) {
+      case "--":
+        break;
       case "--repo":
         opts.repo = argv[++i] ?? null;
         break;

@@ -89,7 +89,7 @@ assert.deepEqual(dryRun.summaries[0].beadIds, ["cave-hlv.5"], "bridge should dis
 assert.equal(dryRun.beadUpdates.length, 2, "bridge should plan linked bead updates for all open PRs by default");
 assert.throws(() => readFileSync(bdLog, "utf8"), /ENOENT/, "dry-run mode must not call bd");
 
-const filtered = JSON.parse(run(["--repo", "OpenCoven/coven-cave", "--pr", "42", "--json"]));
+const filtered = JSON.parse(run(["--repo", "OpenCoven/coven-cave", "--json", "--", "--pr", "42"]));
 assert.equal(filtered.summaries.length, 1, "PR filter should narrow the report to one PR");
 assert.equal(filtered.beadUpdates[0].id, "cave-hlv.5", "PR filter should plan only the selected PR's bead update");
 
