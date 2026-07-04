@@ -76,12 +76,21 @@ export async function GET(req: Request) {
 
   const mode = url.searchParams.get("mode") ?? "ready";
   const id = url.searchParams.get("id")?.trim();
-  const args =
-    mode === "prime"
-      ? ["prime"]
-      : mode === "show" && id
-        ? ["show", id, "--json"]
-        : ["ready", "--json"];
+  let args: string[];
+  switch (mode) {
+    case "prime":
+      args = ["prime"];
+      break;
+    case "show":
+      if (!id) return NextResponse.json({ ok: false, error: "id required for mode=show" }, { status: 400 });
+      args = ["show", id, "--json"];
+      break;
+    case "ready":
+      args = ["ready", "--json"];
+      break;
+    default:
+      return NextResponse.json({ ok: false, error: "unsupported mode" }, { status: 400 });
+  }
   const result = await runBd(root.repoRoot, root.beadsDir, args);
   if (!result.ok) {
     return NextResponse.json(

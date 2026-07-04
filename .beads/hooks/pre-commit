@@ -117,7 +117,6 @@ EOF
 fi
 
 info "ok (${#STAGED_FILES[@]} files scanned)"
-exit 0
 
 # --- BEGIN BEADS INTEGRATION v1.0.5 ---
 # This section is managed by beads. Do not remove these markers.
@@ -151,3 +150,5 @@ if command -v bd >/dev/null 2>&1; then
   if [ $_bd_exit -ne 0 ]; then exit $_bd_exit; fi
 fi
 # --- END BEADS INTEGRATION v1.0.5 ---
+
+exit 0

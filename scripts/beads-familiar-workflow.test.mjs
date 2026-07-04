@@ -12,6 +12,7 @@ const workflow = read("docs/workflows/beads-familiars.md");
 const beadsConfig = read(".beads/config.yaml");
 const beadsMetadata = JSON.parse(read(".beads/metadata.json"));
 const beadsExport = read(".beads/issues.jsonl").trim().split("\n").map((line) => JSON.parse(line));
+const beadsPreCommitHook = read(".beads/hooks/pre-commit");
 const apiRoute = read("src/app/api/beads/route.ts");
 const apiContracts = read("src/app/api/api-contracts.test.ts");
 
@@ -58,16 +59,18 @@ assert.match(workflow, /No secrets in bead text/, "workflow doc should include t
 assert.match(workflow, /\.beads\/issues\.jsonl is an export, not the sync protocol/, "workflow doc should prevent JSONL sync misuse");
 assert.match(workflow, /public-scrubbed before committing/, "workflow doc should require public-safe JSONL review exports");
 assert.match(workflow, /bd dolt pull[\s\S]*bd dolt push/, "workflow doc should name Dolt sync commands");
+assert.doesNotMatch(
+  beadsPreCommitHook,
+  /info "ok \(\$\{#STAGED_FILES\[@\]\} files scanned\)"\nexit 0[\s\S]*BEGIN BEADS INTEGRATION/,
+  "the repo pre-commit scan must not exit before the managed Beads hook runs",
+);
 
 assert.match(apiContracts, /\{ route: "\/beads", methods: \["GET", "POST"\]/, "the Beads API route must be covered by route contracts");
 assert.match(apiRoute, /export async function GET/, "Beads route should expose GET for ready/show/prime reads");
 assert.match(apiRoute, /export async function POST/, "Beads route should expose POST for claim/comment/close mutations");
-assert.match(apiRoute, /rejectNonLocalRequest\(req\)/, "Beads mutations must stay local-only");
-assert.match(
-  apiRoute,
-  /export async function GET[\s\S]{0,200}rejectNonLocalRequest\(req\)/,
-  "Beads GET reads must also apply the local-origin guard",
-);
+assert.match(apiRoute, /export async function GET[\s\S]*rejectNonLocalRequest\(req\)/, "Beads reads must stay local-only");
+assert.match(apiRoute, /export async function POST[\s\S]*rejectNonLocalRequest\(req\)/, "Beads mutations must stay local-only");
+assert.match(apiRoute, /id required for mode=show/, "explicit show requests should fail clearly when id is missing");
 assert.match(apiRoute, /readJsonBody<[\s\S]*MAX_SESSION_JSON_BYTES/, "Beads mutations must use the bounded JSON body helper");
 assert.match(apiRoute, /execFileAsync\("bd"/, "Beads route should call bd through argv arrays, not shell strings");
 assert.match(apiRoute, /case "claim":[\s\S]*"--claim"/, "Beads POST should support atomic familiar claiming");
