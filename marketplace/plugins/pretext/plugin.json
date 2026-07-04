@@ -1,0 +1,58 @@
+{
+  "name": "pretext",
+  "version": "0.1.0",
+  "description": "DOM-free multiline text measurement & layout for web UIs via @chenglou/pretext \u2014 get wrapped height, line count, and per-line ranges from pure arithmetic, with no getBoundingClientRect/offsetHeight reflow. Powers list virtualization, layout-shift prevention, CI-time overflow checks, multiline shrink-wrap / balanced text, and manual line rendering to Canvas/SVG/WebGL.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "pretext",
+    "text-measurement",
+    "text-layout",
+    "line-breaking",
+    "virtualization",
+    "layout-shift",
+    "canvas",
+    "typography",
+    "intl-segmenter",
+    "chenglou"
+  ],
+  "capabilities": [
+    "read_files",
+    "write_files"
+  ],
+  "marketplaceId": "opencoven/pretext",
+  "x-coven": {
+    "displayName": "Pretext \u2014 Text Measurement & Layout",
+    "category": "Design & UI",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/chenglou/pretext",
+      "https://github.com/chenglou/pretext/blob/main/README.md",
+      "https://github.com/chenglou/pretext/blob/main/PLATFORM_BUGS.md",
+      "https://www.npmjs.com/package/@chenglou/pretext",
+      "https://chenglou.me/pretext/",
+      "https://github.com/chenglou/text-layout"
+    ],
+    "roleAffinity": [
+      {
+        "familiar": "cody",
+        "roles": [
+          "implementer",
+          "code-reviewer",
+          "debugger"
+        ]
+      }
+    ],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": true
+    }
+  }
+}
