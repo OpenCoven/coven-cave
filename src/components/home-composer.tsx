@@ -17,6 +17,7 @@ import {
   useState,
 } from "react";
 import { ComposerHostChip } from "@/components/composer-host-chip";
+import { ProjectAvatar } from "@/components/project-avatar";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
@@ -1119,7 +1120,16 @@ export function HomeComposer({
             </label>
 
             <label className="hc-familiar-selector hc-project-selector">
-              <Icon name="ph:folder" width={13} className="hc-familiar-glyph" aria-hidden />
+              {selectedProject && selectedProjectId !== NO_PROJECT_ID ? (
+                <ProjectAvatar
+                  name={selectedProject.name}
+                  root={selectedProject.root}
+                  color={selectedProject.color}
+                  size="sm"
+                />
+              ) : (
+                <Icon name="ph:folder" width={13} className="hc-familiar-glyph" aria-hidden />
+              )}
               <select
                 aria-label="Choose project"
                 className="hc-familiar-select"

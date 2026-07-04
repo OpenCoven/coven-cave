@@ -298,8 +298,9 @@ assert.match(projectsView, /const stats = projectStats\(chats\)/, "the header de
 assert.match(projectsView, /stats\.running > 0 \?/, "the stat line shows a running count when any session is running");
 assert.match(projectsView, /stats\.tasks > 0 \?/, "the stat line shows a task count when the project has tasks");
 
-// The project folder icon is tinted by the project's color (when set).
-assert.match(projectsView, /color: project\.color \|\| "var\(--accent-presence\)"/, "the folder icon takes the project color, falling back to the accent");
+// The project identity tile is the shared ProjectAvatar (uploaded image or
+// monogram), tinted by the project's color when set.
+assert.match(projectsView, /<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\}/, "the identity tile is the shared ProjectAvatar, fed the project color");
 
 // A project card expands + scrolls into view when the command palette's
 // "Open project" navigation fires CHAT_FOCUS_PROJECT_EVENT for its root.
