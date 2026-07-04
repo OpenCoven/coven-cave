@@ -43,6 +43,15 @@ test("mobile tailscale app mode serves the native client with no token", () => {
   assert.match(script, /PORT="\$PORT"/);
 });
 
+test("mobile tailscale runner can use an explicit Tailscale binary", () => {
+  assert.match(script, /TAILSCALE_BIN="\$\{TAILSCALE_BIN:-tailscale\}"/);
+  assert.match(script, /node - "\$TAILSCALE_TIMEOUT_MS" "\$TAILSCALE_BIN" "\$@"/);
+  assert.match(script, /const \[timeoutMsRaw, bin, \.\.\.args\]/);
+  assert.match(script, /spawnSync\(bin, args/);
+  assert.match(script, /need "\$TAILSCALE_BIN"/);
+  assert.match(script, /command -v "\$TAILSCALE_BIN"/);
+});
+
 test("mobile tailscale app mode falls back to Tailscale IP HTTP when MagicDNS is missing", () => {
   assert.match(script, /tailscale_ip_host\(\)/);
   assert.match(script, /Array\.isArray\(rawIps\)/);

@@ -98,6 +98,34 @@ function backendUrl(req: Request) {
   return `http://127.0.0.1:${port}`;
 }
 
+function normalizeLoopbackBackend(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:") return null;
+    if (!["127.0.0.1", "localhost", "::1"].includes(url.hostname)) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function nativeAppBackendUrl(req: Request) {
+  const configured = normalizeLoopbackBackend(process.env.COVEN_CAVE_NATIVE_APP_BACKEND_URL);
+  if (configured) return configured;
+
+  // The packaged desktop app runs an authenticated sidecar on a random loopback
+  // port. The native SwiftUI iOS app is tokenless and trusts Tailscale instead,
+  // so publishing the packaged port makes the iPhone hit 401. In bundled mode,
+  // reconcile the native route against the tokenless app server started by
+  // `pnpm mobile:tailscale:app` instead of the packaged sidecar itself.
+  if (process.env.COVEN_CAVE_BUNDLE === "1" && process.env.COVEN_CAVE_TAILNET_TRUST !== "1") {
+    return "http://127.0.0.1:3000";
+  }
+
+  return backendUrl(req);
+}
+
 function backendPort(backend: string) {
   try {
     return new URL(backend).port || process.env.PORT || "3000";
@@ -106,7 +134,46 @@ function backendPort(backend: string) {
   }
 }
 
+async function verifyNativeAppBackend(req: Request, backend: string) {
+  if (backend === backendUrl(req)) return { ok: true as const };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1500);
+  try {
+    const res = await fetch(new URL("/api/familiars", backend), {
+      headers: { accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (res.ok) return { ok: true as const };
+    const authHint =
+      res.status === 401 || res.status === 403
+        ? " The backend is still token-gated; start the tokenless native app server with `pnpm mobile:tailscale:app`."
+        : "";
+    return {
+      ok: false as const,
+      error: `native app backend ${backend} returned HTTP ${res.status}.${authHint}`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      ok: false as const,
+      error: `native app backend ${backend} is not ready. Run \`pnpm mobile:tailscale:app\` first. (${message})`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function ensureNativeAppServe(req: Request) {
+  const backend = nativeAppBackendUrl(req);
+  const backendReady = await verifyNativeAppBackend(req, backend);
+  if (!backendReady.ok) {
+    return NextResponse.json(
+      { ok: false, error: backendReady.error, backendUrl: backend },
+      { status: 503 },
+    );
+  }
+
   const self = await runTailscale(["status", "--self", "--json"]);
   if (!self.ok) {
     return NextResponse.json(
@@ -117,7 +184,6 @@ async function ensureNativeAppServe(req: Request) {
 
   const parsedSelf = parseServeStatus(self.stdout);
   const selfStatus: unknown = "error" in parsedSelf ? null : parsedSelf.value;
-  const backend = backendUrl(req);
   const serve = await runTailscale(["serve", "--bg", backend]);
   const serveWarning = serve.ok
     ? null
