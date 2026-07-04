@@ -230,7 +230,9 @@
 .flow-node-phase-dot-running { background: var(--color-warning); }
 .flow-node-phase-dot-succeeded { background: var(--color-success); }
 .flow-node-phase-dot-failed { background: var(--color-danger); }
-.flow-node-phase-dot-skipped { background: var(--border); }
+/* Skipped: hollow dashed square — shape + fill differ from every other
+   phase so it's never ambiguous in either light or dark mode. */
+.flow-node-phase-dot-skipped { background: transparent; outline: 1.5px dashed var(--text-muted); border-radius: 2px; opacity: 0.55; }
 .flow-node-spinner { display: block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid color-mix(in oklch, var(--color-warning) 30%, transparent); border-top-color: var(--color-warning); animation: flow-spin 0.7s linear infinite; }
 .flow-node-phase-running { box-shadow: 0 0 0 2px color-mix(in oklch, var(--color-warning) 40%, transparent), 0 10px 30px rgb(0 0 0 / 30%); }
 .flow-node-phase-failed { border-color: var(--color-danger); }
@@ -533,7 +535,13 @@
 .flow-exec-step-running { background: var(--color-warning); }
 .flow-exec-step-succeeded { background: var(--color-success); }
 .flow-exec-step-failed { background: var(--color-danger); }
-.flow-exec-step-skipped { background: var(--bg-hover); }
+/* Skipped bars: square corners (vs 2px radius on others) add shape coding
+   so status is never color-alone, even for small 5px-tall bars. */
+.flow-exec-step-skipped { background: var(--bg-hover); border-radius: 0; }
+/* Light-mode contrast: default pending bars (--border = 12% foreground) are
+   near-invisible on near-white surfaces; lift to 20% for legibility. */
+:root[data-mode="light"] .flow-exec-step { background: color-mix(in oklch, var(--foreground) 20%, transparent); }
+:root[data-mode="light"] .flow-exec-step-skipped { background: color-mix(in oklch, var(--foreground) 10%, transparent); }
 .flow-exec-open { flex: none; padding: 5px 11px; font-size: var(--text-sm); font-weight: 500; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg-elevated); color: var(--text-primary); cursor: pointer; }
 .flow-exec-open:hover { border-color: color-mix(in oklch, var(--accent-presence) 50%, var(--border)); }
 

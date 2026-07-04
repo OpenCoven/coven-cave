@@ -1885,6 +1885,18 @@ textarea.required-inputs-control {
   letter-spacing: var(--tracking-eyebrow);
 }
 
+/* Light-mode: --color-danger-soft (L≈0.70) fails AA contrast on near-white.
+   Swap to --color-danger (L≈0.52) for foreground text only; backgrounds and
+   borders may keep the soft variant since they don't carry text. */
+:root[data-mode="light"] .ui-lifecycle-badge[data-lifecycle="failed"],
+:root[data-mode="light"] .ui-lifecycle-badge[data-needs-human="true"],
+:root[data-mode="light"] .ui-lifecycle-needs-human,
+:root[data-mode="light"] .ui-btn--danger-ghost,
+:root[data-mode="light"] .ui-popover-item--danger,
+:root[data-mode="light"] .cave-project-picker__error {
+  color: var(--color-danger);
+}
+
 /* ---- Chooser list buttons (three-option chooser) ----------- */
 .ui-chooser-list {
   display: flex;
