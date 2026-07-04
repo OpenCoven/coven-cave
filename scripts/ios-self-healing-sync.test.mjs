@@ -46,6 +46,18 @@ assert.match(
   "foreground retry should also converge loaded surfaces after a successful reconnect",
 );
 
+// --- New host handoff: do not show stale old-host data while probing the new one
+assert.match(
+  model,
+  /func configure\(host: String, token: String\? = nil\) async \{[\s\S]*?let isSameEndpoint[\s\S]*?if !isSameEndpoint \{[\s\S]*?resetHostScopedStateForNewConnection\(\)/,
+  "configuring a different host should clear host-scoped data before probing it",
+);
+assert.match(
+  model,
+  /private func resetHostScopedStateForNewConnection\(\) \{[\s\S]*?familiars = \[\][\s\S]*?sessionsLoaded = false[\s\S]*?tasksLoaded = false[\s\S]*?remindersLoaded = false[\s\S]*?projectsLoaded = false[\s\S]*?journalLoaded = false/,
+  "new-host reset should drop loaded-surface flags so .checking shows the connection flow instead of stale data",
+);
+
 // --- Auth failures: expired pairing goes to pairing guidance, not generic offline
 assert.match(model, /private func handleSurfaceError\(_ error: Error\) -> String/, "surface loads should share error handling");
 assert.match(

@@ -588,10 +588,34 @@ final class AppModel {
             // credential to a newly configured host from a tokenless invite.
             CaveConnection.saveAccessToken(nil)
         }
+        if !isSameEndpoint {
+            resetHostScopedStateForNewConnection()
+        }
 
         connection = conn
         conn.save()
         await refreshConnection()
+    }
+
+    private func resetHostScopedStateForNewConnection() {
+        familiars = []
+        familiarsError = nil
+        sessionsLoaded = false
+        tasks = []
+        tasksError = nil
+        tasksLoaded = false
+        reminders = []
+        remindersError = nil
+        remindersLoaded = false
+        projects = []
+        projectsError = nil
+        projectsLoaded = false
+        journalDays = []
+        journalError = nil
+        journalLoaded = false
+        chrome = .fallback
+        publishedThemeId = nil
+        publishedMode = nil
     }
 
     func disconnect() {
