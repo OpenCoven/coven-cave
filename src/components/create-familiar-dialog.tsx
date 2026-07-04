@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
@@ -54,6 +55,7 @@ export function CreateFamiliarDialog({
   defaultHarness,
   onCreated,
 }: Props) {
+  const { announce } = useAnnouncer();
   const [name, setName] = useState("");
   const [idOverride, setIdOverride] = useState<string | null>(null);
   const [glyph, setGlyph] = useState<string>(DEFAULT_GLYPH);
@@ -129,7 +131,9 @@ export function CreateFamiliarDialog({
       });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; id?: string; error?: string };
       if (!res.ok || !json.ok) {
-        setError(json.error ?? `Could not create familiar (HTTP ${res.status}).`);
+        const msg = json.error ?? `Could not create familiar (HTTP ${res.status}).`;
+        setError(msg);
+        announce(msg, "assertive");
         setSubmitting(false);
         return;
       }
@@ -149,9 +153,12 @@ export function CreateFamiliarDialog({
       }
       reset();
       onCreated(newId);
+      announce(`${name.trim() || "Familiar"} created`, "polite");
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create familiar.");
+      const msg = err instanceof Error ? err.message : "Could not create familiar.";
+      setError(msg);
+      announce(msg, "assertive");
       setSubmitting(false);
     }
   }

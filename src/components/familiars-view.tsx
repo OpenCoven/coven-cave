@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Tabs } from "@/components/ui/tabs";
 // Shared relative-time formatter, imported as `age` so the call sites read the
 // same — standardizes this surface on the app-wide "2m ago / 3h ago / Jun 12" style.
@@ -515,16 +516,9 @@ type AgentMemoryOverlayProps = {
 };
 
 function FamiliarMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile }: AgentMemoryOverlayProps) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Trap focus inside the panel + Escape-to-close + restore focus to the opener.
+  useFocusTrap(true, panelRef, { onEscape: onClose });
 
   return (
     <div
@@ -535,7 +529,9 @@ function FamiliarMemoryOverlay({ familiars, familiar, onClose, onOpenMemoryFile 
       onClick={onClose}
     >
       <div
-        className="familiars-view__overlay-panel relative flex h-[100dvh] w-full flex-col overflow-hidden border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl md:h-[85vh] md:w-[90vw] md:max-w-[1280px] md:rounded-xl"
+        ref={panelRef}
+        tabIndex={-1}
+        className="familiars-view__overlay-panel relative flex h-[100dvh] w-full flex-col overflow-hidden border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-2xl focus:outline-none md:h-[85vh] md:w-[90vw] md:max-w-[1280px] md:rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
