@@ -41,16 +41,8 @@ assert.match(
   "strip marks all selected familiars active (falls back to the single active id)",
 );
 assert.match(source, /<FamiliarAvatar familiar=\{f\} size="sm" \/>/, "renders each familiar's avatar");
-assert.match(
-  source,
-  /className=\{`familiar-quickswitch__presence \$\{presence\.dot\}`\}/,
-  "strip avatars carry a presence dot",
-);
-assert.match(
-  source,
-  /isPinned \? <span className="familiar-quickswitch__pin"/,
-  "pinned familiars show a pin badge in the strip",
-);
+// Presence dot and pin badge were removed — the avatar alone carries presence
+// context (title text still includes pinned state for accessibility).
 
 // The strip honors the user's preference — "dropdown" hides it, leaving only
 // the switcher menu.
