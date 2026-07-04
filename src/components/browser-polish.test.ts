@@ -172,4 +172,16 @@ assert.match(pane, /if \(h\.stack\[h\.idx\] === evUrl\) \{/, "page-load history 
 assert.match(pane, /then\(\(fn\) => \{ if \(cancelled\) fn\(\); else unlisten/, "async listen() unlistens if the effect was already torn down");
 assert.match(pane, /if \(document\.visibilityState !== "visible" \|\| now - lastRun < 100\) return;/, "the bounds-reconcile rAF loop is throttled + idle-gated");
 
+// ───────── a11y: tab strip is a real tablist ─────────
+assert.match(pane, /role="tablist" aria-orientation="vertical"/, "tab strip is a tablist");
+assert.match(pane, /role="tab"\n\s*tabIndex=\{0\}/, "each tab uses role=tab");
+assert.match(pane, /aria-selected=\{isActive\}/, "the active tab is announced via aria-selected");
+assert.doesNotMatch(pane, /aria-pressed=\{isActive\}/, "tabs use aria-selected, not aria-pressed");
+assert.match(pane, /aria-label=\{`Close tab: \$\{title\}`\}/, "the close button names its tab");
+assert.match(pane, /aria-label="Address bar"/, "the address input is labeled");
+assert.match(pane, /inert=\{!toolbarOpen \|\| undefined\}/, "the collapsed toolbar is inert (its controls leave the tab order)");
+// quick-open palette is a focus-trapped dialog
+assert.match(qo, /role="dialog"\n\s*aria-modal="true"/, "quick-open palette is an aria-modal dialog");
+assert.match(qo, /useFocusTrap\(true, cardRef, \{ onEscape: onClose/, "quick-open traps focus + restores it on close");
+
 console.log("browser-polish.test.ts: ok");

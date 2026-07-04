@@ -795,6 +795,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
           >
             <Icon name="ph:magnifying-glass" width={13} />
           </button>
+        <div role="tablist" aria-orientation="vertical" aria-label="Browser tabs" className="flex w-full flex-col items-center">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const title = shortTitle(tab.url, tabTitles[tab.id] ?? tab.title);
@@ -802,10 +803,10 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
           return (
             <div
               key={tab.id}
-              role="button"
+              role="tab"
               tabIndex={0}
               aria-label={tabTitles[tab.id] ?? tab.title ?? tab.url}
-              aria-pressed={isActive}
+              aria-selected={isActive}
               onClick={() => switchTab(tab.id)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -841,6 +842,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
                 <button
                   onClick={(e) => removeTab(tab.id, e)}
                   className="touch-always-visible focus-ring absolute top-1 right-1 rounded opacity-0 group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 text-[var(--fg-muted)] transition-opacity"
+                  aria-label={`Close tab: ${title}`}
                   title="Close tab"
                 >
                   <Icon name="ph:x-bold" width={7} />
@@ -849,6 +851,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
             </div>
           );
         })}
+        </div>
         {/* Spacer */}
         <div className="flex-1" />
         {/* Pin current page */}
@@ -877,6 +880,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
             toolbarOpen ? "translate-y-0" : "pointer-events-none -translate-y-full",
           ].join(" ")}
           aria-hidden={!toolbarOpen}
+          inert={!toolbarOpen || undefined}
         >
           {/* Back */}
           <button type="button" onClick={goBack} disabled={!canBack}
@@ -916,6 +920,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               value={addressBar}
               onChange={(e) => setAddressBar(e.target.value)}
               onFocus={(e) => e.currentTarget.select()}
+              aria-label="Address bar"
               placeholder="Search or enter address"
               className="browser-address-input focus-ring-inset flex-1 rounded bg-transparent text-[12px] text-[var(--fg-base)]"
             />

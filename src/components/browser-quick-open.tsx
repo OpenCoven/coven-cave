@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import type { BrowserTab } from "@/components/browser-pane";
 
 // ── BrowserQuickOpen ──────────────────────────────────────────────────────────
@@ -47,6 +48,10 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
   const [highlightIdx, setHighlightIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Trap focus + Escape + restore focus to the trigger on close (the palette is
+  // a modal overlay but previously leaked Tab to the page behind it).
+  useFocusTrap(true, cardRef, { onEscape: onClose, focusFirst: false });
 
   // Focus input on mount
   useEffect(() => {
@@ -102,6 +107,10 @@ export function BrowserQuickOpen({ tabs, activeId, onSelect, onClose }: Props) {
       onClick={onClose}
     >
       <div
+        ref={cardRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Jump to tab"
         onClick={(e) => e.stopPropagation()}
         className="w-[420px] max-w-[92vw] overflow-hidden rounded-2xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] shadow-2xl"
       >
