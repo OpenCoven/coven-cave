@@ -29,6 +29,8 @@
  * fallback chains, or editing pair choices.
  */
 
+import Script from "next/script";
+
 const THEME_SCRIPT = `
 (function () {
   try {
@@ -138,8 +140,9 @@ const THEME_SCRIPT = `
  */
 export function ThemeScript() {
   return (
-    <script
+    <Script
       id="theme-init"
+      strategy="beforeInteractive"
       // biome-ignore lint/security/noDangerouslySetInnerHtml: intentional flash-prevention inline script
       dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }}
     />
