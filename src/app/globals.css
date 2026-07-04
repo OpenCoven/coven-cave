@@ -5885,10 +5885,10 @@ button:active > .edge-rail-chip {
 .familiar-quickswitch__strip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  /* no gap — items overlap by default; spacing animates on hover */
+  gap: 0;
   margin: 0;
-  /* vertical room so scaled avatars aren't clipped by the scrollport */
-  padding: 4px 0;
+  padding: 4px 2px;
   list-style: none;
   min-width: 0;
   overflow-x: auto;
@@ -5903,6 +5903,23 @@ button:active > .edge-rail-chip {
 .familiar-quickswitch__item {
   flex: 0 0 auto;
   overflow: visible;
+  /* stack avatars: each item after the first overlaps 10px */
+  margin-left: -10px;
+  transition: margin 300ms ease-out;
+  will-change: margin;
+}
+
+/* first item has no leading overlap */
+.familiar-quickswitch__item:first-child {
+  margin-left: 0;
+}
+
+/* on strip hover: fan out to give each item breathing room */
+.familiar-quickswitch__strip:hover .familiar-quickswitch__item {
+  margin-left: 4px;
+}
+.familiar-quickswitch__strip:hover .familiar-quickswitch__item:first-child {
+  margin-left: 0;
 }
 
 .familiar-quickswitch__btn {
@@ -5918,24 +5935,26 @@ button:active > .edge-rail-chip {
   background: var(--bg-raised);
   color: var(--text-secondary);
   cursor: pointer;
-  transform-origin: bottom center;
+  /* ring separator so stacked avatars read as distinct */
+  box-shadow: 0 0 0 2px var(--bg-base);
   will-change: transform;
-  /* spring overshoot on scale; standard curve on colour props */
-  transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+  transition: transform 300ms ease-out,
               background 140ms var(--ease-standard),
               border-color 140ms var(--ease-standard),
               box-shadow 140ms var(--ease-standard);
 }
 
 .familiar-quickswitch__btn:hover {
-  transform: scale(1.18);
+  transform: translateY(-2px);
+  z-index: 10;
   background: var(--bg-hover);
   border-color: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 45%, var(--border-hairline));
 }
 
 .familiar-quickswitch__btn.is-active {
   border-color: var(--familiar-accent, var(--accent-presence));
-  box-shadow: 0 0 0 1px var(--familiar-accent, var(--accent-presence));
+  box-shadow: 0 0 0 2px var(--bg-base),
+              0 0 0 3px var(--familiar-accent, var(--accent-presence));
 }
 
 .familiar-quickswitch__avatar {
@@ -5952,6 +5971,9 @@ button:active > .edge-rail-chip {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .familiar-quickswitch__item {
+    transition: none;
+  }
   .familiar-quickswitch__btn {
     transition: background 140ms var(--ease-standard),
                 border-color 140ms var(--ease-standard),
