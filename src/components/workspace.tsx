@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { SidebarMinimal } from "@/components/sidebar-minimal";
 import { groupInboxFeed } from "@/lib/inbox-feed";
@@ -344,9 +344,15 @@ export function Workspace() {
   // Render mirror of the ref: while the deep link awaits the sessions fetch
   // the shell shows an "Opening chat…" takeover instead of flashing Home —
   // that wait is ~2s warm but stretches under a cold dev-server compile.
-  const [chatDeepLinkPending, setChatDeepLinkPending] = useState<boolean>(
-    () => pendingChatDeepLinkRef.current !== null,
-  );
+  // The hash is only readable client-side, so the flag must start false to
+  // match SSR's first render (seeding it from the ref made every #chat- URL
+  // a hydration mismatch that regenerated the whole tree); the layout effect
+  // flips it before first paint, so the takeover still shows without a
+  // Home flash.
+  const [chatDeepLinkPending, setChatDeepLinkPending] = useState(false);
+  useLayoutEffect(() => {
+    if (pendingChatDeepLinkRef.current !== null) setChatDeepLinkPending(true);
+  }, []);
   // Refs for the popstate listener — sessions repoll every 4s and mode flips
   // often; the listener should not resubscribe on either.
   const sessionsRef = useRef(sessions);

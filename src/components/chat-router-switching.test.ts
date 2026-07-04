@@ -134,10 +134,20 @@ assert.match(
 // ── Deep-link loading hint (2026-07-04) ─────────────────────────────────────
 // The restore holds until the sessions fetch settles (~2s warm, longer under a
 // cold compile) — the shell must show intent for that beat, not flash Home.
+// REGRESSION (2026-07-04): seeding this state from the mount-time hash made
+// every #chat- URL a hydration mismatch (SSR renders false — the hash is
+// client-only), which regenerated the whole tree and spewed theme-script
+// console errors. It must start false and flip in a LAYOUT effect: that runs
+// before first paint, so the takeover still appears without a Home flash.
 assert.match(
   workspaceSource,
-  /const \[chatDeepLinkPending, setChatDeepLinkPending\] = useState<boolean>\(\s*\(\) => pendingChatDeepLinkRef\.current !== null,\s*\)/,
-  "the pending deep link mirrors into render state seeded from the mount-time hash",
+  /const \[chatDeepLinkPending, setChatDeepLinkPending\] = useState\(false\);\s*useLayoutEffect\(\(\) => \{\s*if \(pendingChatDeepLinkRef\.current !== null\) setChatDeepLinkPending\(true\);\s*\}, \[\]\);/,
+  "the pending flag starts hydration-safe (false) and reveals pre-paint via useLayoutEffect",
+);
+assert.doesNotMatch(
+  workspaceSource,
+  /useState<boolean>\(\s*\(\) => pendingChatDeepLinkRef\.current !== null,?\s*\)/,
+  "the hash-seeded initializer (hydration mismatch on #chat- URLs) must not return",
 );
 assert.match(
   restoreEffect,
