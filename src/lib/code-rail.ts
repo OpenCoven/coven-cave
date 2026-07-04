@@ -1,0 +1,54 @@
+export type CodeRailTab = "changes" | "files" | "terminal";
+
+export type CodeRailSignals = {
+  /** Active session is linked to a project/repo (session.project_root set). */
+  hasRepo: boolean;
+  /** Number of pending AI edits (from /api/changes). 0 = none. */
+  changeCount: number;
+  /** A pty/terminal session is running for this conversation. */
+  terminalActive: boolean;
+  /** User pinned the rail open (persisted preference). */
+  pinned: boolean;
+  /** User collapsed the rail for the current reason. */
+  dismissed: boolean;
+};
+
+export type CodeRailState = {
+  /** Rail is rendered at all (there is something to show). */
+  available: boolean;
+  open: boolean;
+  activeTab: CodeRailTab;
+  /** Echoed so the caller can feed it back as `prev` next tick. */
+  changeCount: number;
+};
+
+/**
+ * Pure reveal/hide/tab decision for the code rail. `prev` is the last resolved
+ * state (or null on first render) — used to detect a fresh 0→N edit batch, which
+ * re-reveals the rail even after a manual collapse.
+ */
+export function resolveCodeRail(
+  signals: CodeRailSignals,
+  prev: CodeRailState | null,
+): CodeRailState {
+  const { hasRepo, changeCount, terminalActive, pinned, dismissed } = signals;
+  const available = hasRepo || changeCount > 0 || terminalActive;
+
+  if (!available) {
+    return { available: false, open: false, activeTab: prev?.activeTab ?? "files", changeCount: 0 };
+  }
+
+  // A fresh edit batch: changes went from 0 (or unknown) to > 0.
+  const newEdits = changeCount > 0 && (prev == null || prev.changeCount === 0);
+
+  const open = pinned ? true : newEdits ? true : dismissed ? false : true;
+
+  let activeTab: CodeRailTab;
+  if (newEdits) activeTab = "changes";
+  else if (prev?.activeTab) activeTab = prev.activeTab;
+  else if (changeCount > 0) activeTab = "changes";
+  else if (hasRepo) activeTab = "files";
+  else activeTab = "terminal";
+
+  return { available, open, activeTab, changeCount };
+}
