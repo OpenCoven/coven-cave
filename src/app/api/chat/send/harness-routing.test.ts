@@ -272,6 +272,11 @@ assert.match(
   /catch \(error\) \{[\s\S]*?closed = true;[\s\S]*?if \(!req\.signal\.aborted\) console\.warn/,
   "Native stream enqueue failures should mark the stream closed and avoid noisy abort-path errors",
 );
+assert.match(
+  chatRoute,
+  /const push = \(event: StreamEvent\) => \{[\s\S]*?if \(closed \|\| args\.req\.signal\.aborted\) return;[\s\S]*?controller\.enqueue\(sse\(event\)\);[\s\S]*?catch/,
+  "OpenClaw stream pushes should be ignored after close/abort so late child close/error output cannot enqueue into a cancelled stream",
+);
 assert.doesNotMatch(
   chatRoute,
   /saveConfig\([\s\S]*modelOverride/,
