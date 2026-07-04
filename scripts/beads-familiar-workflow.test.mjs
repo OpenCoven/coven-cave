@@ -20,16 +20,22 @@ assert.deepEqual(
   {
     prime: packageJson.scripts["beads:prime"],
     ready: packageJson.scripts["beads:ready"],
+    prs: packageJson.scripts["beads:prs"],
+    prsJson: packageJson.scripts["beads:prs:json"],
+    prsApply: packageJson.scripts["beads:prs:apply"],
     sync: packageJson.scripts["beads:sync"],
     doctor: packageJson.scripts["beads:doctor"],
   },
   {
     prime: "bd prime",
     ready: "bd ready --json",
+    prs: "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave",
+    prsJson: "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave --json",
+    prsApply: "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave --apply",
     sync: "bd dolt pull && bd dolt push",
     doctor: "bd doctor && bd lint",
   },
-  "package scripts should give familiars stable Beads entrypoints",
+  "package scripts should give familiars stable Beads and PR entrypoints",
 );
 
 assert.match(agents, /Beads Issue Tracker/, "AGENTS.md should install Beads issue tracking guidance");
@@ -59,6 +65,11 @@ assert.match(workflow, /No secrets in bead text/, "workflow doc should include t
 assert.match(workflow, /\.beads\/issues\.jsonl is an export, not the sync protocol/, "workflow doc should prevent JSONL sync misuse");
 assert.match(workflow, /public-scrubbed before committing/, "workflow doc should require public-safe JSONL review exports");
 assert.match(workflow, /bd dolt pull[\s\S]*bd dolt push/, "workflow doc should name Dolt sync commands");
+assert.match(workflow, /## Pull Request Management/, "workflow doc should include PR management guidance");
+assert.match(workflow, /pnpm beads:prs[\s\S]*pnpm beads:prs:apply/, "workflow doc should document PR bridge commands");
+assert.match(workflow, /draft PR[\s\S]*checks\/review loop[\s\S]*merge gate[\s\S]*post-merge cleanup/, "workflow doc should cover the full PR lifecycle");
+assert.match(workflow, /ready-to-merge[\s\S]*needs-review[\s\S]*checks-failing[\s\S]*changes-requested/, "workflow doc should name the PR control lanes");
+assert.match(workflow, /Do not close the bead before the merge or explicit completion/, "workflow doc should protect bead close evidence");
 assert.doesNotMatch(
   beadsPreCommitHook,
   /info "ok \(\$\{#STAGED_FILES\[@\]\} files scanned\)"\nexit 0[\s\S]*BEGIN BEADS INTEGRATION/,

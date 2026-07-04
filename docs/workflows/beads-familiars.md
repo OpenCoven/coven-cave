@@ -51,9 +51,48 @@ The package shortcuts are the stable entrypoints for familiars:
 ```bash
 pnpm beads:prime
 pnpm beads:ready
+pnpm beads:prs
+pnpm beads:prs:apply
 pnpm beads:doctor
 pnpm beads:sync
 ```
+
+## Pull Request Management
+
+GitHub remains the review and CI source of truth. Beads owns the familiar execution state around that PR: owner, worktree, branch, linked PR, current lane, final verification, and close evidence.
+
+Every PR-backed bead follows this lifecycle:
+
+1. Claim exactly one bead with `bd update <id> --claim`.
+2. Create an isolated branch or worktree whose name includes the bead ID, such as `feat/cave-hlv.5-pr-bridge`.
+3. Open a draft PR early once the patch is coherent enough for CI and review.
+4. Keep the checks/review loop in GitHub, but mirror concise state into the bead with the bridge.
+5. Enter the merge gate only after required checks are green, review threads are resolved, and the repository merge policy is satisfied.
+6. Perform post-merge cleanup: sync `main`, remove the merged branch/worktree, prune stale refs only when safe, and record cleanup in the bead.
+7. Do not close the bead before the merge or explicit completion; the close reason must include the PR number and verification evidence.
+
+The PR bridge is report-only by default:
+
+```bash
+pnpm beads:prs
+pnpm beads:prs:json
+```
+
+When the report looks correct, apply the bridge state to linked beads:
+
+```bash
+pnpm beads:prs:apply -- --pr <number>
+```
+
+The bridge discovers bead IDs from PR title, branch name, body, and labels such as `bead:cave-hlv.5`. It classifies PRs into the control lanes Cave should render:
+
+- `ready-to-merge` means the PR is approved, checks are passing, and GitHub reports a clean merge state.
+- `needs-review` means the PR has no blocking check failure but still needs review.
+- `checks-failing` means CI failed and the familiar should fix or triage logs before requesting more review.
+- `changes-requested` means review feedback must be addressed or explicitly answered.
+- `checks-pending`, `blocked`, and `draft` are waiting lanes and should not be merged.
+
+The merge gate is intentionally conservative. A familiar may prepare a PR for merge, but merge authority still follows repository policy and Val's explicit instructions. For guarded branches, do not merge because Beads says ready; Beads only records that the GitHub state appears ready.
 
 ## Cave Adapter
 
