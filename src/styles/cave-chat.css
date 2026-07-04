@@ -4323,6 +4323,120 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
+/* Files tab — a scrollable project tree stacked over a read-only preview. */
+.workspace-rail__files {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace-rail__files-tree {
+  flex: 0 0 45%;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.workspace-rail__files-preview {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.workspace-rail__files-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.workspace-rail__preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.workspace-rail__preview-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+
+.workspace-rail__preview-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.workspace-rail__preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+}
+
+.workspace-rail__preview-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workspace-rail__preview-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 160px;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.workspace-rail__preview-error svg {
+  color: var(--color-danger, #f87171);
+  opacity: 0.8;
+}
+
+.workspace-rail__preview-image {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.workspace-rail__preview-image img {
+  max-width: 100%;
+  object-fit: contain;
+  border: 1px solid var(--border-hairline);
+  border-radius: 6px;
+}
+
+.workspace-rail__preview-meta {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
 /* Collapsed code rail — a slim clickable strip on the surface's right edge
    that reopens the rail. Absolutely positioned so it overlays the chat gutter
    without reserving layout width. */

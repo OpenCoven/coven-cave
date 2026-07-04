@@ -107,4 +107,42 @@ test.describe("code rail beside chat", () => {
     await reopen.click();
     await expect(page.locator(".workspace-rail")).toBeVisible();
   });
+
+  test("(e) Files tab → project tree + read-only preview", async ({ page }) => {
+    const filesRef = { count: 0 };
+    await routeChanges(page, filesRef);
+    // Mock the file tree: a single readme file at the project root.
+    await page.route("**/api/project-tree**", (route) =>
+      route.fulfill({
+        json: {
+          ok: true,
+          entries: [{ name: "README.md", path: "/repo/alpha/README.md", isDir: false }],
+        },
+      }),
+    );
+    // Mock the read-only preview payload for that file.
+    await page.route("**/api/project-file**", (route) =>
+      route.fulfill({
+        json: { ok: true, kind: "text", content: "# Alpha\n\nHello world.", size: 22 },
+      }),
+    );
+
+    await base(page, [REPO_SESSION]);
+    await openSession(page, "Refactor auth flow");
+
+    const rail = page.locator(".workspace-rail");
+    await expect(rail).toBeVisible({ timeout: 30_000 });
+
+    // Switch to the Files tab — the placeholder is gone and the tree appears.
+    await rail.getByRole("button", { name: "Files" }).click();
+    await expect(rail.locator(".workspace-rail__files")).toBeVisible();
+    await expect(rail.locator(".workspace-rail__soon")).toHaveCount(0);
+    await expect(rail.locator('[role="tree"]')).toBeVisible({ timeout: 15_000 });
+
+    // Empty preview until a file is picked, then read-only content renders.
+    await expect(rail.locator(".workspace-rail__files-empty")).toBeVisible();
+    await rail.getByText("README.md", { exact: false }).first().click();
+    await expect(rail.locator(".workspace-rail__preview")).toBeVisible({ timeout: 15_000 });
+    await expect(rail.locator(".workspace-rail__preview-name")).toContainText("README.md");
+  });
 });

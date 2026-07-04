@@ -588,6 +588,8 @@ export function ChatSurface({
                     changeCount={changeCount}
                     activeTab={rail.activeTab}
                     pinned={rail.pinned}
+                    projectRoot={railProjectRoot}
+                    familiarId={snapshot.familiar?.id ?? null}
                     onSelectTab={rail.setActiveTab}
                     onTogglePin={rail.togglePin}
                     onCollapse={rail.collapse}
