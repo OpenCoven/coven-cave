@@ -39,6 +39,8 @@ type Props = {
   onOpenSession: (session: SessionRow) => void;
   onNewChat: (projectRoot: string | null) => void;
   onDeleteSession: (session: SessionRow) => Promise<void>;
+  /** Badge count for the Scheduled shortcut (from code-sidebar). */
+  scheduledCount?: number;
 };
 
 const THREADS_PREVIEW = 6;
@@ -75,6 +77,14 @@ function folderIcon(group: ChatProjectGroup, expanded: boolean): IconName {
   return "ph:folder-simple-dashed";
 }
 
+// Returns a context-aware leading icon for threads whose title suggests a PR
+// or branch operation (from code-sidebar). Returns null for ordinary threads.
+function threadLeadingIcon(title: string): IconName | null {
+  if (/^\s*resolve\s+pr\b|\bpr\s*#?\d+/i.test(title)) return "ph:git-pull-request";
+  if (/\bbranch\b|\bmerge\b|\brebase\b/i.test(title)) return "ph:git-branch";
+  return null;
+}
+
 type ThreadRowProps = {
   session: SessionRow;
   active: boolean;
@@ -86,6 +96,8 @@ type ThreadRowProps = {
   /** Shown in the time-bucketed Recent view, where rows from every project
    *  interleave — the folder view already says this via the group header. */
   project?: { root: string; name: string } | null;
+  /** PR/branch glyph from threadLeadingIcon — shown instead of the status dot when truthy. */
+  glyph?: IconName | null;
   onOpen: () => void;
   onTogglePin: () => void;
   onRequestDelete: () => void;
@@ -101,6 +113,7 @@ function ThreadRow({
   deleting,
   indent,
   project = null,
+  glyph,
   onOpen,
   onTogglePin,
   onRequestDelete,
@@ -116,7 +129,11 @@ function ThreadRow({
         onClick={onOpen}
         className="cnav__thread-main focus-ring"
       >
-        <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+        {glyph ? (
+          <Icon name={glyph} width={13} className="cnav__lead" aria-hidden />
+        ) : (
+          <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+        )}
         {project ? (
           <span className="cnav__thread-proj" title={project.name}>
             <ProjectAvatar name={project.name} root={project.root} size="sm" />
@@ -164,7 +181,7 @@ function ThreadRow({
   );
 }
 
-export function ChatSidebar({
+export function WorkspaceSidebar({
   sessions,
   activeFamiliarId = null,
   activeSessionId,
@@ -172,6 +189,7 @@ export function ChatSidebar({
   onOpenSession,
   onNewChat,
   onDeleteSession,
+  scheduledCount,
 }: Props) {
   const { projects, createProject, reload } = useProjects({ familiarId: activeFamiliarId });
   const overrides = useProjectOverrides();
@@ -320,22 +338,22 @@ export function ChatSidebar({
   }
 
   return (
-    <div className="chat-sidebar flex h-full min-h-0 flex-col">
+    <div className="workspace-sidebar chat-sidebar flex h-full min-h-0 flex-col">
       {/* Collapsed rail — when the nav panel is collapsed the shell adds
           `.shell-nav--rail`, which hides the full sidebar and shows this
           vertical "Chats" label. Clicking it reopens the panel. */}
       <button
         type="button"
-        className="chat-sidebar__rail focus-ring"
+        className="workspace-sidebar__rail chat-sidebar__rail focus-ring"
         aria-label="Expand chats"
         title="Expand chats"
         onClick={() => window.dispatchEvent(new CustomEvent("cave:toggle-left-panel"))}
       >
         <Icon name="ph:sidebar-simple" width={15} aria-hidden />
-        <span className="chat-sidebar__rail-label">Chats</span>
+        <span className="workspace-sidebar__rail-label chat-sidebar__rail-label">Chats</span>
       </button>
 
-      <div className="chat-sidebar__full cnav">
+      <div className="workspace-sidebar__full chat-sidebar__full cnav">
         <header className="cnav__header">
           <button
             type="button"
@@ -390,6 +408,27 @@ export function ChatSidebar({
             <span className="cnav__new-label">New chat</span>
             <span className="cnav__kbd" aria-hidden>⌘N</span>
           </button>
+          <div className="cnav__mini-row">
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "inbox" } }))}
+              className="cnav__mini focus-ring"
+            >
+              <Icon name="ph:clock" width={14} className="cnav__mini-icon" aria-hidden />
+              <span className="cnav__mini-label">Scheduled</span>
+              {typeof scheduledCount === "number" && scheduledCount > 0 ? (
+                <span className="cnav__mini-count">{scheduledCount}</span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "marketplace" } }))}
+              className="cnav__mini focus-ring"
+            >
+              <Icon name="ph:plugs" width={14} className="cnav__mini-icon" aria-hidden />
+              <span className="cnav__mini-label">Plugins</span>
+            </button>
+          </div>
         </div>
 
         <div className="cnav__search-wrap">
@@ -401,7 +440,7 @@ export function ChatSidebar({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search projects or threads…"
-              aria-label="Search chat projects and threads"
+              aria-label="Search projects and threads"
             />
             {query ? (
               <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="cnav__search-clear">
@@ -476,6 +515,7 @@ export function ChatSidebar({
                             deleting={deletingSessionId === session.id}
                             indent="flat"
                             project={sessionProjectById.get(session.id) ?? null}
+                            glyph={threadLeadingIcon(sessionRailTitle(session))}
                             onOpen={() => onOpenSession(session)}
                             onTogglePin={() => togglePin(session.id)}
                             onRequestDelete={() => setConfirmingSessionId(session.id)}
@@ -551,7 +591,12 @@ export function ChatSidebar({
                       ) : null}
                       <button
                         type="button"
-                        onClick={() => onNewChat(group.projectRoot)}
+                        onClick={() => {
+                          if (group.projectRoot) {
+                            window.dispatchEvent(new CustomEvent("cave:code-select-project", { detail: { root: group.projectRoot } }));
+                          }
+                          onNewChat(group.projectRoot);
+                        }}
                         title={`New chat in ${label}`}
                         aria-label={`New chat in ${label}`}
                         className="cnav__icon-btn focus-ring"
@@ -564,23 +609,28 @@ export function ChatSidebar({
                         <p className="cnav__thread-empty">No threads yet.</p>
                       ) : (
                         <ul>
-                          {rows.map((session) => (
-                            <li key={session.id}>
-                              <ThreadRow
-                                session={session}
-                                active={activeSessionId === session.id}
-                                pinned={isSessionPinned(pinnedIds, session.id)}
-                                confirming={confirmingSessionId === session.id}
-                                deleting={deletingSessionId === session.id}
-                                indent="folder"
-                                onOpen={() => onOpenSession(session)}
-                                onTogglePin={() => togglePin(session.id)}
-                                onRequestDelete={() => setConfirmingSessionId(session.id)}
-                                onCancelDelete={() => setConfirmingSessionId(null)}
-                                onConfirmDelete={() => void handleDeleteSession(session)}
-                              />
-                            </li>
-                          ))}
+                          {rows.map((session) => {
+                            const title = sessionRailTitle(session);
+                            const glyph = threadLeadingIcon(title);
+                            return (
+                              <li key={session.id}>
+                                <ThreadRow
+                                  session={session}
+                                  active={activeSessionId === session.id}
+                                  pinned={isSessionPinned(pinnedIds, session.id)}
+                                  confirming={confirmingSessionId === session.id}
+                                  deleting={deletingSessionId === session.id}
+                                  indent="folder"
+                                  glyph={glyph}
+                                  onOpen={() => onOpenSession(session)}
+                                  onTogglePin={() => togglePin(session.id)}
+                                  onRequestDelete={() => setConfirmingSessionId(session.id)}
+                                  onCancelDelete={() => setConfirmingSessionId(null)}
+                                  onConfirmDelete={() => void handleDeleteSession(session)}
+                                />
+                              </li>
+                            );
+                          })}
                           {group.sessions.length > THREADS_PREVIEW && !showAllByKey.has(key) && !hasSearch ? (
                             <li>
                               <button

@@ -68,6 +68,7 @@ export const SUITES = {
     "src/lib/secret-validators.test.ts",
     "src/components/chat-project-sidebar-dnd.test.ts",
     "src/components/chat-sidebar-wiring.test.ts",
+    "src/components/workspace-sidebar-wiring.test.ts",
     "src/components/workspace-rail.test.ts",
     "src/components/workspace-rail-motion.test.ts",
     "src/components/workspace-rail-wiring.test.ts",

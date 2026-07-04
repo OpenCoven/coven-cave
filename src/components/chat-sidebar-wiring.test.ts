@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
-const chatSidebar = await readFile(new URL("./chat-sidebar.tsx", import.meta.url), "utf8");
+const workspaceSidebar = await readFile(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
@@ -16,7 +16,7 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const chatSidebar =\s*\(\s*<ChatSidebar/,
+  /const chatSidebar =\s*\(\s*<WorkspaceSidebar/,
   "workspace should define the chatSidebar element",
 );
 assert.match(
@@ -42,17 +42,17 @@ assert.match(chatSurface, /compact=\{compactRail\}/, "ChatRouter should receive 
 
 // ── Recreated sidepanel: project-grouped threads + register-as-project. ───────
 assert.match(
-  chatSidebar,
+  workspaceSidebar,
   /deriveChatProjectGroups\(applyProjectOverrides/,
   "ChatSidebar should group threads by project (with local overrides applied)",
 );
 assert.match(
-  chatSidebar,
+  workspaceSidebar,
   /handleRegister/,
   "ChatSidebar should offer register-as-project for unregistered roots",
 );
 assert.match(
-  chatSidebar,
+  workspaceSidebar,
   /Register \$\{label\} as a project/,
   "ChatSidebar register affordance should be labeled for assistive tech",
 );
@@ -69,23 +69,23 @@ assert.match(
 
 // ── Organize sidebar: recency view (default) + by-project, via a header menu. ─
 assert.match(
-  chatSidebar,
+  workspaceSidebar,
   /deriveChatRecencyBuckets\(/,
   "ChatSidebar should derive time buckets for the Recent view",
 );
-assert.match(chatSidebar, /Organize sidebar/, "ChatSidebar should expose the Organize sidebar menu");
+assert.match(workspaceSidebar, /Organize sidebar/, "ChatSidebar should expose the Organize sidebar menu");
 assert.match(
-  chatSidebar,
+  workspaceSidebar,
   /readChatSidebarView\(\)/,
   "the organize mode should hydrate from the persisted preference",
 );
 assert.match(
-  chatSidebar,
+  workspaceSidebar,
   /relativeTime\(iso, Date\.now\(\), "bare"\)/,
   'sidebar row times should use the bare density (no "ago")',
 );
 assert.ok(
-  (chatSidebar.match(/<ThreadRow/g) ?? []).length >= 2,
+  (workspaceSidebar.match(/<ThreadRow/g) ?? []).length >= 2,
   "both view branches should render the shared ThreadRow",
 );
 
@@ -94,25 +94,25 @@ assert.ok(
 // override-aware grouping the folder view uses (a dragged chat shows its
 // override folder's tile, not its recorded cwd's).
 assert.match(
-  chatSidebar,
+  workspaceSidebar,
   /const sessionProjectById = useMemo\(\(\) => \{[\s\S]*?for \(const group of groups\)/,
   "Recent-row project lookup derives from the override-aware groups",
 );
 assert.match(
-  chatSidebar,
+  workspaceSidebar,
   /indent="flat"\s*\n\s*project=\{sessionProjectById\.get\(session\.id\) \?\? null\}/,
   "Recent rows pass the project identity into ThreadRow",
 );
 assert.match(
-  chatSidebar,
+  workspaceSidebar,
   /cnav__thread-proj[\s\S]*?<ProjectAvatar name=\{project\.name\} root=\{project\.root\} size="sm"/,
   "ThreadRow renders the shared ProjectAvatar tile with an accessible project name",
 );
 assert.match(
-  chatSidebar,
+  workspaceSidebar,
   /<span className="sr-only">\{project\.name\}<\/span>/,
   "the project name is announced, not just painted",
 );
-assert.doesNotMatch(chatSidebar, /cnav__footer|cnav__user-plan/, "ChatSidebar should not render the user plan footer");
+assert.doesNotMatch(workspaceSidebar, /cnav__footer|cnav__user-plan/, "ChatSidebar should not render the user plan footer");
 
 console.log("chat-sidebar-wiring.test.ts passed");
