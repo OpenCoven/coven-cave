@@ -98,16 +98,24 @@ export function WorkspaceRail({
           </span>
         </header>
         <div className="workspace-rail__pane">
-          {activeTab === "changes" ? (
-            <SessionChangesPanel />
-          ) : activeTab === "files" ? (
-            <RailFilesPanel projectRoot={projectRoot} familiarId={familiarId} />
+          {/* Non-terminal panel body. Keyed by activeTab so React remounts it on
+              a Changes<->Files switch and the CSS entrance animation replays
+              (short crossfade). The terminal host below is deliberately OUTSIDE
+              this keyed wrapper so its pty keepalive is never remounted. */}
+          {activeTab !== "terminal" ? (
+            <div className="workspace-rail__panel" key={activeTab}>
+              {activeTab === "changes" ? (
+                <SessionChangesPanel />
+              ) : (
+                <RailFilesPanel projectRoot={projectRoot} familiarId={familiarId} />
+              )}
+            </div>
           ) : null}
           {/* Terminal: mounted lazily on first selection, then kept mounted but
               visually hidden when another tab is active so the pty persists. */}
           {terminalEverOpened ? (
             <div
-              className={`workspace-rail__terminal${terminalVisible ? "" : " is-hidden"}`}
+              className={`workspace-rail__terminal workspace-rail__panel${terminalVisible ? "" : " is-hidden"}`}
               hidden={!terminalVisible}
             >
               <RailTerminalPanel

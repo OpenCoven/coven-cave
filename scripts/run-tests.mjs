@@ -69,6 +69,7 @@ export const SUITES = {
     "src/components/chat-project-sidebar-dnd.test.ts",
     "src/components/chat-sidebar-wiring.test.ts",
     "src/components/workspace-rail.test.ts",
+    "src/components/workspace-rail-motion.test.ts",
     "src/components/workspace-rail-wiring.test.ts",
     "src/components/nav-rail-coupling.test.ts",
     "src/components/rail-files-panel.test.ts",

@@ -4202,6 +4202,47 @@ details[open] > .cave-tool-summary::before {
   min-height: 0;
   min-width: 0;
   background: var(--bg-surface, var(--background));
+  /* Clip the small entrance slide so translateX never spills a horizontal
+     scrollbar while the content settles to 0. */
+  overflow: hidden;
+}
+
+/* Rail entrance + tab-switch motion.
+   - .workspace-rail__body eases in when the rail mounts (opens) — a subtle
+     fade + short slide from the right. We animate the inner content, not the
+     react-resizable-panels frame width, so panel layout is never fought.
+   - .workspace-rail__panel is the per-tab body wrapper; it is keyed by
+     activeTab in the component, so switching Changes<->Files remounts it and
+     this same entrance replays as a short crossfade. */
+@keyframes workspace-rail-content-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.workspace-rail__body {
+  /* mount entrance — slightly longer, emphasized ease */
+  animation: workspace-rail-content-in var(--duration-base, 180ms)
+    var(--ease-emphasized, ease) both;
+}
+.workspace-rail__panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  /* tab-switch crossfade — shorter, standard ease */
+  animation: workspace-rail-content-in var(--duration-fast, 120ms)
+    var(--ease-standard, ease) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-rail__body,
+  .workspace-rail__panel {
+    animation: none;
+  }
 }
 
 .workspace-rail__strip {
