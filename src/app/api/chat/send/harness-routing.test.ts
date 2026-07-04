@@ -104,10 +104,10 @@ assert.match(
 );
 
 // ── Host picker (composer Host chip) ─────────────────────────────────────────
-// An explicit registered host (or "local") wins; with no request, a
-// conversation recorded on an ssh host stays pinned there; only then does the
-// familiar's own runtime binding decide. Unregistered hosts are rejected
-// fail-closed and the remote command comes from the registry, never the body.
+// An explicit allowed host wins; with no request, a conversation recorded on
+// an allowed ssh host stays pinned there; only then does the familiar's own
+// runtime binding decide. Unregistered hosts are rejected fail-closed and the
+// remote command comes from the registry, never the body.
 assert.match(
   chatRoute,
   /const runtimeSelection = resolveRequestedRuntime\(\{\s*requestedHost: body\.runtimeHost,\s*conversationRuntime: existingConversation\?\.runtime,/,
@@ -127,6 +127,21 @@ assert.match(
   chatRoute,
   /remoteHosts: config\.remoteHosts,/,
   "registered remote hosts feed the registry",
+);
+assert.match(
+  chatRoute,
+  /familiarRuntimes: \[config\.defaults\?\.runtime, binding\.runtime\]/,
+  "inherited familiar SSH runtimes are scoped to the current familiar instead of every familiar",
+);
+assert.match(
+  chatRoute,
+  /currentRuntime: binding\.runtime,/,
+  "requested local execution is authorized against the current familiar runtime",
+);
+assert.doesNotMatch(
+  chatRoute,
+  /Object\.values\(config\.familiars \?\? \{\}\)\.map\(\(entry\) => entry\?\.runtime\)/,
+  "send must not expose every familiar's SSH runtime as a selectable chat host",
 );
 
 assert.match(
