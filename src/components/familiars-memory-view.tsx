@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { Icon } from "@/lib/icon";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { formatTimestamp, readDateTimePrefs, useDateTimePrefs } from "@/lib/datetime-format";
@@ -786,12 +787,9 @@ type MemoryReaderModalProps = {
 
 export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalProps) {
   const { text, error } = useMemoryFile(path);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Trap focus inside the reader + Escape-to-close + restore focus to the opener.
+  useFocusTrap(true, panelRef, { onEscape: onClose });
 
   const heading = title ?? path.split("/").pop() ?? "Memory";
 
@@ -804,7 +802,9 @@ export function MemoryReaderModal({ path, title, onClose }: MemoryReaderModalPro
       aria-label={`Memory reader: ${heading}`}
     >
       <div
-        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl"
+        ref={panelRef}
+        tabIndex={-1}
+        className="relative flex h-[92vh] w-[94vw] max-w-[1100px] flex-col overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-panel)] shadow-2xl focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2.5">
