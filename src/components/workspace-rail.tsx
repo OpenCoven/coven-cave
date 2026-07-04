@@ -84,7 +84,7 @@ export function WorkspaceRail({
             <SessionChangesPanel />
           ) : (
             <p className="workspace-rail__soon">
-              {activeTab === "files" ? "Files" : "Terminal"} arrives in the next step.
+              {TAB_TITLE[activeTab]} arrives in the next step.
             </p>
           )}
         </div>

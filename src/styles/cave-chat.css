@@ -4322,10 +4322,3 @@ details[open] > .cave-tool-summary::before {
   font-size: 12px;
   color: var(--text-muted);
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .workspace-rail__tab,
-  .workspace-rail__btn {
-    transition: none;
-  }
-}
