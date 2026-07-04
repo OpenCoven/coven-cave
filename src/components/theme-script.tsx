@@ -33,7 +33,7 @@ const THEME_SCRIPT = `
 (function () {
   try {
     var rename = { "mood-c": "coven", "sky": "tide", "orchid": "dusk", "midnight": "slate" };
-    var valid = ["coven","tide","grove","ember","bloom","dusk","mist","hex","bane","slate","ghosty","claymorphism","claude","pastel-dreams","meatseeks","trucker","custom"];
+    var valid = ["coven","tide","grove","ember","bloom","dusk","mist","hex","bane","slate","ghosty","claymorphism","claude","pastel-dreams","meatseeks","trucker","contrast","beacon","solstice","custom"];
     var theme = localStorage.getItem("coven-theme") || "coven";
     if (rename[theme]) {
       theme = rename[theme];

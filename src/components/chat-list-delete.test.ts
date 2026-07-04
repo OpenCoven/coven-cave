@@ -255,13 +255,13 @@ assert.match(
 const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 assert.match(
   globals,
-  /--text-muted: color-mix\(in oklch, var\(--foreground\) 55%, transparent\);/,
-  "Dark-mode --text-muted mixes at 55% (≥4.5:1 over the panel ladder, CHAT-D13-02)",
+  /--text-muted: color-mix\(in oklch, var\(--foreground\) 72%, transparent\);/,
+  "Dark-mode --text-muted mixes at 72% — 55% passed AA only on Coven; 72% clears 4.5:1 on every premade palette (theme-contrast-audit.test.ts)",
 );
 assert.match(
   globals,
-  /--text-muted: color-mix\(in oklch, var\(--foreground\) 62%, transparent\);/,
-  "Light-mode --text-muted overrides to 62% (dark ink needs a higher mix for the same contrast)",
+  /--text-muted: color-mix\(in oklch, var\(--foreground\) 76%, transparent\);/,
+  "Light-mode --text-muted overrides to 76% (dark ink needs a higher mix for the same contrast)",
 );
 assert.doesNotMatch(
   globals,

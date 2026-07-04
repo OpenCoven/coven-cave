@@ -45,8 +45,14 @@ assert.match(
 
 console.log("globals.css.test.ts (task 3) OK");
 
-// Task 4 assertions: the 9 non-default themes each have dark + light blocks.
-const otherThemes = ["tide", "grove", "ember", "bloom", "dusk", "mist", "hex", "bane", "slate"];
+// Task 4 assertions: every non-default theme has dark + light blocks —
+// including the tweakcn ports and the a11y additions (contrast/beacon/
+// solstice), which the original loop of 9 never covered.
+const otherThemes = [
+  "tide", "grove", "ember", "bloom", "dusk", "mist", "hex", "bane", "slate",
+  "ghosty", "claymorphism", "claude", "pastel-dreams", "meatseeks", "trucker",
+  "contrast", "beacon", "solstice",
+];
 for (const id of otherThemes) {
   const darkRe = new RegExp(`\\[data-theme="${id}"\\]\\s*\\{`);
   const lightRe = new RegExp(`\\[data-theme="${id}"\\]\\[data-mode="light"\\]\\s*\\{`);

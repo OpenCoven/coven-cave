@@ -4628,6 +4628,135 @@ textarea.required-inputs-control {
   --ring-focus: color-mix(in oklch, #525258 55%, var(--foreground) 45%);
 }
 
+/* ---- High Contrast — maximum-legibility ward; AAA text everywhere ----
+   Built for low vision: true black/white surfaces, 7:1+ body text, a
+   goldenrod accent that clears 3:1 as a non-text mark on both modes. */
+[data-theme="contrast"] {
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #0d0d0d;
+  --popover: #0d0d0d;
+  --muted: #1a1a1a;
+  --accent: #1a1a1a;
+  --secondary: #1a1a1a;
+  --muted-foreground: #d9d9d9;
+  --accent-presence: #ffd60a;
+  --accent-presence-foreground: #000000;
+  --ring: #ffd60a;
+  --border: #666666;
+  --border-strong: #9a9a9a;
+  --text-muted: #cccccc;
+  --bg-base: var(--background);
+  --bg-panel: #050505;
+  --bg-raised: var(--card);
+  --bg-elevated: #161616;
+  --bg-hover: #222222;
+  --ring-focus: #ffd60a;
+}
+[data-theme="contrast"][data-mode="light"] {
+  --background: #ffffff;
+  --foreground: #000000;
+  --card: #f2f2f2;
+  --popover: #fafafa;
+  --muted: #e6e6e6;
+  --accent: #e6e6e6;
+  --secondary: #e6e6e6;
+  --muted-foreground: #262626;
+  --accent-presence: #0f62fe;
+  --accent-presence-foreground: #ffffff;
+  --ring: #0f62fe;
+  --border: #8c8c8c;
+  --border-strong: #595959;
+  --text-muted: #333333;
+  --bg-base: var(--background);
+  --bg-panel: #fcfcfc;
+  --bg-raised: var(--card);
+  --bg-elevated: #e9e9e9;
+  --bg-hover: #dedede;
+  --ring-focus: #0f62fe;
+}
+
+/* ---- Beacon (harbor 250/60) — signal-fire on a night sea ----
+   Colorblind-considerate: the palette leans on the blue↔orange axis,
+   which stays distinct under deutan/protan vision; nothing important
+   rides a red↔green difference. */
+[data-theme="beacon"] {
+  --background: oklch(0.14 0.025 250);
+  --card: oklch(0.175 0.028 250);
+  --popover: oklch(0.175 0.028 250);
+  --muted: oklch(0.22 0.030 250);
+  --accent: oklch(0.22 0.030 250);
+  --secondary: oklch(0.22 0.030 250);
+  --muted-foreground: oklch(0.72 0.030 250);
+  --accent-presence: #f5a623;
+  --accent-presence-foreground: #000000;
+  --ring: oklch(0.68 0.14 65);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.11 0.022 250);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.22 0.030 250);
+  --bg-hover: oklch(0.26 0.032 250);
+  --ring-focus: color-mix(in oklch, #f5a623 55%, var(--foreground) 45%);
+}
+[data-theme="beacon"][data-mode="light"] {
+  --background: oklch(0.975 0.010 250);
+  --foreground: oklch(0.17 0.030 250);
+  --card: oklch(0.94 0.012 250);
+  --popover: oklch(0.965 0.012 250);
+  --muted: oklch(0.90 0.016 250);
+  --accent: oklch(0.90 0.016 250);
+  --secondary: oklch(0.90 0.016 250);
+  --muted-foreground: oklch(0.40 0.030 250);
+  --accent-presence: #a34d00;
+  --accent-presence-foreground: #ffffff;
+  --ring: oklch(0.50 0.13 65);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.008 250);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.014 250);
+  --bg-hover: oklch(0.87 0.018 250);
+  --ring-focus: color-mix(in oklch, #a34d00 55%, var(--foreground) 45%);
+}
+
+/* ---- Solstice (midsummer 85) — long light, gold leaf on shadow ---- */
+[data-theme="solstice"] {
+  --background: oklch(0.145 0.020 85);
+  --card: oklch(0.185 0.022 85);
+  --popover: oklch(0.185 0.022 85);
+  --muted: oklch(0.23 0.024 85);
+  --accent: oklch(0.23 0.024 85);
+  --secondary: oklch(0.23 0.024 85);
+  --muted-foreground: oklch(0.72 0.040 85);
+  --accent-presence: #e3b341;
+  --accent-presence-foreground: #000000;
+  --ring: oklch(0.70 0.13 85);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.115 0.018 85);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.23 0.024 85);
+  --bg-hover: oklch(0.27 0.026 85);
+  --ring-focus: color-mix(in oklch, #e3b341 55%, var(--foreground) 45%);
+}
+[data-theme="solstice"][data-mode="light"] {
+  --background: oklch(0.975 0.016 90);
+  --foreground: oklch(0.19 0.030 85);
+  --card: oklch(0.94 0.020 90);
+  --popover: oklch(0.965 0.018 90);
+  --muted: oklch(0.90 0.026 90);
+  --accent: oklch(0.90 0.026 90);
+  --secondary: oklch(0.90 0.026 90);
+  --muted-foreground: oklch(0.40 0.036 85);
+  --accent-presence: #7a5c00;
+  --accent-presence-foreground: #ffffff;
+  --ring: oklch(0.48 0.11 85);
+  --bg-base: var(--background);
+  --bg-panel: oklch(0.99 0.012 90);
+  --bg-raised: var(--card);
+  --bg-elevated: oklch(0.91 0.022 90);
+  --bg-hover: oklch(0.87 0.026 90);
+  --ring-focus: color-mix(in oklch, #7a5c00 55%, var(--foreground) 45%);
+}
+
 /* ────────────────────────────────────────────────
    Edge-rail chip — the pressable chip the collapsed chat-projects
    strip uses for its reopen tab. (The familiar trigger rails that

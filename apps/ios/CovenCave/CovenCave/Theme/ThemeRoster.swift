@@ -83,6 +83,12 @@ enum ThemeRoster {
               accentDark: "#1d7449", accentLight: "#279c6b", bgDark: "#121212", bgLight: "#fcfcfc"),
         .init("trucker", "Trucker", "Roadside evergreen, blacktop panels, cab lights.",
               accentDark: "#21704a", accentLight: "#005735", bgDark: "#020504", bgLight: "#f5fcf9"),
+        .init("contrast", "High Contrast", "Maximum-legibility ward. Nothing whispered.",
+              accentDark: "#ffd60a", accentLight: "#0f62fe", bgDark: "#000000", bgLight: "#ffffff"),
+        .init("beacon", "Beacon", "Signal-fire blue-orange; colorblind-considerate.",
+              accentDark: "#f5a623", accentLight: "#a34d00", bgDark: "#030a13", bgLight: "#f2f7fd"),
+        .init("solstice", "Solstice", "Midsummer gold leaf on long shadow.",
+              accentDark: "#e3b341", accentLight: "#7a5c00", bgDark: "#0e0903", bgLight: "#fbf7eb"),
     ]
 
     /// Look up a theme by id, for resolving the published `themeId` to a name.
