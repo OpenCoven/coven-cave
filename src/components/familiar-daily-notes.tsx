@@ -40,6 +40,10 @@ export function FamiliarDailyNotes({ familiar }: Props) {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const dirtyRef = useRef(false);
+  // Monotonic token so a slow notes fetch can't apply after a newer date- or
+  // familiar-switch: a late response would otherwise overwrite the editor with
+  // the wrong day's body AND silently clear the unsaved-edit dirty flag.
+  const loadSeq = useRef(0);
 
   const loadDates = useCallback(async () => {
     try {
@@ -53,22 +57,25 @@ export function FamiliarDailyNotes({ familiar }: Props) {
 
   const loadDay = useCallback(
     async (slug: string) => {
+      const seq = ++loadSeq.current;
       setLoaded(false);
       setError(null);
       try {
         const res = await fetch(`/api/familiars/${familiar.id}/notes?date=${slug}`);
         const data = await res.json();
+        if (seq !== loadSeq.current) return; // superseded by a newer day/familiar load
         if (!data?.ok) throw new Error(data?.error || "Failed to load notes");
         setNotes(typeof data.note?.notes === "string" ? data.note.notes : "");
         setReflection(typeof data.note?.reflection === "string" ? data.note.reflection : "");
         setSavedAt(data.modified ?? null);
         dirtyRef.current = false;
       } catch (err) {
+        if (seq !== loadSeq.current) return; // stale failure — leave the current day intact
         setError(err instanceof Error ? err.message : "Failed to load notes");
         setNotes("");
         setReflection("");
       } finally {
-        setLoaded(true);
+        if (seq === loadSeq.current) setLoaded(true);
       }
     },
     [familiar.id],

@@ -136,6 +136,11 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
   const [staleOnly, setStaleOnly] = useState(false);
   const [expandRow, setExpandRow] = useState<MemoryRow | null>(null);
   const { pending: undoPending, scheduleDelete, undo: undoDelete, commit: commitDelete } = useUndoDelete<{ key: string }>();
+  // The real DELETE is deferred 4s for undo, but the 30s poll / on-focus refresh
+  // re-fetches during that window and would resurrect the optimistically-removed
+  // row. Track the one pending path (useUndoDelete is single-pending) and filter
+  // it out of anything load() applies until the delete commits or is undone.
+  const pendingDeletePathRef = useRef<string | null>(null);
   const [lastLoadedAt, setLastLoadedAt] = useState<string | null>(null);
   const effectiveLimit = limit ?? Infinity;
   // Incremental render cap for the full view (rail/compact use `limit` instead).
@@ -171,8 +176,9 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
       const covenJson = (await covenRes.json()) as CovenMemoryResponse;
       const fileJson = (await fileRes.json()) as FileMemoryResponse;
 
-      if (covenJson.ok) setCovenEntries(covenJson.entries ?? []);
-      if (fileJson.ok) setFileEntries(fileJson.entries ?? []);
+      const pendingDelete = pendingDeletePathRef.current;
+      if (covenJson.ok) setCovenEntries((covenJson.entries ?? []).filter((e) => e.path !== pendingDelete));
+      if (fileJson.ok) setFileEntries((fileJson.entries ?? []).filter((e) => e.fullPath !== pendingDelete));
 
       const errors = [
         covenJson.ok ? null : covenJson.error ?? "Coven memory unavailable",
@@ -189,7 +195,8 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
 
   const handleDelete = useCallback(
     (path: string, key: string, source: "coven" | "file") => {
-      // optimistic removal from the rendered lists
+      // optimistic removal from the rendered lists + suppress a poll re-adding it
+      pendingDeletePathRef.current = path;
       if (source === "coven") setCovenEntries((prev) => prev.filter((e) => e.path !== path));
       else setFileEntries((prev) => prev.filter((e) => e.fullPath !== path));
       scheduleDelete({ key }, path.split("/").pop() ?? "entry", async () => {
@@ -198,12 +205,17 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ path }),
         });
+        // Delete committed server-side; stop filtering (unless a newer delete
+        // has already claimed the slot).
+        if (pendingDeletePathRef.current === path) pendingDeletePathRef.current = null;
       });
     },
     [scheduleDelete],
   );
 
   const handleUndoDelete = useCallback(() => {
+    // Undo cancels the DELETE, so stop suppressing the path before re-pulling.
+    pendingDeletePathRef.current = null;
     undoDelete();
     void load(); // re-pull so the optimistically-removed row reappears
   }, [undoDelete, load]);
