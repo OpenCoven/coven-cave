@@ -299,6 +299,7 @@ export const ICON_NAMES = [
   "ph:flag-checkered",
   "ph:note",
   "ph:cube",
+  "ph:desktop",
   "ph:flow-arrow",
   "ph:pause",
   "ph:clock-counter-clockwise",

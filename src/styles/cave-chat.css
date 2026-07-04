@@ -4184,3 +4184,13 @@ details[open] > .cave-tool-summary::before {
 .cave-launch__recent-meta { font-size: 11px; color: var(--text-muted); }
 .cave-launch__recent-go { color: var(--text-muted); flex: 0 0 auto; opacity: 0; transition: opacity 140ms ease; }
 .cave-launch__recent:hover .cave-launch__recent-go { opacity: 1; }
+
+/* Connect-new-host dialog (composer Host chip) */
+.cave-connect-host { display: flex; flex-direction: column; gap: 12px; }
+.cave-connect-host__hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }
+.cave-connect-host__hint code { font-size: 11px; padding: 0 4px; border-radius: 4px; background: var(--bg-elevated); border: 1px solid var(--border-hairline); }
+.cave-connect-host__field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-secondary); }
+.cave-connect-host__field input { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--bg-base); color: var(--text-primary); outline: none; }
+.cave-connect-host__field input:focus { border-color: color-mix(in oklch, var(--accent-presence) 60%, transparent); }
+.cave-connect-host__error { margin: 0; font-size: 11px; line-height: 1.4; color: var(--color-danger); }
+.cave-connect-host__actions { display: flex; justify-content: flex-end; gap: 8px; }

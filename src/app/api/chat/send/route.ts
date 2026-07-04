@@ -97,6 +97,7 @@ import {
   buildSshSpawnArgs,
   isSshRuntime,
 } from "@/lib/familiar-runtime";
+import { resolveRequestedRuntime, sshHostRegistry } from "@/lib/chat-hosts";
 import {
   parseCostUsd,
   parseStreamJsonUsage,
@@ -123,6 +124,13 @@ type SendBody = {
    *  only when the installed CLI advertises it; "full" is left implicit so the
    *  harness keeps its default sandbox rather than being widened. */
   permissionMode?: string;
+  /** Composer Host chip: "local" or a REGISTERED ssh host id from /api/hosts.
+   *  Resolved against the server-side registry (config.remoteHosts ∪ familiar
+   *  runtime bindings) — an unregistered host is rejected fail-closed, and the
+   *  remote command always comes from the registry, never this field. Absent ⇒
+   *  a conversation recorded on an ssh host stays pinned there, else the
+   *  familiar's own runtime binding decides. */
+  runtimeHost?: string;
   attachments?: ChatAttachment[];
   /** Repo-relative paths the user @-mentioned in the composer (CHAT-D1-04). */
   mentionedFiles?: string[];
@@ -951,7 +959,6 @@ export async function POST(req: Request) {
   // run` is invoked with an unknown harness name. Every downstream check and
   // the spawn use this canonical id.
   binding.harness = canonicalHarnessId(binding.harness);
-  const sshRuntime = isSshRuntime(binding.runtime) ? binding.runtime : null;
   const existingConversation = body.sessionId
     ? await loadConversation(body.sessionId).catch(() => null)
     : null;
@@ -961,6 +968,29 @@ export async function POST(req: Request) {
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
+  // Host picker: an explicit registered host (or "local") wins; with no
+  // request, a conversation recorded on an ssh host stays pinned there; only
+  // then does the familiar's own runtime binding decide. Unregistered hosts
+  // are rejected fail-closed — the client names registry entries, nothing more.
+  const runtimeSelection = resolveRequestedRuntime({
+    requestedHost: body.runtimeHost,
+    conversationRuntime: existingConversation?.runtime,
+    registry: sshHostRegistry({
+      remoteHosts: config.remoteHosts,
+      familiarRuntimes: [
+        config.defaults?.runtime,
+        ...Object.values(config.familiars ?? {}).map((entry) => entry?.runtime),
+      ],
+    }),
+  });
+  if (!runtimeSelection.ok) {
+    return new Response(
+      JSON.stringify({ ok: false, error: runtimeSelection.error }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
+  }
+  const effectiveRuntime = runtimeSelection.runtime ?? binding.runtime;
+  const sshRuntime = isSshRuntime(effectiveRuntime) ? effectiveRuntime : null;
   // OpenClaw runs through its own agent bridge (no `coven run`), so it never
   // forwards `--model`; every other bundled harness gates on the capability
   // probe so this stays a no-op until the companion CLI ships the flag.
