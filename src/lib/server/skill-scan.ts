@@ -15,6 +15,11 @@ export type LocalSkillEntry = {
   version?: string;
   kind?: string;
   tags?: string[];
+  owner?: string;
+  repo?: string;
+  packageName?: string;
+  topics?: string[];
+  agents?: string[];
   /**
    * Capabilities the skill needs, declared in its SKILL.md frontmatter as a
    * `permissions:` list (e.g. `web.fetch`, `repo.read`). Surfaced as inherited
@@ -83,12 +88,14 @@ export async function scanSkillsDir(dir: string, familiar: string, out: LocalSki
 
   for (const skillName of entries) {
     const skillMdPath = path.join(dir, skillName, "SKILL.md");
-    try {
+  try {
       await stat(skillMdPath);
       const text = await readFile(skillMdPath, "utf8");
       const fm = parseFrontmatter(text);
       const tags = parseListField(text, "tags");
       const permissions = parseListField(text, "permissions");
+      const topics = parseListField(text, "topics");
+      const agents = parseListField(text, "agents");
       out.push({
         id: skillName,
         name: fm.name ?? skillName,
@@ -97,6 +104,11 @@ export async function scanSkillsDir(dir: string, familiar: string, out: LocalSki
         kind: fm.kind,
         tags: tags.length ? tags : (fm.tags ? [fm.tags] : []),
         permissions: permissions.length ? permissions : undefined,
+        owner: fm.owner,
+        repo: fm.repo,
+        packageName: fm.package,
+        topics: topics.length ? topics : undefined,
+        agents: agents.length ? agents : undefined,
         path: skillMdPath,
         familiar,
       });

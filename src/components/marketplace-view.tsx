@@ -88,14 +88,15 @@ const SORT_OPTIONS: ReadonlyArray<{ id: SortKey; label: string }> = [
 // Map a scanned local skill to the detail drawer's shape (shared by the Skills
 // browser and the role-card skill chips).
 function toSkillDetail(skill: SkillBrowserEntry): SkillDetailEntry {
+  const owner = skill.owner && skill.repo ? `${skill.owner}/${skill.repo}` : skill.owner;
   return {
     id: skill.id,
     name: skill.name,
     description: skill.description,
-    version: skill.version,
-    category: skill.kind,
-    owner: skill.familiar,
-    tags: skill.tags,
+    version: skill.local?.version,
+    category: skill.installed ? "Installed" : "Directory",
+    owner,
+    tags: [...new Set([...(skill.tags ?? []), ...(skill.topics ?? [])])],
     source: skill.path,
   };
 }
@@ -203,11 +204,17 @@ export function MarketplaceViewSurface({
     skillsCtl.current = ctl;
     setSkillsLoaded(false);
     try {
-      const res = await fetch("/api/skills/local", { cache: "no-store", signal: ctl.signal });
-      const json = (await res.json()) as { ok?: boolean; skills?: SkillBrowserEntry[]; error?: string };
+      const res = await fetch("/api/skills/directory", { cache: "no-store", signal: ctl.signal });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        entries?: SkillBrowserEntry[];
+        error?: string;
+        source?: string;
+        fetchedAt?: string;
+      };
       if (ctl.signal.aborted) return;
       if (!json.ok) throw new Error(json.error ?? `skills http ${res.status}`);
-      setSkills(json.skills ?? []);
+      setSkills(json.entries ?? []);
       setSkillsError(null);
     } catch (err) {
       if (ctl.signal.aborted) return;
@@ -383,8 +390,17 @@ export function MarketplaceViewSurface({
   // skills fall back to the Skills section, pre-filtered to the name.
   const openSkillByName = useCallback(
     (name: string) => {
+      const q = name.toLowerCase();
       const match = skills.find(
-        (s) => s.id === name || s.name.toLowerCase() === name.toLowerCase(),
+        (s) =>
+          s.id === name ||
+          s.slug?.toLowerCase() === q ||
+          s.packageName?.toLowerCase() === q ||
+          (s.owner && s.repo
+            ? `${s.owner.toLowerCase()}/${s.repo.toLowerCase()}` === q
+            : false) ||
+          s.name.toLowerCase() === q ||
+          s.owner?.toLowerCase() === q,
       );
       if (match) {
         setSelectedSkill(toSkillDetail(match));

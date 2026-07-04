@@ -12,8 +12,9 @@ assert.match(src, /className="skill-browser__rail"/, "renders the category rail"
 assert.match(src, /className="skill-browser__list"/, "renders the card list");
 assert.match(src, /className="skill-browser__detail"/, "renders the detail pane");
 
-// Category rail: All / Claude Code / Generic with derived counts.
+// Category rail: All / Installed / Claude Code / Generic with derived counts.
 assert.match(src, /label: "All Skills"/, "rail has an All Skills entry");
+assert.match(src, /label: "Installed"/, "rail has an Installed entry");
 assert.match(src, /label: "Claude Code"[\s\S]*?icon: "ph:terminal-window"/, "rail has a Claude Code entry");
 assert.match(src, /label: "Generic"[\s\S]*?icon: "ph:puzzle-piece"/, "rail has a Generic entry");
 assert.match(
@@ -38,7 +39,7 @@ assert.match(src, /skill-browser__detail-path/, "detail shows the skill's path")
 assert.match(src, /visible\.find\(\(s\) => skillKey\(s\) === selectedKey\) \?\? visible\[0\]/, "auto-selects the first visible skill");
 
 // ── Detail-pane actions: reveal folder + delete ─────────────────────────────
-assert.match(src, /className="skill-browser__actions"/, "detail head has an actions cluster");
+assert.match(src, /selectedHasLocalPath \? \(/, "detail actions are limited to installed/local entries");
 assert.match(src, /name="ph:folder-open"/, "reveal-folder action uses the folder-open icon");
 assert.match(src, /name="ph:trash"/, "delete action uses the trash icon");
 // Reveal shells out via Tauri and copies the path on the web.

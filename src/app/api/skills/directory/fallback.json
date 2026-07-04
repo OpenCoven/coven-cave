@@ -1,0 +1,70 @@
+{
+  "entries": [
+    {
+      "id": "skill-scanner",
+      "slug": "coven/skill-scanner",
+      "name": "skill-scanner",
+      "description": "Scan and surface reusable workflow capabilities from installed and remote skill packs.",
+      "owner": "coven",
+      "repo": "skill-scanner",
+      "package": "skill-scanner",
+      "tags": ["skills", "automation", "workflow"],
+      "topics": ["skill-management", "agent-tools"],
+      "agents": ["codex", "claude-code", "cursor"],
+      "trust": {
+        "official": true,
+        "audited": true,
+        "source": "registry"
+      },
+      "installs": 420,
+      "trend": 86,
+      "hot": 63,
+      "registryUrl": "https://registry.example.com/skills/coven/skill-scanner",
+      "sourceUrl": "https://github.com/OpenCoven/skill-scanner"
+    },
+    {
+      "id": "web-research",
+      "slug": "coven/web-research",
+      "name": "web-research",
+      "description": "Search and summarize web research for chat and planning workflows.",
+      "owner": "coven",
+      "repo": "web-research",
+      "package": "web-research",
+      "tags": ["research", "knowledge", "network"],
+      "topics": ["research", "browser", "context"],
+      "agents": ["codex", "copilot", "windsurf"],
+      "trust": {
+        "official": true,
+        "audited": false,
+        "source": "registry"
+      },
+      "installs": 188,
+      "trend": 72,
+      "hot": 79,
+      "registryUrl": "https://registry.example.com/skills/coven/web-research",
+      "sourceUrl": "https://github.com/OpenCoven/web-research"
+    },
+    {
+      "id": "github-reviewer",
+      "slug": "coven/github-reviewer",
+      "name": "github-reviewer",
+      "description": "Review pull requests and summarize risk in a familiar-friendly format.",
+      "owner": "coven",
+      "repo": "github-reviewer",
+      "package": "github-reviewer",
+      "tags": ["github", "pr", "review"],
+      "topics": ["code-review", "automation"],
+      "agents": ["codex", "r1", "sonnet"],
+      "trust": {
+        "official": false,
+        "audited": true,
+        "source": "daemon"
+      },
+      "installs": 79,
+      "trend": 54,
+      "hot": 46,
+      "registryUrl": "https://registry.example.com/skills/coven/github-reviewer",
+      "sourceUrl": "https://github.com/OpenCoven/github-reviewer"
+    }
+  ]
+}
