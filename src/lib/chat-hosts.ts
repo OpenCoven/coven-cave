@@ -120,10 +120,10 @@ export function resolveRequestedRuntime(args: {
   requestedHost: string | null | undefined;
   conversationRuntime: string | null | undefined;
   registry: SshFamiliarRuntime[];
-  currentRuntime?: FamiliarRuntime | Partial<FamiliarRuntime> | null | undefined;
+  currentRuntime: FamiliarRuntime | Partial<FamiliarRuntime> | null | undefined;
 }): RequestedRuntimeResolution {
   const requested = typeof args.requestedHost === "string" ? args.requestedHost.trim() : "";
-  const currentRuntime = normalizeFamiliarRuntime(args.currentRuntime as FamiliarRuntime);
+  const currentRuntime = normalizeFamiliarRuntime(args.currentRuntime);
   if (requested) {
     if (requested === LOCAL_HOST_ID) {
       if (isSshRuntime(currentRuntime)) {
