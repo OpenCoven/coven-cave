@@ -648,7 +648,21 @@ function openClawChatResponse(args: {
 }): Response {
   const stream = new ReadableStream<Uint8Array>({
     start: async (controller) => {
-      const push = (event: StreamEvent) => controller.enqueue(sse(event));
+      let closed = false;
+      // A user "stop" aborts the request while the OpenClaw child is still
+      // running; its late `close`/`error` handlers keep calling push after the
+      // client stream has been cancelled. Guard every enqueue so those tail
+      // events are dropped instead of throwing ERR_INVALID_STATE on a closed
+      // controller (mirrors the native coven-run stream below).
+      const push = (event: StreamEvent) => {
+        if (closed || args.req.signal.aborted) return;
+        try {
+          controller.enqueue(sse(event));
+        } catch (error) {
+          closed = true;
+          if (!args.req.signal.aborted) console.warn("Failed to enqueue chat stream event", error);
+        }
+      };
       const pushProgress = (
         id: string,
         label: string,
@@ -664,7 +678,6 @@ function openClawChatResponse(args: {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
-      let closed = false;
       const close = () => {
         if (closed) return;
         closed = true;
