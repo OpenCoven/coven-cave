@@ -225,8 +225,8 @@ assert.match(
 
 assert.match(
   css,
-  /\.hc-control-group--who\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?margin-left: auto;/,
-  "HomeComposer action bar should keep the who cluster content-sized and pin the run cluster to the right edge",
+  /\.hc-control-group--tools\s*\{[\s\S]*?flex: 0 0 auto;[\s\S]*?\.hc-control-group--identity\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?\.hc-control-group--settings\s*\{[\s\S]*?margin-left: auto;[\s\S]*?\.hc-control-group--submit\s*\{[\s\S]*?flex: 0 0 auto;/,
+  "HomeComposer action bar should separate tools, identity, settings, and submit clusters",
 );
 
 assert.match(
@@ -371,7 +371,7 @@ assert.match(
 // creating a board task, so they render only while the Chat mode is selected.
 assert.match(
   source,
-  /destination === "chat" \? \(\s*<>[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<\/>\s*\) : null/,
+  /destination === "chat" \? \(\s*<div className="hc-control-group hc-control-group--settings">[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<\/div>\s*\) : null/,
   "Runtime/model, Think, and Speed controls collapse out of the action bar when Task is selected",
 );
 

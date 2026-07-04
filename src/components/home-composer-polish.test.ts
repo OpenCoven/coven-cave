@@ -47,6 +47,38 @@ assert.doesNotMatch(source, /className="hc-send-label"/, "visible Send text labe
 assert.doesNotMatch(css, /\.hc-send-label\s*\{/, "old .hc-send-label rule removed");
 assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*999px/, ".hc-send-btn is a circular disc");
 
+// ───────── Command-bar hierarchy ─────────
+assert.match(
+  source,
+  /hc-control-group--tools[\s\S]*?hc-control-group--identity[\s\S]*?hc-control-group--settings[\s\S]*?hc-control-group--submit/,
+  "home composer separates tools, identity, settings, and submit control groups",
+);
+assert.match(
+  css,
+  /\.home-composer-card\s*\{[\s\S]*?border-radius:\s*18px;[\s\S]*?box-shadow:\s*0 8px 28px/,
+  "home composer card uses quieter radius and shadow than the oversized command-shell chrome",
+);
+assert.match(
+  css,
+  /\.hc-action-bar\s*\{[\s\S]*?border-top:\s*1px solid[\s\S]*?background:\s*color-mix/,
+  "home composer action bar has a subtle separated control rail",
+);
+assert.match(
+  css,
+  /\.hc-control-group--settings\s+\.hc-familiar-selector\s*\{[\s\S]*?background:\s*transparent/,
+  "runtime and tuning settings are visually demoted inside the command bar",
+);
+assert.match(
+  css,
+  /\.hc-send-btn:not\(\.empty\):not\(:disabled\)\s*\{/,
+  "active send button has an explicit non-empty state",
+);
+assert.match(
+  css,
+  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-control-group--identity\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[\s\S]*?\.hc-control-group--settings\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[\s\S]*?\.hc-control-group--settings\s+\.hc-command-select\s+\.hc-command-select-label\s*\{[\s\S]*?display:\s*inline;/,
+  "mobile identity and advanced settings wrap as readable two-column controls",
+);
+
 // ── "Jump back in" recent-chats strip REMOVED ──
 // The standalone recents strip was dropped from the home surface; resume now
 // lives only in the Daily-summary carousel's session cards.

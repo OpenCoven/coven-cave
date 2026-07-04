@@ -1070,7 +1070,7 @@ export function HomeComposer({
 
         {/* Action bar */}
         <div className="hc-action-bar">
-          <div className="hc-control-group hc-control-group--who">
+          <div className="hc-control-group hc-control-group--tools">
             <input
               ref={fileInputRef}
               type="file"
@@ -1091,6 +1091,35 @@ export function HomeComposer({
               <Icon name="ph:paperclip" width={15} aria-hidden />
             </button>
 
+            {enhanceOriginal != null && (
+              <button
+                type="button"
+                className="hc-enhance-undo"
+                onClick={revertEnhance}
+                disabled={sending}
+                title="Undo enhance"
+              >
+                Undo
+              </button>
+            )}
+            <button
+              type="button"
+              className={`hc-enhance-btn${enhanceStatus === "loading" ? " loading" : ""}`}
+              onClick={() => void enhancePrompt()}
+              disabled={!text.trim() || sending || enhanceStatus === "loading"}
+              aria-label="Enhance prompt"
+              title="Enhance prompt"
+            >
+              {enhanceStatus === "loading" ? (
+                <span className="hc-spinner" />
+              ) : (
+                <Icon name="ph:sparkle" width={13} aria-hidden />
+              )}
+              <span className="hc-enhance-label">Enhance</span>
+            </button>
+          </div>
+
+          <div className="hc-control-group hc-control-group--identity">
             <label className="hc-familiar-selector">
               {selectedResolved ? (
                 <FamiliarAvatar familiar={selectedResolved} size="sm" className="hc-familiar-glyph hc-familiar-avatar" />
@@ -1165,93 +1194,66 @@ export function HomeComposer({
             {addProjectFlow.addProjectModal}
           </div>
 
-          <div className="hc-control-group hc-control-group--run">
-            {/* Runtime/model, Think, and Speed configure a chat send — they're
-                meaningless for creating a board task, so they collapse out when
-                the Task mode is selected, leaving just the submit affordance. */}
-            {destination === "chat" ? (
-              <>
-                <label className="hc-familiar-selector hc-runtime-model-selector">
-                  <Icon name="ph:terminal-window" width={13} className="hc-familiar-glyph" aria-hidden />
-                  <select
-                    aria-label="Choose runtime and model"
-                    className="hc-familiar-select"
-                    value={selectedRuntimeModelValue}
-                    onChange={(e) => handleSelectRuntimeModel(e.currentTarget.value)}
-                    disabled={!selectedFamiliarId || sending}
-                  >
-                    {COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => (
-                      <optgroup key={adapter.id} label={adapter.label}>
-                        {runtimeModelOptionsFor(adapter.id).length === 0 ? (
-                          <option value={runtimeModelValue(adapter.id, "")}>
-                            Runtime managed
+          {/* Runtime/model, Think, and Speed configure a chat send — they're
+              meaningless for creating a board task, so they collapse out when
+              the Task mode is selected, leaving just the submit affordance. */}
+          {destination === "chat" ? (
+            <div className="hc-control-group hc-control-group--settings">
+              <label className="hc-familiar-selector hc-runtime-model-selector">
+                <Icon name="ph:terminal-window" width={13} className="hc-familiar-glyph" aria-hidden />
+                <select
+                  aria-label="Choose runtime and model"
+                  className="hc-familiar-select"
+                  value={selectedRuntimeModelValue}
+                  onChange={(e) => handleSelectRuntimeModel(e.currentTarget.value)}
+                  disabled={!selectedFamiliarId || sending}
+                >
+                  {COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => (
+                    <optgroup key={adapter.id} label={adapter.label}>
+                      {runtimeModelOptionsFor(adapter.id).length === 0 ? (
+                        <option value={runtimeModelValue(adapter.id, "")}>
+                          Runtime managed
+                        </option>
+                      ) : (
+                        runtimeModelOptionsFor(adapter.id).map((model) => (
+                          <option key={model.id} value={runtimeModelValue(adapter.id, model.id)}>
+                            {model.label}
                           </option>
-                        ) : (
-                          runtimeModelOptionsFor(adapter.id).map((model) => (
-                            <option key={model.id} value={runtimeModelValue(adapter.id, model.id)}>
-                              {model.label}
-                            </option>
-                          ))
-                        )}
-                      </optgroup>
-                    ))}
-                  </select>
-                  <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-                </label>
+                        ))
+                      )}
+                    </optgroup>
+                  ))}
+                </select>
+                <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+              </label>
 
-                {renderCompactSelect(
-                  "Think",
-                  "ph:sparkle-bold",
-                  thinkingEffort,
-                  (value) => setThinkingEffort(value as CommandThinkingEffort),
-                  COMMAND_THINKING_OPTIONS,
-                  "Choose thinking effort",
-                )}
-
-                {renderCompactSelect(
-                  "Speed",
-                  "ph:lightning-bold",
-                  responseSpeed,
-                  (value) => setResponseSpeed(value as CommandResponseSpeed),
-                  COMMAND_RESPONSE_SPEED_OPTIONS,
-                  "Choose response speed",
-                )}
-
-                <ComposerHostChip
-                  value={runtimeHost ?? LOCAL_HOST_ID}
-                  disabled={sending}
-                  onPick={(id) => setRuntimeHost(id === LOCAL_HOST_ID ? null : id)}
-                />
-              </>
-            ) : null}
-
-            {enhanceOriginal != null && (
-              <button
-                type="button"
-                className="hc-enhance-undo"
-                onClick={revertEnhance}
-                disabled={sending}
-                title="Undo enhance"
-              >
-                Undo
-              </button>
-            )}
-            <button
-              type="button"
-              className={`hc-enhance-btn${enhanceStatus === "loading" ? " loading" : ""}`}
-              onClick={() => void enhancePrompt()}
-              disabled={!text.trim() || sending || enhanceStatus === "loading"}
-              aria-label="Enhance prompt"
-              title="Enhance prompt"
-            >
-              {enhanceStatus === "loading" ? (
-                <span className="hc-spinner" />
-              ) : (
-                <Icon name="ph:sparkle" width={13} aria-hidden />
+              {renderCompactSelect(
+                "Think",
+                "ph:sparkle-bold",
+                thinkingEffort,
+                (value) => setThinkingEffort(value as CommandThinkingEffort),
+                COMMAND_THINKING_OPTIONS,
+                "Choose thinking effort",
               )}
-              <span className="hc-enhance-label">Enhance</span>
-            </button>
 
+              {renderCompactSelect(
+                "Speed",
+                "ph:lightning-bold",
+                responseSpeed,
+                (value) => setResponseSpeed(value as CommandResponseSpeed),
+                COMMAND_RESPONSE_SPEED_OPTIONS,
+                "Choose response speed",
+              )}
+
+              <ComposerHostChip
+                value={runtimeHost ?? LOCAL_HOST_ID}
+                disabled={sending}
+                onPick={(id) => setRuntimeHost(id === LOCAL_HOST_ID ? null : id)}
+              />
+            </div>
+          ) : null}
+
+          <div className="hc-control-group hc-control-group--submit">
             <button
               type="button"
               className={`hc-send-btn${sending ? " sending" : ""}${!text.trim() && attachments.length === 0 ? " empty" : ""}`}
