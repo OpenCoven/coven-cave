@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 import {
   type FamiliarRuntime,
+  isSshRuntime,
   normalizeFamiliarRuntime,
 } from "@/lib/familiar-runtime";
 
@@ -29,6 +30,7 @@ const DEFAULT_CONFIG: CaveConfig = {
   },
   marketplace: { installed: {} },
   multiHost: { mode: "local", hubUrl: "", executorUrls: [] },
+  remoteHosts: [],
 };
 
 const DEFAULT_STATE: CaveState = {
@@ -57,6 +59,7 @@ function defaultConfig(): CaveConfig {
     addons: { ...DEFAULT_CONFIG.addons },
     marketplace: { installed: {} },
     multiHost: { ...DEFAULT_CONFIG.multiHost, executorUrls: [] },
+    remoteHosts: [],
   };
 }
 
@@ -95,6 +98,7 @@ type CaveConfigPatch = Omit<Partial<CaveConfig>, "defaults" | "familiars"> & {
   defaults?: Partial<FamiliarBinding>;
   familiars?: Record<string, FamiliarBindingPatch | null>;
   multiHost?: Partial<CaveMultiHostConfig>;
+  remoteHosts?: CaveRemoteHost[];
 };
 
 export type RoleConfigEntry = {
@@ -114,6 +118,17 @@ export type CaveMultiHostConfig = {
   mode: "local" | "hub";
   hubUrl: string;
   executorUrls: string[];
+};
+
+/** A registered remote execution host chats can run on (over SSH). Cave never
+ *  stores key material — `host` is an ssh alias/hostname the user's own ssh
+ *  config can reach non-interactively. */
+export type CaveRemoteHost = {
+  host: string;
+  /** Remote working directory harness sessions start in. */
+  cwd: string;
+  /** Remote Coven executable. Defaults to "coven". */
+  command?: string;
 };
 
 export type CaveTravelQueueItem = {
@@ -158,6 +173,8 @@ export type CaveConfig = {
     installed: Record<string, MarketplaceInstallEntry>;
   };
   multiHost: CaveMultiHostConfig;
+  /** Chat-selectable remote hosts (beyond per-familiar runtime bindings). */
+  remoteHosts: CaveRemoteHost[];
 };
 
 export type CaveState = {
@@ -201,10 +218,32 @@ export async function loadConfig(): Promise<CaveConfig> {
         installed: parsed.marketplace?.installed ?? {},
       },
       multiHost: normalizeMultiHostConfig(parsed.multiHost),
+      remoteHosts: normalizeRemoteHosts(parsed.remoteHosts),
     };
   } catch {
     return defaultConfig();
   }
+}
+
+export function normalizeRemoteHosts(input: CaveRemoteHost[] | undefined): CaveRemoteHost[] {
+  const seen = new Set<string>();
+  const hosts: CaveRemoteHost[] = [];
+  for (const entry of Array.isArray(input) ? input : []) {
+    const runtime = normalizeFamiliarRuntime({
+      kind: "ssh",
+      host: entry?.host,
+      cwd: entry?.cwd,
+      command: entry?.command,
+    });
+    if (!isSshRuntime(runtime) || seen.has(runtime.host)) continue;
+    seen.add(runtime.host);
+    hosts.push({
+      host: runtime.host,
+      cwd: runtime.cwd,
+      ...(runtime.command !== "coven" ? { command: runtime.command } : {}),
+    });
+  }
+  return hosts;
 }
 
 export function normalizeMultiHostConfig(input: Partial<CaveMultiHostConfig> | undefined): CaveMultiHostConfig {
@@ -351,6 +390,9 @@ export async function saveConfig(patch: CaveConfigPatch): Promise<CaveConfig> {
       ...(patch.defaults ?? {}),
     },
     familiars: mergeFamiliarConfigs(current.familiars, patch.familiars),
+    // Replace remoteHosts if provided (normalized + deduped, like roles)
+    remoteHosts:
+      patch.remoteHosts !== undefined ? normalizeRemoteHosts(patch.remoteHosts) : current.remoteHosts,
     // Replace roles if provided
     roles: patch.roles !== undefined ? patch.roles : current.roles,
   };

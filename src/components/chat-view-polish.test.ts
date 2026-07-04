@@ -279,6 +279,21 @@ assert.match(
 );
 assert.match(
   source,
+  /label="Host"/,
+  "composer has a host chip (remote execution picker)",
+);
+assert.match(
+  source,
+  /\.\.\.\(runtimeHost \? \{ runtimeHost \} : \{\}\)/,
+  "an explicit host pick rides the send body; auto stays absent",
+);
+assert.match(
+  source,
+  /CONNECT_HOST_OPTION/,
+  "the host chip offers the connect-new-host flow",
+);
+assert.match(
+  source,
   /ph:microphone/,
   "desktop composer has a mic/voice button",
 );

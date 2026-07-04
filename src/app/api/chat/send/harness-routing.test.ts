@@ -99,8 +99,34 @@ assert.match(
 
 assert.match(
   chatRoute,
-  /const sshRuntime = isSshRuntime\(binding\.runtime\) \? binding\.runtime : null;[\s\S]*buildSshSpawnArgs/,
-  "SSH runtime familiars should build SSH argv before local process spawning",
+  /const sshRuntime = isSshRuntime\(effectiveRuntime\) \? effectiveRuntime : null;[\s\S]*buildSshSpawnArgs/,
+  "SSH runtime chats should build SSH argv before local process spawning",
+);
+
+// ── Host picker (composer Host chip) ─────────────────────────────────────────
+// An explicit registered host (or "local") wins; with no request, a
+// conversation recorded on an ssh host stays pinned there; only then does the
+// familiar's own runtime binding decide. Unregistered hosts are rejected
+// fail-closed and the remote command comes from the registry, never the body.
+assert.match(
+  chatRoute,
+  /const runtimeSelection = resolveRequestedRuntime\(\{\s*requestedHost: body\.runtimeHost,\s*conversationRuntime: existingConversation\?\.runtime,/,
+  "the requested host resolves against the server-side registry with the conversation runtime as fallback",
+);
+assert.match(
+  chatRoute,
+  /if \(!runtimeSelection\.ok\) \{[\s\S]{0,220}status: 400/,
+  "an unregistered host is rejected with a 400, never improvised",
+);
+assert.match(
+  chatRoute,
+  /const effectiveRuntime = runtimeSelection\.runtime \?\? binding\.runtime;/,
+  "the familiar's own runtime binding stays the final fallback",
+);
+assert.match(
+  chatRoute,
+  /remoteHosts: config\.remoteHosts,/,
+  "registered remote hosts feed the registry",
 );
 
 assert.match(
