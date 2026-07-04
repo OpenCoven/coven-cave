@@ -5887,10 +5887,12 @@ button:active > .edge-rail-chip {
   align-items: center;
   gap: 4px;
   margin: 0;
-  padding: 0;
+  /* vertical room so scaled avatars aren't clipped by the scrollport */
+  padding: 4px 0;
   list-style: none;
   min-width: 0;
   overflow-x: auto;
+  overflow-y: visible;
   scrollbar-width: none;
 }
 
@@ -5900,6 +5902,7 @@ button:active > .edge-rail-chip {
 
 .familiar-quickswitch__item {
   flex: 0 0 auto;
+  overflow: visible;
 }
 
 .familiar-quickswitch__btn {
@@ -5910,16 +5913,22 @@ button:active > .edge-rail-chip {
   width: 28px;
   height: 28px;
   padding: 0;
-  border-radius: var(--radius-control);
+  border-radius: 999px;
   border: 1px solid var(--border-hairline);
   background: var(--bg-raised);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard),
-              border-color var(--duration-fast) var(--ease-standard);
+  transform-origin: bottom center;
+  will-change: transform;
+  /* spring overshoot on scale; standard curve on colour props */
+  transition: transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+              background 140ms var(--ease-standard),
+              border-color 140ms var(--ease-standard),
+              box-shadow 140ms var(--ease-standard);
 }
 
 .familiar-quickswitch__btn:hover {
+  transform: scale(1.18);
   background: var(--bg-hover);
   border-color: color-mix(in oklch, var(--familiar-accent, var(--accent-presence)) 45%, var(--border-hairline));
 }
@@ -5931,13 +5940,15 @@ button:active > .edge-rail-chip {
 
 .familiar-quickswitch__avatar {
   display: inline-flex;
+  border-radius: 999px;
+  overflow: hidden;
 }
 
 .familiar-quickswitch__btn img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: calc(var(--radius-control) - 1px);
+  border-radius: 999px;
 }
 
 .familiar-quickswitch__presence {
@@ -5971,6 +5982,17 @@ button:active > .edge-rail-chip {
   border-radius: 999px;
   background: var(--color-warning);
   box-shadow: 0 0 0 2px var(--bg-base);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .familiar-quickswitch__btn {
+    transition: background 140ms var(--ease-standard),
+                border-color 140ms var(--ease-standard),
+                box-shadow 140ms var(--ease-standard);
+  }
+  .familiar-quickswitch__btn:hover {
+    transform: none;
+  }
 }
 
 /* ── Settings: pinned-familiar order ───────────────────────────────────────── */
