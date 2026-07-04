@@ -968,20 +968,19 @@ export async function POST(req: Request) {
       { status: 404, headers: { "content-type": "application/json" } },
     );
   }
-  // Host picker: an explicit registered host (or "local") wins; with no
-  // request, a conversation recorded on an ssh host stays pinned there; only
-  // then does the familiar's own runtime binding decide. Unregistered hosts
-  // are rejected fail-closed — the client names registry entries, nothing more.
+  // Host picker: an explicit allowed host wins; with no request, a conversation
+  // recorded on an allowed ssh host stays pinned there; only then does the
+  // familiar's own runtime binding decide. Unregistered hosts are rejected
+  // fail-closed — inherited familiar runtimes are scoped to the current
+  // familiar so one familiar cannot borrow another familiar's SSH binding.
   const runtimeSelection = resolveRequestedRuntime({
     requestedHost: body.runtimeHost,
     conversationRuntime: existingConversation?.runtime,
     registry: sshHostRegistry({
       remoteHosts: config.remoteHosts,
-      familiarRuntimes: [
-        config.defaults?.runtime,
-        ...Object.values(config.familiars ?? {}).map((entry) => entry?.runtime),
-      ],
+      familiarRuntimes: [config.defaults?.runtime, binding.runtime],
     }),
+    currentRuntime: binding.runtime,
   });
   if (!runtimeSelection.ok) {
     return new Response(

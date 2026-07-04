@@ -51,10 +51,16 @@ assert.equal(parseConversationRuntime("garbage"), null);
 assert.equal(parseConversationRuntime(null), null);
 
 // ── Requested-runtime resolution (fail closed) ──────────────────────────────
-const resolve = (requestedHost, conversationRuntime = null) =>
-  resolveRequestedRuntime({ requestedHost, conversationRuntime, registry });
+const resolve = (requestedHost, conversationRuntime = null, currentRuntime = { kind: "local" }) =>
+  resolveRequestedRuntime({ requestedHost, conversationRuntime, registry, currentRuntime });
 
-assert.deepEqual(resolve("local"), { ok: true, runtime: { kind: "local" } }, "'local' forces the local machine");
+assert.deepEqual(resolve("local"), { ok: true, runtime: { kind: "local" } }, "'local' keeps a local-bound familiar on the local machine");
+{
+  const rejected = resolve("local", null, { kind: "ssh", host: "vm-1", cwd: "/srv/work", command: "coven" });
+  assert.equal(rejected.ok, false, "'local' cannot downgrade an ssh-bound familiar to local execution");
+  assert.match(rejected.error, /local runtime is not allowed/);
+}
+
 assert.deepEqual(
   resolve("vm-1"),
   { ok: true, runtime: { kind: "ssh", host: "vm-1", cwd: "/srv/work", command: "coven" } },

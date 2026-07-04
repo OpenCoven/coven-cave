@@ -4,10 +4,10 @@
 // send route all share one model.
 //
 // Security model (fail-closed, like project permissions): the client only ever
-// names a host id — "local" or a REGISTERED ssh host. The server resolves the
-// id against the registry (config.remoteHosts ∪ familiars' ssh runtime
-// bindings); an unregistered host is rejected, and the remote `command` always
-// comes from the registry, never from the request.
+// names a host id — "local" or an allowed ssh host. The send route resolves the
+// id against a registry scoped to the current familiar plus explicitly
+// registered remote hosts; an unregistered host is rejected, and the remote
+// `command` always comes from the registry, never from the request.
 
 import {
   isSshRuntime,
@@ -16,8 +16,8 @@ import {
   type SshFamiliarRuntime,
 } from "./familiar-runtime.ts";
 
-/** Sentinel host id for "this machine" — a real id so it can force-local a
- *  chat whose familiar is bound to a remote runtime. */
+/** Sentinel host id for "this machine" — a real id so local-bound chats can
+ *  select local execution explicitly. */
 export const LOCAL_HOST_ID = "local";
 
 export type ChatHostOption = {
@@ -38,8 +38,8 @@ export type SshHostRegistryEntry = {
 
 /**
  * The merged, deduped ssh-host registry: explicitly registered remote hosts
- * first (their cwd/command win), then hosts inherited from familiars' runtime
- * bindings. Invalid entries are dropped via the same validation the send
+ * first (their cwd/command win), then supplied familiar runtime bindings.
+ * Invalid entries are dropped via the same validation the send
  * route enforces.
  */
 export function sshHostRegistry(args: {
@@ -106,9 +106,11 @@ export type RequestedRuntimeResolution =
  * Resolve what runtime a send should use, before falling back to the
  * familiar's own binding:
  *
- *  - an explicit `requestedHost` wins — "local" forces the local machine, a
- *    registered ssh host resolves to its registry runtime, anything else is
- *    REJECTED (fail closed; the picker only offers registered hosts);
+ *  - an explicit `requestedHost` wins only within the caller's authorization
+ *    context — "local" is accepted for local-bound familiars but cannot
+ *    downgrade an ssh-bound familiar, an allowed ssh host resolves to its
+ *    registry runtime, anything else is REJECTED (fail closed; the picker only
+ *    offers registered hosts);
  *  - with no request, a conversation previously recorded on an ssh host stays
  *    pinned there while that host remains registered (remote chats must not
  *    silently fall back to local because the picker default is local);
@@ -118,10 +120,17 @@ export function resolveRequestedRuntime(args: {
   requestedHost: string | null | undefined;
   conversationRuntime: string | null | undefined;
   registry: SshFamiliarRuntime[];
+  currentRuntime?: FamiliarRuntime | Partial<FamiliarRuntime> | null | undefined;
 }): RequestedRuntimeResolution {
   const requested = typeof args.requestedHost === "string" ? args.requestedHost.trim() : "";
+  const currentRuntime = normalizeFamiliarRuntime(args.currentRuntime as FamiliarRuntime);
   if (requested) {
-    if (requested === LOCAL_HOST_ID) return { ok: true, runtime: { kind: "local" } };
+    if (requested === LOCAL_HOST_ID) {
+      if (isSshRuntime(currentRuntime)) {
+        return { ok: false, error: "local runtime is not allowed for this familiar" };
+      }
+      return { ok: true, runtime: { kind: "local" } };
+    }
     const match = args.registry.find((runtime) => runtime.host === requested);
     if (!match) return { ok: false, error: `host '${requested}' is not registered` };
     return { ok: true, runtime: match };
