@@ -67,6 +67,9 @@ async function runBd(repoRoot: string, beadsDir: string, args: string[]) {
 }
 
 export async function GET(req: Request) {
+  const forbidden = rejectNonLocalRequest(req);
+  if (forbidden) return forbidden;
+
   const url = new URL(req.url);
   const root = await resolveProjectRoot(url.searchParams.get("projectRoot"));
   if (!root.ok) return projectRootErrorResponse(root);
