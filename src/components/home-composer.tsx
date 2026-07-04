@@ -38,6 +38,7 @@ import { ADD_PROJECT_ID, useAddProjectFlow } from "@/components/project-picker";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
+import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
   fileToAttachment,
@@ -149,6 +150,11 @@ export function HomeComposer({
   const [history, setHistory] = useState<string[]>(() => readComposerHistory(HOME_HISTORY_KEY));
   const [historyIdx, setHistoryIdx] = useState<number>(-1);
   const [slashIdx, setSlashIdx] = useState(0);
+  // Escape dismisses the inline slash/model/skill menus (they otherwise stay
+  // open purely as a function of the text). Reset whenever the text changes so
+  // typing a fresh command token re-opens them.
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const { announce } = useAnnouncer();
   // Stable per-mount listbox id — the chat composer mounts its own slash menu,
   // so ids must be unique across simultaneously mounted composers.
   const slashListboxId = useId();
@@ -368,7 +374,7 @@ export function HomeComposer({
   const modelHarness =
     modelState?.harness ?? selectedFamiliar?.harness ?? "claude";
   const modelOptions = useMemo(() => modelSlashOptions(text, modelHarness), [text, modelHarness]);
-  const modelMenuActive = (modelOptions?.length ?? 0) > 0;
+  const modelMenuActive = !slashDismissed && (modelOptions?.length ?? 0) > 0;
   // Inline skill picker: "/skill <partial>" / "/skills" shows skill options.
   const [skills, setSkills] = useState<SkillOption[]>([]);
   useEffect(() => {
@@ -386,10 +392,11 @@ export function HomeComposer({
     };
   }, []);
   const skillOptions = useMemo(() => skillSlashOptions(text, skills), [text, skills]);
-  const skillMenuActive = (skillOptions?.length ?? 0) > 0;
+  const skillMenuActive = !slashDismissed && (skillOptions?.length ?? 0) > 0;
   // The inline listboxes (slash commands, /model, /skill) share the same listbox
   // id, so the textarea's combobox ARIA tracks whichever is open.
-  const menuOpen = modelMenuActive || skillMenuActive || slashSuggestions.length > 0;
+  const menuOpen =
+    modelMenuActive || skillMenuActive || (!slashDismissed && slashSuggestions.length > 0);
 
   // Invoke a skill from home = open a new chat that asks the familiar to run it.
   const invokeSkill = useCallback(
@@ -408,6 +415,7 @@ export function HomeComposer({
 
   useEffect(() => {
     setSlashIdx(0);
+    setSlashDismissed(false);
   }, [text]);
 
   // Persist the draft so a reload restores it; cleared when the input empties
@@ -458,8 +466,9 @@ export function HomeComposer({
     }
     const next = await Promise.all(selected.map(fileToAttachment));
     setAttachments((prev) => [...prev, ...next]);
+    announce(`Attached ${next.length} file${next.length === 1 ? "" : "s"}`, "polite");
     setTimeout(() => textareaRef.current?.focus(), 0);
-  }, [attachments.length, onToast]);
+  }, [attachments.length, onToast, announce]);
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   }, []);
@@ -485,13 +494,14 @@ export function HomeComposer({
       }
       setEnhanceOriginal(text);
       setText(json.enhanced);
+      announce("Prompt enhanced", "polite");
       setEnhanceStatus("idle");
       setTimeout(() => { textareaRef.current?.focus(); autoGrow(); }, 0);
     } catch {
       setEnhanceStatus("error");
       onToast("Couldn't enhance the prompt.");
     }
-  }, [text, sending, enhanceStatus, onToast, autoGrow]);
+  }, [text, sending, enhanceStatus, onToast, autoGrow, announce]);
   const revertEnhance = useCallback(() => {
     setEnhanceOriginal((original) => {
       if (original == null) return null;
@@ -666,6 +676,13 @@ export function HomeComposer({
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // Escape closes any open inline menu — the menu footers advertise
+      // "Esc cancel", and typing re-opens it (slashDismissed resets on text).
+      if (e.key === "Escape" && menuOpen) {
+        e.preventDefault();
+        setSlashDismissed(true);
+        return;
+      }
       // Inline model picker takes priority when "/model <partial>" is open.
       if (modelMenuActive && modelOptions) {
         const opts = modelOptions;
@@ -693,7 +710,7 @@ export function HomeComposer({
         }
       }
       // Slash menu hotkeys take priority over history/submit when it's open
-      if (slashSuggestions.length > 0) {
+      if (!slashDismissed && slashSuggestions.length > 0) {
         if (e.key === "ArrowDown") {
           e.preventDefault();
           setSlashIdx((i) => Math.min(i + 1, slashSuggestions.length - 1));
@@ -760,6 +777,8 @@ export function HomeComposer({
       skillOptions,
       invokeSkill,
       onToast,
+      menuOpen,
+      slashDismissed,
       slashIdx,
       slashSuggestions,
       text,
@@ -864,7 +883,7 @@ export function HomeComposer({
             </div>
             <div className="hc-slash-footer">↑↓ navigate · Enter run · Tab complete · Esc cancel</div>
           </div>
-        ) : slashSuggestions.length > 0 ? (
+        ) : !slashDismissed && slashSuggestions.length > 0 ? (
           <div className="hc-slash-menu">
             <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Slash commands">
               {slashSuggestions.map((cmd, i) => {
