@@ -89,4 +89,29 @@ assert.ok(
   "both view branches should render the shared ThreadRow",
 );
 
+// Recent rows carry their project's identity tile: the time buckets
+// interleave chats from every project, and the mapping comes from the SAME
+// override-aware grouping the folder view uses (a dragged chat shows its
+// override folder's tile, not its recorded cwd's).
+assert.match(
+  chatSidebar,
+  /const sessionProjectById = useMemo\(\(\) => \{[\s\S]*?for \(const group of groups\)/,
+  "Recent-row project lookup derives from the override-aware groups",
+);
+assert.match(
+  chatSidebar,
+  /indent="flat"\s*\n\s*project=\{sessionProjectById\.get\(session\.id\) \?\? null\}/,
+  "Recent rows pass the project identity into ThreadRow",
+);
+assert.match(
+  chatSidebar,
+  /cnav__thread-proj[\s\S]*?<ProjectAvatar name=\{project\.name\} root=\{project\.root\} size="sm"/,
+  "ThreadRow renders the shared ProjectAvatar tile with an accessible project name",
+);
+assert.match(
+  chatSidebar,
+  /<span className="sr-only">\{project\.name\}<\/span>/,
+  "the project name is announced, not just painted",
+);
+
 console.log("chat-sidebar-wiring.test.ts passed");
