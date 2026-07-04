@@ -85,6 +85,9 @@ type ThreadRowProps = {
   deleting: boolean;
   /** "folder" indents under a project folder; "flat" aligns with section headers. */
   indent: "folder" | "flat";
+  /** Shown in the time-bucketed Recent view, where rows from every project
+   *  interleave — the folder view already says this via the group header. */
+  project?: { root: string; name: string } | null;
   onOpen: () => void;
   onTogglePin: () => void;
   onRequestDelete: () => void;
@@ -99,6 +102,7 @@ function ThreadRow({
   confirming,
   deleting,
   indent,
+  project = null,
   onOpen,
   onTogglePin,
   onRequestDelete,
@@ -115,6 +119,12 @@ function ThreadRow({
         className="cnav__thread-main focus-ring"
       >
         <span className={`cnav__dot ${statusDotClass(session.status)}`} aria-hidden />
+        {project ? (
+          <span className="cnav__thread-proj" title={project.name}>
+            <ProjectAvatar name={project.name} root={project.root} size="sm" />
+            <span className="sr-only">{project.name}</span>
+          </span>
+        ) : null}
         <span className="cnav__thread-title" title={title}>{title}</span>
         {confirming ? null : (
           <span className="cnav__time">{bareTime(session.updated_at || session.created_at)}</span>
@@ -210,6 +220,21 @@ export function ChatSidebar({
     () => deriveChatProjectGroups(applyProjectOverrides(visibleSessions, overrides), projects),
     [visibleSessions, overrides, projects],
   );
+
+  // Session → project identity for the Recent view, derived from the SAME
+  // override-aware grouping the folder view renders — a chat dragged into
+  // another folder shows that folder's tile, not its recorded cwd's.
+  const sessionProjectById = useMemo(() => {
+    const byId = new Map<string, { root: string; name: string }>();
+    for (const group of groups) {
+      if (!group.projectRoot) continue;
+      const name = folderLabel(group);
+      for (const session of group.sessions) {
+        byId.set(session.id, { root: group.projectRoot, name });
+      }
+    }
+    return byId;
+  }, [groups]);
 
   const pinnedSessions = useMemo(
     () =>
@@ -456,6 +481,7 @@ export function ChatSidebar({
                             confirming={confirmingSessionId === session.id}
                             deleting={deletingSessionId === session.id}
                             indent="flat"
+                            project={sessionProjectById.get(session.id) ?? null}
                             onOpen={() => onOpenSession(session)}
                             onTogglePin={() => togglePin(session.id)}
                             onRequestDelete={() => setConfirmingSessionId(session.id)}

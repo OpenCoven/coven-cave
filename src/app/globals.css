@@ -1181,6 +1181,13 @@ tr[role="checkbox"]:focus-visible {
   flex-shrink: 0;
   background: var(--text-muted);
 }
+/* Project identity tile on Recent rows — the time buckets interleave chats
+   from every project, so each row carries its project's avatar/monogram. */
+.cnav__thread-proj {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
 .cnav__dot--running {
   background: var(--color-success);
   animation: cnav-pulse 1.6s ease-in-out infinite;
