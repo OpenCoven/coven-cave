@@ -215,6 +215,7 @@ export function PopoverSeparator() {
 
 export function PopoverItem({
   icon,
+  leading,
   children,
   onSelect,
   active,
@@ -223,6 +224,8 @@ export function PopoverItem({
   checked,
 }: {
   icon?: IconName;
+  /** Rich leading visual (e.g. a ProjectAvatar); wins over `icon`. */
+  leading?: ReactNode;
   children: ReactNode;
   onSelect?: () => void;
   active?: boolean;
@@ -249,7 +252,7 @@ export function PopoverItem({
       role={radio ? "menuitemradio" : "menuitem"}
       aria-checked={radio ? checked : undefined}
     >
-      {icon ? <Icon name={icon} width={13} aria-hidden /> : null}
+      {leading ?? (icon ? <Icon name={icon} width={13} aria-hidden /> : null)}
       <span>{children}</span>
       {radio && checked ? (
         <Icon name="ph:check" width={12} aria-hidden className="ml-auto" />

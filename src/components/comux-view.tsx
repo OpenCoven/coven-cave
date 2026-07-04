@@ -33,10 +33,9 @@ import { Button } from "@/components/ui/button";
 import {
   deriveComuxProjects,
   projectName,
-  projectTint,
-  projectMonogram,
   type ComuxProject,
 } from "@/lib/comux-projects";
+import { ProjectAvatar } from "@/components/project-avatar";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { ContextMenu, openContextMenuAt, type ContextMenuState } from "@/components/ui/context-menu";
 import { PopoverItem, PopoverSeparator } from "@/components/ui/popover";
@@ -355,9 +354,7 @@ function SortableProjectRow({
     meta.push(`${project.sessionCount} ${project.sessionCount === 1 ? "chat" : "chats"}`);
   }
   if (project.updatedAt) meta.push(shortProjectTime(project.updatedAt));
-  const monogram = projectMonogram(project.name);
   const style: CSSProperties = {
-    ["--tile" as string]: projectTint(project.root),
     transform: CSS.Translate.toString(transform),
     transition,
   };
@@ -386,9 +383,7 @@ function SortableProjectRow({
           : "text-[var(--text-primary)]"
       }`}
     >
-      <span className="comux-project-tile shrink-0 font-bold leading-none tracking-tight tabular-nums" aria-hidden>
-        {monogram}
-      </span>
+      <ProjectAvatar name={project.name} root={project.root} size="lg" className="shrink-0" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-medium leading-tight">{project.name}</span>
         {meta.length > 0 && (

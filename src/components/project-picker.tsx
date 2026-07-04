@@ -10,6 +10,7 @@ import {
   PopoverSeparator,
 } from "@/components/ui/popover";
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
+import { ProjectAvatar } from "@/components/project-avatar";
 import { addChatProject } from "@/lib/chat-add-project";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import type { CaveProject } from "@/lib/cave-projects";
@@ -166,7 +167,11 @@ export function ProjectPicker({
         disabled={disabled}
         title={selected ? selected.root : "No project"}
       >
-        <Icon name={selected ? "ph:folder-open" : "ph:folder"} width={14} aria-hidden />
+        {selected ? (
+          <ProjectAvatar name={selected.name} root={selected.root} color={selected.color} size="sm" />
+        ) : (
+          <Icon name="ph:folder" width={14} aria-hidden />
+        )}
         <span className="cave-project-picker__trigger-label">
           {selected ? selected.name : "No project"}
         </span>
@@ -195,7 +200,8 @@ export function ProjectPicker({
           <PopoverLabel>Project</PopoverLabel>
           {allowNoProject ? (
             <PopoverItem
-              icon={selected ? "ph:folder" : "ph:check"}
+              icon="ph:folder"
+              checked={!selected}
               active={!selected}
               onSelect={() => {
                 onChange(NO_PROJECT_ID);
@@ -208,7 +214,10 @@ export function ProjectPicker({
           {visible.map((entry) => (
             <PopoverItem
               key={entry.id}
-              icon={entry.id === selected?.id ? "ph:check" : "ph:folder"}
+              leading={
+                <ProjectAvatar name={entry.name} root={entry.root} color={entry.color} size="sm" />
+              }
+              checked={entry.id === selected?.id}
               active={entry.id === selected?.id}
               onSelect={() => {
                 onChange(entry.id);

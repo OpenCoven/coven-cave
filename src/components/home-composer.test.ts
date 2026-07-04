@@ -311,20 +311,23 @@ for (const [name, src] of [
   );
   // menuOpen unifies the slash-command and /model listboxes (both share the
   // listbox id), so the combobox ARIA covers the /model picker too — not just
-  // the slash menu. Both composers must use it.
+  // the slash menu. Both composers must use it. (HomeComposer additionally gates
+  // the slash term on its Escape-dismiss flag: `(!slashDismissed && …)`.)
   assert.match(
     src,
-    /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| slashSuggestions\.length > 0;/,
+    /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\|[\s\S]{0,40}slashSuggestions\.length > 0/,
     `${name} combobox ARIA must reflect every inline menu (slash, /model, /skill)`,
   );
 }
 
 // ── HomeComposer combobox ARIA covers the /model picker, not just slash ──────
 // Both inline listboxes share the listbox id; menuOpen unifies them so the
-// textarea announces the /model picker too (was: slash-only).
+// textarea announces the /model picker too (was: slash-only). The slash term is
+// gated on the Escape-dismiss flag so a dismissed menu also drops the combobox
+// ARIA.
 assert.match(
   source,
-  /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| slashSuggestions\.length > 0;/,
+  /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\| \(!slashDismissed && slashSuggestions\.length > 0\);/,
   "HomeComposer combobox ARIA reflects every inline menu (slash, /model, /skill)",
 );
 
@@ -532,4 +535,51 @@ assert.match(
   source,
   /hc-attachments-clear[\s\S]*?onClick=\{\(\) => setAttachments\(\[\]\)\}[\s\S]*?Clear all/,
   "a Clear all control empties the staged attachments",
+);
+
+// ─── a11y: Escape dismisses the inline menus; enhance/attach announce ─────────
+// The slash/model/skill menu footers advertise "Esc cancel", but nothing wired
+// Escape — the menus re-open purely as a function of the text. A dismissed flag
+// (reset on text change) closes them; and the genuinely-silent state changes
+// (enhance success, attachment add — neither raises a toast) announce to the
+// shared live region so screen-reader users aren't left guessing.
+assert.match(
+  source,
+  /const \[slashDismissed, setSlashDismissed\] = useState\(false\)/,
+  "a slashDismissed flag backs Escape-to-dismiss for the inline menus",
+);
+assert.match(
+  source,
+  /if \(e\.key === "Escape" && menuOpen\) \{[\s\S]{0,120}setSlashDismissed\(true\);[\s\S]{0,40}return;/,
+  "Escape closes any open inline menu (the footers advertise Esc cancel)",
+);
+assert.match(
+  source,
+  /setSlashIdx\(0\);\s*setSlashDismissed\(false\);/,
+  "the dismissed flag resets when the text changes so a fresh token re-opens the menu",
+);
+assert.match(
+  source,
+  /const modelMenuActive = !slashDismissed &&/,
+  "the model menu respects the dismissed flag",
+);
+assert.match(
+  source,
+  /const skillMenuActive = !slashDismissed &&/,
+  "the skill menu respects the dismissed flag",
+);
+assert.match(
+  source,
+  /const \{ announce \} = useAnnouncer\(\)/,
+  "HomeComposer wires the shared live-region announcer",
+);
+assert.match(
+  source,
+  /setText\(json\.enhanced\);\s*announce\("Prompt enhanced", "polite"\)/,
+  "a successful enhance is announced (the textarea swap is otherwise silent to AT)",
+);
+assert.match(
+  source,
+  /Attached \$\{next\.length\} file/,
+  "adding attachments is announced (there is no toast on the success path)",
 );

@@ -3,16 +3,18 @@ import assert from "node:assert/strict";
 import { THEME_IDS, THEME_META, getSwatches } from "./theme-palettes.ts";
 import { LEGACY_THEME_RENAME, COVEN_THEME_KEY, COVEN_MODE_KEY } from "./theme-storage.ts";
 
-// 16 themes, coven is the default (first).
-assert.equal(THEME_IDS.length, 16);
+// 19 themes, coven is the default (first).
+assert.equal(THEME_IDS.length, 19);
 assert.equal(THEME_IDS[0], "coven");
 assert.deepEqual(
   [...THEME_IDS].sort(),
   [
     "bane",
+    "beacon",
     "bloom",
     "claude",
     "claymorphism",
+    "contrast",
     "coven",
     "dusk",
     "ember",
@@ -23,6 +25,7 @@ assert.deepEqual(
     "mist",
     "pastel-dreams",
     "slate",
+    "solstice",
     "tide",
     "trucker",
   ],
@@ -69,11 +72,16 @@ assert.equal(THEME_META.claymorphism.name, "Claymorphism");
 assert.equal(THEME_META.claude.name, "Claude");
 assert.equal(THEME_META["pastel-dreams"].name, "Pastel Dreams");
 assert.equal(THEME_META["pastel-dreams"].accentDark, "#c0aafd");
-assert.equal(THEME_META["pastel-dreams"].accentLight, "#a78bfa");
+assert.equal(THEME_META["pastel-dreams"].accentLight, "#9377e6");
 assert.equal(THEME_META.meatseeks.name, "Meatseeks");
 assert.equal(THEME_META.trucker.name, "Trucker");
-assert.equal(THEME_META.trucker.accentDark, "#005735");
+assert.equal(THEME_META.trucker.accentDark, "#21704a");
 assert.equal(THEME_META.trucker.accentLight, "#005735");
+assert.equal(THEME_META.contrast.name, "High Contrast");
+assert.equal(THEME_META.contrast.accentDark, "#ffd60a");
+assert.equal(THEME_META.contrast.accentLight, "#0f62fe");
+assert.equal(THEME_META.beacon.name, "Beacon");
+assert.equal(THEME_META.solstice.name, "Solstice");
 
 // Storage keys are stable strings.
 assert.equal(COVEN_THEME_KEY, "coven-theme");

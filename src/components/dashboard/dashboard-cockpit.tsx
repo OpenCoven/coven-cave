@@ -23,6 +23,7 @@ import type { ContractReport } from "@/lib/familiar-contract";
 import type { RetroRunsSnapshot } from "@/lib/retro-runs";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
 import { useMinuteTick } from "@/lib/use-minute-tick";
+import { usePrefersReducedMotion } from "@/lib/use-prefers-reduced-motion";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
 import { TodaySummary } from "@/components/dashboard/today-summary";
 import { RecentReports } from "@/components/dashboard/recent-reports";
@@ -195,7 +196,17 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
 
   // Predictive signals — pure + cheap over already-fetched data.
   const signals = useMemo(
-    () => dashboardSignals({ github: data.github, reading: data.reading, sessions: data.sessions, familiars: data.familiars, nowMs: now.getTime() }),
+    () =>
+      dashboardSignals({
+        github: data.github,
+        // Only the *active* queue (want-to-read / reading) — counting done and
+        // abandoned items made "Reading queue is large (N)" contradict the
+        // "To read" KPI, which uses this same filter.
+        reading: data.reading.filter((r) => r.status === "want-to-read" || r.status === "reading"),
+        sessions: data.sessions,
+        familiars: data.familiars,
+        nowMs: now.getTime(),
+      }),
     [data.github, data.reading, data.sessions, data.familiars, now],
   );
 
@@ -456,9 +467,13 @@ function Panel({ title, icon, count, hint, href, children }: {
 
 function SortableWidget({ id, children }: { id: string; children: ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const reduceMotion = usePrefersReducedMotion();
   const style: CSSProperties = {
     transform: CSS.Translate.toString(transform),
-    transition,
+    // dnd-kit drives the settle animation via an inline JS transition that the
+    // global reduced-motion CSS reset can't reach — drop it so panels snap into
+    // place instead of sliding when the user asks for less motion.
+    transition: reduceMotion ? undefined : transition,
     zIndex: isDragging ? 20 : undefined,
     opacity: isDragging ? 0.92 : undefined,
   };

@@ -1,8 +1,12 @@
 /**
- * 16-theme roster metadata + swatch lookup for the appearance settings UI.
+ * 19-theme roster metadata + swatch lookup for the appearance settings UI.
  * The actual palette CSS lives in `src/app/globals.css`; this module
  * mirrors the accent values and a representative background swatch
  * per (theme, mode) so the settings grid can preview each card.
+ *
+ * Every premade palette is held to WCAG 2.1 AA by
+ * `src/lib/theme-contrast-audit.test.ts` — run it before shipping a new
+ * theme or touching accent/surface values here or in globals.css.
  */
 
 import type { Mode } from "./theme-storage.ts";
@@ -24,6 +28,9 @@ export const THEME_IDS = [
   "pastel-dreams",
   "meatseeks",
   "trucker",
+  "contrast",
+  "beacon",
+  "solstice",
 ] as const;
 
 export type ThemeId = (typeof THEME_IDS)[number];
@@ -79,7 +86,7 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
   mist: {
     name: "Mist",
     description: "Scrying-pool teal. Cold as a question without an answer.",
-    hue: 198, accentDark: "#6BD8D3", accentLight: "#1A857F",
+    hue: 198, accentDark: "#6BD8D3", accentLight: "#177b76",
     bgDark: "oklch(0.09 0.030 198)", bgLight: "oklch(0.97 0.015 195)",
   },
   hex: {
@@ -109,7 +116,7 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
   claymorphism: {
     name: "Claymorphism",
     description: "Soft-molded stone with indigo glaze and lifted clay shadows.",
-    hue: 239, accentDark: "#818cf8", accentLight: "#6366f1",
+    hue: 239, accentDark: "#818cf8", accentLight: "#5457e9",
     bgDark: "#1e1b18", bgLight: "#e7e5e4",
   },
   claude: {
@@ -121,20 +128,38 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
   "pastel-dreams": {
     name: "Pastel Dreams",
     description: "Soft violet pastels with lifted white surfaces.",
-    hue: 263, accentDark: "#c0aafd", accentLight: "#a78bfa",
+    hue: 263, accentDark: "#c0aafd", accentLight: "#9377e6",
     bgDark: "#1c1917", bgLight: "#f7f3f9",
   },
   meatseeks: {
     name: "Meatseeks",
     description: "Supabase green over crisp utility surfaces.",
-    hue: 153, accentDark: "#006239", accentLight: "#72e3ad",
+    hue: 153, accentDark: "#1d7449", accentLight: "#279c6b",
     bgDark: "#121212", bgLight: "#fcfcfc",
   },
   trucker: {
     name: "Trucker",
     description: "Roadside evergreen, blacktop panels, and clean cab lights.",
-    hue: 156, accentDark: "#005735", accentLight: "#005735",
+    hue: 156, accentDark: "#21704a", accentLight: "#005735",
     bgDark: "#020504", bgLight: "#f5fcf9",
+  },
+  contrast: {
+    name: "High Contrast",
+    description: "Maximum-legibility ward. True black and white, nothing whispered.",
+    hue: 0, accentDark: "#ffd60a", accentLight: "#0f62fe",
+    bgDark: "#000000", bgLight: "#ffffff",
+  },
+  beacon: {
+    name: "Beacon",
+    description: "Signal-fire on a night sea. Blue-orange keel; colorblind-considerate.",
+    hue: 250, accentDark: "#f5a623", accentLight: "#a34d00",
+    bgDark: "oklch(0.14 0.025 250)", bgLight: "oklch(0.975 0.010 250)",
+  },
+  solstice: {
+    name: "Solstice",
+    description: "Midsummer gold leaf on long shadow. The light that lingers.",
+    hue: 85, accentDark: "#e3b341", accentLight: "#7a5c00",
+    bgDark: "oklch(0.145 0.020 85)", bgLight: "oklch(0.975 0.016 90)",
   },
 };
 

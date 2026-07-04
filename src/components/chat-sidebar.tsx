@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { Icon, type IconName } from "@/lib/icon";
+import { ProjectAvatar } from "@/components/project-avatar";
 import { sessionRailTitle } from "@/lib/session-rail-title";
 import { relativeTime } from "@/lib/relative-time";
 import type { SessionRow } from "@/lib/types";
@@ -506,7 +507,11 @@ export function ChatSidebar({
                         className="cnav__group-toggle focus-ring"
                       >
                         <Icon name="ph:caret-down" width={10} className="cnav__chev" aria-hidden />
-                        <Icon name={folderIcon(group, expanded)} width={14} className="cnav__folder" aria-hidden />
+                        {group.projectId ? (
+                          <ProjectAvatar name={label} root={group.projectRoot} size="sm" className="cnav__folder" />
+                        ) : (
+                          <Icon name={folderIcon(group, expanded)} width={14} className="cnav__folder" aria-hidden />
+                        )}
                         <span className="cnav__group-name" title={group.projectRoot ?? "Threads with no project"}>
                           {label}
                         </span>

@@ -341,6 +341,12 @@ export function Workspace() {
   // Deep-link target captured at mount, held until the async sessions fetch
   // settles (loadSessions → sessionsLoaded) so the restore can resolve it.
   const pendingChatDeepLinkRef = useRef<string | null>(readChatHash());
+  // Render mirror of the ref: while the deep link awaits the sessions fetch
+  // the shell shows an "Opening chat…" takeover instead of flashing Home —
+  // that wait is ~2s warm but stretches under a cold dev-server compile.
+  const [chatDeepLinkPending, setChatDeepLinkPending] = useState<boolean>(
+    () => pendingChatDeepLinkRef.current !== null,
+  );
   // Refs for the popstate listener — sessions repoll every 4s and mode flips
   // often; the listener should not resubscribe on either.
   const sessionsRef = useRef(sessions);
@@ -1360,6 +1366,7 @@ export function Workspace() {
     const sid = pendingChatDeepLinkRef.current;
     if (!sid) return;
     pendingChatDeepLinkRef.current = null;
+    setChatDeepLinkPending(false);
     const target = sessions.find((s) => s.id === sid);
     if (target) {
       openFamiliarSession(sid, target.familiarId);
@@ -2478,6 +2485,13 @@ export function Workspace() {
           openFamiliarSession(sid, fid);
         }}
       />
+
+      {chatDeepLinkPending && (
+        <div className="workspace-deeplink-pending" role="status">
+          <span className="workspace-deeplink-pending__spinner" aria-hidden />
+          Opening chat…
+        </div>
+      )}
     </FamiliarStudioProvider>
   );
 }

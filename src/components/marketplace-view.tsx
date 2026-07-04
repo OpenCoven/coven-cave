@@ -12,6 +12,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs } from "@/components/ui/tabs";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { MarketplaceCard } from "@/components/marketplace/marketplace-card";
 import { MarketplaceDetail } from "@/components/marketplace/marketplace-detail";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
@@ -148,6 +149,10 @@ export function MarketplaceViewSurface({
   const loadCtl = useRef<AbortController | null>(null);
   const rolesCtl = useRef<AbortController | null>(null);
   const skillsCtl = useRef<AbortController | null>(null);
+  // Install / remove / role-toggle / configure surface their outcome as
+  // visual-only <p> banners (not toasts), so mirror success + errors to the
+  // shared live region — otherwise these core actions are silent to AT.
+  const { announce } = useAnnouncer();
 
   const load = useCallback(async () => {
     loadCtl.current?.abort();
@@ -309,13 +314,16 @@ export function MarketplaceViewSurface({
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };
       if (!json.ok) throw new Error(json.error ?? "install failed");
+      announce("Added to your setup", "polite");
     } catch (err) {
       setInstalled(id, false);
-      setError(err instanceof Error ? err.message : "install failed");
+      const msg = err instanceof Error ? err.message : "install failed";
+      setError(msg);
+      announce(msg, "assertive");
     } finally {
       setBusyId(null);
     }
-  }, [setInstalled]);
+  }, [setInstalled, announce]);
 
   const remove = useCallback(async (id: string) => {
     setBusyId(id);
@@ -328,13 +336,16 @@ export function MarketplaceViewSurface({
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };
       if (!json.ok) throw new Error(json.error ?? "uninstall failed");
+      announce("Removed from your setup", "polite");
     } catch (err) {
       setInstalled(id, true);
-      setError(err instanceof Error ? err.message : "uninstall failed");
+      const msg = err instanceof Error ? err.message : "uninstall failed";
+      setError(msg);
+      announce(msg, "assertive");
     } finally {
       setBusyId(null);
     }
-  }, [setInstalled]);
+  }, [setInstalled, announce]);
 
   const toggleRole = useCallback(async (role: RoleEntry) => {
     const key = `${role.familiar}:${role.id}`;
@@ -351,17 +362,20 @@ export function MarketplaceViewSurface({
       });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || json.ok === false) throw new Error(json.error ?? `roles http ${res.status}`);
+      announce(next ? "Role enabled" : "Role disabled", "polite");
     } catch (err) {
       setRoles((current) =>
         current.map((item) =>
           item.id === role.id && item.familiar === role.familiar ? { ...item, active: role.active } : item,
         ),
       );
-      setRolesError(err instanceof Error ? err.message : "role update failed");
+      const msg = err instanceof Error ? err.message : "role update failed";
+      setRolesError(msg);
+      announce(msg, "assertive");
     } finally {
       setBusyRoleKey(null);
     }
-  }, []);
+  }, [announce]);
 
   // A role-card skill chip opens that skill's detail drawer (resolving the
   // chip's name against the scanned local skills). Unknown/not-yet-loaded
