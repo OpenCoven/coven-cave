@@ -79,4 +79,15 @@ assert.ok(!sigIds.includes("familiar-down-f2"), "recently-active familiar is not
 assert.equal(signals[0].severity, "warn", "warnings sort ahead of info");
 assert.equal(dashboardSignals({ github: [], reading: [], sessions: [], familiars: [], nowMs: NOW }).length, 0, "no signals when nothing is drifting");
 
+// ── Signals are actionable: each carries the destination to act on it ─
+const stalled = signals.find((s) => s.id === "pr-stalled-p1");
+assert.equal(stalled.href, "#", "stalled-PR signal links to the PR's own URL");
+assert.equal(stalled.external, true, "PR links leave the app via the external opener");
+assert.equal(signals.find((s) => s.id === "reading-large").href, "/?mode=library", "reading signal opens the library");
+assert.equal(
+  signals.find((s) => s.id === "familiar-down-f1").href,
+  "/dashboard/familiars/f1/analytics",
+  "trending-down signal opens that familiar's analytics",
+);
+
 console.log("dashboard-analytics.test.ts passed");

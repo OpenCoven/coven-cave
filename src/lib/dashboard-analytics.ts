@@ -90,6 +90,11 @@ export type DashboardSignal = {
   id: string;
   severity: "warn" | "info";
   text: string;
+  /** Where acting on the signal takes you (the stalled PR, the library, the
+   *  familiar's analytics). Signals without a destination render as plain rows. */
+  href?: string;
+  /** True when href leaves the app (opened via the external-URL helper). */
+  external?: boolean;
 };
 
 const STALE_PR_DAYS = 7;
@@ -124,6 +129,8 @@ export function dashboardSignals(input: {
         id: `pr-stalled-${g.id}`,
         severity: "warn",
         text: `PR stalled ${days}d: ${g.title}`,
+        href: g.url,
+        external: true,
       });
     }
   }
@@ -134,6 +141,7 @@ export function dashboardSignals(input: {
       id: "reading-large",
       severity: "info",
       text: `Reading queue is large (${reading.length} items)`,
+      href: "/?mode=library",
     });
   }
 
@@ -156,6 +164,7 @@ export function dashboardSignals(input: {
         id: `familiar-down-${f.id}`,
         severity: "warn",
         text: `${f.display_name} is trending down — no sessions in 3 days`,
+        href: `/dashboard/familiars/${encodeURIComponent(f.id)}/analytics`,
       });
     }
   }

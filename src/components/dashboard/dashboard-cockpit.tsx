@@ -22,6 +22,7 @@ import { buildFamiliarCardStats, type FamiliarCardStats } from "@/components/fam
 import type { ContractReport } from "@/lib/familiar-contract";
 import type { RetroRunsSnapshot } from "@/lib/retro-runs";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useMinuteTick } from "@/lib/use-minute-tick";
 import { ActionInbox } from "@/components/dashboard/action-inbox";
 import { TodaySummary } from "@/components/dashboard/today-summary";
 import { RecentReports } from "@/components/dashboard/recent-reports";
@@ -122,10 +123,14 @@ const STATUS_ORDER: CardStatus[] = ["running", "review", "blocked", "inbox", "ba
 
 export function DashboardCockpit({ model }: { model: DashboardModel }) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
+  useMinuteTick();    // keep the "Updated Nm ago" pill honest between polls
   const [data, setData] = useState<CockpitData>(EMPTY);
   // Each source populates independently so a panel renders the moment its data
   // lands — the slow ones (sessions) never block the fast ones (board, agents).
   const [ready, setReady] = useState<ReadonlySet<keyof CockpitData>>(new Set());
+  // Truthful freshness: stamped when fetched data actually lands (not render
+  // time), so a backgrounded tab shows real staleness when you come back.
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // Keep setState off an unmounted tree: the polled `load` may resolve after
   // unmount. A ref survives across the stable `load` identity (a plain `let`
@@ -143,6 +148,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       if (!aliveRef.current) return;
       setData((d) => ({ ...d, [key]: value }));
       setReady((r) => new Set(r).add(key));
+      setLastUpdated(new Date());
     };
     void getJson<{ cards: Card[] }>("/api/board").then((r) => put("cards", r?.cards ?? []));
     void getJson<{ familiars: Familiar[] }>("/api/familiars").then((r) => put("familiars", r?.familiars ?? []));
@@ -236,13 +242,15 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     });
   }, [confidenceRaw, data.sessions]);
 
+  // Every tile with a value that lives on another surface is a drill-down to
+  // that surface ("Needs you" stays put — its panel is right below).
   const kpis: KpiSpec[] = [
     { icon: "ph:warning-circle", value: model.needsAttention.length, label: "Needs you", accent: "rose", metric: "needs" },
-    { icon: "ph:kanban-bold", value: open.length, label: "Active tasks", accent: "lavender", src: "cards", metric: "tasks", href: "/#card-" },
-    { icon: "ph:lightning-bold", value: (byStatus.get("running") ?? 0) + runningSessions.length, label: "In progress", accent: "green", src: "cards", metric: "progress", href: "/#card-" },
-    { icon: "ph:git-merge", value: byStatus.get("review") ?? 0, label: "In review", accent: "blue", src: "cards", metric: "review", href: "/#card-" },
-    { icon: "ph:git-pull-request", value: prsToReview.length, label: "PRs to review", accent: "amber", src: "github", metric: "prs" },
-    { icon: "ph:books-bold", value: readingQueue.length, label: "To read", accent: "blue", src: "reading", metric: "reading" },
+    { icon: "ph:kanban-bold", value: open.length, label: "Active tasks", accent: "lavender", src: "cards", metric: "tasks", href: "/?mode=board" },
+    { icon: "ph:lightning-bold", value: (byStatus.get("running") ?? 0) + runningSessions.length, label: "In progress", accent: "green", src: "cards", metric: "progress", href: "/?mode=board" },
+    { icon: "ph:git-merge", value: byStatus.get("review") ?? 0, label: "In review", accent: "blue", src: "cards", metric: "review", href: "/?mode=board" },
+    { icon: "ph:git-pull-request", value: prsToReview.length, label: "PRs to review", accent: "amber", src: "github", metric: "prs", href: "/?mode=github" },
+    { icon: "ph:books-bold", value: readingQueue.length, label: "To read", accent: "blue", src: "reading", metric: "reading", href: "/?mode=library" },
   ];
 
   // ── 7-day KPI trends: load history; snapshot today once the live data is in ──
@@ -304,7 +312,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
           <SignalsPanel signals={signals} />
         </Panel>);
       case "confidence": return confidence.length === 0 ? null : (
-        <Panel title="Confidence" icon="ph:seal-check">
+        <Panel title="Confidence" icon="ph:seal-check" href="/dashboard/familiars/growth">
           <ConfidencePanel rows={confidence} />
         </Panel>);
       case "needs": return model.caughtUp ? null : (
@@ -312,18 +320,18 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
           <ActionInbox initialItems={model.needsAttention} />
         </Panel>);
       case "board": return (
-        <Panel title="Board" icon="ph:kanban-bold" hint={`${open.length} open`}>
+        <Panel title="Board" icon="ph:kanban-bold" hint={`${open.length} open`} href="/?mode=board">
           <BoardSnapshot byStatus={byStatus} total={data.cards.length} active={activeCards} loaded={ready.has("cards")} familiars={data.familiars} />
         </Panel>);
       case "today": return <TodaySummary summary={model.todaySummary} featured={model.featuredReport} now={now} />;
       case "agents": return (
-        <Panel title="Agents" icon="ph:sparkle" count={data.familiars.length || undefined}>
+        <Panel title="Agents" icon="ph:sparkle" count={data.familiars.length || undefined} href="/?mode=agents">
           <AgentsPanel familiars={data.familiars} sessions={data.sessions} loaded={ready.has("familiars")} />
         </Panel>);
       case "load": {
         const series = familiarLoadSeries(data.familiars, data.sessions, Date.now(), 7, 4);
         return (
-          <Panel title="Familiar load" icon="ph:chart-bar-bold">
+          <Panel title="Familiar load" icon="ph:chart-bar-bold" href="/dashboard/familiars/growth">
             {series.length > 0 ? (
               <div className="cockpit-load"><TrendChart series={series} height={150} fill={false} /></div>
             ) : (
@@ -332,15 +340,15 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
           </Panel>);
       }
       case "github": return (
-        <Panel title="GitHub" icon="ph:github-logo" count={data.github.length || undefined} hint={prsToReview.length ? `${prsToReview.length} to review` : undefined}>
+        <Panel title="GitHub" icon="ph:github-logo" count={data.github.length || undefined} hint={prsToReview.length ? `${prsToReview.length} to review` : undefined} href="/?mode=github">
           <GithubPanel items={data.github} loaded={ready.has("github")} />
         </Panel>);
       case "agenda": return (
-        <Panel title="Up next" icon="ph:calendar-bold" count={upcoming.length || undefined}>
+        <Panel title="Up next" icon="ph:calendar-bold" count={upcoming.length || undefined} href="/?mode=calendar">
           <AgendaPanel items={upcoming} now={now} loaded={ready.has("upcoming")} />
         </Panel>);
       case "reading": return (
-        <Panel title="Reading" icon="ph:books-bold" count={readingQueue.length || undefined} hint={readingQueue.length ? undefined : "queue empty"}>
+        <Panel title="Reading" icon="ph:books-bold" count={readingQueue.length || undefined} hint={readingQueue.length ? undefined : "queue empty"} href="/?mode=library">
           <ReadingPanel items={readingQueue} loaded={ready.has("reading")} />
         </Panel>);
       default: return null;
@@ -360,9 +368,18 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
           </h1>
         </div>
         <div className="cockpit-head__meta">
-          <span className="cockpit-pill">
-            <Icon name="ph:clock" aria-hidden /> Updated {relativeTime(now.toISOString(), now) || "just now"}
-          </span>
+          {/* The pill doubles as a manual refresh — the label stays truthful
+              (stamped when data lands), the click re-pulls everything now. */}
+          <button
+            type="button"
+            className="cockpit-pill cockpit-pill--refresh"
+            onClick={load}
+            title="Refresh now"
+            aria-label={`Refresh now — updated ${lastUpdated ? relativeTime(lastUpdated.toISOString()) || "just now" : "…"}`}
+          >
+            <Icon name="ph:arrows-clockwise" aria-hidden />
+            {lastUpdated ? `Updated ${relativeTime(lastUpdated.toISOString()) || "just now"}` : "Loading…"}
+          </button>
         </div>
       </header>
 
@@ -392,11 +409,11 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
         <SectionHead icon="ph:squares-four" title="Jump back in" />
         <div className="cockpit-quicklinks">
           <QuickLink href="/" icon="ph:house-bold" label="Home" sub="Your cave" />
-          <QuickLink href="/#card-" icon="ph:kanban-bold" label="Board" sub="Cards & tasks" />
+          <QuickLink href="/?mode=board" icon="ph:kanban-bold" label="Board" sub="Cards & tasks" />
           <QuickLink href="/dashboard/familiars/growth" icon="ph:chart-bar-bold" label="Growth" sub="Familiar performance" />
           <QuickLink href="/?mode=evals" icon="ph:flask" label="Evals" sub="Suites, loops, freshness" />
-          <QuickLink href="/" icon="ph:calendar-bold" label="Calendar" sub="Reminders & agenda" />
-          <QuickLink href="/" icon="ph:books-bold" label="Library" sub="Saved knowledge" />
+          <QuickLink href="/?mode=calendar" icon="ph:calendar-bold" label="Calendar" sub="Reminders & agenda" />
+          <QuickLink href="/?mode=library" icon="ph:books-bold" label="Library" sub="Saved knowledge" />
           <QuickLink href="/settings" icon="ph:gear-six" label="Settings" sub="Preferences" />
         </div>
       </div>
@@ -474,7 +491,12 @@ function KpiTile({ icon, value, label, accent, href, loading, series }: KpiSpec 
           <Icon name={icon} aria-hidden />
         </span>
         {!loading && delta !== 0 ? (
-          <span className="cockpit-kpi__delta" title={`${delta > 0 ? "+" : ""}${delta} over ${TREND_DAYS} days`}>
+          // Every KPI here is a workload queue, so rising is load and falling
+          // is relief — color the delta by what it means, not by direction.
+          <span
+            className={`cockpit-kpi__delta cockpit-kpi__delta--${delta > 0 ? "up" : "down"}`}
+            title={`${delta > 0 ? "+" : ""}${delta} over ${TREND_DAYS} days`}
+          >
             {delta > 0 ? "▲" : "▼"} {Math.abs(delta)}
           </span>
         ) : null}
@@ -541,17 +563,20 @@ function AgentsPanel({ familiars, sessions, loaded }: { familiars: Familiar[]; s
         const p = profiles.find((x) => x.id === f.id);
         return (
           <li key={f.id} className="cockpit-agent">
-            <span className="cockpit-agent__avatar" style={{ background: f.color || "var(--accent-presence)" }}>
-              {(f.display_name || "?").slice(0, 1).toUpperCase()}
-              {active ? <span className="cockpit-agent__on" /> : null}
-            </span>
-            <span className="cockpit-agent__body">
-              <span className="cockpit-agent__name" title={f.display_name}>{f.display_name}</span>
-              <span className="cockpit-agent__role" title={f.role || f.model || "familiar"}>{f.role || f.model || "familiar"}</span>
-            </span>
-            {p ? <span className="cockpit-agent__count">{p.sessionsLast7d}/7d</span> : null}
-            {p ? <span className="cockpit-agent__trend"><Sparkline points={p.trend} color={f.color || "var(--accent-presence)"} height={20} /></span> : null}
-            {active ? <span className="cockpit-agent__busy">{f.active_sessions} active</span> : null}
+            {/* The whole row drills into the familiar's analytics page. */}
+            <a className="cockpit-agent__link" href={`/dashboard/familiars/${encodeURIComponent(f.id)}/analytics`}>
+              <span className="cockpit-agent__avatar" style={{ background: f.color || "var(--accent-presence)" }}>
+                {f.emoji || (f.display_name || "?").slice(0, 1).toUpperCase()}
+                {active ? <span className="cockpit-agent__on" /> : null}
+              </span>
+              <span className="cockpit-agent__body">
+                <span className="cockpit-agent__name" title={f.display_name}>{f.display_name}</span>
+                <span className="cockpit-agent__role" title={f.role || f.model || "familiar"}>{f.role || f.model || "familiar"}</span>
+              </span>
+              {p ? <span className="cockpit-agent__count">{p.sessionsLast7d}/7d</span> : null}
+              {p ? <span className="cockpit-agent__trend"><Sparkline points={p.trend} color={f.color || "var(--accent-presence)"} height={20} /></span> : null}
+              {active ? <span className="cockpit-agent__busy">{f.active_sessions} active</span> : null}
+            </a>
           </li>
         );
       })}
@@ -594,7 +619,7 @@ function GithubPanel({ items, loaded }: { items: GitHubItem[]; loaded: boolean }
 function checkDot(s: GitHubItem["checkStatus"]) {
   if (!s) return null;
   const color = s === "passing" ? "var(--color-success)" : s === "failing" ? "var(--color-danger)" : "var(--color-warning)";
-  return <span className="cockpit-dot" style={{ background: color }} title={`Checks: ${s}`} />;
+  return <span className="cockpit-dot" style={{ background: color }} title={`Checks: ${s}`} role="img" aria-label={`Checks ${s}`} />;
 }
 function shortRepo(repo: string): string {
   const slash = repo.lastIndexOf("/");
@@ -636,13 +661,22 @@ function ReadingPanel({ items, loaded }: { items: ReadingItem[]; loaded: boolean
     <ul className="cockpit-reading">
       {items.slice(0, 5).map((r) => {
         const reading = r.status === "reading";
+        const inner = (
+          <>
+            <span className="cockpit-dot" style={{ background: reading ? "var(--accent-presence)" : "var(--text-muted)" }} />
+            <span className="cockpit-readrow__title" title={r.title}>{r.title}</span>
+            {host(r.url) ? <span className="cockpit-readrow__host">{host(r.url)}</span> : null}
+          </>
+        );
         return (
           <li key={r.id}>
-            <a className="cockpit-readrow" href={r.url || "#"} target={r.url ? "_blank" : undefined} rel="noreferrer">
-              <span className="cockpit-dot" style={{ background: reading ? "var(--accent-presence)" : "var(--text-muted)" }} />
-              <span className="cockpit-readrow__title" title={r.title}>{r.title}</span>
-              {host(r.url) ? <span className="cockpit-readrow__host">{host(r.url)}</span> : null}
-            </a>
+            {r.url ? (
+              <a className="cockpit-readrow" href={r.url} target="_blank" rel="noreferrer">{inner}</a>
+            ) : (
+              // No URL → nothing to open; a dead href="#" link would just
+              // scroll-jump and lie to assistive tech.
+              <span className="cockpit-readrow">{inner}</span>
+            )}
           </li>
         );
       })}
@@ -660,12 +694,31 @@ const SIGNAL_ICON: Record<DashboardSignal["severity"], IconName> = { warn: "ph:w
 function SignalsPanel({ signals }: { signals: DashboardSignal[] }) {
   return (
     <ul className="cockpit-signals">
-      {signals.map((s) => (
-        <li key={s.id} className={`cockpit-signal cockpit-signal--${s.severity}`}>
-          <Icon name={SIGNAL_ICON[s.severity]} className="cockpit-signal__icon" aria-hidden />
-          <span className="cockpit-signal__text">{s.text}</span>
-        </li>
-      ))}
+      {signals.map((s) => {
+        const inner = (
+          <>
+            <Icon name={SIGNAL_ICON[s.severity]} className="cockpit-signal__icon" aria-hidden />
+            <span className="cockpit-signal__text">{s.text}</span>
+          </>
+        );
+        return (
+          <li key={s.id}>
+            {s.href ? (
+              // An actionable signal takes you to where you can act on it —
+              // the stalled PR, the library, the familiar's analytics.
+              <a
+                className={`cockpit-signal cockpit-signal--${s.severity} cockpit-signal--link`}
+                href={s.href}
+                onClick={s.external ? (event) => { event.preventDefault(); openExternalUrl(s.href!); } : undefined}
+              >
+                {inner}
+              </a>
+            ) : (
+              <span className={`cockpit-signal cockpit-signal--${s.severity}`}>{inner}</span>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -698,7 +751,13 @@ function ConfidencePanel({ rows }: { rows: ConfidenceRow[] }) {
       <div className="cockpit-confidence__grid">
         <div className="cockpit-confidence__rows">
           {rows.map((r) => (
-            <span key={r.id} title={`${r.name}: confidence ${r.score}`}>{r.name}</span>
+            <a
+              key={r.id}
+              href={`/dashboard/familiars/${encodeURIComponent(r.id)}/analytics`}
+              title={`${r.name}: confidence ${r.score} — open analytics`}
+            >
+              {r.name}
+            </a>
           ))}
         </div>
         <Heatmap rows={rows.map((r) => r.name)} cols={cols} cells={cells} colorFor={confidenceColor} height={Math.max(72, rows.length * 26)} />

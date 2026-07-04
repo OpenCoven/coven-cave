@@ -448,6 +448,10 @@
 .cockpit-head__meta { display: flex; gap: 8px; }
 .cockpit-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-muted);
   border: 1px solid var(--border-hairline); border-radius: 999px; padding: 4px 10px; background: var(--bg-raised); }
+/* The freshness pill doubles as the manual refresh button. */
+button.cockpit-pill--refresh { cursor: pointer; font: inherit; font-size: 11.5px; transition: border-color .15s, color .15s; }
+button.cockpit-pill--refresh:hover { border-color: var(--border-strong); color: var(--text-secondary); }
+button.cockpit-pill--refresh:hover svg { color: var(--accent-presence); }
 
 /* KPI rail */
 .cockpit-kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
@@ -460,6 +464,9 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 .cockpit-kpi__icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 8px;
   color: var(--kpi, var(--accent-presence)); background: color-mix(in oklch, var(--kpi, var(--accent-presence)) 15%, transparent); }
 .cockpit-kpi__delta { font-size: 10px; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+/* All KPI metrics are workload queues: rising = load, falling = relief. */
+.cockpit-kpi__delta--up { color: var(--color-warning); }
+.cockpit-kpi__delta--down { color: var(--color-success); }
 .cockpit-kpi__value { font-size: 24px; font-weight: 700; line-height: 1.1; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .cockpit-kpi__label { font-size: 11.5px; color: var(--text-secondary); }
 /* Shared hover-able trend sparkline (cockpit KPIs + report metric cards) */
@@ -509,7 +516,10 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 
 /* Agents */
 .cockpit-agents { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.cockpit-agent { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
+.cockpit-agent { display: flex; }
+.cockpit-agent__link { display: flex; align-items: center; gap: 10px; padding: 6px 8px; flex: 1; min-width: 0;
+  border-radius: 8px; text-decoration: none; color: inherit; }
+.cockpit-agent__link:hover { background: var(--bg-hover); }
 .cockpit-agent__avatar { position: relative; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
   font-size: 12px; font-weight: 700; color: #fff; flex: 0 0 auto; }
 .cockpit-agent__on { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border-radius: 50%;
@@ -546,6 +556,8 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
 .cockpit-signal--warn .cockpit-signal__icon { color: var(--color-warning); }
 .cockpit-signal--info .cockpit-signal__icon { color: var(--color-info); }
 .cockpit-signal__text { min-width: 0; }
+a.cockpit-signal--link { text-decoration: none; }
+a.cockpit-signal--link:hover { background: var(--bg-hover); }
 
 /* Confidence heatmap */
 .cockpit-confidence { display: flex; flex-direction: column; gap: 6px; }
@@ -553,7 +565,9 @@ a.cockpit-kpi:hover { border-color: var(--border-strong); transform: translateY(
   font-size: 9.5px; color: var(--text-muted); text-align: center; }
 .cockpit-confidence__grid { display: flex; align-items: stretch; gap: 6px; }
 .cockpit-confidence__rows { display: flex; flex-direction: column; justify-content: space-around; width: 78px; flex: 0 0 auto; }
-.cockpit-confidence__rows span { font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-confidence__rows a { font-size: 11px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-decoration: none; }
+.cockpit-confidence__rows a:hover { color: var(--accent-presence); text-decoration: underline; }
 .cockpit-confidence .cave-chart--heatmap { flex: 1; min-width: 0; }
 
 /* Quick launch + skeleton */
