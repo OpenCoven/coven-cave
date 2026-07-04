@@ -32,8 +32,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /const mode = \(e as CustomEvent<\{ mode\?: WorkspaceMode \}>\)\.detail\?\.mode;[\s\S]{0,40}if \(mode\) setMode\(mode\)/,
-  "The navigate listener calls setMode with the requested mode",
+  /const targetMode = \(e as CustomEvent<\{ mode\?: string \}>\)\.detail\?\.mode;[\s\S]*?if \(targetMode === "code"\)[\s\S]*?setMode\(targetMode as WorkspaceMode\)/,
+  "The navigate listener redirects retired code links, then calls setMode with other requested modes",
 );
 
 // ── Uppercase counted section headers (RESULTS) + compact Projects header ────
