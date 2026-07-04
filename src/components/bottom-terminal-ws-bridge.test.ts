@@ -25,7 +25,8 @@ assert.match(
   /if \(!bridge\.isOpen\) \{[\s\S]{0,260}attemptReconnect\(\);[\s\S]{0,80}return;[\s\S]{0,120}bridge\.write\(new TextEncoder\(\)\.encode\(data\)\)/,
   "typing on a dead socket revives the terminal instead of vanishing into a no-op write",
 );
-assert.match(src, /term\.reset\(\);[\s\S]{0,120}await bridge\.reconnect\(\)/, "screen resets before reattach so the server replay paints clean");
+assert.match(src, /term\.reset\(\);[\s\S]{0,400}await bridge\.reconnect\(\)/, "screen resets before reattach so the server replay paints clean");
+assert.match(src, /term\.reset\(\);[\s\S]{0,300}decoderRef\.current = new TextDecoder/, "the streaming decoder is reset on reconnect so replayed scrollback decodes cleanly");
 assert.match(src, /reason === "replaced"/, "a take-over by another window is announced, not fought with reconnects");
 
 // ── PTY lifetime is decoupled from view lifetime ──────────────────────────────

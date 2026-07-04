@@ -21,6 +21,10 @@ import { Icon } from "@/lib/icon";
 // (e.g. `cargo build`) don't flood SR or thrash React.
 const MIRROR_LINES = 50;
 const MIRROR_DEBOUNCE_MS = 250;
+// While the pane is backgrounded the mirror isn't re-rendered; cap the buffered
+// text so a busy background stream can't grow it without bound before the pane
+// is next active (the flush trims to MIRROR_LINES anyway).
+const MIRROR_PENDING_CAP = 16384;
 // The xterm lazy-import + PTY handshake is "a few seconds"; well past that with
 // no connection means startup hung (a wedged native command, a transport await
 // that never settled, or `platform` never resolving off "unknown"). Surface a
@@ -251,6 +255,10 @@ export function BottomTerminal({
   if (!decoderRef.current) {
     decoderRef.current = new TextDecoder("utf-8", { fatal: false });
   }
+  // Mirror `active` into a ref so the byte handlers (registered once per mount)
+  // can read the current value without re-subscribing.
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   const flushMirror = useCallback(() => {
     flushTimerRef.current = null;
@@ -266,11 +274,22 @@ export function BottomTerminal({
   const pushToMirror = useCallback(
     (bytes: Uint8Array) => {
       if (!decoderRef.current) return;
+      // Keep decoding even while hidden so the streaming decoder state stays
+      // consistent — but don't re-render the (aria-hidden) mirror off-screen: a
+      // busy background stream otherwise re-rendered the 50-line mirror every
+      // 250ms while the terminal wasn't even visible. Buffer (bounded) and drain
+      // when the pane is next active.
       const text = stripAnsi(
         decoderRef.current.decode(bytes, { stream: true }),
       );
       if (!text) return;
       pendingMirrorRef.current += text;
+      if (!activeRef.current) {
+        if (pendingMirrorRef.current.length > MIRROR_PENDING_CAP) {
+          pendingMirrorRef.current = pendingMirrorRef.current.slice(-MIRROR_PENDING_CAP);
+        }
+        return;
+      }
       if (flushTimerRef.current == null) {
         flushTimerRef.current = setTimeout(flushMirror, MIRROR_DEBOUNCE_MS);
       }
@@ -303,13 +322,14 @@ export function BottomTerminal({
   // Re-fit + refocus whenever this terminal becomes the active tab.
   useEffect(() => {
     if (active) {
+      flushMirror(); // drain output buffered while the pane was hidden
       const id = requestAnimationFrame(() => {
         fitRef.current?.();
         termRef.current?.focus();
       });
       return () => cancelAnimationFrame(id);
     }
-  }, [active]);
+  }, [active, flushMirror]);
 
   // Startup watchdog: covers every way the terminal can stall before `ready` —
   // a native pty_* command that never returns, a transport await that throws/
@@ -588,6 +608,10 @@ export function BottomTerminal({
               // first so the replay paints a clean screen instead of
               // appending a duplicate of what's already visible.
               term.reset();
+              // Reset the streaming decoder (+ pending buffer) too: a mid-char
+              // socket drop left partial bytes that would corrupt the mirror.
+              decoderRef.current = new TextDecoder("utf-8", { fatal: false });
+              pendingMirrorRef.current = "";
               await bridge.reconnect();
               bridge.resize(term.cols, term.rows);
               return;

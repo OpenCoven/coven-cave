@@ -63,4 +63,11 @@ assert.match(source, /const \{ term, fit, search \} = await createXterm\(wrap, \
 // Search decoration colors are a module constant, not rebuilt each render.
 assert.match(source, /^const SEARCH_DECORATIONS = \{/m, "SEARCH_DECORATIONS is hoisted to module scope");
 
+// The mirror must not re-render while the pane is backgrounded/hidden — a busy
+// background stream otherwise re-renders the 50-line mirror every 250ms
+// off-screen. pushToMirror keeps decoding (decoder stays consistent) but skips
+// the flush when the pane isn't active, and drains on becoming active.
+assert.match(source, /if \(!activeRef\.current\) \{[\s\S]{0,180}return;/, "the SR mirror doesn't re-render while the pane is hidden");
+assert.match(source, /if \(active\) \{\s*\n\s*flushMirror\(\);/, "buffered output is drained into the mirror when the pane becomes active");
+
 console.log("bottom-terminal-sr-mirror.test.ts OK");
