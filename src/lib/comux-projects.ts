@@ -23,7 +23,7 @@ export function projectName(root: string): string {
  * so the Projects list reads like a set of distinct objects rather than a
  * uniform monochrome stack. Moderate chroma + a fixed lightness keep every hue
  * tasteful against both the dark and light themes; callers feed it to the
- * `--tile` custom property the `.comux-project-tile` glass chip reads.
+ * `--tile` custom property the `.project-avatar` glass tile reads.
  */
 export function projectTint(root: string): string {
   let hash = 0;
