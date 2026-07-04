@@ -4323,6 +4323,29 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
+/* Terminal tab — fills the pane so xterm's fit addon can size the shell. Kept
+   mounted but display:none'd when another tab is active (pty keepalive). */
+.workspace-rail__terminal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.workspace-rail__terminal.is-hidden {
+  display: none;
+}
+
+.workspace-rail__terminal-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* Files tab — a scrollable project tree stacked over a read-only preview. */
 .workspace-rail__files {
   display: flex;

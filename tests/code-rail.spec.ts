@@ -145,4 +145,30 @@ test.describe("code rail beside chat", () => {
     await expect(rail.locator(".workspace-rail__preview")).toBeVisible({ timeout: 15_000 });
     await expect(rail.locator(".workspace-rail__preview-name")).toContainText("README.md");
   });
+
+  test("(f) Terminal tab → lazy pty host (not mounted until first opened)", async ({ page }) => {
+    const filesRef = { count: 0 };
+    await routeChanges(page, filesRef);
+
+    await base(page, [REPO_SESSION]);
+    await openSession(page, "Refactor auth flow");
+
+    const rail = page.locator(".workspace-rail");
+    await expect(rail).toBeVisible({ timeout: 30_000 });
+
+    // The Terminal tab button exists…
+    const terminalTab = rail.getByRole("button", { name: "Terminal" });
+    await expect(terminalTab).toBeVisible();
+
+    // …but its host container is ABSENT before the first click (genuine
+    // laziness — the pty must not start early).
+    await expect(rail.locator(".workspace-rail__terminal")).toHaveCount(0);
+
+    // Clicking Terminal mounts the host wrapper. In daemon-less e2e there is no
+    // live pty websocket bridge, so we assert the host wrapper mounts (not a
+    // working shell) and that the "next step" placeholder is gone.
+    await terminalTab.click();
+    await expect(rail.locator(".workspace-rail__terminal")).toBeVisible({ timeout: 15_000 });
+    await expect(rail.locator(".workspace-rail__soon")).toHaveCount(0);
+  });
 });

@@ -22,8 +22,38 @@ assert.match(
 
 assert.match(
   source,
-  /useCodeRail\(\s*\{[\s\S]*?projectRoot:[\s\S]*?changeCount[\s\S]*?terminalActive:\s*false[\s\S]*?\}\s*\)/,
-  "chat-surface calls useCodeRail with projectRoot/changeCount and terminalActive:false",
+  /useCodeRail\(\s*\{[\s\S]*?projectRoot:[\s\S]*?changeCount[\s\S]*?terminalActive:\s*terminalOpened[\s\S]*?\}\s*\)/,
+  "chat-surface calls useCodeRail with projectRoot/changeCount and terminalActive:terminalOpened",
+);
+
+// Once the Terminal tab is opened the rail stays available (keepalive) — the
+// terminalOpened flag flips false→true and feeds back into terminalActive.
+assert.match(
+  source,
+  /rail\.activeTab === "terminal" && rail\.open[\s\S]*?setTerminalOpened\(true\)/,
+  "chat-surface flips terminalOpened once the Terminal tab is opened",
+);
+
+// The active session id is threaded into the rail so the terminal gets a stable
+// per-session pty identity.
+assert.match(
+  source,
+  /<WorkspaceRail[\s\S]*?sessionId=\{snapshot\.sessionId \?\? null\}/,
+  "WorkspaceRail receives the active session id",
+);
+
+// On session change the previous session's rail shell is stopped (desktop PTYs
+// have no idle reaper) and the terminal-held-open latch is reset so the rail is
+// not forced open on an unrelated session.
+assert.match(
+  source,
+  /pty_stop"?,\s*\{\s*threadId:\s*`cave\.rail\.\$\{prev\}`/,
+  "chat-surface stops the previous session's rail pty on session change",
+);
+assert.match(
+  source,
+  /railTermSessionRef[\s\S]*?setTerminalOpened\(false\)/,
+  "chat-surface resets the terminal-held-open latch when the session changes",
 );
 
 assert.match(
