@@ -141,52 +141,74 @@ export function MarketplaceViewSurface({
   const [skillsLoaded, setSkillsLoaded] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillDetailEntry | null>(null);
+  // Each loader keeps its in-flight controller so a newer load (or unmount)
+  // aborts the previous one — a slow response can't land after a fresher one
+  // and clobber the list (the useProjects hygiene pattern). A superseded load
+  // bails before touching state; only the winning load flips its loaded flag.
+  const loadCtl = useRef<AbortController | null>(null);
+  const rolesCtl = useRef<AbortController | null>(null);
+  const skillsCtl = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
+    loadCtl.current?.abort();
+    const ctl = new AbortController();
+    loadCtl.current = ctl;
     setLoaded(false);
     try {
-      const res = await fetch("/api/marketplace", { cache: "no-store" });
+      const res = await fetch("/api/marketplace", { cache: "no-store", signal: ctl.signal });
       const json = (await res.json()) as { ok?: boolean; plugins?: MarketplacePlugin[]; error?: string };
+      if (ctl.signal.aborted) return;
       if (!json.ok) throw new Error(json.error ?? `marketplace http ${res.status}`);
       setPlugins(json.plugins ?? []);
       setError(null);
     } catch (err) {
+      if (ctl.signal.aborted) return;
       setPlugins([]);
       setError(err instanceof Error ? err.message : "marketplace unavailable");
     } finally {
-      setLoaded(true);
+      if (!ctl.signal.aborted) setLoaded(true);
     }
   }, []);
 
   const loadRoles = useCallback(async () => {
+    rolesCtl.current?.abort();
+    const ctl = new AbortController();
+    rolesCtl.current = ctl;
     setRolesLoaded(false);
     try {
-      const res = await fetch("/api/roles", { cache: "no-store" });
+      const res = await fetch("/api/roles", { cache: "no-store", signal: ctl.signal });
       const json = (await res.json()) as { ok?: boolean; roles?: RoleEntry[]; error?: string };
+      if (ctl.signal.aborted) return;
       if (!json.ok) throw new Error(json.error ?? `roles http ${res.status}`);
       setRoles(json.roles ?? []);
       setRolesError(null);
     } catch (err) {
+      if (ctl.signal.aborted) return;
       setRoles([]);
       setRolesError(err instanceof Error ? err.message : "roles unavailable");
     } finally {
-      setRolesLoaded(true);
+      if (!ctl.signal.aborted) setRolesLoaded(true);
     }
   }, []);
 
   const loadSkills = useCallback(async () => {
+    skillsCtl.current?.abort();
+    const ctl = new AbortController();
+    skillsCtl.current = ctl;
     setSkillsLoaded(false);
     try {
-      const res = await fetch("/api/skills/local", { cache: "no-store" });
+      const res = await fetch("/api/skills/local", { cache: "no-store", signal: ctl.signal });
       const json = (await res.json()) as { ok?: boolean; skills?: SkillBrowserEntry[]; error?: string };
+      if (ctl.signal.aborted) return;
       if (!json.ok) throw new Error(json.error ?? `skills http ${res.status}`);
       setSkills(json.skills ?? []);
       setSkillsError(null);
     } catch (err) {
+      if (ctl.signal.aborted) return;
       setSkills([]);
       setSkillsError(err instanceof Error ? err.message : "skills unavailable");
     } finally {
-      setSkillsLoaded(true);
+      if (!ctl.signal.aborted) setSkillsLoaded(true);
     }
   }, []);
 
@@ -194,6 +216,11 @@ export function MarketplaceViewSurface({
     void load();
     void loadRoles();
     void loadSkills();
+    return () => {
+      loadCtl.current?.abort();
+      rolesCtl.current?.abort();
+      skillsCtl.current?.abort();
+    };
   }, [load, loadRoles, loadSkills]);
 
   // "/" focuses the hub search from anywhere on the surface (unless typing).
@@ -648,10 +675,10 @@ export function MarketplaceViewSurface({
                     key={plugin.id}
                     plugin={plugin}
                     busy={busyId === plugin.id}
-                    onOpen={() => setSelected(plugin.id)}
-                    onAdd={() => void add(plugin.id)}
-                    onRemove={() => void remove(plugin.id)}
-                    onConfigure={() => setConfiguringId(plugin.id)}
+                    onOpen={setSelected}
+                    onAdd={add}
+                    onRemove={remove}
+                    onConfigure={setConfiguringId}
                   />
                 ))}
               </div>

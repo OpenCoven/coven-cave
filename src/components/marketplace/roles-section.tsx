@@ -68,7 +68,6 @@ type Props = {
   busyRoleKey: string | null;
   onToggleRole: (role: RoleEntry) => void;
   onOpenChat?: (familiarId: string) => void;
-  onOpenWorkflow?: (id: string) => void;
   onOpenSkill?: (name: string) => void;
   /** Jumps to the hub's Browse section — the empty state's "get more" CTA. */
   onBrowseMarketplace?: () => void;
@@ -82,7 +81,6 @@ export function RolesSection({
   busyRoleKey,
   onToggleRole,
   onOpenChat,
-  onOpenWorkflow,
   onOpenSkill,
   onBrowseMarketplace,
 }: Props) {
@@ -202,8 +200,6 @@ export function RolesSection({
                 items={role.workflows}
                 emptyText="No workflows"
                 icon={ICONS.workflow}
-                onOpen={onOpenWorkflow}
-                openHint="Open workflow"
               />
             </dl>
           </article>
