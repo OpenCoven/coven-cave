@@ -16,9 +16,6 @@ import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import type { CaveProject } from "@/lib/cave-projects";
 import { isTauri } from "@/lib/tauri-platform";
 
-/** Sentinel `<option>` value for native selects that embed the add flow. */
-export const ADD_PROJECT_ID = "__add-project__";
-
 export type AddProjectFlow = {
   /** Open the folder chooser — native dialog on desktop, in-app browser on web. */
   beginAddProject: () => void;

@@ -65,7 +65,7 @@ assert.match(
 );
 
 // 4a. If the active familiar is archived, fall through to the first visible
-//     one so the <select>'s value matches an option in the DOM.
+//     one so the custom select's value matches an option in the DOM.
 assert.match(
   source,
   /activeIsArchived/,
@@ -75,8 +75,8 @@ assert.match(
 // 5. Dropdown renders visibleFamiliars, not raw familiars.
 assert.match(
   source,
-  /visibleFamiliars\.map\(\(familiar\)\s*=>\s*\(\s*<option/,
-  "HomeComposer dropdown should render <option>s from visibleFamiliars (non-archived only)",
+  /visibleFamiliars\.map\(\(familiar\)\s*=>\s*\{[\s\S]{0,500}value:\s*familiar\.id[\s\S]{0,500}label:\s*familiar\.display_name/,
+  "HomeComposer dropdown should build custom select options from visibleFamiliars (non-archived only)",
 );
 
 // 6. The empty-state check should also reflect that there might be zero visible

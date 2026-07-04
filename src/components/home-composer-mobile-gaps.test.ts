@@ -46,8 +46,8 @@ assert.match(
 // ───── Phone composer controls are thumb-sized ─────
 assert.match(
   css,
-  /@media \(max-width: 520px\)\s*\{[\s\S]*?\.hc-action-bar\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?\.hc-familiar-selector\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-familiar-select\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-send-btn\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-dest-pills\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[\s\S]*?\.hc-dest-pill\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
-  "phone composer action bar wraps into thumb-sized familiar/send/two-destination controls",
+  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-action-bar\s*\{[\s\S]*?align-items:\s*stretch;[\s\S]*?\.hc-control-group--who,\s*\.hc-control-group--run\s*\{[\s\S]*?display:\s*grid;[\s\S]*?\.hc-familiar-selector\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-home-select-value\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-dest-pills\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[\s\S]*?\.hc-dest-pill\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-send-btn\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
+  "phone composer action bar uses thumb-sized custom selectors, send, and two-destination controls",
 );
 
 

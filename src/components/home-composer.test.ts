@@ -39,20 +39,20 @@ assert.match(
 
 assert.match(
   source,
-  /aria-label="Choose project"[\s\S]*value=\{selectedProjectId\}/,
-  "HomeComposer should render a project selector",
+  /<ProjectPicker[\s\S]*?value=\{selectedProjectId \|\| null\}[\s\S]*?ariaLabel="Choose project"/,
+  "HomeComposer should render the shared custom project selector",
 );
 
 assert.match(
   source,
-  /<option value=\{NO_PROJECT_ID\}>No project<\/option>/,
+  /<ProjectPicker[\s\S]*?allowNoProject/,
   "HomeComposer should offer an explicit No-project choice, matching chat semantics",
 );
 
 assert.match(
   source,
-  /value === ADD_PROJECT_ID[\s\S]{0,120}?beginAddProject\(\);/,
-  "The Add-project option should open the shared register+grant flow instead of changing the selection",
+  /<ProjectPicker[\s\S]*?createProject=\{createProject\}/,
+  "The Add-project row should come from the shared register+grant picker flow",
 );
 
 assert.match(
@@ -75,13 +75,13 @@ assert.match(
 
 assert.match(
   source,
-  /aria-label="Choose runtime and model"[\s\S]*value=\{selectedRuntimeModelValue\}/,
-  "HomeComposer should expose one combined runtime/model selector for the selected familiar",
+  /<HomeSelect[\s\S]*?value=\{selectedRuntimeModelValue\}[\s\S]*?ariaLabel="Choose runtime and model"/,
+  "HomeComposer should expose one combined custom runtime/model selector for the selected familiar",
 );
 
 assert.match(
   source,
-  /<optgroup key=\{adapter\.id\} label=\{adapter\.label\}>[\s\S]*?runtimeModelOptionsFor\(adapter\.id\)\.map/,
+  /runtimeModelSelectGroups[\s\S]*?label: adapter\.label,[\s\S]*?models\.map/,
   "HomeComposer should group model choices under their runtime",
 );
 
@@ -165,8 +165,14 @@ assert.match(
 
 assert.match(
   source,
-  /aria-label="Choose chat agent"[\s\S]*value=\{selectedFamiliarId\}/,
-  "HomeComposer should include an agent selector when starting chat from home",
+  /<HomeSelect[\s\S]*?value=\{selectedFamiliarId\}[\s\S]*?ariaLabel="Choose chat agent"/,
+  "HomeComposer should include a custom agent selector when starting chat from home",
+);
+
+assert.doesNotMatch(
+  source,
+  /<select\b/,
+  "HomeComposer toolbar dropdowns should be custom popovers, not native selects",
 );
 
 assert.match(
@@ -195,8 +201,8 @@ assert.match(
 
 assert.match(
   source,
-  /aria-label=\{ariaLabel\}[\s\S]*?value=\{value\}/,
-  "HomeComposer compact command select should render the supplied aria label and selected value",
+  /function HomeSelect\([\s\S]*?aria-label=\{ariaLabel\}[\s\S]*?aria-haspopup="dialog"[\s\S]*?PopoverItem[\s\S]*?checked=\{option\.value === value\}/,
+  "HomeComposer compact command select should render custom popover options with the supplied aria label and selected value",
 );
 
 assert.match(
@@ -225,8 +231,8 @@ assert.match(
 
 assert.match(
   css,
-  /\.hc-control-group--tools\s*\{[\s\S]*?flex: 0 0 auto;[\s\S]*?\.hc-control-group--identity\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?\.hc-control-group--settings\s*\{[\s\S]*?margin-left: auto;[\s\S]*?\.hc-control-group--submit\s*\{[\s\S]*?flex: 0 0 auto;/,
-  "HomeComposer action bar should separate tools, identity, settings, and submit clusters",
+  /\.hc-control-group--who\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?margin-left: auto;/,
+  "HomeComposer action bar should keep the who cluster content-sized and pin the run cluster to the right edge",
 );
 
 assert.match(
@@ -371,7 +377,7 @@ assert.match(
 // creating a board task, so they render only while the Chat mode is selected.
 assert.match(
   source,
-  /destination === "chat" \? \(\s*<div className="hc-control-group hc-control-group--settings">[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<\/div>\s*\) : null/,
+  /destination === "chat" \? \(\s*<>[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<\/>\s*\) : null/,
   "Runtime/model, Think, and Speed controls collapse out of the action bar when Task is selected",
 );
 

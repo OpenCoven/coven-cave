@@ -50,33 +50,33 @@ assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*999px/, ".hc-send-
 // ───────── Command-bar hierarchy ─────────
 assert.match(
   source,
-  /hc-control-group--tools[\s\S]*?hc-control-group--identity[\s\S]*?hc-control-group--settings[\s\S]*?hc-control-group--submit/,
-  "home composer separates tools, identity, settings, and submit control groups",
+  /hc-control-group--who[\s\S]*?<HomeSelect[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?<ProjectPicker[\s\S]*?hc-control-group--run[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?aria-label="Send"/,
+  "home composer separates who and run control groups with custom selectors and the send control",
 );
 assert.match(
   css,
-  /\.home-composer-card\s*\{[\s\S]*?border-radius:\s*18px;[\s\S]*?box-shadow:\s*0 8px 28px/,
-  "home composer card uses quieter radius and shadow than the oversized command-shell chrome",
+  /\.home-composer-card\s*\{[\s\S]*?border-radius:\s*22px;[\s\S]*?box-shadow:\s*0 12px 40px/,
+  "home composer card keeps the rounded elevated composer chrome",
 );
 assert.match(
   css,
-  /\.hc-action-bar\s*\{[\s\S]*?border-top:\s*1px solid[\s\S]*?background:\s*color-mix/,
-  "home composer action bar has a subtle separated control rail",
+  /\.hc-action-bar\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?gap:\s*8px 14px;[\s\S]*?padding:\s*10px 14px 14px;/,
+  "home composer action bar wraps with distinct spacing between who and run clusters",
 );
 assert.match(
   css,
-  /\.hc-control-group--settings\s+\.hc-familiar-selector\s*\{[\s\S]*?background:\s*transparent/,
-  "runtime and tuning settings are visually demoted inside the command bar",
+  /\.hc-home-select-trigger\s*\{[\s\S]*?border:\s*1px solid[\s\S]*?text-align:\s*left;/,
+  "custom selector triggers keep button styling while reading as compact selects",
 );
 assert.match(
   css,
-  /\.hc-send-btn:not\(\.empty\):not\(:disabled\)\s*\{/,
-  "active send button has an explicit non-empty state",
+  /\.hc-send-btn\s*\{[\s\S]*?background:\s*var\(--accent-presence\);/,
+  "active send button keeps the presence accent fill",
 );
 assert.match(
   css,
-  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-control-group--identity\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[\s\S]*?\.hc-control-group--settings\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[\s\S]*?\.hc-control-group--settings\s+\.hc-command-select\s+\.hc-command-select-label\s*\{[\s\S]*?display:\s*inline;/,
-  "mobile identity and advanced settings wrap as readable two-column controls",
+  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-control-group--who,\s*\.hc-control-group--run\s*\{[\s\S]*?display:\s*grid;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)\s*var\(--touch-target\);/,
+  "mobile who and run clusters wrap as readable custom selector grids",
 );
 
 // ── "Jump back in" recent-chats strip REMOVED ──

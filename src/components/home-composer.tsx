@@ -9,6 +9,7 @@
 
 import {
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useId,
@@ -17,7 +18,6 @@ import {
   useState,
 } from "react";
 import { ComposerHostChip } from "@/components/composer-host-chip";
-import { ProjectAvatar } from "@/components/project-avatar";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
@@ -37,7 +37,13 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
-import { ADD_PROJECT_ID, useAddProjectFlow } from "@/components/project-picker";
+import { ProjectPicker } from "@/components/project-picker";
+import {
+  Popover,
+  PopoverBody,
+  PopoverItem,
+  PopoverLabel,
+} from "@/components/ui/popover";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
@@ -71,6 +77,113 @@ const PLACEHOLDERS: Record<Destination, string> = {
   chat: "Summon something magical",
   board: "Describe a new task…",
 };
+
+type HomeSelectOption = {
+  value: string;
+  label: string;
+  icon?: IconName;
+  leading?: ReactNode;
+  detail?: string;
+  disabled?: boolean;
+};
+
+type HomeSelectGroup = {
+  label?: string;
+  options: HomeSelectOption[];
+};
+
+function HomeSelect({
+  label,
+  icon,
+  value,
+  onChange,
+  groups,
+  ariaLabel,
+  disabled = false,
+  className,
+}: {
+  label?: string;
+  icon: IconName;
+  value: string;
+  onChange: (value: string) => void;
+  groups: HomeSelectGroup[];
+  ariaLabel: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const selected = groups.flatMap((group) => group.options).find((option) => option.value === value);
+
+  const close = () => setOpen(false);
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className={["hc-familiar-selector", "hc-home-select-trigger", className ?? ""]
+          .filter(Boolean)
+          .join(" ")}
+        aria-label={ariaLabel}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        disabled={disabled}
+        title={selected?.detail ?? selected?.label ?? ariaLabel}
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        {selected?.leading ?? (
+          <Icon name={selected?.icon ?? icon} width={13} className="hc-familiar-glyph" aria-hidden />
+        )}
+        {label ? <span className="hc-command-select-label">{label}</span> : null}
+        <span className="hc-home-select-value">{selected?.label ?? "None"}</span>
+        <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+      </button>
+      <Popover
+        open={open}
+        onOpenChange={(next) => (next ? setOpen(true) : close())}
+        anchorRef={triggerRef}
+        placement="bottom-start"
+        minWidth={220}
+        className="hc-home-select-popover"
+        ariaLabel={ariaLabel}
+      >
+        <PopoverBody role="menu" ariaLabel={ariaLabel}>
+          {groups.map((group, groupIndex) => (
+            <div key={group.label ?? groupIndex} className="hc-home-select-group">
+              {group.label ? <PopoverLabel>{group.label}</PopoverLabel> : null}
+              {group.options.map((option) => (
+                <PopoverItem
+                  key={option.value}
+                  leading={
+                    option.leading ?? (
+                      <Icon name={option.icon ?? icon} width={13} aria-hidden />
+                    )
+                  }
+                  checked={option.value === value}
+                  active={option.value === value}
+                  disabled={option.disabled}
+                  onSelect={() => {
+                    if (option.disabled) return;
+                    onChange(option.value);
+                    close();
+                  }}
+                >
+                  <span className="hc-home-select-option">
+                    <span className="hc-home-select-option__label">{option.label}</span>
+                    {option.detail ? (
+                      <span className="hc-home-select-option__detail">{option.detail}</span>
+                    ) : null}
+                  </span>
+                </PopoverItem>
+              ))}
+            </div>
+          ))}
+        </PopoverBody>
+      </Popover>
+    </>
+  );
+}
 
 type Props = {
   familiars: Familiar[];
@@ -186,7 +299,7 @@ export function HomeComposer({
     [familiars, archivedFamiliars],
   );
   // If the user's previously-active familiar is now archived, fall through to
-  // the first visible one so the <select>'s value matches an actual option and
+  // the first visible one so the picker value matches an actual option and
   // the new-session flow stays usable.
   const activeIsArchived =
     activeFamiliarId != null && activeFamiliarId in archivedFamiliars;
@@ -201,21 +314,13 @@ export function HomeComposer({
   // Resolve avatars so the selector chip shows the selected familiar's actual
   // avatar image (falling back to its glyph) instead of a static sparkle icon.
   const resolvedFamiliars = useResolvedFamiliars(familiars);
-  const selectedResolved = useMemo(
-    () => resolvedFamiliars.find((familiar) => familiar.id === selectedFamiliarId) ?? null,
-    [resolvedFamiliars, selectedFamiliarId],
+  const resolvedFamiliarById = useMemo(
+    () => new Map(resolvedFamiliars.map((familiar) => [familiar.id, familiar])),
+    [resolvedFamiliars],
   );
   const [modelState, setModelState] = useState<ChatModelState | null>(null);
   const { projects, createProject } = useProjects({ familiarId: selectedFamiliarId || null });
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  // Shared register+grant flow behind the select's "Add project…" option —
-  // the composer no longer dead-ends when the wanted root isn't registered.
-  const addProjectFlow = useAddProjectFlow({
-    familiarId: selectedFamiliarId || null,
-    createProject,
-    projects,
-    onAdded: setSelectedProjectId,
-  });
   const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
     COMMAND_CONTROL_DEFAULTS.thinkingEffort,
   );
@@ -246,6 +351,58 @@ export function HomeComposer({
         ? modelState!.effectiveModel
         : runtimeModelOptions[0]?.id ?? "";
   const selectedRuntimeModelValue = runtimeModelValue(selectedRuntime, selectedModelId);
+  const familiarSelectGroups = useMemo<HomeSelectGroup[]>(
+    () => [
+      {
+        options:
+          visibleFamiliars.length === 0
+            ? [{ value: "", label: "No agents", icon: "ph:sparkle", disabled: true }]
+            : visibleFamiliars.map((familiar) => {
+                const resolved = resolvedFamiliarById.get(familiar.id);
+                return {
+                  value: familiar.id,
+                  label: familiar.display_name,
+                  leading: resolved ? (
+                    <FamiliarAvatar
+                      familiar={resolved}
+                      size="sm"
+                      className="hc-familiar-glyph hc-familiar-avatar"
+                    />
+                  ) : (
+                    <Icon name="ph:sparkle" width={13} aria-hidden />
+                  ),
+                };
+              }),
+      },
+    ],
+    [resolvedFamiliarById, visibleFamiliars],
+  );
+  const runtimeModelSelectGroups = useMemo<HomeSelectGroup[]>(
+    () =>
+      COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => {
+        const models = runtimeModelOptionsFor(adapter.id);
+        return {
+          label: adapter.label,
+          options:
+            models.length === 0
+              ? [
+                  {
+                    value: runtimeModelValue(adapter.id, ""),
+                    label: "Runtime managed",
+                    detail: adapter.label,
+                    icon: "ph:terminal-window",
+                  },
+                ]
+              : models.map((model) => ({
+                  value: runtimeModelValue(adapter.id, model.id),
+                  label: model.label,
+                  detail: adapter.label,
+                  icon: "ph:terminal-window" as IconName,
+                })),
+        };
+      }),
+    [runtimeModelOptionsFor],
+  );
 
   useEffect(() => {
     if (selectedProjectId === NO_PROJECT_ID) return; // an explicit No-project choice is valid
@@ -791,34 +948,6 @@ export function HomeComposer({
     ],
   );
 
-  const renderCompactSelect = (
-    label: string,
-    icon: IconName,
-    value: string,
-    onChange: (value: string) => void,
-    options: Array<{ value: string; label: string }>,
-    ariaLabel: string,
-  ) => (
-    <label className="hc-familiar-selector hc-command-select">
-      <Icon name={icon} width={13} className="hc-familiar-glyph" aria-hidden />
-      <span className="hc-command-select-label">{label}</span>
-      <select
-        aria-label={ariaLabel}
-        className="hc-familiar-select"
-        value={value}
-        onChange={(e) => onChange(e.currentTarget.value)}
-        disabled={sending}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-    </label>
-  );
-
   return (
     <div className="home-composer-root">
 
@@ -1070,7 +1199,7 @@ export function HomeComposer({
 
         {/* Action bar */}
         <div className="hc-action-bar">
-          <div className="hc-control-group hc-control-group--tools">
+          <div className="hc-control-group hc-control-group--who">
             <input
               ref={fileInputRef}
               type="file"
@@ -1090,6 +1219,90 @@ export function HomeComposer({
             >
               <Icon name="ph:paperclip" width={15} aria-hidden />
             </button>
+
+            <HomeSelect
+              icon="ph:sparkle"
+              value={selectedFamiliarId}
+              onChange={(value) => {
+                if (value) onSetActiveFamiliar(value);
+              }}
+              groups={familiarSelectGroups}
+              ariaLabel="Choose chat agent"
+              disabled={visibleFamiliars.length === 0 || sending}
+            />
+
+            <ProjectPicker
+              projects={projects}
+              value={selectedProjectId || null}
+              onChange={setSelectedProjectId}
+              allowNoProject
+              familiarId={selectedFamiliarId || null}
+              createProject={createProject}
+              disabled={sending}
+              ariaLabel="Choose project"
+              className="hc-project-selector"
+            />
+          </div>
+
+          <div className="hc-control-group hc-control-group--run">
+            {/* Runtime/model, Think, and Speed configure a chat send — they're
+                meaningless for creating a board task, so they collapse out when
+                the Task mode is selected, leaving just the submit affordance. */}
+            {destination === "chat" ? (
+              <>
+                <HomeSelect
+                  icon="ph:terminal-window"
+                  value={selectedRuntimeModelValue}
+                  onChange={handleSelectRuntimeModel}
+                  groups={runtimeModelSelectGroups}
+                  ariaLabel="Choose runtime and model"
+                  disabled={!selectedFamiliarId || sending}
+                  className="hc-runtime-model-selector"
+                />
+
+                <HomeSelect
+                  label="Think"
+                  icon="ph:sparkle-bold"
+                  value={thinkingEffort}
+                  onChange={(value) => setThinkingEffort(value as CommandThinkingEffort)}
+                  groups={[
+                    {
+                      options: COMMAND_THINKING_OPTIONS.map((option) => ({
+                        ...option,
+                        icon: "ph:sparkle-bold",
+                      })),
+                    },
+                  ]}
+                  ariaLabel="Choose thinking effort"
+                  disabled={sending}
+                  className="hc-command-select"
+                />
+
+                <HomeSelect
+                  label="Speed"
+                  icon="ph:lightning-bold"
+                  value={responseSpeed}
+                  onChange={(value) => setResponseSpeed(value as CommandResponseSpeed)}
+                  groups={[
+                    {
+                      options: COMMAND_RESPONSE_SPEED_OPTIONS.map((option) => ({
+                        ...option,
+                        icon: "ph:lightning-bold",
+                      })),
+                    },
+                  ]}
+                  ariaLabel="Choose response speed"
+                  disabled={sending}
+                  className="hc-command-select"
+                />
+
+                <ComposerHostChip
+                  value={runtimeHost ?? LOCAL_HOST_ID}
+                  disabled={sending}
+                  onPick={(id) => setRuntimeHost(id === LOCAL_HOST_ID ? null : id)}
+                />
+              </>
+            ) : null}
 
             {enhanceOriginal != null && (
               <button
@@ -1117,143 +1330,7 @@ export function HomeComposer({
               )}
               <span className="hc-enhance-label">Enhance</span>
             </button>
-          </div>
 
-          <div className="hc-control-group hc-control-group--identity">
-            <label className="hc-familiar-selector">
-              {selectedResolved ? (
-                <FamiliarAvatar familiar={selectedResolved} size="sm" className="hc-familiar-glyph hc-familiar-avatar" />
-              ) : (
-                <Icon name="ph:sparkle" width={13} className="hc-familiar-glyph" aria-hidden />
-              )}
-              <select
-                aria-label="Choose chat agent"
-                className="hc-familiar-select"
-                value={selectedFamiliarId}
-                onChange={(e) => {
-                  if (e.currentTarget.value) onSetActiveFamiliar(e.currentTarget.value);
-                }}
-                disabled={visibleFamiliars.length === 0 || sending}
-              >
-                {visibleFamiliars.length === 0 ? (
-                  <option value="">No agents</option>
-                ) : (
-                  visibleFamiliars.map((familiar) => (
-                    <option key={familiar.id} value={familiar.id}>
-                      {familiar.display_name}
-                    </option>
-                  ))
-                )}
-              </select>
-              <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-            </label>
-
-            <label className="hc-familiar-selector hc-project-selector">
-              {selectedProject && selectedProjectId !== NO_PROJECT_ID ? (
-                <ProjectAvatar
-                  name={selectedProject.name}
-                  root={selectedProject.root}
-                  color={selectedProject.color}
-                  size="sm"
-                />
-              ) : (
-                <Icon name="ph:folder" width={13} className="hc-familiar-glyph" aria-hidden />
-              )}
-              <select
-                aria-label="Choose project"
-                className="hc-familiar-select"
-                value={selectedProjectId}
-                onChange={(e) => {
-                  const value = e.currentTarget.value;
-                  // The add row is an action, not a selection — keep the
-                  // current value and open the shared register+grant flow.
-                  if (value === ADD_PROJECT_ID) {
-                    addProjectFlow.beginAddProject();
-                    return;
-                  }
-                  setSelectedProjectId(value);
-                }}
-                disabled={sending}
-              >
-                {projects.length === 0 ? (
-                  <option value="">No projects yet</option>
-                ) : (
-                  <>
-                    <option value={NO_PROJECT_ID}>No project</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </>
-                )}
-                <option value={ADD_PROJECT_ID}>＋ Add project…</option>
-              </select>
-              <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-            </label>
-            {addProjectFlow.addProjectModal}
-          </div>
-
-          {/* Runtime/model, Think, and Speed configure a chat send — they're
-              meaningless for creating a board task, so they collapse out when
-              the Task mode is selected, leaving just the submit affordance. */}
-          {destination === "chat" ? (
-            <div className="hc-control-group hc-control-group--settings">
-              <label className="hc-familiar-selector hc-runtime-model-selector">
-                <Icon name="ph:terminal-window" width={13} className="hc-familiar-glyph" aria-hidden />
-                <select
-                  aria-label="Choose runtime and model"
-                  className="hc-familiar-select"
-                  value={selectedRuntimeModelValue}
-                  onChange={(e) => handleSelectRuntimeModel(e.currentTarget.value)}
-                  disabled={!selectedFamiliarId || sending}
-                >
-                  {COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => (
-                    <optgroup key={adapter.id} label={adapter.label}>
-                      {runtimeModelOptionsFor(adapter.id).length === 0 ? (
-                        <option value={runtimeModelValue(adapter.id, "")}>
-                          Runtime managed
-                        </option>
-                      ) : (
-                        runtimeModelOptionsFor(adapter.id).map((model) => (
-                          <option key={model.id} value={runtimeModelValue(adapter.id, model.id)}>
-                            {model.label}
-                          </option>
-                        ))
-                      )}
-                    </optgroup>
-                  ))}
-                </select>
-                <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-              </label>
-
-              {renderCompactSelect(
-                "Think",
-                "ph:sparkle-bold",
-                thinkingEffort,
-                (value) => setThinkingEffort(value as CommandThinkingEffort),
-                COMMAND_THINKING_OPTIONS,
-                "Choose thinking effort",
-              )}
-
-              {renderCompactSelect(
-                "Speed",
-                "ph:lightning-bold",
-                responseSpeed,
-                (value) => setResponseSpeed(value as CommandResponseSpeed),
-                COMMAND_RESPONSE_SPEED_OPTIONS,
-                "Choose response speed",
-              )}
-
-              <ComposerHostChip
-                value={runtimeHost ?? LOCAL_HOST_ID}
-                disabled={sending}
-                onPick={(id) => setRuntimeHost(id === LOCAL_HOST_ID ? null : id)}
-              />
-            </div>
-          ) : null}
-
-          <div className="hc-control-group hc-control-group--submit">
             <button
               type="button"
               className={`hc-send-btn${sending ? " sending" : ""}${!text.trim() && attachments.length === 0 ? " empty" : ""}`}
