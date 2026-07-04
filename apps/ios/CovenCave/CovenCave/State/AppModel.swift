@@ -575,8 +575,12 @@ final class AppModel {
 
     func configure(host: String, token: String? = nil) async {
         let conn = CaveConnection(host: host)
-        let isSameEndpoint = connection?.baseURL == conn.baseURL
-
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hostIsExplicitURL = trimmedHost.lowercased().hasPrefix("http://") || trimmedHost.lowercased().hasPrefix("https://")
+        let hostHasExplicitPort = !hostIsExplicitURL && trimmedHost.contains(":")
+        let isSameEndpoint = (hostIsExplicitURL || hostHasExplicitPort)
+            ? (connection?.baseURL == conn.baseURL)
+            : (connection?.baseURL?.host?.lowercased() == conn.baseURL?.host?.lowercased())
         if let token {
             CaveConnection.saveAccessToken(token)
         } else if !isSameEndpoint {
