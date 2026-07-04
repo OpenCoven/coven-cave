@@ -10,6 +10,7 @@ TAILSCALE_TIMEOUT_MS="${TAILSCALE_TIMEOUT_MS:-8000}"
 PRINT_URL="${PRINT_URL:-0}"
 COPY_INVITE="${COPY_INVITE:-1}"
 USE_TMUX="${USE_TMUX:-1}"
+TAILSCALE_BIN="${TAILSCALE_BIN:-tailscale}"
 
 if [ -d "$HOME/.cargo/bin" ]; then
   PATH="$HOME/.cargo/bin:$PATH"
@@ -96,18 +97,18 @@ clear_mobile_tokens() {
 }
 
 tailscale_cmd() {
-  node - "$TAILSCALE_TIMEOUT_MS" "$@" <<'NODE'
+  node - "$TAILSCALE_TIMEOUT_MS" "$TAILSCALE_BIN" "$@" <<'NODE'
 const { spawnSync } = require("node:child_process");
 
-const [timeoutMsRaw, ...args] = process.argv.slice(2);
+const [timeoutMsRaw, bin, ...args] = process.argv.slice(2);
 const timeout = Number(timeoutMsRaw);
-const res = spawnSync("tailscale", args, {
+const res = spawnSync(bin, args, {
   stdio: "inherit",
   timeout: Number.isFinite(timeout) ? timeout : 8000,
 });
 
 if (res.error?.code === "ETIMEDOUT") {
-  console.error(`tailscale ${args.join(" ")} timed out`);
+  console.error(`${bin} ${args.join(" ")} timed out`);
   process.exit(124);
 }
 if (res.error) {
@@ -119,18 +120,18 @@ NODE
 }
 
 tailscale_capture() {
-  node - "$TAILSCALE_TIMEOUT_MS" "$@" <<'NODE'
+  node - "$TAILSCALE_TIMEOUT_MS" "$TAILSCALE_BIN" "$@" <<'NODE'
 const { spawnSync } = require("node:child_process");
 
-const [timeoutMsRaw, ...args] = process.argv.slice(2);
+const [timeoutMsRaw, bin, ...args] = process.argv.slice(2);
 const timeout = Number(timeoutMsRaw);
-const res = spawnSync("tailscale", args, {
+const res = spawnSync(bin, args, {
   encoding: "utf8",
   timeout: Number.isFinite(timeout) ? timeout : 8000,
 });
 
 if (res.error?.code === "ETIMEDOUT") {
-  console.error(`tailscale ${args.join(" ")} timed out`);
+  console.error(`${bin} ${args.join(" ")} timed out`);
   process.exit(124);
 }
 if (res.error) {
@@ -150,7 +151,7 @@ masked_serve_status() {
 }
 
 warn_if_serve_targets_other_backend() {
-  if ! command -v tailscale >/dev/null 2>&1; then
+  if ! command -v "$TAILSCALE_BIN" >/dev/null 2>&1; then
     return 0
   fi
 
@@ -208,7 +209,7 @@ load_or_create_sidecar_token() {
 
 ensure_tailscale() {
   need node
-  need tailscale
+  need "$TAILSCALE_BIN"
   if ! tailscale_cmd status --self >/dev/null 2>&1; then
     echo "tailscale is not connected or did not respond. Run: tailscale up" >&2
     exit 1
@@ -703,7 +704,7 @@ stop_command() {
     fi
   fi
 
-  if command -v tailscale >/dev/null 2>&1; then
+  if command -v "$TAILSCALE_BIN" >/dev/null 2>&1; then
     tailscale_cmd serve reset >/dev/null 2>&1 || true
   fi
   rm -f "$PID_FILE" "$INVITE_FILE" "$EXPIRES_FILE"

@@ -48,6 +48,12 @@ assert.match(handoffRoute, /action === "app-stop"/, "API should expose a native 
 assert.match(handoffRoute, /nativeHost/, "API should return the exact host the native iOS app should connect to");
 assert.match(handoffRoute, /nativeUrl/, "API should return the full Tailscale Serve URL for smoke checks and copying");
 assert.match(handoffRoute, /ensureNativeAppServe/, "API should share one reconcile path for stale Tailscale Serve targets");
+assert.match(handoffRoute, /nativeAppBackendUrl/, "native mobile mode should choose a backend separately from invite handoff");
+assert.match(handoffRoute, /COVEN_CAVE_NATIVE_APP_BACKEND_URL/, "native mobile mode should allow an explicit loopback backend override");
+assert.match(handoffRoute, /COVEN_CAVE_BUNDLE === "1"[\s\S]*http:\/\/127\.0\.0\.1:3000/, "bundled desktop app must publish the tokenless native backend, not its authenticated sidecar port");
+assert.match(handoffRoute, /verifyNativeAppBackend/, "native mobile mode should verify the tokenless backend before publishing Serve");
+assert.match(handoffRoute, /\/api\/familiars/, "native backend readiness should use the same lightweight endpoint as the iOS connection probe");
+assert.match(handoffRoute, /pnpm mobile:tailscale:app/, "native backend readiness errors should point to the documented app-mode command");
 assert.match(handoffRoute, /NODE_ENV !== "production"[\s\S]*pnpm mobile:tailscale/, "API should give an actionable dev hint when the access token is missing");
 assert.match(settings, /MobileModeToggle/, "Settings should render a mobile mode toggle component");
 assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mobile mode enabled state");
