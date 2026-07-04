@@ -206,6 +206,9 @@ const signingKey = ["handoff", "mobile", "key"].join("-");
   assert.equal(magicDnsServeUrl({ Self: {} }), null);
   assert.equal(magicDnsHost({ Self: { DNSName: "  " } }), null);
   assert.equal(tailscaleIpHost({ Self: { TailscaleIPs: ["fd7a:115c:a1e0::1"] } }), null);
+  assert.equal(tailscaleIpHost({ Self: { TailscaleIPs: "100.101.102.103" } }), null);
+  assert.equal(tailscaleIpHost({ TailscaleIPs: { primary: "100.101.102.103" } }), null);
+  assert.equal(tailscaleIpHost({ TailscaleIPs: [null, 42, "100.101.102.103"] }), "100.101.102.103");
 }
 
 console.log("mobile-handoff.test.ts OK");

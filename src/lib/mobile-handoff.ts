@@ -160,9 +160,11 @@ export function magicDnsServeUrl(selfStatus: unknown): string | null {
   return host ? `https://${host}/` : null;
 }
 
-function selfTailscaleIps(selfStatus: unknown) {
+function selfTailscaleIps(selfStatus: unknown): string[] {
   const status = selfStatus as TailscaleSelfStatus | null;
-  return status?.Self?.TailscaleIPs ?? status?.TailscaleIPs ?? [];
+  const ips = status?.Self?.TailscaleIPs ?? status?.TailscaleIPs;
+  if (!Array.isArray(ips)) return [];
+  return ips.filter((candidate): candidate is string => typeof candidate === "string");
 }
 
 export function tailscaleIpHost(selfStatus: unknown): string | null {

@@ -141,8 +141,11 @@ async function ensureNativeAppServe(req: Request) {
           ? `${serveWarning} Using the Tailscale IP fallback for the native app.`
           : "Using the Tailscale IP fallback for the native app.";
       }
-    } else if (!serveWarning) {
-      fallbackWarning = httpServe.stderr || "Tailscale HTTP Serve could not be started.";
+    } else {
+      const httpServeError = httpServe.stderr || "Tailscale HTTP Serve could not be started.";
+      fallbackWarning = serveWarning
+        ? `${serveWarning} HTTP fallback failed: ${httpServeError}`
+        : httpServeError;
       discovery = {
         ok: false,
         reason: fallbackWarning,

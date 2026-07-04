@@ -410,7 +410,8 @@ try {
 } catch {
   process.exit(1);
 }
-const ips = status?.Self?.TailscaleIPs ?? status?.TailscaleIPs ?? [];
+const rawIps = status?.Self?.TailscaleIPs ?? status?.TailscaleIPs;
+const ips = Array.isArray(rawIps) ? rawIps.filter((ip) => typeof ip === "string") : [];
 const ipv4 = ips.find((ip) => /^100\.\d+\.\d+\.\d+$/.test(ip));
 if (!ipv4) process.exit(1);
 console.log(ipv4);

@@ -92,6 +92,11 @@ assert.match(
 );
 assert.match(
   handoffRoute,
+  /HTTP fallback failed:/,
+  "native mobile mode should keep the HTTP Serve fallback stderr when that fallback fails",
+);
+assert.match(
+  handoffRoute,
   /status", "--self", "--json"/,
   "route reads self status as JSON to source the MagicDNS fallback host",
 );
