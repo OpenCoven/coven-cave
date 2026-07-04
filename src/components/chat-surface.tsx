@@ -11,6 +11,7 @@ import { DebugPane } from "@/components/debug-pane";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { WorkspaceRail } from "@/components/workspace-rail";
 import { useCodeRail } from "@/lib/use-code-rail";
+import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { SeparatorHandle } from "@/components/ui/separator-handle";
 import { useIsMobile } from "@/lib/use-viewport";
 import { Tabs } from "@/components/ui/tabs";
@@ -260,42 +261,14 @@ export function ChatSurface({
   const showRightSidebar = rightPanel !== null && !isMobile && !paneNarrow;
 
   // ── Code rail (PR 1) ────────────────────────────────────────────────────────
-  // The active chat is reflected in the URL as `#chat-<sessionId>` (ChatRouter
-  // owns the write via syncUrlHash). Track that hash and resolve it against the
-  // sessions list to recover the active session's project_root + running status
-  // — the signals the code rail needs. Standalone chat surface only; code mode
-  // (comux) owns its own file/changes navigation.
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  useEffect(() => {
-    if (isCodeSurface || typeof window === "undefined") return;
-    const CHAT_HASH_PREFIX = "#chat-";
-    const read = () => {
-      const hash = window.location.hash;
-      if (!hash.startsWith(CHAT_HASH_PREFIX)) { setActiveSessionId(null); return; }
-      try {
-        setActiveSessionId(decodeURIComponent(hash.slice(CHAT_HASH_PREFIX.length)) || null);
-      } catch {
-        setActiveSessionId(null);
-      }
-    };
-    read();
-    // The router mutates the hash via pushState/replaceState (no hashchange
-    // event fires for those), so also poll on the same cadence the shell uses
-    // to re-read app hashes — cheap string compare, no fetch.
-    window.addEventListener("hashchange", read);
-    window.addEventListener("popstate", read);
-    const id = window.setInterval(read, 400);
-    return () => {
-      window.removeEventListener("hashchange", read);
-      window.removeEventListener("popstate", read);
-      window.clearInterval(id);
-    };
-  }, [isCodeSurface]);
-
-  const activeSession = useMemo(
-    () => (activeSessionId ? sessions.find((s) => s.id === activeSessionId) ?? null : null),
-    [activeSessionId, sessions],
-  );
+  // The active session's project_root + running status are the signals the code
+  // rail needs. Read them from the reactive chat debug store — the single
+  // publisher ChatView already feeds and that the sibling SessionChangesPanel
+  // consumes — rather than tracking the `#chat-<id>` URL hash and resolving it
+  // against the sessions list. Standalone chat surface only; code mode (comux)
+  // owns its own file/changes navigation.
+  const snapshot = useChatDebugSnapshot();
+  const activeSession = isCodeSurface ? null : snapshot.session;
   const railProjectRoot = activeSession?.project_root ?? null;
   const sessionRunning = activeSession?.status === "running";
 
@@ -610,6 +583,7 @@ export function ChatSurface({
                   minSize="240px"
                   maxSize="560px"
                 >
+                  {/* TODO: reconcile the duplicate Changes UI with RightPanel's SessionChangesPanel in a later PR of this arc */}
                   <WorkspaceRail
                     changeCount={changeCount}
                     activeTab={rail.activeTab}
