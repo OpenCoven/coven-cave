@@ -1,6 +1,7 @@
 "use client";
 import { Icon } from "@/lib/icon";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
+import { RailFilesPanel } from "@/components/rail-files-panel";
 import type { CodeRailTab } from "@/lib/code-rail";
 
 const TAB_TITLE: Record<CodeRailTab, string> = {
@@ -13,6 +14,8 @@ export function WorkspaceRail({
   changeCount,
   activeTab,
   pinned,
+  projectRoot,
+  familiarId,
   onSelectTab,
   onTogglePin,
   onCollapse,
@@ -20,6 +23,8 @@ export function WorkspaceRail({
   changeCount: number;
   activeTab: CodeRailTab;
   pinned: boolean;
+  projectRoot: string | null;
+  familiarId?: string | null;
   onSelectTab: (tab: CodeRailTab) => void;
   onTogglePin: () => void;
   onCollapse: () => void;
@@ -82,6 +87,8 @@ export function WorkspaceRail({
         <div className="workspace-rail__pane">
           {activeTab === "changes" ? (
             <SessionChangesPanel />
+          ) : activeTab === "files" ? (
+            <RailFilesPanel projectRoot={projectRoot} familiarId={familiarId} />
           ) : (
             <p className="workspace-rail__soon">
               {TAB_TITLE[activeTab]} arrives in the next step.
