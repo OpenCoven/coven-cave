@@ -8,7 +8,7 @@ import { readFile } from "node:fs/promises";
 const codeView = await readFile(new URL("./code-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = await readFile(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
-const codeSidebar = await readFile(new URL("./code-sidebar.tsx", import.meta.url), "utf8");
+const workspaceSidebar = await readFile(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 const comux = await readFile(new URL("./comux-view.tsx", import.meta.url), "utf8");
 const modeType = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const preset = await readFile(new URL("../lib/code-layout-preset.ts", import.meta.url), "utf8");
@@ -59,14 +59,14 @@ assert.match(toolbar, /CODE_PRESETS\.map\(/, "the toolbar renders a chip per pre
 assert.match(chatSurface, /isCodeSurface \? \([\s\S]*?<CodeInlineToolbar \/>/, "the Code header row hosts the inline toolbar");
 
 // ── Code mode owns project/thread nav in the primary sidebar ─────────────────
-// The app shell swaps the far-left application menu for CodeSidebar when
+// The app shell swaps the far-left application menu for WorkspaceSidebar when
 // mode === "code"; comux keeps file/search/diff concerns and hides its internal
 // project/session navigator in that mode.
-assert.match(workspace, /import \{ CodeSidebar \}/, "Workspace imports the CodeSidebar");
+assert.match(workspace, /import \{ WorkspaceSidebar \}/, "Workspace imports the unified WorkspaceSidebar");
 assert.match(
   workspace,
-  /const codeSidebar = \([\s\S]*?<CodeSidebar[\s\S]*?onBack=\{exitCodeMode\}/,
-  "Workspace builds a CodeSidebar with a back action",
+  /const codeSidebar = \([\s\S]*?<WorkspaceSidebar[\s\S]*?onBack=\{exitCodeMode\}/,
+  "Workspace builds a WorkspaceSidebar with a code-mode back action",
 );
 assert.match(
   workspace,
@@ -84,33 +84,33 @@ assert.match(
   "Back exits Code to the previous non-Code surface with Home fallback",
 );
 assert.match(
-  codeSidebar,
-  /export function CodeSidebar/,
-  "CodeSidebar is a dedicated component",
+  workspaceSidebar,
+  /export function WorkspaceSidebar/,
+  "WorkspaceSidebar is the shared chat/code navigation component",
 );
-assert.match(codeSidebar, /aria-label="Back to previous surface"/, "CodeSidebar exposes the Back control");
-assert.match(codeSidebar, /aria-label="Code projects and threads"/, "CodeSidebar names its project/thread navigator");
-assert.match(codeSidebar, /cave:code-select-project/, "CodeSidebar announces project selection to the Code surface");
-assert.match(codeSidebar, /onOpenSession\(session\)/, "CodeSidebar opens thread rows through the workspace/session bridge");
+assert.match(workspaceSidebar, /aria-label="Back to previous surface"/, "WorkspaceSidebar exposes the Back control");
+assert.match(workspaceSidebar, /aria-label="Chat threads"/, "WorkspaceSidebar names its project/thread navigator");
+assert.match(workspaceSidebar, /cave:code-select-project/, "WorkspaceSidebar announces project selection to the Code surface");
+assert.match(workspaceSidebar, /onOpenSession\(session\)/, "WorkspaceSidebar opens thread rows through the workspace/session bridge");
 assert.match(
-  codeSidebar,
+  workspaceSidebar,
   /aria-label=\{`Delete thread \$\{title\}`\}[\s\S]{0,520}?<Icon name="ph:x-bold"/,
-  "CodeSidebar exposes an inline close-button delete affordance on thread rows",
+  "WorkspaceSidebar exposes an inline close-button delete affordance on thread rows",
 );
 // Codex sidebar: PR/branch threads get a distinct leading glyph.
-assert.match(codeSidebar, /ph:git-pull-request|ph:git-branch/, "thread rows show a PR/branch glyph for PR-like titles");
-assert.match(codeSidebar, /useSessionPins|toggleSessionPin/, "sidebar reads/writes session pins");
-assert.match(codeSidebar, /Pinned/, "sidebar renders a Pinned section header");
-assert.match(codeSidebar, /Show more|showAll|THREADS_PREVIEW/, "long thread lists collapse behind Show more");
-assert.match(codeSidebar, /New session|New chat/, "sidebar nav has a New session/chat action");
-assert.match(codeSidebar, /cave:navigate-mode/, "sidebar deep-links to other surfaces via the nav bus");
-assert.match(codeSidebar, /mode:\s*"inbox"/, "Scheduled deep-links to Automations (inbox mode)");
-assert.match(codeSidebar, /mode:\s*"marketplace"/, "Plugins deep-links to the Marketplace surface (its own mode after #2154)");
-assert.doesNotMatch(codeSidebar, /code-sidebar__footer|code-sidebar__user|cnav__user-plan/, "CodeSidebar should not render the user plan footer");
+assert.match(workspaceSidebar, /ph:git-pull-request|ph:git-branch/, "thread rows show a PR/branch glyph for PR-like titles");
+assert.match(workspaceSidebar, /readPinnedSessions|togglePinnedSession/, "sidebar reads/writes session pins");
+assert.match(workspaceSidebar, /Pinned/, "sidebar renders a Pinned section header");
+assert.match(workspaceSidebar, /Show more|showAll|THREADS_PREVIEW/, "long thread lists collapse behind Show more");
+assert.match(workspaceSidebar, /New session|New chat/, "sidebar nav has a New session/chat action");
+assert.match(workspaceSidebar, /cave:navigate-mode/, "sidebar deep-links to other surfaces via the nav bus");
+assert.match(workspaceSidebar, /mode:\s*"inbox"/, "Scheduled deep-links to Automations (inbox mode)");
+assert.match(workspaceSidebar, /mode:\s*"marketplace"/, "Plugins deep-links to the Marketplace surface (its own mode after #2154)");
+assert.doesNotMatch(workspaceSidebar, /code-sidebar__footer|code-sidebar__user|cnav__user-plan/, "WorkspaceSidebar should not render the user plan footer");
 assert.match(
   workspace,
   /onDeleteSession=\{async \(session\) => \{[\s\S]*?fetch\(`\/api\/chat\/conversation\/\$\{encodeURIComponent\(session\.id\)\}`,[\s\S]*?method: "DELETE"[\s\S]*?loadSessions\(\)/,
-  "Workspace wires CodeSidebar thread delete through the authoritative conversation DELETE route and refreshes sessions",
+  "Workspace wires WorkspaceSidebar thread delete through the authoritative conversation DELETE route and refreshes sessions",
 );
 assert.match(
   workspace,
@@ -129,7 +129,7 @@ assert.match(
 );
 assert.match(comux, /hideProjectNavigator\?: boolean/, "ComuxView accepts hideProjectNavigator");
 assert.match(comux, /if \(hideProjectNavigator\) return;/, "Comux project-list shortcuts are disabled when hidden");
-assert.match(comux, /cave:code-select-project/, "Comux listens for CodeSidebar project selection");
+assert.match(comux, /cave:code-select-project/, "Comux listens for WorkspaceSidebar project selection");
 assert.match(
   comux,
   /\{!hideProjectNavigator && \([\s\S]*?Projects — merged into this column/,
@@ -249,23 +249,23 @@ assert.match(
   "sidebar has a Code nav entry bound to ⌘7",
 );
 
-// ── Collapsed nav rail shows a "Sessions" label, not a bare clipped icon ─────
-// When the Code surface's nav panel collapses to the 56px rail, the CodeSidebar
-// renders a vertical "Sessions" label (mirrors the comux Details/Preview rails)
+// ── Collapsed nav rail shows a "Chats" label, not a bare clipped icon ─────────
+// When the Code surface's nav panel collapses to the 56px rail, WorkspaceSidebar
+// renders a vertical "Chats" label (mirrors the comux Details/Preview rails)
 // that reopens the panel on click via the symmetric cave:toggle-left-panel hook.
-assert.match(codeSidebar, /className="code-sidebar__rail focus-ring"/, "CodeSidebar renders a collapsed rail control");
-assert.match(codeSidebar, /aria-label="Expand sessions"/, "the collapsed rail is an accessible expand affordance");
+assert.match(workspaceSidebar, /className="workspace-sidebar__rail chat-sidebar__rail focus-ring"/, "WorkspaceSidebar renders a collapsed rail control");
+assert.match(workspaceSidebar, /aria-label="Expand chats"/, "the collapsed rail is an accessible expand affordance");
 assert.match(
-  codeSidebar,
+  workspaceSidebar,
   /new CustomEvent\("cave:toggle-left-panel"\)/,
   "the collapsed rail reopens the nav panel via the cave:toggle-left-panel event",
 );
 assert.match(
-  codeSidebar,
-  /<span className="code-sidebar__rail-label">Sessions<\/span>/,
-  "the collapsed rail shows a 'Sessions' label instead of a bare icon",
+  workspaceSidebar,
+  /<span className="workspace-sidebar__rail-label chat-sidebar__rail-label">Chats<\/span>/,
+  "the collapsed rail shows a 'Chats' label instead of a bare icon",
 );
-assert.match(codeSidebar, /className="code-sidebar__full/, "the full sidebar is wrapped so CSS can hide it when collapsed");
+assert.match(workspaceSidebar, /className="workspace-sidebar__full chat-sidebar__full/, "the full sidebar is wrapped so CSS can hide it when collapsed");
 // Shell honours the symmetric left-panel toggle event (mirror of the right one).
 assert.match(
   shell,

@@ -52,7 +52,7 @@ test.describe("chat sidebar (session navigator)", () => {
     const sidebar = page.locator(".chat-sidebar");
 
     // Search control survives in both views.
-    await expect(sidebar.getByRole("searchbox", { name: "Search chat projects and threads" })).toBeVisible();
+    await expect(sidebar.getByRole("searchbox", { name: "Search projects and threads" })).toBeVisible();
 
     // Recent is the default: time-bucket headers, no project folder toggles.
     await expect(sidebar.getByText("Today", { exact: true })).toBeVisible();
@@ -83,7 +83,7 @@ test.describe("chat sidebar (session navigator)", () => {
   test("search filters threads to matches, with an empty state", async ({ page }) => {
     await gotoChat(page);
     const sidebar = page.locator(".chat-sidebar");
-    const search = sidebar.getByRole("searchbox", { name: "Search chat projects and threads" });
+    const search = sidebar.getByRole("searchbox", { name: "Search projects and threads" });
 
     await search.fill("deploy");
     await expect(sidebar.getByText("Wire deploy pipeline").first()).toBeVisible();
