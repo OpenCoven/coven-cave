@@ -5913,7 +5913,7 @@ button:active > .edge-rail-chip {
   width: 28px;
   height: 28px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border-hairline);
   background: var(--bg-raised);
   color: var(--text-secondary);
@@ -5940,7 +5940,7 @@ button:active > .edge-rail-chip {
 
 .familiar-quickswitch__avatar {
   display: inline-flex;
-  border-radius: 999px;
+  border-radius: calc(var(--radius-control) - 1px);
   overflow: hidden;
 }
 
@@ -5948,40 +5948,7 @@ button:active > .edge-rail-chip {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 999px;
-}
-
-.familiar-quickswitch__presence {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  box-shadow: 0 0 0 2px var(--bg-base);
-}
-
-/* Filled pin badge marking a pinned familiar in the strip. */
-.familiar-quickswitch__pin {
-  position: absolute;
-  top: -3px;
-  left: -3px;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--accent-presence);
-  box-shadow: 0 0 0 2px var(--bg-base);
-}
-
-.familiar-quickswitch__unread {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--color-warning);
-  box-shadow: 0 0 0 2px var(--bg-base);
+  border-radius: calc(var(--radius-control) - 1px);
 }
 
 @media (prefers-reduced-motion: reduce) {

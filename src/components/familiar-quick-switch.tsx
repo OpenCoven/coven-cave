@@ -73,11 +73,10 @@ export function FamiliarQuickSwitch({
             const isActive = selectedFamiliarIds
               ? selectedFamiliarIds.has(f.id)
               : f.id === activeFamiliarId;
-            const needsReply = responseNeeded?.has(f.id) ?? false;
             const presence = computePresence({
               familiar: f,
               sessions,
-              needsReply,
+              needsReply: false,
               isRemoteHarness: f.harness ? REMOTE_HARNESSES.has(f.harness) : false,
             });
             const isPinned = pinnedSet.has(f.id);
@@ -98,9 +97,6 @@ export function FamiliarQuickSwitch({
                   <span className="familiar-quickswitch__avatar">
                     <FamiliarAvatar familiar={f} size="sm" />
                   </span>
-                  <span className={`familiar-quickswitch__presence ${presence.dot}`} aria-hidden />
-                  {isPinned ? <span className="familiar-quickswitch__pin" aria-hidden /> : null}
-                  {needsReply ? <span className="familiar-quickswitch__unread" aria-hidden /> : null}
                 </button>
               </li>
             );
