@@ -33,13 +33,24 @@ export function useCodeRail({ projectRoot, changeCount, terminalActive }: UseCod
     { hasRepo: Boolean(projectRoot), changeCount, terminalActive, pinned, dismissed },
     prevRef.current,
   );
-  // Keep the resolved tab in sync so tab clicks persist while open.
+
+  // Commit the resolved state as `prev` on EVERY render so the pure fn always
+  // sees the real previous changeCount. If this were gated on a partial deps
+  // array, a 2→0→3 edit sequence would leave `prev.changeCount` stale and miss
+  // the fresh-batch re-reveal.
+  useEffect(() => {
+    prevRef.current = state;
+  });
+
+  // React to reveals: force the tab on a fresh edit batch, and clear a stale
+  // dismissal once the rail re-opens. Deliberately NOT keyed on `activeTab` —
+  // keying on it would revert a manual tab click back to the resolved tab
+  // (state.activeTab is otherwise a fixed point between edit batches).
   useEffect(() => {
     if (state.available && state.activeTab !== activeTab) setActiveTab(state.activeTab);
-    prevRef.current = state;
-    // Reset the per-reason dismissal when a fresh edit batch reveals the rail.
     if (state.open && dismissed) setDismissed(false);
-  }, [state.available, state.open, state.activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
+  }, [state.available, state.open, state.activeTab]);
 
   const togglePin = () => {
     setPinned((p) => {
