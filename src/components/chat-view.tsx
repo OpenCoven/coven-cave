@@ -52,7 +52,8 @@ import {
 } from "@/lib/file-mention";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { LOCAL_HOST_ID, parseConversationRuntime, type ChatHostOption } from "@/lib/chat-hosts";
+import { LOCAL_HOST_ID, parseConversationRuntime } from "@/lib/chat-hosts";
+import { ComposerHostChip } from "@/components/composer-host-chip";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
@@ -708,184 +709,6 @@ function ComposerControlSelect<T extends string>({
       </select>
       <Icon name="ph:caret-down-bold" width={10} aria-hidden className="cave-composer-select__chevron" />
     </label>
-  );
-}
-
-function hostStatusKind(option: ChatHostOption): "online" | "offline" | "unknown" {
-  if (option.kind === "local" || option.online === true) return "online";
-  return option.online === false ? "offline" : "unknown";
-}
-
-/** Composer Host chip: a popover picker with live status dots per host and a
- *  connect-new-host row — a native select can't render either. */
-function ComposerHostChip({
-  value,
-  options,
-  disabled,
-  onOpen,
-  onPick,
-  onConnectNew,
-}: {
-  value: string;
-  options: ChatHostOption[];
-  disabled?: boolean;
-  onOpen: () => void;
-  onPick: (id: string) => void;
-  onConnectNew: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const anchorRef = useRef<HTMLButtonElement | null>(null);
-  const current = options.find((option) => option.id === value);
-  const label = current?.label ?? value;
-  const status = current ? hostStatusKind(current) : "unknown";
-  return (
-    <>
-      <button
-        ref={anchorRef}
-        type="button"
-        className="cave-composer-select cave-composer-host-chip"
-        disabled={disabled}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={`Host: ${label}`}
-        onClick={() => {
-          onOpen();
-          setOpen((v) => !v);
-        }}
-      >
-        <Icon name="ph:desktop" width={13} aria-hidden />
-        <span className="cave-composer-select__label">Host</span>
-        <span className={`cave-host-dot cave-host-dot--${status}`} aria-hidden />
-        <span className="cave-composer-select__value">{label}</span>
-        <Icon name="ph:caret-down-bold" width={10} aria-hidden className="cave-composer-select__chevron" />
-      </button>
-      <Popover
-        open={open}
-        onOpenChange={setOpen}
-        anchorRef={anchorRef}
-        placement="top-start"
-        minWidth={240}
-        ariaLabel="Chat host"
-      >
-        <PopoverBody role="menu" ariaLabel="Chat host">
-          <PopoverLabel>Run this chat on</PopoverLabel>
-          {options.map((option) => {
-            const optionStatus = hostStatusKind(option);
-            return (
-              <PopoverItem
-                key={option.id}
-                checked={option.id === value}
-                onSelect={() => {
-                  onPick(option.id);
-                  setOpen(false);
-                }}
-              >
-                <span className="cave-host-row">
-                  <Icon name="ph:desktop" width={13} aria-hidden />
-                  <span className="cave-host-row__name">{option.label}</span>
-                  <span className={`cave-host-status cave-host-status--${optionStatus}`}>
-                    <span className="cave-host-dot cave-host-dot--inline" aria-hidden />
-                    {optionStatus === "online" ? "online" : optionStatus === "offline" ? "offline" : "checking"}
-                  </span>
-                </span>
-              </PopoverItem>
-            );
-          })}
-          <PopoverSeparator />
-          <PopoverItem icon="ph:plus" onSelect={() => { setOpen(false); onConnectNew(); }}>
-            Connect new host
-          </PopoverItem>
-        </PopoverBody>
-      </Popover>
-    </>
-  );
-}
-
-/** Register a new SSH host for chat execution: probe (BatchMode, key auth)
- *  then persist to config.remoteHosts via POST /api/hosts. */
-function ConnectHostDialog({ onClose, onConnected }: { onClose: () => void; onConnected: (host: string) => void }) {
-  const [host, setHost] = useState("");
-  const [cwd, setCwd] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async () => {
-    if (!host.trim() || pending) return;
-    setPending(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/hosts", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ host: host.trim(), ...(cwd.trim() ? { cwd: cwd.trim() } : {}) }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        setError(json?.error ?? `couldn't reach the host (http ${res.status})`);
-        return;
-      }
-      onConnected(host.trim());
-      onClose();
-    } finally {
-      setPending(false);
-    }
-  };
-
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      breadcrumb={["Chat", "Connect a new host"]}
-      dismissOnBackdrop={!pending}
-      footerActions={
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={pending}>
-            Cancel
-          </Button>
-          <Button variant="primary" disabled={!host.trim() || pending} onClick={() => void submit()}>
-            {pending ? "Probing…" : "Connect"}
-          </Button>
-        </>
-      }
-    >
-      <div className="cave-connect-host">
-        <p className="cave-connect-host__hint">
-          Chats can run on any machine your SSH config reaches with key auth and a{" "}
-          <code>coven</code> CLI installed. Run <code>ssh &lt;host&gt;</code> once first to trust
-          the host key.
-        </p>
-        <label className="cave-connect-host__field">
-          <span>Host</span>
-          <input
-            type="text"
-            value={host}
-            autoFocus
-            placeholder="vm-1 or user@server.tailnet"
-            onChange={(event) => setHost(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void submit();
-            }}
-          />
-        </label>
-        <label className="cave-connect-host__field">
-          <span>Remote directory (optional)</span>
-          <input
-            type="text"
-            value={cwd}
-            placeholder="~"
-            onChange={(event) => setCwd(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void submit();
-            }}
-          />
-        </label>
-        {error && (
-          <p className="cave-connect-host__error" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
-    </Modal>
   );
 }
 
@@ -2436,45 +2259,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // body (deliberately per-session, not a sticky global pref: a forgotten
   // sticky remote host would silently run every new chat elsewhere).
   const [runtimeHost, setRuntimeHost] = useState<string | null>(null);
-  const [hostOptions, setHostOptions] = useState<ChatHostOption[] | null>(null);
-  const hostOptionsLoading = useRef(false);
-  const [connectHostOpen, setConnectHostOpen] = useState(false);
-
-  // Lazy host registry: an instant unprobed list on first interaction, then a
-  // probed refresh so online/offline states fill in without blocking the menu.
-  const loadHostOptions = useCallback(async (force = false) => {
-    if (hostOptionsLoading.current && !force) return;
-    hostOptionsLoading.current = true;
-    try {
-      const quick = await fetch("/api/hosts?probe=0").then((res) => res.json()).catch(() => null);
-      if (quick?.ok && Array.isArray(quick.hosts)) setHostOptions(quick.hosts);
-      const probed = await fetch("/api/hosts").then((res) => res.json()).catch(() => null);
-      if (probed?.ok && Array.isArray(probed.hosts)) setHostOptions(probed.hosts);
-    } finally {
-      if (force) hostOptionsLoading.current = false;
-    }
-  }, []);
-
-  // What the Host chip displays: an explicit pick, else the host this
-  // conversation is recorded on, else the local machine.
   const sessionRuntimeHost = useMemo(() => {
     const parsed = parseConversationRuntime(session?.runtime);
     return parsed?.kind === "ssh" ? parsed.host : null;
   }, [session?.runtime]);
   const composerHostValue = runtimeHost ?? sessionRuntimeHost ?? LOCAL_HOST_ID;
-  const hostChipOptions = useMemo<ChatHostOption[]>(() => {
-    const base: ChatHostOption[] = hostOptions ?? [
-      { id: LOCAL_HOST_ID, kind: "local", label: "This machine", online: true },
-      ...(sessionRuntimeHost
-        ? [{ id: sessionRuntimeHost, kind: "ssh" as const, label: sessionRuntimeHost, online: null }]
-        : []),
-    ];
-    // The current value must always be present — cover a stale pick or a host
-    // recorded on the conversation that isn't (or is no longer) registered.
-    return base.some((option) => option.id === composerHostValue)
-      ? base
-      : [...base, { id: composerHostValue, kind: "ssh", label: composerHostValue, online: null }];
-  }, [hostOptions, sessionRuntimeHost, composerHostValue]);
   const [input, setInput] = useState(() => readComposerDraft());
   // CHAT-D11-04: Input history navigation (↑↓), matching HomeComposer pattern
   const [inputHistory, setInputHistory] = useState<string[]>(() => readComposerHistory(COMPOSER_HISTORY_KEY));
@@ -3695,7 +3484,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     outgoingAttachments: ChatAttachment[] = [],
     outgoingMentions: string[] = [],
     opts?: { promptOverride?: string; parentTurnId?: string | null },
-    controlsOverride?: { thinkingEffort: ComposerThinkingEffort; responseSpeed: ComposerResponseSpeed },
+    controlsOverride?: { thinkingEffort: ComposerThinkingEffort; responseSpeed: ComposerResponseSpeed; runtimeHost?: string },
   ) => {
     const trimmed = text.trim();
     const submitPrompt = opts?.promptOverride?.trim() || trimmed;
@@ -3779,7 +3568,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           permissionMode,
           // Composer Host chip: only an explicit pick rides; the server
           // resolves it against the registered-host registry fail-closed.
-          ...(runtimeHost ? { runtimeHost } : {}),
+          ...((controlsOverride?.runtimeHost ?? runtimeHost) ? { runtimeHost: controlsOverride?.runtimeHost ?? runtimeHost } : {}),
           // Forward the picked model explicitly so it reaches `coven run
           // --model` for THIS turn — don't rely on the PATCH to model-state
           // having persisted to the conversation file before this send (a
@@ -4135,7 +3924,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setThinkingEffort(normalized.thinkingEffort);
         setResponseSpeed(normalized.responseSpeed);
       }
-      void sendRaw(initialPrompt, initialAttachments ?? [], [], undefined, normalized ?? undefined);
+      // The home composer's host pick rides the first send explicitly (state
+      // set below lands too late for this closure) and seeds the chip.
+      if (initialControls?.runtimeHost) setRuntimeHost(initialControls.runtimeHost);
+      void sendRaw(
+        initialPrompt,
+        initialAttachments ?? [],
+        [],
+        undefined,
+        normalized
+          ? { ...normalized, runtimeHost: initialControls?.runtimeHost }
+          : undefined,
+      );
     }, 0);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5454,24 +5254,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       onChange={(id) => handleSelectModel(id)}
                     />
                   ) : null}
-                  <ComposerHostChip
-                    value={composerHostValue}
-                    options={hostChipOptions}
-                    disabled={busy}
-                    onOpen={() => void loadHostOptions()}
-                    onPick={setRuntimeHost}
-                    onConnectNew={() => setConnectHostOpen(true)}
-                  />
+                  <ComposerHostChip value={composerHostValue} disabled={busy} onPick={setRuntimeHost} />
                 </div>
-                {connectHostOpen && (
-                  <ConnectHostDialog
-                    onClose={() => setConnectHostOpen(false)}
-                    onConnected={(host) => {
-                      setRuntimeHost(host);
-                      void loadHostOptions(true);
-                    }}
-                  />
-                )}
                 {busy ? (
                   <button
                     type="button"

@@ -10,7 +10,11 @@ export type CommandControls = {
   responseSpeed: CommandResponseSpeed;
 };
 
-export type InitialCommandControls = Partial<CommandControls>;
+export type InitialCommandControls = Partial<CommandControls> & {
+  /** Composer Host chip: "local" or a registered ssh host id (see chat-hosts).
+   *  Rides the opened chat's first send and seeds its Host chip. */
+  runtimeHost?: string;
+};
 
 export const COMMAND_CONTROL_DEFAULTS: CommandControls = {
   thinkingEffort: "high",
