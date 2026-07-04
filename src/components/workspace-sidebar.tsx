@@ -563,12 +563,7 @@ export function WorkspaceSidebar({
                         type="button"
                         aria-expanded={expanded}
                         aria-label={`${expanded ? "Collapse" : "Expand"} ${label} threads`}
-                        onClick={() => {
-                          toggleCollapse(key);
-                          if (group.projectRoot) {
-                            window.dispatchEvent(new CustomEvent("cave:code-select-project", { detail: { root: group.projectRoot } }));
-                          }
-                        }}
+                        onClick={() => toggleCollapse(key)}
                         className="cnav__group-toggle focus-ring"
                       >
                         <Icon name="ph:caret-down" width={10} className="cnav__chev" aria-hidden />
