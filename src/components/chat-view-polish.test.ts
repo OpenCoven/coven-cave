@@ -8,10 +8,10 @@ const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), 
 // fileToAttachment moved to the shared lib (reused by the home composer).
 const attachmentsLib = readFileSync(new URL("../lib/chat-attachments.ts", import.meta.url), "utf8");
 
-assert.match(
+assert.doesNotMatch(
   globalsSrc,
-  /\.cave-code-page[\s\S]*?cave-composer/,
-  "Codex composer card styling is scoped to the code page",
+  /\.cave-code-page[\s\S]*?cave-composer|data-code-inline-toolbar|code-mode-toggle/,
+  "Retired Code page and inline toolbar styling should stay removed",
 );
 const turnRow = source.match(/function TurnRowImpl[\s\S]*?\n}\n\ntype TurnRowProps/)?.[0] ?? "";
 const splitReasoning = source.match(/function splitReasoning[\s\S]*?\n}\n\n\/\/ ── ChatEmptyState/)?.[0] ?? "";
@@ -252,8 +252,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /placeholder=\{busy \? "Streaming… \(esc to cancel\)" : surface === "code" \? "Ask for follow-up changes" : `Message \$\{familiar\.display_name\}…  ↵ to send`\}/,
-  "Composer placeholder should include ↵ to send hint in steady state (code surface uses the Codex follow-up copy)",
+  /placeholder=\{busy \? "Streaming… \(esc to cancel\)" : `Message \$\{familiar\.display_name\}…  ↵ to send`\}/,
+  "Composer placeholder should include ↵ to send hint in steady state",
 );
 
 assert.match(
@@ -261,10 +261,10 @@ assert.match(
   /Worked for/,
   "settled reasoning shows a 'Worked for Xs' summary",
 );
-assert.match(
+assert.doesNotMatch(
   source,
   /Ask for follow-up changes/,
-  "code-surface composer uses the Codex follow-up placeholder",
+  "retired Code surface composer copy should be removed",
 );
 
 assert.match(
@@ -611,8 +611,8 @@ assert.match(
 );
 assert.equal(
   (workspaceSource.match(/onSlashFromChat=\{handleSlashIntent\}/g) ?? []).length,
-  2,
-  "All onSlashFromChat sites (chat mode, code workspace) must report unhandled slash commands honestly (no unconditional return-true wrappers)",
+  1,
+  "The chat-mode onSlashFromChat site must report unhandled slash commands honestly (no unconditional return-true wrappers)",
 );
 
 // — CHAT-D1-02: paste-to-attach (clipboard files route through attachFiles) —

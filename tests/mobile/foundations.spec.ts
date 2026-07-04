@@ -127,7 +127,7 @@ test.describe("mobile foundations", () => {
     // rows: most of these surfaces are now opt-in add-ons (hidden from the nav by
     // default), but they still render when navigated — so this stays a true
     // cross-surface chrome check without depending on which rows are visible.
-    const surfaces = ["home", "chat", "board", "calendar", "browser", "terminal", "code"];
+    const surfaces = ["home", "chat", "board", "calendar", "browser", "terminal"];
 
     for (const surface of surfaces) {
       await page.evaluate(
@@ -302,7 +302,7 @@ test.describe("mobile foundations", () => {
     // this red.
     const ALL_SURFACES = [
       "home", "agents", "chat", "groupchat", "board", "calendar", "inbox",
-      "library", "browser", "terminal", "code", "github", "roles", "marketplace",
+      "library", "browser", "terminal", "github", "roles", "marketplace",
       "flow", "evals", "submissions", "retro", "capabilities", "journal",
     ];
 

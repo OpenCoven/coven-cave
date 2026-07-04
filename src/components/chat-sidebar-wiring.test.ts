@@ -7,11 +7,10 @@ const workspaceSidebar = await readFile(new URL("./workspace-sidebar.tsx", impor
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const chatView = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
 
-// ── Left-sidebar transformation: chat mode swaps the nav for the ChatSidebar,
-//    mirroring how code mode swaps in the CodeSidebar. ─────────────────────────
+// ── Left-sidebar transformation: chat mode swaps the nav for the ChatSidebar. ──
 assert.match(
   workspace,
-  /mode === "code" \? codeSidebar : mode === "chat" \? chatSidebar : sidebar/,
+  /mode === "chat" \? chatSidebar : sidebar/,
   "workspace nav should swap to chatSidebar in chat mode",
 );
 assert.match(
@@ -35,7 +34,7 @@ assert.match(
 assert.match(chatSurface, /hideThreadRail = false/, "ChatSurface should accept a hideThreadRail prop");
 assert.match(
   chatSurface,
-  /const compactRail = isCodeSurface \|\| hideThreadRail/,
+  /const compactRail = hideThreadRail/,
   "ChatSurface should fold hideThreadRail into the compact rail flag",
 );
 assert.match(chatSurface, /compact=\{compactRail\}/, "ChatRouter should receive the combined compact flag");

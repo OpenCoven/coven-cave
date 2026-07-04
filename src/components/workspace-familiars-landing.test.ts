@@ -54,8 +54,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "inbox", "browser", "terminal", "code",/,
-  "SURFACE_ORDER ascends with the merged sidebar top-to-bottom order (⌘1..⌘7)",
+  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "inbox", "browser", "terminal",/,
+  "SURFACE_ORDER ascends with the merged sidebar top-to-bottom order (⌘1..⌘6)",
 );
 
 // ⌘[ / ⌘] cycle to the previous / next surface through SURFACE_ORDER (wraps).

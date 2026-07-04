@@ -64,8 +64,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /if \(m === "code" \|\| m === "terminal"\) return;[\s\S]*?setMode\("code"\)[\s\S]*?dispatchEvent\(new CustomEvent\("cave:open-project-file"/,
-  "workspace switches to Code mode and re-emits when no comux is showing",
+  /if \(m === "terminal"\) return;[\s\S]*?setMode\("terminal"\)[\s\S]*?dispatchEvent\(new CustomEvent\("cave:open-project-file"/,
+  "workspace switches to Terminal mode and re-emits when no comux is showing",
 );
 
 console.log("tool-target-file.test.ts: ok");

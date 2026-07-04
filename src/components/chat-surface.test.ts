@@ -77,8 +77,8 @@ assert.doesNotMatch(
 
 assert.match(
   chatSurface,
-  /\{\s*id:\s*"memory",\s*label:\s*"Memory"\s*\}/,
-  "ChatSurface should label the secondary primary tab Memory instead of Traces",
+  /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/,
+  "ChatSurface should label the secondary primary tab Projects instead of Traces",
 );
 // Familiar selection now lives in the global top menu bar (and the sidebar /
 // mobile top-bar switcher), so the chat header carries only its scope tabs —
@@ -148,34 +148,23 @@ assert.match(
   "ChatSurface should keep live chat available inside the Chat tab",
 );
 
-// Code surface ("code" mode): the chat pane is transcript-only — the comux pane
-// owns project/file navigation. ChatSurface takes a `surface` prop, derives
-// isCodeSurface, drops the in-chat project sidebar by passing compact, and tags
-// the transcript wrapper so the reading-width cap applies.
-assert.match(
+// Retired Code mode: ChatSurface is now the only chat surface. The left
+// WorkspaceSidebar owns project/thread navigation in chat mode, so ChatSurface
+// only needs the explicit hideThreadRail compact flag.
+assert.doesNotMatch(
   chatSurface,
-  /surface\s*=\s*"chat"/,
-  "ChatSurface should accept a surface prop defaulting to standalone chat",
+  /surface\s*=\s*"chat"|surface === "code"|isCodeSurface|CodeInlineToolbar/,
+  "ChatSurface should not keep the retired code-surface switch",
 );
 assert.match(
   chatSurface,
-  /const isCodeSurface = surface === "code"/,
-  "ChatSurface should derive isCodeSurface from the surface prop",
-);
-assert.match(
-  chatSurface,
-  /const compactRail = isCodeSurface \|\| hideThreadRail/,
-  "ChatSurface should fold hideThreadRail (chat mode's ChatSidebar owns threads) into the compact rail flag",
+  /const compactRail = hideThreadRail/,
+  "ChatSurface should fold chat mode's hideThreadRail into the compact rail flag",
 );
 assert.match(
   chatSurface,
   /<ChatRouter[\s\S]*?compact=\{compactRail\}/,
-  "ChatSurface should suppress the in-chat project sidebar via compact (Code surface or chat-mode ChatSidebar)",
-);
-assert.match(
-  chatSurface,
-  /data-surface=\{surface\}/,
-  "ChatSurface should tag the transcript wrapper with the surface for the reading-width cap",
+  "ChatSurface should suppress the in-chat project sidebar via compact when chat-mode ChatSidebar owns threads",
 );
 
 assert.match(

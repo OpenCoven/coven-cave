@@ -2,14 +2,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-// Locks the guarantee that the Code surface's thread list is filtered by the
-// selected familiar. The Code page (mode "code") renders a `ChatSurface
-// surface="code"` whose thread rail + list come from `filterVisibleChatSessions`
-// keyed off the active familiar. This is a multi-component prop chain, so this
-// test pins each load-bearing seam — a regression at any one of them would let
-// another familiar's threads leak into the Code page. Mirrors the idiom in
-// board-view-familiar-scope.test.ts. (`filterVisibleChatSessions` itself is
-// behaviorally tested in chat-projects.test.ts.)
+// Locks the guarantee that chat-mode thread lists are filtered by the selected
+// familiar. Chat mode now owns the unified project/thread navigator through
+// WorkspaceSidebar, while ChatSurface/ChatRouter still render the transcript
+// and compact in-thread list. This pins each load-bearing seam — a regression
+// at any one of them would let another familiar's threads leak into chat mode.
+// Mirrors the idiom in board-view-familiar-scope.test.ts.
+// (`filterVisibleChatSessions` itself is behaviorally tested in
+// chat-projects.test.ts.)
 
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const chatSurface = await readFile(new URL("./chat-surface.tsx", import.meta.url), "utf8");
@@ -17,20 +17,20 @@ const chatRouter = await readFile(new URL("./chat-router.tsx", import.meta.url),
 const chatList = await readFile(new URL("./chat-list.tsx", import.meta.url), "utf8");
 const workspaceSidebar = await readFile(new URL("./workspace-sidebar.tsx", import.meta.url), "utf8");
 
-// 1. Workspace feeds the *selected* familiar into the Code surface's chat pane.
+// 1. Workspace feeds the *selected* familiar into the chat surface.
 //    `active` is the single-selected familiar (null for All / multiselect).
 assert.match(
   workspace,
-  /surface="code"[\s\S]*?activeFamiliar=\{active\}/,
-  "workspace must pass the active (selected) familiar into the Code surface ChatSurface",
+  /mode === "chat" \? \([\s\S]*?<ChatSurface[\s\S]*?activeFamiliar=\{active\}/,
+  "workspace must pass the active (selected) familiar into ChatSurface",
 );
 
 // 2. ChatSurface forwards that familiar (and the sessions) into ChatRouter on the
-//    Code surface (compact) path — without the familiar prop the list can't scope.
+//    compact chat-mode path — without the familiar prop the list can't scope.
 assert.match(
   chatSurface,
   /<ChatRouter[\s\S]*?familiar=\{activeFamiliar\}[\s\S]*?sessions=\{sessions\}[\s\S]*?compact=\{compactRail\}/,
-  "ChatSurface must forward activeFamiliar + sessions into ChatRouter (compact on the Code surface / chat-mode ChatSidebar)",
+  "ChatSurface must forward activeFamiliar + sessions into ChatRouter (compact on the chat-mode ChatSidebar path)",
 );
 
 // 3. ChatRouter scopes the sidebar/thread list to the familiar (null = show all,
@@ -49,14 +49,14 @@ assert.match(
   "ChatList must filter its visible rows by the familiar",
 );
 
-// 5. The Code surface's left project navigator (WorkspaceSidebar) counts per-project
+// 5. The chat-mode left project navigator (WorkspaceSidebar) counts per-project
 //    sessions too, so its project list + count badges must be scoped to the same
 //    familiar — otherwise "proj 4" tallies every familiar's chats next to a
 //    familiar-filtered thread list.
 assert.match(
   workspace,
-  /const codeSidebar = \([\s\S]*?<WorkspaceSidebar[\s\S]*?activeFamiliarId=\{activeId\}/,
-  "workspace must pass the active familiar id into the code-mode WorkspaceSidebar",
+  /const chatSidebar = \([\s\S]*?<WorkspaceSidebar[\s\S]*?activeFamiliarId=\{activeId\}/,
+  "workspace must pass the active familiar id into the chat-mode WorkspaceSidebar",
 );
 
 // 6. WorkspaceSidebar scopes the sessions that drive its project list + per-project

@@ -74,12 +74,12 @@ assert.match(
   "changeCount is derived from the /api/changes files length",
 );
 
-// The rail is gated on the standalone chat surface (surface !== 'code') and on
-// the hook's availability/open state, never in code mode.
+// The rail is gated on the hook's availability/open state. Retired Code mode no
+// longer needs a surface switch to suppress it.
 assert.match(
   source,
-  /showCodeRail\s*=\s*!isCodeSurface\s*&&\s*rail\.available\s*&&\s*rail\.open/,
-  "code rail visibility is gated on !isCodeSurface && rail.available && rail.open",
+  /showCodeRail\s*=\s*rail\.available\s*&&\s*rail\.open/,
+  "code rail visibility is gated on rail.available && rail.open",
 );
 
 assert.match(
