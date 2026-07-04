@@ -362,6 +362,11 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
   // ── Page-load + title events ──────────────────────────────────────
   useEffect(() => {
     if (!bridge || !nativeBrowserAvailable) return;
+    // If this effect is torn down (tab switch / unmount) before an async
+    // bridge.listen() resolves, unlisten the moment it does — otherwise the
+    // handler leaks and later fires with a stale activeTabId (duplicate
+    // loading / address-bar updates for the wrong tab).
+    let cancelled = false;
     let unlistenLoad: (() => void) | null = null;
     let unlistenTitle: (() => void) | null = null;
 
@@ -386,13 +391,20 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               t.id === tabId ? { ...t, url: evUrl } : t
             )
           );
-          // Push to per-tab history
+          // Push to per-tab history — but a back/forward re-navigation lands on
+          // the URL already at the current index (goBack/goForward move idx
+          // first), so skip the truncate-and-append that would otherwise
+          // permanently destroy the forward entries.
           const h = historyRef.current[tabId] ?? { stack: [evUrl], idx: 0 };
-          const next = [...h.stack.slice(0, h.idx + 1), evUrl];
-          historyRef.current[tabId] = { stack: next, idx: next.length - 1 };
+          if (h.stack[h.idx] === evUrl) {
+            historyRef.current[tabId] = h;
+          } else {
+            const next = [...h.stack.slice(0, h.idx + 1), evUrl];
+            historyRef.current[tabId] = { stack: next, idx: next.length - 1 };
+          }
         }
       },
-    ).then((fn) => { unlistenLoad = fn; });
+    ).then((fn) => { if (cancelled) fn(); else unlistenLoad = fn; });
 
     void bridge.listen<{ label: string; title: string; url: string }>(
       "browser:title",
@@ -404,9 +416,9 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
         setTabTitles((prev) => ({ ...prev, [tabId]: title }));
         if (tabId === activeTabId) setAddressBar(evUrl);
       },
-    ).then((fn) => { unlistenTitle = fn; });
+    ).then((fn) => { if (cancelled) fn(); else unlistenTitle = fn; });
 
-    return () => { unlistenLoad?.(); unlistenTitle?.(); };
+    return () => { cancelled = true; unlistenLoad?.(); unlistenTitle?.(); };
   }, [bridge, nativeBrowserAvailable, label, activeTabId]);
 
   // ── Sync active tab webview bounds ────────────────────────────────
@@ -427,6 +439,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     let raf = 0;
     let hidden = false;
     let last = { x: 0, y: 0, w: 0, h: 0 };
+    let lastRun = 0;
 
     const hideAll = () => {
       tabIds.forEach((id) => {
@@ -434,7 +447,14 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
       });
     };
 
-    const tick = () => {
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      // Throttle to ~10 Hz and idle while the tab is hidden. This loop
+      // otherwise runs a getBoundingClientRect + a full-document occlusion
+      // check (querySelectorAll + up to 5 elementFromPoint hit-tests)
+      // 60x/second continuously, even when nothing is moving.
+      if (document.visibilityState !== "visible" || now - lastRun < 100) return;
+      lastRun = now;
       const rect = surface.getBoundingClientRect();
       // Hide every webview when the panel is collapsed, the toolbar is open,
       // OR a DOM overlay (onboarding, a modal, the palette…) renders above
@@ -472,7 +492,6 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
           });
         }
       }
-      raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
 
@@ -959,7 +978,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
             src={activeUrl}
             title="Browser"
             className="absolute inset-0 h-full w-full border-0 bg-[var(--bg-base)]"
-            sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
           />
         ) : (
           <div ref={surfaceRef} className="absolute inset-0" />

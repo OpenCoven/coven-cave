@@ -156,4 +156,20 @@ assert.match(qo, /bg-black\/40 backdrop-blur-sm/, "Backdrop must use bg-black/40
 assert.match(qo, /onClick=\{onClose\}/, "Outer container must handle onClick={onClose}");
 assert.match(qo, /onClick=\{\(e\) => e\.stopPropagation\(\)\}/, "Inner card must stopPropagation on click");
 
+// ───────── Security: iframe fallback sandbox ─────────
+// allow-top-navigation lets framed arbitrary content navigate the whole app
+// window away — it must never be in the fallback sandbox.
+assert.doesNotMatch(pane, /allow-top-navigation/, "iframe sandbox must not grant allow-top-navigation");
+assert.match(pane, /sandbox="allow-same-origin allow-scripts allow-forms allow-popups"/, "iframe fallback keeps a scoped sandbox");
+
+// ───────── Correctness: back/forward preserves forward history ─────────
+// A back/forward re-navigation lands on the URL already at the current index;
+// the page-load handler must skip the truncate-and-append that would destroy
+// the forward entries.
+assert.match(pane, /if \(h\.stack\[h\.idx\] === evUrl\) \{/, "page-load history push guards against clobbering forward entries");
+
+// ───────── Correctness: listen() unlisten race + perf throttle ─────────
+assert.match(pane, /then\(\(fn\) => \{ if \(cancelled\) fn\(\); else unlisten/, "async listen() unlistens if the effect was already torn down");
+assert.match(pane, /if \(document\.visibilityState !== "visible" \|\| now - lastRun < 100\) return;/, "the bounds-reconcile rAF loop is throttled + idle-gated");
+
 console.log("browser-polish.test.ts: ok");
