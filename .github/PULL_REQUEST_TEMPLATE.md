@@ -1,14 +1,11 @@
 <!--
-Heads up before you fill this out:
+Thanks for contributing to Coven Cave. A few tips before you fill this out:
 
-  Coven Cave is NOT accepting external pull requests through July 1st, 2026.
+  - Keep the PR focused on one concern.
+  - Sign off your commits (`git commit -s`) per the DCO in CONTRIBUTING.md.
+  - Make sure CI is green before requesting review.
 
-  PRs opened from outside the OpenCoven organization will be closed without
-  review during the freeze. The intent will be captured as an issue so the
-  work isn't lost. See CONTRIBUTING.md for the full policy.
-
-  If you are an OpenCoven maintainer, please replace this template with the
-  PR description below.
+  See CONTRIBUTING.md for the full contribution flow.
 -->
 
 ## Summary
