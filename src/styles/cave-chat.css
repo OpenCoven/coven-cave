@@ -2025,7 +2025,10 @@ details[open] > .cave-tool-summary::before {
 
 .cave-composer-select svg {
   flex-shrink: 0;
-  color: var(--accent-presence);
+  /* Warm gold accent for the control-pill icons (matches the reference
+     composer) — deliberately independent of the app's accent so the pills read
+     the same across themes. */
+  color: var(--composer-pill-gold, oklch(0.81 0.105 83));
 }
 
 .cave-composer-select__label {
