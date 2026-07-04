@@ -22,8 +22,24 @@ assert.match(
 
 assert.match(
   source,
-  /useCodeRail\(\s*\{[\s\S]*?projectRoot:[\s\S]*?changeCount[\s\S]*?terminalActive:\s*false[\s\S]*?\}\s*\)/,
-  "chat-surface calls useCodeRail with projectRoot/changeCount and terminalActive:false",
+  /useCodeRail\(\s*\{[\s\S]*?projectRoot:[\s\S]*?changeCount[\s\S]*?terminalActive:\s*terminalOpened[\s\S]*?\}\s*\)/,
+  "chat-surface calls useCodeRail with projectRoot/changeCount and terminalActive:terminalOpened",
+);
+
+// Once the Terminal tab is opened the rail stays available (keepalive) — the
+// terminalOpened flag flips false→true and feeds back into terminalActive.
+assert.match(
+  source,
+  /rail\.activeTab === "terminal" && rail\.open[\s\S]*?setTerminalOpened\(true\)/,
+  "chat-surface flips terminalOpened once the Terminal tab is opened",
+);
+
+// The active session id is threaded into the rail so the terminal gets a stable
+// per-session pty identity.
+assert.match(
+  source,
+  /<WorkspaceRail[\s\S]*?sessionId=\{snapshot\.sessionId \?\? null\}/,
+  "WorkspaceRail receives the active session id",
 );
 
 assert.match(

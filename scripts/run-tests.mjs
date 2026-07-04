@@ -71,6 +71,7 @@ export const SUITES = {
     "src/components/workspace-rail.test.ts",
     "src/components/workspace-rail-wiring.test.ts",
     "src/components/rail-files-panel.test.ts",
+    "src/components/rail-terminal-panel.test.ts",
     "src/lib/workflows.test.ts",
     "src/lib/familiar-multiselect.test.ts",
     "src/lib/codex-automation-form.test.ts",

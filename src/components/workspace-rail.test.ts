@@ -14,8 +14,14 @@ assert.match(src, /SessionChangesPanel/, "Changes tab reuses SessionChangesPanel
 assert.match(src, /RailFilesPanel/, "Files tab renders RailFilesPanel");
 assert.match(src, /activeTab === "files"/, "Files tab is branched on explicitly");
 assert.match(src, /projectRoot=\{projectRoot\}/, "threads projectRoot into the files panel");
-// Terminal is still the placeholder.
-assert.match(src, /workspace-rail__soon/, "Terminal keeps the placeholder");
+// Terminal tab hosts RailTerminalPanel, mounted lazily (pty must not start early)
+// and kept mounted thereafter (keepalive) — gated behind terminalEverOpened.
+assert.match(src, /RailTerminalPanel/, "Terminal tab renders RailTerminalPanel");
+assert.match(src, /terminalEverOpened/, "lazy gate: terminal not mounted until first opened");
+assert.match(src, /setTerminalEverOpened\(true\)/, "flips the lazy gate once the Terminal tab opens");
+assert.match(src, /workspace-rail__terminal/, "terminal wrapper class for keepalive hide/show");
+assert.match(src, /sessionId=\{sessionId\}/, "threads the session id into the terminal host");
+assert.doesNotMatch(src, /workspace-rail__soon/, "Terminal placeholder is gone");
 assert.match(src, /onTogglePin/, "pin control wired");
 assert.match(src, /onCollapse/, "collapse control wired");
 assert.match(src, /changeCount > 0/, "shows a change-count badge");

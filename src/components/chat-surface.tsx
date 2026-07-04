@@ -312,7 +312,14 @@ export function ChatSurface({
     };
   }, [isCodeSurface, railProjectRoot, sessionRunning]);
 
-  const rail = useCodeRail({ projectRoot: railProjectRoot, changeCount, terminalActive: false });
+  // Once the Terminal tab has been opened, keep the rail available (terminalActive)
+  // even if the session has no repo and no edits — otherwise switching away would
+  // yank the running pty. Flips false→true once; never resets → no render loop.
+  const [terminalOpened, setTerminalOpened] = useState(false);
+  const rail = useCodeRail({ projectRoot: railProjectRoot, changeCount, terminalActive: terminalOpened });
+  useEffect(() => {
+    if (rail.activeTab === "terminal" && rail.open) setTerminalOpened(true);
+  }, [rail.activeTab, rail.open]);
   const showCodeRail = !isCodeSurface && rail.available && rail.open && !isMobile && !paneNarrow;
 
   // Persist the chat / right-area split. panelIds tracks which panels are
@@ -590,6 +597,7 @@ export function ChatSurface({
                     pinned={rail.pinned}
                     projectRoot={railProjectRoot}
                     familiarId={snapshot.familiar?.id ?? null}
+                    sessionId={snapshot.sessionId ?? null}
                     onSelectTab={rail.setActiveTab}
                     onTogglePin={rail.togglePin}
                     onCollapse={rail.collapse}
