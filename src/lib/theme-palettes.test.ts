@@ -69,10 +69,10 @@ assert.equal(THEME_META.claymorphism.name, "Claymorphism");
 assert.equal(THEME_META.claude.name, "Claude");
 assert.equal(THEME_META["pastel-dreams"].name, "Pastel Dreams");
 assert.equal(THEME_META["pastel-dreams"].accentDark, "#c0aafd");
-assert.equal(THEME_META["pastel-dreams"].accentLight, "#a78bfa");
+assert.equal(THEME_META["pastel-dreams"].accentLight, "#9377e6");
 assert.equal(THEME_META.meatseeks.name, "Meatseeks");
 assert.equal(THEME_META.trucker.name, "Trucker");
-assert.equal(THEME_META.trucker.accentDark, "#005735");
+assert.equal(THEME_META.trucker.accentDark, "#21704a");
 assert.equal(THEME_META.trucker.accentLight, "#005735");
 
 // Storage keys are stable strings.

@@ -79,7 +79,7 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
   mist: {
     name: "Mist",
     description: "Scrying-pool teal. Cold as a question without an answer.",
-    hue: 198, accentDark: "#6BD8D3", accentLight: "#1A857F",
+    hue: 198, accentDark: "#6BD8D3", accentLight: "#177b76",
     bgDark: "oklch(0.09 0.030 198)", bgLight: "oklch(0.97 0.015 195)",
   },
   hex: {
@@ -109,7 +109,7 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
   claymorphism: {
     name: "Claymorphism",
     description: "Soft-molded stone with indigo glaze and lifted clay shadows.",
-    hue: 239, accentDark: "#818cf8", accentLight: "#6366f1",
+    hue: 239, accentDark: "#818cf8", accentLight: "#5457e9",
     bgDark: "#1e1b18", bgLight: "#e7e5e4",
   },
   claude: {
@@ -121,19 +121,19 @@ export const THEME_META: Record<ThemeId, ThemeMeta> = {
   "pastel-dreams": {
     name: "Pastel Dreams",
     description: "Soft violet pastels with lifted white surfaces.",
-    hue: 263, accentDark: "#c0aafd", accentLight: "#a78bfa",
+    hue: 263, accentDark: "#c0aafd", accentLight: "#9377e6",
     bgDark: "#1c1917", bgLight: "#f7f3f9",
   },
   meatseeks: {
     name: "Meatseeks",
     description: "Supabase green over crisp utility surfaces.",
-    hue: 153, accentDark: "#006239", accentLight: "#72e3ad",
+    hue: 153, accentDark: "#1d7449", accentLight: "#279c6b",
     bgDark: "#121212", bgLight: "#fcfcfc",
   },
   trucker: {
     name: "Trucker",
     description: "Roadside evergreen, blacktop panels, and clean cab lights.",
-    hue: 156, accentDark: "#005735", accentLight: "#005735",
+    hue: 156, accentDark: "#21704a", accentLight: "#005735",
     bgDark: "#020504", bgLight: "#f5fcf9",
   },
 };

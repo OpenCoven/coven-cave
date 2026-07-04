@@ -50,7 +50,10 @@
   --accent: oklch(0.20 0.028 293);
   --accent-foreground: oklch(0.985 0 0);
   --border: color-mix(in oklch, var(--foreground) 12%, transparent);
-  --border-strong: color-mix(in oklch, var(--foreground) 22%, transparent);
+  /* WCAG 1.4.11: --border-strong marks interactive boundaries (inputs,
+     emphasized dividers) and must read at ≥3:1 against the base surface —
+     22% composited under 2:1 on every theme. Hairline stays decorative. */
+  --border-strong: color-mix(in oklch, var(--foreground) 48%, transparent);
   --input: color-mix(in oklch, var(--foreground) 18%, transparent);
   --ring: oklch(0.55 0.08 293);
 
@@ -61,7 +64,9 @@
   --accent-presence-foreground: var(--primary-foreground);
   --accent-presence-soft: oklch(0.72 0.08 295);
   --brand: var(--accent-presence);
-  --brand-foreground: oklch(0.985 0 0);
+  /* Follows the per-theme ink choice — hardcoded white failed AA on every
+     palette whose accent is light (22 of 32 theme×mode combos). */
+  --brand-foreground: var(--accent-presence-foreground);
 
   /* ---- Issue #14 named aliases ----
      Semantic names called out in the spec. Resolve to the same
@@ -79,11 +84,11 @@
   --fg-muted: var(--text-secondary);
   --text-primary: var(--foreground);
   --text-secondary: var(--muted-foreground);
-  /* CHAT-D13-02: 40% alpha composited ~3:1 on the dark panel ladder — under
-     AA for the 9-11px labels that consume this token. 55% lands ~6:1 over
-     --card/--bg-elevated while still reading as muted next to
-     --text-secondary. Light mode needs its own ratio (override below). */
-  --text-muted: color-mix(in oklch, var(--foreground) 55%, transparent);
+  /* CHAT-D13-02 → a11y audit 2026-07: the 9-11px labels consuming this token
+     need full AA (4.5:1) on every premade palette, not just Coven's. 72%
+     keeps it visibly quieter than --text-secondary while clearing 4.5:1 on
+     the whole panel ladder across themes (theme-contrast-audit.test.ts). */
+  --text-muted: color-mix(in oklch, var(--foreground) 72%, transparent);
 
   /* ---- Radii ---- */
   --radius: 0.625rem;
@@ -181,7 +186,11 @@
      Single source of truth for keyboard focus. Pair with
      `outline: none` on the element and apply via box-shadow or
      outline-width. */
-  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  /* Solid, not translucent: a keyboard focus indicator must hit 3:1 against
+     the surface (WCAG 1.4.11 / 2.4.13). Mixing toward --foreground keeps the
+     accent hue while guaranteeing visibility on every theme; the -soft glow
+     below stays translucent for decoration. */
+  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, var(--foreground) 45%);
   --ring-focus-soft: color-mix(in oklch, var(--accent-presence) 30%, transparent);
   --ring-width: 2px;
   --ring-offset: 2px;
@@ -266,14 +275,17 @@
 
   --text-primary: var(--foreground);
   --text-secondary: var(--muted-foreground);
-  /* --border, --border-strong, --input are derived from --foreground;
-     they auto-invert. No override needed. */
-  /* CHAT-D13-02: dark ink over near-white needs a higher mix than light ink
-     over near-black for the same contrast — 55% composites ~4.1:1 here; 62%
-     lands ~5:1 against --background/--card. */
-  --text-muted: color-mix(in oklch, var(--foreground) 62%, transparent);
+  /* --border and --input derive from --foreground and auto-invert; the
+     strong border needs a higher ink mix over near-white to hold 3:1
+     (WCAG 1.4.11), same asymmetry as --text-muted below. */
+  --border-strong: color-mix(in oklch, var(--foreground) 60%, transparent);
+  /* CHAT-D13-02 → a11y audit 2026-07: dark ink over near-white needs a
+     higher mix than light ink over near-black for the same contrast — 76%
+     clears 4.5:1 across every premade light palette. */
+  --text-muted: color-mix(in oklch, var(--foreground) 76%, transparent);
 
-  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  /* Solid for 3:1 focus visibility — see the dark-mode note. */
+  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, var(--foreground) 45%);
   --ring-focus-soft: color-mix(in oklch, var(--accent-presence) 30%, transparent);
   --backdrop-scrim: oklch(0 0 0 / 40%);
 
@@ -3788,7 +3800,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.18 0.040 245);
   --bg-hover: oklch(0.22 0.042 245);
-  --ring-focus: color-mix(in oklch, #5FB0FF 55%, transparent);
+  --ring-focus: color-mix(in oklch, #5FB0FF 55%, var(--foreground) 45%);
 }
 [data-theme="tide"][data-mode="light"] {
   --background: oklch(0.97 0.020 240);
@@ -3806,7 +3818,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.91 0.024 240);
   --bg-hover: oklch(0.87 0.028 240);
-  --ring-focus: color-mix(in oklch, #2E6FC9 55%, transparent);
+  --ring-focus: color-mix(in oklch, #2E6FC9 55%, var(--foreground) 45%);
 }
 
 /* ---- Grove (hexenwald 150) — damp, patient, full of teeth ---- */
@@ -3825,7 +3837,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.18 0.044 150);
   --bg-hover: oklch(0.22 0.046 150);
-  --ring-focus: color-mix(in oklch, #7FD89F 55%, transparent);
+  --ring-focus: color-mix(in oklch, #7FD89F 55%, var(--foreground) 45%);
 }
 [data-theme="grove"][data-mode="light"] {
   --background: oklch(0.97 0.018 145);
@@ -3843,7 +3855,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.91 0.022 145);
   --bg-hover: oklch(0.87 0.026 145);
-  --ring-focus: color-mix(in oklch, #2A8050 55%, transparent);
+  --ring-focus: color-mix(in oklch, #2A8050 55%, var(--foreground) 45%);
 }
 
 /* ---- Vintage Paper (id: ember) — warm tan ink steeped into aged folio.
@@ -3870,7 +3882,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.3795 0.0181 57.1280);
   --bg-hover: oklch(0.4186 0.0281 56.3404);
-  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, var(--foreground) 45%);
 }
 [data-theme="ember"][data-mode="light"] {
   --background: oklch(0.9582 0.0152 90.2357);
@@ -3882,8 +3894,9 @@ textarea.required-inputs-control {
   --muted: oklch(0.9239 0.0190 83.0636);
   --accent: oklch(0.8348 0.0426 88.8064);
   --secondary: oklch(0.8846 0.0302 85.5655);
-  --muted-foreground: oklch(0.5391 0.0387 71.1655);
+  --muted-foreground: oklch(0.495 0.0387 71.1655);
   --accent-presence: oklch(0.6180 0.0778 65.5444);
+  --accent-presence-foreground: #111111;
   --accent-presence-soft: oklch(0.6180 0.060 65);
   --ring: oklch(0.6180 0.0778 65.5444);
   --border: oklch(0.8606 0.0321 84.5881);
@@ -3893,7 +3906,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.9239 0.0190 83.0636);
   --bg-hover: oklch(0.8846 0.0302 85.5655);
-  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, transparent);
+  --ring-focus: color-mix(in oklch, var(--accent-presence) 55%, var(--foreground) 45%);
 }
 
 /* ---- Bloom (bewitching-blood 20) — saccharine looks; thorned hands ---- */
@@ -3912,7 +3925,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.19 0.046 20);
   --bg-hover: oklch(0.23 0.048 20);
-  --ring-focus: color-mix(in oklch, #F09BB1 55%, transparent);
+  --ring-focus: color-mix(in oklch, #F09BB1 55%, var(--foreground) 45%);
 }
 [data-theme="bloom"][data-mode="light"] {
   --background: oklch(0.975 0.018 20);
@@ -3924,13 +3937,14 @@ textarea.required-inputs-control {
   --secondary: oklch(0.91 0.026 20);
   --muted-foreground: oklch(0.44 0.036 20);
   --accent-presence: #BE506E;
+  --accent-presence-foreground: #ffffff;
   --ring: oklch(0.60 0.16 20);
   --bg-base: var(--background);
   --bg-panel: oklch(0.99 0.014 20);
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.92 0.024 20);
   --bg-hover: oklch(0.88 0.028 20);
-  --ring-focus: color-mix(in oklch, #BE506E 55%, transparent);
+  --ring-focus: color-mix(in oklch, #BE506E 55%, var(--foreground) 45%);
 }
 
 /* ---- Dusk (witching-hour 322) — the veil thins; so does your patience ---- */
@@ -3949,7 +3963,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.18 0.054 322);
   --bg-hover: oklch(0.22 0.056 322);
-  --ring-focus: color-mix(in oklch, #E175FF 55%, transparent);
+  --ring-focus: color-mix(in oklch, #E175FF 55%, var(--foreground) 45%);
 }
 [data-theme="dusk"][data-mode="light"] {
   --background: oklch(0.97 0.022 325);
@@ -3967,7 +3981,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.91 0.026 325);
   --bg-hover: oklch(0.87 0.030 325);
-  --ring-focus: color-mix(in oklch, #9930C2 55%, transparent);
+  --ring-focus: color-mix(in oklch, #9930C2 55%, var(--foreground) 45%);
 }
 
 /* ---- Mist (scrying-pool 198) — cold as a question without an answer ---- */
@@ -3986,7 +4000,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.17 0.034 198);
   --bg-hover: oklch(0.21 0.036 198);
-  --ring-focus: color-mix(in oklch, #6BD8D3 55%, transparent);
+  --ring-focus: color-mix(in oklch, #6BD8D3 55%, var(--foreground) 45%);
 }
 [data-theme="mist"][data-mode="light"] {
   --background: oklch(0.97 0.015 195);
@@ -3997,14 +4011,15 @@ textarea.required-inputs-control {
   --accent: oklch(0.90 0.022 195);
   --secondary: oklch(0.90 0.022 195);
   --muted-foreground: oklch(0.42 0.028 198);
-  --accent-presence: #1A857F;
+  --accent-presence: #177b76;
+  --accent-presence-foreground: #ffffff;
   --ring: oklch(0.55 0.14 198);
   --bg-base: var(--background);
   --bg-panel: oklch(0.99 0.010 195);
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.91 0.020 195);
   --bg-hover: oklch(0.87 0.024 195);
-  --ring-focus: color-mix(in oklch, #1A857F 55%, transparent);
+  --ring-focus: color-mix(in oklch, #1A857F 55%, var(--foreground) 45%);
 }
 
 /* ---- Hex (bloodletter 25) — the mark that doesn't wash off ---- */
@@ -4023,7 +4038,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.17 0.066 25);
   --bg-hover: oklch(0.21 0.068 25);
-  --ring-focus: color-mix(in oklch, #E04848 55%, transparent);
+  --ring-focus: color-mix(in oklch, #E04848 55%, var(--foreground) 45%);
 }
 [data-theme="hex"][data-mode="light"] {
   --background: oklch(0.97 0.022 25);
@@ -4041,7 +4056,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.91 0.026 25);
   --bg-hover: oklch(0.87 0.030 25);
-  --ring-focus: color-mix(in oklch, #A41C24 55%, transparent);
+  --ring-focus: color-mix(in oklch, #A41C24 55%, var(--foreground) 45%);
 }
 
 /* ---- Bane (wolfsbane 125) — bright; deeply unwise ---- */
@@ -4060,7 +4075,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.17 0.054 125);
   --bg-hover: oklch(0.21 0.056 125);
-  --ring-focus: color-mix(in oklch, #A5F050 55%, transparent);
+  --ring-focus: color-mix(in oklch, #A5F050 55%, var(--foreground) 45%);
 }
 [data-theme="bane"][data-mode="light"] {
   --background: oklch(0.97 0.022 125);
@@ -4078,7 +4093,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.91 0.026 125);
   --bg-hover: oklch(0.87 0.030 125);
-  --ring-focus: color-mix(in oklch, #4A7C18 55%, transparent);
+  --ring-focus: color-mix(in oklch, #4A7C18 55%, var(--foreground) 45%);
 }
 
 /* ---- Ghosty (tweakcn Ghostlyy) — spectral grayscale with soft graphite chrome ---- */
@@ -4096,7 +4111,7 @@ textarea.required-inputs-control {
   --muted: #1a1a1a;
   --muted-foreground: #a6a6a6;
   --accent: #a6a6a6;
-  --accent-foreground: #cccccc;
+  --accent-foreground: #1a1a1a;
   --destructive: #4d4d4d;
   --destructive-foreground: #fafafa;
   --border: #242424;
@@ -4111,8 +4126,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: #1e1e1e;
   --bg-hover: #242424;
-  --border-strong: color-mix(in oklch, #242424 62%, #a6a6a6 38%);
-  --ring-focus: color-mix(in oklch, #a6a6a6 55%, transparent);
+  --border-strong: #6a6a6a;
+  --ring-focus: color-mix(in oklch, #a6a6a6 55%, var(--foreground) 45%);
   --chart-1: #a6a6a6;
   --chart-2: #999999;
   --chart-3: #b3b3b3;
@@ -4127,7 +4142,7 @@ textarea.required-inputs-control {
   --popover: #fafafa;
   --popover-foreground: #1a1a1a;
   --primary: #808080;
-  --primary-foreground: #fafafa;
+  --primary-foreground: #111111;
   --secondary: #272727;
   --secondary-foreground: #fafafa;
   --muted: #ebebeb;
@@ -4135,12 +4150,12 @@ textarea.required-inputs-control {
   --accent: #f2f2f2;
   --accent-foreground: #666666;
   --destructive: #999999;
-  --destructive-foreground: #fafafa;
+  --destructive-foreground: #111111;
   --border: #e5e5e5;
   --input: #e5e5e5;
   --ring: #808080;
   --accent-presence: #808080;
-  --accent-presence-foreground: #fafafa;
+  --accent-presence-foreground: #111111;
   --accent-presence-soft: color-mix(in oklch, #808080 78%, transparent);
   --accent-faint: color-mix(in oklch, #808080 14%, transparent);
   --bg-base: var(--background);
@@ -4148,8 +4163,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: #f2f2f2;
   --bg-hover: #ebebeb;
-  --border-strong: color-mix(in oklch, #e5e5e5 62%, #808080 38%);
-  --ring-focus: color-mix(in oklch, #808080 55%, transparent);
+  --border-strong: #8c8c8c;
+  --ring-focus: color-mix(in oklch, #808080 55%, var(--foreground) 45%);
   --chart-1: #808080;
   --chart-2: #272727;
   --chart-3: #999999;
@@ -4198,8 +4213,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: var(--secondary);
   --bg-hover: var(--accent);
-  --border-strong: color-mix(in oklch, #3a3633 62%, #818cf8 38%);
-  --ring-focus: color-mix(in oklch, #818cf8 55%, transparent);
+  --border-strong: #8e5e69;
+  --ring-focus: color-mix(in oklch, #818cf8 55%, var(--foreground) 45%);
   --chart-1: #818cf8;
   --chart-2: #6366f1;
   --chart-3: #4f46e5;
@@ -4213,20 +4228,20 @@ textarea.required-inputs-control {
   --card-foreground: #1e293b;
   --popover: #f5f5f4;
   --popover-foreground: #1e293b;
-  --primary: #6366f1;
+  --primary: #5457e9;
   --primary-foreground: #ffffff;
   --secondary: #d6d3d1;
   --secondary-foreground: #4b5563;
   --muted: #e7e5e4;
-  --muted-foreground: #6b7280;
+  --muted-foreground: #555c6a;
   --accent: #f3e5f5;
   --accent-foreground: #374151;
-  --destructive: #ef4444;
+  --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --border: #d6d3d1;
   --input: #d6d3d1;
-  --ring: #6366f1;
-  --accent-presence: #6366f1;
+  --ring: #5457e9;
+  --accent-presence: #5457e9;
   --accent-presence-foreground: #ffffff;
   --accent-presence-soft: color-mix(in oklch, #6366f1 78%, transparent);
   --accent-faint: color-mix(in oklch, #6366f1 14%, transparent);
@@ -4235,8 +4250,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: var(--secondary);
   --bg-hover: var(--accent);
-  --border-strong: color-mix(in oklch, #d6d3d1 62%, #6366f1 38%);
-  --ring-focus: color-mix(in oklch, #6366f1 55%, transparent);
+  --border-strong: #b07281;
+  --ring-focus: color-mix(in oklch, #6366f1 55%, var(--foreground) 45%);
   --chart-1: #6366f1;
   --chart-2: #4f46e5;
   --chart-3: #4338ca;
@@ -4260,20 +4275,20 @@ textarea.required-inputs-control {
   --popover: #30302e;
   --popover-foreground: #e5e5e2;
   --primary: #d97757;
-  --primary-foreground: #ffffff;
+  --primary-foreground: #111111;
   --secondary: #faf9f5;
   --secondary-foreground: #30302e;
   --muted: #1b1b19;
   --muted-foreground: #b7b5a9;
   --accent: #1a1915;
   --accent-foreground: #f5f4ee;
-  --destructive: #ef4444;
+  --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --border: #3e3e38;
   --input: #52514a;
   --ring: #d97757;
   --accent-presence: #d97757;
-  --accent-presence-foreground: #ffffff;
+  --accent-presence-foreground: #111111;
   --accent-presence-soft: color-mix(in oklch, #d97757 78%, transparent);
   --accent-faint: color-mix(in oklch, #d97757 14%, transparent);
   --bg-base: var(--background);
@@ -4281,8 +4296,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: #30302e;
   --bg-hover: var(--accent);
-  --border-strong: color-mix(in oklch, #3e3e38 62%, #d97757 38%);
-  --ring-focus: color-mix(in oklch, #d97757 55%, transparent);
+  --border-strong: #806c49;
+  --ring-focus: color-mix(in oklch, #d97757 55%, var(--foreground) 45%);
   --chart-1: #b05730;
   --chart-2: #9c87f5;
   --chart-3: #1a1915;
@@ -4297,11 +4312,11 @@ textarea.required-inputs-control {
   --popover: #ffffff;
   --popover-foreground: #28261b;
   --primary: #c96442;
-  --primary-foreground: #ffffff;
+  --primary-foreground: #111111;
   --secondary: #e9e6dc;
   --secondary-foreground: #535146;
   --muted: #ede9de;
-  --muted-foreground: #83827d;
+  --muted-foreground: #676661;
   --accent: #e9e6dc;
   --accent-foreground: #28261b;
   --destructive: #141413;
@@ -4310,7 +4325,7 @@ textarea.required-inputs-control {
   --input: #b4b2a7;
   --ring: #c96442;
   --accent-presence: #c96442;
-  --accent-presence-foreground: #ffffff;
+  --accent-presence-foreground: #111111;
   --accent-presence-soft: color-mix(in oklch, #c96442 78%, transparent);
   --accent-faint: color-mix(in oklch, #c96442 14%, transparent);
   --bg-base: var(--background);
@@ -4318,8 +4333,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: var(--secondary);
   --bg-hover: var(--accent);
-  --border-strong: color-mix(in oklch, #dad9d4 62%, #c96442 38%);
-  --ring-focus: color-mix(in oklch, #c96442 55%, transparent);
+  --border-strong: #a68d6b;
+  --ring-focus: color-mix(in oklch, #c96442 55%, var(--foreground) 45%);
   --chart-1: #b05730;
   --chart-2: #9c87f5;
   --chart-3: #ded8c4;
@@ -4368,8 +4383,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: var(--secondary);
   --bg-hover: var(--accent);
-  --border-strong: color-mix(in oklch, #3f324a 62%, #c0aafd 38%);
-  --ring-focus: color-mix(in oklch, #c0aafd 55%, transparent);
+  --border-strong: #705d89;
+  --ring-focus: color-mix(in oklch, #c0aafd 55%, var(--foreground) 45%);
   --chart-1: #c0aafd;
   --chart-2: #a78bfa;
   --chart-3: #8b5cf6;
@@ -4384,20 +4399,21 @@ textarea.required-inputs-control {
   --popover: #ffffff;
   --popover-foreground: #374151;
   --primary: #a78bfa;
-  --primary-foreground: #ffffff;
+  --primary-foreground: #111111;
   --secondary: #e9d8fd;
   --secondary-foreground: #4b5563;
   --muted: #f3e8ff;
-  --muted-foreground: #6b7280;
+  --muted-foreground: #555c6a;
+  --text-muted: color-mix(in oklch, var(--foreground) 84%, transparent);
   --accent: #f3e5f5;
   --accent-foreground: #374151;
   --destructive: #fca5a5;
-  --destructive-foreground: #ffffff;
+  --destructive-foreground: #111111;
   --border: #e9d8fd;
   --input: #e9d8fd;
-  --ring: #a78bfa;
-  --accent-presence: #a78bfa;
-  --accent-presence-foreground: #ffffff;
+  --ring: #9377e6;
+  --accent-presence: #9377e6;
+  --accent-presence-foreground: #111111;
   --accent-presence-soft: color-mix(in oklch, #a78bfa 78%, transparent);
   --accent-faint: color-mix(in oklch, #a78bfa 14%, transparent);
   --bg-base: var(--background);
@@ -4405,8 +4421,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: var(--secondary);
   --bg-hover: var(--accent);
-  --border-strong: color-mix(in oklch, #e9d8fd 62%, #a78bfa 38%);
-  --ring-focus: color-mix(in oklch, #a78bfa 55%, transparent);
+  --border-strong: #9077b8;
+  --ring-focus: color-mix(in oklch, #a78bfa 55%, var(--foreground) 45%);
   --chart-1: #a78bfa;
   --chart-2: #8b5cf6;
   --chart-3: #7c3aed;
@@ -4444,8 +4460,8 @@ textarea.required-inputs-control {
   --border: #292929;
   --input: #242424;
   --ring: #4ade80;
-  --accent-presence: #006239;
-  --accent-presence-foreground: #dde8e3;
+  --accent-presence: #1d7449;
+  --accent-presence-foreground: #ffffff;
   --accent-presence-soft: color-mix(in oklch, #006239 78%, transparent);
   --accent-faint: color-mix(in oklch, #006239 14%, transparent);
   --bg-base: var(--background);
@@ -4453,8 +4469,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: var(--secondary);
   --bg-hover: var(--accent);
-  --border-strong: color-mix(in oklch, #292929 62%, #4ade80 38%);
-  --ring-focus: color-mix(in oklch, #4ade80 55%, transparent);
+  --border-strong: #427050;
+  --ring-focus: color-mix(in oklch, #4ade80 55%, var(--foreground) 45%);
   --chart-1: #4ade80;
   --chart-2: #60a5fa;
   --chart-3: #a78bfa;
@@ -4480,9 +4496,9 @@ textarea.required-inputs-control {
   --destructive-foreground: #fffcfc;
   --border: #dfdfdf;
   --input: #f6f6f6;
-  --ring: #72e3ad;
-  --accent-presence: #72e3ad;
-  --accent-presence-foreground: #1e2723;
+  --ring: #279c6b;
+  --accent-presence: #279c6b;
+  --accent-presence-foreground: #0d120f;
   --accent-presence-soft: color-mix(in oklch, #72e3ad 78%, transparent);
   --accent-faint: color-mix(in oklch, #72e3ad 14%, transparent);
   --bg-base: var(--background);
@@ -4490,8 +4506,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: var(--secondary);
   --bg-hover: var(--accent);
-  --border-strong: color-mix(in oklch, #dfdfdf 62%, #72e3ad 38%);
-  --ring-focus: color-mix(in oklch, #72e3ad 55%, transparent);
+  --border-strong: #6f927e;
+  --ring-focus: color-mix(in oklch, #72e3ad 55%, var(--foreground) 45%);
   --chart-1: #72e3ad;
   --chart-2: #3b82f6;
   --chart-3: #8b5cf6;
@@ -4515,12 +4531,12 @@ textarea.required-inputs-control {
   --muted-foreground: #a8c7b8;
   --accent: #005735;
   --accent-foreground: #ffffff;
-  --destructive: #ef4444;
+  --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --border: #14241e;
   --input: #14241e;
-  --ring: #005735;
-  --accent-presence: #005735;
+  --ring: #21704a;
+  --accent-presence: #21704a;
   --accent-presence-foreground: #ffffff;
   --accent-presence-soft: color-mix(in oklch, #005735 78%, transparent);
   --accent-faint: color-mix(in oklch, #005735 14%, transparent);
@@ -4529,8 +4545,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: var(--secondary);
   --bg-hover: var(--accent);
-  --border-strong: color-mix(in oklch, #14241e 62%, #005735 38%);
-  --ring-focus: color-mix(in oklch, #005735 55%, transparent);
+  --border-strong: #426a58;
+  --ring-focus: color-mix(in oklch, #005735 55%, var(--foreground) 45%);
   --chart-1: #005735;
   --chart-2: #007a4a;
   --chart-3: #009c60;
@@ -4566,8 +4582,8 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: var(--secondary);
   --bg-hover: var(--accent);
-  --border-strong: color-mix(in oklch, #d1e0d9 62%, #005735 38%);
-  --ring-focus: color-mix(in oklch, #005735 55%, transparent);
+  --border-strong: #6f9280;
+  --ring-focus: color-mix(in oklch, #005735 55%, var(--foreground) 45%);
   --chart-1: #005735;
   --chart-2: #208b5e;
   --chart-3: #40bd8a;
@@ -4591,7 +4607,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.14 0.000 0);
   --bg-hover: oklch(0.18 0.000 0);
-  --ring-focus: color-mix(in oklch, #B8B8C2 55%, transparent);
+  --ring-focus: color-mix(in oklch, #B8B8C2 55%, var(--foreground) 45%);
 }
 [data-theme="slate"][data-mode="light"] {
   --background: oklch(0.985 0.000 0);
@@ -4609,7 +4625,7 @@ textarea.required-inputs-control {
   --bg-raised: var(--card);
   --bg-elevated: oklch(0.93 0.000 0);
   --bg-hover: oklch(0.89 0.000 0);
-  --ring-focus: color-mix(in oklch, #525258 55%, transparent);
+  --ring-focus: color-mix(in oklch, #525258 55%, var(--foreground) 45%);
 }
 
 /* ────────────────────────────────────────────────
