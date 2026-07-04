@@ -42,8 +42,8 @@ assert.match(
 );
 assert.match(
   source,
-  /aria-label="Show code rail"/,
-  "toggle button has an accessible label",
+  /aria-label=\{mobileRailOpen \? "Hide code rail" : "Show code rail"\}/,
+  "toggle button has a state-reflecting accessible label",
 );
 assert.match(
   source,

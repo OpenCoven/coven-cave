@@ -102,8 +102,9 @@ test.describe("mobile code-rail slide-over sheet", () => {
     await openRepoChat(page);
 
     // On mobile the third-column rail Panel is NOT rendered (no room). Instead
-    // the toggle affordance appears for the repo-linked session.
-    const toggle = page.getByRole("button", { name: "Show code rail" });
+    // the toggle affordance appears for the repo-linked session. The toggle's
+    // accessible name flips Show↔Hide with open state, so match either.
+    const toggle = page.getByRole("button", { name: /^(Show|Hide) code rail$/ });
     await expect(toggle).toBeVisible({ timeout: 30_000 });
     await expect(page.locator(".workspace-rail")).toHaveCount(0);
     await expect(toggle).toHaveAttribute("aria-expanded", "false");

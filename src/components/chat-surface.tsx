@@ -359,11 +359,14 @@ export function ChatSurface({
     onEscape: () => setMobileRailOpen(false),
   });
   // Can't get stuck open: close if there's nothing to show (rail no longer
-  // available) or when the layout leaves mobile/narrow (the desktop Panel path
-  // owns the rail there, so the overlay must not linger behind it).
+  // available), when the layout leaves mobile/narrow (the desktop Panel path
+  // owns the rail there, so the overlay must not linger behind it), or when the
+  // side area switches away from the conversation scope (the toggle is
+  // conversation-scoped, so the sheet must not linger over the Projects list).
   useEffect(() => {
-    if (!rail.available || (!isMobile && !paneNarrow)) setMobileRailOpen(false);
-  }, [rail.available, isMobile, paneNarrow]);
+    if (!rail.available || (!isMobile && !paneNarrow) || scope !== "conversation")
+      setMobileRailOpen(false);
+  }, [rail.available, isMobile, paneNarrow, scope]);
 
   // Announce code-rail visibility to the shell so it can soft-collapse the left
   // nav to its icon rail while the rail is open (keeps chat centered). Directional
@@ -566,10 +569,16 @@ export function ChatSurface({
               <button
                 type="button"
                 className="mobile-code-rail-toggle focus-ring"
-                aria-label="Show code rail"
+                aria-label={mobileRailOpen ? "Hide code rail" : "Show code rail"}
                 aria-haspopup="dialog"
                 aria-expanded={mobileRailOpen}
-                onClick={() => setMobileRailOpen((v) => !v)}
+                onClick={() => {
+                  // Mutually exclusive with the right-panel sheet: two z-[200]
+                  // aria-modal overlays on the same edge would stack and confuse
+                  // AT. Opening the code rail dismisses the other sheet.
+                  if (!mobileRailOpen) onSetRightPanel?.(null);
+                  setMobileRailOpen((v) => !v);
+                }}
               >
                 <Icon name="ph:code" width={16} aria-hidden />
                 {changeCount > 0 ? (
