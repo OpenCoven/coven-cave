@@ -480,8 +480,23 @@ assert.match(
 );
 assert.match(
   source,
+  /import \{ buildPromptEnhancement \} from "@\/lib\/prompt-enhancer"/,
+  "Enhance uses the shared pure prompt enhancer",
+);
+assert.doesNotMatch(
+  source,
   /fetch\("\/api\/prompt\/enhance"/,
-  "Enhance calls the prompt-enhance endpoint",
+  "Enhance should not round-trip through the prompt-enhance API route",
+);
+assert.match(
+  source,
+  /mode: destination === "board" \? "task" : "chat"/,
+  "Enhance should optimize the prompt for the active Chat or Task destination",
+);
+assert.match(
+  source,
+  /selectedFiles: attachments\.map\(\(attachment\) => attachment\.name\)/,
+  "Enhance should include staged attachment names as file context",
 );
 assert.match(
   source,
@@ -575,7 +590,7 @@ assert.match(
 );
 assert.match(
   source,
-  /setText\(json\.enhanced\);\s*announce\("Prompt enhanced", "polite"\)/,
+  /setText\(result\.enhanced\);\s*announce\("Prompt enhanced", "polite"\)/,
   "a successful enhance is announced (the textarea swap is otherwise silent to AT)",
 );
 assert.match(

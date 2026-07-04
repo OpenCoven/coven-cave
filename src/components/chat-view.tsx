@@ -127,6 +127,7 @@ import {
   type ThreadSelfReport,
 } from "@/lib/thread-self-report";
 import { streamFamiliarText } from "@/lib/familiar-stream";
+import { buildPromptEnhancement } from "@/lib/prompt-enhancer";
 
 type ToolEvent = {
   id: string;
@@ -3742,38 +3743,29 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   }
 
-  async function enhancePrompt() {
+  function enhancePrompt() {
     const draft = input.trim();
     if (!draft || busy || enhanceStatus === "loading") return;
     setEnhanceOriginal(input);
     setEnhanceStatus("loading");
-    try {
-      const res = await fetch("/api/prompt/enhance", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          draft: input,
-          mode: activeProjectRoot ? "code" : "chat",
-          context: {
-            activeProject: activeProjectRoot
-              ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
-              : null,
-            selectedFiles: mentionedFiles,
-            recentThreadTitle: session?.title ?? null,
-          },
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as { ok?: boolean; enhanced?: string } | null;
-      if (!res.ok || !json?.ok || typeof json.enhanced !== "string") {
-        setEnhanceStatus("error");
-        return;
-      }
-      setInput(json.enhanced);
-      setEnhanceStatus("success");
-      window.setTimeout(() => inputRef.current?.focus(), 0);
-    } catch {
+    const result = buildPromptEnhancement({
+      draft: input,
+      mode: activeProjectRoot ? "code" : "chat",
+      context: {
+        activeProject: activeProjectRoot
+          ? { name: selectedProject?.name ?? null, root: activeProjectRoot }
+          : null,
+        selectedFiles: [...mentionedFiles, ...attachments.map((attachment) => attachment.name)],
+        recentThreadTitle: session?.title ?? null,
+      },
+    });
+    if (!result.ok || !result.enhanced.trim()) {
       setEnhanceStatus("error");
+      return;
     }
+    setInput(result.enhanced);
+    setEnhanceStatus("success");
+    window.setTimeout(() => inputRef.current?.focus(), 0);
   }
 
   // CHAT-D6-01: edit-and-resend. Loads a user turn's text into the composer so

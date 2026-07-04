@@ -1,4 +1,4 @@
-export type PromptEnhanceMode = "chat" | "code" | "image" | "research";
+export type PromptEnhanceMode = "chat" | "code" | "image" | "research" | "task";
 
 type PromptEnhanceContext = {
   activeProject?: {
@@ -29,7 +29,7 @@ export type PromptEnhanceResult =
     };
 
 export function normalizeEnhanceMode(mode: unknown): PromptEnhanceMode {
-  return mode === "code" || mode === "image" || mode === "research" || mode === "chat"
+  return mode === "code" || mode === "image" || mode === "research" || mode === "task" || mode === "chat"
     ? mode
     : "chat";
 }
@@ -129,6 +129,26 @@ export function buildPromptEnhancement(input: PromptEnhanceRequest): PromptEnhan
         "Output format: start with an executive summary, then detailed findings, comparison criteria, and recommended next steps.",
         preserved,
       ].join("\n"),
+    };
+  }
+
+  if (mode === "task") {
+    return {
+      ok: true,
+      mode,
+      label: "Implement",
+      enhanced: [
+        `Turn this into a concrete task: ${draft}.`,
+        contextText,
+        "\nTask brief:",
+        "- Task title: a short imperative title.",
+        "- Outcome: the concrete result that should exist when this is done.",
+        "- Acceptance criteria: 3-5 observable checks that prove completion.",
+        "- Subtasks: ordered implementation steps sized for one maintainer or agent.",
+        "- Context: include relevant project, file, dependency, or user constraints.",
+        "- Verification: name the focused checks or manual proof expected before closing.",
+        `- ${preserved}`,
+      ].filter(Boolean).join("\n"),
     };
   }
 

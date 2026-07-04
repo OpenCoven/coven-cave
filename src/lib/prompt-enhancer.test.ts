@@ -47,8 +47,26 @@ const chat = buildPromptEnhancement({
 assert.match(chat.enhanced, /Explain docker networking/i, "chat mode keeps conversational phrasing");
 assert.match(chat.enhanced, /Output format:/, "chat mode asks for a clearer response format");
 
+const task = buildPromptEnhancement({
+  draft: "audit stale onboarding copy",
+  mode: "task",
+  context: {
+    activeProject: { name: "Cave", root: "/repo/cave" },
+    selectedFiles: ["src/components/onboarding.tsx", "docs/onboarding.md"],
+  },
+});
+
+assert.equal(task.ok, true, "task enhancement should succeed for a non-empty draft");
+assert.equal(task.mode, "task", "task mode should be preserved");
+assert.match(task.enhanced, /Task title:/, "task mode adds a title shape");
+assert.match(task.enhanced, /Acceptance criteria:/, "task mode adds acceptance criteria");
+assert.match(task.enhanced, /Subtasks:/, "task mode asks for concrete subtasks");
+assert.match(task.enhanced, /Current project: Cave/, "task mode includes project context when provided");
+assert.match(task.enhanced, /Selected files: src\/components\/onboarding\.tsx, docs\/onboarding\.md/, "task mode includes selected files when provided");
+
 const empty = buildPromptEnhancement({ draft: "   ", mode: "chat" });
 assert.equal(empty.ok, false, "empty drafts are rejected");
+assert.equal(normalizeEnhanceMode("task"), "task", "task mode should normalize explicitly");
 assert.equal(normalizeEnhanceMode("made-up"), "chat", "unknown modes fall back to chat");
 
 console.log("prompt-enhancer.test.ts: ok");

@@ -56,6 +56,7 @@ import {
   type CommandResponseSpeed,
   type CommandThinkingEffort,
 } from "@/lib/command-controls";
+import { buildPromptEnhancement } from "@/lib/prompt-enhancer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -480,34 +481,33 @@ export function HomeComposer({
   }, []);
 
   // ── Enhance ──────────────────────────────────────────────────────────────
-  // Rewrite the draft via /api/prompt/enhance (mirrors the chat composer),
-  // stashing the original for a one-tap revert.
-  const enhancePrompt = useCallback(async () => {
+  // Rewrite the draft through the shared pure enhancer (mirrors the chat
+  // composer), stashing the original for a one-tap revert.
+  const enhancePrompt = useCallback(() => {
     const draft = text.trim();
     if (!draft || sending || enhanceStatus === "loading") return;
     setEnhanceStatus("loading");
-    try {
-      const res = await fetch("/api/prompt/enhance", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ draft, mode: "chat" }),
-      });
-      const json = (await res.json().catch(() => null)) as { ok?: boolean; enhanced?: string } | null;
-      if (!res.ok || !json?.ok || typeof json.enhanced !== "string" || !json.enhanced.trim()) {
-        setEnhanceStatus("error");
-        onToast("Couldn't enhance the prompt.");
-        return;
-      }
-      setEnhanceOriginal(text);
-      setText(json.enhanced);
-      announce("Prompt enhanced", "polite");
-      setEnhanceStatus("idle");
-      setTimeout(() => { textareaRef.current?.focus(); autoGrow(); }, 0);
-    } catch {
+    const result = buildPromptEnhancement({
+      draft,
+      mode: destination === "board" ? "task" : "chat",
+      context: {
+        activeProject: selectedProject
+          ? { name: selectedProject.name, root: selectedProject.root }
+          : null,
+        selectedFiles: attachments.map((attachment) => attachment.name),
+      },
+    });
+    if (!result.ok || !result.enhanced.trim()) {
       setEnhanceStatus("error");
       onToast("Couldn't enhance the prompt.");
+      return;
     }
-  }, [text, sending, enhanceStatus, onToast, autoGrow, announce]);
+    setEnhanceOriginal(text);
+    setText(result.enhanced);
+    announce("Prompt enhanced", "polite");
+    setEnhanceStatus("idle");
+    setTimeout(() => { textareaRef.current?.focus(); autoGrow(); }, 0);
+  }, [text, destination, selectedProject, attachments, sending, enhanceStatus, onToast, autoGrow, announce]);
   const revertEnhance = useCallback(() => {
     setEnhanceOriginal((original) => {
       if (original == null) return null;
