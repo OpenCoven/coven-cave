@@ -6573,6 +6573,67 @@
           "**This skill decides; siblings build.** Do not re-implement shadcn/Radix recipes, token code, motion, or a11y audits here \u2014 hand off."
         ]
       }
+    },
+    {
+      "name": "pretext",
+      "displayName": "Pretext \u2014 Text Measurement & Layout",
+      "version": "0.1.0",
+      "description": "DOM-free multiline text measurement & layout for web UIs via @chenglou/pretext \u2014 get wrapped height, line count, and per-line ranges from pure arithmetic, with no getBoundingClientRect/offsetHeight reflow. Powers list virtualization, layout-shift prevention, CI-time overflow checks, multiline shrink-wrap / balanced text, and manual line rendering to Canvas/SVG/WebGL.",
+      "category": "Design & UI",
+      "keywords": [
+        "pretext",
+        "text-measurement",
+        "text-layout",
+        "line-breaking",
+        "virtualization",
+        "layout-shift",
+        "canvas",
+        "typography",
+        "intl-segmenter",
+        "chenglou"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/chenglou/pretext",
+        "https://github.com/chenglou/pretext/blob/main/README.md",
+        "https://github.com/chenglou/pretext/blob/main/PLATFORM_BUGS.md",
+        "https://www.npmjs.com/package/@chenglou/pretext",
+        "https://chenglou.me/pretext/",
+        "https://github.com/chenglou/text-layout"
+      ],
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer",
+            "debugger"
+          ]
+        }
+      ],
+      "skill": {
+        "managed": "manual",
+        "description": "Use when measuring or laying out multiline text in a web UI WITHOUT triggering DOM reflow (getBoundingClientRect / offsetHeight / measuring a hidden clone) \u2014 the @chenglou/pretext library (pure JS/TS, works across all languages, renders to DOM/Canvas/SVG/WebGL and soon server-side). Covers the prepare()/layout() split (one-time analysis + canvas measurement vs the cheap pure-arithmetic hot path; never re-run prepare() on resize), height + lineCount measurement for list virtualization/occlusion, layout-shift prevention when text loads late, dev/CI-time button/label overflow checks (browser-free), and userland masonry/JS-flexbox layout; manual line layout via prepareWithSegments + layoutWithLines / walkLineRanges / measureLineStats / measureNaturalWidth / layoutNextLine(Range) / materializeLineRange (multiline shrink-wrap, balanced text, text flowed around a float, canvas/SVG/WebGL rendering); the @chenglou/pretext/rich-inline helper for inline chips/mentions/code-spans with break:'never' + caller-owned extraWidth; options whiteSpace normal|pre-wrap (textarea-like), wordBreak normal|keep-all (CJK/Hangul), letterSpacing px, soft-hyphen break points, setLocale/clearCache. Encodes the load-bearing caveats \u2014 the canvas `font` string AND the `lineHeight`/`letterSpacing` you pass MUST match the element's CSS; `system-ui` is unsafe for layout() accuracy on macOS (use a named font); requires Intl.Segmenter + Canvas 2D; empty string returns {lineCount:0} (clamp with Math.max(1,lineCount)); it is horizontal-only and NOT a full CSS inline/bidi formatting engine.",
+        "useCases": [
+          "You need a paragraph or label's wrapped **height / line count** without triggering DOM reflow (`getBoundingClientRect` / `offsetHeight`) \u2014 list virtualization, occlusion, autosize rows, JS masonry.",
+          "You must **prevent layout shift** by reserving exact space before late-loading text arrives.",
+          "You want a **browser-free / CI-time guard** that a button, chip, or nav label doesn't wrap to N+1 lines.",
+          "You are **rendering text yourself** to Canvas / SVG / WebGL / server and need correct per-width (or variable-width) line breaks.",
+          "You need **multiline shrink-wrap** (tightest width that still fits) or **balanced text**, or inline flow for chips/mentions via `@chenglou/pretext/rich-inline`."
+        ],
+        "guardrails": [
+          "**Keep the config in lock-step with CSS.** The canvas `font` string, plus the `lineHeight` and `letterSpacing` you pass, MUST match the element's actual CSS \u2014 otherwise every measured height is subtly wrong.",
+          "**Run `prepare()` once, `layout()` many.** `prepare()` is the expensive measurement pass; never re-run it for the same text+config. On resize call only `layout()` / the walkers, and cache the handle by `(text, font, options)`.",
+          "**Use a named font \u2014 `system-ui` is unsafe for `layout()` accuracy on macOS.** See the repo's `PLATFORM_BUGS.md` for the underlying Chrome/Firefox issues.",
+          "**Clamp empty strings.** `layout('')` returns `{ lineCount: 0 }`; browsers still show one line-height for an empty block \u2014 use `Math.max(1, lineCount) * lineHeight`.",
+          "**Know the floor and the scope.** Requires `Intl.Segmenter` + Canvas 2D `measureText`. It is horizontal-only line-breaking, models only the canvas `font` shorthand (no `font-feature-settings` / optical-sizing; `tab-size` fixed at 8), and is NOT a full CSS inline/bidi formatting engine.",
+          "**Don't reach for it for a single static single-line width** (use `ctx.measureText` directly) or for true CSS inline formatting (nested spans, `vertical-align`, ruby, bidi x-reconstruction)."
+        ]
+      }
     }
   ]
 }

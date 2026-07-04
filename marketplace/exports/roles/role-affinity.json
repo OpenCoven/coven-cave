@@ -1281,5 +1281,15 @@
         "strategic-navigator"
       ]
     }
+  ],
+  "pretext": [
+    {
+      "familiar": "cody",
+      "roles": [
+        "implementer",
+        "code-reviewer",
+        "debugger"
+      ]
+    }
   ]
 }

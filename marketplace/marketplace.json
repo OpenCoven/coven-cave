@@ -2982,6 +2982,30 @@
           ]
         }
       ]
+    },
+    {
+      "name": "pretext",
+      "displayName": "Pretext \u2014 Text Measurement & Layout",
+      "category": "Design & UI",
+      "source": {
+        "source": "local",
+        "path": "./plugins/pretext"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": [
+        {
+          "familiar": "cody",
+          "roles": [
+            "implementer",
+            "code-reviewer",
+            "debugger"
+          ]
+        }
+      ]
     }
   ]
 }
