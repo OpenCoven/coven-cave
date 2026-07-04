@@ -4202,9 +4202,6 @@ details[open] > .cave-tool-summary::before {
   min-height: 0;
   min-width: 0;
   background: var(--bg-surface, var(--background));
-  /* Clip the small entrance slide so translateX never spills a horizontal
-     scrollbar while the content settles to 0. */
-  overflow: hidden;
 }
 
 /* Rail entrance + tab-switch motion.
@@ -4305,6 +4302,10 @@ details[open] > .cave-tool-summary::before {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* Clip the small entrance slide so translateX never spills a horizontal
+     scrollbar while content settles to 0. Scoped to the body (not the whole
+     rail) so the sibling tab strip's focus rings are never clipped. */
+  overflow: hidden;
 }
 
 .workspace-rail__head {
