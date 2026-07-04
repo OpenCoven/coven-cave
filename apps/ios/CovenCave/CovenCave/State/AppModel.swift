@@ -574,8 +574,17 @@ final class AppModel {
     // MARK: - Connection lifecycle
 
     func configure(host: String, token: String? = nil) async {
-        if let token { CaveConnection.saveAccessToken(token) }
         let conn = CaveConnection(host: host)
+        let isSameEndpoint = connection?.baseURL == conn.baseURL
+
+        if let token {
+            CaveConnection.saveAccessToken(token)
+        } else if !isSameEndpoint {
+            // Tokens are stored globally, so never carry an old desktop's
+            // credential to a newly configured host from a tokenless invite.
+            CaveConnection.saveAccessToken(nil)
+        }
+
         connection = conn
         conn.save()
         await refreshConnection()
