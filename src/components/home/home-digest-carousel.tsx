@@ -91,6 +91,7 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
             className="home-digest__media-close"
             aria-label="Close news carousel"
             title="Close news carousel"
+            onMouseEnter={() => setMediaDismissed(true)}
             onClick={() => setMediaDismissed(true)}
           >
             <Icon name="ph:x-bold" width={11} aria-hidden />

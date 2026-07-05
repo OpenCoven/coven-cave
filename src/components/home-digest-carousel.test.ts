@@ -33,6 +33,7 @@ assert.match(view, /const \[mediaDismissed, setMediaDismissed\] = useState\(fals
 assert.match(view, /mediaCards\.length > 0 && !mediaDismissed/, "dismissing media leaves the chat digest row intact");
 assert.match(view, /aria-label="Close news carousel"/, "news carousel exposes an accessible close button");
 assert.match(view, /onClick=\{\(\) => setMediaDismissed\(true\)\}/, "close button hides the news carousel");
+assert.match(view, /onMouseEnter=\{\(\) => setMediaDismissed\(true\)\}/, "hovering the close affordance hides the news carousel");
 assert.match(view, /home-digest__media-close/, "close button has a stable styling hook");
 
 // ── Media cards support an image thumbnail (with icon fallback on error) ───────
