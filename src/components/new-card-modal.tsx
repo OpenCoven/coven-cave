@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { CaveProject } from "@/lib/cave-projects";
 import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
 import { PropertyPill } from "@/components/ui/property-pill";
+import { StandardSelect } from "@/components/ui/select";
 import {
   STATUSES,
   PRIORITIES,
@@ -165,19 +167,19 @@ export function NewCardModal({
       }
       footerActions={
         <>
-          <button
+          <Button
+            variant="secondary"
             onClick={onClose}
-            className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-muted"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
             onClick={create}
             disabled={!title.trim() || busy}
-            className="rounded-md border border-border-strong bg-muted px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-card disabled:opacity-50"
           >
             {busy ? "Creating…" : "Create"}
-          </button>
+          </Button>
         </>
       }
     >
@@ -187,7 +189,7 @@ export function NewCardModal({
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Task title"
           autoFocus={!coarse}
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+          className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
         />
       </Field>
 
@@ -197,7 +199,7 @@ export function NewCardModal({
           onChange={(e) => setNotes(e.target.value)}
           placeholder="Notes, acceptance criteria, links"
           rows={6}
-          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+          className="w-full resize-y rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
         />
       </Field>
 
@@ -263,7 +265,7 @@ export function NewCardModal({
             type="date"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+            className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
           />
         </Field>
         <Field label="End date">
@@ -271,7 +273,7 @@ export function NewCardModal({
             type="date"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
-            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+            className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
           />
         </Field>
       </div>
@@ -281,7 +283,7 @@ export function NewCardModal({
           value={cwd}
           onChange={(e) => setCwd(e.target.value)}
           placeholder="/Users/buns/Documents/GitHub/OpenCoven/coven-cave"
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+          className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
         />
       </Field>
 
@@ -291,7 +293,7 @@ export function NewCardModal({
           onChange={(e) => setLinks(e.target.value)}
           placeholder="https://github.com/OpenCoven/coven-cave/pull/153"
           rows={3}
-          className="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+          className="w-full resize-y rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
         />
       </Field>
 
@@ -300,12 +302,12 @@ export function NewCardModal({
           value={labels}
           onChange={(e) => setLabels(e.target.value)}
           placeholder="ui, docs"
-          className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
+          className="w-full rounded-[var(--radius-control)] border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-border-strong"
         />
       </Field>
 
       {error ? (
-        <div className="mb-3 rounded border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
+        <div className="mb-3 rounded-[var(--radius-control)] border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground">
           {error}
         </div>
       ) : null}
@@ -332,22 +334,13 @@ function Select({
   options: { value: string; label: string }[];
 }) {
   return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-md border border-border bg-background px-3 py-2 pr-8 text-sm text-foreground outline-none focus:border-border-strong"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-card">
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-        ▾
-      </span>
-    </div>
+    <StandardSelect
+      label="Choose value"
+      value={value}
+      onChange={onChange}
+      options={options}
+      className="w-full border-border bg-background px-3 py-2 text-sm text-foreground focus:border-border-strong"
+    />
   );
 }
 

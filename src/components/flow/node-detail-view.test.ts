@@ -55,5 +55,13 @@ assert.match(styles, /\.flow-ndv-pinned/, "Pinned data controls are styled");
 assert.match(styles, /\.flow-ndv-data-stale/, "Stale run-data badge is styled");
 assert.match(styles, /\.flow-ndv-webhook/, "Webhook URL controls are styled");
 assert.match(styles, /\.flow-ndv-foot \{[^}]*flex-wrap: wrap/, "NDV footer actions should wrap in narrow panels");
+assert.match(detail, /import \{ Button \}/, "NDV labelled actions use the shared Button primitive");
+assert.match(detail, /import \{ IconButton \}/, "NDV icon actions use the shared IconButton primitive");
+assert.doesNotMatch(detail, /<button\b/, "NDV should not hand-roll button controls");
+assert.doesNotMatch(
+  detail,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "NDV should not hard-code rectangular radius classes",
+);
 
 console.log("node-detail-view.test.ts OK");

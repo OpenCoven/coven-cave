@@ -7,6 +7,7 @@ import {
   type Edge,
   type EdgeProps,
 } from "@xyflow/react";
+import { IconButton } from "@/components/ui/icon-button";
 
 export type FlowEdgeData = {
   /** Open the node catalog to splice a node into this edge. */
@@ -61,8 +62,9 @@ export function FlowEdge({
       )}
       {data?.onInsert && (
         <EdgeLabelRenderer>
-          <button
-            type="button"
+          <IconButton
+            icon="ph:plus"
+            size="xs"
             className="flow-edge-add nodrag nopan"
             style={{
               position: "absolute",
@@ -75,9 +77,7 @@ export function FlowEdge({
               event.stopPropagation();
               data.onInsert?.();
             }}
-          >
-            +
-          </button>
+          />
         </EdgeLabelRenderer>
       )}
     </>

@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
 import { FamiliarGlyph } from "@/components/familiar-glyph";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
@@ -34,7 +35,7 @@ const STARTER_GLYPHS = [
 const DEFAULT_GLYPH = "ph:sparkle-fill";
 
 const inputClass =
-  "focus-ring h-9 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2.5 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]";
+  "focus-ring h-9 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2.5 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]";
 const labelClass = "mb-1 block text-[11px] font-medium text-[var(--text-secondary)]";
 
 type Props = {
@@ -199,20 +200,20 @@ export function CreateFamiliarDialog({
             Name
           </label>
           <div className="flex items-stretch gap-2">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               onClick={() => setGlyphOpen((v) => !v)}
               aria-label="Pick an icon or photo"
               aria-expanded={glyphOpen}
               title="Pick an icon or photo"
-              className="focus-ring grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 hover:border-[var(--accent-presence)]"
+              className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 p-0 hover:border-[var(--accent-presence)]"
             >
               {avatarFile ? (
                 <Icon name="ph:camera" width={16} className="text-[var(--accent-presence)]" />
               ) : (
                 <FamiliarGlyph glyph={{ kind: "icon", name: glyph }} size="sm" />
               )}
-            </button>
+            </Button>
             <input
               ref={fileRef}
               type="file"
@@ -251,37 +252,37 @@ export function CreateFamiliarDialog({
 
         {/* Icon / photo picker */}
         {glyphOpen ? (
-          <div className="flex flex-col gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-2">
+          <div className="flex flex-col gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 p-2">
             <div className="flex items-center justify-between">
               <span className="truncate text-[11px] font-medium text-[var(--text-secondary)]">
                 {avatarFile ? `Photo attached · ${avatarFile.name}` : "Pick an icon"}
               </span>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  leadingIcon="ph:camera"
                   onClick={() => fileRef.current?.click()}
-                  className="focus-ring inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
                 >
-                  <Icon name="ph:camera" width={11} />
                   Upload photo
-                </button>
+                </Button>
                 {avatarFile ? (
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    leadingIcon="ph:x"
                     onClick={() => pickAvatar(null)}
-                    className="focus-ring inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   >
-                    <Icon name="ph:x" width={11} />
                     Remove
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>
             <div role="listbox" aria-label="Starter icons" className="grid grid-cols-8 gap-1">
               {STARTER_GLYPHS.map((g) => (
-                <button
+                <Button
                   key={g}
-                  type="button"
+                  variant="ghost"
                   role="option"
                   aria-selected={!avatarFile && glyph === g}
                   onClick={() => {
@@ -290,14 +291,14 @@ export function CreateFamiliarDialog({
                     setGlyphOpen(false);
                   }}
                   title={g.replace(/^ph:/, "").replace(/-fill$/, "")}
-                  className={`focus-ring grid h-8 w-8 place-items-center rounded-md hover:bg-[var(--bg-raised)] ${
+                  className={`grid h-8 w-8 place-items-center rounded-[var(--radius-control)] p-0 hover:bg-[var(--bg-raised)] ${
                     !avatarFile && glyph === g
                       ? "bg-[var(--accent-presence)]/15 ring-1 ring-[var(--accent-presence)]"
                       : ""
                   }`}
                 >
                   <FamiliarGlyph glyph={{ kind: "icon", name: g }} size="sm" />
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -308,30 +309,29 @@ export function CreateFamiliarDialog({
           <label className={labelClass} htmlFor="create-familiar-harness">
             Harness
           </label>
-          <select
-            id="create-familiar-harness"
+          <StandardSelect
+            label="Harness"
             value={harness}
-            onChange={(e) => setHarness(e.target.value)}
+            onChange={setHarness}
             className={inputClass}
-          >
-            {COMPATIBILITY_ADAPTERS.map((adapter) => (
-              <option key={adapter.id} value={adapter.id}>
-                {adapter.label}
-              </option>
-            ))}
-          </select>
+            options={COMPATIBILITY_ADAPTERS.map((adapter) => ({
+              value: adapter.id,
+              label: adapter.label,
+            }))}
+          />
         </div>
 
         {/* More options */}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={() => setShowMore((v) => !v)}
           aria-expanded={showMore}
-          className="focus-ring inline-flex w-fit items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          className="w-fit text-[11px]"
+          leadingIcon={showMore ? "ph:caret-down" : "ph:caret-right"}
         >
-          <Icon name={showMore ? "ph:caret-down" : "ph:caret-right"} width={11} />
           More options
-        </button>
+        </Button>
 
         {showMore ? (
           <div className="flex flex-col gap-3 border-l border-[var(--border-hairline)] pl-3">
@@ -388,7 +388,7 @@ export function CreateFamiliarDialog({
         ) : null}
 
         {error ? (
-          <p className="flex items-center gap-1.5 rounded-md border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[11px] text-[var(--color-warning)]">
+          <p className="flex items-center gap-1.5 rounded-[var(--radius-control)] border border-[var(--color-warning)]/40 bg-[var(--color-warning)]/10 px-2.5 py-1.5 text-[11px] text-[var(--color-warning)]">
             <Icon name="ph:warning-circle" width={12} />
             {error}
           </p>

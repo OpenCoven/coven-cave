@@ -8,6 +8,8 @@ import { homedir } from "node:os";
  * the daemon's own scan misses locally-installed skills).
  */
 
+export type LocalSkillScope = "global" | "user" | "codex-user" | "agents-project" | "agents-user";
+
 export type LocalSkillEntry = {
   id: string;
   name: string;
@@ -27,7 +29,7 @@ export type LocalSkillEntry = {
    */
   permissions?: string[];
   path: string;
-  familiar: string;   // "global" for shared workspace skills, "user" for ~/.claude
+  familiar: LocalSkillScope;
 };
 
 export function parseFrontmatter(text: string): Record<string, string> {
@@ -76,7 +78,7 @@ function parseListField(text: string, field: string): string[] {
   return match[1].match(/- (.+)/g)?.map(m => m.slice(2).trim()) ?? [];
 }
 
-export async function scanSkillsDir(dir: string, familiar: string, out: LocalSkillEntry[]): Promise<void> {
+export async function scanSkillsDir(dir: string, familiar: LocalSkillScope, out: LocalSkillEntry[]): Promise<void> {
   let entries: string[] = [];
   try {
     const dirents = await readdir(dir, { withFileTypes: true });
@@ -120,5 +122,24 @@ export async function scanSkillsDir(dir: string, familiar: string, out: LocalSki
 export async function scanClaudeUserSkills(): Promise<LocalSkillEntry[]> {
   const out: LocalSkillEntry[] = [];
   await scanSkillsDir(path.join(homedir(), ".claude", "skills"), "user", out);
+  return out;
+}
+
+/** Codex global skills installed by `npx skills add -g -a codex`. */
+export async function scanCodexUserSkills(): Promise<LocalSkillEntry[]> {
+  const out: LocalSkillEntry[] = [];
+  await scanSkillsDir(path.join(homedir(), ".codex", "skills"), "codex-user", out);
+  return out;
+}
+
+/**
+ * Shared agent-skills roots used by the Skills CLI:
+ * - project `.agents/skills` for Codex and several universal agents
+ * - user `~/.agents/skills` as the CLI's canonical shared copy/link root
+ */
+export async function scanAgentSharedSkills(projectRoot = process.cwd()): Promise<LocalSkillEntry[]> {
+  const out: LocalSkillEntry[] = [];
+  await scanSkillsDir(path.join(projectRoot, ".agents", "skills"), "agents-project", out);
+  await scanSkillsDir(path.join(homedir(), ".agents", "skills"), "agents-user", out);
   return out;
 }

@@ -36,4 +36,10 @@ assert.ok(modal.includes('role="dialog"') && modal.includes('aria-modal="true"')
 assert.ok(modal.includes('aria-labelledby="new-reminder-title"'), "dialog labelled by heading");
 assert.ok(modal.includes('id="new-reminder-title"'), "heading carries labelledby id");
 
+// Shared control primitives/radius tokens.
+assert.ok(modal.includes('import { Button } from "@/components/ui/button"'), "modal action buttons use the shared Button primitive");
+assert.ok(modal.includes('import { IconButton } from "@/components/ui/icon-button"'), "modal close button uses the shared IconButton primitive");
+assert.doesNotMatch(modal, /<button\b/, "modal should not hand-roll button controls");
+assert.doesNotMatch(modal, /rounded-md/, "modal should use control radius tokens instead of hard-coded rounded-md");
+
 console.log("new-reminder-modal.test.ts: ok");

@@ -4,10 +4,10 @@ import "@/styles/flow.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { catalogNode, createNode } from "@/lib/flow/flow-catalog";
 import {
@@ -883,23 +883,32 @@ export function FlowView() {
                   placeholder="Describe a flow to create"
                   rows={3}
                 />
-                <button
+                <Button
                   type="submit"
+                  variant="primary"
+                  size="xs"
+                  leadingIcon="ph:sparkle"
                   className="flow-toolbar-execute"
                   disabled={onboardingPrompt.trim().length === 0}
                 >
-                  <Icon name="ph:sparkle" width={14} /> Create
-                </button>
+                  Create
+                </Button>
               </form>
-              <button type="button" className="flow-toolbar-save" onClick={createFlow}>
-                <Icon name="ph:plus" width={14} /> Blank
-              </button>
+              <Button
+                variant="secondary"
+                size="xs"
+                leadingIcon="ph:plus"
+                className="flow-toolbar-save"
+                onClick={createFlow}
+              >
+                Blank
+              </Button>
             </div>
           }
         />
         <FlowTemplateGallery
           isEmpty
-          onUse={(id) => void fromTemplate(id)}
+          onUse={(id) => fromTemplate(id)}
           onClose={() => void createFlow()}
         />
       </div>
@@ -925,7 +934,7 @@ export function FlowView() {
           <div className="flow-template-overlay-backdrop" onClick={() => setTemplateGalleryOpen(false)} />
           <div className="flow-template-overlay-panel">
             <FlowTemplateGallery
-              onUse={(id) => void fromTemplate(id)}
+              onUse={(id) => fromTemplate(id)}
               onClose={() => setTemplateGalleryOpen(false)}
             />
           </div>
@@ -1002,12 +1011,24 @@ export function FlowView() {
                       or double-click anywhere on the canvas.
                     </p>
                     <div className="flow-canvas-coach-actions">
-                      <button type="button" className="flow-toolbar-execute" onClick={() => requestAdd({ x: 220, y: 180 })}>
-                        <Icon name="ph:plus" width={13} /> Add node
-                      </button>
-                      <button type="button" className="flow-toolbar-save" onClick={openTemplates}>
-                        <Icon name="ph:squares-four" width={13} /> Templates
-                      </button>
+                      <Button
+                        variant="primary"
+                        size="xs"
+                        leadingIcon="ph:plus"
+                        className="flow-toolbar-execute"
+                        onClick={() => requestAdd({ x: 220, y: 180 })}
+                      >
+                        Add node
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="xs"
+                        leadingIcon="ph:squares-four"
+                        className="flow-toolbar-save"
+                        onClick={openTemplates}
+                      >
+                        Templates
+                      </Button>
                     </div>
                   </div>
                 )}

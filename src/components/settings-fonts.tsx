@@ -1,7 +1,9 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ButtonHTMLAttributes, type ReactNode, useEffect, useState } from "react";
 import { SettingsGroup } from "@/components/ui/settings-group";
+import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import {
   DEFAULT_FONT_PAIR_ID,
   FONT_PAIRS,
@@ -127,14 +129,31 @@ const PREVIEW: Record<FontSlot, string> = {
 
 // Shared segmented-control styling, hoisted so each option group stays terse.
 const segWrap =
-  "flex w-fit shrink-0 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5";
+  "flex w-fit shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] p-0.5";
 
 function segBtn(active: boolean, extra = ""): string {
-  return `focus-ring ${extra} rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+  return `focus-ring ${extra} rounded-[var(--radius-control)] px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
     active
       ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
       : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
   }`;
+}
+
+function SegmentButton({
+  active,
+  extra,
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  active: boolean;
+  extra?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Button variant="ghost" size="xs" className={segBtn(active, extra)} {...props}>
+      {children}
+    </Button>
+  );
 }
 
 // Compact label-left / control-right row used to group the reading-text controls,
@@ -312,25 +331,19 @@ export function FontSettings() {
         {/* Pair selector — label-left / control-right, consistent with every
             other row in Typography (no wasted full-width row). */}
         <ReadingRow label="Typography pair" hint="Approved interface + code pairing.">
-          <select
-            id="typography-pair"
+          <StandardSelect
+            label="Typography pair"
             className="gh-select"
             style={{ width: "min(100%, 300px)", maxWidth: "100%" }}
             value={pairId}
-            onChange={(e) => selectPair(e.target.value)}
-            aria-label="Typography pair"
-          >
-            {FONT_PAIRS.map((pair) => (
-              <option key={pair.id} value={pair.id}>
-                {pair.label}
-              </option>
-            ))}
-          </select>
+            onChange={selectPair}
+            options={FONT_PAIRS.map((pair) => ({ value: pair.id, label: pair.label }))}
+          />
         </ReadingRow>
 
         {/* Live specimen — one inset panel, both samples, no center gutter. */}
         <div className="px-4 py-3">
-          <div className="overflow-hidden rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] divide-y divide-[var(--border-hairline)]">
+          <div className="overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] divide-y divide-[var(--border-hairline)]">
             <FontSpecimen slot="sans" label="Interface" fontId={selectedPair.sansId} />
             <FontSpecimen slot="mono" label={<>Code &amp; terminal</>} fontId={selectedPair.monoId} />
           </div>
@@ -340,16 +353,16 @@ export function FontSettings() {
         <ReadingRow label="Text size" hint="Scales all text and UI.">
           <div className={segWrap}>
             {SCREEN_SCALE_OPTIONS.map((option) => (
-              <button
+              <SegmentButton
                 key={option}
-                type="button"
                 onClick={() => setTextSize(option)}
                 aria-pressed={scale === option}
                 aria-label={`Text size ${option}%`}
-                className={segBtn(scale === option, "min-w-12")}
+                active={scale === option}
+                extra="min-w-12"
               >
                 {option}%
-              </button>
+              </SegmentButton>
             ))}
           </div>
         </ReadingRow>
@@ -360,112 +373,105 @@ export function FontSettings() {
           <ReadingRow label="Line spacing">
             <div className={segWrap}>
               {READING_LEADING_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setLineSpacing(option)}
                   aria-pressed={leading === option}
                   aria-label={`Line spacing ${LEADING_LABEL[option]}`}
-                  className={segBtn(leading === option)}
+                  active={leading === option}
                 >
                   {LEADING_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Letter spacing">
             <div className={segWrap}>
               {READING_TRACKING_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setLetterSpacing(option)}
                   aria-pressed={tracking === option}
                   aria-label={`Letter spacing ${TRACKING_LABEL[option]}`}
-                  className={segBtn(tracking === option)}
+                  active={tracking === option}
                 >
                   {TRACKING_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Text alignment">
             <div className={segWrap}>
               {READING_ALIGN_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setTextAlign(option)}
                   aria-pressed={align === option}
                   aria-label={`Text alignment ${ALIGN_LABEL[option]}`}
-                  className={segBtn(align === option)}
+                  active={align === option}
                 >
                   {ALIGN_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Max reading width">
             <div className={segWrap}>
               {READING_WIDTH_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setReadingWidth(option)}
                   aria-pressed={width === option}
                   aria-label={`Max reading width ${WIDTH_LABEL[option]}`}
-                  className={segBtn(width === option)}
+                  active={width === option}
                 >
                   {WIDTH_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Font weight">
             <div className={segWrap}>
               {READING_WEIGHT_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setFontWeight(option)}
                   aria-pressed={weight === option}
                   aria-label={`Font weight ${WEIGHT_LABEL[option]}`}
-                  className={segBtn(weight === option)}
+                  active={weight === option}
                 >
                   {WEIGHT_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Hyphenation" hint="Pairs well with Justify.">
             <div className={segWrap}>
               {READING_HYPHENS_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setHyphenation(option)}
                   aria-pressed={hyphens === option}
                   aria-label={`Hyphenation ${HYPHENS_LABEL[option]}`}
-                  className={segBtn(hyphens === option)}
+                  active={hyphens === option}
                 >
                   {HYPHENS_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Drop cap" hint="Library documents only.">
             <div className={segWrap}>
               {READING_DROPCAP_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setDropCap(option)}
                   aria-pressed={dropcap === option}
                   aria-label={`Drop cap ${DROPCAP_LABEL[option]}`}
-                  className={segBtn(dropcap === option)}
+                  active={dropcap === option}
                 >
                   {DROPCAP_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
@@ -481,62 +487,60 @@ export function FontSettings() {
           <ReadingRow label="Clock" hint="Across the app">
             <div className={segWrap}>
               {CLOCK_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setClockFormat(option)}
                   aria-pressed={dtPrefs.clock === option}
                   aria-label={`Clock ${CLOCK_LABEL[option]}`}
-                  className={segBtn(dtPrefs.clock === option)}
+                  active={dtPrefs.clock === option}
                 >
                   {CLOCK_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Date" hint="Across the app">
             <div className={segWrap}>
               {DATE_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setDateFormat(option)}
                   aria-pressed={dtPrefs.date === option}
                   aria-label={`Date ${DATE_LABEL[option]}`}
-                  className={segBtn(dtPrefs.date === option)}
+                  active={dtPrefs.date === option}
                 >
                   {DATE_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
           <ReadingRow label="Relative time" hint="Across the app">
             <div className={segWrap}>
               {DENSITY_OPTIONS.map((option) => (
-                <button
+                <SegmentButton
                   key={option}
-                  type="button"
                   onClick={() => setDensityFormat(option)}
                   aria-pressed={dtPrefs.density === option}
                   aria-label={`Relative time ${DENSITY_LABEL[option]}`}
-                  className={segBtn(dtPrefs.density === option)}
+                  active={dtPrefs.density === option}
                 >
                   {DENSITY_LABEL[option]}
-                </button>
+                </SegmentButton>
               ))}
             </div>
           </ReadingRow>
       </SettingsGroup>
 
       <div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
           onClick={reset}
           disabled={isDefault}
-          className="rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Reset to default
-        </button>
+        </Button>
       </div>
     </section>
   );

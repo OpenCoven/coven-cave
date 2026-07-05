@@ -23,6 +23,7 @@ import { Icon as IconifyIcon, addCollection } from "@iconify/react";
 import phChrome from "@/lib/ph-icons-subset.json";
 import phGlyphs from "@/lib/ph-glyph-catalog.json";
 import { useEffect, useState } from "react";
+import { StandardSelect } from "@/components/ui/select";
 import "./mockup.css";
 
 let registered = false;
@@ -351,12 +352,26 @@ function CreateAgentModal({ onClose }: { onClose: () => void }) {
 
           <div className="multica-field">
             <label className="multica-field-label">Runtime</label>
-            <select className="multica-field-select" defaultValue=""><option value="">No runtime available</option></select>
+            <StandardSelect
+              label="Runtime"
+              className="multica-field-select"
+              value=""
+              disabled
+              onChange={() => undefined}
+              options={[{ value: "", label: "No runtime available", disabled: true }]}
+            />
           </div>
 
           <div className="multica-field">
             <label className="multica-field-label">Model</label>
-            <select className="multica-field-select" defaultValue=""><option value="">Select a runtime first</option></select>
+            <StandardSelect
+              label="Model"
+              className="multica-field-select"
+              value=""
+              disabled
+              onChange={() => undefined}
+              options={[{ value: "", label: "Select a runtime first", disabled: true }]}
+            />
           </div>
 
           <div className="multica-field">

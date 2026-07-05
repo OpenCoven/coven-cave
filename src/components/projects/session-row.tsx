@@ -3,6 +3,7 @@
 import { useState, type CSSProperties } from "react";
 
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { modelIcon, modelLabel } from "@/lib/model-label";
 import type { SessionRow } from "@/lib/types";
@@ -66,7 +67,7 @@ export function ProjectChatRow({
       ref={setNodeRef}
       style={style}
       data-dragging={isDragging ? "true" : undefined}
-      className="group/pc relative rounded-md data-[dragging=true]:z-10 data-[dragging=true]:bg-[var(--bg-raised)] data-[dragging=true]:opacity-90 data-[dragging=true]:shadow-[0_8px_24px_oklch(0_0_0/35%)] data-[dragging=true]:ring-1 data-[dragging=true]:ring-[var(--border-strong)]"
+      className="group/pc relative rounded-[var(--radius-control)] data-[dragging=true]:z-10 data-[dragging=true]:bg-[var(--bg-raised)] data-[dragging=true]:opacity-90 data-[dragging=true]:shadow-[0_8px_24px_oklch(0_0_0/35%)] data-[dragging=true]:ring-1 data-[dragging=true]:ring-[var(--border-strong)]"
     >
       <div
         role={selectMode ? "checkbox" : "button"}
@@ -93,7 +94,7 @@ export function ProjectChatRow({
         {selectMode ? (
           <span
             aria-hidden
-            className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded border ${
+            className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[var(--radius-control)] border ${
               selected
                 ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--text-primary)]"
                 : "border-[var(--border-strong)] text-transparent"
@@ -102,17 +103,17 @@ export function ProjectChatRow({
             <Icon name="ph:check-bold" width={9} aria-hidden />
           </span>
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             {...attributes}
             {...listeners}
             onClick={(e) => e.stopPropagation()}
             title="Drag to reorder or move to another project"
             aria-label={`Move ${title}`}
-            className="grid h-4 w-3 shrink-0 cursor-grab touch-none place-items-center text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/pc:opacity-100 [@media(pointer:coarse)]:opacity-100"
-          >
-            <Icon name="ph:dots-six-vertical" width={10} aria-hidden />
-          </button>
+            className="grid h-4 w-3 shrink-0 cursor-grab touch-none place-items-center p-0 text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-secondary)] focus-visible:opacity-100 group-hover/pc:opacity-100 [@media(pointer:coarse)]:opacity-100"
+            leadingIcon="ph:dots-six-vertical"
+          />
         )}
         <span
           className={`grid h-3.5 w-3.5 shrink-0 place-items-center ${glyphToneClass(glyph.tone)}`}
@@ -131,7 +132,7 @@ export function ProjectChatRow({
           <span className="flex shrink-0 items-center gap-2 text-[10px] text-[var(--text-muted)]">
             {density === "comfortable" && session.model ? (
               <span
-                className="hidden items-center gap-0.5 rounded-[4px] bg-[var(--bg-raised)]/70 px-1 py-px font-medium sm:inline-flex"
+                className="hidden items-center gap-0.5 rounded-[var(--radius-control)] bg-[var(--bg-raised)]/70 px-1 py-px font-medium sm:inline-flex"
                 title={`Model: ${session.model}`}
               >
                 <Icon name={modelIcon(session.model)} width={10} aria-hidden />
@@ -155,18 +156,20 @@ export function ProjectChatRow({
         )}
         {selectMode ? null : confirmDelete ? (
           <span className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={(e) => {
                 e.stopPropagation();
                 setConfirmDelete(false);
               }}
-              className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+              className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
             >
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="danger-ghost"
+              size="xs"
               disabled={deleting}
               onClick={async (e) => {
                 e.stopPropagation();
@@ -175,24 +178,24 @@ export function ProjectChatRow({
                 setDeleting(false);
                 setConfirmDelete(false);
               }}
-              className="focus-ring rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+              className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
             >
               Delete
-            </button>
+            </Button>
           </span>
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={(e) => {
               e.stopPropagation();
               setConfirmDelete(true);
             }}
             title="Delete thread"
             aria-label={`Delete thread ${title}`}
-            className="focus-ring grid h-5 w-5 shrink-0 place-items-center rounded text-[var(--text-muted)] opacity-55 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/pc:opacity-100 [@media(pointer:coarse)]:opacity-100"
-          >
-            <Icon name="ph:x-bold" width={10} aria-hidden />
-          </button>
+            className="grid h-5 w-5 shrink-0 place-items-center rounded-[var(--radius-control)] p-0 text-[var(--text-muted)] opacity-55 transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--color-danger)] focus-visible:opacity-100 group-hover/pc:opacity-100 [@media(pointer:coarse)]:opacity-100"
+            leadingIcon="ph:x-bold"
+          />
         )}
       </div>
       <ContextMenu

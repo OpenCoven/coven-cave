@@ -688,23 +688,6 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     return id;
   }, [daemonProjectRoot, selectedProjectRoot, sessions.length, terminalLayout]);
 
-  // Cross-surface launch: other surfaces (e.g. the Projects page) open a
-  // terminal in a specific project by dispatching `cave:terminal-open` with the
-  // project root. Only the canonical terminal instance handles it so a single
-  // session is created, and it spawns in that project's cwd via addSession.
-  useEffect(() => {
-    // Gate on `active` so that when several ComuxView instances are mounted
-    // (e.g. the hidden Terminal surface plus the visible Code workspace), only
-    // the active one opens a session — otherwise a single event spawns two.
-    if (view !== "terminal" || !active) return;
-    const onTerminalOpen = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectRoot?: string }>).detail;
-      addSession(detail?.projectRoot);
-    };
-    window.addEventListener("cave:terminal-open", onTerminalOpen as EventListener);
-    return () => window.removeEventListener("cave:terminal-open", onTerminalOpen as EventListener);
-  }, [view, active, addSession]);
-
   useEffect(() => {
     const activeTerminal = view === "terminal" && active;
     if (!activeTerminal) {
@@ -1878,8 +1861,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       )}
                     </div>
                     {/* Right-click a project → act on it without selecting it
-                        first (start a chat/terminal in any project's cwd, copy
-                        or reveal its path). One menu serves the whole list. */}
+                        first (start a chat, copy, or reveal its path). One
+                        menu serves the whole list. */}
                     <ContextMenu
                       state={projectMenu}
                       onClose={() => setProjectMenu(null)}
@@ -1907,16 +1890,6 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                           >
                             New chat
                           </PopoverItem>
-                          <PopoverItem
-                            icon="ph:terminal-window-bold"
-                            onSelect={() => {
-                              setProjectMenu(null);
-                              addSession(projectMenuTarget.root);
-                            }}
-                          >
-                            Open terminal
-                          </PopoverItem>
-                          <PopoverSeparator />
                           <PopoverItem
                             icon="ph:copy"
                             onSelect={() => {

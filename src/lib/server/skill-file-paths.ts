@@ -17,7 +17,8 @@ import { covenHome } from "@/lib/coven-paths";
  * the preview endpoint from exposing arbitrary markdown or symlink targets from
  * broad harness directories.
  */
-const SKILL_ROOT_SUBPATHS = [".claude", ".coven", ".codex", ".cursor", ".gemini", path.join(".agents", "skills")];
+const HOME_SKILL_ROOT_SUBPATHS = [".claude", ".coven", ".codex", ".cursor", ".gemini", path.join(".agents", "skills")];
+const PROJECT_SKILL_ROOT_SUBPATHS = [path.join(".agents", "skills")];
 const ALLOWED_SKILL_FILE_NAMES = new Set(["SKILL.md", "CLAUDE.md", "AGENTS.md"]);
 const CODEX_AUTOMATION_FILE_NAME = "automation.toml";
 
@@ -54,12 +55,21 @@ export async function isAllowedSkillFilePath(fullPath: string, home = homedir())
     }
   }
 
-  for (const sub of SKILL_ROOT_SUBPATHS) {
+  for (const sub of HOME_SKILL_ROOT_SUBPATHS) {
     try {
       const rootRealPath = await realpath(path.join(home, sub));
       if (isWithinRoot(candidateRealPath, rootRealPath)) return true;
     } catch {
       // Missing harness roots are not previewable roots.
+    }
+  }
+
+  for (const sub of PROJECT_SKILL_ROOT_SUBPATHS) {
+    try {
+      const rootRealPath = await realpath(path.join(process.cwd(), sub));
+      if (isWithinRoot(candidateRealPath, rootRealPath)) return true;
+    } catch {
+      // Missing project roots are not previewable roots.
     }
   }
 
@@ -89,7 +99,13 @@ export async function isRemovableSkillDir(dir: string, home = homedir()): Promis
   }
 
   const parent = path.dirname(real);
-  const rootCandidates = [path.join(covenHome(), "skills"), path.join(home, ".claude", "skills")];
+  const rootCandidates = [
+    path.join(covenHome(), "skills"),
+    path.join(home, ".claude", "skills"),
+    path.join(home, ".codex", "skills"),
+    path.join(home, ".agents", "skills"),
+    path.join(process.cwd(), ".agents", "skills"),
+  ];
   for (const root of rootCandidates) {
     try {
       const rootReal = await realpath(root);

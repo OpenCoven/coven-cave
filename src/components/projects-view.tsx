@@ -27,6 +27,7 @@ import { useUndoDelete } from "@/lib/use-undo-delete";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import {
   DndContext,
   PointerSensor,
@@ -363,47 +364,50 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
             <div
               role="group"
               aria-label="List density"
-              className="flex items-center rounded-md border border-[var(--border-hairline)] p-0.5"
+              className="flex items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0.5"
             >
               {([
                 { value: "comfortable", icon: "ph:rows", label: "Comfortable density" },
                 { value: "compact", icon: "ph:list-bullets-bold", label: "Compact density" },
               ] as const).map((opt) => (
-                <button
+                <Button
                   key={opt.value}
-                  type="button"
+                  variant="ghost"
+                  size="xs"
                   onClick={() => setDensity(opt.value)}
                   aria-pressed={density === opt.value}
                   aria-label={opt.label}
                   title={opt.label}
-                  className={`focus-ring flex h-7 w-7 items-center justify-center rounded ${
+                  className={`flex h-7 w-7 items-center justify-center rounded-[var(--radius-control)] p-0 ${
                     density === opt.value
                       ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                   }`}
+                  leadingIcon={opt.icon}
                 >
-                  <Icon name={opt.icon} width={14} aria-hidden />
-                </button>
+                </Button>
               ))}
             </div>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => void reload()}
               disabled={loading}
               aria-label="Refresh projects"
-              className="focus-ring flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
+              className="h-8 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-50"
             >
               <Icon name="ph:arrows-clockwise-bold" width={12} className={loading ? "animate-spin" : undefined} aria-hidden />
               Refresh
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={showForm ? () => setShowForm(false) : openCreateProjectForm}
-              className="focus-ring flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[12px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
+              className="h-8 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--accent-presence)]/10 px-2.5 text-[12px] text-[var(--accent-presence)] hover:bg-[var(--accent-presence)]/15"
+              leadingIcon="ph:plus-bold"
             >
-              <Icon name="ph:plus-bold" width={12} aria-hidden />
               New project
-            </button>
+            </Button>
           </div>
         </div>
         {projects.length > 1 ? (
@@ -427,12 +431,12 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
               }}
               placeholder="Filter projects by name or path…"
               aria-label="Filter projects"
-              className="focus-ring h-8 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] pl-8 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              className="focus-ring h-8 w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] pl-8 pr-7 text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
             {!query && (
               <kbd
                 aria-hidden
-                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[10px] leading-tight text-[var(--text-muted)]"
+                className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-1 font-mono text-[10px] leading-tight text-[var(--text-muted)]"
               >
                 /
               </kbd>
@@ -455,7 +459,7 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
               value={nameDraft}
               onChange={(event) => setNameDraft(event.target.value)}
               placeholder="Project name"
-              className="focus-ring h-9 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+              className="focus-ring h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
             />
             <div className="flex items-center gap-2">
               <input
@@ -463,33 +467,37 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
                 value={rootDraft}
                 onChange={(event) => setRootDraft(event.target.value)}
                 placeholder="/absolute/path/to/project"
-                className="focus-ring h-9 min-w-0 flex-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[12px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
+                className="focus-ring h-9 min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 font-mono text-[12px] text-[var(--text-secondary)] placeholder:text-[var(--text-muted)]"
               />
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => void handleBrowse()}
                 title="Browse for a project folder"
-                className="focus-ring inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+                className="h-9 shrink-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[12px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-hover)]"
+                leadingIcon="ph:folder-open"
               >
-                <Icon name="ph:folder-open" width={14} aria-hidden />
                 Browse
-              </button>
+              </Button>
             </div>
             <div className="flex items-center gap-2">
-              <button
+              <Button
                 type="submit"
+                variant="primary"
+                size="sm"
                 disabled={creating || !nameDraft.trim() || !rootDraft.trim()}
-                className="focus-ring h-9 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-[var(--text-primary)] disabled:opacity-50"
+                className="h-9 rounded-[var(--radius-control)] px-3 text-[12px] font-medium disabled:opacity-50"
               >
                 {creating ? "Creating" : "Create"}
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => setShowForm(false)}
-                className="focus-ring h-9 rounded-md border border-[var(--border-hairline)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                className="h-9 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </div>
         </form>
@@ -511,23 +519,24 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
           </span>
           <div className="flex shrink-0 items-center gap-2">
             {onNewChat ? (
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={() => onNewChat?.(createdProject.root)}
-                className="focus-ring inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-2.5 text-[12px] font-medium text-[var(--text-primary)]"
+                className="h-8 rounded-[var(--radius-control)] px-2.5 text-[12px] font-medium"
+                leadingIcon="ph:chat-circle-dots-bold"
               >
-                <Icon name="ph:chat-circle-dots-bold" width={13} aria-hidden />
                 Start chat in {createdProject.name}
-              </button>
+              </Button>
             ) : null}
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="xs"
               onClick={() => setCreatedProject(null)}
               aria-label="Dismiss created project action"
-              className="focus-ring grid h-8 w-8 place-items-center rounded-md border border-[var(--border-hairline)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-            >
-              <Icon name="ph:x" width={12} aria-hidden />
-            </button>
+              className="grid h-8 w-8 place-items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0 text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+              leadingIcon="ph:x"
+            />
           </div>
         </div>
       ) : null}
@@ -539,13 +548,14 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
             headline="Couldn't load projects"
             subtitle={error}
             actions={
-              <button
-                type="button"
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={() => void reload()}
-                className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
               >
                 Retry
-              </button>
+              </Button>
             }
           />
         ) : loading && projects.length === 0 ? (
@@ -559,25 +569,27 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
             subtitle="Add a project folder to group chats by codebase."
             actions={
               <>
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={openCreateProjectForm}
-                  className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                  className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
                 >
                   New project
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
                   onClick={() => {
                     if (typeof window !== "undefined") {
                       window.dispatchEvent(new CustomEvent("cave:salem-open"));
                     }
                   }}
-                  className="focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                  className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1.5 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+                  leadingIcon="ph:sparkle"
                 >
-                  <Icon name="ph:sparkle" width={13} aria-hidden />
                   Ask Salem
-                </button>
+                </Button>
               </>
             }
           />
@@ -586,31 +598,33 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
             {error ? (
               <div
                 role="alert"
-                className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+                className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
               >
                 <span className="min-w-0 truncate">Couldn't refresh: {error}</span>
-                <button
-                  type="button"
+                <Button
+                  variant="danger-ghost"
+                  size="xs"
                   onClick={() => void reload()}
-                  className="focus-ring shrink-0 rounded-md border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
+                  className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
                 >
                   Retry
-                </button>
+                </Button>
               </div>
             ) : null}
             {sessionError ? (
               <div
                 role="alert"
-                className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
+                className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12px] text-[var(--color-danger)]"
               >
                 <span className="min-w-0 truncate">Couldn't delete chat: {sessionError}</span>
-                <button
-                  type="button"
+                <Button
+                  variant="danger-ghost"
+                  size="xs"
                   onClick={() => setSessionError(null)}
-                  className="focus-ring shrink-0 rounded-md border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
+                  className="shrink-0 rounded-[var(--radius-control)] border border-[var(--color-danger)]/40 px-2 py-0.5 text-[11px] hover:bg-[var(--color-danger)]/15"
                 >
                   Dismiss
-                </button>
+                </Button>
               </div>
             ) : null}
             {visibleProjects.length === 0 ? (
@@ -619,26 +633,48 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
               </p>
             ) : (
               <DndContext id="projects-grid" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                {visibleProjects.map((project) => (
-                  <ProjectRow
-                    key={project.id}
-                    project={project}
-                    chats={chatsByRoot.get(normalizeProjectRoot(project.root)) ?? []}
-                    onRename={renameProject}
-                    onUpdateRoot={updateRoot}
-                    onUpdateColor={updateColor}
-                    onDelete={deleteProject}
-                    onNewChat={onNewChat}
-                    onOpenSession={openSessionById}
-                    onDeleteSession={handleDeleteSession}
-                    onDeleteSessions={handleDeleteSessions}
-                    density={density}
-                    expanded={isExpanded(project.id)}
-                    onSetExpanded={(next) => setExpanded(project.id, next)}
-                    allProjects={projects}
-                    onMoveSession={moveSessionToProject}
-                  />
-                ))}
+                <div className="board-table-wrap projects-table-wrap">
+                  <table className="board-table board-table--grid projects-table">
+                    <colgroup>
+                      <col />
+                      <col style={{ width: "130px" }} />
+                      <col style={{ width: "110px" }} />
+                      <col style={{ width: "112px" }} />
+                      <col style={{ width: "180px" }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th>Project</th>
+                        <th>Status</th>
+                        <th>Sessions</th>
+                        <th>Updated</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleProjects.map((project) => (
+                        <ProjectRow
+                          key={project.id}
+                          project={project}
+                          chats={chatsByRoot.get(normalizeProjectRoot(project.root)) ?? []}
+                          onRename={renameProject}
+                          onUpdateRoot={updateRoot}
+                          onUpdateColor={updateColor}
+                          onDelete={deleteProject}
+                          onNewChat={onNewChat}
+                          onOpenSession={openSessionById}
+                          onDeleteSession={handleDeleteSession}
+                          onDeleteSessions={handleDeleteSessions}
+                          density={density}
+                          expanded={isExpanded(project.id)}
+                          onSetExpanded={(next) => setExpanded(project.id, next)}
+                          allProjects={projects}
+                          onMoveSession={moveSessionToProject}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </DndContext>
             )}
           </div>

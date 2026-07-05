@@ -7,6 +7,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { copyText } from "@/lib/clipboard";
 
@@ -30,34 +32,40 @@ export type SkillBrowserEntry = {
   };
   installed?: boolean;
   installsAllTime?: number;
+  weeklyInstalls?: number[];
   trendScore?: number;
   hotScore?: number;
+  registryUrl?: string;
+  sourceUrl?: string;
   source?: "registry" | "local" | "daemon" | "fallback";
   local?: {
     installed: boolean;
     path?: string;
     version?: string;
-    scope?: "coven" | "claude-user" | "other-local";
+    scope?: "coven" | "claude-user" | "codex-user" | "agents-project" | "agents-user" | "other-local";
     source?: "local-match" | "local-scan";
   };
   /** Absolute path to the skill's SKILL.md (local entries only). */
   path?: string;
-  /** Scan scope: "user" (~/.claude/skills), "global" (Coven shared skills),
+  /** Scan scope: "user" (~/.claude/skills), "codex-user" (~/.codex/skills),
+   * "agents-project"/"agents-user" (.agents/skills), "global" (Coven shared),
    * or omitted for directory-only entries.
    */
   familiar?: string;
 };
 
 type Category = "all" | "installed" | "claude" | "generic";
+type LeaderboardMode = "all-time" | "trending" | "hot";
+type BrowseFilter = "all" | "official" | "audited" | "installed";
 type PreviewState = {
   status: "idle" | "loading" | "loaded" | "error";
   text: string | null;
   error: string | null;
 };
+type BusyState = "reveal" | "delete" | "install" | "use" | "prompt" | null;
 
-// The scan tags user skills (~/.claude/skills) as "user" and shared Coven
-// skills as "global"; directory entries without a local path are grouped with
-// Generic while installed entries get a first-class Installed tab.
+// The scan tags user skills by agent/root while installed entries get a
+// first-class Installed tab.
 function categoryOf(skill: SkillBrowserEntry): "installed" | "claude" | "generic" {
   if (skill.installed || skill.local?.installed) return "installed";
   return skill.familiar === "user" ? "claude" : "generic";
@@ -75,11 +83,119 @@ const RAIL: { id: Category; label: string; icon: IconName }[] = [
   { id: "generic", label: "Generic", icon: "ph:puzzle-piece" },
 ];
 
+const LEADERBOARD_MODES: { id: LeaderboardMode; label: string }[] = [
+  { id: "all-time", label: "All Time" },
+  { id: "trending", label: "Trending" },
+  { id: "hot", label: "Hot" },
+];
+
+const BROWSE_FILTERS: { id: BrowseFilter; label: string; icon: IconName }[] = [
+  { id: "all", label: "All skills", icon: "ph:magnifying-glass" },
+  { id: "official", label: "Official", icon: "ph:seal-check" },
+  { id: "audited", label: "Security audits", icon: "ph:shield-warning" },
+  { id: "installed", label: "Installed", icon: "ph:check-circle" },
+];
+
+const SKILLS_DIRECTORY_LINKS = [
+  { label: "Topics", href: "https://www.skills.sh/topic" },
+  { label: "Official", href: "https://www.skills.sh/official" },
+  { label: "Security audits", href: "https://www.skills.sh/audits" },
+  { label: "Docs", href: "https://www.skills.sh/docs" },
+] as const;
+
+const FEATURED_AGENT_LABELS = [
+  "Claude Code",
+  "Cursor",
+  "Codex",
+  "GitHub Copilot",
+  "Windsurf",
+  "Gemini",
+] as const;
+
+const TOPIC_FILTERS = [
+  { id: "react", label: "React", keywords: ["react"] },
+  { id: "nextjs", label: "Next.js", keywords: ["next.js", "nextjs", "next-"] },
+  { id: "design-ui", label: "Design & UI", keywords: ["design", "ui", "ux", "frontend", "shadcn", "interface"] },
+  { id: "mobile", label: "Mobile", keywords: ["mobile", "ios", "android", "react-native", "swiftui"] },
+  { id: "agent-workflows", label: "Agent workflows", keywords: ["agent", "workflow", "automation", "subagent", "prompt", "skill"] },
+  { id: "databases", label: "Databases", keywords: ["database", "postgres", "sql", "supabase", "firebase"] },
+  { id: "testing", label: "Testing", keywords: ["test", "testing", "tdd", "qa", "playwright", "debug"] },
+  { id: "marketing", label: "Marketing", keywords: ["marketing", "seo", "copywriting", "content", "viral"] },
+] as const;
+
 function skillKey(skill: SkillBrowserEntry): string {
   const scope = skill.local ? "local" : "remote";
   const base = skill.slug ?? skill.id;
   const bucket = skill.path ?? `${skill.owner ?? ""}:${skill.repo ?? ""}`;
   return `${scope}:${base}:${bucket}`;
+}
+
+function scoreFor(skill: SkillBrowserEntry, mode: LeaderboardMode): number {
+  if (mode === "trending") return skill.trendScore ?? 0;
+  if (mode === "hot") return skill.hotScore ?? 0;
+  return skill.installsAllTime ?? 0;
+}
+
+function formatCount(value: number | undefined): string {
+  if (!value) return "0";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}K`;
+  return String(value);
+}
+
+function weeklyActivity(skill: SkillBrowserEntry) {
+  const weekly = (skill.weeklyInstalls ?? [])
+    .filter((value) => Number.isFinite(value))
+    .slice(-8);
+  const values = Array.from({ length: 8 }, (_, index) => weekly[index - (8 - weekly.length)] ?? 0);
+  const max = Math.max(...values, 1);
+  return {
+    label: values.map((value) => formatCount(value)).join(", "),
+    bars: values.map((value) => ({
+      value,
+      height: value > 0 ? Math.max(12, Math.round((value / max) * 100)) : 10,
+    })),
+  };
+}
+
+function sourceTarget(skill: SkillBrowserEntry): string {
+  if (skill.owner && skill.repo) return `${skill.owner}/${skill.repo}`;
+  if (skill.packageName) return skill.packageName;
+  const parts = skill.slug?.split("/").filter(Boolean) ?? [];
+  if (parts.length >= 3) return `${parts[0]}/${parts[1]}`;
+  if (parts.length >= 2 && parts[0]?.includes(".")) return parts[0];
+  return skill.slug ?? skill.id;
+}
+
+function sourceKey(skill: SkillBrowserEntry): string {
+  return sourceTarget(skill).toLowerCase();
+}
+
+function specificSkillName(skill: SkillBrowserEntry): string | null {
+  if (skill.owner && skill.repo) return skill.id;
+  const parts = skill.slug?.split("/").filter(Boolean) ?? [];
+  if (parts.length >= 3) return parts.slice(2).join("/");
+  if (parts.length >= 2 && parts[0]?.includes(".")) return skill.id;
+  return null;
+}
+
+function quoteCliArg(value: string): string {
+  if (/^[A-Za-z0-9._@/:+-]+$/.test(value)) return value;
+  return `"${value.replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+function installCommand(skill: SkillBrowserEntry): string {
+  const target = sourceTarget(skill);
+  const specific = specificSkillName(skill);
+  if (specific) return `npx skills add ${quoteCliArg(target)} --skill ${quoteCliArg(specific)}`;
+  return `npx skills add ${quoteCliArg(target)}`;
+}
+
+function useCommand(skill: SkillBrowserEntry): string {
+  const target = sourceTarget(skill);
+  const specific = specificSkillName(skill);
+  if (specific) return `npx skills use ${quoteCliArg(target)} --skill ${quoteCliArg(specific)}`;
+  return `npx skills use ${quoteCliArg(target)}`;
 }
 
 // SKILL.md opens with a YAML frontmatter block (name/description/tags) already
@@ -108,6 +224,56 @@ function matchesQuery(skill: SkillBrowserEntry, query: string): boolean {
     .join(" ")
     .toLowerCase();
   return hay.includes(query.toLowerCase());
+}
+
+function topicHaystack(skill: SkillBrowserEntry): string {
+  return [
+    skill.id,
+    skill.name,
+    skill.description,
+    skill.owner,
+    skill.repo,
+    skill.slug,
+    skill.packageName,
+    ...(skill.tags ?? []),
+    ...(skill.topics ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function matchesTopic(skill: SkillBrowserEntry, topicId: string): boolean {
+  if (topicId === "all") return true;
+  const explicit = [...(skill.topics ?? []), ...(skill.tags ?? [])].map((item) => item.toLowerCase());
+  if (explicit.includes(topicId)) return true;
+  const topic = TOPIC_FILTERS.find((item) => item.id === topicId);
+  if (!topic) return true;
+  const hay = topicHaystack(skill);
+  return topic.keywords.some((keyword) => hay.includes(keyword));
+}
+
+function matchesBrowseFilter(skill: SkillBrowserEntry, filter: BrowseFilter): boolean {
+  if (filter === "official") return Boolean(skill.trust?.official);
+  if (filter === "audited") return Boolean(skill.trust?.audited);
+  if (filter === "installed") return Boolean(skill.installed || skill.local?.installed);
+  return true;
+}
+
+function topicCounts(skills: SkillBrowserEntry[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const topic of TOPIC_FILTERS) {
+    counts[topic.id] = skills.filter((skill) => matchesTopic(skill, topic.id)).length;
+  }
+  return counts;
+}
+
+function sourceSummary(source: string, skills: SkillBrowserEntry[]) {
+  const entries = skills.filter((skill) => sourceKey(skill) === source.toLowerCase());
+  return {
+    count: entries.length,
+    installs: entries.reduce((sum, skill) => sum + (skill.installsAllTime ?? 0), 0),
+  };
 }
 
 // Collapse the absolute SKILL.md path to a friendly directory (drops /SKILL.md,
@@ -151,10 +317,14 @@ export function SkillBrowser({
   onChanged?: () => void;
 }) {
   const [category, setCategory] = useState<Category>("all");
+  const [mode, setMode] = useState<LeaderboardMode>("all-time");
+  const [browse, setBrowse] = useState<BrowseFilter>("all");
+  const [topic, setTopic] = useState("all");
+  const [agent, setAgent] = useState("all");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewState>({ status: "idle", text: null, error: null });
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [busy, setBusy] = useState<"reveal" | "delete" | null>(null);
+  const [busy, setBusy] = useState<BusyState>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const counts = useMemo(
@@ -167,25 +337,62 @@ export function SkillBrowser({
     [skills],
   );
 
+  const agents = useMemo(() => {
+    const names = new Set<string>();
+    for (const skill of skills) for (const name of skill.agents ?? []) names.add(name);
+    return ["all", ...Array.from(names).sort((a, b) => a.localeCompare(b))];
+  }, [skills]);
+
+  const topics = useMemo(() => topicCounts(skills), [skills]);
+
   const visible = useMemo(
-    () => skills.filter((s) => (category === "all" || categoryOf(s) === category) && matchesQuery(s, query)),
-    [skills, category, query],
+    () =>
+      skills.filter(
+        (s) =>
+          (category === "all" || categoryOf(s) === category) &&
+          matchesBrowseFilter(s, browse) &&
+          matchesTopic(s, topic) &&
+          (agent === "all" || (s.agents ?? []).includes(agent)) &&
+          matchesQuery(s, query),
+      ),
+    [skills, category, browse, topic, agent, query],
+  );
+
+  const rankedVisible = useMemo(
+    () => [...visible].sort((a, b) => scoreFor(b, mode) - scoreFor(a, mode) || a.name.localeCompare(b.name)),
+    [visible, mode],
   );
 
   // Keep a valid selection: fall back to the first visible skill when the
   // current pick is filtered out (or nothing is selected yet).
   const selected = useMemo(
-    () => visible.find((s) => skillKey(s) === selectedKey) ?? visible[0] ?? null,
-    [visible, selectedKey],
+    () => rankedVisible.find((s) => skillKey(s) === selectedKey) ?? rankedVisible[0] ?? null,
+    [rankedVisible, selectedKey],
   );
   const selectedPath = selected?.local?.path ?? selected?.path ?? null;
+  const selectedPreviewKey = selected ? skillKey(selected) : null;
   const selectedHasLocalPath = Boolean(selected?.local?.installed && selectedPath);
+  const selectedSource = selected ? sourceTarget(selected) : "";
+  const selectedSourceSummary = useMemo(
+    () => (selectedSource ? sourceSummary(selectedSource, skills) : { count: 0, installs: 0 }),
+    [selectedSource, skills],
+  );
+  const relatedSourceSkills = useMemo(
+    () =>
+      selected
+        ? rankedVisible
+            .filter((skill) => sourceKey(skill) === sourceKey(selected) && skillKey(skill) !== skillKey(selected))
+            .slice(0, 4)
+        : [],
+    [rankedVisible, selected],
+  );
+  const ecosystemCommand = selected ? installCommand(selected) : "npx skills add <owner/repo>";
 
   // Load the selected skill's SKILL.md for the detail pane. Only paths under the
   // allow-listed roots return content; anything else 403s → fall back to the
   // scanned description so the pane never goes blank.
   useEffect(() => {
-    if (!selectedPath) {
+    if (!selected) {
       setPreview({ status: "idle", text: null, error: null });
       return;
     }
@@ -193,11 +400,18 @@ export function SkillBrowser({
     setPreview({ status: "loading", text: null, error: null });
     void (async () => {
       try {
-        const res = await fetch(`/api/skills/file?path=${encodeURIComponent(selectedPath)}`, { cache: "no-store" });
-        const json = (await res.json()) as { ok: boolean; text?: string; error?: string };
+        const source = sourceTarget(selected);
+        const url = selectedPath
+          ? `/api/skills/file?path=${encodeURIComponent(selectedPath)}`
+          : `/api/skills/directory/${encodeURIComponent(selected.id)}?source=${encodeURIComponent(source)}`;
+        const res = await fetch(url, { cache: "no-store" });
+        const json = (await res.json()) as { ok: boolean; text?: string; error?: string; preview?: { text?: string } | null };
         if (cancelled) return;
-        if (!json.ok) setPreview({ status: "error", text: null, error: json.error ?? `http ${res.status}` });
-        else setPreview({ status: "loaded", text: json.text ?? "", error: null });
+        if (!json.ok) {
+          setPreview({ status: "error", text: null, error: json.error ?? `http ${res.status}` });
+        } else {
+          setPreview({ status: "loaded", text: json.text ?? json.preview?.text ?? "", error: null });
+        }
       } catch (err) {
         if (!cancelled) setPreview({ status: "error", text: null, error: err instanceof Error ? err.message : "fetch failed" });
       }
@@ -205,7 +419,7 @@ export function SkillBrowser({
     return () => {
       cancelled = true;
     };
-  }, [selectedPath]);
+  }, [selected, selectedPath, selectedPreviewKey]);
 
   const body = preview.text ? stripFrontmatter(preview.text) : "";
 
@@ -214,7 +428,7 @@ export function SkillBrowser({
   useEffect(() => {
     setConfirmingDelete(false);
     setNotice(null);
-  }, [selectedPath]);
+  }, [selectedPreviewKey, selectedPath]);
 
   async function handleReveal() {
     if (!selectedPath || busy) return;
@@ -225,6 +439,92 @@ export function SkillBrowser({
       setNotice(how === "revealed" ? "Opened in file manager" : "Path copied to clipboard");
     } catch {
       setNotice("Could not open folder");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleCopyInstall() {
+    if (!selected) return;
+    try {
+      await copyText(installCommand(selected));
+      setNotice("Install command copied");
+    } catch {
+      setNotice("Could not copy install command");
+    }
+  }
+
+  async function handleInstall() {
+    if (!selected || selected.local?.installed || selected.installed || busy) return;
+    setBusy("install");
+    setNotice(null);
+    try {
+      const res = await fetch("/api/skills/directory/install", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ id: selected.id, source: sourceTarget(selected), agents: ["claude-code", "codex"] }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; alreadyInstalled?: boolean };
+      if (!res.ok || !json.ok) {
+        setNotice(json.error ? `Install failed: ${json.error}` : `Install failed (${res.status})`);
+        return;
+      }
+      setNotice(json.alreadyInstalled ? "Skill already installed" : "Skill installed");
+      onChanged?.();
+    } catch (err) {
+      setNotice(err instanceof Error ? `Install failed: ${err.message}` : "Install failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function requestSkillPrompt(selectedSkill: SkillBrowserEntry): Promise<string | null> {
+    const res = await fetch("/api/skills/directory/use", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ id: selectedSkill.id, source: sourceTarget(selectedSkill) }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; prompt?: string };
+    if (!res.ok || !json.ok || !json.prompt) {
+      setNotice(json.error ? `Use failed: ${json.error}` : `Use failed (${res.status})`);
+      return null;
+    }
+    return json.prompt;
+  }
+
+  async function handleUseSkill() {
+    if (!selected || busy) return;
+    setBusy("use");
+    setNotice(null);
+    try {
+      const prompt = await requestSkillPrompt(selected);
+      if (!prompt) return;
+      window.dispatchEvent(
+        new CustomEvent("cave:agents-new-chat", {
+          detail: { initialPrompt: prompt },
+        }),
+      );
+      setNotice("Opened chat with skill prompt");
+    } catch (err) {
+      setNotice(err instanceof Error ? `Use failed: ${err.message}` : "Use failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleCopyPrompt() {
+    if (!selected || busy) return;
+    setBusy("prompt");
+    setNotice(null);
+    try {
+      const prompt = await requestSkillPrompt(selected);
+      if (!prompt) return;
+      await copyText(prompt);
+      setNotice("Skill prompt copied");
+    } catch (err) {
+      setNotice(err instanceof Error ? `Copy prompt failed: ${err.message}` : "Copy prompt failed");
     } finally {
       setBusy(null);
     }
@@ -266,9 +566,9 @@ export function SkillBrowser({
           const count = counts[cat.id === "all" ? "all" : cat.id];
           const active = category === cat.id;
           return (
-            <button
+            <Button
               key={cat.id}
-              type="button"
+              variant="ghost"
               className={`skill-browser__cat${active ? " is-active" : ""}`}
               aria-pressed={active}
               onClick={() => setCategory(cat.id)}
@@ -276,13 +576,109 @@ export function SkillBrowser({
               <Icon name={cat.icon} width={15} className="skill-browser__cat-icon" aria-hidden />
               <span className="skill-browser__cat-label">{cat.label}</span>
               <span className="skill-browser__cat-count">{count}</span>
-            </button>
+            </Button>
           );
         })}
       </nav>
 
       {/* ── Card list ────────────────────────────────────────────────── */}
       <div className="skill-browser__list" role="listbox" aria-label="Skills">
+        <div className="skill-browser__leaderboard">
+          <div>
+            <p className="skill-browser__leaderboard-kicker">Skills Leaderboard</p>
+            <p className="skill-browser__leaderboard-title">{formatCount(skills.reduce((sum, skill) => sum + (skill.installsAllTime ?? 0), 0))} installs tracked</p>
+          </div>
+          <div className="skill-browser__ecosystem">
+            <div className="skill-browser__ecosystem-command">
+              <span>Try it now</span>
+              <code>{ecosystemCommand}</code>
+            </div>
+            <div className="skill-browser__agent-strip" aria-label="Available for these agents">
+              {FEATURED_AGENT_LABELS.map((name) => (
+                <span key={name}>{name}</span>
+              ))}
+            </div>
+            <nav className="skill-browser__directory-links" aria-label="Skills directory links">
+              {SKILLS_DIRECTORY_LINKS.map((link) => (
+                <a key={link.href} href={link.href} target="_blank" rel="noreferrer">
+                  {link.label}
+                </a>
+              ))}
+            </nav>
+          </div>
+          <div className="skill-browser__browse" aria-label="Browse skills">
+            {BROWSE_FILTERS.map((item) => (
+              <Button
+                key={item.id}
+                variant="ghost"
+                size="xs"
+                className={`skill-browser__browse-btn${browse === item.id ? " is-active" : ""}`}
+                aria-pressed={browse === item.id}
+                onClick={() => {
+                  setBrowse(item.id);
+                  if (item.id === "all") setTopic("all");
+                }}
+              >
+                <Icon name={item.icon} width={13} aria-hidden />
+                <span>{item.label}</span>
+              </Button>
+            ))}
+          </div>
+          <div className="skill-browser__topics" aria-label="Browse by topic">
+            <Button
+              variant="ghost"
+              size="xs"
+              className={`skill-browser__topic${topic === "all" ? " is-active" : ""}`}
+              aria-pressed={topic === "all"}
+              onClick={() => setTopic("all")}
+            >
+              Topics
+            </Button>
+            {TOPIC_FILTERS.filter((item) => (topics[item.id] ?? 0) > 0).map((item) => (
+              <Button
+                key={item.id}
+                variant="ghost"
+                size="xs"
+                className={`skill-browser__topic${topic === item.id ? " is-active" : ""}`}
+                aria-pressed={topic === item.id}
+                onClick={() => setTopic(item.id)}
+              >
+                <span>{item.label}</span>
+                <span className="skill-browser__topic-count">{topics[item.id]}</span>
+              </Button>
+            ))}
+          </div>
+          <div className="skill-browser__modes" aria-label="Rank skills">
+            {LEADERBOARD_MODES.map((item) => (
+              <Button
+                key={item.id}
+                variant="ghost"
+                size="xs"
+                className={`skill-browser__mode${mode === item.id ? " is-active" : ""}`}
+                aria-pressed={mode === item.id}
+                onClick={() => setMode(item.id)}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </div>
+          {agents.length > 1 ? (
+            <div className="skill-browser__agents" aria-label="Filter by agent">
+              {agents.slice(0, 8).map((name) => (
+                <Button
+                  key={name}
+                  variant="ghost"
+                  size="xs"
+                  className={`skill-browser__agent${agent === name ? " is-active" : ""}`}
+                  aria-pressed={agent === name}
+                  onClick={() => setAgent(name)}
+                >
+                  {name === "all" ? "All agents" : name}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         {!loaded ? (
           <div className="skill-browser__note" aria-hidden>
             Loading skills…
@@ -292,39 +688,63 @@ export function SkillBrowser({
             <Icon name="ph:puzzle-piece" width={22} aria-hidden />
             <p>No directory skills found.</p>
             {onCreateSkill ? (
-              <button type="button" className="skill-browser__empty-action" onClick={onCreateSkill}>
+              <Button variant="secondary" size="xs" className="skill-browser__empty-action" onClick={onCreateSkill}>
                 Open Capabilities
-              </button>
+              </Button>
             ) : null}
           </div>
-        ) : visible.length === 0 ? (
+        ) : rankedVisible.length === 0 ? (
           <div className="skill-browser__empty">
             <p>No skills match “{query.trim()}”.</p>
-            <button type="button" className="skill-browser__empty-action" onClick={onClearQuery}>
+            <Button variant="secondary" size="xs" className="skill-browser__empty-action" onClick={onClearQuery}>
               Clear search
-            </button>
+            </Button>
           </div>
         ) : (
-          visible.map((skill) => {
+          rankedVisible.map((skill, index) => {
             const key = skillKey(skill);
             const isSel = selected != null && skillKey(selected) === key;
+            const score = scoreFor(skill, mode);
+            const activity = weeklyActivity(skill);
             return (
-              <button
+              <Button
                 key={key}
-                type="button"
+                variant="ghost"
                 role="option"
                 aria-selected={isSel}
                 className={`skill-browser__card${isSel ? " is-active" : ""}`}
                 onClick={() => setSelectedKey(key)}
               >
+                <span className="skill-browser__rank">#{index + 1}</span>
                 <span className="skill-browser__card-main">
                   <span className="skill-browser__card-name">{skill.name}</span>
+                  <span className="skill-browser__card-slug">{sourceTarget(skill)}</span>
                   {skill.description ? (
                     <span className="skill-browser__card-desc">{skill.description}</span>
                   ) : null}
                 </span>
-                <span className="skill-browser__badge">{CATEGORY_LABEL[categoryOf(skill)]}</span>
-              </button>
+                <span className="skill-browser__row-stats">
+                  <span
+                    className="skill-browser__activity"
+                    aria-label={`8 week activity: ${activity.label}`}
+                    title={`8 week activity: ${activity.label}`}
+                  >
+                    {activity.bars.map((bar, barIndex) => (
+                      <i
+                        // biome-ignore lint/suspicious/noArrayIndexKey: fixed eight-week sparkline slots.
+                        key={barIndex}
+                        className="skill-browser__activity-bar"
+                        style={{ height: `${bar.height}%` }}
+                        aria-hidden
+                      />
+                    ))}
+                  </span>
+                  <span className="skill-browser__metric">
+                    <span>{formatCount(score)}</span>
+                    <i style={{ width: `${Math.min(100, Math.max(8, score))}%` }} aria-hidden />
+                  </span>
+                </span>
+              </Button>
             );
           })
         )}
@@ -339,36 +759,77 @@ export function SkillBrowser({
                 <h2 className="skill-browser__detail-name">{selected.name}</h2>
                 {selectedHasLocalPath ? (
                   <div className="skill-browser__actions">
-                    <button
-                      type="button"
+                    <IconButton
+                      icon="ph:folder-open"
+                      size="sm"
                       className="skill-browser__action"
                       onClick={handleReveal}
                       disabled={busy != null}
                       title="Reveal skill folder"
                       aria-label="Reveal skill folder"
-                    >
-                      <Icon name="ph:folder-open" width={16} aria-hidden />
-                    </button>
-                    <button
-                      type="button"
+                    />
+                    <Button
+                      variant="danger-ghost"
+                      size="xs"
+                      leadingIcon="ph:trash"
                       className={`skill-browser__action skill-browser__action--danger${confirmingDelete ? " is-confirming" : ""}`}
                       onClick={handleDelete}
                       disabled={busy != null}
                       title={confirmingDelete ? "Confirm delete" : "Delete skill"}
                       aria-label={confirmingDelete ? "Confirm delete skill" : "Delete skill"}
                     >
-                      <Icon name="ph:trash" width={16} aria-hidden />
                       {confirmingDelete ? <span className="skill-browser__action-label">Delete?</span> : null}
-                    </button>
+                    </Button>
                   </div>
                 ) : null}
+              </div>
+              <div className="skill-browser__install">
+                <code>{installCommand(selected)}</code>
+                <IconButton
+                  icon="ph:copy"
+                  size="sm"
+                  className="skill-browser__action"
+                  onClick={handleCopyInstall}
+                  title="Copy install command"
+                  aria-label="Copy install command"
+                />
+                <Button
+                  variant="primary"
+                  size="xs"
+                  leadingIcon={selected.installed || selected.local?.installed ? "ph:check-circle" : "ph:arrow-down"}
+                  className="skill-browser__install-button"
+                  onClick={handleInstall}
+                  disabled={busy != null || selected.installed || selected.local?.installed}
+                >
+                  <span>{busy === "install" ? "Installing" : selected.installed || selected.local?.installed ? "Installed" : "Install"}</span>
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  leadingIcon="ph:chat-circle-dots"
+                  className="skill-browser__use-button"
+                  onClick={handleUseSkill}
+                  disabled={busy != null}
+                  title={useCommand(selected)}
+                >
+                  <span>{busy === "use" ? "Opening" : "Use"}</span>
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="xs"
+                  leadingIcon="ph:clipboard-text"
+                  className="skill-browser__prompt-button"
+                  onClick={handleCopyPrompt}
+                  disabled={busy != null}
+                  title="Copy generated skill prompt"
+                >
+                  <span>{busy === "prompt" ? "Copying" : "Copy prompt"}</span>
+                </Button>
               </div>
               <p className="skill-browser__detail-path" title={selected.path ?? selected?.source ?? "directory"}>
                 {selected.path
                   ? displayPath(selected.path)
-                  : selected.owner
-                    ? `${selected.owner}/${selected.repo ?? ""}`
-                    : "Directory listing"}
+                  : sourceTarget(selected)}
               </p>
               <div className="skill-browser__detail-meta">
                 <span className="skill-browser__badge">{CATEGORY_LABEL[categoryOf(selected)]}</span>
@@ -386,6 +847,47 @@ export function SkillBrowser({
                   </span>
                 ))}
               </div>
+              <div className="skill-browser__links">
+                {selected.sourceUrl ? (
+                  <a href={selected.sourceUrl} target="_blank" rel="noreferrer">
+                    Source
+                  </a>
+                ) : null}
+                {selected.registryUrl ? (
+                  <a href={selected.registryUrl} target="_blank" rel="noreferrer">
+                    Registry
+                  </a>
+                ) : null}
+                {(selected.agents ?? []).slice(0, 8).map((name) => (
+                  <span key={name}>{name}</span>
+                ))}
+              </div>
+              {selectedSourceSummary.count > 1 ? (
+                <div className="skill-browser__source-group">
+                  <div className="skill-browser__source-group-head">
+                    <span>More from {selectedSource}</span>
+                    <span>
+                      {selectedSourceSummary.count} skills · {formatCount(selectedSourceSummary.installs)} installs
+                    </span>
+                  </div>
+                  {relatedSourceSkills.length > 0 ? (
+                    <div className="skill-browser__source-list">
+                      {relatedSourceSkills.map((skill) => (
+                        <Button
+                          key={skillKey(skill)}
+                          variant="ghost"
+                          size="xs"
+                          className="skill-browser__source-skill"
+                          onClick={() => setSelectedKey(skillKey(skill))}
+                        >
+                          <span>{skill.name}</span>
+                          <span>{formatCount(scoreFor(skill, mode))}</span>
+                        </Button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {notice ? (
                 <p className="skill-browser__notice" role="status">
                   {notice}

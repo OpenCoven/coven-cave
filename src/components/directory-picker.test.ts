@@ -33,4 +33,11 @@ test("the modal navigates via the fs-browse API with up/select controls", () => 
   assert.match(src, /\/api\/fs-browse\?dir=\$\{encodeURIComponent\(dir\)\}/, "fetches the browse API");
   assert.match(src, /aria-label="Up one folder"/, "has an up-a-level control");
   assert.match(src, /Select this folder/, "can select the current folder");
+  assert.match(src, /import \{ Button \}/, "modal actions use the shared Button primitive");
+  assert.doesNotMatch(src, /<button\b/, "modal should not hand-roll button controls");
+  assert.doesNotMatch(
+    src,
+    /rounded-md|rounded-lg|rounded(?=\s|")/,
+    "modal controls should use radius tokens instead of hard-coded radii",
+  );
 });

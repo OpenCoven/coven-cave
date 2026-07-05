@@ -1,5 +1,5 @@
 // Synthesizes the scattered familiar-analytics signals (confidence, activity,
-// contract, eval loop, self-heal) into a single plain-language "so what" line,
+// contract, growth, self-heal) into a single plain-language "so what" line,
 // so the KPI numbers carry meaning at a glance. Pure + unit-tested; the view
 // renders the result as a tinted insight banner above the KPI row.
 
@@ -35,8 +35,6 @@ export function deriveAnalyticsInsight(
   const contract = model.contractReport;
   const contractTotal = contract?.properties.length ?? 0;
   const contractPass = contract ? contract.properties.filter((p) => p.pass).length : 0;
-  const evals = model.evalLoopState?.iterations?.length ?? 0;
-  const acceptRate = g?.retroAcceptRate ?? null;
 
   const healthPhrase = g ? HEALTH_PHRASE[g.healthLabel] ?? null : null;
   const lead = healthPhrase ? `${c.label}, ${healthPhrase}` : c.label;
@@ -51,17 +49,13 @@ export function deriveAnalyticsInsight(
   if (healRequestCount > 0) {
     concerns.push(`${healRequestCount} self-heal request${healRequestCount === 1 ? "" : "s"} open`);
   }
-  if (evals === 0 && acceptRate == null) {
-    concerns.push("the eval loop hasn't run");
-  } else if (acceptRate != null) {
-    positives.push(`eval acceptance ${Math.round(acceptRate * 100)}%`);
-  }
+  if (model.threadReports.length > 0) positives.push(`${model.threadReports.length} thread signal report${model.threadReports.length === 1 ? "" : "s"}`);
 
   const contractFailing = contractTotal > 0 && !contract!.pass;
   const tone: InsightTone =
     contractFailing || g?.healthLabel === "stalled"
       ? "bad"
-      : healRequestCount > 0 || (evals === 0 && acceptRate == null)
+      : healRequestCount > 0
         ? "warn"
         : "good";
 

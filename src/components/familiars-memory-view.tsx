@@ -29,6 +29,7 @@ import { MemoryRowItem } from "@/components/familiars-memory-row";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { MemoryReaderPane } from "@/components/familiars-memory-reader";
 import "@/styles/library.css";
 
@@ -56,7 +57,7 @@ type Props = {
   onOpenMemoryFile?: (path: string) => void;
   /** Cap the number of entries rendered per section. */
   limit?: number;
-  /** Suppress the familiar <select>; render the active familiar as a chip. */
+  /** Suppress the familiar picker; render the active familiar as a chip. */
   lockToFamiliar?: boolean;
   /** Compact header for narrow surfaces like the companion rail. */
   compact?: boolean;
@@ -448,38 +449,50 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
             ) : null}
           </div>
           {lockToFamiliar ? null : (
-            <select
+            <StandardSelect
+              label="Filter memory by familiar"
               value={familiarFilter}
-              onChange={(event) => setFamiliarFilter(event.target.value)}
-              aria-label="Filter memory by familiar"
-              className="focus-ring h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)] focus:border-[var(--accent-presence)]"
-            >
-              {familiarOptions.map((familiar) => (
-                <option key={familiar.id} value={familiar.id}>{familiar.display_name}</option>
-              ))}
-            </select>
+              onChange={setFamiliarFilter}
+              className="h-8 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-2 text-[12px] text-[var(--text-secondary)] focus:border-[var(--accent-presence)]"
+              options={familiarOptions.map((familiar) => ({
+                value: familiar.id,
+                label: familiar.display_name,
+              }))}
+            />
           )}
         </div>
         {compact ? null : (
           <div className="memory-controls mt-3">
             <label className="memory-control">
               Group
-              <select value={groupMode} onChange={(e) => setGroupMode(e.target.value as GroupBy)}>
-                <option value="none">None</option>
-                <option value="type">Type</option>
-                <option value="source">Source</option>
-                <option value="date">Date</option>
-              </select>
+              <StandardSelect<GroupBy>
+                label="Group memory"
+                value={groupMode}
+                onChange={setGroupMode}
+                className="memory-control-select"
+                options={[
+                  { value: "none", label: "None" },
+                  { value: "type", label: "Type" },
+                  { value: "source", label: "Source" },
+                  { value: "date", label: "Date" },
+                ]}
+              />
             </label>
             <label className="memory-control">
               Sort
-              <select value={sortMode} onChange={(e) => setSortMode(e.target.value as typeof sortMode)}>
-                <option value="recent">Recent</option>
-                <option value="oldest">Oldest</option>
-                <option value="name">Name</option>
-                <option value="size">Size</option>
-                <option value="staleFirst">Stale first</option>
-              </select>
+              <StandardSelect<typeof sortMode>
+                label="Sort memory"
+                value={sortMode}
+                onChange={setSortMode}
+                className="memory-control-select"
+                options={[
+                  { value: "recent", label: "Recent" },
+                  { value: "oldest", label: "Oldest" },
+                  { value: "name", label: "Name" },
+                  { value: "size", label: "Size" },
+                  { value: "staleFirst", label: "Stale first" },
+                ]}
+              />
             </label>
             <button
               type="button"
@@ -754,7 +767,7 @@ export function RailMemoryList({
 
 // ────────────────────────────────────────────────────────────────────────────
 // Standalone file-list — reusable by the Familiars detail panel without the
-// coven-memory half or the familiar <select>.
+// coven-memory half or the familiar picker.
 // ────────────────────────────────────────────────────────────────────────────
 
 type MemoryFilesListProps = {

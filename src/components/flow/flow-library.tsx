@@ -2,6 +2,8 @@
 
 import { memo, useMemo, useState, type FormEvent } from "react";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { FlowDoc } from "@/lib/flows";
 
@@ -40,17 +42,26 @@ function FlowLibraryImpl(props: FlowLibraryProps) {
       <div className="flow-library-head">
         <span className="flow-library-title">Flows</span>
         <div className="flow-library-head-actions">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="xs"
+            leadingIcon="ph:squares-four"
             className="flow-library-template-btn"
             onClick={props.onTemplate}
             title="Browse templates"
           >
-            <Icon name="ph:squares-four" width={13} /> Templates
-          </button>
-          <button type="button" className="flow-library-new" onClick={props.onCreate} title="New flow">
-            <Icon name="ph:plus" width={14} /> New
-          </button>
+            Templates
+          </Button>
+          <Button
+            variant="primary"
+            size="xs"
+            leadingIcon="ph:plus"
+            className="flow-library-new"
+            onClick={props.onCreate}
+            title="New flow"
+          >
+            New
+          </Button>
         </div>
       </div>
       <div className="flow-library-search">
@@ -70,9 +81,16 @@ function FlowLibraryImpl(props: FlowLibraryProps) {
           placeholder="Describe a flow to create"
           rows={3}
         />
-        <button type="submit" className="flow-library-prompt-submit" disabled={promptDraft.trim().length === 0}>
-          <Icon name="ph:sparkle" width={13} /> Create
-        </button>
+        <Button
+          type="submit"
+          variant="primary"
+          size="xs"
+          leadingIcon="ph:sparkle"
+          className="flow-library-prompt-submit"
+          disabled={promptDraft.trim().length === 0}
+        >
+          Create
+        </Button>
       </form>
 
       {props.loading && props.flows.length === 0 ? (
@@ -94,33 +112,36 @@ function FlowLibraryImpl(props: FlowLibraryProps) {
               key={flow.id}
               className={`flow-library-row${flow.id === props.selectedId ? " is-active" : ""}`}
             >
-              <button type="button" className="flow-library-select" onClick={() => props.onSelect(flow.id)}>
+              <Button
+                variant="ghost"
+                className="flow-library-select"
+                onClick={() => props.onSelect(flow.id)}
+              >
                 <span className="flow-library-row-name">{flow.name}</span>
                 <span className="flow-library-row-meta">
                   {flow.active && <span className="flow-library-active-dot" title="Active" />}
                   {flow.nodes.length} node{flow.nodes.length === 1 ? "" : "s"} ·{" "}
                   <RelativeTime iso={flow.updatedAt} fallback="new" />
                 </span>
-              </button>
+              </Button>
               <span className="flow-library-row-actions">
-                <button
-                  type="button"
+                <IconButton
+                  icon="ph:copy"
+                  size="xs"
                   className="flow-library-row-action"
                   onClick={() => props.onDuplicate(flow.id)}
                   title="Duplicate"
                   aria-label={`Duplicate ${flow.name}`}
-                >
-                  <Icon name="ph:copy" width={13} />
-                </button>
-                <button
-                  type="button"
+                />
+                <IconButton
+                  icon="ph:trash"
+                  size="xs"
+                  danger
                   className="flow-library-row-action flow-library-row-danger"
                   onClick={() => props.onDelete(flow.id)}
                   title="Delete"
                   aria-label={`Delete ${flow.name}`}
-                >
-                  <Icon name="ph:trash" width={13} />
-                </button>
+                />
               </span>
             </li>
           ))}

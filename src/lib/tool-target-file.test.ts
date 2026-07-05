@@ -64,8 +64,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /if \(m === "terminal"\) return;[\s\S]*?setMode\("terminal"\)[\s\S]*?dispatchEvent\(new CustomEvent\("cave:open-project-file"/,
-  "workspace switches to Terminal mode and re-emits when no comux is showing",
+  /Click-to-open a file from chat stays on the unified chat\/code workspace[\s\S]*?setMode\("chat"\)/,
+  "workspace keeps file-open events in the unified chat/code workspace",
 );
 
 console.log("tool-target-file.test.ts: ok");

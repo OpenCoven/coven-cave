@@ -54,12 +54,12 @@ assert.match(
   'Sidebar Work section must filter on group === "work"',
 );
 
-// The standalone Knowledge section is gone — Library folded into Tools, so the
-// sidebar renders just Work and Tools (no group === "knowledge" filter remains).
+// The standalone Knowledge section is gone; Library is now isolated on its
+// feature branch, so the integrated sidebar renders just Work and Tools.
 assert.doesNotMatch(
   source,
   /"knowledge"/,
-  "Knowledge section removed — Library now lives in Tools",
+  "Knowledge section removed",
 );
 
 assert.match(
@@ -116,19 +116,19 @@ assert.match(
 assert.doesNotMatch(
   source,
   /\{ id: "calendar", label: "Calendar"/,
-  "Calendar should not appear as a standalone sidebar row after merging into Automations",
+  "Calendar should not appear as a standalone sidebar row after merging into Schedules",
 );
 
 assert.match(
   source,
-  /\{ id: "inbox", label: "Automations", iconName: "ph:lightning-bold", group: "work", kbd: "⌘4", description:/,
-  "Automations should own the old Calendar shortcut as the unified schedule surface",
+  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-check", group: "work", kbd: "⌘4", description:/,
+  "Schedules should own the old Calendar shortcut as the active schedule surface",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /\{ id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description:/,
-  "Library is the last shortcut Tools surface, on ⌘0 (shortcuts ascend with sidebar order)",
+  /\{ id: "library", label: "Library"/,
+  "Library should not be an integrated sidebar surface while it lives on feature/library",
 );
 
 // The "Coven" surface was purged — its docs/feedback/social are now default
@@ -139,26 +139,19 @@ assert.doesNotMatch(
   "the removed Coven (docs) surface should have no sidebar nav entry",
 );
 
-// Library is a gated add-on (default off): the nav filter hides it until the
-// add-on is enabled, mirroring GitHub. Tools always has non-gated surfaces
-// (Browser/Terminal/Code/Roles/Flow), so it never renders an empty header.
-assert.match(
+assert.doesNotMatch(
   source,
-  /if \(fm\.id === "library"\) return addons\?\.library === true;/,
-  "Library nav entry is gated on the library add-on",
+  /addons\?\.library|fm\.id === "library"/,
+  "Library should not be a root add-on gate in the integrated sidebar",
 );
 
 assert.match(
   source,
   /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘5", description:/,
-  "Browser is the first Tools surface after Automations, on ⌘5",
+  "Browser is the first Tools surface after Schedules, on ⌘5",
 );
 
-assert.match(
-  source,
-  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘6", description:/,
-  "Terminal follows Browser on ⌘6",
-);
+assert.doesNotMatch(source, /id:\s*"terminal"/, "Terminal is not a standalone sidebar destination");
 
 assert.match(
   source,
@@ -178,10 +171,10 @@ assert.doesNotMatch(
   "Workflows should not appear as a top-level Tools surface",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
   /\{ id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description:/,
-  "Flow should replace the old Workflows page as the top-level automation surface",
+  "Flow should not appear as a top-level Tools surface on the active branch",
 );
 
 assert.doesNotMatch(
@@ -199,7 +192,7 @@ assert.doesNotMatch(
 assert.doesNotMatch(
   source,
   /\{ id: "schedules"/,
-  "Schedules row removed — folded into Automations as a tab",
+  "Schedules uses the existing inbox mode instead of a second schedules mode",
 );
 
 assert.doesNotMatch(
@@ -254,27 +247,23 @@ assert.match(
   "the unread count badge uses the danger treatment",
 );
 
-// Tools-group entries include browser, terminal, roles, and flow.
+// Tools-group entries include browser and marketplace.
 // (Capabilities moved to a tab on the Roles page — no standalone entry.)
 assert.match(
   source,
   /id:\s*"browser"[^}]*group:\s*"tools"/,
   "browser stays in Tools",
 );
-assert.match(
-  source,
-  /id:\s*"terminal"[^}]*group:\s*"tools"/,
-  "terminal stays in Tools",
-);
+assert.doesNotMatch(source, /id:\s*"terminal"[^}]*group:\s*"tools"/, "terminal does not stay in Tools");
 assert.match(
   source,
   /id:\s*"marketplace"[^}]*group:\s*"tools"/,
   "marketplace stays in Tools",
 );
-assert.match(
+assert.doesNotMatch(
   source,
   /id:\s*"flow"[^}]*group:\s*"tools"/,
-  "flow stays in Tools",
+  "flow does not stay in Tools",
 );
 
 // Recent Activity items must navigate: RecentActivityRollup's onClick calls
@@ -341,17 +330,11 @@ assert.match(
 );
 
 // Every surface carries a one-line description, and FolderRow surfaces it as a
-// title (hover tooltip / touch long-press hint / AT description) — so the
-// look-alike surfaces (Marketplace vs Flow) are differentiated.
+// title (hover tooltip / touch long-press hint / AT description).
 assert.match(
   source,
   /id: "marketplace"[\s\S]*?description: "Browse the store/,
-  "Marketplace is described as the store + setup hub, distinct from Flow",
-);
-assert.match(
-  source,
-  /id: "flow"[\s\S]*?description: "Freeform/,
-  "Flow is described as the automation editor, distinct from Marketplace",
+  "Marketplace is described as the store + setup hub",
 );
 assert.match(
   source,

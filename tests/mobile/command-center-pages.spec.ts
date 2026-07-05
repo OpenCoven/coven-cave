@@ -41,22 +41,6 @@ test.describe("mobile command center pages", () => {
     await page.waitForSelector(".mobile-bottom-tabs");
   });
 
-  test("Library uses a full-width mobile list instead of squeezed desktop panes", async ({ page }) => {
-    await page.getByRole("tab", { name: "Library" }).click();
-    await page.waitForSelector(".library-shell");
-
-    await expectNoHorizontalOverflow(page, "Library");
-
-    await expect(page.locator(".library-preview").first()).toBeHidden();
-
-    const list = await box(page, ".library-list-panel, .library-browse-canvas");
-    const rail = await box(page, ".library-rail");
-
-    expect(list.width, "Library list should claim the phone width").toBeGreaterThanOrEqual(340);
-    expect(rail.width, "Library section rail should span the phone width").toBeGreaterThanOrEqual(340);
-    expect(list.top, "Library list should sit below the mobile section strip").toBeGreaterThanOrEqual(rail.bottom - 1);
-  });
-
   test("Chat index and new chat detail keep stable mobile geometry", async ({ page }) => {
     await page.getByRole("tab", { name: "Chat" }).click();
     await page.waitForSelector(".chat-surface");

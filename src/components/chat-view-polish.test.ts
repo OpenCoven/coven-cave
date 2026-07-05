@@ -282,6 +282,31 @@ assert.match(
   /<ComposerHostChip value=\{composerHostValue\} disabled=\{busy\} onPick=\{setRuntimeHost\} \/>/,
   "composer has a host chip (remote execution picker, shared with the home composer)",
 );
+assert.match(
+  source,
+  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*aria-label="Voice"[\s\S]*<ComposerHostChip value=\{composerHostValue\} disabled=\{busy\} onPick=\{setRuntimeHost\} \/>/,
+  "composer utility row should keep attach, voice, and Host together before response controls",
+);
+assert.match(
+  source,
+  /<div className="cave-composer-settings-row" aria-label="Chat response controls">[\s\S]*label="Access"[\s\S]*label="Model"[\s\S]*label="Thinking"[\s\S]*label="Speed"/,
+  "composer response controls should render below the input in Access, Model, Thinking, Speed order",
+);
+assert.match(
+  source,
+  /<div className="cave-composer-submit-row">[\s\S]*aria-label="Enhance prompt"[\s\S]*<Icon name="ph:sparkle"[\s\S]*aria-label="Send message"/,
+  "Enhance should be an icon-only sparkle action immediately next to Send",
+);
+assert.doesNotMatch(
+  source,
+  /<span className="hidden sm:inline">Enhance<\/span>/,
+  "Enhance prompt action should not render visible text in the chat composer",
+);
+assert.match(
+  styles,
+  /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/,
+  "composer footer should lay out utility, ordered response controls, and submit actions in one row below the input",
+);
 // The chip internals moved to the shared module — pin them there.
 const hostChip = readFileSync(new URL("./composer-host-chip.tsx", import.meta.url), "utf8");
 assert.match(

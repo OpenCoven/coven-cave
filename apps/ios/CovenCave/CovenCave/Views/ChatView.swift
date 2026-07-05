@@ -609,8 +609,6 @@ struct ChatView: View {
                           style: .info)
         case .sendAsPrompt:
             sendPrompt(args, command: command)
-        case .saveLink:
-            Task { await saveLink(args) }
         case .daemonStatus:
             Task { await runDaemonStatus() }
         case .doctor:

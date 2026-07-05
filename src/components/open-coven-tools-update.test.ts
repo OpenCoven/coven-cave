@@ -8,6 +8,13 @@ const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 const status = await readFile(new URL("../lib/opencoven-tools-status.ts", import.meta.url), "utf8");
 const runner = await readFile(new URL("../../scripts/run-tests.mjs", import.meta.url), "utf8");
 
+assert.match(src, /import \{ Button \}/, "OpenCoven tools actions use the shared Button primitive");
+assert.doesNotMatch(src, /<button\b/, "OpenCoven tools should not hand-roll button controls");
+assert.doesNotMatch(
+  src,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "OpenCoven tools controls should use tokenized radii instead of hard-coded rounded classes",
+);
 assert.match(src, /\/api\/opencoven-tools\/status/, "component fetches OpenCoven tool version status");
 assert.match(src, /\/api\/onboarding\/install/, "component reuses the allowlisted background installer");
 assert.match(src, /tool\.outdated/, "update buttons are gated to outdated tools");

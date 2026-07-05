@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import {
   RRULE_DAY_ORDER,
@@ -13,6 +12,8 @@ import {
 import { FamiliarMultiSelect } from "@/components/automation-familiar-select";
 import { SkillSelect } from "@/components/automation-skill-select";
 import { CwdPickerField } from "@/components/cwd-picker-field";
+import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { parseListInput } from "@/lib/automations/list-input";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 
@@ -48,7 +49,7 @@ type Props = {
 
 
 const fieldBaseClass =
-  "w-full rounded-md border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
+  "w-full rounded-[var(--radius-control)] border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
 const inputClass = `${fieldBaseClass} h-8 px-2 text-[12px]`;
 const selectClass = `${fieldBaseClass} h-8 px-2 text-[12px]`;
 const textareaClass = `${fieldBaseClass} resize-y px-2 py-2 text-[12px] leading-relaxed`;
@@ -125,9 +126,13 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
             <p className="workflow-eyebrow">New automation</p>
             <h2>Schedule a Codex run</h2>
           </div>
-          <button type="button" className="workflow-icon-button" onClick={onClose} aria-label="Close">
-            <Icon name="ph:x" width={14} />
-          </button>
+          <Button
+            variant="ghost"
+            className="workflow-icon-button p-0"
+            onClick={onClose}
+            aria-label="Close"
+            leadingIcon="ph:x"
+          />
         </div>
 
         {/* Name */}
@@ -145,21 +150,22 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
         {/* Schedule */}
         <div className="workflow-field">
           <span>Schedule</span>
-          <div className="mb-2 inline-flex rounded-md border p-0.5"
+          <div className="mb-2 inline-flex rounded-[var(--radius-control)] border p-0.5"
             style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}>
             {(["weekly", "daily", "raw"] as const).map((mode) => (
-              <button
+              <Button
                 key={mode}
-                type="button"
+                variant="ghost"
+                size="xs"
                 onClick={() => setScheduleMode(mode)}
-                className="rounded px-2 py-1 text-[11px] capitalize transition-colors"
+                className="rounded-[var(--radius-control)] px-2 py-1 text-[11px] capitalize transition-colors"
                 style={{
                   background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
                   color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
                 }}
               >
                 {mode}
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -179,11 +185,12 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                   {RRULE_DAY_ORDER.map((day) => {
                     const active = days.includes(day);
                     return (
-                      <button
+                      <Button
                         key={day}
-                        type="button"
+                        variant="ghost"
+                        size="xs"
                         onClick={() => toggleDay(day)}
-                        className="rounded-md border px-2 py-1 text-[11px] transition-colors"
+                        className="rounded-[var(--radius-control)] border px-2 py-1 text-[11px] transition-colors"
                         style={{
                           background: active ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
                           borderColor: active ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
@@ -191,7 +198,7 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
                         }}
                       >
                         {RRULE_DAY_LABEL[day]}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
@@ -264,30 +271,34 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
         {/* Reasoning effort */}
         <label className="workflow-field">
           <span>Reasoning</span>
-          <select
+          <StandardSelect
+            label="Reasoning"
             value={reasoningEffort}
-            onChange={(event) => setReasoningEffort(event.target.value)}
+            onChange={setReasoningEffort}
+            options={[
+              { value: "low", label: "low" },
+              { value: "medium", label: "medium" },
+              { value: "high", label: "high" },
+            ]}
             className={selectClass}
             style={fieldStyle}
-          >
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-          </select>
+          />
         </label>
 
         {/* Execution environment */}
         <label className="workflow-field">
           <span>Environment</span>
-          <select
+          <StandardSelect
+            label="Environment"
             value={executionEnvironment}
-            onChange={(event) => setExecutionEnvironment(event.target.value)}
+            onChange={setExecutionEnvironment}
+            options={[
+              { value: "worktree", label: "worktree" },
+              { value: "repo", label: "repo" },
+            ]}
             className={selectClass}
             style={fieldStyle}
-          >
-            <option value="worktree">worktree</option>
-            <option value="repo">repo</option>
-          </select>
+          />
         </label>
 
         {/* Working directories — type paths or browse projects (parity with the
@@ -328,18 +339,18 @@ export function AutomationCreateDialog({ resolvedFamiliars, onClose, onCreate, i
 
         {/* Footer */}
         <div className="workflow-dialog-actions">
-          <button type="button" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             Cancel
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            variant="primary"
             className="workflow-primary-button"
             disabled={!canCreate}
             onClick={handleCreate}
+            leadingIcon="ph:plus-bold"
           >
-            <Icon name="ph:plus-bold" width={13} />
             Create
-          </button>
+          </Button>
         </div>
       </div>
     </div>

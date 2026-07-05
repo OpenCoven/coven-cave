@@ -70,4 +70,10 @@ assert.match(source, /if \(avatarFile\)/, "avatar upload should only run when an
 assert.doesNotMatch(source, /<img\b/, "dialog must not render the picked file as an <img>");
 assert.match(source, /Photo attached/, "dialog should confirm an attached photo by name");
 
+// Shared control primitives/radius tokens.
+assert.match(source, /import \{ Button \}/, "dialog controls should use the shared Button primitive");
+assert.match(source, /StandardSelect/, "dialog dropdowns should use the shared StandardSelect primitive");
+assert.doesNotMatch(source, /<button\b/, "dialog should not hand-roll button controls");
+assert.doesNotMatch(source, /rounded-md/, "dialog controls should use radius tokens instead of hard-coded rounded-md");
+
 console.log("create-familiar-dialog.test.ts: ok");

@@ -138,6 +138,7 @@ export const ICON_NAMES = [
   "ph:folder-simple-dashed",
   "ph:folders-bold",
   "ph:calendar-blank",
+  "ph:calendar-check",
   "ph:caret-down-bold",
   "ph:puzzle-piece-bold",
   "ph:puzzle-piece",

@@ -7,6 +7,9 @@ import {
   type CommandResponseSpeed,
   type CommandThinkingEffort,
 } from "@/lib/command-controls";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
 import { useQuickChat } from "@/lib/use-quick-chat";
 import type { Familiar } from "@/lib/types";
@@ -152,62 +155,48 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
               </p>
             </div>
           </div>
-          <button
-            type="button"
+          <IconButton
             onClick={onClose}
+            icon="ph:x"
             aria-label="Close quick chat"
             title="Close"
-            className="ui-icon-btn ui-icon-btn--sm"
-          >
-            <Icon name="ph:x" width={14} aria-hidden />
-          </button>
+            size="sm"
+          />
         </header>
 
         <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2">
           <Icon name="ph:at" width={14} aria-hidden />
-          <select
+          <StandardSelect
+            label="Familiar"
             value={selectedFamiliarId ?? ""}
-            onChange={(event) => setSelectedFamiliarId(event.target.value || null)}
+            onChange={(next) => setSelectedFamiliarId(next || null)}
             disabled={loading || familiars.length === 0}
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none"
-            aria-label="Familiar"
-          >
-            {loading && familiars.length === 0 ? <option value="">Loading…</option> : null}
-            {familiars.map((familiar) => (
-              <option key={familiar.id} value={familiar.id}>
-                {familiar.display_name}
-              </option>
-            ))}
-          </select>
+            className="min-w-0 flex-1 rounded-[var(--radius-control)] bg-transparent text-sm outline-none"
+            options={
+              loading && familiars.length === 0
+                ? [{ value: "", label: "Loading…", disabled: true }]
+                : familiars.map((familiar) => ({ value: familiar.id, label: familiar.display_name }))
+            }
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-2 border-b border-[var(--border-hairline)] px-4 py-2">
-          <select
+          <StandardSelect
+            label="Choose thinking effort"
             value={thinkingEffort}
-            onChange={(event) => setThinkingEffort(event.target.value as CommandThinkingEffort)}
+            onChange={(next) => setThinkingEffort(next as CommandThinkingEffort)}
             disabled={sending}
-            className="min-w-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none"
-            aria-label="Choose thinking effort"
-          >
-            {COMMAND_THINKING_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <select
+            className="min-w-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none"
+            options={COMMAND_THINKING_OPTIONS}
+          />
+          <StandardSelect
+            label="Choose response speed"
             value={responseSpeed}
-            onChange={(event) => setResponseSpeed(event.target.value as CommandResponseSpeed)}
+            onChange={(next) => setResponseSpeed(next as CommandResponseSpeed)}
             disabled={sending}
-            className="min-w-0 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none"
-            aria-label="Choose response speed"
-          >
-            {COMMAND_RESPONSE_SPEED_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            className="min-w-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none"
+            options={COMMAND_RESPONSE_SPEED_OPTIONS}
+          />
         </div>
 
         <div className="px-4 py-3">
@@ -238,25 +227,24 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onTextareaKeyDown}
             placeholder="@sage summarize what needs attention"
-            className="mt-2 h-24 w-full resize-none rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-sm outline-none focus:border-[var(--accent-presence)]"
+            className="mt-2 h-24 w-full resize-none rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-sm outline-none focus:border-[var(--accent-presence)]"
           />
 
           {error ? (
-            <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--fg-primary)]">
+            <div className="mt-2 flex items-center justify-between gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--fg-primary)]">
               <span className="min-w-0 truncate">{error}</span>
-              <button
-                type="button"
+              <Button
+                size="xs"
                 onClick={() => void send()}
                 disabled={sending}
-                className="shrink-0 rounded-md border border-[var(--border-hairline)] px-2 py-1 text-xs font-medium disabled:opacity-50"
               >
                 Retry
-              </button>
+              </Button>
             </div>
           ) : null}
 
           <div
-            className="mt-3 max-h-48 min-h-24 overflow-auto rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] p-3 text-sm"
+            className="mt-3 max-h-48 min-h-24 overflow-auto rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] p-3 text-sm"
             aria-live="polite"
           >
             {answer ? (
@@ -270,34 +258,31 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
         </div>
 
         <footer className="flex items-center justify-between gap-3 border-t border-[var(--border-hairline)] px-4 py-3">
-          <button
-            type="button"
+          <Button
+            size="sm"
+            leadingIcon="ph:arrow-square-out"
             onClick={openFull}
             disabled={!sessionId}
-            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 py-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <Icon name="ph:arrow-square-out" width={12} aria-hidden />
             Open in full chat
-          </button>
+          </Button>
           <div className="flex items-center gap-2">
             {sending ? (
-              <button
-                type="button"
+              <Button
+                variant="secondary"
                 onClick={cancel}
-                className="inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] px-3 py-2 text-sm font-medium"
               >
                 Cancel
-              </button>
+              </Button>
             ) : null}
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              leadingIcon="ph:sparkle"
               onClick={() => void send()}
               disabled={sending || loading}
-              className="inline-flex items-center gap-2 rounded-md bg-[var(--accent)] px-3 py-2 text-sm font-medium text-[var(--accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Icon name="ph:sparkle" width={14} aria-hidden />
               Send
-            </button>
+            </Button>
           </div>
         </footer>
       </div>

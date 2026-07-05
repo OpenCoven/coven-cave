@@ -8,11 +8,12 @@ function model(over: Partial<FamiliarAnalyticsModel> = {}): FamiliarAnalyticsMod
     familiarId: "f",
     familiar: null,
     contractReport: null,
-    evalLoopState: null,
     growthReport: null,
     confidence: { score: 50, label: "Developing", factors: [] },
     healRequests: [],
     threadReports: [],
+    responseConfidenceEvents: [],
+    responseConfidenceRollup: {} as FamiliarAnalyticsModel["responseConfidenceRollup"],
     errors: [],
     ...over,
   } as FamiliarAnalyticsModel;
@@ -48,20 +49,24 @@ function growth(healthLabel: string, retroAcceptRate: number | null = null) {
   assert.match(i.text, /stalled/);
 }
 
-// ---- self-heal + no eval run → warn ----
+// ---- self-heal → warn ----
 {
   const i = deriveAnalyticsInsight(model({ contractReport: contract(true, 5, 5), growthReport: growth("active") }), 1);
   assert.equal(i.tone, "warn", "open heal request → warn");
   assert.match(i.text, /1 self-heal request open/, "singular request");
-  assert.match(i.text, /eval loop hasn't run/, "flags an idle eval loop");
 }
 
 // ---- all clear → good, lists positives ----
 {
-  const i = deriveAnalyticsInsight(model({ confidence: { score: 90, label: "Trusted", factors: [] }, contractReport: contract(true, 5, 5), growthReport: growth("active", 0.8) }), 0);
+  const i = deriveAnalyticsInsight(model({
+    confidence: { score: 90, label: "Trusted", factors: [] },
+    contractReport: contract(true, 5, 5),
+    growthReport: growth("active", 0.8),
+    threadReports: [{}] as FamiliarAnalyticsModel["threadReports"],
+  }), 0);
   assert.equal(i.tone, "good", "clean state → good");
   assert.match(i.text, /contract clean \(5\/5\)/);
-  assert.match(i.text, /eval acceptance 80%/);
+  assert.match(i.text, /1 thread signal report/);
 }
 
 // ---- joins two clauses with "and" ----

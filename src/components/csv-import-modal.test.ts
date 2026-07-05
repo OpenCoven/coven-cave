@@ -22,4 +22,9 @@ assert.doesNotMatch(
   "CsvImportModal must not create a fresh headers array on every render",
 );
 
+assert.ok(source.includes('import { Button } from "@/components/ui/button"'), "CsvImportModal actions use the shared Button primitive");
+assert.ok(source.includes('import { StandardSelect } from "@/components/ui/select"'), "CsvImportModal column mapping uses StandardSelect");
+assert.doesNotMatch(source, /<button\b/, "CsvImportModal should not hand-roll button controls");
+assert.doesNotMatch(source, /rounded-md|rounded(?=\s|")/, "CsvImportModal should use control radius tokens instead of hard-coded rounded classes");
+
 console.log("csv-import-modal.test.ts: ok");

@@ -33,8 +33,8 @@ assert.match(
 
 assert.match(
   mobileTabs,
-  /{ id: "inbox", label: "Auto", ariaLabel: "Automations", iconName: "ph:lightning-bold" }/,
-  "Mobile bottom tabs should keep the Automations label short while preserving the full accessible name",
+  /{ id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-check" }/,
+  "Mobile bottom tabs should keep the Schedules label short while preserving the full accessible name",
 );
 
 assert.match(
@@ -235,10 +235,10 @@ assert.match(
   "Schedules mobile CTA and list rows should meet the shared touch target",
 );
 
-assert.match(
+assert.doesNotMatch(
   workspace,
   /mode === "terminal"[\s\S]*\? "relative"[\s\S]*: "pointer-events-none invisible absolute inset-0 opacity-0"/,
-  "Inactive persistent terminal detail should be invisible, not just transparent, on mobile surfaces",
+  "The old persistent standalone terminal detail should not render on mobile surfaces",
 );
 
 assert.match(

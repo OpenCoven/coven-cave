@@ -14,7 +14,6 @@ import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
-import { slashSaveParse } from "@/lib/slash-save-parser";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
 import { MagicTriggers } from "@/components/magic-triggers";
 import { FamiliarGlyphPicker } from "@/components/familiar-glyph-picker";
@@ -44,11 +43,7 @@ import { BrowserPane, type BrowserPaneHandle } from "@/components/browser-pane";
 import {
   BoardView,
   CalendarView,
-  ComuxView,
-  EvalsView,
-  FlowView,
   GitHubView,
-  LibraryView,
   MarketplaceView,
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
@@ -119,18 +114,14 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
   chat: "Familiars",
   groupchat: "Group Chat",
   board: "Tasks",
-  calendar: "Automations",
-  inbox: "Automations",
-  library: "Library",
+  calendar: "Schedules",
+  inbox: "Schedules",
   browser: "Browser",
-  terminal: "Terminal",
   github: "GitHub",
   roles: "Roles",
   marketplace: "Marketplace",
   flow: "Flow",
-  evals: "Evals",
   submissions: "Submissions",
-  retro: "Evals",
   capabilities: "Capabilities",
   journal: "Journal",
 };
@@ -158,10 +149,9 @@ function clearChatHash() {
   window.history.replaceState(null, "", window.location.pathname + window.location.search);
 }
 
-// Mode deep links (e.g. `/?mode=evals`): the Evals surface (and the other
-// workspace modes) live inside this SPA shell and aren't URL-addressable on
-// their own. A `?mode=<WorkspaceMode>` query param lets external links
-// (redirects from /retro, dashboard buttons) land directly on a surface.
+// Mode deep links: workspace modes live inside this SPA shell and aren't
+// URL-addressable on their own. A `?mode=<WorkspaceMode>` query param lets
+// external links land directly on a surface.
 // Only modes the shell can actually render are honoured — validated against
 // WORKSPACE_MODE_TITLES, which is keyed by every WorkspaceMode — so unknown
 // values are ignored silently.
@@ -321,13 +311,10 @@ export function Workspace() {
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
   const [addons, setAddons] = useState<{
     github?: boolean;
-    library?: boolean;
-    terminal?: boolean;
     browser?: boolean;
     flow?: boolean;
     groupchat?: boolean;
     journal?: boolean;
-    retro?: boolean;
   }>({});
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
@@ -511,8 +498,8 @@ export function Workspace() {
     return () => window.removeEventListener("cave:onboarding-open", openCreate);
   }, []);
 
-  // `?mode=<WorkspaceMode>` deep link: external links (e.g. /retro redirects,
-  // dashboard buttons) can land directly on a surface. Runs once on mount,
+  // `?mode=<WorkspaceMode>` deep link: external links can land directly on a
+  // surface. Runs once on mount,
   // mirrors the hash deep-link idiom — switch then strip the param so reloads
   // and back/forward stay clean.
   useEffect(() => {
@@ -523,19 +510,13 @@ export function Workspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Click-to-open a file from chat: the comux pane (Terminal) handles
-  // `cave:open-project-file` directly when it's showing. When it isn't, switch
-  // to the Terminal workspace and re-emit so the freshly-mounted comux catches it.
+  // Click-to-open a file from chat stays on the unified chat/code workspace.
+  // The code rail owns Files/Changes; there is no standalone Terminal page to
+  // switch into as a side effect of a file link.
   useEffect(() => {
     const onOpenFile = (e: Event) => {
-      const m = modeRef.current;
-      if (m === "terminal") return;
-      const detail = (e as CustomEvent).detail;
-      setMode("terminal");
-      window.setTimeout(
-        () => window.dispatchEvent(new CustomEvent("cave:open-project-file", { detail })),
-        0,
-      );
+      void (e as CustomEvent).detail;
+      setMode("chat");
     };
     window.addEventListener("cave:open-project-file", onOpenFile as EventListener);
     return () => window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
@@ -615,7 +596,8 @@ export function Workspace() {
     // "projects" standalone surface). Only restore if the stored string is
     // still a valid WorkspaceMode; otherwise fall back to the default.
     const VALID_MODES = new Set<string>(Object.keys(WORKSPACE_MODE_TITLES));
-    if (last && VALID_MODES.has(last)) setMode(last as WorkspaceMode);
+    if (last === "flow") setMode("inbox");
+    else if (last && VALID_MODES.has(last)) setMode(last as WorkspaceMode);
   }, []);
 
   const selectFamiliar = useCallback((id: string) => {
@@ -723,35 +705,6 @@ export function Workspace() {
   useEffect(() => {
     if (activeId) setLastSurface(activeId, mode);
   }, [activeId, mode]);
-
-  // Auto-collapse the bottom slide-up terminal slot when the Terminal surface
-  // is active. Prevents the double-terminal state where the surface PTY and
-  // the slide-up PTY both render at once.
-  useEffect(() => {
-    if (mode !== "terminal") return;
-    requestAnimationFrame(() => {
-      if (typeof window === "undefined") return;
-      const raw = window.localStorage.getItem("cave.shell.bottom.v1");
-      if (!raw) return;
-      try {
-        const parsed = JSON.parse(raw);
-        const bottomLayout = parsed?.["cave.shell.bottom.v1"]?.layout;
-        const bottomSize = Array.isArray(bottomLayout) ? bottomLayout[1] : 0;
-        if (typeof bottomSize === "number" && bottomSize > 0) {
-          window.dispatchEvent(
-            new KeyboardEvent("keydown", {
-              key: "`",
-              code: "Backquote",
-              ctrlKey: true,
-              bubbles: true,
-            }),
-          );
-        }
-      } catch {
-        /* ignore corrupted layout */
-      }
-    });
-  }, [mode]);
 
   // Keep prefs accessible to the SSE callback without re-subscribing on every
   // mute toggle.
@@ -1159,6 +1112,10 @@ export function Workspace() {
         }
         return;
       }
+      if (targetMode === "flow") {
+        setMode("inbox");
+        return;
+      }
       setMode(targetMode as WorkspaceMode);
     };
     window.addEventListener("cave:navigate-mode", onNavigate as EventListener);
@@ -1250,11 +1207,11 @@ export function Workspace() {
   }, [startFamiliarChat]);
 
   useEffect(() => {
-    // ⌘1..⌘7 in the order surfaces appear top-to-bottom in the left sidebar
-    // (Work group, then Tools group). ⌘9 is Projects and ⌘0 is Library (handled
-    // below); Journal/Roles/Workflows are unshortcut.
+    // ⌘1..⌘5 in the order surfaces appear top-to-bottom in the left sidebar
+    // (Work group, then Tools group). ⌘9 is Projects; Journal/Roles/Workflows
+    // are unshortcut.
     const SURFACE_ORDER: WorkspaceMode[] = [
-      "home", "chat", "board", "inbox", "browser", "terminal",
+      "home", "chat", "board", "inbox", "browser",
     ];
 
     const onKey = (e: KeyboardEvent) => {
@@ -1276,13 +1233,6 @@ export function Workspace() {
           e.preventDefault();
           setMode(target);
         }
-        return;
-      }
-
-      // ⌘0 -> Library (the last Tools surface in the sidebar)
-      if (meta && !alt && e.key === "0") {
-        e.preventDefault();
-        setMode("library");
         return;
       }
 
@@ -1596,13 +1546,10 @@ export function Workspace() {
       case "/chat":
         showFamiliarChatList();
         return true;
+      case "/schedules":
       case "/automations":
       case "/inbox":
         setMode("inbox");
-        return true;
-      case "/evals":
-      case "/eval-loops":
-        setMode("evals");
         return true;
       case "/remind": {
         const trimmedArgs = args.trim();
@@ -1618,23 +1565,9 @@ export function Workspace() {
       case "/shortcuts":
         setShortcutsOpen(true);
         return true;
-      case "/terminal":
-        setMode("terminal");
-        return true;
       case "/projects":
         setMode("chat");
         window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_PROJECTS_EVENT)), 0);
-        return true;
-      case "/library":
-        setMode("library");
-        return true;
-      case "/research":
-        setMode("library");
-        // Defer so LibraryView is mounted and listening before the event fires.
-        window.setTimeout(
-          () => window.dispatchEvent(new CustomEvent("cave:library:research", { detail: { topic: args.trim() } })),
-          0,
-        );
         return true;
       case "/quit":
         showFamiliarChatList();
@@ -1680,56 +1613,6 @@ export function Workspace() {
         }
         return true;
       }
-      case "/save":
-      case "/bookmark":
-      case "/read": {
-        // Same contract as the chat composer's /save: route the URL into the
-        // library. Palette/home invocations have no transcript to append to,
-        // so outcomes surface as toasts instead.
-        const parsed = slashSaveParse(args);
-        if ("error" in parsed) {
-          pushToast("Usage: /save <url> [bookmarks|reading|github] [#tag]");
-          return true;
-        }
-        void (async () => {
-          try {
-            const res = await fetch("/api/library/route-link", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                url: parsed.url,
-                source: { kind: "slash", originSessionId: null },
-                familiar: activeId ?? "",
-                tags: parsed.tags,
-                listHint: parsed.listHint,
-              }),
-            });
-            const json = (await res.json()) as {
-              ok: boolean;
-              deduped?: boolean;
-              classify?: { rule: string };
-            };
-            if (!json.ok) {
-              pushToast("Save failed.");
-            } else if (json.deduped) {
-              pushToast("Already in library.");
-            } else {
-              const list =
-                json.classify?.rule === "github"
-                  ? "GitHub"
-                  : json.classify?.rule === "article-host" ||
-                      json.classify?.rule === "paper-host" ||
-                      json.classify?.rule === "video-host"
-                    ? "Reading"
-                    : "Bookmarks";
-              pushToast(`Saved to ${list}.`);
-            }
-          } catch {
-            pushToast("Save failed.");
-          }
-        })();
-        return true;
-      }
       case "/clear":
         routerRef.current?.clearTranscript();
         return true;
@@ -1746,7 +1629,6 @@ export function Workspace() {
 
   const active = familiars.find((f) => f.id === activeId) ?? null;
   const calendarFamiliarId = activeId ?? familiars[0]?.id ?? null;
-  const retroFamiliarId = activeId ?? familiars[0]?.id ?? null;
 
   // Tasks badge count: scoped to the active familiar's open cards, or the grand
   // total of all open cards when "All familiars" (activeId === null) is selected.
@@ -1923,32 +1805,9 @@ export function Workspace() {
 
   const list = undefined;
 
-  const terminalDetail = (
-    <div
-      className={[
-        "h-full min-h-0 flex flex-col",
-        mode === "terminal"
-          ? "relative"
-          : "pointer-events-none invisible absolute inset-0 opacity-0",
-      ].join(" ")}
-      aria-hidden={mode !== "terminal"}
-    >
-      <ComuxView
-        view="terminal"
-        active={mode === "terminal"}
-        sessions={sessions}
-        onOpenSession={(sessionId, familiarId) => {
-          openFamiliarSession(sessionId, familiarId);
-        }}
-        onNewChat={openProjectChat}
-      />
-    </div>
-  );
-
   // renderSurface maps a workspace mode to its surface element. Extracted so the
   // same machinery renders both the primary detail and a dragged-in split
-  // secondary. `terminal` is served by the always-mounted terminalDetail (primary
-  // only) and excluded from drag-to-split, so it never reaches renderSurface.
+  // secondary.
   const renderSurface = (mode: WorkspaceMode): ReactNode =>
     mode === "agents" ? (
       <FamiliarsView
@@ -2006,13 +1865,6 @@ export function Workspace() {
         onSessionStarted={loadSessions}
         onOpenUrl={openUrlInAppBrowser}
       />
-    ) : mode === "library" ? (
-      <LibraryView
-        onOpenUrl={openUrlInAppBrowser}
-        sessions={sessions}
-        onOpenSession={openFamiliarSession}
-        onNewProjectChat={openProjectChat}
-      />
     ) : mode === "board" ? (
       <BoardView
         familiars={familiars}
@@ -2027,13 +1879,12 @@ export function Workspace() {
     ) : mode === "journal" ? (
       <JournalView familiars={familiars} activeFamiliarId={activeId} scopeFamiliarIds={scopeIds} />
     ) : mode === "inbox" || mode === "calendar" ? (
-      // Calendar and Automations are one Automations surface: Calendar is the
-      // leading tab of the Automations view. The "calendar" mode still resolves
+      // Calendar and crons are one Schedules surface. The "calendar" mode still resolves
       // here (nav button / deep links) but opens that tab; keying on the mode
       // remounts so the deep link lands on it.
       <InboxEscalationsView
         key={mode}
-        initialTab={mode === "calendar" ? "calendar" : "all"}
+        initialTab={mode === "calendar" ? "calendar" : "crons"}
         onOpenSource={(item) => {
           if (item.sourceSessionKey) {
             openFamiliarSession(item.sourceSessionKey);
@@ -2103,10 +1954,6 @@ export function Workspace() {
       />
     ) : mode === "submissions" ? (
       <OpenCovenSubmissionPage />
-    ) : mode === "flow" ? (
-      <FlowView />
-    ) : mode === "evals" || mode === "retro" ? (
-      <EvalsView familiars={resolvedFamiliars} activeFamiliarId={mode === "retro" ? retroFamiliarId : activeId} />
     ) : (
       <HomeComposer
         familiars={familiars}
@@ -2126,8 +1973,7 @@ export function Workspace() {
   const detail = (
     <div className="cave-mode-fade relative h-full min-h-0 flex flex-col overflow-hidden">
       <h1 className="sr-only">{WORKSPACE_MODE_TITLES[mode] ?? "Coven Cave"}</h1>
-      {terminalDetail}
-      {mode === "terminal" ? null : renderSurface(mode)}
+      {renderSurface(mode)}
     </div>
   );
 

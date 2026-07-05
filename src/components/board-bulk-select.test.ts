@@ -40,7 +40,7 @@ assert.match(view, /const bulkSetPriority = async \(priority: CardPriority\)/, "
 assert.match(view, /const bulkAddLabel = async \(raw: string\)/, "bulk add-label handler");
 assert.match(view, /\.filter\(\(c\) => !c\.labels\.includes\(label\)\)/, "bulk label skips cards that already have it");
 assert.match(view, /id="board-bulk-priority"/, "toolbar exposes a priority control");
-assert.match(view, /void bulkSetPriority\(e\.target\.value as CardPriority\)/, "priority select wires bulkSetPriority");
+assert.match(view, /<StandardSelect<CardPriority \| "">[\s\S]*?onChange=\{\(next\) => \{ if \(next\) void bulkSetPriority\(next\); \}\}/, "priority picker wires bulkSetPriority");
 assert.match(view, /list="board-bulk-label-options"/, "label input is backed by a datalist of existing labels");
 assert.match(view, /void bulkAddLabel\(labelDraft\)/, "label form submits bulkAddLabel");
 

@@ -696,8 +696,6 @@ function DaemonSection() {
 
 type AddonKey =
   | "github"
-  | "library"
-  | "terminal"
   | "browser"
   | "flow"
   | "groupchat"
@@ -718,21 +716,7 @@ const ADDON_ROWS: Array<{
     group: "integrations",
     description: "Browse open issues and pull requests, attach them to tasks, and hand off to a familiar.",
   },
-  {
-    key: "library",
-    label: "Library",
-    icon: "ph:books",
-    group: "integrations",
-    description: "Save links, notes, and references for your familiars to draw from.",
-  },
   // Sidebar surfaces — off by default to keep Cave simple; turn on what you need.
-  {
-    key: "terminal",
-    label: "Terminal",
-    icon: "ph:terminal-window",
-    group: "surfaces",
-    description: "A shell session running in your project.",
-  },
   {
     key: "browser",
     label: "Browser",

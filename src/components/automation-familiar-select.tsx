@@ -1,6 +1,7 @@
 "use client";
 
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { Button } from "@/components/ui/button";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   isAllSelected,
@@ -18,7 +19,7 @@ type Props = {
 
 const chipClass = (active: boolean) =>
   [
-    "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[12px] transition-colors",
+    "rounded-[var(--radius-control)] border px-2 py-1 text-[12px] transition-colors",
     active
       ? "border-transparent bg-[var(--bg-raised)] text-[var(--text-primary)]"
       : "border-[var(--border-hairline)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
@@ -38,20 +39,22 @@ export function FamiliarMultiSelect({ familiars, selected, onChange }: Props) {
       role="group"
       aria-label="Filter automations by familiar"
     >
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="xs"
         aria-pressed={all}
         className={chipClass(all)}
         onClick={() => onChange(selectAll())}
       >
         All
-      </button>
+      </Button>
       {familiars.map((f) => {
         const active = selected.has(f.id);
         return (
-          <button
+          <Button
             key={f.id}
-            type="button"
+            variant="ghost"
+            size="xs"
             aria-pressed={active}
             title={`${f.display_name} — click to filter, ⌘-click to multi-select`}
             className={chipClass(active)}
@@ -61,7 +64,7 @@ export function FamiliarMultiSelect({ familiars, selected, onChange }: Props) {
           >
             <FamiliarAvatar familiar={f} size="sm" />
             <span className="max-w-[120px] truncate">{f.display_name}</span>
-          </button>
+          </Button>
         );
       })}
       {familiars.length > 1 && (

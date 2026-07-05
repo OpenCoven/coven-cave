@@ -1,10 +1,9 @@
-import type { EvalLoopState } from "@/components/eval-loop-panel";
 import type { ContractReport, ContractViolation } from "@/lib/familiar-contract";
 import type { FamiliarGrowthReport, GrowthSignal } from "@/lib/familiar-growth-signals";
 import type { BlockerCategory, ThreadSignalsAggregate } from "@/lib/thread-self-report";
 
-export type HealSource = "eval-loop" | "contract" | "growth-signal" | "self-report-aggregate";
-export type HealActionKind = "run-eval" | "fix-contract" | "write-memory" | "request-skill" | "manual";
+export type HealSource = "contract" | "growth-signal" | "self-report-aggregate";
+export type HealActionKind = "fix-contract" | "write-memory" | "request-skill" | "manual";
 
 export type SelfHealRequest = {
   id: string;
@@ -26,10 +25,6 @@ const SEVERITY_RANK: Record<SelfHealRequest["severity"], number> = {
   warn: 1,
   info: 2,
 };
-
-function titleCase(value: string): string {
-  return value.slice(0, 1).toUpperCase() + value.slice(1);
-}
 
 function fromContractViolation(
   familiarId: string,
@@ -90,37 +85,12 @@ function sortRequests(requests: SelfHealRequest[]): SelfHealRequest[] {
   });
 }
 
-function iterationChangeSummary(iteration: {
-  change_summary?: string;
-  changeSummary?: string;
-}): string {
-  return iteration.change_summary ?? iteration.changeSummary ?? "Iteration recorded";
-}
-
 export function deriveHealRequests(args: {
   familiarId: string;
-  evalLoopState: EvalLoopState | null;
   contractReport: ContractReport | null;
   growthReport: FamiliarGrowthReport | null;
 }): SelfHealRequest[] {
   const requests: SelfHealRequest[] = [];
-
-  for (const iteration of args.evalLoopState?.iterations ?? []) {
-    if (iteration.outcome !== "REVERT") continue;
-    const changeSummary = iterationChangeSummary(iteration);
-    requests.push({
-      id: `${args.familiarId}:eval-loop:${iteration.id}`,
-      familiarId: args.familiarId,
-      source: "eval-loop",
-      severity: "warn",
-      title: `${titleCase(iteration.track)} eval reverted`,
-      detail: iteration.notes ? `${changeSummary} ${iteration.notes}` : changeSummary,
-      suggestedAction: `Run a follow-up ${iteration.track} eval iteration.`,
-      actionKind: "run-eval",
-      createdAt: iteration.timestamp || STATIC_CREATED_AT,
-      resolved: false,
-    });
-  }
 
   for (const [index, violation] of (args.contractReport?.violations ?? []).entries()) {
     requests.push(fromContractViolation(args.familiarId, violation, index));

@@ -54,8 +54,8 @@ assert.match(
 
 assert.match(
   workspace,
-  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "inbox", "browser", "terminal",/,
-  "SURFACE_ORDER ascends with the merged sidebar top-to-bottom order (⌘1..⌘6)",
+  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "inbox", "browser",\s*\]/,
+  "SURFACE_ORDER ascends with the merged sidebar top-to-bottom order (⌘1..⌘5)",
 );
 
 // ⌘[ / ⌘] cycle to the previous / next surface through SURFACE_ORDER (wraps).
@@ -167,10 +167,6 @@ assert.match(
   "Sidebar Browser is the first Tools shortcut, on ⌘5",
 );
 
-assert.match(
-  sidebar,
-  /\{ id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘6", description:/,
-  "Sidebar Terminal follows Browser on ⌘6",
-);
+assert.doesNotMatch(sidebar, /id:\s*"terminal"/, "Sidebar does not expose Terminal as a standalone destination");
 
 console.log("workspace-familiars-landing: all assertions passed");

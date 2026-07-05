@@ -168,7 +168,7 @@ test.describe("code rail beside chat", () => {
   // under tests/mobile/ (see playwright.config.ts testMatch). A mobile-only test
   // placed here would only ever run under the desktop project and self-skip.
 
-  test("(f) Terminal tab → lazy pty host (not mounted until first opened)", async ({ page }) => {
+  test("(f) Terminal tab → fullscreen-only lazy pty host", async ({ page }) => {
     const filesRef = { count: 0 };
     await routeChanges(page, filesRef);
 
@@ -178,7 +178,15 @@ test.describe("code rail beside chat", () => {
     const rail = page.locator(".workspace-rail");
     await expect(rail).toBeVisible({ timeout: 30_000 });
 
-    // The Terminal tab button exists…
+    // The normal side rail has Changes/Files only; Terminal is reserved for
+    // the user-expanded fullscreen rail.
+    await expect(rail.getByRole("button", { name: "Terminal" })).toHaveCount(0);
+    await expect(rail.locator(".workspace-rail__terminal")).toHaveCount(0);
+
+    await rail.getByRole("button", { name: "Expand code rail fullscreen" }).click();
+    await expect(rail).toHaveAttribute("data-fullscreen", "true");
+
+    // The Terminal tab button appears only after fullscreen expansion…
     const terminalTab = rail.getByRole("button", { name: "Terminal" });
     await expect(terminalTab).toBeVisible();
 

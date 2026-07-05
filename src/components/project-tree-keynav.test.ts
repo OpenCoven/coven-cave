@@ -28,4 +28,14 @@ assert.match(t, /Couldn&apos;t load — retry/, "an errored folder offers an inl
 assert.match(t, /const isRefresh = loadedKeyRef\.current === key/, "a same-key reload is treated as a refresh");
 assert.match(t, /if \(!isRefresh\) setLoading\(true\)/, "skeletons only show on first load / project switch, not refresh");
 
+// ── Shared controls/radius tokens ──────────────────────────────────────────
+assert.match(t, /import \{ Button \}/, "tree actions use the shared Button primitive");
+assert.match(t, /<Button[\s\S]{0,220}data-tree-row=""/, "tree rows stay real buttons via the shared primitive");
+assert.doesNotMatch(t, /<button\b/, "tree should not hand-roll button controls");
+assert.doesNotMatch(
+  t,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[5px\]/,
+  "tree controls should use radius tokens instead of hard-coded radii",
+);
+
 console.log("project-tree-keynav.test.ts passed");

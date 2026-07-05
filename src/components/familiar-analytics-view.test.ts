@@ -8,28 +8,6 @@ import {
 
 const source = readFileSync(new URL("./familiar-analytics-view.tsx", import.meta.url), "utf8");
 
-const highEvalState = {
-  familiar_id: "cody",
-  last_run: "2026-06-25T12:00:00.000Z",
-  iterations: [
-    {
-      id: "revert-1",
-      timestamp: "2026-06-25T12:00:00.000Z",
-      track: "prompt",
-      iteration: 1,
-      change_summary: "Prompt change reverted",
-      metric_before: 0.7,
-      metric_after: 0.5,
-      delta: -0.2,
-      outcome: "REVERT",
-    },
-  ],
-  track_counts: { synthesis: 0, prompt: 1, memory: 0 },
-  total_accepted: 0,
-  total_reverted: 1,
-  running: false,
-};
-
 afterEach(() => {
   globalThis.fetch = originalFetch;
 });
@@ -73,7 +51,6 @@ function mockFetchFor(score: "low" | "trusted") {
   const responses = new Map<string, unknown>([
     ["/api/familiars", { ok: true, familiars: [familiar] }],
     ["/api/familiars/cody/contract", { ok: true, report: contract }],
-    ["/api/skills/eval-loop/cody", { ok: true, state: score === "trusted" ? highEvalState : null }],
     [
       "/api/sessions/list",
       {
@@ -352,24 +329,19 @@ describe("FamiliarAnalyticsView", () => {
     assert.equal(model.contractReport, null);
   });
 
-  it("renders the heal request count and keeps EvalLoopPanel present", async () => {
+  it("renders the heal request count and keeps thread analytics present", async () => {
     mockFetchFor("trusted");
     const data = await loadFamiliarAnalyticsData("cody");
     const model = buildFamiliarAnalyticsModel(data);
 
-    // The "trusted" fixture produces two heal requests from two distinct
-    // sources: an eval-loop REVERT iteration (cody:eval-loop:revert-1) and a
-    // growth-report session-gap signal (cody:growth-signal:session-gap:all:0).
-    // deriveHealRequests aggregates eval-loop + contract + growth sources, so
-    // both legitimately surface here.
-    assert.equal(model.healRequests.length, 2);
+    assert.equal(model.healRequests.length, 1);
     assert.equal(model.threadReports.length, 1);
     assert.match(source, /escalateBlockers\(model\.familiarId, threadSignalsAggregate, model\.healRequests\)/);
     assert.match(source, /healRequests\.length === 1 \? "request" : "requests"/);
     assert.match(source, /ResponseConfidenceSection/);
-    assert.match(source, /responseConfidenceRollup=\{model\.responseConfidenceRollup\}/);
     assert.match(source, /<ThreadSignalsSection[\s\S]*reports=\{model\.threadReports\}/);
-    assert.match(source, /<EvalLoopPanel[\s\S]*familiarId=\{model\.familiar\.id\}/);
+    assert.doesNotMatch(source, /EvalLoopPanel/);
+    assert.doesNotMatch(source, /fa-eval/);
   });
 
   it("renders a confidence ring and a scannable KPI summary row", () => {
@@ -378,7 +350,7 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /className="fa-ring__value"/, "ring draws a progress arc");
     assert.match(source, /strokeDasharray/, "ring arc length tracks the score");
 
-    // KPI row surfaces growth / eval / contract / heal signals up top.
+    // KPI row surfaces growth / contract / heal / thread signals up top.
     assert.match(source, /<FamiliarKpis model=\{model\} healRequestCount=\{healRequests\.length\}/, "KPI row is wired to the model");
     assert.match(source, /function deriveKpis/, "KPIs are derived from the model");
     assert.match(source, /model\.growthReport/, "KPIs read the (previously unsurfaced) growth report");
@@ -391,8 +363,7 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /<AnalyticsInsightBanner model=\{model\} healRequestCount=\{healRequests\.length\}/, "banner is rendered with the model");
     assert.match(source, /deriveAnalyticsInsight\(model, healRequestCount\)/, "banner derives the insight from the model");
     assert.match(source, /fa-insight--\$\{insight\.tone\}/, "banner is tinted by tone");
-    // Idle eval loop reads as "Not run", not a bare dash.
-    assert.match(source, /evals === 0 \? "Not run"/, "empty eval tile is meaningful");
+    assert.match(source, /responseConfidenceRollup\.eventCount/, "KPI row includes response confidence event count");
   });
 
   it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {

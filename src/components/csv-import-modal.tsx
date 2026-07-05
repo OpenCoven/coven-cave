@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
 import {
   parseCsv,
@@ -136,27 +138,28 @@ export function CsvImportModal({ raw, familiar, onImport, onClose }: Props) {
       breadcrumb={["Library", "Import CSV"]}
       footerActions={
         importResult ? (
-          <button
+          <Button
+            variant="secondary"
             onClick={onClose}
-            className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
           >
             Done
-          </button>
+          </Button>
         ) : (
           <>
-            <button
+            <Button
+              variant="secondary"
               onClick={onClose}
-              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-sm text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)]"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="primary"
               onClick={() => void handleImport()}
               disabled={importing || targetList === "unknown"}
-              className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-1.5 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-hover)] disabled:opacity-50"
+              loading={importing}
             >
               {importing ? "Importing\u2026" : `Import ${parsed.rows.length} item${parsed.rows.length !== 1 ? "s" : ""}`}
-            </button>
+            </Button>
           </>
         )
       }
@@ -177,11 +180,11 @@ export function CsvImportModal({ raw, familiar, onImport, onClose }: Props) {
       ) : (
         <>
           {/* Summary row */}
-          <div className="mb-4 flex items-center gap-3 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-[var(--text-secondary)]">
+          <div className="mb-4 flex items-center gap-3 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-[var(--text-secondary)]">
             <Icon name="ph:file-text" width={14} className="shrink-0 text-[var(--text-muted)]" />
             <span>{parsed.rows.length} rows \u00b7 {parsed.headers.length} columns</span>
             {detected !== "unknown" && (
-              <span className="ml-auto rounded bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-muted)]">
+              <span className="ml-auto rounded-[var(--radius-control)] bg-[var(--bg-elevated)] px-1.5 py-0.5 text-[var(--text-muted)]">
                 Detected: {TARGET_LIST_LABELS[detected]}
               </span>
             )}
@@ -194,18 +197,19 @@ export function CsvImportModal({ raw, familiar, onImport, onClose }: Props) {
             </label>
             <div className="flex gap-2">
               {(["bookmarks", "reading", "github"] as CsvTargetList[]).map((t) => (
-                <button
+                <Button
                   key={t}
-                  type="button"
+                  size="sm"
+                  variant={targetList === t ? "primary" : "secondary"}
                   onClick={() => setTargetList(t)}
-                  className={`rounded border px-3 py-1.5 text-xs transition-colors ${
+                  className={`${
                     targetList === t
                       ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-white"
                       : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
                   }`}
                 >
                   {TARGET_LIST_LABELS[t]}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -221,25 +225,22 @@ export function CsvImportModal({ raw, familiar, onImport, onClose }: Props) {
                   <span className="text-[10px] text-[var(--text-muted)]">
                     {field.label}{field.required ? " *" : ""}
                   </span>
-                  <div className="relative">
-                    <select
+                  <div>
+                    <StandardSelect
+                      label={field.label}
                       value={mapping.fieldMappings[field.key] ?? ""}
-                      onChange={(e) =>
+                      onChange={(next) =>
                         setMapping((prev) => ({
                           ...prev,
-                          fieldMappings: { ...prev.fieldMappings, [field.key]: e.target.value },
+                          fieldMappings: { ...prev.fieldMappings, [field.key]: next },
                         }))
                       }
-                      className="w-full appearance-none rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 pr-6 text-xs text-[var(--text-primary)] outline-none focus:border-[var(--border-strong)]"
-                    >
-                      <option value="">\u2014 skip \u2014</option>
-                      {parsed.headers.map((h) => (
-                        <option key={h} value={h}>{h}</option>
-                      ))}
-                    </select>
-                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)] text-[9px]">
-                      \u25be
-                    </span>
+                      options={[
+                        { value: "", label: "— skip —" },
+                        ...parsed.headers.map((header) => ({ value: header, label: header })),
+                      ]}
+                      className="w-full border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--border-strong)]"
+                    />
                   </div>
                 </label>
               ))}
@@ -251,7 +252,7 @@ export function CsvImportModal({ raw, familiar, onImport, onClose }: Props) {
             <div className="mb-2 text-[10px] uppercase tracking-widest text-[var(--text-muted)]">
               Preview (first {previewRows.length} rows)
             </div>
-            <div className="overflow-x-auto rounded border border-[var(--border-hairline)]">
+            <div className="overflow-x-auto rounded-[var(--radius-control)] border border-[var(--border-hairline)]">
               <table className="w-full min-w-full text-xs">
                 <thead>
                   <tr className="border-b border-[var(--border-hairline)] bg-[var(--bg-raised)]">
@@ -278,7 +279,7 @@ export function CsvImportModal({ raw, familiar, onImport, onClose }: Props) {
           </div>
 
           {importError && (
-            <div className="mt-3 rounded border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-red-400">
+            <div className="mt-3 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-3 py-2 text-xs text-red-400">
               {importError}
             </div>
           )}

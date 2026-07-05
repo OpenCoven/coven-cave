@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 import { isTauri, useIsTauriDesktop } from "@/lib/tauri-platform";
 import { useShellBanners } from "@/lib/shell-banners";
 import { openInAppBrowserUrl } from "@/lib/open-external";
@@ -272,7 +272,9 @@ export function UpdateSettingsRow() {
   };
 
   const accentBtn =
-    "flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90";
+    "rounded-[var(--radius-control)] bg-[var(--accent-presence)] px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90";
+  const secondaryBtn =
+    "rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
 
   let control: ReactNode;
   if (state.phase === "checking") {
@@ -287,15 +289,13 @@ export function UpdateSettingsRow() {
       <>
         <span className="text-[12px] font-medium text-[var(--text-primary)]">v{r.version} available</span>
         {r.kind === "native" ? (
-          <button type="button" onClick={() => install(r.update, r.version)} className={accentBtn}>
-            <Icon name="ph:arrow-down-bold" width={12} />
+          <Button variant="primary" size="xs" onClick={() => install(r.update, r.version)} className={accentBtn} leadingIcon="ph:arrow-down-bold">
             Install &amp; restart
-          </button>
+          </Button>
         ) : (
-          <button type="button" onClick={() => openInAppBrowserUrl(r.url)} className={accentBtn}>
-            <Icon name="ph:arrow-square-out" width={12} />
+          <Button variant="primary" size="xs" onClick={() => openInAppBrowserUrl(r.url)} className={accentBtn} leadingIcon="ph:arrow-square-out">
             Open installer in Browser
-          </button>
+          </Button>
         )}
       </>
     );
@@ -309,17 +309,17 @@ export function UpdateSettingsRow() {
         >
           Native updater unavailable
         </span>
-        <button type="button" onClick={check} className={accentBtn}>
-          <Icon name="ph:arrow-clockwise-bold" width={12} />
+        <Button variant="primary" size="xs" onClick={check} className={accentBtn} leadingIcon="ph:arrow-clockwise-bold">
           Retry native update
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="secondary"
+          size="xs"
           onClick={() => void openFallbackUpdateInBrowser()}
-          className="rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          className={secondaryBtn}
         >
           Open installer in Browser
-        </button>
+        </Button>
       </>
     );
   } else if (state.phase === "failed") {
@@ -334,30 +334,31 @@ export function UpdateSettingsRow() {
         >
           Update failed
         </span>
-        <button type="button" onClick={() => void openFallbackUpdateInBrowser()} className={accentBtn}>
-          <Icon name="ph:arrow-square-out" width={12} />
+        <Button variant="primary" size="xs" onClick={() => void openFallbackUpdateInBrowser()} className={accentBtn} leadingIcon="ph:arrow-square-out">
           Open installer in Browser
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="secondary"
+          size="xs"
           onClick={check}
-          className="rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          className={secondaryBtn}
         >
           Retry
-        </button>
+        </Button>
       </>
     );
   } else {
     control = (
       <>
         <span className="text-[12px] text-[var(--text-muted)]">Up to date</span>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="xs"
           onClick={check}
-          className="rounded-md border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          className={secondaryBtn}
         >
           Check for updates
-        </button>
+        </Button>
       </>
     );
   }

@@ -229,12 +229,12 @@ assert.equal(
 );
 assert.equal(recoveredStatus[0].exit_code, 0, "newer Cave-local transcript exit code should win");
 
-// An eval-discuss conversation carries its origin through to the session row.
-const evalRows = localConversationSessionRows(
-  [{ ...localConversation, sessionId: "eval-9", origin: "eval" }],
+// Analytics-spawned discussions carry regular chat provenance through to the session row.
+const analyticsRows = localConversationSessionRows(
+  [{ ...localConversation, sessionId: "analytics-9", origin: "chat" }],
   { sessionFamiliar: {}, sessionTitles: {}, sessionArchived: {}, sessionSacrificed: {} },
   false,
 );
-assert.equal(evalRows[0].origin, "eval", "conversation origin 'eval' maps to the session origin");
+assert.equal(analyticsRows[0].origin, "chat", "analytics discussion origin maps to regular chat");
 
 console.log("session-list-merge.test.ts: ok");

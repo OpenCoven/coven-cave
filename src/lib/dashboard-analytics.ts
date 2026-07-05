@@ -90,31 +90,28 @@ export type DashboardSignal = {
   id: string;
   severity: "warn" | "info";
   text: string;
-  /** Where acting on the signal takes you (the stalled PR, the library, the
-   *  familiar's analytics). Signals without a destination render as plain rows. */
+  /** Where acting on the signal takes you (the stalled PR or the familiar's
+   *  analytics). Signals without a destination render as plain rows. */
   href?: string;
   /** True when href leaves the app (opened via the external-URL helper). */
   external?: boolean;
 };
 
 const STALE_PR_DAYS = 7;
-const READING_QUEUE_LARGE = 8;
-
 /** Cheap, pure, clock-injected "things drifting" detector for the cockpit's
  *  Signals strip. Reads only what the cockpit already fetches — no extra calls.
  *
  *  - PR stalled: an open PR / review request untouched for > 7 days.
- *  - Reading queue large: the reading list has grown past a comfortable size.
  *  - Familiar trending down: had sessions in the prior 4-day window (days 3–7
  *    ago) but none in the last 3 days. */
 export function dashboardSignals(input: {
   github: GitHubItem[];
-  reading: { status?: string }[];
+  reading?: { status?: string }[];
   sessions: SessionRow[];
   familiars: Familiar[];
   nowMs: number;
 }): DashboardSignal[] {
-  const { github, reading, sessions, familiars, nowMs } = input;
+  const { github, sessions, familiars, nowMs } = input;
   const out: DashboardSignal[] = [];
 
   // PR stalled > 7 days (open PRs / review requests with a stale updatedAt).
@@ -133,16 +130,6 @@ export function dashboardSignals(input: {
         external: true,
       });
     }
-  }
-
-  // Reading queue grown large.
-  if (reading.length > READING_QUEUE_LARGE) {
-    out.push({
-      id: "reading-large",
-      severity: "info",
-      text: `Reading queue is large (${reading.length} items)`,
-      href: "/?mode=library",
-    });
   }
 
   // Familiar trending down: active in the prior window, quiet in the last 3 days.

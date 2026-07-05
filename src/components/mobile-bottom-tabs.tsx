@@ -2,8 +2,8 @@
 
 /**
  * MobileBottomTabs — fixed/sticky bottom navigation strip for mobile/tablet
- * viewports. Surfaces the most-used destinations (Home, Familiars, Board, Inbox,
- * Library) as a tablist with icon + label and an active highlight.
+ * viewports. Surfaces the most-used destinations (Home, Familiars, Board, Schedules)
+ * as a tablist with icon + label and an active highlight.
  *
  * Renders only when the parent shell is in mobile mode (≤1023px); Shell is
  * responsible for that conditional render — this component itself doesn't
@@ -12,7 +12,7 @@
 
 import { Icon, type IconName } from "@/lib/icon";
 
-type TabId = "home" | "chat" | "board" | "inbox" | "library";
+type TabId = "home" | "chat" | "board" | "inbox";
 
 type TabDef = {
   id: TabId;
@@ -25,8 +25,7 @@ const TABS: TabDef[] = [
   { id: "home", label: "Home", ariaLabel: "Home", iconName: "ph:house-bold" },
   { id: "chat", label: "Chat", ariaLabel: "Chat", iconName: "ph:chats" },
   { id: "board", label: "Board", ariaLabel: "Board", iconName: "ph:kanban" },
-  { id: "inbox", label: "Auto", ariaLabel: "Automations", iconName: "ph:lightning-bold" },
-  { id: "library", label: "Library", ariaLabel: "Library", iconName: "ph:books" },
+  { id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-check" },
 ];
 
 export type MobileBottomTabsProps = {

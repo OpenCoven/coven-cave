@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { catalogNode } from "@/lib/flow/flow-catalog";
 import type { FlowDoc } from "@/lib/flow/flow-doc";
 import type { FlowNodePhase, FlowRunProgress } from "@/lib/flow/flow-progress";
@@ -95,15 +97,15 @@ export function FlowRunSteps({
   return (
     <aside className={`flow-run-steps${collapsed ? " is-collapsed" : ""}`} aria-label="Flow run steps">
       <header className="flow-run-steps-head">
-        <button
-          type="button"
+        <IconButton
+          icon={collapsed ? "ph:caret-right" : "ph:caret-down"}
+          size="xs"
           className="flow-run-steps-toggle"
           onClick={() => setCollapsed((c) => !c)}
           aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand steps" : "Collapse steps"}
           title={collapsed ? "Expand steps" : "Collapse steps"}
-        >
-          <Icon name={collapsed ? "ph:caret-right" : "ph:caret-down"} width={13} />
-        </button>
+        />
         <span className={`flow-run-steps-status flow-exec-status-${run.status}`}>
           {STATUS_LABEL[run.status]}
         </span>
@@ -111,9 +113,16 @@ export function FlowRunSteps({
           {doneCount}/{run.steps.length} steps
         </span>
         {running && (
-          <button type="button" className="flow-run-steps-stop" onClick={onStop} title="Stop run">
-            <Icon name="ph:stop-fill" width={12} /> Stop
-          </button>
+          <Button
+            variant="danger"
+            size="xs"
+            leadingIcon="ph:stop-fill"
+            className="flow-run-steps-stop"
+            onClick={onStop}
+            title="Stop run"
+          >
+            Stop
+          </Button>
         )}
       </header>
 
@@ -148,8 +157,8 @@ export function FlowRunSteps({
                 className={`flow-run-step flow-run-step-${phase}${isSelected ? " is-selected" : ""}`}
               >
                 <div className="flow-run-step-row">
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
                     className="flow-run-step-main"
                     onClick={() => onSelectNode(step.id)}
                     title={`Focus ${name}`}
@@ -170,17 +179,17 @@ export function FlowRunSteps({
                     <span className="flow-run-step-phase" aria-label={phase}>
                       {phase}
                     </span>
-                  </button>
+                  </Button>
                   {canExpand && (
-                    <button
-                      type="button"
+                    <IconButton
+                      icon={isExpanded ? "ph:caret-down" : "ph:caret-right"}
+                      size="xs"
                       className="flow-run-step-expand"
                       onClick={() => toggleStep(step.id)}
                       aria-expanded={isExpanded}
+                      aria-label={isExpanded ? "Hide step log" : "Show step log"}
                       title={isExpanded ? "Hide step log" : "Show step log"}
-                    >
-                      <Icon name={isExpanded ? "ph:caret-down" : "ph:caret-right"} width={12} />
-                    </button>
+                    />
                   )}
                 </div>
                 {isExpanded && detail && (
@@ -194,16 +203,17 @@ export function FlowRunSteps({
 
       {!collapsed && (run.sessionId || transcript) && (
         <div className="flow-run-logs">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
+            leadingIcon={logsOpen ? "ph:caret-down" : "ph:caret-right"}
             className="flow-run-logs-toggle"
             onClick={() => setLogsOpen((o) => !o)}
             aria-expanded={logsOpen}
           >
-            <Icon name={logsOpen ? "ph:caret-down" : "ph:caret-right"} width={12} />
             Session output
             {transcript ? <span className="flow-run-logs-size">{transcript.length} chars</span> : null}
-          </button>
+          </Button>
           {logsOpen &&
             (transcript ? (
               <pre className="flow-run-logs-body">{transcript.slice(-6000)}</pre>
@@ -219,13 +229,15 @@ export function FlowRunSteps({
 
       {!collapsed && run.sessionId && (
         <footer className="flow-run-steps-foot">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="xs"
+            leadingIcon="ph:chat-circle-dots"
             className="flow-run-steps-open"
             onClick={() => onOpenSession(run.sessionId as string)}
           >
-            <Icon name="ph:chat-circle-dots" width={13} /> Open session
-          </button>
+            Open session
+          </Button>
         </footer>
       )}
     </aside>

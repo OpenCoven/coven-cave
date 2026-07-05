@@ -129,8 +129,8 @@ assert.doesNotMatch(
 
 assert.doesNotMatch(
   destinations,
-  /id: "inbox"[\s\S]*label: "Automations"/,
-  "HomeComposer should not offer Automations as an original chat launch destination",
+  /id: "inbox"[\s\S]*label: "Schedules"/,
+  "HomeComposer should not offer Schedules as an original chat launch destination",
 );
 
 assert.doesNotMatch(
@@ -207,8 +207,8 @@ assert.match(
 
 assert.match(
   source,
-  /function HomeSelect\([\s\S]*?aria-label=\{ariaLabel\}[\s\S]*?aria-haspopup="dialog"[\s\S]*?PopoverItem[\s\S]*?checked=\{option\.value === value\}/,
-  "HomeComposer compact command select should render custom popover options with the supplied aria label and selected value",
+  /function HomeSelect\([\s\S]*?<StandardSelect[\s\S]*?label=\{ariaLabel\}[\s\S]*?popoverClassName="hc-home-select-popover"[\s\S]*?groupClassName="hc-home-select-group"[\s\S]*?renderValue=/,
+  "HomeComposer compact command select should delegate option rendering to StandardSelect with the supplied aria label and selected value",
 );
 
 assert.match(

@@ -18,9 +18,7 @@ const DEFAULT_CONFIG: CaveConfig = {
   roles: [],
   addons: {
     github: false,
-    library: false,
     code: false,
-    terminal: false,
     browser: false,
     flow: false,
     roles: false,
@@ -158,16 +156,13 @@ export type CaveConfig = {
   roles: RoleConfigEntry[];
   addons?: {
     github?: boolean;
-    library?: boolean;
     code?: boolean;
-    terminal?: boolean;
     browser?: boolean;
     flow?: boolean;
     roles?: boolean;
     groupchat?: boolean;
     journal?: boolean;
     docs?: boolean;
-    retro?: boolean;
   };
   marketplace: {
     installed: Record<string, MarketplaceInstallEntry>;
@@ -203,16 +198,13 @@ export async function loadConfig(): Promise<CaveConfig> {
       roles: parsed.roles ?? [],
       addons: {
         github: parsed.addons?.github ?? false,
-        library: parsed.addons?.library ?? false,
         code: parsed.addons?.code ?? false,
-        terminal: parsed.addons?.terminal ?? false,
         browser: parsed.addons?.browser ?? false,
         flow: parsed.addons?.flow ?? false,
         roles: parsed.addons?.roles ?? false,
         groupchat: parsed.addons?.groupchat ?? false,
         journal: parsed.addons?.journal ?? false,
         docs: parsed.addons?.docs ?? false,
-        retro: parsed.addons?.retro ?? false,
       },
       marketplace: {
         installed: parsed.marketplace?.installed ?? {},

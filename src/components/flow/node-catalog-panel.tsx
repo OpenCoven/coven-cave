@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { searchCatalog } from "@/lib/flow/flow-catalog";
 
@@ -57,9 +59,13 @@ export function NodeCatalogPanel({ open, onPick, onClose }: NodeCatalogPanelProp
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <button type="button" className="flow-catalog-close" onClick={onClose} aria-label="Close">
-            <Icon name="ph:x" width={14} />
-          </button>
+          <IconButton
+            icon="ph:x"
+            size="sm"
+            className="flow-catalog-close"
+            onClick={onClose}
+            aria-label="Close"
+          />
         </header>
         <div className="flow-catalog-body">
           {empty && <p className="flow-catalog-empty">No nodes match “{query}”.</p>}
@@ -69,7 +75,11 @@ export function NodeCatalogPanel({ open, onPick, onClose }: NodeCatalogPanelProp
               <ul className="flow-catalog-list">
                 {group.nodes.map((node) => (
                   <li key={node.type}>
-                    <button type="button" className="flow-catalog-item" onClick={() => onPick(node.type)}>
+                    <Button
+                      variant="ghost"
+                      className="flow-catalog-item"
+                      onClick={() => onPick(node.type)}
+                    >
                       <span className="flow-catalog-item-icon" style={{ background: node.accent }} aria-hidden>
                         <Icon name={node.icon} width={16} />
                       </span>
@@ -77,7 +87,7 @@ export function NodeCatalogPanel({ open, onPick, onClose }: NodeCatalogPanelProp
                         <span className="flow-catalog-item-label">{node.label}</span>
                         <span className="flow-catalog-item-desc">{node.description}</span>
                       </span>
-                    </button>
+                    </Button>
                   </li>
                 ))}
               </ul>

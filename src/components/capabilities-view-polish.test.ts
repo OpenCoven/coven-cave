@@ -112,7 +112,7 @@ assert.match(
 assert.match(source, /capabilities-view/, "Capabilities surface should expose a mobile hit-area root hook");
 assert.match(
   globals,
-  /@media \(max-width: 767px\) \{[\s\S]*\.capabilities-view button,[\s\S]*\.capabilities-view select,[\s\S]*\.capabilities-view label:has\(input\)[\s\S]*min-height:\s*var\(--touch-target\)/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.capabilities-view button,[\s\S]*\.capabilities-view \[aria-haspopup="menu"\],[\s\S]*\.capabilities-view label:has\(input\)[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Capabilities mobile controls should meet the shared touch target",
 );
 

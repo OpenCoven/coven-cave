@@ -205,9 +205,9 @@ export function FamiliarGrowthView({
           >
             <Icon name="ph:arrows-clockwise-bold" aria-hidden />
           </button>
-          <a className="retro-btn" href="/?mode=evals">
-            <Icon name="ph:arrows-clockwise-bold" aria-hidden />
-            Evals
+          <a className="retro-btn" href={`/dashboard/familiars/${encodeURIComponent(selected.familiar.id)}/analytics`}>
+            <Icon name="ph:chart-bar-bold" aria-hidden />
+            Analytics
           </a>
         </div>
       </header>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
 
 type SubmissionType = "runtime" | "harness";
@@ -304,7 +305,7 @@ export function OpenCovenSubmissionPanel() {
   }
 
   return (
-    <section className="mb-5 rounded-lg border border-border bg-card p-3 shadow-sm">
+    <section className="mb-5 rounded-[var(--radius-control)] border border-border bg-card p-3 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -316,23 +317,25 @@ export function OpenCovenSubmissionPanel() {
             OpenCoven catalog, then route through OpenCoven execution services.
           </p>
         </div>
-        <div className="flex shrink-0 rounded-md border border-border bg-background p-1" aria-label="Submission type">
+        <div className="flex shrink-0 rounded-[var(--radius-control)] border border-border bg-background p-1" aria-label="Submission type">
           {(["runtime", "harness"] as const).map((type) => (
-            <button
+            <Button
               key={type}
-              type="button"
+              size="sm"
+              variant={submissionType === type ? "primary" : "ghost"}
               onClick={() => setSubmissionType(type)}
-              className={`focus-ring rounded px-2.5 py-1 text-[12px] capitalize ${submissionType === type ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              aria-pressed={submissionType === type}
+              className="capitalize"
             >
               {type === "runtime" ? "Runtime" : "Harness"}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
 
       <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
-          <label className="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-md border border-dashed border-border bg-background px-3 py-2 text-[12px] text-muted-foreground hover:border-[var(--border-strong)]">
+          <label className="flex min-h-9 cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-control)] border border-dashed border-border bg-background px-3 py-2 text-[12px] text-muted-foreground hover:border-[var(--border-strong)]">
             <span className="min-w-0 truncate">
               {fileName ?? "One package: manifest + artifacts + optional examples/tests as JSON"}
             </span>
@@ -352,7 +355,7 @@ export function OpenCovenSubmissionPanel() {
             }}
             spellCheck={false}
             aria-label="Submission package JSON"
-            className="mt-2 min-h-[220px] w-full resize-y rounded-md border border-border bg-background p-3 font-mono text-[11px] leading-5 text-foreground outline-none focus:ring-1 focus:ring-ring"
+            className="mt-2 min-h-[220px] w-full resize-y rounded-[var(--radius-control)] border border-border bg-background p-3 font-mono text-[11px] leading-5 text-foreground outline-none focus:ring-1 focus:ring-ring"
           />
           {parsed.error ? <p className="mt-1 text-[11px] text-red-600">{parsed.error}</p> : null}
           {typeMismatch ? (
@@ -378,11 +381,11 @@ export function OpenCovenSubmissionPanel() {
           </div>
         </div>
 
-        <aside className="min-w-0 rounded-md border border-border bg-background p-3">
+        <aside className="min-w-0 rounded-[var(--radius-control)] border border-border bg-background p-3">
           <div className="flex items-center justify-between gap-2">
             <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">Validation</h4>
             {result?.validation ? (
-              <span className={`rounded border px-1.5 py-px text-[10px] ${statusClass(result.validation.status)}`}>
+              <span className={`rounded-[var(--radius-control)] border px-1.5 py-px text-[10px] ${statusClass(result.validation.status)}`}>
                 {STATUS_LABEL[result.validation.status]}
               </span>
             ) : null}
@@ -392,7 +395,7 @@ export function OpenCovenSubmissionPanel() {
             result.validation.issues.length > 0 ? (
               <ul className="mt-2 space-y-1.5">
                 {result.validation.issues.map((issue) => (
-                  <li key={`${issue.code}:${issue.path ?? ""}`} className="rounded border border-border bg-card px-2 py-1.5 text-[11px]">
+                  <li key={`${issue.code}:${issue.path ?? ""}`} className="rounded-[var(--radius-control)] border border-border bg-card px-2 py-1.5 text-[11px]">
                     <span className="font-medium text-foreground">{issue.code}</span>
                     <span className="ml-2 text-muted-foreground">{issue.message}</span>
                   </li>
@@ -407,7 +410,7 @@ export function OpenCovenSubmissionPanel() {
             </p>
           )}
           {result?.published ? (
-            <p className="mt-2 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+            <p className="mt-2 rounded-[var(--radius-control)] border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-700 dark:text-emerald-300">
               Published into the OpenCoven catalog.
             </p>
           ) : null}
@@ -419,33 +422,36 @@ export function OpenCovenSubmissionPanel() {
             <div className="mt-2 grid gap-2">
               <label className="grid gap-1 text-[11px] text-muted-foreground">
                 <span className="font-medium text-foreground">Harness</span>
-                <select
+                <StandardSelect
+                  label="Harness"
                   value={selectedHarnessId}
-                  onChange={(event) => setSelectedHarnessId(event.target.value)}
-                  className="min-h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:ring-1 focus:ring-ring"
-                >
-                  {harnessEntries.length === 0 ? <option value="">No harnesses</option> : null}
-                  {harnessEntries.map((entry) => (
-                    <option key={entry.id} value={entry.submissionId}>
-                      {entry.name} v{entry.latestCompatibleVersion}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedHarnessId}
+                  options={
+                    harnessEntries.length === 0
+                      ? [{ value: "", label: "No harnesses", disabled: true }]
+                      : harnessEntries.map((entry) => ({
+                          value: entry.submissionId,
+                          label: `${entry.name} v${entry.latestCompatibleVersion}`,
+                        }))
+                  }
+                  className="min-h-8 rounded-[var(--radius-control)] border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:ring-1 focus:ring-ring"
+                />
               </label>
               <label className="grid gap-1 text-[11px] text-muted-foreground">
                 <span className="font-medium text-foreground">Runtime</span>
-                <select
+                <StandardSelect
+                  label="Runtime"
                   value={selectedRuntimeId}
-                  onChange={(event) => setSelectedRuntimeId(event.target.value)}
-                  className="min-h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:ring-1 focus:ring-ring"
-                >
-                  <option value="">Latest compatible</option>
-                  {runtimeEntries.map((entry) => (
-                    <option key={entry.id} value={entry.submissionId}>
-                      {entry.name} v{entry.latestCompatibleVersion}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedRuntimeId}
+                  options={[
+                    { value: "", label: "Latest compatible" },
+                    ...runtimeEntries.map((entry) => ({
+                      value: entry.submissionId,
+                      label: `${entry.name} v${entry.latestCompatibleVersion}`,
+                    })),
+                  ]}
+                  className="min-h-8 rounded-[var(--radius-control)] border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:ring-1 focus:ring-ring"
+                />
               </label>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -476,12 +482,12 @@ export function OpenCovenSubmissionPanel() {
               </p>
             )}
             {executionPlan?.status === "ready" ? (
-              <p className="mt-2 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+              <p className="mt-2 rounded-[var(--radius-control)] border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[11px] text-emerald-700 dark:text-emerald-300">
                 Execution plan ready for {executionPlan.executionService}: {executionPlan.dispatch.harnessId} -&gt;{" "}
                 {executionPlan.dispatch.runtimeId} via {executionPlan.dispatch.adapter}.
               </p>
             ) : executionPlan ? (
-              <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+              <p className="mt-2 rounded-[var(--radius-control)] border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
                 {executionPlan.reason}
               </p>
             ) : null}
@@ -501,7 +507,7 @@ function CatalogDiscovery({ catalog }: { catalog: CatalogEntry[] }) {
       ) : (
         <div className="mt-2 space-y-2">
           {catalog.map((entry) => (
-            <article key={entry.id} className="rounded border border-border bg-card px-2 py-2 text-[11px]">
+            <article key={entry.id} className="rounded-[var(--radius-control)] border border-border bg-card px-2 py-2 text-[11px]">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h5 className="truncate text-[12px] font-medium text-foreground">{entry.name}</h5>
@@ -509,7 +515,7 @@ function CatalogDiscovery({ catalog }: { catalog: CatalogEntry[] }) {
                     {entry.type} · v{entry.latestCompatibleVersion}
                   </p>
                 </div>
-                <span className={`shrink-0 rounded border px-1.5 py-px text-[10px] ${statusClass(entry.validationStatus)}`}>
+                <span className={`shrink-0 rounded-[var(--radius-control)] border px-1.5 py-px text-[10px] ${statusClass(entry.validationStatus)}`}>
                   {entry.validationStatus}
                 </span>
               </div>

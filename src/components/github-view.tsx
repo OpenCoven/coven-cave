@@ -7,6 +7,7 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { StandardSelect } from "@/components/ui/select";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useCopy } from "@/lib/use-copy";
@@ -1751,32 +1752,33 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
               </button>
             )}
           </div>
-          <select
+          <StandardSelect
+            label="Filter by organization"
             className="gh-select"
             value={orgFilter}
-            onChange={(e) => setOrgFilter(e.target.value)}
+            onChange={setOrgFilter}
             title={repoFilter !== "all" ? "Org is locked to the selected repo — clear the repo to change it" : "Filter by organization"}
-            aria-label="Filter by organization"
             disabled={orgOptions.length === 0 || repoFilter !== "all"}
-          >
-            <option value="all">All orgs</option>
-            {orgOptions.map((o) => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </select>
-          <select
+            options={[
+              { value: "all", label: "All orgs" },
+              ...orgOptions.map((org) => ({ value: org, label: org })),
+            ]}
+          />
+          <StandardSelect
+            label="Filter by repository"
             className="gh-select"
             value={repoFilter}
-            onChange={(e) => setRepoFilter(e.target.value)}
+            onChange={setRepoFilter}
             title="Filter by repository"
-            aria-label="Filter by repository"
             disabled={repoOptions.length === 0}
-          >
-            <option value="all">All repos</option>
-            {repoOptions.map((r) => (
-              <option key={r} value={r}>{orgFilter === "all" ? r : (r.split("/")[1] ?? r)}</option>
-            ))}
-          </select>
+            options={[
+              { value: "all", label: "All repos" },
+              ...repoOptions.map((repo) => ({
+                value: repo,
+                label: orgFilter === "all" ? repo : (repo.split("/")[1] ?? repo),
+              })),
+            ]}
+          />
           <span className="gh-select-sep" aria-hidden />
           <div className="gh-compact-group" role="group" aria-label="Group rows">
             {(["none", "org", "repo"] as GroupBy[]).map((g) => {

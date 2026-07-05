@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import type { RequiredInput } from "@/lib/required-inputs";
 
 export type RequiredInputOption = { value: string; label: string };
@@ -23,6 +24,7 @@ export function RequiredInputsDialog({ inputs, familiarOptions = [], onSubmit, o
     [inputs],
   );
   const [values, setValues] = useState<Record<string, string>>(initialValues);
+  const hasMissingRequired = inputs.some((input) => !(values[input.key] ?? "").trim());
 
   useEffect(() => {
     setValues(initialValues);
@@ -39,7 +41,7 @@ export function RequiredInputsDialog({ inputs, familiarOptions = [], onSubmit, o
           <Button variant="secondary" onClick={onCancel}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="required-inputs-form">
+          <Button variant="primary" type="submit" form="required-inputs-form" disabled={hasMissingRequired}>
             Continue
           </Button>
         </>
@@ -69,23 +71,23 @@ export function RequiredInputsDialog({ inputs, familiarOptions = [], onSubmit, o
                   </span>
                 </span>
                 {input.control === "familiar" ? (
-                  <select
-                    required
+                  <StandardSelect
+                    label={input.paramLabel}
                     className="required-inputs-control required-inputs-select"
                     value={values[input.key] ?? ""}
-                    onChange={(event) =>
-                      setValues((current) => ({ ...current, [input.key]: event.target.value }))
+                    onChange={(next) =>
+                      setValues((current) => ({ ...current, [input.key]: next }))
                     }
-                  >
-                    <option value="" disabled>
-                      {familiarOptions.length ? "Choose a familiar…" : "No familiars available"}
-                    </option>
-                    {familiarOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      {
+                        value: "",
+                        label: familiarOptions.length ? "Choose a familiar…" : "No familiars available",
+                        disabled: true,
+                      },
+                      ...familiarOptions,
+                    ]}
+                    placeholder={familiarOptions.length ? "Choose a familiar…" : "No familiars available"}
+                  />
                 ) : input.control === "textarea" || input.control === "code" || input.control === "json" ? (
                   <textarea
                     required

@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { StandardSelect } from "@/components/ui/select";
 import { STICKY_COLORS, type FlowNodeType, type FlowParamField } from "@/lib/flow/flow-catalog";
 import type { FlowNode, FlowNodeSettings, FlowParamValue, FlowStickyData } from "@/lib/flow/flow-doc";
 import type { FlowNodeRunData } from "@/lib/flow/flow-progress";
@@ -50,9 +53,13 @@ export function NodeDetailView(props: NodeDetailViewProps) {
           <Icon name={def?.icon ?? "ph:cube"} width={16} />
         </span>
         <NameField value={node.name} onCommit={props.onRename} />
-        <button type="button" className="flow-ndv-close" onClick={props.onClose} aria-label="Close settings">
-          <Icon name="ph:x" width={14} />
-        </button>
+        <IconButton
+          icon="ph:x"
+          size="sm"
+          className="flow-ndv-close"
+          onClick={props.onClose}
+          aria-label="Close settings"
+        />
       </header>
       <p className="flow-ndv-type">{def?.label ?? node.type}</p>
       {def?.description && <p className="flow-ndv-desc">{def.description}</p>}
@@ -109,28 +116,44 @@ export function NodeDetailView(props: NodeDetailViewProps) {
       </div>
 
       <footer className="flow-ndv-foot">
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          size="xs"
+          leadingIcon="ph:play"
           className="flow-ndv-action flow-ndv-primary"
           onClick={props.onExecuteNode}
           disabled={node.disabled === true}
           title={node.disabled ? "Enable this node before executing it." : undefined}
         >
-          <Icon name="ph:play" width={13} />
           Execute step
-        </button>
-        <button type="button" className="flow-ndv-action" onClick={props.onToggleDisabled}>
-          <Icon name={node.disabled ? "ph:play" : "ph:pause"} width={13} />
+        </Button>
+        <Button
+          variant="secondary"
+          size="xs"
+          leadingIcon={node.disabled ? "ph:play" : "ph:pause"}
+          className="flow-ndv-action"
+          onClick={props.onToggleDisabled}
+        >
           {node.disabled ? "Enable" : "Disable"}
-        </button>
-        <button type="button" className="flow-ndv-action" onClick={props.onDuplicate}>
-          <Icon name="ph:copy" width={13} />
+        </Button>
+        <Button
+          variant="secondary"
+          size="xs"
+          leadingIcon="ph:copy"
+          className="flow-ndv-action"
+          onClick={props.onDuplicate}
+        >
           Duplicate
-        </button>
-        <button type="button" className="flow-ndv-action flow-ndv-danger" onClick={props.onDelete}>
-          <Icon name="ph:trash" width={13} />
+        </Button>
+        <Button
+          variant="danger"
+          size="xs"
+          leadingIcon="ph:trash"
+          className="flow-ndv-action flow-ndv-danger"
+          onClick={props.onDelete}
+        >
           Delete
-        </button>
+        </Button>
       </footer>
     </aside>
   );
@@ -213,15 +236,17 @@ function ExecutionSettingsSection({
       </label>
       <label className="flow-ndv-field">
         <span className="flow-ndv-label">On error</span>
-        <select
+        <StandardSelect<NonNullable<FlowNodeSettings["onError"]>>
+          label="On error"
           className="flow-ndv-input"
           value={onError}
-          onChange={(event) => onChangeSettings({ onError: event.target.value as FlowNodeSettings["onError"] })}
-        >
-          <option value="stop">Stop workflow</option>
-          <option value="continue">Continue with last output</option>
-          <option value="continueErrorOutput">Continue using error output</option>
-        </select>
+          onChange={(next) => onChangeSettings({ onError: next })}
+          options={[
+            { value: "stop", label: "Stop workflow" },
+            { value: "continue", label: "Continue with last output" },
+            { value: "continueErrorOutput", label: "Continue using error output" },
+          ]}
+        />
       </label>
     </section>
   );
@@ -269,21 +294,37 @@ function WebhookUrlsSection({
       <div className="flow-ndv-webhook-url-row">
         <span className="flow-ndv-webhook-url-label">Production URL</span>
         <code className="flow-ndv-webhook-url">{productionUrl}</code>
-        <button type="button" className="flow-ndv-mini-action" onClick={() => void copyUrl(productionUrl)}>
+        <Button
+          variant="secondary"
+          size="xs"
+          className="flow-ndv-mini-action"
+          onClick={() => void copyUrl(productionUrl)}
+        >
           {copied ? "Copied" : "Copy URL"}
-        </button>
+        </Button>
       </div>
       <div className="flow-ndv-webhook-url-row">
         <span className="flow-ndv-webhook-url-label">Test URL</span>
         <code className="flow-ndv-webhook-url">{testUrl}</code>
-        <button type="button" className="flow-ndv-mini-action" onClick={() => void copyUrl(testUrl)}>
+        <Button
+          variant="secondary"
+          size="xs"
+          className="flow-ndv-mini-action"
+          onClick={() => void copyUrl(testUrl)}
+        >
           {copied ? "Copied" : "Copy URL"}
-        </button>
+        </Button>
       </div>
-      <button type="button" className="flow-ndv-webhook-listen" disabled={listening} onClick={() => void listen()}>
-        <Icon name="ph:play" width={13} />
+      <Button
+        variant="primary"
+        size="xs"
+        leadingIcon="ph:play"
+        className="flow-ndv-webhook-listen"
+        disabled={listening}
+        onClick={() => void listen()}
+      >
         {listening ? "Listening..." : "Listen for test event"}
-      </button>
+      </Button>
       <p className="flow-ndv-webhook-note">
         {testListen
           ? `Test URL is listening until ${new Date(testListen.expiresAt).toLocaleTimeString()}.`
@@ -351,18 +392,24 @@ function PinnedDataSection({
       <div className="flow-ndv-pinned-head">
         <span className="flow-ndv-label">Pinned data</span>
         <div className="flow-ndv-pinned-actions">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="xs"
             className="flow-ndv-mini-action"
             disabled={!canPinOutput}
             onClick={() => onPinData(runData?.output ?? "")}
           >
             Pin output
-          </button>
+          </Button>
           {pinned && (
-            <button type="button" className="flow-ndv-mini-action" onClick={() => onPinData("")}>
+            <Button
+              variant="secondary"
+              size="xs"
+              className="flow-ndv-mini-action"
+              onClick={() => onPinData("")}
+            >
               Unpin
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -401,24 +448,28 @@ function ParamRow({
         <span className="flow-ndv-label">{field.label}</span>
         {expressionCapable && (
           <span className="flow-ndv-param-mode" aria-label={`${field.label} value mode`}>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="xs"
               className={!expressionMode ? "is-active" : ""}
+              aria-pressed={!expressionMode}
               onClick={() => {
                 if (expressionMode) onChange(fromExpressionValue(str));
               }}
             >
               Fixed
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
               className={expressionMode ? "is-active" : ""}
+              aria-pressed={expressionMode}
               onClick={() => {
                 if (!expressionMode) onChange(toExpressionValue(str));
               }}
             >
               Expression
-            </button>
+            </Button>
           </span>
         )}
       </span>
@@ -488,35 +539,31 @@ function ParamRow({
         );
       case "select":
         return (
-          <select
+          <StandardSelect
+            label={field.label}
             className="flow-ndv-input"
-            aria-label={field.label}
             value={str}
-            onChange={(event) => onChange(event.target.value)}
-          >
-            {!field.default && <option value="">Choose…</option>}
-            {(field.options ?? []).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            onChange={onChange}
+            options={[
+              ...(!field.default ? [{ value: "", label: "Choose...", disabled: true }] : []),
+              ...(field.options ?? []).map((option) => ({ value: option.value, label: option.label })),
+            ]}
+            placeholder="Choose..."
+          />
         );
       case "familiar":
         return (
-          <select
+          <StandardSelect
+            label={field.label}
             className="flow-ndv-input"
-            aria-label={field.label}
             value={str}
-            onChange={(event) => onChange(event.target.value)}
-          >
-            <option value="">Choose a familiar…</option>
-            {familiarOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            onChange={onChange}
+            options={[
+              { value: "", label: "Choose a familiar...", disabled: true },
+              ...familiarOptions.map((option) => ({ value: option.value, label: option.label })),
+            ]}
+            placeholder="Choose a familiar..."
+          />
         );
       case "skill":
         return (
@@ -578,9 +625,13 @@ function StickyDetail(props: NodeDetailViewProps) {
           <Icon name="ph:note" width={16} />
         </span>
         <span className="flow-ndv-name-static">Sticky note</span>
-        <button type="button" className="flow-ndv-close" onClick={props.onClose} aria-label="Close settings">
-          <Icon name="ph:x" width={14} />
-        </button>
+        <IconButton
+          icon="ph:x"
+          size="sm"
+          className="flow-ndv-close"
+          onClick={props.onClose}
+          aria-label="Close settings"
+        />
       </header>
       <div className="flow-ndv-fields">
         <label className="flow-ndv-field">
@@ -596,9 +647,10 @@ function StickyDetail(props: NodeDetailViewProps) {
           <span className="flow-ndv-label">Colour</span>
           <div className="flow-sticky-swatches">
             {STICKY_COLORS.map((color) => (
-              <button
+              <Button
                 key={color.key}
-                type="button"
+                variant="ghost"
+                size="xs"
                 className={`flow-sticky-swatch${sticky?.color === color.key ? " is-active" : ""}`}
                 style={{ background: color.fill }}
                 aria-label={color.label}
@@ -610,14 +662,24 @@ function StickyDetail(props: NodeDetailViewProps) {
         </div>
       </div>
       <footer className="flow-ndv-foot">
-        <button type="button" className="flow-ndv-action" onClick={props.onDuplicate}>
-          <Icon name="ph:copy" width={13} />
+        <Button
+          variant="secondary"
+          size="xs"
+          leadingIcon="ph:copy"
+          className="flow-ndv-action"
+          onClick={props.onDuplicate}
+        >
           Duplicate
-        </button>
-        <button type="button" className="flow-ndv-action flow-ndv-danger" onClick={props.onDelete}>
-          <Icon name="ph:trash" width={13} />
+        </Button>
+        <Button
+          variant="danger"
+          size="xs"
+          leadingIcon="ph:trash"
+          className="flow-ndv-action flow-ndv-danger"
+          onClick={props.onDelete}
+        >
           Delete
-        </button>
+        </Button>
       </footer>
     </aside>
   );

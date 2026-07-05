@@ -130,8 +130,8 @@ assert.match(
 );
 assert.match(
   boardInspector,
-  /projects\.map\(\(project\) =>[\s\S]{0,120}<option key=\{project\.id\} value=\{project\.id\}>[\s\S]{0,120}\{project\.name\}/,
-  "The task project picker should render the persisted project registry",
+  /<StandardSelect[\s\S]{0,120}label="Project"[\s\S]{0,260}value=\{card\.projectId \?\? ""\}[\s\S]{0,520}\{ value: "", label: "No project" \}[\s\S]{0,160}\.\.\.projects\.map\(\(project\) => \(\{ value: project\.id, label: project\.name \}\)\)/,
+  "The task project picker should render the persisted project registry through the shared select",
 );
 assert.doesNotMatch(
   boardInspector,

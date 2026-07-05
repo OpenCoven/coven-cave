@@ -7,6 +7,7 @@ import {
   reportDaemonSyncSuccess,
 } from "@/lib/daemon-sync-status";
 import type { HarnessCapabilityManifest } from "@/components/capability-card";
+import { StandardSelect, type StandardSelectGroup } from "@/components/ui/select";
 import { catalogForRuntime } from "@/lib/runtime-models";
 
 type Props = { familiar: ResolvedFamiliar };
@@ -153,23 +154,25 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
               <label className="familiar-studio-brain__row">
                 <span className="familiar-studio-brain__label">Runtime</span>
                 <div className="familiar-studio-brain__control">
-                  <select
+                  <StandardSelect
+                    label="Runtime"
                     value={draftHarness}
-                    onChange={(e) => {
-                      setDraftHarness(e.target.value);
-                      void save({ harness: e.target.value || null });
+                    onChange={(next) => {
+                      setDraftHarness(next);
+                      void save({ harness: next || null });
                     }}
                     className="familiar-studio-brain__input"
-                  >
-                    <option value="">Inherit workspace default: {defaultHarnessLabel}</option>
-                    <optgroup label="Available runtimes">
-                      {harnesses.map((h) => (
-                        <option key={h.id} value={h.id}>
-                          {h.label}{h.installed ? "" : " (not installed)"}
-                        </option>
-                      ))}
-                    </optgroup>
-                  </select>
+                    options={[
+                      { value: "", label: `Inherit workspace default: ${defaultHarnessLabel}` },
+                      {
+                        label: "Available runtimes",
+                        options: harnesses.map((h) => ({
+                          value: h.id,
+                          label: `${h.label}${h.installed ? "" : " (not installed)"}`,
+                        })),
+                      } satisfies StandardSelectGroup<string>,
+                    ]}
+                  />
                 </div>
               </label>
 
@@ -177,28 +180,24 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                 <span className="familiar-studio-brain__label">Model</span>
                 <div className="familiar-studio-brain__control">
                   {modelOptions.length > 0 ? (
-                    <select
-                      aria-label="Model"
+                    <StandardSelect
+                      label="Model"
                       value={draftModelIsListed ? draftModel : "__custom__"}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        if (value === "__custom__") {
+                      onChange={(next) => {
+                        if (next === "__custom__") {
                           setDraftModel("");
                           return;
                         }
-                        setDraftModel(value);
-                        void save({ model: value || null });
+                        setDraftModel(next);
+                        void save({ model: next || null });
                       }}
                       className="familiar-studio-brain__input"
-                    >
-                      <option value="">— inherit default —</option>
-                      {modelOptions.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.label}
-                        </option>
-                      ))}
-                      {allowCustomModel ? <option value="__custom__">Custom…</option> : null}
-                    </select>
+                      options={[
+                        { value: "", label: "Inherit default" },
+                        ...modelOptions.map((option) => ({ value: option.id, label: option.label })),
+                        ...(allowCustomModel ? [{ value: "__custom__", label: "Custom..." }] : []),
+                      ]}
+                    />
                   ) : null}
                   {allowCustomModel && (modelOptions.length === 0 || !draftModelIsListed) ? (
                     <input
@@ -244,18 +243,20 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
             <label className="familiar-studio-brain__row">
               <span className="familiar-studio-brain__label">Voice provider</span>
               <div className="familiar-studio-brain__control">
-                <select
+                <StandardSelect
+                  label="Voice provider"
                   value={draftVoiceProvider}
-                  onChange={(e) => {
-                    setDraftVoiceProvider(e.target.value);
-                    void save({ voiceProvider: e.target.value || null });
+                  onChange={(next) => {
+                    setDraftVoiceProvider(next);
+                    void save({ voiceProvider: next || null });
                   }}
                   className="familiar-studio-brain__input"
-                >
-                  <option value="">— none —</option>
-                  <option value="openai">OpenAI Realtime</option>
-                  <option value="gemini" disabled>Gemini Live (v1.1)</option>
-                </select>
+                  options={[
+                    { value: "", label: "None" },
+                    { value: "openai", label: "OpenAI Realtime" },
+                    { value: "gemini", label: "Gemini Live (v1.1)", disabled: true },
+                  ]}
+                />
               </div>
             </label>
 
@@ -278,24 +279,26 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                 <label className="familiar-studio-brain__row">
                   <span className="familiar-studio-brain__label">Voice</span>
                   <div className="familiar-studio-brain__control">
-                    <select
+                    <StandardSelect
+                      label="Voice"
                       value={draftVoiceName}
-                      onChange={(e) => {
-                        setDraftVoiceName(e.target.value);
-                        void save({ voiceName: e.target.value || null });
+                      onChange={(next) => {
+                        setDraftVoiceName(next);
+                        void save({ voiceName: next || null });
                       }}
                       className="familiar-studio-brain__input"
-                    >
-                      <option value="">— default (alloy) —</option>
-                      <option value="alloy">alloy</option>
-                      <option value="ash">ash</option>
-                      <option value="ballad">ballad</option>
-                      <option value="coral">coral</option>
-                      <option value="echo">echo</option>
-                      <option value="sage">sage</option>
-                      <option value="shimmer">shimmer</option>
-                      <option value="verse">verse</option>
-                    </select>
+                      options={[
+                        { value: "", label: "Default (alloy)" },
+                        { value: "alloy", label: "alloy" },
+                        { value: "ash", label: "ash" },
+                        { value: "ballad", label: "ballad" },
+                        { value: "coral", label: "coral" },
+                        { value: "echo", label: "echo" },
+                        { value: "sage", label: "sage" },
+                        { value: "shimmer", label: "shimmer" },
+                        { value: "verse", label: "verse" },
+                      ]}
+                    />
                   </div>
                 </label>
               </>

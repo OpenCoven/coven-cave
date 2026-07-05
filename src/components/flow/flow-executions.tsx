@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { catalogNode } from "@/lib/flow/flow-catalog";
@@ -107,38 +107,40 @@ export function FlowExecutions({
         <span className="flow-exec-count">
           {filteredRuns.length} of {runs.length} execution{runs.length === 1 ? "" : "s"}
         </span>
-        <button type="button" className="flow-exec-clear" onClick={onClear}>
-          <Icon name="ph:trash" width={13} /> Clear
-        </button>
+        <Button variant="danger-ghost" size="xs" leadingIcon="ph:trash" className="flow-exec-clear" onClick={onClear}>
+          Clear
+        </Button>
       </div>
       <div className="flow-exec-filters" aria-label="Execution filters">
         <div className="flow-exec-filter-group">
           <span className="flow-exec-filter-label">Status</span>
           {FLOW_EXECUTION_STATUS_FILTERS.map((option) => (
-            <button
+            <Button
               key={option.value}
-              type="button"
+              variant="ghost"
+              size="xs"
               className={`flow-exec-filter${filter === option.value ? " is-active" : ""}`}
               aria-pressed={filter === option.value}
               onClick={() => setFilter(option.value)}
             >
               {option.label}
               <span>{counts[option.value]}</span>
-            </button>
+            </Button>
           ))}
         </div>
         <div className="flow-exec-filter-group">
           <span className="flow-exec-filter-label">Started</span>
           {FLOW_EXECUTION_STARTED_FILTERS.map((option) => (
-            <button
+            <Button
               key={option.value}
-              type="button"
+              variant="ghost"
+              size="xs"
               className={`flow-exec-filter${startedFilter === option.value ? " is-active" : ""}`}
               aria-pressed={startedFilter === option.value}
               onClick={() => setStartedFilter(option.value)}
             >
               {option.label}
-            </button>
+            </Button>
           ))}
         </div>
         <div className="flow-exec-filter-group">
@@ -208,48 +210,53 @@ export function FlowExecutions({
                     </span>
                   )}
                 </span>
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="xs"
                   className="flow-exec-open"
                   onClick={() => onInspectRun(run)}
                 >
                   Inspect
-                </button>
+                </Button>
                 {retryable && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="xs"
                     className="flow-exec-open"
                     onClick={() => onRetryRun(run, "current")}
                   >
                     Retry current
-                  </button>
+                  </Button>
                 )}
                 {retryable && run.flowSnapshot && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="xs"
                     className="flow-exec-open"
                     onClick={() => onRetryRun(run, "original")}
                   >
                     Retry original
-                  </button>
+                  </Button>
                 )}
                 {hasRunData && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="xs"
                     className="flow-exec-open"
                     onClick={() => onLoadRunData(run)}
                   >
                     {loadRunDataLabel}
-                  </button>
+                  </Button>
                 )}
                 {run.sessionId && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="secondary"
+                    size="xs"
                     className="flow-exec-open"
                     onClick={() => onOpenSession(run.sessionId as string)}
                   >
                     Open session
-                  </button>
+                  </Button>
                 )}
               </li>
             );

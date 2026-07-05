@@ -40,7 +40,6 @@ struct SlashCommand: Identifiable, Hashable {
         case openBoard             // switch to the Tasks tab
         case openDeveloper(String) // switch to Developer and select a section
         case sendAsPrompt          // /run /codex /claude — send the args as a message
-        case saveLink              // /save <url> … — route a URL into the library
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline
         case switchModel           // /model — pick or set the chat model
@@ -122,15 +121,6 @@ enum SlashCatalog {
         SlashCommand(name: "/board", hint: "Tasks",
                      description: "Open the Tasks board.",
                      section: .view, availability: .native, action: .openBoard),
-        SlashCommand(name: "/save", aliases: ["/bookmark", "/read"],
-                     hint: "/save <url> [bookmarks|reading|github] [#tag]",
-                     description: "Route a URL into the library (auto-classified).",
-                     argPlaceholder: "url …", section: .view,
-                     availability: .native, action: .saveLink),
-        SlashCommand(name: "/research", hint: "research a topic",
-                     description: "Research a topic and save the brief to the Library — on the desktop for now.",
-                     argPlaceholder: "topic …", section: .view,
-                     availability: .desktopOnly, action: .desktopOnly("Research")),
         SlashCommand(name: "/journal", hint: "Journal",
                      description: "Your daily journal — open it on the desktop.",
                      section: .view, availability: .desktopOnly, action: .desktopOnly("Journal")),

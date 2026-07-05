@@ -8,6 +8,7 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const marketplaceView = await readFile(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
 const rolesSection = await readFile(new URL("./marketplace/roles-section.tsx", import.meta.url), "utf8");
+const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const rolesRoute = await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8");
 const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const shortcutsCatalog = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
@@ -89,6 +90,10 @@ assert.match(marketplaceView, /aria-selected=\{section === s\.id\}/, "the active
 assert.match(marketplaceView, /aria-controls=\{`marketplace-panel-\$\{s\.id\}`\}/, "tabs point at their panel via aria-controls");
 assert.match(marketplaceView, /tabIndex=\{section === s\.id \? 0 : -1\}/, "the tablist uses a roving tab stop");
 assert.match(marketplaceView, /e\.key === "ArrowRight"[\s\S]{0,80}?\(i \+ 1\) % SECTIONS\.length/, "Left/Right arrows move between tabs");
+assert.match(marketplaceView, /const sectionSummaries = useMemo/, "the shell derives status summaries for every Marketplace section");
+assert.match(marketplaceView, /className="marketplace-section-overview"/, "the section tabs render as an overview rail, not loose pills");
+assert.match(marketplaceView, /className="marketplace-section-card__metric"/, "each section tab exposes a compact status metric");
+assert.match(marketplaceView, /className="marketplace-section-card__detail"/, "each section tab explains the status metric");
 for (const id of ["browse", "roles", "skills", "capabilities"]) {
   assert.match(
     marketplaceView,
@@ -96,6 +101,10 @@ for (const id of ["browse", "roles", "skills", "capabilities"]) {
     `the ${id} panel is a tabpanel labelled by its tab`,
   );
 }
+assert.match(css, /\.marketplace-section-overview \{[\s\S]*?grid-template-columns/, "Marketplace section overview uses a stable responsive grid");
+assert.match(css, /\.marketplace-section-card \{[\s\S]*?min-height:/, "Marketplace section cards reserve stable height");
+assert.match(css, /\.marketplace-section-card\.is-active \{/, "active Marketplace section card has a distinct state");
+assert.match(css, /@media \(max-width: 680px\)[\s\S]*?\.marketplace-section-overview \{/, "Marketplace section overview has a mobile treatment");
 
 // One search field, scoped per section; the self-contained Capabilities
 // surface owns its own search so the hub hides the shared one there.

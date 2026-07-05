@@ -62,16 +62,4 @@ assert.match(
   "Vault panel empty state has an Add mapping action, not bare text",
 );
 
-const retro = read("./retro-runs-view.tsx");
-assert.match(
-  retro,
-  /\{error \?[\s\S]*?role="alert"[\s\S]*?ph:warning-circle[\s\S]*?void load\(\)[\s\S]*?Retry/,
-  "Retro runs error banner is role=alert with a Retry wired to load()",
-);
-assert.match(
-  retro,
-  /<EmptyState[\s\S]*?No matching retro runs\./,
-  "Retro runs empty state uses the shared EmptyState",
-);
-
 console.log("surface-error-states.test.ts: ok");

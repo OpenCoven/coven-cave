@@ -29,7 +29,6 @@ const CAPTURES = [
   { file: "board.png",    label: "Board view",                   click: "Board" },
   { file: "library.png",  label: "Library",                      click: "Library" },
   { file: "calendar.png", label: "Calendar (week view)",         click: "Calendar" },
-  { file: "terminal.png", label: "Terminal surface",             click: "Terminal" },
   { file: "floor.png",    label: "Coven Floor (Home ambient)",   click: "Home" },
 ];
 

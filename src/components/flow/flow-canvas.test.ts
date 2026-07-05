@@ -5,6 +5,8 @@ import { readFileSync } from "node:fs";
 const canvas = readFileSync(new URL("./flow-canvas.tsx", import.meta.url), "utf8");
 const node = readFileSync(new URL("./flow-node.tsx", import.meta.url), "utf8");
 const view = readFileSync(new URL("./flow-view.tsx", import.meta.url), "utf8");
+const templateGallery = readFileSync(new URL("./flow-template-gallery.tsx", import.meta.url), "utf8");
+const nodeCatalog = readFileSync(new URL("./node-catalog-panel.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../../styles/flow.css", import.meta.url), "utf8");
 
 assert.match(canvas, /onTidy: \(\) => void/, "FlowCanvas should accept a tidy-workflow action");
@@ -78,5 +80,32 @@ assert.doesNotMatch(
 assert.match(canvas, /sourceDef\.outputs\.length > 1/, "only true fan-outs get branch labels");
 assert.match(edge, /branchLabel/, "the edge renders its branch name");
 assert.match(styles, /\.flow-edge-branch-label/, "branch labels are styled");
+assert.match(canvas, /import \{ Button \}/, "FlowCanvas labelled canvas actions use the shared Button primitive");
+assert.match(canvas, /import \{ IconButton \}/, "FlowCanvas icon-only actions use the shared IconButton primitive");
+assert.match(edge, /import \{ IconButton \}/, "FlowEdge midpoint insert action uses the shared IconButton primitive");
+assert.doesNotMatch(canvas, /<button\b/, "FlowCanvas should not hand-roll button controls");
+assert.doesNotMatch(edge, /<button\b/, "FlowEdge should not hand-roll button controls");
+assert.doesNotMatch(
+  canvas,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "FlowCanvas should not hard-code rectangular radius classes",
+);
+assert.doesNotMatch(
+  edge,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "FlowEdge should not hard-code rectangular radius classes",
+);
+assert.match(view, /import \{ Button \}/, "FlowView onboarding and coach actions use the shared Button primitive");
+assert.doesNotMatch(view, /<button\b/, "FlowView should not hand-roll button controls");
+assert.match(templateGallery, /import \{ Button \}/, "FlowTemplateGallery labelled actions use the shared Button primitive");
+assert.match(templateGallery, /import \{ IconButton \}/, "FlowTemplateGallery close action uses the shared IconButton primitive");
+assert.match(nodeCatalog, /import \{ Button \}/, "NodeCatalogPanel node rows use the shared Button primitive");
+assert.match(nodeCatalog, /import \{ IconButton \}/, "NodeCatalogPanel close action uses the shared IconButton primitive");
+assert.doesNotMatch(templateGallery, /<button\b/, "FlowTemplateGallery should not hand-roll button controls");
+assert.doesNotMatch(templateGallery, /loading=\{busy === template\.id\}/, "template creation must not swap Button spinner DOM during the async handoff");
+assert.match(templateGallery, /aria-busy=\{busy === template\.id \|\| undefined\}/, "template creation exposes busy state without remounting button children");
+assert.match(templateGallery, /disabled=\{busy != null\}/, "template creation disables all template actions while one is in flight");
+assert.match(view, /onUse=\{\(id\) => fromTemplate\(id\)\}/, "FlowTemplateGallery receives the template creation promise");
+assert.doesNotMatch(nodeCatalog, /<button\b/, "NodeCatalogPanel should not hand-roll button controls");
 
 console.log("flow-canvas.test.ts OK");

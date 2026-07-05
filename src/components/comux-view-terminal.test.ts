@@ -71,19 +71,7 @@ assert.match(
   "opening the active Terminal surface should auto-start one terminal session without respawning after in-surface closes",
 );
 
-// Cross-surface launch: the Projects page (and others) open a terminal in a
-// project's cwd by dispatching cave:terminal-open; the canonical terminal
-// instance handles it and spawns the shell in that project root.
-assert.match(
-  source,
-  /addSession\(detail\?\.projectRoot\)[\s\S]{0,200}?addEventListener\("cave:terminal-open"/,
-  "the terminal instance launches a session in the requested project root on cave:terminal-open",
-);
-assert.match(
-  source,
-  /if \(view !== "terminal" \|\| !active\) return;[\s\S]{0,360}?addEventListener\("cave:terminal-open"/,
-  "only the ACTIVE terminal instance handles cave:terminal-open — when several ComuxViews are mounted (e.g. Terminal surface + Code workspace) just one spawns a session",
-);
+assert.doesNotMatch(source, /cave:terminal-open/, "Comux does not expose a cross-surface terminal launcher");
 
 // ⌘N / ⌘W keydown handler is wired and respects modifier + contentEditable gate.
 assert.match(
@@ -107,24 +95,7 @@ assert.match(
   "⌘W triggers removeSession of the current index",
 );
 
-// Terminal persistence: switching workspace surfaces must hide, not unmount,
-// the Comux terminal. Otherwise the PTY bridge disconnects and desktop Tauri
-// cleanup stops the process.
-assert.match(
-  workspace,
-  /const terminalDetail = \([\s\S]*?<ComuxView[\s\S]{0,120}view="terminal"[\s\S]{0,120}active=\{mode === "terminal"\}/,
-  "Workspace should create one persistent terminal detail subtree",
-);
-assert.match(
-  workspace,
-  /\{terminalDetail\}[\s\S]{0,80}\{mode === "terminal" \? null :/,
-  "Workspace should always render the terminal subtree and hide other detail surfaces while Terminal is active",
-);
-assert.match(
-  workspace,
-  /: "pointer-events-none invisible absolute inset-0 opacity-0"/,
-  "Hidden terminal subtree should be invisible instead of only transparent",
-);
+assert.doesNotMatch(workspace, /const terminalDetail|view="terminal"|mode === "terminal"/, "Workspace should not create a standalone terminal subtree");
 assert.doesNotMatch(
   workspace,
   /<div key=\{mode\} className="cave-mode-fade/,

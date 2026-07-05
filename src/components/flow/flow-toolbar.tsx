@@ -2,6 +2,8 @@
 
 import { memo, useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 
 export type FlowTab = "editor" | "executions";
 
@@ -43,8 +45,9 @@ function FlowToolbarImpl(props: FlowToolbarProps) {
           <Icon name="ph:flow-arrow" width={16} />
         </span>
         <NameField value={props.name} onCommit={props.onRename} />
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="xs"
           className={`flow-status-toggle${props.active ? " is-on" : ""}`}
           role="switch"
           aria-checked={props.active}
@@ -53,49 +56,49 @@ function FlowToolbarImpl(props: FlowToolbarProps) {
           title={props.active ? "Triggers armed — flow runs automatically" : "Triggers off — manual runs only"}
         >
           {props.active ? "Active" : "Inactive"}
-        </button>
+        </Button>
       </div>
 
       <nav className="flow-toolbar-tabs" aria-label="Flow view">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="xs"
           className={`flow-tab${props.tab === "editor" ? " is-active" : ""}`}
           aria-current={props.tab === "editor"}
           onClick={() => props.onTab("editor")}
         >
           Editor
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="ghost"
+          size="xs"
           className={`flow-tab${props.tab === "executions" ? " is-active" : ""}`}
           aria-current={props.tab === "executions"}
           onClick={() => props.onTab("executions")}
         >
           Executions
-        </button>
+        </Button>
       </nav>
 
       <div className="flow-toolbar-right">
-        <button
-          type="button"
+        <IconButton
+          icon="ph:arrow-counter-clockwise"
+          size="sm"
           className="flow-toolbar-icon"
           onClick={props.onUndo}
           disabled={!props.canUndo}
           title="Undo"
           aria-label="Undo"
-        >
-          <Icon name="ph:arrow-counter-clockwise" width={15} />
-        </button>
-        <button
-          type="button"
+        />
+        <IconButton
+          icon="ph:arrow-clockwise"
+          size="sm"
           className="flow-toolbar-icon"
           onClick={props.onRedo}
           disabled={!props.canRedo}
           title="Redo"
           aria-label="Redo"
-        >
-          <Icon name="ph:arrow-clockwise" width={15} />
-        </button>
+        />
         <span className="flow-toolbar-divider" aria-hidden />
         <span className={`flow-toolbar-publish-status flow-toolbar-publish-status-${props.publishStatus}`}>
           {props.publishStatus === "unpublished"
@@ -104,8 +107,10 @@ function FlowToolbarImpl(props: FlowToolbarProps) {
               ? "Unpublished changes"
               : "Published"}
         </span>
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          size="xs"
+          leadingIcon={props.publishStatus === "published" ? "ph:pause" : "ph:cloud-arrow-up-bold"}
           className="flow-toolbar-publish"
           onClick={props.publishStatus === "published" ? props.onUnpublish : props.onPublish}
           disabled={props.saving || Boolean(props.publishBlockReason)}
@@ -113,33 +118,34 @@ function FlowToolbarImpl(props: FlowToolbarProps) {
             ? "Unpublish production version"
             : props.publishBlockReason ?? "Publish current draft to production"}
         >
-          <Icon name={props.publishStatus === "published" ? "ph:pause" : "ph:cloud-arrow-up-bold"} width={13} />
           {props.saving ? "Saving…" : publishLabel}
-        </button>
+        </Button>
 
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="xs"
           className="flow-toolbar-save"
           onClick={props.onSave}
           disabled={props.saving || !props.dirty}
         >
           {props.saving ? "Saving…" : "Save"}
-        </button>
+        </Button>
         {props.running ? (
-          <button type="button" className="flow-toolbar-stop" onClick={props.onStop}>
+          <Button variant="danger" size="xs" className="flow-toolbar-stop" onClick={props.onStop}>
             <span className="flow-toolbar-stop-spinner" aria-hidden />
             Stop
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="primary"
+            size="xs"
+            leadingIcon="ph:play"
             className="flow-toolbar-execute"
             onClick={props.onExecute}
             disabled={props.executing}
           >
-            <Icon name="ph:play" width={13} />
             {props.executing ? "Running…" : "Execute"}
-          </button>
+          </Button>
         )}
       </div>
     </header>

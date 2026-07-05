@@ -6,11 +6,13 @@ import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
 import { parseWhen } from "@/lib/parse-when";
 import { draftReminderFromText } from "@/lib/reminder-draft";
 import { parseCron } from "@/lib/cron";
-import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { readDateTimePrefs } from "@/lib/datetime-format";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import { ReminderLinkField } from "@/components/reminder-link-field";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { StandardSelect } from "@/components/ui/select";
 import type { LinkRef } from "@/lib/cave-inbox";
 
 export type NewReminderDraft = {
@@ -287,14 +289,12 @@ export function NewReminderModal({
               Type a natural phrase like “in 30m” or pick a date.
             </p>
           </div>
-          <button
-            type="button"
+          <IconButton
             onClick={onClose}
-            className="focus-ring grid h-7 w-7 place-items-center rounded border border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+            icon="ph:x-bold"
             aria-label="Close"
-          >
-            <Icon name="ph:x-bold" />
-          </button>
+            className="border border-[var(--border-hairline)]"
+          />
         </div>
 
         <Field label="Remind me to">
@@ -303,7 +303,7 @@ export function NewReminderModal({
             onChange={(e) => setTitle(e.target.value)}
             placeholder="check the deploy"
             autoFocus={!coarse}
-            className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
+            className="w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)]"
           />
         </Field>
 
@@ -315,7 +315,7 @@ export function NewReminderModal({
               if (e.target.value.trim()) setManualFireAt("");
             }}
             placeholder="in 30m · in 2h · today 17:30 · tomorrow 9am"
-            className={`w-full rounded-md border bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] ${
+            className={`w-full rounded-[var(--radius-control)] border bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] ${
               whenText && !parsed
                 ? "border-[color-mix(in_oklch,var(--color-warning)_60%,transparent)]"
                 : "border-[var(--border-hairline)] focus:border-[var(--accent-presence)]"
@@ -341,7 +341,7 @@ export function NewReminderModal({
               if (e.target.value) setWhenText("");
             }}
             min={toLocalInput(new Date().toISOString())}
-            className="w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-presence)]"
+            className="w-full rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-presence)]"
           />
         </Field>
 
@@ -374,7 +374,7 @@ export function NewReminderModal({
               value={cronExpr}
               onChange={(e) => setCronExpr(e.target.value)}
               placeholder="*/15 * * * *"
-              className={`w-full rounded-md border bg-[var(--bg-raised)]/40 px-3 py-2 font-mono text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] ${
+              className={`w-full rounded-[var(--radius-control)] border bg-[var(--bg-raised)]/40 px-3 py-2 font-mono text-sm text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] ${
                 cronExpr && !cronFields
                   ? "border-[color-mix(in_oklch,var(--color-warning)_60%,transparent)]"
                   : "border-[var(--border-hairline)] focus:border-[var(--accent-presence)]"
@@ -403,16 +403,16 @@ export function NewReminderModal({
         </Field>
 
         {error ? (
-          <div className="mb-3 rounded border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-3 py-1.5 text-xs text-[var(--color-warning)]">
+          <div className="mb-3 rounded-[var(--radius-control)] border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] px-3 py-1.5 text-xs text-[var(--color-warning)]">
             {error}
           </div>
         ) : null}
 
         <div className="flex items-center justify-end gap-2">
-          <button
+          <Button
+            variant="danger"
             onClick={create}
             disabled={!title.trim() || !resolvedFireAt || busy}
-            className="rounded-md bg-[var(--color-danger)] px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[var(--color-danger)] disabled:opacity-50"
           >
             {isEditing
               ? busy
@@ -423,13 +423,13 @@ export function NewReminderModal({
               : previewLabel
               ? `Remind ${previewLabel}`
               : "Create"}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="secondary"
             onClick={onClose}
-            className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-1.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
           >
             Cancel
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -457,22 +457,13 @@ function Select({
   options: { value: string; label: string }[];
 }) {
   return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 pr-8 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent-presence)]"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value} className="bg-[var(--bg-raised)]">
-            {o.label}
-          </option>
-        ))}
-      </select>
-      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
-        ▾
-      </span>
-    </div>
+    <StandardSelect
+      label="Choose value"
+      value={value}
+      onChange={onChange}
+      options={options}
+      className="w-full border-[var(--border-hairline)] bg-[var(--bg-raised)]/40 px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent-presence)]"
+    />
   );
 }
 

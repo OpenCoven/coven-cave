@@ -160,84 +160,6 @@ test.describe("mobile foundations", () => {
     expect(fatalConsole, `fatal React render errors while sweeping surfaces:\n${fatalConsole.join("\n")}`).toEqual([]);
   });
 
-  test("library document rail scrolls inside the right panel", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 720 });
-
-    const docs = Array.from({ length: 42 }, (_, index) => ({
-      id: `doc-${index}`,
-      title: `Knowledge graph source ${index + 1}`,
-      familiar: "sage",
-      collection: "all",
-      modifiedAt: new Date(Date.now() - index * 60_000).toISOString(),
-      tags: index % 4 === 0 ? ["coven-cave", "knowledge-graph"] : [],
-      excerpt: "A deliberately long library entry used to prove the right-side document rail owns its scrolling.",
-    }));
-
-    await page.route("**/api/library?**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          ok: true,
-          docs,
-          collections: [
-            {
-              id: "all",
-              label: "All",
-              path: "/tmp/coven-cave-test-library",
-              familiar: "sage",
-            },
-          ],
-        }),
-      });
-    });
-
-    // The Library surface is an addon, gated out of the sidebar by default —
-    // enable it (passthrough-patch the config) so the nav entry renders.
-    await page.route("**/api/config**", async (route) => {
-      const res = await route.fetch();
-      const json = await res.json().catch(() => ({}));
-      const config = { ...(json.config ?? {}), addons: { ...(json.config?.addons ?? {}), library: true } };
-      await route.fulfill({ json: { ...json, ok: true, config } });
-    });
-
-    await page.goto("/");
-    await page.waitForSelector(".shell-frame");
-
-    const sidebar = page.locator(".sidebar-nav-scroll");
-    await sidebar.getByRole("button", { name: /^Library\b/ }).click();
-    await page.waitForSelector(".library-shell");
-    await page.locator(".library-rail-item").filter({ hasText: /^All/ }).first().click();
-    await expect(page.getByPlaceholder("Search documents…")).toBeVisible();
-    await expect(page.locator(".library-doclist-item")).toHaveCount(docs.length);
-
-    const metrics = await page.evaluate(() => {
-      const panel = document.querySelector(".library-list-panel, .library-browse-canvas");
-      const doclist = document.querySelector(".library-doclist");
-      const items = document.querySelector(".library-doclist-items");
-      const panelRect = panel?.getBoundingClientRect();
-      const doclistRect = doclist?.getBoundingClientRect();
-      const itemsRect = items?.getBoundingClientRect();
-      const itemsStyle = items ? window.getComputedStyle(items) : null;
-
-      return {
-        documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
-        bodyOverflow: document.body.scrollHeight - document.body.clientHeight,
-        panelHeight: panelRect?.height ?? 0,
-        doclistHeight: doclistRect?.height ?? 0,
-        itemsHeight: itemsRect?.height ?? 0,
-        itemsScrollHeight: items?.scrollHeight ?? 0,
-        itemsOverflowY: itemsStyle?.overflowY ?? "",
-      };
-    });
-
-    expect(metrics.documentOverflow, "Library must not push scrolling onto the document").toBeLessThanOrEqual(1);
-    expect(metrics.bodyOverflow, "Library must not push scrolling onto body").toBeLessThanOrEqual(1);
-    expect(metrics.doclistHeight, "Document list should stay bounded by the right panel").toBeLessThanOrEqual(metrics.panelHeight + 1);
-    expect(metrics.itemsOverflowY, "Document rows should be the inner scroll container").toBe("auto");
-    expect(metrics.itemsScrollHeight, "Document rows should have more content than visible space").toBeGreaterThan(metrics.itemsHeight + 1);
-  });
-
   test("persisted screen magnification scales the app without window scroll", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto("/");
@@ -302,7 +224,7 @@ test.describe("mobile foundations", () => {
     // this red.
     const ALL_SURFACES = [
       "home", "agents", "chat", "groupchat", "board", "calendar", "inbox",
-      "library", "browser", "terminal", "github", "roles", "marketplace",
+      "browser", "terminal", "github", "roles", "marketplace",
       "flow", "evals", "submissions", "retro", "capabilities", "journal",
     ];
 

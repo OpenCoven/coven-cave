@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
@@ -426,18 +427,19 @@ export function CapabilitiesViewSurface({
                     </kbd>
                   )}
                 </label>
-                <select
+                <StandardSelect
+                  label="Filter by status"
                   value={statusFilter}
-                  onChange={(e) => applyStatusFilter(e.target.value as CapabilityStatus | "all")}
+                  onChange={(next) => applyStatusFilter(next as CapabilityStatus | "all")}
                   className="focus-ring h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground"
-                  aria-label="Filter by status"
-                >
-                  <option value="all">All statuses</option>
-                  <option value="enabled">Enabled</option>
-                  <option value="available">Available</option>
-                  <option value="disabled">Disabled</option>
-                  <option value="warning">Warnings</option>
-                </select>
+                  options={[
+                    { value: "all", label: "All statuses" },
+                    { value: "enabled", label: "Enabled" },
+                    { value: "available", label: "Available" },
+                    { value: "disabled", label: "Disabled" },
+                    { value: "warning", label: "Warnings" },
+                  ]}
+                />
               </div>
 
               {/* Summary tiles double as the primary type/status filters. */}

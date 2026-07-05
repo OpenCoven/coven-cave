@@ -277,7 +277,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
         {moveError ? (
           <div
             role="alert"
-            className="mx-1 mb-1 flex items-center gap-1.5 rounded-md bg-[var(--color-danger,#b91c1c)]/12 px-2 py-1 text-[11px] text-[var(--color-danger,#b91c1c)]"
+            className="mx-1 mb-1 flex items-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--color-danger,#b91c1c)]/12 px-2 py-1 text-[11px] text-[var(--color-danger,#b91c1c)]"
           >
             <Icon name="ph:warning" width={12} className="shrink-0" />
             <span className="truncate">{moveError}</span>
@@ -285,7 +285,7 @@ export const ProjectTree = forwardRef<ProjectTreeHandle, Props>(
         ) : null}
         <div
           role="tree"
-          className={`select-none rounded-md text-[12px] leading-none ${
+          className={`select-none rounded-[var(--radius-control)] text-[12px] leading-none ${
             rootDrop ? "outline-dashed outline-1 outline-[var(--accent-presence)]" : ""
           }`}
           tabIndex={0}
@@ -489,8 +489,9 @@ function TreeRow({
       aria-setsize={siblingCount}
     >
       {/* Row */}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="xs"
         tabIndex={-1}
         data-tree-row=""
         data-tree-depth={depth}
@@ -525,7 +526,7 @@ function TreeRow({
           const src = e.dataTransfer.getData(DRAG_MIME) || e.dataTransfer.getData("text/plain");
           if (src && src !== entry.path) onMove(src, entry.path);
         } : undefined}
-        className={`focus-ring-inset group flex w-full items-center gap-0 rounded-[5px] py-[3px] text-left transition-colors ${
+        className={`focus-ring-inset group flex w-full items-center gap-0 rounded-[var(--radius-control)] py-[3px] text-left transition-colors ${
           isSelected
             ? "bg-[var(--accent-presence)] text-white"
             : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
@@ -583,7 +584,7 @@ function TreeRow({
         </span>
 
         {/* Folder-picker affordance — pick this directory without leaving the
-            tree. Uses role=button (not <button>) to avoid nesting inside the row
+            tree. Uses role=button instead of another nested button inside the row
             button; stops propagation so it doesn't also toggle expand. */}
         {entry.isDir && onDirSelect ? (
           <span
@@ -598,7 +599,7 @@ function TreeRow({
                 onDirSelect(entry.path);
               }
             }}
-            className={`ml-auto mr-1 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium transition-opacity ${
+            className={`ml-auto mr-1 shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[10px] font-medium transition-opacity ${
               added
                 ? "text-[var(--accent-presence)]"
                 : "text-[var(--text-muted)] opacity-0 hover:bg-[var(--bg-base)] group-hover:opacity-100"
@@ -607,7 +608,7 @@ function TreeRow({
             {added ? "Added" : "Use"}
           </span>
         ) : null}
-      </button>
+      </Button>
 
       {/* Children — no extra wrapper div, rows flow inline */}
       {entry.isDir && expanded && children && children.length > 0 &&
@@ -633,15 +634,16 @@ function TreeRow({
 
       {/* A child fetch failed — offer a retry instead of looking empty. */}
       {entry.isDir && expanded && childError && (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="xs"
+          leadingIcon="ph:arrow-clockwise"
           onClick={(e) => { e.stopPropagation(); void loadChildren(); }}
-          className="flex items-center gap-1 py-[3px] text-[11px] text-[var(--color-danger,#b91c1c)] hover:underline"
+          className="py-[3px] text-[11px] text-[var(--color-danger,#b91c1c)] hover:underline"
           style={{ paddingLeft: 4 + (depth + 1) * 16 + 16 }}
         >
-          <Icon name="ph:arrow-clockwise" width={10} className="shrink-0" />
           Couldn&apos;t load — retry
-        </button>
+        </Button>
       )}
     </div>
   );

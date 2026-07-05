@@ -44,13 +44,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /if \(m === "terminal"\) return;[\s\S]*?setMode\("terminal"\)[\s\S]*?cave:open-project-file/,
-  "file-open events should target Terminal/Projects after Code mode retirement",
+  /Click-to-open a file from chat stays on the unified chat\/code workspace[\s\S]*?setMode\("chat"\)/,
+  "file-open events should stay in the unified Chat workspace after Code mode retirement",
 );
 assert.match(
   workspace,
-  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "inbox", "browser", "terminal",\s*\]/,
-  "keyboard surface order should end at Terminal (Cmd/Ctrl+6)",
+  /const SURFACE_ORDER: WorkspaceMode\[\] = \[\s*"home", "chat", "board", "inbox", "browser",\s*\]/,
+  "keyboard surface order should not include a standalone Terminal destination",
 );
 assert.match(workspace, /nav=\{mode === "chat" \? chatSidebar : sidebar\}/, "only chat mode swaps the primary nav for WorkspaceSidebar");
 

@@ -11,14 +11,24 @@ assert.doesNotMatch(src, /MONO_OPTIONS/, "does not expose an independent mono pi
 assert.match(src, /readFontPairPref/, "loads the saved curated font pair");
 assert.match(src, /writeFontPairPref/, "persists font pairs as a unit");
 assert.match(src, /applyFontPair/, "applies font pairs as a unit");
-assert.match(src, /<select/, "renders selects");
+assert.match(src, /StandardSelect/, "renders the shared custom select");
+assert.doesNotMatch(src, /<select/, "does not render native selects");
+assert.match(src, /import \{ Button \}/, "font settings actions use the shared Button primitive");
+assert.doesNotMatch(src, /<button\b/, "font settings should not hand-roll button controls");
+assert.match(src, /rounded-\[var\(--radius-control\)\]/, "font settings controls use the shared control radius token");
+assert.doesNotMatch(src, /rounded-md/, "font settings controls do not hard-code Tailwind's md radius");
+assert.doesNotMatch(
+  src,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "font settings controls do not hard-code rounded classes",
+);
 assert.match(src, /fontStack\(/, "preview rendered with fontStack");
 assert.match(src, /DEFAULT_FONT_PAIR_ID/, "reset targets the default pair");
 assert.match(src, /Reset/, "exposes a reset control");
 assert.match(src, /Typography pair/, "renders a single pair selector");
 assert.match(
   src,
-  /id="typography-pair"[\s\S]*?style=\{\{ width: "min\(100%, 300px\)", maxWidth: "100%" \}\}/,
+  /label="Typography pair"[\s\S]*?style=\{\{ width: "min\(100%, 300px\)", maxWidth: "100%" \}\}/,
   "typography pair selector uses a responsive width that fits curated pair labels",
 );
 assert.match(src, /Interface/, "keeps the interface preview");
