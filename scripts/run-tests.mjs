@@ -41,6 +41,7 @@ export const SUITES = {
     "src/components/open-coven-tools-update.test.ts",
     "src/lib/workflow-run-prompt.test.ts",
     "src/lib/workflow-step-progress.test.ts",
+    "src/lib/hfr-trace-export.test.ts",
     "src/lib/screen-magnification.test.ts",
     "src/lib/no-builtin-familiar-roster.test.ts",
     "src/lib/cave-projects.test.ts",
