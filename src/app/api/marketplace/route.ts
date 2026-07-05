@@ -13,7 +13,6 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "@/lib/cave-config";
 import { hasConfiguredSecretMetadata } from "@/lib/vault";
-import { readEnvLocalValue } from "@/lib/env-file";
 import {
   mergeCatalog,
   sanitizeMarketplaceCatalogCards,
@@ -57,9 +56,7 @@ export async function GET() {
     ...p,
     // configured = every required field has a value already in env/.env.local
     // or has vault metadata. This must not resolve or cache secret values.
-    configured: p.requiredConfig.every(
-      (f) => readEnvLocalValue(f.env) !== undefined || hasConfiguredSecretMetadata(f.env),
-    ),
+    configured: p.requiredConfig.every((f) => hasConfiguredSecretMetadata(f.env)),
   })));
   return NextResponse.json({ ok: true, plugins });
 }

@@ -20,7 +20,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { covenHome } from "./coven-paths.ts";
-import { readEnvLocalValue } from "./env-file.ts";
+import { readEnvLocalAll, readEnvLocalValue } from "./env-file.ts";
 import { getLocalEncryptedSecret, hasLocalEncryptedSecret } from "./local-encrypted-vault.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -258,8 +258,9 @@ export function hasConfiguredSecretMetadata(key: string): boolean {
 
 export function getVaultMetadataStatuses(): VaultMappingStatus[] {
   const map = loadVaultMap(true); // always fresh for status checks
+  const envLocal = readEnvLocalAll(); // read once for all entries
   return Object.entries(map).map(([key, entry]) => {
-    const inEnv = !!(process.env[key]?.trim()) || readEnvLocalValue(key) !== undefined;
+    const inEnv = !!(process.env[key]?.trim()) || key in envLocal;
     const hasEncrypted = entry.storage === "encrypted" || hasLocalEncryptedSecret(key);
 
     if (inEnv) {

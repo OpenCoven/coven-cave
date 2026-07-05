@@ -23,6 +23,39 @@ export function envLocalPath(): string {
 }
 
 /**
+ * Parse `.env.local` into a key→value record in one file read.
+ *
+ * Uses the same minimal `.env` parsing as {@link readEnvLocalValue}. Useful
+ * when multiple keys need to be looked up in a single call (e.g. iterating
+ * over all vault entries) to avoid O(N) file reads.
+ */
+export function readEnvLocalAll(): Record<string, string> {
+  let raw: string;
+  try {
+    raw = readFileSync(envLocalPath(), "utf8");
+  } catch {
+    return {};
+  }
+  const result: Record<string, string> = {};
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq < 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      value.length >= 2 &&
+      ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (value) result[key] = value;
+  }
+  return result;
+}
+
+/**
  * Read a single key's value from the writable `.env.local`, or undefined.
  *
  * In dev, Next auto-loads `<cwd>/.env.local` into `process.env` at boot, so
