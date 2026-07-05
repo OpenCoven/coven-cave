@@ -11,7 +11,7 @@ import { fuzzyMatch, bestFuzzyScore } from "@/lib/fuzzy-match";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { MarkdownBlock } from "@/components/message-bubble";
-import { FOLDER_MODES, type FolderMode, type AddonsConfig } from "@/components/sidebar-minimal";
+import { FOLDER_MODES, type FolderMode } from "@/components/sidebar-minimal";
 import { useProjects } from "@/lib/use-projects";
 
 function shortProjectRoot(root: string): string {
@@ -113,8 +113,6 @@ type Props = {
   initialQuery?: string;
   onQueryChange?: (query: string) => void;
   onIntent: (intent: PaletteIntent) => void;
-  /** Add-on gating so palette navigation matches the sidebar's visible surfaces. */
-  addons?: AddonsConfig;
 };
 
 // One hit from the conversation content search (/api/chat/search).
@@ -240,7 +238,6 @@ export function CommandPalette({
   initialQuery = "",
   onQueryChange,
   onIntent,
-  addons,
 }: Props) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const { projects } = useProjects();
@@ -517,19 +514,12 @@ export function CommandPalette({
       ? [{ id: "create-task", kind: "create-task", title: trimmedTitle }]
       : [];
 
-    // "Go to <surface>" rows make ⌘K a launcher for the sidebar surfaces. Gated
-    // the same way the sidebar gates them, and hidden while typing a slash
-    // command or a familiar scope (where surface nav would be noise).
+    // "Go to <surface>" rows make ⌘K a launcher for the visible sidebar
+    // surfaces. Hidden while typing a slash command or a familiar scope (where
+    // surface nav would be noise).
     const surfaceRows: Row[] = (scoped || slashToken)
       ? []
-      : rank(FOLDER_MODES.filter((fm) => {
-          if (fm.id === "github") return addons?.github === true;
-          if (fm.id === "browser") return addons?.browser === true;
-          if (fm.id === "flow") return addons?.flow === true;
-          if (fm.id === "groupchat") return addons?.groupchat === true;
-          if (fm.id === "journal") return addons?.journal === true;
-          return true;
-        })
+      : rank(FOLDER_MODES
           // Fuzzy on the short label/id; substring-only on the long description
           // (subsequence-matching prose surfaces irrelevant items).
           .filter((fm) => !q || fz(fm.label) || fz(fm.id) || fm.description.toLowerCase().includes(q)),
@@ -626,7 +616,7 @@ export function CommandPalette({
       : [];
 
     return [...salemRows, ...localRows];
-  }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects, addons]);
+  }, [familiars, familiarById, sessions, cards, covenMemory, fsMemory, contentHits, query, activeFamiliarId, projects]);
 
   useEffect(() => {
     if (activeIdx >= rows.length) setActiveIdx(Math.max(0, rows.length - 1));

@@ -12,7 +12,7 @@ import {
 // ── settings-sections catalog (pure) ─────────────────────────────────────────
 
 test("every section has full overview metadata + a highlight strip", () => {
-  const ids = ["general", "daemon", "familiars", "addons", "mobile", "appearance", "about"];
+  const ids = ["general", "daemon", "familiars", "mobile", "appearance", "about"];
   assert.deepEqual(SECTIONS.map((s) => s.id), ids, "the section set matches the shell nav");
   for (const s of SECTIONS) {
     assert.ok(s.label && s.icon.startsWith("ph:") && s.description.length > 0, `${s.id} has label/icon/description`);
@@ -56,9 +56,10 @@ test("the shell sources sections from settings-sections and renders the overview
   // The shared search index is sourced from settings-sections.
   assert.doesNotMatch(shell, /const SETTINGS_INDEX: SettingsIndexEntry\[\]/);
   // Each SettingsPage-based section opts into its overview header.
-  for (const id of ["general", "daemon", "addons", "mobile", "appearance", "about"]) {
+  for (const id of ["general", "daemon", "mobile", "appearance", "about"]) {
     assert.match(shell, new RegExp(`section="${id}"`), `${id} page passes its section`);
   }
+  assert.doesNotMatch(shell, /section="addons"|AddonsSection|Add-ons/, "Add-ons is not a settings section");
 });
 
 console.log("settings-overview.test.ts: ok");

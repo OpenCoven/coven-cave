@@ -26,8 +26,6 @@ import { useIsMobile } from "@/lib/use-viewport";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
-import { SettingsTabbed } from "./settings-section-tabs";
-import type { TabItem } from "@/components/ui/tabs";
 import { SettingsOverview } from "./settings-overview";
 import {
   SECTIONS,
@@ -329,9 +327,8 @@ export function SettingsShell() {
           {section === "general" && <GeneralSection />}
           {section === "daemon"   && <DaemonSection />}
           {section === "familiars" && <FamiliarsSection />}
-          {section === "addons"   && <AddonsSection scrollTarget={scrollTarget} />}
           {section === "mobile"   && <MobileSection />}
-          {section === "appearance" && <AppearanceSection scrollTarget={scrollTarget} />}
+          {section === "appearance" && <AppearanceSection />}
           {section === "about"    && <AboutSection />}
         </main>
       </div>
@@ -688,190 +685,6 @@ function DaemonSection() {
           <SettingsKV label="Workspace"     value={status.workspacePath ?? "—"} mono />
         </SettingsGroup>
       )}
-    </SettingsPage>
-  );
-}
-
-// ─── Section: Add-ons ─────────────────────────────────────────────────────────────
-
-type AddonKey =
-  | "github"
-  | "browser"
-  | "flow"
-  | "groupchat"
-  | "journal";
-
-const ADDON_ROWS: Array<{
-  key: AddonKey;
-  label: string;
-  icon: string;
-  group: "integrations" | "surfaces";
-  description: string;
-}> = [
-  // Integrations
-  {
-    key: "github",
-    label: "GitHub",
-    icon: "ph:github-logo",
-    group: "integrations",
-    description: "Browse open issues and pull requests, attach them to tasks, and hand off to a familiar.",
-  },
-  // Sidebar surfaces — off by default to keep Cave simple; turn on what you need.
-  {
-    key: "browser",
-    label: "Browser",
-    icon: "ph:globe",
-    group: "surfaces",
-    description: "A built-in web browser.",
-  },
-  {
-    key: "flow",
-    label: "Flow",
-    icon: "ph:flow-arrow",
-    group: "surfaces",
-    description: "Freeform automation editor — wire nodes on a canvas.",
-  },
-  {
-    key: "groupchat",
-    label: "Group chat",
-    icon: "ph:users-three",
-    group: "surfaces",
-    description: "Broadcast one prompt to a coven of familiars at once.",
-  },
-  {
-    key: "journal",
-    label: "Journal",
-    icon: "ph:book-open",
-    group: "surfaces",
-    description: "Your daily journal and generated sketches.",
-  },
-];
-
-const DEFAULT_ADDONS = Object.fromEntries(
-  ADDON_ROWS.map((r) => [r.key, false]),
-) as Record<AddonKey, boolean>;
-
-type AddonsTab = "surfaces" | "integrations";
-const ADDONS_TABS: ReadonlyArray<TabItem<AddonsTab>> = [
-  { id: "surfaces", label: "Surfaces" },
-  { id: "integrations", label: "Integrations" },
-];
-const ADDONS_TAB_GROUPS: Record<AddonsTab, readonly string[]> = {
-  surfaces: ["Sidebar surfaces"],
-  integrations: ["Integrations"],
-};
-
-function AddonsSection({ scrollTarget }: { scrollTarget?: string | null }) {
-  const [addons, setAddons] = useState<Record<AddonKey, boolean>>(DEFAULT_ADDONS);
-  const [loading, setLoading] = useState(true);
-  const [toggleError, setToggleError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/config", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j: { ok?: boolean; config?: { addons?: Partial<Record<AddonKey, boolean>> } }) => {
-        if (j.ok && j.config?.addons) {
-          const cfg = j.config.addons;
-          setAddons(
-            Object.fromEntries(
-              ADDON_ROWS.map((r) => [r.key, cfg[r.key] ?? false]),
-            ) as Record<AddonKey, boolean>,
-          );
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  const toggle = async (key: AddonKey) => {
-    const newValue = !addons[key];
-    // Optimistic update
-    setAddons((prev) => ({ ...prev, [key]: newValue }));
-    setToggleError(null);
-    try {
-      const res = await fetch("/api/config", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ addons: { [key]: newValue } }),
-      });
-      // fetch only throws on network errors — a 4xx/5xx still "succeeds", so a
-      // failed save would otherwise leave the toggle stuck in the wrong state.
-      if (!res.ok) throw new Error(`save failed (${res.status})`);
-    } catch {
-      // Revert + surface the failure instead of silently flipping back.
-      setAddons((prev) => ({ ...prev, [key]: !newValue }));
-      setToggleError("Couldn't save that change — check the daemon and try again.");
-    }
-  };
-
-  const renderRow = (row: (typeof ADDON_ROWS)[number]) => (
-    <div key={row.key} className="flex items-center justify-between gap-4 px-4 py-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <Icon
-          name={row.icon as Parameters<typeof Icon>[0]["name"]}
-          width={18}
-          className="shrink-0 text-[var(--text-muted)]"
-        />
-        <div className="min-w-0">
-          <p className="text-[13px] text-[var(--text-primary)]">{row.label}</p>
-          <p className="text-[11px] text-[var(--text-muted)]">{row.description}</p>
-        </div>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={addons[row.key]}
-        aria-label={`${row.label} add-on`}
-        onClick={() => void toggle(row.key)}
-        className="settings-addon-switch focus-ring relative inline-flex shrink-0 cursor-pointer items-center justify-center"
-      >
-        <span
-          className="settings-addon-switch__track"
-          aria-hidden="true"
-        >
-          <span className="settings-addon-switch__thumb" />
-        </span>
-      </button>
-    </div>
-  );
-
-  const skeleton = (rows: number) => (
-    <div aria-hidden className="animate-pulse space-y-3 px-4 py-3">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex items-center justify-between gap-4">
-          <span className="h-3 w-1/3 rounded bg-[var(--bg-hover)]" />
-          <span className="h-5 w-9 rounded-full bg-[var(--bg-hover)] opacity-70" />
-        </div>
-      ))}
-    </div>
-  );
-
-  return (
-    <SettingsPage section="addons" title="Add-ons" description="Optional surfaces and integrations. Anything disabled here is hidden from the sidebar — turn on what you need.">
-      {toggleError && (
-        <p role="alert" className="mb-2 px-1 text-[12px] text-[var(--color-danger)]">{toggleError}</p>
-      )}
-      <SettingsTabbed
-        ariaLabel="Add-on settings"
-        tabs={ADDONS_TABS}
-        groupsByTab={ADDONS_TAB_GROUPS}
-        scrollTarget={scrollTarget}
-      >
-        {(tab) => (
-          <>
-      {tab === "surfaces" && (
-      <SettingsGroup label="Sidebar surfaces">
-        {loading ? skeleton(4) : ADDON_ROWS.filter((r) => r.group === "surfaces").map(renderRow)}
-      </SettingsGroup>
-      )}
-      {tab === "integrations" && (
-      <SettingsGroup label="Integrations">
-        {loading ? skeleton(2) : ADDON_ROWS.filter((r) => r.group === "integrations").map(renderRow)}
-      </SettingsGroup>
-      )}
-          </>
-        )}
-      </SettingsTabbed>
     </SettingsPage>
   );
 }
@@ -1329,25 +1142,7 @@ function ThemeTokenOverrides({
 
 // ─── Section: Appearance ───────────────────────────────────────────────────────────────────────
 
-// Appearance stacks 7 groups — tab them so the common controls don't require a
-// long scroll. Labels in APPEARANCE_TAB_GROUPS must match each SettingsGroup
-// label so search/deep-link can switch to the right tab. Module-level (stable
-// ref) so the tab effect doesn't re-run every render.
-type AppearanceTab = "theme" | "colors" | "text" | "interface";
-const APPEARANCE_TABS: ReadonlyArray<TabItem<AppearanceTab>> = [
-  { id: "theme", label: "Theme" },
-  { id: "colors", label: "Colors" },
-  { id: "text", label: "Text" },
-  { id: "interface", label: "Interface" },
-];
-const APPEARANCE_TAB_GROUPS: Record<AppearanceTab, readonly string[]> = {
-  theme: ["Mode", "Theme", "Import from tweakcn"],
-  colors: ["Theme tokens"],
-  text: ["Reading text"],
-  interface: ["Familiar switcher", "Corners"],
-};
-
-function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
+function AppearanceSection() {
   const [activeTheme, setActiveTheme] = useState<ActiveTheme>("coven");
   const [mode, setMode] = useState<ModePref>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
@@ -1527,25 +1322,14 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
 
   return (
     <SettingsPage section="appearance" title="Appearance" description="Colors and visual style.">
-      <SettingsTabbed
-        ariaLabel="Appearance settings"
-        tabs={APPEARANCE_TABS}
-        groupsByTab={APPEARANCE_TAB_GROUPS}
-        scrollTarget={scrollTarget}
-      >
-        {(tab) => (
-          <>
       {/* ── Mode toggle ── */}
-      {tab === "theme" && (
       <SettingsGroup label="Mode">
         <div className="px-4 py-3">
           <ModeToggle value={mode} onChange={handleSetMode} />
         </div>
       </SettingsGroup>
-      )}
 
       {/* ── Preset themes ── */}
-      {tab === "theme" && (
       <SettingsGroup label="Theme">
         {/* Custom theme chip */}
         {activeTheme === "custom" && customData && (
@@ -1617,10 +1401,8 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
           </div>
         )}
       </SettingsGroup>
-      )}
 
       {/* ── Per-token overrides + manual resync ── */}
-      {tab === "colors" && (
       <SettingsGroup label="Theme tokens">
         <ThemeTokenOverrides
           mode={resolveMode(mode)}
@@ -1646,10 +1428,8 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
           </span>
         </div>
       </SettingsGroup>
-      )}
 
       {/* ── tweakcn import ── */}
-      {tab === "theme" && (
       <SettingsGroup label="Import from tweakcn">
         <div className="flex flex-col gap-2 px-4 py-3">
           <p className="text-[12px] text-[var(--text-muted)]">
@@ -1708,13 +1488,11 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
           )}
         </div>
       </SettingsGroup>
-      )}
 
-      {tab === "text" && <FontSettings />}
+      <FontSettings />
 
       {/* ── Familiar switcher ── choose the top-bar familiar control: a row of
           quick-switch avatars, or just the switcher dropdown. */}
-      {tab === "interface" && (
       <SettingsGroup label="Familiar switcher">
         <SettingControlRow
           label="Top-bar style"
@@ -1761,11 +1539,9 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
           </>
         ) : null}
       </SettingsGroup>
-      )}
 
       {/* ── Corner radius ── a minor shape tweak (drives the shared --radius
           tokens), kept last so the primary color/theme and text controls lead. */}
-      {tab === "interface" && (
       <SettingsGroup label="Corners">
         <SettingControlRow
           label="Corner radius"
@@ -1780,10 +1556,6 @@ function AppearanceSection({ scrollTarget }: { scrollTarget?: string | null }) {
           />
         </SettingControlRow>
       </SettingsGroup>
-      )}
-          </>
-        )}
-      </SettingsTabbed>
     </SettingsPage>
   );
 }

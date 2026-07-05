@@ -136,10 +136,10 @@ assert.match(
   /name:\s*`Go to \$\{fm\.label\}`/,
   "each navigable surface renders a 'Go to <label>' row",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /fm\.id === "github"[\s\S]{0,80}?addons\?\.github === true/,
-  "surface rows respect the same add-on gating as the sidebar (GitHub)",
+  /addons\?\.github|addons\?\.browser|addons\?\.flow|addons\?\.groupchat|addons\?\.journal|addons\?: AddonsConfig/,
+  "surface rows are no longer hidden behind add-on config",
 );
 assert.match(
   source,

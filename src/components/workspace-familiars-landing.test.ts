@@ -157,14 +157,14 @@ assert.doesNotMatch(
 
 assert.match(
   sidebar,
-  /\{ id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1", description:/,
+  /\{ id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description:/,
   "Sidebar Home keeps its shortcut hint",
 );
 
 assert.match(
   sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘5", description:/,
-  "Sidebar Browser is the first Tools shortcut, on ⌘5",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description:/,
+  "Sidebar Browser keeps its shortcut hint",
 );
 
 assert.doesNotMatch(sidebar, /id:\s*"terminal"/, "Sidebar does not expose Terminal as a standalone destination");

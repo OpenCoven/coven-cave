@@ -309,13 +309,6 @@ export function Workspace() {
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
-  const [addons, setAddons] = useState<{
-    github?: boolean;
-    browser?: boolean;
-    flow?: boolean;
-    groupchat?: boolean;
-    journal?: boolean;
-  }>({});
   const responseNeededRef = useRef(responseNeeded);
   responseNeededRef.current = responseNeeded;
   // Deep-link target captured at mount, held until the async sessions fetch
@@ -522,15 +515,6 @@ export function Workspace() {
     return () => window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
   }, []);
 
-  useEffect(() => {
-    fetch("/api/config", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((j: { ok?: boolean; config?: { addons?: typeof addons } }) => {
-        if (j.ok && j.config?.addons) setAddons(j.config.addons);
-      })
-      .catch(() => {/* keep defaults */});
-  }, []);
-
   // Daemon status poll (previously lived on DaemonBar before chrome consolidation)
   // — pauses while the tab is hidden and refreshes on return (usePausablePoll).
   useEffect(() => {
@@ -609,11 +593,9 @@ export function Workspace() {
 
     const request = (async () => {
       let baseSessionsApplied = false;
-      const githubTasksPromise = addons.github
-        ? fetch("/api/github/tasks", { cache: "no-store" })
-            .then((res) => (res.ok ? res.json() : null))
-            .catch(() => null)
-        : Promise.resolve(null);
+      const githubTasksPromise = fetch("/api/github/tasks", { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null);
       try {
         // Scope the session list to the active familiar's granted projects so
         // every surface fed by `sessions` enforces the familiar→projects map.
@@ -652,7 +634,7 @@ export function Workspace() {
 
     loadSessionsInFlightRef.current = request;
     return request;
-  }, [addons.github, activeId]);
+  }, [activeId]);
 
   useEffect(() => {
     loadFamiliars();
@@ -1737,7 +1719,6 @@ export function Workspace() {
       mode={mode}
       sessions={sessions}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
-      addons={addons}
       onNewChat={() => {
         startFamiliarChat(activeId);
         shellRef.current?.dismissNavMobile();
@@ -2104,7 +2085,6 @@ export function Workspace() {
         initialQuery={topSearchQuery}
         onQueryChange={setTopSearchQuery}
         onIntent={onPaletteIntent}
-        addons={addons}
       />
 
       <ShortcutsSheet open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />

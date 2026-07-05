@@ -76,15 +76,10 @@ assert.doesNotMatch(
   />Loading…</,
   "Settings integrations no longer shows a bare Loading… line",
 );
-assert.match(
+assert.doesNotMatch(
   settings,
-  /loading \? skeleton\(/,
-  "Settings add-ons shows skeleton rows while the config loads",
-);
-assert.match(
-  settings,
-  /const skeleton = [\s\S]{0,160}animate-pulse/,
-  "the add-ons skeleton helper renders animate-pulse placeholder rows",
+  /loading \? skeleton\(|const skeleton = [\s\S]{0,160}animate-pulse/,
+  "Settings no longer keeps Add-ons skeleton rows after removing the section",
 );
 
 const vault = read("./vault-panel.tsx");

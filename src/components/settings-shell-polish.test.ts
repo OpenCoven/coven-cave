@@ -116,42 +116,15 @@ assert.match(
   "comingSoon rows get opacity-50",
 );
 
-// Add-on toggle must treat a non-ok response as a failure (fetch only throws on
-// network errors), revert, and surface the error — not silently stick.
-assert.match(
+assert.doesNotMatch(
   source,
-  /if \(!res\.ok\) throw new Error\(`save failed \(\$\{res\.status\}\)`\)/,
-  "add-on toggle checks res.ok so a 4xx/5xx is treated as a failed save",
+  /AddonsSection|ADDONS_TABS|settings-addon-switch|aria-label=\{`\$\{row\.label\} add-on`\}|Add-ons/,
+  "Settings should not render an Add-ons section or add-on switches",
 );
-assert.match(
-  source,
-  /setToggleError\("Couldn't save that change/,
-  "a failed add-on toggle surfaces an inline error",
-);
-assert.match(
-  source,
-  /aria-label=\{`\$\{row\.label\} add-on`\}/,
-  "each add-on switch should expose the add-on name to assistive tech",
-);
-assert.match(
-  source,
-  /className="settings-addon-switch/,
-  "add-on switches should use the dedicated touch-target class",
-);
-assert.match(
-  source,
-  /className="settings-addon-switch__track"/,
-  "add-on switches should keep a compact visual track inside the larger hit target",
-);
-assert.match(
+assert.doesNotMatch(
   dashboardCss,
-  /\.settings-addon-switch\s*\{[\s\S]*?min-width:\s*var\(--touch-target\)[\s\S]*?min-height:\s*var\(--touch-target\)/,
-  "add-on switch hit targets should meet the shared touch target without enlarging the track",
-);
-assert.match(
-  dashboardCss,
-  /\.settings-addon-switch__track\s*\{[\s\S]*?width:\s*36px[\s\S]*?height:\s*20px/,
-  "add-on switch visual track should remain compact inside the touch target",
+  /settings-addon-switch/,
+  "Settings stylesheet should not keep Add-ons switch chrome after the section is removed",
 );
 assert.match(
   dashboardCss,
@@ -223,10 +196,22 @@ assert.match(
   "Settings shell styles should live in an imported tracked stylesheet so the dev CSS bundle includes them reliably",
 );
 
+assert.doesNotMatch(
+  globals,
+  /\.settings-overview\s*\{/,
+  "globals.css should not override the Settings overview styles owned by dashboard.css",
+);
+
 assert.match(
   dashboardCss,
-  /\.settings-overview-strip\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/,
-  "Settings overview strip grid should live in the imported Settings stylesheet owner",
+  /\.settings-overview\s*\{[\s\S]*?display:\s*flex[\s\S]*?align-items:\s*center/,
+  "Settings overview headers should compact into a single row on desktop",
+);
+
+assert.match(
+  dashboardCss,
+  /\.settings-overview-strip\s*\{[\s\S]*?display:\s*flex/,
+  "Settings overview highlight chips should sit inline with the title row where space allows",
 );
 
 assert.match(
@@ -303,14 +288,14 @@ assert.match(
 
 assert.match(
   dashboardCss,
-  /\.settings-overview-strip[\s\S]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/,
-  "Settings overview should use a stable three-column summary strip on desktop",
+  /\.settings-overview\s*\{[\s\S]*?display:\s*flex[\s\S]*?align-items:\s*center/,
+  "Settings overview should use a single-row desktop header",
 );
 
 assert.match(
   dashboardCss,
-  /@media \(max-width: 767px\) \{[\s\S]*\.settings-overview-strip[\s\S]*grid-template-columns:\s*1fr/,
-  "Settings overview should collapse to one column on mobile",
+  /@media \(max-width: 767px\) \{[\s\S]*\.settings-overview\s*\{[\s\S]*display:\s*block[\s\S]*\.settings-overview-strip[\s\S]*flex-direction:\s*column/,
+  "Settings overview should stack on mobile",
 );
 
 // ── 2026-07-03 settings a11y batch ────────────────────────────────────────────

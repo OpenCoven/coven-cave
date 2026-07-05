@@ -37,22 +37,19 @@ test("uses idOf to compare (so it works on derived DOM ids, not raw labels)", ()
   assert.equal(tabForScrollTarget(GROUPS, "Corners", slug), null); // raw label no longer matches
 });
 
-// Source guard: the long sections route through the shared tabbed wrapper so the
-// "minimize scrolling" behaviour can't silently regress to a flat scroll. Every
-// gated group label must also appear in its tab map (search/deep-link relies on
-// the labels matching the SettingsGroup labels).
+// Source guard: Settings now keeps all section options visible by default.
 const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 
-test("Appearance and Add-ons render through SettingsTabbed", () => {
-  assert.match(shell, /import \{ SettingsTabbed \} from "\.\/settings-section-tabs"/);
-  assert.match(shell, /tabs=\{APPEARANCE_TABS\}/, "Appearance uses the appearance tab set");
-  assert.match(shell, /tabs=\{ADDONS_TABS\}/, "Add-ons uses the add-ons tab set");
+test("Settings no longer hides Appearance or Add-ons groups behind tabs", () => {
+  assert.doesNotMatch(shell, /import \{ SettingsTabbed \} from "\.\/settings-section-tabs"/);
+  assert.doesNotMatch(shell, /tabs=\{APPEARANCE_TABS\}/, "Appearance groups are all visible by default");
+  assert.doesNotMatch(shell, /ADDONS_TABS|AddonsSection/, "Add-ons section is removed");
 });
 
 test("every tab-map group label still has a matching SettingsGroup in the shell", () => {
   const labels = [
     "Mode", "Theme", "Theme tokens", "Import from tweakcn",
-    "Familiar switcher", "Corners", "Sidebar surfaces", "Integrations",
+    "Familiar switcher", "Corners",
   ];
   for (const label of labels) {
     assert.match(shell, new RegExp(`<SettingsGroup label="${label}"`), `${label} group still rendered`);

@@ -5,9 +5,7 @@
  *
  * Layout (top to bottom):
  *   1. Familiar scope selector + New chat CTA
- *   2. App destinations grouped by purpose:
- *      Work  (Home / Chat / Tasks / Schedules)
- *      Tools (Browser / Marketplace / GitHub)
+ *   2. App destinations as one flat visible list
  *   3. Footer: Dashboard, Settings
  */
 
@@ -44,14 +42,6 @@ export type FolderMode =
   | "capabilities"
   | "journal";
 
-export type AddonsConfig = {
-  github?: boolean;
-  browser?: boolean;
-  flow?: boolean;
-  groupchat?: boolean;
-  journal?: boolean;
-};
-
 export type SidebarMinimalProps = {
   mode: string;
   sessions: SessionRow[];
@@ -60,7 +50,6 @@ export type SidebarMinimalProps = {
   onOpenSettings: () => void;
   onModeChange: (mode: string) => void;
   onOpenSession: (id: string) => void;
-  addons?: AddonsConfig;
   /* Notifications — when omitted, the bell is hidden. */
   inboxItems?: InboxItem[];
   inboxPrefs?: InboxPrefs;
@@ -89,79 +78,25 @@ const FOLDER_MODES: Array<{
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
   badge?: (props: SidebarMinimalProps) => string | undefined;
-  group: "work" | "tools" | "addons";
   kbd?: string;
   // One-line hover/long-press help. Differentiates surfaces that read alike at
   // a glance.
   description: string;
 }> = [
-  // Work
-  { id: "home", label: "Home", iconName: "ph:house-bold", group: "work", kbd: "⌘1", description: "Overview and quick actions" },
-  { id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2", description: "Talk with your familiars" },
-  { id: "groupchat", label: "Group", iconName: "ph:users-three", group: "work", description: "Group chat — broadcast to a coven of familiars at once" },
-  { id: "board", label: "Tasks", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
-  { id: "journal", label: "Journal", iconName: "ph:book-open", group: "work", description: "Your daily journal and generated sketches" },
-  { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", group: "work", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
-  // Tools
-  { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘5", description: "Built-in web browser" },
-  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description: "Browse the store and manage your familiars' roles, skills, and capabilities" },
+  { id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description: "Overview and quick actions" },
+  { id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description: "Talk with your familiars" },
+  { id: "groupchat", label: "Group", iconName: "ph:users-three", description: "Group chat — broadcast to a coven of familiars at once" },
+  { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
+  { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your daily journal and generated sketches" },
+  { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
+  { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser" },
+  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities" },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
-  // Add-ons (gated)
-  { id: "github", label: "GitHub", iconName: "ph:github-logo", group: "addons", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount) },
+  { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount) },
 ];
 
 export { FOLDER_MODES };
-
-function SidebarSection({
-  label,
-  className = "",
-  children,
-}: {
-  label?: string;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  const storageKey = label
-    ? `cave:sidebar:section:${label.toLowerCase().replace(/\s+/g, "-")}`
-    : null;
-  const [collapsed, setCollapsed] = React.useState(false);
-  // Hydrate the persisted collapse state after mount so the SSR markup (always
-  // expanded) matches the first client render, then reconcile from storage.
-  React.useEffect(() => {
-    if (!storageKey) return;
-    setCollapsed(localStorage.getItem(storageKey) === "1");
-  }, [storageKey]);
-  const toggle = React.useCallback(() => {
-    setCollapsed((v) => {
-      const next = !v;
-      if (storageKey) localStorage.setItem(storageKey, next ? "1" : "0");
-      return next;
-    });
-  }, [storageKey]);
-  return (
-    <div className={`sidebar-folders ${className}`.trim()}>
-      {label ? (
-        // The whole header is the hit target — clicking anywhere across its full
-        // height/width collapses or expands the section.
-        <button
-          type="button"
-          className="sidebar-section-label"
-          aria-expanded={!collapsed}
-          onClick={toggle}
-        >
-          <span className="sidebar-section-label__text">{label}</span>
-          <Icon
-            name="ph:caret-down-bold"
-            width={CAVE_ICON_SIZE.sidePanelChevron} height={CAVE_ICON_SIZE.sidePanelChevron}
-            className={`sidebar-section-label__chevron${collapsed ? " sidebar-section-label__chevron--collapsed" : ""}`}
-          />
-        </button>
-      ) : null}
-      {collapsed ? null : children}
-    </div>
-  );
-}
 
 
 function FolderRow({
@@ -235,11 +170,10 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onModeChange,
     onOpenSession,
     activeSessionId,
-    addons,
   } = props;
 
-  // Arrow-key navigation across the nav rows (Work + Tools): one tab stop,
-  // Up/Down moves focus, Home/End jumps. Uses the shared roving-tabindex hook.
+  // Arrow-key navigation across the flat nav rows: one tab stop, Up/Down moves
+  // focus, Home/End jumps. Uses the shared roving-tabindex hook.
   const navScrollRef = React.useRef<HTMLDivElement | null>(null);
   useRovingTabIndex({ containerRef: navScrollRef, itemSelector: ".sidebar-folder-row", orientation: "vertical" });
 
@@ -248,20 +182,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
   const handleModeSelect = (id: FolderMode) => {
     onModeChange(id);
   };
-
-  // Gated surfaces are hidden from the nav until enabled in Settings → Add-ons
-  // (all default off). This keeps the default Cave to a simple core — Home, Chat,
-  // Board, Schedules — with everything else opt-in.
-  const visibleFolderModes = FOLDER_MODES.filter((fm) => {
-    if (fm.id === "github") return addons?.github === true;
-    if (fm.id === "browser") return addons?.browser === true;
-    if (fm.id === "groupchat") return addons?.groupchat === true;
-    if (fm.id === "journal") return addons?.journal === true;
-    return true;
-  });
-
-  const workModes = visibleFolderModes.filter((fm) => fm.group === "work");
-  const toolsModes = visibleFolderModes.filter((fm) => fm.group === "tools" || fm.group === "addons");
 
   return (
     <nav className="sidebar-minimal">
@@ -289,43 +209,21 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       </div>
 
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
-        <SidebarSection label="Work">
-          {workModes.map((fm) => (
-            <FolderRow
-              key={fm.id}
-              id={fm.id}
-              label={fm.label}
-              iconName={fm.iconName}
-              active={mode === fm.id}
-              badge={fm.badge?.(props)}
-              kbd={fm.kbd}
-              description={fm.description}
-              onClick={() => handleModeSelect(fm.id)}
-            />
-          ))}
-        </SidebarSection>
-
-        {/* Hide the whole Tools section when every tool is gated off — an empty
-            labelled section reads as broken. */}
-        {toolsModes.length > 0 && (
-          <SidebarSection label="Tools">
-            {toolsModes.map((fm) => (
-              <FolderRow
-                key={fm.id}
-                id={fm.id}
-                label={fm.label}
-                iconName={fm.iconName}
-                // Roles and Capabilities are sections of the Marketplace hub,
-                // so keep the Marketplace entry lit when those modes are active.
-                active={mode === fm.id || (fm.id === "marketplace" && (mode === "roles" || mode === "capabilities"))}
-                badge={fm.badge?.(props)}
-                kbd={fm.kbd}
-                description={fm.description}
-                onClick={() => handleModeSelect(fm.id)}
-              />
-            ))}
-          </SidebarSection>
-        )}
+        {FOLDER_MODES.map((fm) => (
+          <FolderRow
+            key={fm.id}
+            id={fm.id}
+            label={fm.label}
+            iconName={fm.iconName}
+            // Roles and Capabilities are sections of the Marketplace hub, so keep
+            // the Marketplace entry lit when those modes are active.
+            active={mode === fm.id || (fm.id === "marketplace" && (mode === "roles" || mode === "capabilities"))}
+            badge={fm.badge?.(props)}
+            kbd={fm.kbd}
+            description={fm.description}
+            onClick={() => handleModeSelect(fm.id)}
+          />
+        ))}
 
         <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
       </div>

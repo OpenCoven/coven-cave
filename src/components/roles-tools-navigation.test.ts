@@ -52,7 +52,7 @@ assert.doesNotMatch(
 // ── Sidebar: one Tools entry for the merged hub ──────────────────────────────
 assert.match(
   sidebar,
-  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description: "Browse the store and manage your familiars' roles, skills, and capabilities" \},/,
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities" \},/,
   "Sidebar navigation should expose the merged Marketplace hub with a description covering both halves",
 );
 assert.doesNotMatch(

@@ -48,14 +48,14 @@ assert.match(
   "Sidebar should keep the main navigation in one continuous scrollable rail",
 );
 
-assert.match(
+assert.doesNotMatch(
   source,
-  /fm\.group === "work"/,
-  'Sidebar Work section must filter on group === "work"',
+  /function SidebarSection|<SidebarSection|sidebar-section-label|fm\.group === "work"|fm\.group === "tools"/,
+  "Left sidepanel should render one flat list without collapsible Work/Tools sections",
 );
 
 // The standalone Knowledge section is gone; Library is now isolated on its
-// feature branch, so the integrated sidebar renders just Work and Tools.
+// feature branch, so the integrated sidebar renders one flat app list.
 assert.doesNotMatch(
   source,
   /"knowledge"/,
@@ -64,8 +64,8 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /fm\.group === "tools"/,
-  'Sidebar Tools section must filter on group === "tools"',
+  /FOLDER_MODES\.map\(\(fm\) =>/,
+  "Sidebar should render every folder mode directly",
 );
 
 assert.match(
@@ -103,14 +103,14 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "chat", label: "Chat", iconName: "ph:chats", group: "work", kbd: "⌘2", description:/,
-  "The Chat surface should live at the ⌘2 Work shortcut",
+  /\{ id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description:/,
+  "The Chat surface should keep the ⌘2 shortcut",
 );
 
 assert.match(
   source,
-  /\{ id: "board", label: "Tasks", iconName: "ph:kanban", group: "work", kbd: "⌘3", description:/,
-  "the Tasks surface (mode id 'board') sits on the ⌘3 Work shortcut",
+  /\{ id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description:/,
+  "the Tasks surface (mode id 'board') sits on the ⌘3 shortcut",
 );
 
 assert.doesNotMatch(
@@ -121,7 +121,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-check", group: "work", kbd: "⌘4", description:/,
+  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description:/,
   "Schedules should own the old Calendar shortcut as the active schedule surface",
 );
 
@@ -147,7 +147,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘5", description:/,
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description:/,
   "Browser is the first Tools surface after Schedules, on ⌘5",
 );
 
@@ -155,7 +155,7 @@ assert.doesNotMatch(source, /id:\s*"terminal"/, "Terminal is not a standalone si
 
 assert.match(
   source,
-  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description:/,
+  /\{ id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description:/,
   "The merged Marketplace hub should appear as a Tools surface",
 );
 
@@ -173,7 +173,7 @@ assert.doesNotMatch(
 
 assert.doesNotMatch(
   source,
-  /\{ id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description:/,
+  /\{ id: "flow", label: "Flow", iconName: "ph:flow-arrow", description:/,
   "Flow should not appear as a top-level Tools surface on the active branch",
 );
 
@@ -237,23 +237,35 @@ assert.doesNotMatch(
   "footer should not render an unread reminders badge",
 );
 
-// Tools-group entries include browser and marketplace.
+// Default visible entries include browser and marketplace.
 // (Capabilities moved to a tab on the Roles page — no standalone entry.)
 assert.match(
   source,
-  /id:\s*"browser"[^}]*group:\s*"tools"/,
-  "browser stays in Tools",
+  /id:\s*"browser"[^}]*label:\s*"Browser"/,
+  "browser stays visible",
 );
-assert.doesNotMatch(source, /id:\s*"terminal"[^}]*group:\s*"tools"/, "terminal does not stay in Tools");
+assert.doesNotMatch(source, /id:\s*"terminal"/, "terminal does not stay visible");
 assert.match(
   source,
-  /id:\s*"marketplace"[^}]*group:\s*"tools"/,
-  "marketplace stays in Tools",
+  /id:\s*"marketplace"[^}]*label:\s*"Marketplace"/,
+  "marketplace stays visible",
 );
 assert.doesNotMatch(
   source,
-  /id:\s*"flow"[^}]*group:\s*"tools"/,
+  /id:\s*"flow"[^}]*label:\s*"Flow"/,
   "flow does not stay in Tools",
+);
+
+assert.doesNotMatch(
+  source,
+  /addons\?\.github|addons\?\.browser|addons\?\.groupchat|addons\?\.journal|AddonsConfig|addons\?:/,
+  "Sidebar should not hide surfaces behind add-on config",
+);
+
+assert.match(
+  source,
+  /\{ id: "github", label: "GitHub", iconName: "ph:github-logo"/,
+  "GitHub is visible by default",
 );
 
 // Recent Activity items must navigate: RecentActivityRollup's onClick calls

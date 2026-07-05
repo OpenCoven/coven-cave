@@ -204,6 +204,10 @@
 }
 
 .settings-overview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
   margin-bottom: 24px;
   padding: 18px;
   border: 1px solid var(--border-hairline);
@@ -257,10 +261,12 @@
 }
 
 .settings-overview-strip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex: 1 1 360px;
+  justify-content: flex-end;
   gap: 8px;
-  margin-top: 16px;
+  min-width: 0;
+  margin-top: 0;
 }
 
 .settings-overview-strip__item {
@@ -268,6 +274,7 @@
   align-items: center;
   gap: 7px;
   min-width: 0;
+  max-width: 190px;
   padding: 8px 10px;
   border: 1px solid var(--border-hairline);
   border-radius: var(--radius-control);
@@ -304,42 +311,6 @@
   min-height: var(--touch-target);
 }
 
-.settings-addon-switch {
-  min-width: var(--touch-target);
-  min-height: var(--touch-target);
-}
-
-.settings-addon-switch__track {
-  position: relative;
-  display: inline-flex;
-  width: 36px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--bg-elevated);
-  transition: background var(--duration-fast) var(--ease-standard);
-}
-
-.settings-addon-switch[aria-checked="true"] .settings-addon-switch__track {
-  background: var(--accent-presence);
-}
-
-.settings-addon-switch__thumb {
-  position: absolute;
-  top: 2px;
-  left: 0;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: #fff;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.28);
-  transform: translateX(2px);
-  transition: transform var(--duration-fast) var(--ease-standard);
-}
-
-.settings-addon-switch[aria-checked="true"] .settings-addon-switch__thumb {
-  transform: translateX(18px);
-}
-
 @media (max-width: 767px) {
   .settings-shell__sidebar {
     width: 100%;
@@ -351,6 +322,7 @@
   }
 
   .settings-overview {
+    display: block;
     padding: 14px;
     border-radius: 14px;
   }
@@ -370,7 +342,8 @@
   }
 
   .settings-overview-strip {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    margin-top: 16px;
   }
 
   .settings-overview-strip__item span {

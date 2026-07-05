@@ -110,8 +110,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /addons\.github\s*\?[\s\S]{0,120}fetch\("\/api\/github\/tasks"/,
-  "Workspace should only poll GitHub task context when the GitHub addon is enabled",
+  /const githubTasksPromise = fetch\("\/api\/github\/tasks"/,
+  "Workspace polls GitHub task context because GitHub is visible by default",
 );
 
 console.log("chat-all-familiars-project-list.test.ts: ok");
