@@ -1618,7 +1618,9 @@ export async function POST(req: Request) {
       // is the marker-free text that gets persisted (the client also strips
       // markers from the live-streamed text for parity — see chat-view).
       const { text: cleanedAssistantText, attachments: agentAttachments } =
-        parseAgentAttachments(assistantText.trim());
+        parseAgentAttachments(assistantText.trim(), {
+          allowedRoots: sshRuntime ? [] : [familiarCwd ?? cwd, ...grantedProjectRoots],
+        });
       for (const attachment of agentAttachments) {
         push({ kind: "attachment", attachment });
       }

@@ -27,11 +27,12 @@ function restoreEnv() {
 
 const allowed = await mkdtemp(path.join(tmpdir(), "coven-agent-attach-allowed-"));
 const outside = await mkdtemp(path.join(tmpdir(), "coven-agent-attach-outside-"));
+const globalOnly = await mkdtemp(path.join(tmpdir(), "coven-agent-attach-global-"));
 
 try {
-  // Make `allowed` the only project-defined root; clear the rest so the
-  // outside dir is genuinely outside every allowed root.
-  process.env.WORKSPACE_ROOT = allowed;
+  // Make `globalOnly` globally allowed while tests pass only `allowed` as the
+  // runtime-scoped grant set; clear the rest to keep `outside` isolated.
+  process.env.WORKSPACE_ROOT = globalOnly;
   process.env.COVEN_HOME = path.join(allowed, ".coven");
   process.env.CAVE_PROJECTS_PATH_OVERRIDE = path.join(allowed, "cave-projects.json");
   delete process.env.COVEN_WORKSPACES_ROOT;
@@ -42,9 +43,11 @@ try {
   const imgPath = path.join(allowed, "diagram.png");
   const txtPath = path.join(allowed, "notes.txt");
   const outsidePath = path.join(outside, "secret.png");
+  const globalOnlyPath = path.join(globalOnly, "global-secret.txt");
   await writeFile(imgPath, Buffer.from(PNG_1x1_BASE64, "base64"));
   await writeFile(txtPath, "hello\nworld");
   await writeFile(outsidePath, Buffer.from(PNG_1x1_BASE64, "base64"));
+  await writeFile(globalOnlyPath, "should not be read");
 
   const { extractAgentAttachmentMarkers } = await import("../chat-attachments.ts");
   const { parseAgentAttachments } = await import("./agent-attachments.ts");
@@ -66,7 +69,7 @@ try {
   // --- image attachment → bounded data URL ---
   {
     const text = `Here is the image.\n\n\`\`\`coven:attachment\n${JSON.stringify({ path: imgPath, name: "diagram.png" })}\n\`\`\``;
-    const out = parseAgentAttachments(text);
+    const out = parseAgentAttachments(text, { allowedRoots: [allowed] });
     assert.equal(out.attachments.length, 1, "image attachment parsed");
     assert.equal(out.attachments[0].name, "diagram.png");
     assert.equal(out.attachments[0].mimeType, "image/png");
@@ -78,7 +81,7 @@ try {
   // --- text attachment → inline text, no data URL ---
   {
     const text = `\`\`\`coven:attachment\n${JSON.stringify({ path: txtPath })}\n\`\`\``;
-    const out = parseAgentAttachments(text);
+    const out = parseAgentAttachments(text, { allowedRoots: [allowed] });
     assert.equal(out.attachments.length, 1, "text attachment parsed");
     assert.equal(out.attachments[0].name, "notes.txt");
     assert.equal(out.attachments[0].text, "hello\nworld");
@@ -88,15 +91,32 @@ try {
   // --- path outside allowed roots → dropped, but marker still stripped ---
   {
     const text = `nope\n\n\`\`\`coven:attachment\n${JSON.stringify({ path: outsidePath })}\n\`\`\``;
-    const out = parseAgentAttachments(text);
+    const out = parseAgentAttachments(text, { allowedRoots: [allowed] });
     assert.equal(out.attachments.length, 0, "out-of-root path is dropped");
     assert.ok(!out.text.includes("coven:attachment"), "marker still stripped for dropped path");
     assert.equal(out.text, "nope");
   }
 
+
+  // --- globally allowed but not runtime-granted root → dropped ---
+  {
+    const text = `nope\n\n\`\`\`coven:attachment\n${JSON.stringify({ path: globalOnlyPath })}\n\`\`\``;
+    const out = parseAgentAttachments(text, { allowedRoots: [allowed] });
+    assert.equal(out.attachments.length, 0, "global-only path is dropped without runtime grant");
+    assert.equal(out.text, "nope");
+  }
+
+  // --- no runtime-granted roots → no local file reads ---
+  {
+    const text = `nope\n\n\`\`\`coven:attachment\n${JSON.stringify({ path: txtPath })}\n\`\`\``;
+    const out = parseAgentAttachments(text);
+    assert.equal(out.attachments.length, 0, "default parser does not read local files");
+    assert.equal(out.text, "nope");
+  }
+
   // --- no marker → passthrough ---
   {
-    const out = parseAgentAttachments("plain reply");
+    const out = parseAgentAttachments("plain reply", { allowedRoots: [allowed] });
     assert.equal(out.attachments.length, 0);
     assert.equal(out.text, "plain reply");
   }
@@ -104,6 +124,7 @@ try {
   restoreEnv();
   await rm(allowed, { recursive: true, force: true });
   await rm(outside, { recursive: true, force: true });
+  await rm(globalOnly, { recursive: true, force: true });
 }
 
 console.log("agent-attachments.test.ts: ok");

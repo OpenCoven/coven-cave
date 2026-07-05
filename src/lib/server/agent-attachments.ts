@@ -7,7 +7,6 @@ import {
   MAX_ATTACHMENT_TEXT_CHARS,
   type ChatAttachment,
 } from "@/lib/chat-attachments";
-import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
 
 /**
  * Server-side parser for agent-produced inline attachments.
@@ -18,9 +17,9 @@ import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
  *   { "path": "/abs/path/to/file.png", "name": "file.png" }
  *   ```
  *
- * The server resolves the path against the project-root allowlist (the SAME
- * guard the Code/file-preview surfaces use — anything outside a granted root is
- * silently dropped), reads the file under a size cap, and turns it into a
+ * The server resolves the path against the chat runtime's granted local roots
+ * (anything outside those roots is silently dropped), reads the file under a
+ * size cap, and turns it into a
  * {@link ChatAttachment}. Images ride through as a bounded base64 data URL so
  * the chat surface can preview them; text files carry their (truncated) text;
  * everything else is metadata-only. The marker block is stripped from the
@@ -52,6 +51,15 @@ const TEXT_EXTS = new Set([
 
 type AttachmentMarker = { path: string; name?: string };
 
+export type AgentAttachmentParseOptions = {
+  /**
+   * Runtime-scoped local roots that agent-produced attachment markers may read from.
+   * Omit or pass an empty array for runtimes that must not read local files
+   * (for example SSH).
+   */
+  allowedRoots?: readonly string[];
+};
+
 /** Strip control characters and cap length — mirrors the `cleanName` guard in chat-attachments.ts. */
 function sanitizeAttachmentName(name: string): string {
   const base = name.split(/[\\/]/).filter(Boolean).pop() ?? "attachment";
@@ -76,10 +84,22 @@ function parseMarker(body: string): AttachmentMarker | null {
   };
 }
 
-function buildAttachment(marker: AttachmentMarker): ChatAttachment | null {
-  const allowed = resolveAllowedProjectSubpath(marker.path);
-  if (!allowed) return null; // outside every granted root — drop silently
-  const resolved = path.join(allowed.root, allowed.relativePath);
+function resolveAttachmentPath(markerPath: string, allowedRoots: readonly string[] = []): string | null {
+  const resolvedMarkerPath = path.resolve(markerPath);
+  for (const root of allowedRoots) {
+    const resolvedRoot = path.resolve(root);
+    const relative = path.relative(resolvedRoot, resolvedMarkerPath);
+    if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+      return resolvedMarkerPath;
+    }
+    if (!relative) return resolvedMarkerPath;
+  }
+  return null;
+}
+
+function buildAttachment(marker: AttachmentMarker, options: AgentAttachmentParseOptions = {}): ChatAttachment | null {
+  const resolved = resolveAttachmentPath(marker.path, options.allowedRoots);
+  if (!resolved) return null; // outside the runtime/granted roots — drop silently
 
   let stat: fs.Stats;
   try {
@@ -133,13 +153,16 @@ function buildAttachment(marker: AttachmentMarker): ChatAttachment | null {
  * {@link MAX_AGENT_ATTACHMENTS} files; markers that don't resolve are dropped
  * but still stripped from the text.
  */
-export function parseAgentAttachments(text: string): { text: string; attachments: ChatAttachment[] } {
+export function parseAgentAttachments(
+  text: string,
+  options: AgentAttachmentParseOptions = {},
+): { text: string; attachments: ChatAttachment[] } {
   const { text: cleaned, markers } = extractAgentAttachmentMarkers(text);
   const attachments: ChatAttachment[] = [];
   for (const body of markers) {
     if (attachments.length >= MAX_AGENT_ATTACHMENTS) break;
     const marker = parseMarker(body);
-    const attachment = marker ? buildAttachment(marker) : null;
+    const attachment = marker ? buildAttachment(marker, options) : null;
     if (attachment) attachments.push(attachment);
   }
   return { text: cleaned, attachments };
