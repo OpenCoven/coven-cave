@@ -88,12 +88,14 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "assigned project root is invalid" }, { status: 409 });
     }
 
-    const requestedProjectRoot = body.projectRoot ? normalizeProjectRoot(body.projectRoot) : null;
-    if (requestedProjectRoot && requestedProjectRoot !== projectRoot) {
-      return NextResponse.json(
-        { ok: false, error: "project root does not match assigned task project" },
-        { status: 403 },
-      );
+    if (body.projectRoot !== undefined && body.projectRoot !== null) {
+      const requestedProjectRoot = normalizeProjectRoot(body.projectRoot);
+      if (!requestedProjectRoot || requestedProjectRoot !== projectRoot) {
+        return NextResponse.json(
+          { ok: false, error: "project root does not match assigned task project" },
+          { status: 403 },
+        );
+      }
     }
 
     try {
