@@ -202,7 +202,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
   }, [sidebarHydrated, selection]);
 
   // ── URL hash sync (CHAT-D9-01) ────────────────────────────────────────────
-  // Follows the existing in-app hash idiom (`#card-<id>`, `library:projects`):
+  // Follows the existing in-app hash idiom (`#card-<id>`):
   // an open chat is reflected as `#chat-<sessionId>`, so reloads and shared
   // links can re-enter the thread (workspace.tsx owns mount-time restore and
   // the popstate listener). History semantics: opening a chat *pushes* an

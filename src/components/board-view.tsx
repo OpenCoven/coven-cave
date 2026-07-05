@@ -52,7 +52,7 @@ type Props = {
 
 // First-load placeholder that previews the kanban structure (ghost columns +
 // cards) instead of a bare spinner, matching the app-wide skeleton convention
-// (library/schedules/chat/board-inspector). Reuses the real column classes so
+// (schedules/chat/board-inspector). Reuses the real column classes so
 // it's pixel-matched and theme-aware; the shimmer comes from <Skeleton>.
 function BoardKanbanSkeleton() {
   return (

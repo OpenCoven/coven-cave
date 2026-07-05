@@ -276,6 +276,39 @@ function sourceSummary(source: string, skills: SkillBrowserEntry[]) {
   };
 }
 
+function skillDecisionItems(skill: SkillBrowserEntry) {
+  const installed = Boolean(skill.installed || skill.local?.installed);
+  const local = Boolean(skill.local?.installed || skill.path);
+  const trustValue =
+    skill.trust?.official && skill.trust?.audited
+      ? "Official + audited"
+      : skill.trust?.official
+        ? "Official"
+        : skill.trust?.audited
+          ? "Audited"
+          : "Community";
+  return [
+    {
+      icon: installed ? "ph:check-circle" as const : "ph:arrow-down" as const,
+      label: "Install state",
+      value: installed ? "Installed" : "Available",
+      detail: installed ? "Ready from your local skill roots." : "Install or use it from the directory.",
+    },
+    {
+      icon: skill.trust?.official ? "ph:seal-check" as const : "ph:shield-warning" as const,
+      label: "Trust signal",
+      value: trustValue,
+      detail: skill.trust?.source ? `Sourced from ${skill.trust.source}.` : "Review source before installing.",
+    },
+    {
+      icon: local ? "ph:folder-open" as const : "ph:cloud-bold" as const,
+      label: "Source",
+      value: local ? "Local skill" : "Directory",
+      detail: sourceTarget(skill),
+    },
+  ];
+}
+
 // Collapse the absolute SKILL.md path to a friendly directory (drops /SKILL.md,
 // tildes the home prefix) for the detail header.
 function displayPath(path: string): string {
@@ -373,6 +406,7 @@ export function SkillBrowser({
   const selectedPreviewKey = selected ? skillKey(selected) : null;
   const selectedHasLocalPath = Boolean(selected?.local?.installed && selectedPath);
   const selectedSource = selected ? sourceTarget(selected) : "";
+  const selectedDecisionItems = useMemo(() => (selected ? skillDecisionItems(selected) : []), [selected]);
   const selectedSourceSummary = useMemo(
     () => (selectedSource ? sourceSummary(selectedSource, skills) : { count: 0, installs: 0 }),
     [selectedSource, skills],
@@ -782,6 +816,18 @@ export function SkillBrowser({
                     </Button>
                   </div>
                 ) : null}
+              </div>
+              <div className="skill-browser__decision" aria-label={`${selected.name} install decision summary`}>
+                {selectedDecisionItems.map((item) => (
+                  <div key={item.label} className="skill-browser__decision-card">
+                    <span className="skill-browser__decision-label">
+                      <Icon name={item.icon} width={12} aria-hidden />
+                      {item.label}
+                    </span>
+                    <strong>{item.value}</strong>
+                    <p>{item.detail}</p>
+                  </div>
+                ))}
               </div>
               <div className="skill-browser__install">
                 <code>{installCommand(selected)}</code>

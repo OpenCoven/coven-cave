@@ -663,7 +663,7 @@
   color:var(--text-primary);
 }
 .gh-input::placeholder { color:var(--text-muted); }
-.gh-input:focus { border-color:var(--accent-presence); outline:none; }
+.gh-input:focus-visible { border-color:var(--accent-presence); outline:none; }
 
 .gh-workspace {
   position:relative;

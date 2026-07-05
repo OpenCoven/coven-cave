@@ -349,7 +349,7 @@ body {
  *   1. color-scheme (set on :root) — native scrollbars + form controls.
  *   2. scrollbar-color/-width — Firefox and the standards path. These are
  *      INHERITED, so declaring them on html cascades to every element; a
- *      surface with its own scrollbar-color (cave-chat, library, sidebar, …)
+ *      surface with its own scrollbar-color (cave-chat, sidebar, …)
  *      still overrides via the normal cascade.
  *   3. ::-webkit-scrollbar — Chromium/WebKit (the Tauri desktop webview). A
  *      bare pseudo-element matches every scrollbar; per-component
@@ -2740,7 +2740,7 @@ textarea.required-inputs-control {
 }
 
 /* Projects tab: render-virtualize off-screen session rows (same content-visibility
-   strategy as chat turns + library doc rows). The row IS the focusable element
+   strategy as chat turns and dense data rows). The row IS the focusable element
    and its only fixed/portaled descendant — the right-click context menu — is a
    SIBLING, not a child, so layout/paint containment is safe here. The auto
    intrinsic-size caches each row's real height after first paint (works across

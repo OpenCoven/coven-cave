@@ -127,7 +127,7 @@ const WORKSPACE_MODE_TITLES: Record<WorkspaceMode, string> = {
 };
 
 // Chat deep links (CHAT-D9-01): `#chat-<sessionId>` re-enters a specific
-// thread, same in-app hash idiom as `#card-<id>` and `library:projects`.
+// thread, same in-app hash idiom as `#card-<id>`.
 // ChatRouter writes the hash (syncUrlHash); Workspace owns restore + popstate.
 const CHAT_HASH_PREFIX = "#chat-";
 const MOBILE_MODE_STORAGE_KEY = "cave:mobile-mode-enabled";
@@ -1316,7 +1316,7 @@ export function Workspace() {
   }, [sessionsLoaded, sessions, openFamiliarSession, showFamiliarChatList]);
 
   // Browser Back/Forward between list ↔ chat (and chat ↔ chat). Only acts on
-  // chat hashes — board `#card-` and library hashes keep their own listeners.
+  // chat hashes — board `#card-` keeps its own listener.
   useEffect(() => {
     const onPopState = () => {
       const sid = readChatHash();
@@ -1336,7 +1336,7 @@ export function Workspace() {
       }
       // Popped back out of a chat entry to the root (empty hash) → show the
       // list. A *non-empty* hash belongs to another surface's deep link — the
-      // `#card-<id>` the task chip writes, or `#memory:` / `#library:` — and
+      // `#card-<id>` the task chip writes, or `#memory:` — and
       // that surface owns its own mode switch. Bouncing to the chat list here
       // would hijack such navigation: writing `#card-<id>` synchronously fires
       // this handler while `mode` is still "chat" (the intent's setMode("board")
