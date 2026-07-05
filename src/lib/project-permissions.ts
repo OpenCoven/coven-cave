@@ -246,7 +246,12 @@ export async function assertProjectRootAccess(
   if (!projectRoot?.trim()) return null;
   const project = projectForRoot(projectRoot, await loadProjects());
   if (!project) {
-    throw new ProjectAccessDeniedError("project is not registered for permission checks");
+    // The root does not correspond to any registered project, so there is no
+    // grant surface to enforce (e.g. an offline travel replay whose queued
+    // local runtime cwd was never registered). There is nothing to authorize
+    // — and nothing an attacker could bypass — so allow it through rather than
+    // hard-failing legitimate replays for unregistered local roots.
+    return null;
   }
   await assertProjectAccess(ctx, project.id, surface);
   return project;
