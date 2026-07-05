@@ -32,6 +32,7 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
   const [rss, setRss] = useState<FeedItem[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [ready, setReady] = useState(false);
+  const [mediaDismissed, setMediaDismissed] = useState(false);
 
   // Re-derives the digest from the latest inbox + RSS and re-stamps `nowMs` so
   // the count chips and "Nm ago" labels stay current instead of freezing at
@@ -83,10 +84,21 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
           <DigestRow cards={chatCards} onOpenSession={onOpenSession} duplicate />
         </div>
       ) : null}
-      {mediaCards.length > 0 ? (
-        <div className="home-digest__track home-digest__track--media" aria-label="Media headlines">
-          <DigestRow cards={mediaCards} onOpenSession={onOpenSession} />
-          <DigestRow cards={mediaCards} onOpenSession={onOpenSession} duplicate />
+      {mediaCards.length > 0 && !mediaDismissed ? (
+        <div className="home-digest__media">
+          <button
+            type="button"
+            className="home-digest__media-close"
+            aria-label="Close news carousel"
+            title="Close news carousel"
+            onClick={() => setMediaDismissed(true)}
+          >
+            <Icon name="ph:x-bold" width={11} aria-hidden />
+          </button>
+          <div className="home-digest__track home-digest__track--media" aria-label="Media headlines">
+            <DigestRow cards={mediaCards} onOpenSession={onOpenSession} />
+            <DigestRow cards={mediaCards} onOpenSession={onOpenSession} duplicate />
+          </div>
         </div>
       ) : null}
     </section>

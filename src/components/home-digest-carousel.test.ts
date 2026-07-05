@@ -28,6 +28,13 @@ assert.match(view, /home-digest__track--media/, "media headlines render on their
 assert.match(view, /c\.kind === "summary" \|\| c\.kind === "session"/, "chats row = summary + session cards");
 assert.match(view, /c\.kind === "rss"/, "media row = the rss headline cards");
 
+// ── News carousel can be dismissed from a hover/focus close affordance ────────
+assert.match(view, /const \[mediaDismissed, setMediaDismissed\] = useState\(false\)/, "tracks dismissed state for the news/media carousel");
+assert.match(view, /mediaCards\.length > 0 && !mediaDismissed/, "dismissing media leaves the chat digest row intact");
+assert.match(view, /aria-label="Close news carousel"/, "news carousel exposes an accessible close button");
+assert.match(view, /onClick=\{\(\) => setMediaDismissed\(true\)\}/, "close button hides the news carousel");
+assert.match(view, /home-digest__media-close/, "close button has a stable styling hook");
+
 // ── Media cards support an image thumbnail (with icon fallback on error) ───────
 assert.match(view, /home-digest__thumb/, "media card renders an image thumbnail when available");
 assert.match(view, /card\.image/, "media thumbnail is sourced from the card's image field");
@@ -58,6 +65,9 @@ assert.match(css, /\.home-digest__track--media[\s\S]*?animation-direction: rever
 assert.match(css, /\.home-digest__thumb[\s\S]*?object-fit: cover/, "media thumbnail is a cover-fit image");
 assert.match(css, /\.home-digest__thumb[\s\S]*?width: 46px/, "media thumbnail is enlarged for the image-forward row");
 assert.match(css, /\.home-digest__card--media[\s\S]*?padding-left/, "media cards are image-forward (thumbnail hugs the leading edge)");
+assert.match(css, /\.home-digest__media-close[\s\S]*?opacity: 0/, "news close button is hidden until interaction");
+assert.match(css, /\.home-digest__media:hover \.home-digest__media-close[\s\S]*?opacity: 1/, "news close button appears on hover");
+assert.match(css, /\.home-digest__media:focus-within \.home-digest__media-close[\s\S]*?opacity: 1/, "news close button appears when focused");
 
 // ── Wired into the home composer below "Jump back in" ─────────────────────────
 assert.match(composer, /import \{ HomeDigestCarousel \}/, "home composer imports the carousel");
