@@ -161,6 +161,13 @@ assert.match(
   /Browse the marketplace/,
   "The empty Roles section cross-sells the store — that's the point of the merge",
 );
+assert.match(rolesSection, /function roleCapabilityCount\(role: RoleEntry\)/, "Roles section derives capability counts per role");
+assert.match(rolesSection, /const rolesSetupSummary = useMemo/, "Roles section derives a setup summary from the visible roles");
+assert.match(rolesSection, /className="marketplace-roles-summary"/, "Roles section renders a summary strip before role cards");
+assert.match(rolesSection, /className="marketplace-roles-summary__card"/, "Roles setup summary uses stable summary-card hooks");
+assert.match(rolesSection, /className="plugins-role-card__facts"/, "Role cards render compact decision facts");
+assert.match(css, /\.marketplace-roles-summary \{[\s\S]*?grid-template-columns/, "Roles setup summary uses a responsive grid");
+assert.match(css, /\.plugins-role-card__facts \{[\s\S]*?display: flex;/, "Role card facts have a stable flex layout");
 
 // --- Keyboard shortcuts sheet (CHAT-D11-03) ---
 

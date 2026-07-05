@@ -7534,6 +7534,82 @@ a.mobile-handoff__link:hover {
   color: var(--text-primary);
 }
 
+.marketplace-roles-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.marketplace-roles-summary__card {
+  min-height: 88px;
+  min-width: 0;
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 86%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
+  padding: 10px;
+}
+
+.marketplace-roles-summary__card strong {
+  display: block;
+  margin-top: 7px;
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.marketplace-roles-summary__card p {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.marketplace-roles-summary__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.plugins-role-card__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.plugins-role-card__fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-height: 22px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-base) 84%, transparent);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1;
+  padding: 4px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .marketplace-roles-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Touch / coarse-pointer surface. On devices with no hover capability,
    controls that the desktop hides behind `opacity-0 group-hover:opacity-100`
    become permanently visible — opt in with `.touch-always-visible`. */
