@@ -164,7 +164,28 @@ async function verifyNativeAppBackend(req: Request, backend: string) {
   }
 }
 
+function mobileAccessSecret() {
+  return process.env.COVEN_CAVE_ACCESS_TOKEN?.trim() ?? "";
+}
+
+function mobileAccessUnavailableResponse() {
+  // Plain `next dev` never sets COVEN_CAVE_ACCESS_TOKEN, so neither signed
+  // invites nor persistent native-app Serve routes are safe to create. Give
+  // devs the exact next step instead of an opaque string; keep the terse
+  // message in packaged builds, where a missing token is a real
+  // misconfiguration rather than the dev default.
+  const error =
+    process.env.NODE_ENV !== "production"
+      ? "Mobile handoff isn't available in plain `pnpm dev` — it needs the signed access token that the packaged app and `pnpm mobile:tailscale` set up. Run `pnpm mobile:tailscale` (or open the packaged app), then use Open on phone from that session."
+      : "mobile access token unavailable";
+  return NextResponse.json({ ok: false, error }, { status: 503 });
+}
+
 async function ensureNativeAppServe(req: Request) {
+  if (!mobileAccessSecret()) {
+    return mobileAccessUnavailableResponse();
+  }
+
   const backend = nativeAppBackendUrl(req);
   const backendReady = await verifyNativeAppBackend(req, backend);
   if (!backendReady.ok) {
@@ -251,17 +272,9 @@ async function ensureNativeAppServe(req: Request) {
 }
 
 async function mobileHandoff(req: Request) {
-  const accessSecret = process.env.COVEN_CAVE_ACCESS_TOKEN?.trim();
+  const accessSecret = mobileAccessSecret();
   if (!accessSecret) {
-    // Plain `next dev` never sets COVEN_CAVE_ACCESS_TOKEN, so the handoff
-    // can't mint a signed invite. Give devs the exact next step instead of
-    // an opaque string; keep the terse message in packaged builds, where a
-    // missing token is a real misconfiguration rather than the dev default.
-    const error =
-      process.env.NODE_ENV !== "production"
-        ? "Mobile handoff isn't available in plain `pnpm dev` — it needs the signed access token that the packaged app and `pnpm mobile:tailscale` set up. Run `pnpm mobile:tailscale` (or open the packaged app), then use Open on phone from that session."
-        : "mobile access token unavailable";
-    return NextResponse.json({ ok: false, error }, { status: 503 });
+    return mobileAccessUnavailableResponse();
   }
 
   // `--json` doubles as the connectivity check (exit 0 == connected) and the

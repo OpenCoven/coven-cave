@@ -55,6 +55,11 @@ assert.match(handoffRoute, /verifyNativeAppBackend/, "native mobile mode should 
 assert.match(handoffRoute, /\/api\/familiars/, "native backend readiness should use the same lightweight endpoint as the iOS connection probe");
 assert.match(handoffRoute, /pnpm mobile:tailscale:app/, "native backend readiness errors should point to the documented app-mode command");
 assert.match(handoffRoute, /NODE_ENV !== "production"[\s\S]*pnpm mobile:tailscale/, "API should give an actionable dev hint when the access token is missing");
+assert.match(
+  handoffRoute,
+  /async function ensureNativeAppServe[\s\S]*if \(!mobileAccessSecret\(\)\)[\s\S]*return mobileAccessUnavailableResponse\(\)/,
+  "native app mobile-mode start must require the mobile access token before starting Tailscale Serve",
+);
 assert.match(settings, /MobileModeToggle/, "Settings should render a mobile mode toggle component");
 assert.match(settings, /mobileModeEnabled/, "Settings should receive the live mobile mode enabled state");
 assert.match(settings, /onMobileModeChange/, "Settings should expose a toggle callback for mobile mode");
