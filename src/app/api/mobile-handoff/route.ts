@@ -92,10 +92,25 @@ function parseServeStatus(raw: string): { value: unknown } | { error: string } {
   }
 }
 
-function backendUrl(req: Request) {
+function trustedBackendPort() {
+  return process.env.PORT || "3000";
+}
+
+function rejectMismatchedHostPort(req: Request) {
   const url = new URL(req.url);
-  const port = url.port || process.env.PORT || "3000";
-  return `http://127.0.0.1:${port}`;
+  const hostPort = url.port;
+  const backendPort = trustedBackendPort();
+  if (hostPort && hostPort !== backendPort) {
+    return NextResponse.json(
+      { ok: false, error: "request Host port does not match the Cave sidecar port" },
+      { status: 400 },
+    );
+  }
+  return null;
+}
+
+function backendUrl() {
+  return `http://127.0.0.1:${trustedBackendPort()}`;
 }
 
 function normalizeLoopbackBackend(value: string | null | undefined) {
@@ -123,19 +138,19 @@ function nativeAppBackendUrl(req: Request) {
     return "http://127.0.0.1:3000";
   }
 
-  return backendUrl(req);
+  return backendUrl();
 }
 
 function backendPort(backend: string) {
   try {
-    return new URL(backend).port || process.env.PORT || "3000";
+    return new URL(backend).port || trustedBackendPort();
   } catch {
-    return process.env.PORT || "3000";
+    return trustedBackendPort();
   }
 }
 
 async function verifyNativeAppBackend(req: Request, backend: string) {
-  if (backend === backendUrl(req)) return { ok: true as const };
+  if (backend === backendUrl()) return { ok: true as const };
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 1500);
@@ -182,6 +197,9 @@ function mobileAccessUnavailableResponse() {
 }
 
 async function ensureNativeAppServe(req: Request) {
+  const hostPortRejection = rejectMismatchedHostPort(req);
+  if (hostPortRejection) return hostPortRejection;
+
   if (!mobileAccessSecret()) {
     return mobileAccessUnavailableResponse();
   }
@@ -272,6 +290,9 @@ async function ensureNativeAppServe(req: Request) {
 }
 
 async function mobileHandoff(req: Request) {
+  const hostPortRejection = rejectMismatchedHostPort(req);
+  if (hostPortRejection) return hostPortRejection;
+
   const accessSecret = mobileAccessSecret();
   if (!accessSecret) {
     return mobileAccessUnavailableResponse();
@@ -292,7 +313,7 @@ async function mobileHandoff(req: Request) {
   const parsedSelf = parseServeStatus(self.stdout);
   const selfStatus: unknown = "error" in parsedSelf ? null : parsedSelf.value;
 
-  const backend = backendUrl(req);
+  const backend = backendUrl();
 
   // Best-effort (re)start of Tailscale Serve. Don't hard-fail when this errors
   // — on macOS the CLI can return "GUI failed to start (CLIError 3)" even

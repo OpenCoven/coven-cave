@@ -54,6 +54,26 @@ assert.match(handoffRoute, /COVEN_CAVE_BUNDLE === "1"[\s\S]*http:\/\/127\.0\.0\.
 assert.match(handoffRoute, /verifyNativeAppBackend/, "native mobile mode should verify the tokenless backend before publishing Serve");
 assert.match(handoffRoute, /\/api\/familiars/, "native backend readiness should use the same lightweight endpoint as the iOS connection probe");
 assert.match(handoffRoute, /pnpm mobile:tailscale:app/, "native backend readiness errors should point to the documented app-mode command");
+assert.match(
+  handoffRoute,
+  /function trustedBackendPort\(\)[\s\S]*process\.env\.PORT \|\| "3000"/,
+  "API should derive the backend port from the trusted sidecar PORT instead of the request Host",
+);
+assert.match(
+  handoffRoute,
+  /function rejectMismatchedHostPort[\s\S]*hostPort && hostPort !== backendPort[\s\S]*status: 400/,
+  "API should reject request Host ports that do not match the trusted sidecar port",
+);
+assert.match(
+  handoffRoute,
+  /const backend = backendUrl\(\)/,
+  "API should build the backend URL without passing the request-derived URL into the backend target",
+);
+assert.doesNotMatch(
+  handoffRoute,
+  /const port = url\.port \|\| process\.env\.PORT/,
+  "API must not use the request URL Host port as the backend Serve target",
+);
 assert.match(handoffRoute, /NODE_ENV !== "production"[\s\S]*pnpm mobile:tailscale/, "API should give an actionable dev hint when the access token is missing");
 assert.match(
   handoffRoute,
