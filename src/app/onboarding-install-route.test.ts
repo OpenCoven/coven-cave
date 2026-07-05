@@ -25,4 +25,16 @@ assert.match(
   "fire-and-forget installer task should catch synchronous spawn failures",
 );
 
+assert.doesNotMatch(
+  route,
+  /command:\s*["']sudo["']|passwordlessSudoAvailable|sudo\s*,\s*\["-n"/,
+  "install route must not auto-elevate npm installs with sudo",
+);
+
+assert.match(
+  route,
+  /Do not elevate from this API route:[\s\S]*?Require the[\s\S]*?operator to run the sudo command manually instead/,
+  "install route should require manual sudo when global npm dirs are not writable",
+);
+
 console.log("onboarding-install-route.test.ts OK");

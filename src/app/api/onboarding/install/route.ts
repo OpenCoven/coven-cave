@@ -166,21 +166,6 @@ async function npmGlobalDirsWritable(npm: string): Promise<boolean> {
   return true;
 }
 
-/** `sudo -n true` succeeds only when sudo needs no password (cached creds or
- *  a NOPASSWD rule). We never spawn a password-prompting sudo from this
- *  non-interactive server context — with no TTY it would hang forever. */
-async function passwordlessSudoAvailable(): Promise<boolean> {
-  try {
-    await execFileAsync("sudo", ["-n", "true"], {
-      env: covenSpawnEnv(),
-      timeout: 3000,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 type SpawnPlan = {
   command: string;
   args: string[];
@@ -215,22 +200,12 @@ async function spawnPlanFor(
     if (!npm) return { npmMissing: true };
 
     // On POSIX a root-owned global prefix (system Node, /usr/local) fails
-    // `npm install -g` with EACCES. Elevate ONLY when the prefix really isn't
-    // writable; nvm/fnm/Homebrew prefixes are user-owned and must not be
-    // sudo'd (root-owned files there break later user installs).
+    // `npm install -g` with EACCES. Do not elevate from this API route: even
+    // with an allowlisted package and fixed argv, global npm installs may run
+    // package lifecycle scripts and write system locations. Require the
+    // operator to run the sudo command manually instead. nvm/fnm/Homebrew
+    // prefixes are user-owned and return true here, so they stay one-click.
     if (process.platform !== "win32" && !(await npmGlobalDirsWritable(npm))) {
-      // No TTY here: a password-prompting `sudo` would block forever. Only
-      // auto-elevate when passwordless sudo works; otherwise bail with a
-      // marker so the UI can tell the user to run it themselves.
-      if (await passwordlessSudoAvailable()) {
-        return {
-          command: "sudo",
-          // `-n` keeps sudo non-interactive — argv stays fully fixed
-          // (allowlisted package, no user input).
-          args: ["-n", npm, "install", "-g", target.packageName],
-          shell: false,
-        };
-      }
       return { sudoRequired: true, packageName: target.packageName };
     }
 
@@ -520,7 +495,7 @@ export async function POST(req: Request) {
         ok: false,
         sudoRequired: true,
         error: "the global npm directory needs elevated permissions to write",
-        hint: `Cave can't write to the global npm directory and passwordless sudo isn't available here. Run \`sudo npm install -g ${plan.packageName}\` in a terminal, then click Install again.`,
+        hint: `Cave can't write to the global npm directory from this API route. Run \`sudo npm install -g ${plan.packageName}\` in a terminal, then click Install again.`,
       },
       { status: 422 },
     );
