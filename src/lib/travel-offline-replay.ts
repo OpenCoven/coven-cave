@@ -22,6 +22,7 @@ import { flowRunRedactsData } from "@/lib/flow/flow-doc";
 import type { FlowRunStepStatus } from "@/lib/flows";
 import { startAutomationRun } from "@/lib/server/automation-runner";
 import { recordFlowRun } from "@/lib/server/flow-store";
+import { assertProjectRootAccess } from "@/lib/project-permissions";
 import { isAllowedHarness, normalizeProjectRoot } from "@/lib/server/session-security";
 import { buildWorkflowRunPrompt } from "@/lib/workflow-run-prompt";
 import { recordRun } from "@/lib/workflow-runs";
@@ -48,6 +49,11 @@ function stringValue(value: unknown): string | null {
 
 function objectArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? value as T[] : [];
+}
+
+function queuedRuntime(payload: Record<string, unknown>): string | null {
+  const metadata = record(payload.responseMetadata);
+  return stringValue(metadata.runtime);
 }
 
 function replayError(err: unknown): string {
@@ -103,6 +109,13 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   const prompt = stringValue(payload.prompt);
   if (!familiarId || !prompt) throw new Error("queued chat payload missing familiarId or prompt");
 
+  const runtime = queuedRuntime(payload);
+  if (runtime?.startsWith("ssh:")) {
+    throw new Error("queued SSH-runtime chat cannot be replayed as a local hub session");
+  }
+  const projectRoot = stringValue(payload.projectRoot) ?? process.cwd();
+  await assertProjectRootAccess({ familiarId }, projectRoot, "chat");
+
   const binding = bindingFor(config, familiarId);
   const attachments = objectArray<ChatAttachment>(payload.attachments);
   const replayPrompt = buildPromptWithAttachments(prompt, attachments, { imagesSupported: false });
@@ -111,7 +124,7 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
     familiarId,
     harness: binding.harness,
     prompt: replayPrompt,
-    projectRoot: stringValue(payload.projectRoot),
+    projectRoot,
     title: chatTitleFromPrompt(prompt) ?? defaultChatTitleForSession(stringValue(payload.sessionId) ?? item.id),
   });
   if (stringValue(payload.sessionId) && payload.sessionId !== sessionId) {

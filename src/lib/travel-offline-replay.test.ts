@@ -72,4 +72,22 @@ assert.match(
   "queued automation jobs should be replayed through the automation runner",
 );
 
+assert.match(
+  replay,
+  /function queuedRuntime\(payload: Record<string, unknown>\): string \| null \{[\s\S]*payload\.responseMetadata[\s\S]*metadata\.runtime/,
+  "chat replay should inspect the queued runtime metadata before launching a local hub session",
+);
+
+assert.match(
+  replay,
+  /if \(runtime\?\.startsWith\("ssh:"\)\) \{[\s\S]*queued SSH-runtime chat cannot be replayed as a local hub session/,
+  "chat replay should not convert queued SSH-runtime work into a local hub session",
+);
+
+assert.match(
+  replay,
+  /await assertProjectRootAccess\(\{ familiarId \}, projectRoot, "chat"\)/,
+  "chat replay should revalidate the current familiar project grant before spawning a hub session",
+);
+
 console.log("travel-offline-replay.test.ts: ok");
