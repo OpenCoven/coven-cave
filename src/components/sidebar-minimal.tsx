@@ -8,7 +8,7 @@
  *   2. App destinations grouped by purpose:
  *      Work  (Home / Chat / Tasks / Schedules)
  *      Tools (Browser / Marketplace / GitHub)
- *   3. Footer: Notifications, Settings
+ *   3. Footer: Dashboard, Settings
  */
 
 import React from "react";
@@ -236,11 +236,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onOpenSession,
     activeSessionId,
     addons,
-    notificationBadgeCount,
-    onOpenInbox,
   } = props;
-
-  const unreadCount = notificationBadgeCount ?? 0;
 
   // Arrow-key navigation across the nav rows (Work + Tools): one tab stop,
   // Up/Down moves focus, Home/End jumps. Uses the shared roving-tabindex hook.
@@ -334,7 +330,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
       </div>
 
-      {/* Bottom: Dashboard + Notifications + Settings */}
+      {/* Bottom: Dashboard + Settings */}
       <div className="sidebar-foot">
         {/* Dashboard is a standalone Next route (/dashboard), not a workspace
             mode — navigate with a real link rather than onModeChange. */}
@@ -349,30 +345,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           </span>
           <span className="sidebar-foot-label">Dashboard</span>
         </a>
-        {onOpenInbox ? (
-          <button
-            type="button"
-            className="sidebar-foot-btn"
-            onClick={onOpenInbox}
-            aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
-            title={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
-          >
-            <span className="sidebar-foot-icon-cell" aria-hidden="true">
-              <Icon
-                name={unreadCount > 0 ? "ph:bell-fill" : "ph:bell"}
-                width={CAVE_ICON_SIZE.sidePanelNav}
-                height={CAVE_ICON_SIZE.sidePanelNav}
-                className="sidebar-foot-icon"
-              />
-            </span>
-            <span className="sidebar-foot-label">Notifications</span>
-            {unreadCount > 0 ? (
-              <span className="sidebar-foot-badge" aria-hidden="true">
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </span>
-            ) : null}
-          </button>
-        ) : null}
         <button
           type="button"
           className="sidebar-foot-btn"

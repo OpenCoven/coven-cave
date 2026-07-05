@@ -204,13 +204,13 @@ assert.doesNotMatch(
 assert.match(
   styles,
   /\.sidebar-foot-bell,\n\.sidebar-foot-btn/,
-  "Notifications and settings should share the same footer row treatment",
+  "Legacy bell and footer buttons keep shared footer row treatment",
 );
 
 assert.match(
   source,
   /sidebar-foot-icon-cell/,
-  "Settings should use the same fixed footer icon cell as notifications",
+  "Footer controls should use the fixed footer icon cell",
 );
 
 assert.match(
@@ -219,32 +219,22 @@ assert.match(
   "Footer rows should align labels from matching icon cells",
 );
 
-// Notifications footer row: a dedicated bell + unread count that opens the
-// inbox, sitting above Settings.
-assert.match(
+// The left sidepanel footer stays quiet: reminders/notifications live in the
+// Schedules surface and top-level notification affordances, not as a footer row.
+assert.doesNotMatch(
   source,
   /onClick=\{onOpenInbox\}[\s\S]{0,700}sidebar-foot-label">Notifications/,
-  "footer renders a Notifications row wired to onOpenInbox",
+  "footer should not render a Notifications row wired to onOpenInbox",
 );
-assert.match(
+assert.doesNotMatch(
   source,
   /unreadCount > 0 \? "ph:bell-fill" : "ph:bell"/,
-  "the notifications icon fills when there are unread items",
+  "footer should not render the reminder/notification bell",
 );
-assert.match(
+assert.doesNotMatch(
   source,
   /sidebar-foot-badge[\s\S]{0,80}unreadCount > 99 \? "99\+" : unreadCount/,
-  "the notifications row shows the unread count badge (capped at 99+)",
-);
-assert.match(
-  source,
-  /aria-label=\{unreadCount > 0 \? `Notifications, \$\{unreadCount\} unread` : "Notifications"\}/,
-  "the notifications row exposes the unread count to assistive tech",
-);
-assert.match(
-  styles,
-  /\.sidebar-foot-badge \{[^}]*background: var\(--color-danger\)/,
-  "the unread count badge uses the danger treatment",
+  "footer should not render an unread reminders badge",
 );
 
 // Tools-group entries include browser and marketplace.
