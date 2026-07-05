@@ -20,9 +20,13 @@ assert.match(source, /req\.headers\.get\("host"\)/, "middleware should reject un
 assert.match(source, /const requestHost = req\.headers\.get\("host"\)/, "proxy should capture the forwarded request host once");
 assert.match(source, /isAllowedApiHost\(requestHost, mobileAccessAuthenticated \|\| tailnetTrusted\)/, "valid mobile access or tailnet-trust should satisfy the API host gate");
 assert.match(source, /const tailnetTrusted = process\.env\.COVEN_CAVE_TAILNET_TRUST === "1"/, "tokenless app mode (COVEN_CAVE_TAILNET_TRUST) should relax the host gate for tailnet-forwarded requests");
-assert.match(source, /isAllowedRequestSource\(req\.headers\.get\("origin"\), expectedOrigin\)/, "API origin gate should require same-origin sources unless header-CSRF-trusted");
-assert.match(source, /isAllowedRequestSource\(req\.headers\.get\("referer"\), expectedOrigin\)/, "API referer gate should require same-origin sources unless header-CSRF-trusted");
+assert.match(source, /const origin = req\.headers\.get\("origin"\)/, "API origin gate should read the source origin header once");
+assert.match(source, /const referer = req\.headers\.get\("referer"\)/, "API referer gate should read the source referer header once");
+assert.match(source, /isAllowedRequestSource\(origin, expectedOrigin\)/, "API origin gate should require same-origin sources unless header-CSRF-trusted");
+assert.match(source, /isAllowedRequestSource\(referer, expectedOrigin\)/, "API referer gate should require same-origin sources unless header-CSRF-trusted");
 assert.match(source, /unsupported content-type/, "middleware should reject unsafe content types before body parsing");
+assert.match(source, /isProductionWebhookGet\(req\.nextUrl\.pathname, req\.method\)/, "state-changing GET webhooks should have a dedicated tokenless-tailnet CSRF guard");
+assert.match(source, /missing request source/, "tokenless tailnet GET webhooks should reject absent Origin and Referer headers");
 
 // Tailscale Serve fix (re-applies #618; #716 reverted it): a request bearing the
 // sidecar token in the CSRF-immune CUSTOM HEADER bypasses the origin/referer gate
@@ -37,7 +41,7 @@ assert.match(
 );
 assert.match(
   source,
-  /if \(!headerCsrfTrusted\) \{[\s\S]*?isAllowedRequestSource\(req\.headers\.get\("origin"\)/,
+  /if \(!headerCsrfTrusted\) \{[\s\S]*?isAllowedRequestSource\(origin, expectedOrigin\)/,
   "origin gate must run unless the request is header-CSRF-trusted",
 );
 assert.doesNotMatch(
@@ -52,8 +56,8 @@ assert.doesNotMatch(
 // `pnpm dev` if anything ever bound the dev server outside 127.0.0.1.
 {
   const hostIdx = source.indexOf("isAllowedApiHost(requestHost, mobileAccessAuthenticated || tailnetTrusted)");
-  const originIdx = source.indexOf('isAllowedRequestSource(req.headers.get("origin")');
-  const refererIdx = source.indexOf('isAllowedRequestSource(req.headers.get("referer")');
+  const originIdx = source.indexOf("isAllowedRequestSource(origin, expectedOrigin)");
+  const refererIdx = source.indexOf("isAllowedRequestSource(referer, expectedOrigin)");
   const contentTypeIdx = source.indexOf("unsupported content-type");
   const bypassIdx = source.indexOf("missing sidecar auth token");
   assert.ok(hostIdx > 0, "host check should be present");

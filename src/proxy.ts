@@ -118,6 +118,13 @@ function hasSafeContentType(req: NextRequest) {
   return SAFE_CONTENT_TYPES.includes(mediaType);
 }
 
+function isProductionWebhookGet(pathname: string, method: string) {
+  return (
+    method === "GET" &&
+    (pathname === "/api/flows/webhook" || pathname.startsWith("/api/flows/webhook/"))
+  );
+}
+
 function nextWithMobileAccessMarker(req: NextRequest, mobileAccessAuthenticated: boolean) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.delete(MOBILE_ACCESS_HEADER);
@@ -175,11 +182,29 @@ export async function proxy(req: NextRequest) {
     Boolean(sidecarToken) && req.headers.get(TOKEN_HEADER) === sidecarToken;
 
   if (!headerCsrfTrusted) {
-    if (!isAllowedRequestSource(req.headers.get("origin"), expectedOrigin)) {
+    const origin = req.headers.get("origin");
+    const referer = req.headers.get("referer");
+    if (!isAllowedRequestSource(origin, expectedOrigin)) {
       return jsonError(403, "forbidden origin");
     }
-    if (!isAllowedRequestSource(req.headers.get("referer"), expectedOrigin)) {
+    if (!isAllowedRequestSource(referer, expectedOrigin)) {
       return jsonError(403, "forbidden referer");
+    }
+    // Production GET webhooks are intentionally state-changing: a matching
+    // request starts an agent-backed flow. In tokenless Tailscale mode there is
+    // no sidecar secret to prove the caller is first-party, and browsers can
+    // issue cross-site GET navigations/subresources with both Origin and
+    // Referer omitted (for example via Referrer-Policy: no-referrer). Require a
+    // same-origin source header for that narrow state-changing GET surface so
+    // absent headers cannot bypass the CSRF gate.
+    if (
+      tailnetTrusted &&
+      !sidecarToken &&
+      isProductionWebhookGet(req.nextUrl.pathname, req.method) &&
+      !origin &&
+      !referer
+    ) {
+      return jsonError(403, "missing request source");
     }
   }
   if (!hasSafeContentType(req)) {
