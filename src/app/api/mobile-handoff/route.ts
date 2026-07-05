@@ -99,8 +99,8 @@ function trustedBackendPort() {
 function rejectMismatchedHostPort(req: Request) {
   const url = new URL(req.url);
   const hostPort = url.port;
-  const backendPort = trustedBackendPort();
-  if (hostPort && hostPort !== backendPort) {
+  const expectedPort = trustedBackendPort();
+  if (hostPort && hostPort !== expectedPort) {
     return NextResponse.json(
       { ok: false, error: "request Host port does not match the Cave sidecar port" },
       { status: 400 },

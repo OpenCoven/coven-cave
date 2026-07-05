@@ -61,7 +61,7 @@ assert.match(
 );
 assert.match(
   handoffRoute,
-  /function rejectMismatchedHostPort[\s\S]*hostPort && hostPort !== backendPort[\s\S]*status: 400/,
+  /function rejectMismatchedHostPort[\s\S]*hostPort && hostPort !== expectedPort[\s\S]*status: 400/,
   "API should reject request Host ports that do not match the trusted sidecar port",
 );
 assert.match(
