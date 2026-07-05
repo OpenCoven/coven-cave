@@ -113,7 +113,8 @@ async function replayChat(item: CaveTravelQueueItem, config: CaveConfig): Promis
   if (runtime?.startsWith("ssh:")) {
     throw new Error("queued SSH-runtime chat cannot be replayed as a local hub session");
   }
-  const projectRoot = stringValue(payload.projectRoot) ?? process.cwd();
+  const runtimeCwd = runtime?.startsWith("local:") ? stringValue(runtime.slice("local:".length)) : null;
+  const projectRoot = stringValue(payload.projectRoot) ?? runtimeCwd ?? process.cwd();
   await assertProjectRootAccess({ familiarId }, projectRoot, "chat");
 
   const binding = bindingFor(config, familiarId);
