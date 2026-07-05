@@ -7534,6 +7534,52 @@ a.mobile-handoff__link:hover {
   color: var(--text-primary);
 }
 
+.capabilities-decision {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.capabilities-decision__card {
+  min-height: 92px;
+  min-width: 0;
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 86%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
+  padding: 10px;
+}
+
+.capabilities-decision__card strong {
+  display: block;
+  margin-top: 7px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capabilities-decision__card p {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.capabilities-decision__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
 .marketplace-roles-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -7605,6 +7651,7 @@ a.mobile-handoff__link:hover {
 }
 
 @media (max-width: 680px) {
+  .capabilities-decision,
   .marketplace-roles-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
