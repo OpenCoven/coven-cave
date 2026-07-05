@@ -134,6 +134,7 @@ export const SUITES = {
     "src/lib/dashboard-model.test.ts",
     "src/lib/dashboard-analytics.test.ts",
     "src/app/dashboard-page.test.ts",
+    "src/app/dashboard-runtime-smoke.test.ts",
     "src/lib/daily-summary-notifications.test.ts",
     "src/components/dev-cache-reset-script.test.ts",
     "src/components/pwa-register.test.ts",
