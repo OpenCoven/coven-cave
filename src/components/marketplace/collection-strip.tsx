@@ -28,7 +28,7 @@ export function CollectionStrip({ collections, plugins, onOpen }: Props) {
   return (
     <div className="mb-5">
       <p className="mb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
-        Featured collections
+        Recommended groups
       </p>
       {/* Container-query columns — track the marketplace pane, not the viewport. */}
       <div className="grid grid-cols-1 gap-3 @min-[560px]/marketplace:grid-cols-2 @min-[1100px]/marketplace:grid-cols-3">

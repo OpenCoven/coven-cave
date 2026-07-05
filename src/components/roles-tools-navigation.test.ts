@@ -119,6 +119,15 @@ assert.match(marketplaceView, /Your setup/, "the Browse rail carries a Your-setu
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("roles"\)\}/, "the rail jumps to Roles");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("skills"\)\}/, "the rail jumps to Skills");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("capabilities"\)\}/, "the rail jumps to Capabilities");
+assert.match(marketplaceView, /groupPluginsByCategory/, "Browse derives standardized category groups from the visible plugin set");
+assert.match(marketplaceView, /className="marketplace-category-stack"/, "Browse renders a grouped category stack instead of one flat card grid");
+assert.match(marketplaceView, /className="marketplace-category-group"/, "each Marketplace category has a stable grouped section hook");
+assert.match(marketplaceView, /className="marketplace-category-grid"/, "each category group uses the same responsive card grid");
+assert.match(css, /\.marketplace-category-stack \{[\s\S]*?flex-direction: column/, "Marketplace category stack has stable vertical rhythm");
+assert.match(css, /\.marketplace-category-group__head \{[\s\S]*?border-bottom/, "Marketplace category groups use quiet structural dividers");
+assert.match(css, /\.marketplace-category-grid \{[\s\S]*?grid-template-columns/, "Marketplace category groups use a stable responsive grid");
+assert.match(css, /\.marketplace-browse-summary__metrics \{[\s\S]*?flex-wrap: wrap/, "Browse summary metrics wrap instead of overflowing");
+assert.match(css, /\.marketplace-card \{[\s\S]*?min-height:/, "Marketplace cards reserve stable height across categories");
 
 // Browse cards are decision cards: they expose setup effort, capability fit,
 // and role fit before someone opens the detail drawer.

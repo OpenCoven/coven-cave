@@ -82,7 +82,7 @@ export const MarketplaceCard = memo(function MarketplaceCard({
   const capability = capabilityPreview(plugin);
   const roleFit = roleFitLabel(plugin);
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-4">
+    <div className="marketplace-card flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
         <button
           type="button"
@@ -96,7 +96,9 @@ export const MarketplaceCard = memo(function MarketplaceCard({
             <span className="block truncate text-[14px] font-semibold text-[var(--text-primary)]">
               {plugin.displayName}
             </span>
-            <span className="block truncate text-[12px] text-[var(--text-muted)]">By {plugin.author}</span>
+            <span className="block truncate text-[12px] text-[var(--text-muted)]">
+              {kindLabel(plugin.kind)} · {plugin.author}
+            </span>
           </span>
         </button>
         {state === "needs-setup" ? (
@@ -132,26 +134,25 @@ export const MarketplaceCard = memo(function MarketplaceCard({
           <Icon name="ph:mask-happy" width={11} aria-hidden /> {roleFit}
         </span>
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]">
-        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
+      <div className="marketplace-card__meta">
+        <span>
           <Icon name={kindIcon(plugin.kind)} width={11} aria-hidden />{" "}
           {kindLabel(plugin.kind)}
         </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
+        <span>
           <Icon name="ph:seal-check" width={11} aria-hidden /> {TRUST_LABEL[plugin.trust] ?? plugin.trust}
         </span>
-        <span className="rounded-full border border-[var(--border-hairline)] px-2 py-0.5">{plugin.category}</span>
         {plugin.requiresSetup && plugin.configured ? (
           <button
             type="button"
             onClick={() => onConfigure(plugin.id)}
-            className="focus-ring inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            className="focus-ring hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:check-circle" width={11} aria-hidden /> Configured
           </button>
         ) : null}
         {state === "needs-setup" ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[var(--text-primary)]">
+          <span className="text-[var(--text-primary)]">
             <Icon name="ph:warning" width={11} aria-hidden /> Needs setup
           </span>
         ) : null}

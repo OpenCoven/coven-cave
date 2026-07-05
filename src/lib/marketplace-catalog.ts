@@ -278,6 +278,29 @@ export function countByKind(plugins: MarketplacePlugin[]): { api: number; mcp: n
   return { api, mcp, skill };
 }
 
+export type MarketplaceCategoryGroup = {
+  category: string;
+  plugins: MarketplacePlugin[];
+  counts: { api: number; mcp: number; skill: number };
+};
+
+export function groupPluginsByCategory(plugins: MarketplacePlugin[]): MarketplaceCategoryGroup[] {
+  const byCategory = new Map<string, MarketplacePlugin[]>();
+  for (const plugin of plugins) {
+    const list = byCategory.get(plugin.category) ?? [];
+    list.push(plugin);
+    byCategory.set(plugin.category, list);
+  }
+
+  return [...byCategory.entries()]
+    .map(([category, groupPlugins]) => ({
+      category,
+      plugins: groupPlugins,
+      counts: countByKind(groupPlugins),
+    }))
+    .sort((a, b) => b.plugins.length - a.plugins.length || a.category.localeCompare(b.category));
+}
+
 export type Collection = {
   id: string;
   title: string;

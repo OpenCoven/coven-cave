@@ -31,6 +31,7 @@ import {
   filterPlugins,
   sortPlugins,
   countByKind,
+  groupPluginsByCategory,
   resolveCollection,
   COLLECTIONS,
   type KindFilter,
@@ -363,6 +364,8 @@ export function MarketplaceViewSurface({
     });
     return sortPlugins(matched, sort);
   }, [plugins, query, category, kind, sort, collectionIds, activeCollection]);
+  const groupedFiltered = useMemo(() => groupPluginsByCategory(filtered), [filtered]);
+  const groupedKindCounts = useMemo(() => countByKind(filtered), [filtered]);
 
   const selectedPlugin = useMemo(() => plugins.find((p) => p.id === selected) ?? null, [plugins, selected]);
   const configuringPlugin = useMemo(() => plugins.find((p) => p.id === configuringId) ?? null, [plugins, configuringId]);
@@ -635,11 +638,11 @@ export function MarketplaceViewSurface({
               group, so the store stays aware of what your familiars already
               have. */}
           <aside
-            className="hidden w-56 shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] px-3 py-4 @min-[840px]/marketplace:block"
+            className="hidden w-60 shrink-0 overflow-y-auto border-r border-[var(--border-hairline)] px-3 py-4 @min-[840px]/marketplace:block"
             aria-label="Browse by category"
           >
             <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--text-muted)]">
-              Browse
+              Categories
             </p>
             <nav className="flex flex-col gap-0.5">
               {categories.map((cat) => {
@@ -708,6 +711,9 @@ export function MarketplaceViewSurface({
                   }`}
                 >
                   {cat}
+                  <span className="ml-2 text-[11px] opacity-70">
+                    {cat === "All" ? plugins.length : categoryCounts.get(cat) ?? 0}
+                  </span>
                 </button>
               ))}
             </div>
@@ -744,20 +750,31 @@ export function MarketplaceViewSurface({
                 </button>
               </div>
             ) : (
-              <div className="mb-3 flex items-baseline justify-between gap-3">
-                <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">
-                  {query
-                    ? "Search results"
-                    : category === "All" && kind === "all"
-                      ? "All plugins"
-                      : category !== "All"
-                        ? category
-                        : KIND_TABS.find((k) => k.id === kind)?.label ?? "Plugins"}
-                </h3>
+              <div className="marketplace-browse-summary mb-4">
+                <div className="min-w-0">
+                  <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">
+                    {query
+                      ? "Search results"
+                      : category === "All" && kind === "all"
+                        ? "All categories"
+                        : category !== "All"
+                          ? category
+                          : KIND_TABS.find((k) => k.id === kind)?.label ?? "Plugins"}
+                  </h3>
+                  <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">
+                    {category === "All" && !query && kind === "all"
+                      ? "Grouped by category so every tool type uses the same scan pattern."
+                      : "Same card layout, filtered to the current result set."}
+                  </p>
+                </div>
                 {loaded ? (
-                  <span className="text-[12px] text-[var(--text-muted)] tabular-nums">
-                    {filtered.length} {filtered.length === 1 ? "result" : "results"}
-                  </span>
+                  <div className="marketplace-browse-summary__metrics" aria-label="Visible marketplace results">
+                    <span>{filtered.length} total</span>
+                    <span>{groupedFiltered.length} groups</span>
+                    <span>{groupedKindCounts.mcp} MCP</span>
+                    <span>{groupedKindCounts.api} API</span>
+                    <span>{groupedKindCounts.skill} skills</span>
+                  </div>
                 ) : null}
               </div>
             )}
@@ -771,17 +788,33 @@ export function MarketplaceViewSurface({
                 subtitle={query || category !== "All" || kind !== "all" || activeCollection ? "Try a different search, type, or category." : "The catalog is empty."}
               />
             ) : (
-              <div className="grid grid-cols-1 gap-3 @min-[560px]/marketplace:grid-cols-2 @min-[1200px]/marketplace:grid-cols-3">
-                {filtered.map((plugin) => (
-                  <MarketplaceCard
-                    key={plugin.id}
-                    plugin={plugin}
-                    busy={busyId === plugin.id}
-                    onOpen={setSelected}
-                    onAdd={add}
-                    onRemove={remove}
-                    onConfigure={setConfiguringId}
-                  />
+              <div className="marketplace-category-stack">
+                {groupedFiltered.map((group) => (
+                  <section key={group.category} className="marketplace-category-group" aria-labelledby={`marketplace-category-${group.category.replace(/\W+/g, "-").toLowerCase()}`}>
+                    <div className="marketplace-category-group__head">
+                      <div className="min-w-0">
+                        <h4 id={`marketplace-category-${group.category.replace(/\W+/g, "-").toLowerCase()}`}>
+                          {group.category}
+                        </h4>
+                        <p>
+                          {group.plugins.length} {group.plugins.length === 1 ? "tool" : "tools"} · {group.counts.mcp} MCP · {group.counts.api} API · {group.counts.skill} skills
+                        </p>
+                      </div>
+                    </div>
+                    <div className="marketplace-category-grid">
+                      {group.plugins.map((plugin) => (
+                        <MarketplaceCard
+                          key={plugin.id}
+                          plugin={plugin}
+                          busy={busyId === plugin.id}
+                          onOpen={setSelected}
+                          onAdd={add}
+                          onRemove={remove}
+                          onConfigure={setConfiguringId}
+                        />
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
             )}

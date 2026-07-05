@@ -9,6 +9,7 @@ import {
   filterPlugins,
   sortPlugins,
   countByKind,
+  groupPluginsByCategory,
   categoriesFrom,
   requiredConfigFromManifest,
   remoteUrlFromManifest,
@@ -187,6 +188,13 @@ assert.deepEqual(filterPlugins(merged, { ids: ["github"], kind: "skill" }).map((
 
 // --- countByKind ---
 assert.deepEqual(countByKind(merged), { api: 1, mcp: 2, skill: 1 });
+
+// --- groupPluginsByCategory ---
+const groups = groupPluginsByCategory(merged);
+assert.deepEqual(groups.map((g) => g.category), ["Developer Tools", "Other", "Web"]);
+assert.deepEqual(groups[0].plugins.map((p) => p.id), ["fetch", "github"]);
+assert.deepEqual(groups[0].counts, { api: 0, mcp: 2, skill: 0 });
+assert.deepEqual(groups.find((g) => g.category === "Web")?.counts, { api: 1, mcp: 0, skill: 0 });
 
 // --- sortPlugins (returns a new array, never mutates) ---
 const before = merged.map((p) => p.id);
