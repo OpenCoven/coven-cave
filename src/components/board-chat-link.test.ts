@@ -49,13 +49,23 @@ assert.match(
 );
 assert.match(
   route,
-  /normalizeProjectRoot\(rawProjectRoot\)/,
+  /normalizeProjectRoot\(rawProjectRoot\)|projectRoot = normalizeProjectRoot\(assignedProject\.root\)/,
   "Board chat endpoint normalizes the resolved project root",
 );
 assert.match(
   route,
-  /body\.projectRoot \?\? cardProjectRoot \?\? card\.cwd/,
-  "Board chat endpoint prefers the explicitly assigned root, then the card's project, then stale card cwd — never the app's own working directory",
+  /projectById\(card\.projectId, await loadProjects\(\)\)[\s\S]{0,900}assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)/,
+  "Board chat endpoint should resolve assigned project roots server-side and authorize the familiar",
+);
+assert.match(
+  route,
+  /project root does not match assigned task project/,
+  "Board chat endpoint rejects a client-supplied root that disagrees with the assigned project",
+);
+assert.doesNotMatch(
+  route,
+  /process\.cwd\(\)/,
+  "Board chat endpoint must never fall back to the app's own working directory",
 );
 assert.match(
   route,

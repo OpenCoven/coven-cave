@@ -87,7 +87,7 @@ assert.doesNotMatch(
 
 assert.match(
   taskChatRoute,
-  /body\.projectRoot \?\? cardProjectRoot \?\? card\.cwd/,
+  /body\.projectRoot \?\? cardProjectRoot \?\? card\.cwd|body\.projectRoot \?\? card\.cwd/,
   "Task chat sessions start in the assigned project root, then the card's own project, then its cwd",
 );
 // REGRESSION (2026-07-03): the route must never root a task chat in the app's
@@ -105,12 +105,17 @@ assert.match(
 );
 assert.match(
   taskChatRoute,
+  /assertProjectAccess\(\{ familiarId \}, assignedProject\.id, "session-launch"\)/,
+  "Task chat must authorize the familiar for the assigned project before launching",
+);
+assert.match(
+  taskChatRoute,
   /assign a project to this task before starting chat/,
   "A projectless task chat start is refused instead of silently mis-rooted",
 );
 assert.match(
   taskChatRoute,
-  /body\.projectRoot \? \{ cwd: projectRoot \}/,
+  /card\.projectId \|\| body\.projectRoot \? \{ cwd: projectRoot \}/,
   "The assigned project root is persisted onto the card for subsequent task-chat starts",
 );
 assert.match(

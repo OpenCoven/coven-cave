@@ -8,6 +8,7 @@ import { readJsonBody, rejectNonLocalRequest } from "@/lib/server/api-security";
 import { isAllowedHarness, MAX_SESSION_JSON_BYTES, normalizeProjectRoot } from "@/lib/server/session-security";
 import { issueContentionKey, shouldIsolateInWorktree, type IssueWorktreeKind } from "@/lib/issue-worktree";
 import { provisionIssueWorktree, resolveRepoRoot } from "@/lib/server/issue-worktree-provision";
+import { assertProjectAccess, ProjectAccessDeniedError } from "@/lib/project-permissions";
 
 // Match the daemon's "harness X is not a supported harness" rejection
 // from `/api/v1/sessions`. The daemon emits this when the requested
@@ -60,28 +61,64 @@ export async function POST(
     });
   }
 
-  // The UI sends the root for card.projectId when present; prefer that explicit
-  // project scope, then the card's own project association, then its cwd.
-  // NEVER fall back to the app's own working directory: that roots the task
-  // chat in the coven-cave checkout, records the wrong project_root on the
-  // session, and the chat picker then displays the wrong project for the task.
-  const cardProjectRoot = card.projectId
-    ? (projectById(card.projectId, await loadProjects())?.root ?? null)
-    : null;
-  const rawProjectRoot = body.projectRoot ?? cardProjectRoot ?? card.cwd;
-  if (!rawProjectRoot) {
-    return NextResponse.json(
-      { ok: false, error: "assign a project to this task before starting chat" },
-      { status: 409 },
-    );
+  const config = await loadConfig();
+  const binding = bindingFor(config, familiarId);
+
+  // Resolve the project the task chat will run in. Security-critical: when the
+  // card is assigned to a project we resolve the root SERVER-SIDE from
+  // card.projectId (never trust a client-supplied body.projectRoot to point
+  // elsewhere), reject a mismatched requested root, and authorize the familiar
+  // for that project. Only when the card has no assigned project do we fall
+  // back to the supplied/persisted root.
+  //
+  // NEVER silently fall back to the app's own working directory for an assigned
+  // task: that roots the chat in the coven-cave checkout, records the wrong
+  // project_root on the session, and the chat picker then shows the wrong
+  // project for the task.
+  let projectRoot: string | null = null;
+
+  if (card.projectId) {
+    const assignedProject = projectById(card.projectId, await loadProjects());
+    if (!assignedProject) {
+      return NextResponse.json({ ok: false, error: "assigned project not found" }, { status: 409 });
+    }
+
+    projectRoot = normalizeProjectRoot(assignedProject.root);
+    if (!projectRoot) {
+      return NextResponse.json({ ok: false, error: "assigned project root is invalid" }, { status: 409 });
+    }
+
+    const requestedProjectRoot = body.projectRoot ? normalizeProjectRoot(body.projectRoot) : null;
+    if (requestedProjectRoot && requestedProjectRoot !== projectRoot) {
+      return NextResponse.json(
+        { ok: false, error: "project root does not match assigned task project" },
+        { status: 403 },
+      );
+    }
+
+    try {
+      await assertProjectAccess({ familiarId }, assignedProject.id, "session-launch");
+    } catch (error) {
+      if (error instanceof ProjectAccessDeniedError) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: error.status });
+      }
+      throw error;
+    }
+  } else {
+    const rawProjectRoot = body.projectRoot ?? card.cwd;
+    if (!rawProjectRoot) {
+      return NextResponse.json(
+        { ok: false, error: "assign a project to this task before starting chat" },
+        { status: 409 },
+      );
+    }
+    projectRoot = normalizeProjectRoot(rawProjectRoot);
   }
-  const projectRoot = normalizeProjectRoot(rawProjectRoot);
+
   if (!projectRoot) {
     return NextResponse.json({ ok: false, error: "invalid project root" }, { status: 400 });
   }
 
-  const config = await loadConfig();
-  const binding = bindingFor(config, familiarId);
   if (!isAllowedHarness(binding.harness)) {
     return NextResponse.json({ ok: false, error: "unsupported harness" }, { status: 400 });
   }
@@ -169,7 +206,7 @@ export async function POST(
     // one.
     ...(worktree
       ? { cwd: sessionRoot }
-      : (body.projectRoot ? { cwd: projectRoot } : {})),
+      : (card.projectId || body.projectRoot ? { cwd: projectRoot } : {})),
   });
   if (!updated) {
     return NextResponse.json({ ok: false, error: "card disappeared" }, { status: 404 });
