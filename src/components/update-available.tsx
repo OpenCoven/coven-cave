@@ -116,15 +116,13 @@ async function resolveDownloadUrl(status: UpdateStatus): Promise<string> {
 }
 
 /**
- * Open the easiest reachable installer for the running desktop platform in
- * Cave's Browser surface. This is used when the native updater cannot finish,
- * so a broken install attempt still leaves the user one click from the
- * DMG/MSI/AppImage when release metadata is available.
+ * After the signed native updater fails, do not route users to a direct
+ * installer asset resolved from release metadata. Keep the recovery path on the
+ * canonical GitHub release page so a verification/download failure cannot be
+ * turned into a trusted-looking bypass of the signed updater path.
  */
-async function openFallbackUpdateInBrowser(): Promise<void> {
-  const fb = await fetchFallbackStatus();
-  const url = fb ? await resolveDownloadUrl(fb) : RELEASES_PAGE;
-  openInAppBrowserUrl(url);
+function openReleasePageInBrowser(): void {
+  openInAppBrowserUrl(RELEASES_PAGE);
 }
 
 type Resolved =
@@ -191,12 +189,12 @@ export function UpdateBannerTrigger() {
                   title: reason
                     ? `Update failed (${reason})`
                     : "Update failed",
-                  cta: { label: "Open installer in Browser", onClick: () => void openFallbackUpdateInBrowser() },
+                  cta: { label: "Open release page in Browser", onClick: openReleasePageInBrowser },
                   onDismiss: () => markDismissed(r.version),
                 });
               });
             } else if (r.kind === "native-unavailable") {
-              void openFallbackUpdateInBrowser();
+              openReleasePageInBrowser();
             } else {
               openInAppBrowserUrl(r.url);
             }
@@ -315,17 +313,17 @@ export function UpdateSettingsRow() {
         <Button
           variant="secondary"
           size="xs"
-          onClick={() => void openFallbackUpdateInBrowser()}
+          onClick={openReleasePageInBrowser}
           className={secondaryBtn}
         >
-          Open installer in Browser
+          Open release page in Browser
         </Button>
       </>
     );
   } else if (state.phase === "failed") {
     // The native install threw (e.g. unsigned/dev build, app translocation, or
-    // a network/verification error). Don't dead-end: surface the reason and
-    // keep recovery inside Cave.
+    // a network/verification error). Surface the reason and keep recovery on
+    // the canonical release page rather than a direct installer asset.
     control = (
       <>
         <span
@@ -334,8 +332,14 @@ export function UpdateSettingsRow() {
         >
           Update failed
         </span>
-        <Button variant="primary" size="xs" onClick={() => void openFallbackUpdateInBrowser()} className={accentBtn} leadingIcon="ph:arrow-square-out">
-          Open installer in Browser
+        <Button
+          variant="primary"
+          size="xs"
+          onClick={openReleasePageInBrowser}
+          className={accentBtn}
+          leadingIcon="ph:arrow-square-out"
+        >
+          Open release page in Browser
         </Button>
         <Button
           variant="secondary"
