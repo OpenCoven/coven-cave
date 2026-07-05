@@ -1132,9 +1132,45 @@
 }
 /* The media headlines drift on their own row beneath the chats, in the opposite
    direction, so the two streams read as clearly separate. */
+.home-digest__media {
+  position: relative;
+}
 .home-digest__track--media {
   margin-top: 10px;
   animation-direction: reverse;
+}
+.home-digest__media-close {
+  position: absolute;
+  z-index: 2;
+  top: 16px;
+  right: 8%;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-elevated);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s, background 0.14s, color 0.14s, border-color 0.14s;
+}
+.home-digest__media:hover .home-digest__media-close,
+.home-digest__media:focus-within .home-digest__media-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+.home-digest__media-close:hover,
+.home-digest__media-close:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+.home-digest__media-close:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 2px;
 }
 .home-digest:hover .home-digest__track,
 .home-digest:focus-within .home-digest__track {
