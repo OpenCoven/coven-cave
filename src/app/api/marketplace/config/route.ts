@@ -13,7 +13,7 @@
 import { NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
-import { canResolve, getVaultStatuses } from "@/lib/vault";
+import { getVaultMetadataStatuses, hasConfiguredSecretMetadata } from "@/lib/vault";
 import { envLocalPath, readEnvLocalValue, upsertEnvContent } from "@/lib/env-file";
 import { hasValidator } from "@/lib/secret-validators";
 import { resolveCatalogName, requiredConfigFor } from "./catalog-config";
@@ -35,11 +35,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: `unknown plugin "${id}"` }, { status: 400 });
   }
   const fields = await requiredConfigFor(name);
-  const vault = getVaultStatuses();
+  const vault = getVaultMetadataStatuses();
   const out = fields.map((f) => {
     const inEnv = readEnvLocalValue(f.env) !== undefined || !!process.env[f.env]?.trim();
     const vaultEntry = vault.find((v) => v.key === f.env) ?? null;
-    const satisfied = inEnv || canResolve(f.env);
+    const satisfied = inEnv || hasConfiguredSecretMetadata(f.env);
     const source = inEnv ? "env" : vaultEntry?.status === "encrypted" ? "encrypted" : satisfied ? "vault" : "none";
     return {
       key: f.key,

@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { loadConfig } from "@/lib/cave-config";
-import { canResolve } from "@/lib/vault";
+import { hasConfiguredSecretMetadata } from "@/lib/vault";
 import { readEnvLocalValue } from "@/lib/env-file";
 import {
   mergeCatalog,
@@ -55,10 +55,10 @@ export async function GET() {
   const merged = mergeCatalog(marketplaceSafePlugins, manifests, cfg.marketplace.installed);
   const plugins = sanitizeMarketplaceCatalogCards(merged.map((p) => ({
     ...p,
-    // configured = every required field's env var resolves (vault op:// or
-    // process.env) or is present in .env.local (written but not yet loaded).
+    // configured = every required field has a value already in env/.env.local
+    // or has vault metadata. This must not resolve or cache secret values.
     configured: p.requiredConfig.every(
-      (f) => readEnvLocalValue(f.env) !== undefined || canResolve(f.env),
+      (f) => readEnvLocalValue(f.env) !== undefined || hasConfiguredSecretMetadata(f.env),
     ),
   })));
   return NextResponse.json({ ok: true, plugins });

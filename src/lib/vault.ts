@@ -34,7 +34,7 @@ export type VaultEntry = {
 
 export type VaultMap = Record<string, VaultEntry>;
 
-export type VaultStatus = "resolved" | "encrypted" | "env-only" | "unresolved" | "error" | "no-ref";
+export type VaultStatus = "resolved" | "configured" | "encrypted" | "env-only" | "unresolved" | "error" | "no-ref";
 
 export type VaultMappingStatus = {
   key: string;
@@ -233,12 +233,70 @@ export function resolveSecret(key: string): string | undefined {
   return undefined;
 }
 
-/** Check if a key is resolvable without returning the value. */
+/** Check if a key is resolvable without returning the value.
+ *
+ * This is a materializing check: it may decrypt local secrets, run `op read`,
+ * and cache the resolved secret in process.env. Do not call it from read-only
+ * status endpoints that only need configuration metadata.
+ */
 export function canResolve(key: string): boolean {
   return !!resolveSecret(key);
 }
 
+/** Check whether a key appears configured without reading or caching its value. */
+export function hasConfiguredSecretMetadata(key: string): boolean {
+  if (process.env[key]?.trim()) return true;
+  if (readEnvLocalValue(key) !== undefined) return true;
+
+  const map = loadVaultMap();
+  const entry = map[key];
+  if (entry?.storage === "encrypted" || hasLocalEncryptedSecret(key)) return true;
+  return !!entry?.ref;
+}
+
 // ── Status reporter (for /api/vault UI) ──────────────────────────────────────
+
+export function getVaultMetadataStatuses(): VaultMappingStatus[] {
+  const map = loadVaultMap(true); // always fresh for status checks
+  return Object.entries(map).map(([key, entry]) => {
+    const inEnv = !!(process.env[key]?.trim()) || readEnvLocalValue(key) !== undefined;
+    const hasEncrypted = entry.storage === "encrypted" || hasLocalEncryptedSecret(key);
+
+    if (inEnv) {
+      return {
+        key, ref: entry.ref ?? null, description: entry.description ?? null,
+        storage: entry.storage ?? (entry.ref ? "1password" : null),
+        required: entry.required ?? false,
+        status: "env-only" as VaultStatus, hasValue: true,
+      };
+    }
+
+    if (hasEncrypted) {
+      return {
+        key, ref: entry.ref ?? null, description: entry.description ?? null,
+        storage: "encrypted",
+        required: entry.required ?? false,
+        status: "encrypted" as VaultStatus, hasValue: true,
+      };
+    }
+
+    if (entry.ref) {
+      return {
+        key, ref: entry.ref, description: entry.description ?? null,
+        storage: "1password",
+        required: entry.required ?? false,
+        status: "configured" as VaultStatus, hasValue: true,
+      };
+    }
+
+    return {
+      key, ref: null, description: entry.description ?? null,
+      storage: entry.storage ?? null,
+      required: entry.required ?? false,
+      status: "no-ref" as VaultStatus, hasValue: false,
+    };
+  });
+}
 
 export function getVaultStatuses(): VaultMappingStatus[] {
   const map = loadVaultMap(true); // always fresh for status checks

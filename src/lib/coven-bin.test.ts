@@ -37,6 +37,12 @@ assert.match(
 
 assert.match(
   source,
+  /FORBIDDEN_SPAWN_ENV_KEYS = \["GITHUB_PAT", "GITHUB_PERSONAL_ACCESS_TOKEN"\]/,
+  "coven child processes strip both legacy and marketplace GitHub token env vars",
+);
+
+assert.match(
+  source,
   /export function refreshCovenSpawnEnv\(\)[\s\S]*cachedPath = null[\s\S]*return covenSpawnEnv\(\)/,
   "desktop install retries can refresh Cave's cached PATH after Node/npm is installed",
 );

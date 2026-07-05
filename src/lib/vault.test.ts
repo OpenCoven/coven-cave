@@ -27,6 +27,17 @@ assert.doesNotMatch(githubPatRouteSource, /updates\[PAT_KEY\] = pat/, "GitHub PA
 assert.match(panelSource, /Local encrypted/, "Vault panel exposes local encrypted storage as a first-class option");
 assert.match(panelSource, /type="password"/, "Vault panel uses a password input for raw local secrets");
 assert.match(marketplaceConfigureSource, /storage: "encrypted", value: draft/, "Marketplace sensitive config can save raw values through the encrypted vault");
+
+assert.match(
+  vaultSource,
+  /export function getVaultMetadataStatuses[\s\S]*status: "configured"[\s\S]*export function getVaultStatuses/,
+  "marketplace status can inspect vault metadata without op read or secret caching",
+);
+assert.match(
+  vaultSource,
+  /export function hasConfiguredSecretMetadata[\s\S]*loadVaultMap\(\)[\s\S]*return !!entry\?\.ref/,
+  "configured checks use vault metadata instead of resolving secret values",
+);
 assert.doesNotMatch(marketplaceConfigureSource, /enter a 1Password reference/, "Marketplace sensitive config no longer requires 1Password");
 
 console.log("vault.test.ts: ok");

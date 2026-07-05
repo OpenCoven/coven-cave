@@ -36,7 +36,7 @@ export type CovenLaunchCommand = {
   fixedArgs: string[];
 };
 
-const FORBIDDEN_SPAWN_ENV_KEYS = ["GITHUB_PAT"] as const;
+const FORBIDDEN_SPAWN_ENV_KEYS = ["GITHUB_PAT", "GITHUB_PERSONAL_ACCESS_TOKEN"] as const;
 
 const HOME = os.homedir();
 
