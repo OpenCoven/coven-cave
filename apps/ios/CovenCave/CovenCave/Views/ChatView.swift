@@ -600,6 +600,9 @@ struct ChatView: View {
         case .openBoard:
             app.selectedTab = .tasks
             app.showToast("Opened Tasks", systemImage: "checklist", style: .info)
+        case .openCalendar:
+            app.selectedTab = .calendar
+            app.showToast("Opened Schedules", systemImage: "calendar", style: .info)
         case .openDeveloper(let section):
             devSectionRaw = section
             app.selectedTab = .dev

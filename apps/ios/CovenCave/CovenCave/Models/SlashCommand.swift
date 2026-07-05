@@ -38,6 +38,7 @@ struct SlashCommand: Identifiable, Hashable {
         case familiarPicker        // switch familiar (arg = name) or open the picker
         case openSessions          // jump to the Chats list
         case openBoard             // switch to the Tasks tab
+        case openCalendar          // switch to the Calendar/Schedules tab
         case openDeveloper(String) // switch to Developer and select a section
         case sendAsPrompt          // /run /codex /claude — send the args as a message
         case daemonStatus          // /daemon — fetch + show status inline
@@ -121,6 +122,9 @@ enum SlashCatalog {
         SlashCommand(name: "/board", hint: "Tasks",
                      description: "Open the Tasks board.",
                      section: .view, availability: .native, action: .openBoard),
+        SlashCommand(name: "/schedules", hint: "Schedules",
+                     description: "Open Schedules.",
+                     section: .view, availability: .native, action: .openCalendar),
         SlashCommand(name: "/journal", hint: "Journal",
                      description: "Your daily journal — open it on the desktop.",
                      section: .view, availability: .desktopOnly, action: .desktopOnly("Journal")),
