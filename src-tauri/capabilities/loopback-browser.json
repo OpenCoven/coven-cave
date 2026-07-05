@@ -13,8 +13,6 @@
     ]
   },
   "permissions": [
-    "core:event:allow-listen",
-    "core:event:allow-unlisten",
     "allow-pty-start",
     "allow-pty-write",
     "allow-pty-resize",

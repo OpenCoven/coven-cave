@@ -6,6 +6,9 @@ const defaultCapability = JSON.parse(readFileSync(new URL("../capabilities/defau
 const loopbackBrowserCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-browser.json", import.meta.url), "utf8"),
 );
+const loopbackMainEventsCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-main-events.json", import.meta.url), "utf8"),
+);
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
@@ -129,10 +132,20 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     capabilityAllowsOrigin(loopbackBrowserCapability, "http://[::1]:64203/"),
     "packaged random IPv6 loopback sidecar port should be allowed restricted browser IPC",
   );
+  assertCapabilityDoesNotGrant(loopbackBrowserCapability, [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+  ]);
+
+  assert.deepEqual(
+    loopbackMainEventsCapability.webviews,
+    ["main"],
+    "loopback event permissions must be restricted to the trusted main webview",
+  );
   for (const permission of ["core:event:allow-listen", "core:event:allow-unlisten"]) {
     assert.ok(
-      loopbackBrowserCapability.permissions.includes(permission),
-      `loopback terminal/browser pages must be allowed to use Tauri event ${permission}`,
+      loopbackMainEventsCapability.permissions.includes(permission),
+      `trusted main loopback webview must be allowed to use Tauri event ${permission}`,
     );
   }
   for (const permission of [
