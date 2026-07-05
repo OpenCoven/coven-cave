@@ -93,7 +93,7 @@ function parseServeStatus(raw: string): { value: unknown } | { error: string } {
 }
 
 function trustedBackendPort() {
-  return process.env.PORT || "3000";
+  return (process.env.PORT || "3000").trim();
 }
 
 function rejectMismatchedHostPort(req: Request) {
