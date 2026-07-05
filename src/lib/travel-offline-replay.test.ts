@@ -86,6 +86,12 @@ assert.match(
 
 assert.match(
   replay,
+  /const projectRoot = stringValue\(payload\.projectRoot\) \?\? runtimeCwd \?\? process\.cwd\(\)/,
+  "chat replay should derive projectRoot from queued local runtime when payload omits it",
+);
+
+assert.match(
+  replay,
   /await assertProjectRootAccess\(\{ familiarId \}, projectRoot, "chat"\)/,
   "chat replay should revalidate the current familiar project grant before spawning a hub session",
 );
