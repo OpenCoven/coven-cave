@@ -27,7 +27,7 @@ assert.match(
 
 assert.doesNotMatch(
   route,
-  /command:\s*["']sudo["']|passwordlessSudoAvailable|sudo\s*,\s*\["-n"/,
+  /command:\s*["']sudo["']|passwordlessSudoAvailable|(?:spawn|execFileAsync)\(\s*["']sudo["']|\[\s*["']-n["']/,
   "install route must not auto-elevate npm installs with sudo",
 );
 
