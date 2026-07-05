@@ -24,19 +24,20 @@ function baseConversation(
   };
 }
 
-function byType(events: HfrObserverEvent[], type: string): HfrObserverEvent[] {
-  return events.filter((e) => e.type === type);
+function byHook(events: HfrObserverEvent[], hook: string): HfrObserverEvent[] {
+  return events.filter((e) => e.hook === hook);
 }
 
 test("emits a session header with source_format and familiar scope", () => {
   const events = conversationToHfrEvents(baseConversation());
   const [head] = events;
-  assert.equal(head.type, "session");
+  assert.equal(head.hook, "session");
   assert.equal(head.session_id, "sess-1");
   assert.equal(head.familiar_id, "cody");
   assert.equal(head.harness, "claude");
   assert.equal(head.source_format, "coven.cave.v1");
   assert.equal(head.ts, "2026-07-04T10:00:00.000Z");
+  assert.equal(head.timestamp, "2026-07-04T10:00:00.000Z");
 });
 
 test("source_format is overridable", () => {
@@ -70,15 +71,18 @@ test("a tool call becomes a pre/post pair with a shared call_id", () => {
       ],
     }),
   );
-  const pre = byType(events, "pre_tool_call");
-  const post = byType(events, "post_tool_call");
+  const pre = byHook(events, "pre_tool_call");
+  const post = byHook(events, "post_tool_call");
   assert.equal(pre.length, 1);
   assert.equal(post.length, 1);
-  assert.equal(pre[0].call_id, "call-abc");
-  assert.equal(post[0].call_id, "call-abc");
-  assert.equal(pre[0].tool, "Bash");
+  assert.equal(pre[0].tool_call_id, "call-abc");
+  assert.equal(post[0].tool_call_id, "call-abc");
+  assert.equal(pre[0].tool_name, "Bash");
   assert.equal(pre[0].args, "ls");
+  assert.equal(pre[0].tool_input, "ls");
+  assert.equal(post[0].tool_name, "Bash");
   assert.equal(post[0].result, "file.txt");
+  assert.equal(post[0].tool_output, "file.txt");
   assert.equal(post[0].is_error, false);
   assert.equal(post[0].duration_ms, 200);
   // post ts = pre ts + durationMs
@@ -104,7 +108,7 @@ test("error and still-running tools are marked is_error for the completion check
       ],
     }),
   );
-  const post = byType(events, "post_tool_call");
+  const post = byHook(events, "post_tool_call");
   assert.deepEqual(
     post.map((p) => p.is_error),
     [true, true, false],
@@ -131,7 +135,7 @@ test("post_llm_call carries snake_cased usage and cost", () => {
       ],
     }),
   );
-  const [llm] = byType(events, "post_llm_call");
+  const [llm] = byHook(events, "post_llm_call");
   assert.ok(llm);
   // Raw events keep undefined-valued keys; the shipped JSONL prunes them, so
   // assert against the serialized form that HFR actually ingests.
@@ -141,11 +145,13 @@ test("post_llm_call carries snake_cased usage and cost", () => {
     output_tokens: 20,
     cache_read_tokens: 5,
   });
+  assert.equal(shipped.assistant_response, "hi");
+  assert.equal(shipped.output, "hi");
   assert.equal(shipped.cost_usd, 0.0012);
   assert.equal(shipped.ts, "2026-07-04T10:00:02.000Z");
 });
 
-test("no usage and no cost means no post_llm_call event", () => {
+test("valid assistant text emits post_llm_call even without usage or cost", () => {
   const events = conversationToHfrEvents(
     baseConversation({
       turns: [
@@ -158,10 +164,12 @@ test("no usage and no cost means no post_llm_call event", () => {
       ],
     }),
   );
-  assert.equal(byType(events, "post_llm_call").length, 0);
+  const [llm] = byHook(events, "post_llm_call");
+  assert.equal(llm.assistant_response, "hi");
+  assert.equal(llm.output, "hi");
 });
 
-test("final_answer is the last non-cancelled, non-error assistant turn", () => {
+test("final answer text lives on the last valid post_llm_call hook", () => {
   const events = conversationToHfrEvents(
     baseConversation({
       turns: [
@@ -187,14 +195,14 @@ test("final_answer is the last non-cancelled, non-error assistant turn", () => {
       ],
     }),
   );
-  const finals = byType(events, "final_answer");
-  assert.equal(finals.length, 1);
-  assert.equal(finals[0].text, "final");
-  // final_answer is always last.
-  assert.equal(events[events.length - 1].type, "final_answer");
+  const llms = byHook(events, "post_llm_call");
+  assert.equal(llms.length, 2);
+  assert.equal(llms[0].assistant_response, "first");
+  assert.equal(llms[1].assistant_response, "final");
+  assert.equal(events.some((event) => String(event.hook) === "final_answer"), false);
 });
 
-test("a cancelled-only conversation has no final_answer", () => {
+test("a cancelled-only conversation has no assistant_response output", () => {
   const events = conversationToHfrEvents(
     baseConversation({
       turns: [
@@ -208,7 +216,7 @@ test("a cancelled-only conversation has no final_answer", () => {
       ],
     }),
   );
-  assert.equal(byType(events, "final_answer").length, 0);
+  assert.equal(byHook(events, "post_llm_call").length, 0);
 });
 
 test("user turns become user_message events", () => {
@@ -224,7 +232,7 @@ test("user turns become user_message events", () => {
       ],
     }),
   );
-  const [msg] = byType(events, "user_message");
+  const [msg] = byHook(events, "user_message");
   assert.equal(msg.text, "please fix");
   assert.equal(msg.ts, "2026-07-04T10:00:00.500Z");
 });
@@ -248,8 +256,8 @@ test("only subagent links parented by this session are emitted", () => {
   const events = conversationToHfrEvents(baseConversation(), {
     subagentLinks: links,
   });
-  const starts = byType(events, "subagent_start");
-  const stops = byType(events, "subagent_stop");
+  const starts = byHook(events, "subagent_start");
+  const stops = byHook(events, "subagent_stop");
   assert.equal(starts.length, 1);
   assert.equal(stops.length, 1);
   assert.equal(starts[0].child_session_id, "child-a");
@@ -282,10 +290,12 @@ test("field truncation keeps head for args, tail for tool results", () => {
     }),
     { maxFieldChars: 10 },
   );
-  const [pre] = byType(events, "pre_tool_call");
-  const [post] = byType(events, "post_tool_call");
+  const [pre] = byHook(events, "pre_tool_call");
+  const [post] = byHook(events, "post_tool_call");
   assert.equal(pre.args, "aaaaaaaaaa…[+40 chars]");
+  assert.equal(pre.tool_input, "aaaaaaaaaa…[+40 chars]");
   assert.equal(post.result, "…[+40 chars]bbbbbbbbbb");
+  assert.equal(post.tool_output, "…[+40 chars]bbbbbbbbbb");
 });
 
 test("serializeHfrJsonl emits one compact JSON object per line, trailing newline", () => {
@@ -307,7 +317,8 @@ test("serializeHfrJsonl emits one compact JSON object per line, trailing newline
   assert.equal(lines.length, 2);
   for (const line of lines) {
     const parsed = JSON.parse(line);
-    assert.equal(typeof parsed.type, "string");
+    assert.equal(typeof parsed.hook, "string");
+    assert.equal(parsed.type, undefined);
     assert.equal(parsed.session_id, "sess-1");
     // undefined-valued keys are pruned, not serialized as null.
     assert.ok(!Object.values(parsed).includes(null));
@@ -329,7 +340,7 @@ test("malformed timestamps never throw and fall back to the start ts", () => {
       ],
     }),
   );
-  const [post] = byType(events, "post_tool_call");
+  const [post] = byHook(events, "post_tool_call");
   assert.equal(post.ts, "not-a-date");
 });
 

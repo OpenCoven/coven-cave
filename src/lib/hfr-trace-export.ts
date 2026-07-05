@@ -4,8 +4,8 @@
 // traces as newline-delimited JSON ("observer-hook JSONL") and normalizes them
 // to its internal `hfr.trace.v1` schema before scoring runs against scenario
 // contracts. Its documented observer-hook event vocabulary is:
-//   session · pre_tool_call · post_tool_call · post_llm_call ·
-//   subagent_start · subagent_stop · final_answer
+//   session · user_message · pre_tool_call · post_tool_call · post_llm_call ·
+//   subagent_start · subagent_stop
 //
 // This module is the pure transform that turns a Coven Cave conversation file
 // (the richest self-contained record of what a familiar actually did — every
@@ -84,21 +84,22 @@ export type HfrExportOptions = {
   maxFieldChars?: number;
 };
 
-/** One observer-hook event line. `type` is the discriminator; remaining fields
- *  vary by type. Kept as an open record because HFR tolerates extra fields and
- *  only normalizes the ones it recognizes. */
+/** One observer-hook event line. `hook` is the discriminator HFR's observer
+ *  normalizer recognizes; remaining fields vary by hook. Kept as an open
+ *  record because HFR tolerates extra fields and only normalizes the ones it
+ *  recognizes. */
 export type HfrObserverEvent = {
-  type:
+  hook:
     | "session"
     | "user_message"
     | "pre_tool_call"
     | "post_tool_call"
     | "post_llm_call"
     | "subagent_start"
-    | "subagent_stop"
-    | "final_answer";
+    | "subagent_stop";
   session_id: string;
   ts?: string;
+  timestamp?: string;
   [key: string]: unknown;
 };
 
@@ -136,7 +137,7 @@ function addMillis(iso: string, durationMs?: number): string {
  * Transform one Coven conversation into an ordered array of HFR observer-hook
  * events. Order is chronological within the conversation: a session header,
  * then per turn — user messages, each tool's pre/post pair, the LLM-call
- * summary, and any subagent spans — closing with the final answer.
+ * summary, and any subagent spans.
  */
 export function conversationToHfrEvents(
   conv: HfrConversationInput,
@@ -148,7 +149,7 @@ export function conversationToHfrEvents(
   const events: HfrObserverEvent[] = [];
 
   events.push({
-    type: "session",
+    hook: "session",
     session_id: sessionId,
     source_format: sourceFormat,
     familiar_id: conv.familiarId,
@@ -157,21 +158,21 @@ export function conversationToHfrEvents(
     title: conv.title,
     origin: conv.origin ?? "chat",
     ts: conv.createdAt,
+    timestamp: conv.createdAt,
   });
 
   const links = (options.subagentLinks ?? []).filter(
     (link) => link.parentSessionId === sessionId,
   );
 
-  let lastAssistantText: { text: string; ts: string } | null = null;
-
   for (const turn of conv.turns) {
     if (turn.role === "user") {
       events.push({
-        type: "user_message",
+        hook: "user_message",
         session_id: sessionId,
         text: clip(turn.text, max),
         ts: turn.createdAt,
+        timestamp: turn.createdAt,
       });
       continue;
     }
@@ -182,34 +183,47 @@ export function conversationToHfrEvents(
       const startTs = turn.createdAt;
       const endTs = addMillis(startTs, tool.durationMs);
       events.push({
-        type: "pre_tool_call",
+        hook: "pre_tool_call",
         session_id: sessionId,
-        call_id: tool.id,
-        tool: tool.name,
+        tool_call_id: tool.id,
+        tool_name: tool.name,
+        tool_input: clip(tool.input, max),
         args: clip(tool.input, max),
         ts: startTs,
+        timestamp: startTs,
       });
       // A tool still "running" at persist time never settled — record it as an
       // error so HFR's completion check treats it as unresolved, not success.
       const isError = tool.status === "error" || tool.status === "running";
       events.push({
-        type: "post_tool_call",
+        hook: "post_tool_call",
         session_id: sessionId,
-        call_id: tool.id,
-        tool: tool.name,
+        tool_call_id: tool.id,
+        tool_name: tool.name,
+        tool_output: clip(tool.output, max, "tail"),
         result: clip(tool.output, max, "tail"),
         is_error: isError,
         status: tool.status,
         duration_ms: tool.durationMs,
         ts: endTs,
+        timestamp: endTs,
       });
     }
 
-    if (turn.usage || turn.costUsd !== undefined) {
+    // HFR derives `final_answer` from the LLM observer hook's
+    // assistant_response/output. Emit this hook even without usage/cost when
+    // the turn has a valid assistant response.
+    const assistantResponse = turn.text && !turn.cancelled && !turn.isError
+      ? clip(turn.text, max)
+      : undefined;
+    if (assistantResponse !== undefined || turn.usage || turn.costUsd !== undefined) {
+      const ts = addMillis(turn.createdAt, turn.durationMs);
       events.push({
-        type: "post_llm_call",
+        hook: "post_llm_call",
         session_id: sessionId,
         model: conv.model,
+        assistant_response: assistantResponse,
+        output: assistantResponse,
         usage: turn.usage
           ? {
               input_tokens: turn.usage.inputTokens,
@@ -220,39 +234,28 @@ export function conversationToHfrEvents(
           : undefined,
         cost_usd: turn.costUsd,
         duration_ms: turn.durationMs,
-        ts: addMillis(turn.createdAt, turn.durationMs),
+        ts,
+        timestamp: ts,
       });
-    }
-
-    // A cancelled/errored turn is not a valid final answer.
-    if (turn.text && !turn.cancelled && !turn.isError) {
-      lastAssistantText = { text: turn.text, ts: turn.createdAt };
     }
   }
 
   for (const link of links) {
     events.push({
-      type: "subagent_start",
+      hook: "subagent_start",
       session_id: sessionId,
       child_session_id: link.childSessionId,
       familiar_id: link.familiarId,
       ts: link.startedAt,
+      timestamp: link.startedAt,
     });
     events.push({
-      type: "subagent_stop",
+      hook: "subagent_stop",
       session_id: sessionId,
       child_session_id: link.childSessionId,
       status: link.status,
       ts: link.endedAt,
-    });
-  }
-
-  if (lastAssistantText) {
-    events.push({
-      type: "final_answer",
-      session_id: sessionId,
-      text: clip(lastAssistantText.text, max),
-      ts: lastAssistantText.ts,
+      timestamp: link.endedAt,
     });
   }
 

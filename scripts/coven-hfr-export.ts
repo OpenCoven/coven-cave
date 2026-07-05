@@ -9,8 +9,8 @@
 // file is just the I/O shell — locate files, parse JSON defensively, write out.
 //
 // Usage:
-//   pnpm hfr:export                         # all conversations → stdout
-//   pnpm hfr:export --familiar cody         # only cody's runs
+//   pnpm hfr:export --session <id>          # selected conversation → stdout
+//   pnpm hfr:export --familiar cody         # cody's run, if it selects one
 //   pnpm hfr:export --session <id> --out trace.jsonl
 //   pnpm hfr:export --subagents links.json  # splice in delegation edges
 //
@@ -104,7 +104,7 @@ const HELP = `coven-hfr-export — export Coven familiar runs as HFR observer-ho
 
   --dir <path>            conversations dir (default $COVEN_HOME/cave-conversations)
   --session <id>          export a single conversation by id
-  --familiar <id>         only conversations for this familiar
+  --familiar <id>         only conversations for this familiar; must select one
   --subagents <path>      JSON array of {parentSessionId, childSessionId, ...}
   --out <path>            write JSONL here (default stdout)
   --source-format <str>   override the session event's source_format
@@ -166,32 +166,47 @@ function main(): void {
 
   const subagentLinks = opts.subagents ? readSubagentLinks(opts.subagents) : [];
 
-  const events: HfrObserverEvent[] = [];
-  let exported = 0;
+  const matches: Array<{ conv: HfrConversationInput; events: HfrObserverEvent[] }> = [];
   for (const file of files) {
     const conv = readConversation(file);
     if (!conv) continue;
     if (opts.session && conv.sessionId !== opts.session) continue;
     if (opts.familiar && conv.familiarId !== opts.familiar) continue;
-    events.push(
-      ...conversationToHfrEvents(conv, {
+    matches.push({
+      conv,
+      events: conversationToHfrEvents(conv, {
         subagentLinks,
         sourceFormat: opts.sourceFormat ?? undefined,
         maxFieldChars: opts.maxFieldChars ?? undefined,
       }),
-    );
-    exported += 1;
+    });
   }
 
+  if (matches.length !== 1) {
+    const filter = opts.session
+      ? `session ${opts.session}`
+      : opts.familiar
+        ? `familiar ${opts.familiar}`
+        : "all conversations";
+    const ids = matches.map(({ conv }) => conv.sessionId).slice(0, 10).join(", ");
+    const suffix = matches.length > 10 ? ", ..." : "";
+    process.stderr.write(
+      `error: ${filter} matched ${matches.length} conversation(s); HFR ingests one JSONL file as one trace. Re-run with --session <id>.${ids ? ` Matched: ${ids}${suffix}.` : ""}\n`,
+    );
+    process.exit(1);
+    return;
+  }
+
+  const [{ conv, events }] = matches;
   const jsonl = serializeHfrJsonl(events);
   if (opts.out) {
     writeFileSync(opts.out, jsonl);
     process.stderr.write(
-      `wrote ${events.length} events from ${exported} conversation(s) → ${opts.out}\n`,
+      `wrote ${events.length} events from session ${conv.sessionId} → ${opts.out}\n`,
     );
   } else {
     process.stdout.write(jsonl);
-    process.stderr.write(`# ${events.length} events from ${exported} conversation(s)\n`);
+    process.stderr.write(`# ${events.length} events from session ${conv.sessionId}\n`);
   }
 }
 
