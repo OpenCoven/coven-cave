@@ -332,12 +332,18 @@ export function UpdateSettingsRow() {
         >
           Update failed
         </span>
-        <button type="button" onClick={openReleasePageInBrowser} className={accentBtn}>
-          <Icon name="ph:arrow-square-out" width={12} />
+        <Button
+          variant="primary"
+          size="xs"
+          onClick={openReleasePageInBrowser}
+          className={accentBtn}
+          leadingIcon="ph:arrow-square-out"
+        >
           Open release page in Browser
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="secondary"
+          size="xs"
           onClick={check}
           className={secondaryBtn}
         >
