@@ -9,13 +9,6 @@ const files = [
   "src/components/familiar-pin-order.tsx",
   "automations/familiar-weekly-reflection.toml",
   "automations/familiar-daily-notes.toml",
-  "src/app/api/library/route.ts",
-  "src/app/api/library/chat/route.ts",
-  "src/app/api/library/chat/chat-doc-path.ts",
-  "src/app/api/library/doc/route.ts",
-  "src/app/api/library/doc/doc-file.ts",
-  "src/components/library-doc-preview.tsx",
-  "src/components/library-chat-panel.tsx",
 ];
 
 const forbidden = /\b(nova|kitty|cody|sage|echo|charm|astra)\b/i;

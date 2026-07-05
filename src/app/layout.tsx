@@ -10,7 +10,6 @@ import { ReadingAlignController } from "@/components/reading-align-controller";
 import { ReadingWidthController } from "@/components/reading-width-controller";
 import { ReadingWeightController } from "@/components/reading-weight-controller";
 import { ReadingHyphensController } from "@/components/reading-hyphens-controller";
-import { ReadingDropcapController } from "@/components/reading-dropcap-controller";
 import { CornerRadiusController } from "@/components/corner-radius-controller";
 import { RemoteThemeController } from "@/components/remote-theme-controller";
 import { ThemeScript } from "@/components/theme-script";
@@ -86,7 +85,6 @@ export default function RootLayout({
             <ReadingWidthController />
             <ReadingWeightController />
             <ReadingHyphensController />
-            <ReadingDropcapController />
             <CornerRadiusController />
             <RemoteThemeController />
             <PwaRegister />

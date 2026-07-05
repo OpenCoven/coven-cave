@@ -110,8 +110,4 @@ for (const [file, label] of [
   assert.doesNotMatch(src, />Loading…</, `${label} no longer shows a bare Loading… line`);
   assert.match(src, /<SkeletonRows/, `${label} shows shared skeleton rows on first load`);
 }
-const docPreview = read("./library-doc-preview.tsx");
-assert.doesNotMatch(docPreview, /library-preview-empty-text">Loading…</, "Library doc preview no longer shows a bare Loading… line");
-assert.match(docPreview, /<SkeletonGroup[\s\S]{0,200}<Skeleton variant="text"/, "Library doc preview shows a document-shaped skeleton on first load");
-
 console.log("surface-loading-states.test.ts: ok");

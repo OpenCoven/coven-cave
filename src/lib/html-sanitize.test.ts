@@ -4,7 +4,6 @@ import { readFile } from "node:fs/promises";
 
 const sanitizerSource = await readFile(new URL("./html-sanitize.ts", import.meta.url), "utf8");
 const messageBubbleSource = await readFile(new URL("../components/message-bubble.tsx", import.meta.url), "utf8");
-const libraryPreviewSource = await readFile(new URL("../components/library-doc-preview.tsx", import.meta.url), "utf8");
 
 assert.match(
   sanitizerSource,
@@ -42,20 +41,8 @@ assert.match(
   "message markdown should use the shared sanitizer",
 );
 
-assert.match(
-  libraryPreviewSource,
-  /import \{ sanitizeHtml \} from "@\/lib\/html-sanitize"/,
-  "library markdown preview should use the shared sanitizer",
-);
-
 assert.doesNotMatch(
   messageBubbleSource,
   /function sanitizeHtml/,
   "message markdown should not keep a duplicate inline sanitizer",
-);
-
-assert.doesNotMatch(
-  libraryPreviewSource,
-  /new DOMParser\(\)\.parseFromString\(raw, "text\/html"\)/,
-  "library markdown preview should not keep a duplicate inline sanitizer",
 );

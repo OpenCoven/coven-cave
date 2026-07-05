@@ -64,13 +64,6 @@ import {
   type ReadingHyphens,
 } from "@/lib/reading-hyphens";
 import {
-  DEFAULT_READING_DROPCAP,
-  READING_DROPCAP_OPTIONS,
-  applyReadingDropcap,
-  readReadingDropcap,
-  type ReadingDropcap,
-} from "@/lib/reading-dropcap";
-import {
   CLOCK_LABEL,
   CLOCK_OPTIONS,
   DATE_LABEL,
@@ -82,11 +75,6 @@ import {
   setDensityFormat,
   useDateTimePrefs,
 } from "@/lib/datetime-format";
-
-const DROPCAP_LABEL: Record<ReadingDropcap, string> = {
-  off: "Off",
-  on: "On",
-};
 
 const WIDTH_LABEL: Record<ReadingWidth, string> = {
   full: "Full",
@@ -218,7 +206,6 @@ export function FontSettings() {
   const [width, setWidth] = useState<ReadingWidth>(DEFAULT_READING_WIDTH);
   const [weight, setWeight] = useState<ReadingWeight>(DEFAULT_READING_WEIGHT);
   const [hyphens, setHyphens] = useState<ReadingHyphens>(DEFAULT_READING_HYPHENS);
-  const [dropcap, setDropcap] = useState<ReadingDropcap>(DEFAULT_READING_DROPCAP);
   // Chat timestamp format prefs come straight from the reactive store (no local
   // mirror needed) — the segmented controls write through to it on click.
   const dtPrefs = useDateTimePrefs();
@@ -237,7 +224,6 @@ export function FontSettings() {
     setWidth(readReadingWidth());
     setWeight(readReadingWeight());
     setHyphens(readReadingHyphens());
-    setDropcap(readReadingDropcap());
   }, []);
 
   // Keep the segmented control in sync with the ⌘+/⌘−/⌘0 keyboard shortcuts,
@@ -293,11 +279,6 @@ export function FontSettings() {
     applyReadingHyphens(next);
   };
 
-  const setDropCap = (next: ReadingDropcap) => {
-    setDropcap(next);
-    applyReadingDropcap(next);
-  };
-
   const reset = () => {
     selectPair(DEFAULT_FONT_PAIR_ID);
     setTextSize(DEFAULT_SCREEN_SCALE);
@@ -307,7 +288,6 @@ export function FontSettings() {
     setReadingWidth(DEFAULT_READING_WIDTH);
     setFontWeight(DEFAULT_READING_WEIGHT);
     setHyphenation(DEFAULT_READING_HYPHENS);
-    setDropCap(DEFAULT_READING_DROPCAP);
   };
 
   const isDefault =
@@ -318,8 +298,7 @@ export function FontSettings() {
     align === DEFAULT_READING_ALIGN &&
     width === DEFAULT_READING_WIDTH &&
     weight === DEFAULT_READING_WEIGHT &&
-    hyphens === DEFAULT_READING_HYPHENS &&
-    dropcap === DEFAULT_READING_DROPCAP;
+    hyphens === DEFAULT_READING_HYPHENS;
   const selectedPair = fontPairById(pairId) ?? fontPairById(DEFAULT_FONT_PAIR_ID)!;
 
   return (
@@ -456,21 +435,6 @@ export function FontSettings() {
                   active={hyphens === option}
                 >
                   {HYPHENS_LABEL[option]}
-                </SegmentButton>
-              ))}
-            </div>
-          </ReadingRow>
-          <ReadingRow label="Drop cap" hint="Library documents only.">
-            <div className={segWrap}>
-              {READING_DROPCAP_OPTIONS.map((option) => (
-                <SegmentButton
-                  key={option}
-                  onClick={() => setDropCap(option)}
-                  aria-pressed={dropcap === option}
-                  aria-label={`Drop cap ${DROPCAP_LABEL[option]}`}
-                  active={dropcap === option}
-                >
-                  {DROPCAP_LABEL[option]}
                 </SegmentButton>
               ))}
             </div>

@@ -60,7 +60,6 @@ assert.match(
 // Regression: JS smooth-scroll call sites must gate on the preference, because an
 // explicit `behavior: "smooth"` option overrides the CSS scroll-behavior reset.
 const callSites = [
-  "../components/library-doc-preview.tsx",
   "../components/projects/project-row.tsx",
   "../components/board-kanban.tsx",
   "../components/salem/salem-widget.tsx",
@@ -76,16 +75,6 @@ for (const rel of callSites) {
     src,
     /smoothScrollBehavior\(\)/,
     `${rel} must route smooth scrolling through smoothScrollBehavior()`,
-  );
-}
-
-// library-chat-panel keeps its ScrollBehavior param but must gate "smooth" on the preference.
-{
-  const src = readFileSync(new URL("../components/library-chat-panel.tsx", import.meta.url), "utf8");
-  assert.match(
-    src,
-    /prefersReducedMotion\(\)/,
-    "library-chat-panel must gate its smooth auto-scroll on prefersReducedMotion()",
   );
 }
 

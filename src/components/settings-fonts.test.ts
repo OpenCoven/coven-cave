@@ -124,15 +124,6 @@ assert.match(
   "reset restores the default hyphenation",
 );
 
-// Drop cap control (library reader only).
-assert.match(src, /Drop cap/, "renders a Drop cap control");
-assert.match(src, /READING_DROPCAP_OPTIONS/, "uses the reading-dropcap ladder");
-assert.match(src, /applyReadingDropcap/, "applies drop cap via the shared helper");
-assert.match(src, /aria-pressed=\{dropcap === option\}/, "drop-cap buttons expose selected state");
-assert.match(
-  src,
-  /const reset = \(\) => \{[\s\S]*?DEFAULT_READING_DROPCAP[\s\S]*?\}/,
-  "reset restores the default drop cap",
-);
+assert.doesNotMatch(src, /Drop cap|READING_DROPCAP|applyReadingDropcap/, "Library-only drop-cap controls stay out of integrated Settings");
 
 console.log("settings-fonts.test.ts OK");

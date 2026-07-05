@@ -23,8 +23,7 @@ type Props = {
 
 /**
  * Bottom-center undo toast with a countdown progress bar and an Undo / dismiss
- * pair. Shared by the library delete-undo surfaces and the Projects move-undo.
- * Styles live in the `.library-undo-toast*` rules in src/styles/library.css.
+ * pair. Shared by delete and move flows.
  */
 export function UndoToast({
   message,
@@ -56,21 +55,21 @@ export function UndoToast({
   }, [durationMs, autoDismiss]);
 
   return (
-    <div className="library-undo-toast" role="status" aria-live="polite" aria-atomic="true">
-      <div className="library-undo-toast-content">
-        <Icon name={icon} className="library-undo-toast-icon" aria-hidden />
-        <span className="library-undo-toast-label">{message}</span>
-        <button className="library-undo-toast-undo" onClick={onUndo} aria-label={undoAriaLabel}>
+    <div className="ui-undo-toast" role="status" aria-live="polite" aria-atomic="true">
+      <div className="ui-undo-toast__content">
+        <Icon name={icon} className="ui-undo-toast__icon" aria-hidden />
+        <span className="ui-undo-toast__label">{message}</span>
+        <button className="ui-undo-toast__undo" onClick={onUndo} aria-label={undoAriaLabel}>
           Undo
           {/* The same action is bound to ⌘Z while the toast is up (useUndoDelete). */}
-          <kbd className="library-undo-toast-kbd" aria-hidden>⌘Z</kbd>
+          <kbd className="ui-undo-toast__kbd" aria-hidden>⌘Z</kbd>
         </button>
-        <button className="library-undo-toast-dismiss" onClick={onDismiss} aria-label="Dismiss">
+        <button className="ui-undo-toast__dismiss" onClick={onDismiss} aria-label="Dismiss">
           <Icon name="ph:x-bold" aria-hidden />
         </button>
       </div>
       <div
-        className="library-undo-toast-progress"
+        className="ui-undo-toast__progress"
         style={{ width: collapsed ? "0%" : "100%", transitionDuration: `${durationMs}ms` }}
         aria-hidden
       />

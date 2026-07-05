@@ -14,7 +14,7 @@ import type { CovenMemoryEntry } from "@/components/familiars-view-stats";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { useMemoryFile } from "@/lib/use-memory-file";
-import { LibraryUndoToast } from "./library-undo-toast";
+import { UndoToast } from "@/components/ui/undo-toast";
 import {
   classifyProtection,
   detectStale,
@@ -31,7 +31,6 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { StandardSelect } from "@/components/ui/select";
 import { MemoryReaderPane } from "@/components/familiars-memory-reader";
-import "@/styles/library.css";
 
 export type FileMemoryEntry = {
   root: string;
@@ -706,8 +705,10 @@ export function FamiliarsMemoryView({ familiars, activeFamiliar, onOpenMemoryFil
         )}
       </div>
       {undoPending ? (
-        <LibraryUndoToast
-          label={undoPending.label}
+        <UndoToast
+          message={<>Deleted <strong>{undoPending.label}</strong></>}
+          icon="ph:trash"
+          undoAriaLabel={`Undo delete ${undoPending.label}`}
           onUndo={handleUndoDelete}
           onDismiss={commitDelete}
         />

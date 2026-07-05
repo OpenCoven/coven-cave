@@ -70,13 +70,13 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /aria-label=\{patStatus\?\.hasPat \? "GitHub PAT connected/,
-  "Icon-only connected PAT button keeps an aria-label",
+  /aria-label=\{patStatus\?\.hasPat \? "GitHub PAT connected — manage" : "Connect GitHub PAT"\}/,
+  "connected PAT IconButton has aria-label",
 );
 assert.match(
   source,
   /\{patStatus\?\.hasPat \? null : "Add PAT"\}/,
-  "Disconnected state still shows the 'Add PAT' call to action",
+  "disconnected PAT Button still shows the 'Add PAT' label",
 );
 
 assert.match(
@@ -379,5 +379,53 @@ assert.match(source, /announce\(next \? "Thread resolved\." : "Thread unresolved
 assert.match(source, /announce\(`Worktree \$\{json\.created \? "created" : "reused"\} for the safe merge\.`\)/, "the safe-merge worktree announces");
 assert.match(source, /aria-label="Reply to this thread"/, "the comment composer textarea is labelled");
 assert.match(source, /className="gh-composer-error" role="alert"/, "a failed post is announced via role=alert");
+
+// ── cave-4op CSS patch guards ──────────────────────────────────────────────────
+
+assert.doesNotMatch(
+  source,
+  /className="gh-action-btn"/,
+  "raw gh-action-btn className removed — use Button size=sm",
+);
+assert.doesNotMatch(
+  source,
+  /className=\{`gh-action-btn/,
+  "raw gh-action-btn template literal className removed",
+);
+assert.doesNotMatch(
+  source,
+  /className="gh-compact-icon-button/,
+  "raw gh-compact-icon-button className removed — use IconButton",
+);
+assert.doesNotMatch(
+  source,
+  /className=\{`gh-compact-icon-button/,
+  "raw gh-compact-icon-button template literal className removed",
+);
+assert.doesNotMatch(
+  source,
+  /className="gh-composer-submit"/,
+  "raw gh-composer-submit className removed — use Button size=sm variant=primary",
+);
+assert.doesNotMatch(
+  source,
+  /className=\{`gh-composer-submit/,
+  "raw gh-composer-submit template literal className removed",
+);
+assert.match(
+  source,
+  /import \{ IconButton \}/,
+  "IconButton is imported",
+);
+assert.doesNotMatch(
+  source,
+  /rounded-xl border border-\[var\(--border-hairline\)\] bg-\[var\(--bg-elevated\)\]/,
+  "PAT modal wrapper uses .gh-pat-dialog class, not inline Tailwind",
+);
+assert.doesNotMatch(
+  source,
+  /w-full rounded-lg border border-\[var\(--border-hairline\)\] bg-\[var\(--bg-base\)\]/,
+  "PAT modal inputs use .gh-input class, not inline Tailwind",
+);
 
 console.log("github-view-polish.test.ts OK");

@@ -57,12 +57,4 @@ const diffView = readFileSync(new URL("../components/gh-diff-view.tsx", import.m
 assert.match(diffView, /export function DiffHunk/, "exports DiffHunk");
 assert.match(diffView, /parseDiff/, "DiffHunk parses the hunk");
 
-// The research/library GitHub README uses the plain markdown renderer (which
-// emits `<code class="language-diff">`), so wireDiffBlocks colorizes ```diff
-// there. (The chat/PR-body MarkdownBlock pipeline already colorizes diff fences
-// via its Shiki renderer's cave-diff-* classes, so it needs no extra wiring.)
-const lib = readFileSync(new URL("../components/library-doc-preview.tsx", import.meta.url), "utf8");
-assert.match(lib, /import \{ wireDiffBlocks \} from "@\/lib\/gh-diff"/, "research/library markdown imports wireDiffBlocks");
-assert.match(lib, /wireDiffBlocks\(el\)/, "research GitHub README colorizes ```diff blocks");
-
 console.log("gh-diff.test.ts: ok");

@@ -33,7 +33,6 @@ const INPUT_SELECTORS = [
   ".vault-add-input",
   ".cave-composer-input",
   ".hc-textarea",
-  ".library-list-add-input",
 ];
 
 // The global 16px rule is the anchor — verify it exists in globals.css.

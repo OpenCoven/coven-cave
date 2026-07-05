@@ -19,7 +19,7 @@ assert.match(hook, /isContentEditable/, "defers to native undo in contenteditabl
 assert.match(hook, /useEffect\(\(\) => \{\s*if \(!pending\) return;/, "the keydown handler is active only while a delete is pending");
 
 // The toast advertises ⌘Z.
-assert.match(toast, /library-undo-toast-kbd[\s\S]{0,40}⌘Z/, "the undo toast shows a ⌘Z hint");
+assert.match(toast, /ui-undo-toast__kbd[\s\S]{0,40}⌘Z/, "the undo toast shows a ⌘Z hint");
 
 // The shortcuts sheet documents it.
 assert.match(shortcuts, /keys: "⌘Z", description: "Undo the last delete/, "⌘Z is in the shortcuts catalog");

@@ -7552,10 +7552,6 @@ a.mobile-handoff__link:hover {
     overflow: hidden;
   }
 
-  .shell-detail:has(> .cave-mode-fade > .library-shell) {
-    overflow: hidden;
-  }
-
   .chat-surface {
     min-width: 0;
     overflow: hidden;
@@ -8317,17 +8313,6 @@ a.mobile-handoff__link:hover {
   outline-offset: 2px;
   box-shadow: 0 8px 16px color-mix(in oklch, var(--accent-presence) 30%, transparent);
   transform: translateY(-1px);
-}
-
-/* Composition PR — reader heading active flash.
-   Brief visual cue when keyboard nav lands on a heading. */
-@keyframes library-heading-flash {
-  0%   { background: color-mix(in oklch, var(--accent-presence) 22%, transparent); }
-  100% { background: transparent; }
-}
-.library-heading--active {
-  animation: library-heading-flash 800ms ease-out;
-  border-radius: 4px;
 }
 
 /* ── Magic cast: sparkle the side-panel toggle on click ──────────────────────
@@ -11782,4 +11767,119 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   margin-top: 4px;
   font-size: 11.5px;
   color: var(--color-danger-soft);
+}
+
+/* ---- Shared undo toast ---- */
+.ui-undo-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  min-width: 280px;
+  max-width: 420px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  box-shadow: 0 4px 24px rgb(0 0 0 / 35%);
+  overflow: hidden;
+  animation: ui-undo-toast-enter 0.18s var(--ease-decelerate, ease-out);
+}
+
+@keyframes ui-undo-toast-enter {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.ui-undo-toast__content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+.ui-undo-toast__icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.ui-undo-toast__label {
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-undo-toast__label strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.ui-undo-toast__undo {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--accent-presence);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  transition: background 0.1s;
+}
+
+.ui-undo-toast__undo:hover {
+  background: color-mix(in oklch, var(--accent-presence) 15%, transparent);
+}
+
+.ui-undo-toast__undo:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+  outline-offset: 1px;
+}
+
+.ui-undo-toast__kbd {
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--text-muted) 14%, transparent);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.ui-undo-toast__dismiss {
+  display: grid;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  transition: color 0.1s, background 0.1s;
+}
+
+.ui-undo-toast__dismiss:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.ui-undo-toast__dismiss:focus-visible {
+  outline: var(--ring-width) solid var(--ring-focus);
+}
+
+.ui-undo-toast__progress {
+  height: 2px;
+  background: var(--accent-presence);
+  transition: width 0.1s linear;
 }
