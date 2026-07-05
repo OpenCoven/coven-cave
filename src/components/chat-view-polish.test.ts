@@ -652,14 +652,10 @@ assert.match(
   /if \(pastedFiles\.length > 0\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*void attachFiles\(pastedFiles\);\s*\n\s*return;/,
   "Pasted files win over any clipboard text and route through the existing attach pipeline; preventDefault only fires when files were consumed",
 );
-assert.ok(
-  pasteHandler.indexOf("attachFiles(pastedFiles)") < pasteHandler.indexOf("looksLikeCsv"),
-  "Paste precedence: files first, then the plain-text CSV sniff (which must remain intact)",
-);
-assert.match(
-  pasteHandler,
-  /const text = e\.clipboardData\.getData\("text\/plain"\);\s*\n\s*if \(looksLikeCsv\(text\)\) \{ setCsvRaw\(text\); \}/,
-  "Plain-text paste keeps its current behavior — the CSV sniff still runs and the default text insertion is not prevented",
+assert.doesNotMatch(
+  source,
+  /CsvImportModal|looksLikeCsv|setCsvRaw/,
+  "ChatView stays decoupled from the feature/library CSV import flow",
 );
 
 // — CHAT-D1-03: drag-and-drop attach on the chat surface —

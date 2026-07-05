@@ -4,7 +4,7 @@ import SwiftUI
 /// tappable: picking a command drops it into the composer ready to run.
 struct CommandsSheet: View {
     @Environment(\.dismiss) private var dismiss
-    /// Called with the chosen command's canonical name (e.g. "/save ").
+    /// Called with the chosen command's canonical name.
     let onPick: (SlashCommand) -> Void
 
     @State private var query = ""

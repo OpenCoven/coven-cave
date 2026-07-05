@@ -69,10 +69,8 @@ import { catalogForRuntime } from "@/lib/runtime-models";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
-import { CsvImportModal } from "./csv-import-modal";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
-import { looksLikeCsv } from "@/lib/csv-import";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
 import {
   chatUsagePlanTooltip,
@@ -2343,8 +2341,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     onProjectRootChange?.(activeProjectRoot || null);
   }, [activeProjectRoot, onProjectRootChange]);
-  const [csvRaw, setCsvRaw] = useState<string | null>(null);
-  const [csvModalOpen, setCsvModalOpen] = useState(false);
   // Drag-and-drop attach (CHAT-D1-03). The counter tracks nested
   // dragenter/dragleave pairs so transitions across child elements don't
   // flicker the overlay; only file drags (dataTransfer.types includes
@@ -3891,14 +3887,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [initialPrompt, sessionId]);
 
   const attachFiles = async (files: FileList | File[] | null) => {
-    // Check for CSV files before normal attachment handling
-    if (files?.length) {
-      const csvFiles = Array.from(files).filter((f) => f.name.endsWith(".csv") || f.type === "text/csv");
-      if (csvFiles.length > 0 && csvFiles[0]) {
-        const text = await csvFiles[0].text();
-        if (looksLikeCsv(text)) { setCsvRaw(text); return; }
-      }
-    }
     if (!files?.length) return;
     const selected = Array.from(files).slice(0, Math.max(0, 10 - attachments.length));
     if (selected.length === 0) return;
@@ -4982,23 +4970,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           />
 
           <div className="cave-composer-panel">
-            {csvRaw && !csvModalOpen && (
-              <div className="flex items-center gap-2 border-b border-[var(--border-hairline)]/70 bg-[var(--bg-raised)] px-3 py-1.5">
-                <Icon name="ph:file-text" width={12} className="shrink-0 text-[var(--text-muted)]" />
-                <span className="flex-1 truncate text-[11px] text-[var(--text-secondary)]">CSV detected — import to Library?</span>
-                <button
-                  type="button"
-                  onClick={() => setCsvModalOpen(true)}
-                  className="shrink-0 rounded bg-[var(--accent-presence)] px-2 py-0.5 text-[10px] font-medium text-white hover:opacity-90"
-                >Import</button>
-                <button
-                  type="button"
-                  onClick={() => setCsvRaw(null)}
-                  className="shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                  aria-label="Dismiss"
-                ><Icon name="ph:x-bold" width={9} /></button>
-              </div>
-            )}
             {attachments.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
                 {attachments.map((attachment) => (
@@ -5065,8 +5036,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   void attachFiles(pastedFiles);
                   return;
                 }
-                const text = e.clipboardData.getData("text/plain");
-                if (looksLikeCsv(text)) { setCsvRaw(text); }
               }}
               placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…  ↵ to send`}
               rows={1}
@@ -5231,18 +5200,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           </div>
         </div>
       </footer>
-      {csvRaw && csvModalOpen && (
-        <CsvImportModal
-          raw={csvRaw}
-          familiar={familiar.id}
-          onImport={(count) => {
-            setCsvModalOpen(false);
-            setCsvRaw(null);
-            void count;
-          }}
-          onClose={() => setCsvModalOpen(false)}
-        />
-      )}
       {voiceCallOpen && sessionId && (
         <VoiceCallOverlay
           familiar={familiar}

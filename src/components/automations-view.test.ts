@@ -7,6 +7,10 @@ const detailPanelControls = source.slice(
   source.indexOf("function DetailPanel"),
   source.indexOf("function RowActions"),
 );
+const codexDetailPanel = source.slice(
+  source.indexOf("function CodexDetailPanel"),
+  source.indexOf("function AutomationScheduleRow"),
+);
 
 // Save is gated on a valid, changed form: not busy, dirty, named, and a valid
 // schedule (weekly needs ≥1 day).
@@ -42,6 +46,20 @@ assert.match(
   /disabled=\{!canSave\}/,
   "the Save button stays disabled while canSave is false",
 );
+
+// Crons detail UX: the panel should read like an operational editor instead of
+// a long undifferentiated form. Key facts are summarized first, editing is
+// grouped into named zones, and primary/destructive actions are separated.
+assert.match(codexDetailPanel, />\s*Cron details\s*</, "cron detail panel uses Cron-specific title copy");
+assert.match(codexDetailPanel, /className="[^"]*cron-detail-summary-grid/, "cron detail panel renders an at-a-glance summary grid");
+assert.match(codexDetailPanel, /<CronDetailSection title="Identity"/, "cron detail groups identity fields");
+assert.match(codexDetailPanel, /<CronDetailSection title="Instructions"/, "cron detail groups prompt fields");
+assert.match(codexDetailPanel, /<CronDetailSection title="Schedule"/, "cron detail groups schedule fields");
+assert.match(codexDetailPanel, /<CronDetailSection title="Runtime"/, "cron detail groups runtime fields");
+assert.match(codexDetailPanel, /className="[^"]*cron-detail-actions/, "cron detail actions live in a dedicated action rail");
+assert.match(codexDetailPanel, /Save changes[\s\S]*Run now[\s\S]*Delete/, "cron detail actions prioritize save, then run, with delete last");
+assert.match(codexDetailPanel, /leadingIcon="ph:floppy-disk-bold"/, "save action uses a recognizable icon");
+assert.match(codexDetailPanel, /variant="danger-ghost"[\s\S]*Delete/, "delete remains visually separated as a destructive action");
 
 // List rows + detail-panel close buttons show a visible keyboard focus ring.
 assert.ok(source.includes("focus-ring-inset automation-list-row"), "list rows have a focus ring");

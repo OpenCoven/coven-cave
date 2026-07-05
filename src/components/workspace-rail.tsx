@@ -134,7 +134,7 @@ export function WorkspaceRail({
               {activeTab === "changes" ? (
                 <SessionChangesPanel />
               ) : (
-                <RailFilesPanel projectRoot={projectRoot} familiarId={familiarId} />
+                <RailFilesPanel projectRoot={projectRoot} familiarId={familiarId} isFullscreen={isFullscreen} />
               )}
             </div>
           ) : null}

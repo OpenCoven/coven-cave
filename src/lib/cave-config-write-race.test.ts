@@ -34,14 +34,14 @@ try {
 
   // Wider fan-out across all four writers + distinct fields simultaneously.
   await Promise.all([
-    config.saveConfig({ addons: { library: true } }),
+    config.saveConfig({ addons: { browser: true } }),
     config.saveConfig({ familiars: { nova: { color: "#abcdef" } } }),
     config.installMarketplacePlugin("plug-a", "1.0.0", "test"),
     config.upsertRoleConfig("role-x", "nova", true),
   ]);
   cfg = await config.loadConfig();
   assert.equal(cfg.addons.github, true, "earlier addons.github still present after fan-out");
-  assert.equal(cfg.addons.library, true, "addons.library write survived the fan-out");
+  assert.equal(cfg.addons.browser, true, "addons.browser write survived the fan-out");
   assert.equal(cfg.familiars.nova?.color, "#abcdef", "familiar color write survived the fan-out");
   assert.ok(cfg.marketplace.installed["plug-a"], "marketplace install survived the fan-out");
   assert.ok(cfg.roles.some((r) => r.id === "role-x" && r.familiar === "nova" && r.active), "role upsert survived the fan-out");

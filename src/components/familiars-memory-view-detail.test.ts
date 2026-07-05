@@ -45,14 +45,14 @@ assert.match(
 // Sort now lives in the management controls bar (group/sort/stale-only).
 assert.match(source, /value=\{sortMode\}/, "Sort control must be bound to sortMode");
 for (const opt of ["recent", "name", "size"]) {
-  assert.ok(source.includes(`value="${opt}"`), `Sort option ${opt} must be offered`);
+  assert.ok(source.includes(`{ value: "${opt}",`), `Sort option ${opt} must be offered`);
 }
 assert.match(source, /\.sort\(cmp\[sortMode\]\)/, "visibleFiles must sort by the active mode");
 
 // ───────── #9 search a11y + clear ─────────
 
 assert.match(source, /aria-label="Clear search"/, "Search must offer a labelled clear button");
-assert.match(source, /aria-label="Filter memory by familiar"/, "Familiar select must be labelled");
+assert.match(source, /label="Filter memory by familiar"/, "Familiar select must be labelled");
 assert.match(
   source,
   /event\.key === "Escape" && query/,

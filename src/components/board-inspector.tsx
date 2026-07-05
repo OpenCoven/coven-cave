@@ -431,10 +431,6 @@ function LinksSection({
 }) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  // The save flow clears its badge on a 2–3s timer; don't touch state if the
-  // inspector closed in the meantime.
-  const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const links = card.links ?? [];
 

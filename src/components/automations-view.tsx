@@ -140,6 +140,37 @@ function FieldLabel({ children }: { children: ReactNode }) {
   );
 }
 
+function CronDetailSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3 rounded-[var(--radius-control)] border p-3"
+      style={{ borderColor: "var(--border-hairline)", background: "color-mix(in oklch, var(--bg-base) 72%, transparent)" }}>
+      <div>
+        <h3 className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>{title}</h3>
+        {description ? <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>{description}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function CronSummaryTile({ label, value, tone = "default" }: { label: string; value: ReactNode; tone?: "default" | "active" | "paused" | "danger" }) {
+  const valueColor =
+    tone === "active"
+      ? "oklch(0.75 0.1 150)"
+      : tone === "danger"
+        ? "var(--color-danger)"
+        : tone === "paused"
+          ? "var(--text-muted)"
+          : "var(--text-primary)";
+  return (
+    <div className="rounded-[var(--radius-control)] border px-3 py-2"
+      style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}>
+      <p className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>{label}</p>
+      <div className="mt-1 min-w-0 truncate text-[12px] font-medium" style={{ color: valueColor }}>{value}</div>
+    </div>
+  );
+}
+
 const automationFieldBaseClass =
   "w-full rounded-[var(--radius-control)] border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
 const automationInputClass = `${automationFieldBaseClass} h-8 px-2 text-[12px]`;
@@ -745,74 +776,128 @@ function CodexDetailPanel({
       skill_path: skillPath.trim(),
     });
   };
+  const latestRun = runs[0];
+  const latestRunLabel = latestRun
+    ? `${latestRun.status} ${relTime(latestRun.startedAt)}`
+    : "No runs yet";
 
   return (
     <div className="flex h-full flex-col"
       style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-5 py-3"
+      <div className="border-b px-5 py-4"
         style={{ borderColor: "var(--border-hairline)" }}>
-        <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
-          Automation details
-        </h2>
-        <button type="button" onClick={onClose} aria-label="Close"
-          className="focus-ring rounded p-1 transition-colors hover:bg-white/5"
-          style={{ color: "var(--text-muted)" }}>
-          <Icon name="ph:x" width={14} aria-hidden />
-        </button>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+              Cron details
+            </p>
+            <h2 className="mt-1 truncate text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
+              {name.trim() || auto.name}
+            </h2>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border px-2 py-1 text-[11px] font-medium"
+              style={{
+                borderColor: isActive ? "color-mix(in oklch, var(--accent-presence) 45%, transparent)" : "var(--border-hairline)",
+                background: isActive ? "color-mix(in oklch, var(--accent-presence) 14%, transparent)" : "var(--bg-base)",
+                color: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)",
+              }}
+            >
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }} />
+              {isActive ? "Active" : "Paused"}
+            </span>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-white/5"
+              leadingIcon="ph:x"
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Body */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-        <div>
-          <FieldLabel>Name</FieldLabel>
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className={automationInputClass}
-            style={fieldStyle}
-          />
+        <div className="cron-detail-summary-grid grid grid-cols-2 gap-2">
+          <CronSummaryTile label="Schedule" value={auto.scheduleHuman || nextRrule || "Not scheduled"} tone={invalidSchedule ? "danger" : "default"} />
+          <CronSummaryTile label="Status" value={isActive ? "Active" : "Paused"} tone={isActive ? "active" : "paused"} />
+          <CronSummaryTile label="Model" value={model.trim() || "Default"} />
+          <CronSummaryTile label="Last run" value={latestRunLabel} tone={latestRun?.status === "failed" ? "danger" : "default"} />
         </div>
 
-        <div>
-          <FieldLabel>Goals</FieldLabel>
-          <textarea
-            value={goals}
-            onChange={(event) => setGoals(event.target.value)}
-            rows={6}
-            className={automationTextareaClass}
-            style={fieldStyle}
-          />
-        </div>
+        <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Schedules.">
+          <div>
+            <FieldLabel>Name</FieldLabel>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className={automationInputClass}
+              style={fieldStyle}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <FieldLabel>Tags</FieldLabel>
+              <input
+                value={tagsText}
+                onChange={(event) => setTagsText(event.target.value)}
+                className={automationInputClass}
+                style={fieldStyle}
+              />
+            </div>
+            <div>
+              <FieldLabel>Skill</FieldLabel>
+              <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
+            </div>
+          </div>
+        </CronDetailSection>
 
-        <div>
-          <FieldLabel>Deliverables</FieldLabel>
-          <textarea
-            value={deliverables}
-            onChange={(event) => setDeliverables(event.target.value)}
-            rows={5}
-            className={automationTextareaClass}
-            style={fieldStyle}
-          />
-        </div>
+        <CronDetailSection title="Instructions" description="What the cron should do and what output it should leave behind.">
+          <div>
+            <FieldLabel>Goals</FieldLabel>
+            <textarea
+              value={goals}
+              onChange={(event) => setGoals(event.target.value)}
+              rows={5}
+              className={automationTextareaClass}
+              style={fieldStyle}
+            />
+          </div>
+          <div>
+            <FieldLabel>Deliverables</FieldLabel>
+            <textarea
+              value={deliverables}
+              onChange={(event) => setDeliverables(event.target.value)}
+              rows={4}
+              className={automationTextareaClass}
+              style={fieldStyle}
+            />
+          </div>
+        </CronDetailSection>
 
-        <div>
-          <FieldLabel>Schedule</FieldLabel>
-          <div className="mb-2 inline-flex rounded-md border p-0.5"
-            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}>
+        <CronDetailSection title="Schedule" description="Choose the cadence first; use raw RRULE only when the presets are too narrow.">
+          <div className="inline-flex rounded-[var(--radius-control)] border p-0.5"
+            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}
+            role="group"
+            aria-label="Schedule mode"
+          >
             {(["weekly", "daily", "raw"] as const).map((mode) => (
-              <button
+              <Button
                 key={mode}
-                type="button"
+                variant="ghost"
+                size="xs"
                 onClick={() => setScheduleMode(mode)}
-                className="rounded px-2 py-1 text-[11px] capitalize transition-colors"
+                aria-pressed={scheduleMode === mode}
+                className="rounded-[var(--radius-control)] px-2 py-1 text-[11px] capitalize"
                 style={{
                   background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
                   color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
                 }}
               >
                 {mode}
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -827,15 +912,17 @@ function CodexDetailPanel({
           ) : (
             <div className="space-y-3">
               {scheduleMode === "weekly" && (
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Days of week">
                   {RRULE_DAY_ORDER.map((day) => {
                     const selected = scheduleDays.includes(day);
                     return (
-                      <button
+                      <Button
                         key={day}
-                        type="button"
+                        variant="ghost"
+                        size="xs"
                         onClick={() => toggleDay(day)}
-                        className="rounded-md border px-2 py-1 text-[11px] transition-colors"
+                        aria-pressed={selected}
+                        className="rounded-[var(--radius-control)] border px-2 py-1 text-[11px]"
                         style={{
                           background: selected ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
                           borderColor: selected ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
@@ -843,7 +930,7 @@ function CodexDetailPanel({
                         }}
                       >
                         {RRULE_DAY_LABEL[day]}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
@@ -860,58 +947,54 @@ function CodexDetailPanel({
           <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
             {nextRrule || "RRULE required"}
           </p>
-        </div>
+        </CronDetailSection>
 
-        <div className="grid grid-cols-1 gap-4">
-          <div>
-            <FieldLabel>Status</FieldLabel>
-            <p className="text-[12px]" style={{ color: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}>
-              {isActive ? "Active" : "Paused"}
-            </p>
-          </div>
-          <div>
-            <FieldLabel>Model</FieldLabel>
-            <input
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              className={automationInputClass}
-              style={fieldStyle}
-            />
-          </div>
-          <div>
-            <FieldLabel>Reasoning</FieldLabel>
-            <StandardSelect
-              label="Reasoning"
-              value={reasoningEffort}
-              onChange={setReasoningEffort}
-              className={automationSelectClass}
-              style={fieldStyle}
-              options={[
-                ...(!["low", "medium", "high"].includes(reasoningEffort)
-                  ? [{ value: reasoningEffort, label: reasoningEffort }]
-                  : []),
-                { value: "low", label: "low" },
-                { value: "medium", label: "medium" },
-                { value: "high", label: "high" },
-              ]}
-            />
-          </div>
-          <div>
-            <FieldLabel>Environment</FieldLabel>
-            <StandardSelect
-              label="Environment"
-              value={executionEnvironment}
-              onChange={setExecutionEnvironment}
-              className={automationSelectClass}
-              style={fieldStyle}
-              options={[
-                ...(!["worktree", "repo"].includes(executionEnvironment)
-                  ? [{ value: executionEnvironment, label: executionEnvironment }]
-                  : []),
-                { value: "worktree", label: "worktree" },
-                { value: "repo", label: "repo" },
-              ]}
-            />
+        <CronDetailSection title="Runtime" description="Where the cron runs and which model settings it should use.">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <FieldLabel>Model</FieldLabel>
+              <input
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                className={automationInputClass}
+                style={fieldStyle}
+              />
+            </div>
+            <div>
+              <FieldLabel>Reasoning</FieldLabel>
+              <StandardSelect
+                label="Reasoning"
+                value={reasoningEffort}
+                onChange={setReasoningEffort}
+                className={automationSelectClass}
+                style={fieldStyle}
+                options={[
+                  ...(!["low", "medium", "high"].includes(reasoningEffort)
+                    ? [{ value: reasoningEffort, label: reasoningEffort }]
+                    : []),
+                  { value: "low", label: "low" },
+                  { value: "medium", label: "medium" },
+                  { value: "high", label: "high" },
+                ]}
+              />
+            </div>
+            <div>
+              <FieldLabel>Environment</FieldLabel>
+              <StandardSelect
+                label="Environment"
+                value={executionEnvironment}
+                onChange={setExecutionEnvironment}
+                className={automationSelectClass}
+                style={fieldStyle}
+                options={[
+                  ...(!["worktree", "repo"].includes(executionEnvironment)
+                    ? [{ value: executionEnvironment, label: executionEnvironment }]
+                    : []),
+                  { value: "worktree", label: "worktree" },
+                  { value: "repo", label: "repo" },
+                ]}
+              />
+            </div>
           </div>
           <div>
             <FieldLabel>Working directories</FieldLabel>
@@ -923,35 +1006,21 @@ function CodexDetailPanel({
               fieldStyle={fieldStyle}
             />
           </div>
-
-          <div>
-            <FieldLabel>Tags</FieldLabel>
-            <input
-              value={tagsText}
-              onChange={(event) => setTagsText(event.target.value)}
-              className={automationInputClass}
-              style={fieldStyle}
-            />
-          </div>
-          <div>
-            <FieldLabel>Skill</FieldLabel>
-            <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
-          </div>
-        </div>
+        </CronDetailSection>
 
         {runs.length > 0 && (
-          <div>
-            <FieldLabel>Recent runs</FieldLabel>
+          <CronDetailSection title="Recent runs" description="Open a run to inspect its log without leaving this cron.">
             <ul className="mt-1 space-y-1">
               {runs.slice(0, 10).map((r) => (
                 <li key={r.id}>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="xs"
                     onClick={() => void toggleRunLog(r.id)}
                     aria-expanded={openRunId === r.id}
                     aria-controls={`automation-run-log-${r.id}`}
                     aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
-                    className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[12px] hover:bg-white/5"
+                    className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[12px] hover:bg-white/5"
                   >
                     <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: runStatusColor(r.status) }} />
                     <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
@@ -959,11 +1028,11 @@ function CodexDetailPanel({
                     <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
                       <Icon name={openRunId === r.id ? "ph:caret-down" : "ph:caret-right"} width={11} />
                     </span>
-                  </button>
+                  </Button>
                   {openRunId === r.id && (
                     <pre
                       id={`automation-run-log-${r.id}`}
-                      className="mt-1 max-h-48 overflow-auto rounded bg-[var(--bg-base)] p-2 text-[10px] leading-snug"
+                      className="mt-1 max-h-48 overflow-auto rounded-[var(--radius-control)] bg-[var(--bg-base)] p-2 text-[10px] leading-snug"
                       style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
                     >
                       {runLogLoading ? "Loading…" : (runLog || "(empty log)")}
@@ -972,48 +1041,58 @@ function CodexDetailPanel({
                 </li>
               ))}
             </ul>
-          </div>
+          </CronDetailSection>
         )}
       </div>
 
-      {/* Actions */}
-      <div className="border-t px-5 py-4 space-y-2"
+      <div className="cron-detail-actions border-t px-5 py-4 space-y-3"
         style={{ borderColor: "var(--border-hairline)" }}>
-        <button type="button" disabled={busy} onClick={() => onRun(auto)}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium hover:bg-white/5 disabled:opacity-50">
-          <Icon name="ph:play" width={13} /> Run now
-        </button>
         {saveBlockedReason ? (
           <p className="text-[11px]" style={{ color: "oklch(0.7 0.16 35)" }} role="alert">
             {saveBlockedReason}
           </p>
         ) : null}
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          fullWidth
           disabled={!canSave}
           onClick={save}
-          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
-          style={{ background: "var(--accent-presence)" }}
+          className="justify-center rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
+          leadingIcon="ph:floppy-disk-bold"
         >
           {busy ? "Saving..." : "Save changes"}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onToggle(auto)}
-          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
-          style={{ background: isActive ? "oklch(0.45 0.12 20)" : "var(--accent-presence)" }}
-        >
-          {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onDelete(auto)}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] disabled:opacity-50"
-        >
-          <Icon name="ph:trash" width={13} /> Delete
-        </button>
+        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => onRun(auto)}
+            className="justify-center rounded-[var(--radius-control)] text-[12px] font-medium"
+            leadingIcon="ph:play"
+          >
+            Run now
+          </Button>
+          <Button
+            variant={isActive ? "danger" : "secondary"}
+            disabled={busy}
+            onClick={() => onToggle(auto)}
+            className="justify-center rounded-[var(--radius-control)] text-[12px] font-medium"
+            leadingIcon={isActive ? "ph:pause" : "ph:play"}
+          >
+            {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
+          </Button>
+        </div>
+        <div className="border-t pt-3" style={{ borderColor: "var(--border-hairline)" }}>
+          <Button
+            variant="danger-ghost"
+            disabled={busy}
+            onClick={() => onDelete(auto)}
+            className="rounded-[var(--radius-control)] text-[12px] font-medium"
+            leadingIcon="ph:trash"
+          >
+            Delete
+          </Button>
+        </div>
       </div>
     </div>
   );

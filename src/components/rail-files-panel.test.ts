@@ -9,10 +9,20 @@ const preview = readFileSync(new URL("./rail-file-preview.tsx", import.meta.url)
 assert.match(panel, /export function RailFilesPanel\(/, "exports RailFilesPanel");
 assert.match(panel, /import \{ ProjectTree \} from "@\/components\/project-tree"/, "imports ProjectTree");
 assert.match(panel, /import \{ RailFilePreview \} from "@\/components\/rail-file-preview"/, "imports RailFilePreview");
+assert.match(panel, /import \{ Group, Panel, Separator \} from "react-resizable-panels"/, "fullscreen Files uses resizable panels");
+assert.match(panel, /import \{ SeparatorHandle \} from "@\/components\/ui\/separator-handle"/, "fullscreen Files uses the shared resize handle");
+assert.match(panel, /import \{ SessionChangesPanel \} from "@\/components\/session-changes-panel"/, "fullscreen Files includes a far-right diffs panel");
+assert.match(panel, /isFullscreen = false/, "RailFilesPanel accepts a fullscreen layout flag");
 assert.match(panel, /useState<string \| null>\(null\)/, "owns selectedPath state");
 assert.match(panel, /onFileClick=\{setSelectedPath\}/, "passes onFileClick to the tree");
 assert.match(panel, /selectedPath=\{selectedPath\}/, "threads selectedPath into the tree");
 assert.match(panel, /path=\{selectedPath\}/, "feeds the selected path into the preview");
+assert.match(panel, /if \(isFullscreen\)/, "fullscreen Files takes a distinct IDE layout branch");
+assert.match(panel, /className="workspace-rail__files workspace-rail__files--ide"/, "fullscreen root gets an IDE layout class");
+assert.match(panel, /orientation="horizontal"/, "fullscreen Files splits left-to-right");
+assert.match(panel, /id="workspace-rail-files-tree"[\s\S]*?defaultSize="280px"[\s\S]*?minSize="220px"[\s\S]*?ProjectTree/, "file tree is the left resizable pane");
+assert.match(panel, /id="workspace-rail-files-editor"[\s\S]*?minSize="36%"[\s\S]*?RailFilePreview/, "open file/code is the flexible main pane");
+assert.match(panel, /id="workspace-rail-files-diffs"[\s\S]*?defaultSize="340px"[\s\S]*?minSize="280px"[\s\S]*?SessionChangesPanel/, "diffs/changes are the far-right pane");
 assert.match(panel, /if \(!projectRoot\)/, "handles the null-projectRoot state");
 assert.match(panel, /No project linked/, "renders a muted no-project state");
 

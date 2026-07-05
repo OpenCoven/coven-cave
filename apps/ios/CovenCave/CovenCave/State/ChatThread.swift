@@ -4,7 +4,7 @@ import Observation
 /// A message as shown in the thread UI. For group threads, assistant messages
 /// carry the `familiarId` that produced them so we can attribute + colour them.
 struct DisplayMessage: Identifiable, Codable, Hashable {
-    /// `system` carries inline slash-command output (help, `/daemon`, `/save`
+    /// `system` carries inline slash-command output (help, `/daemon`,
     /// results) — rendered as a centred note, never sent to a familiar.
     enum Role: String, Codable { case user, assistant, system }
     var id: String = UUID().uuidString

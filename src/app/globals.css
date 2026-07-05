@@ -11065,6 +11065,30 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   line-height: 1.2;
   color: var(--text-muted);
 }
+.marketplace-card__decision {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+.marketplace-card__decision-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-height: 22px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-base) 84%, transparent);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 1;
+  padding: 4px 7px;
+}
 
 /* ── Skill Browser (Roles → Skills tab): rail · card list · SKILL.md detail ── */
 .skill-browser {

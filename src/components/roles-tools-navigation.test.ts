@@ -7,6 +7,7 @@ const palette = await readFile(new URL("./command-palette.tsx", import.meta.url)
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const marketplaceView = await readFile(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
+const marketplaceCard = await readFile(new URL("./marketplace/marketplace-card.tsx", import.meta.url), "utf8");
 const rolesSection = await readFile(new URL("./marketplace/roles-section.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const rolesRoute = await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8");
@@ -117,6 +118,16 @@ assert.match(marketplaceView, /Your setup/, "the Browse rail carries a Your-setu
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("roles"\)\}/, "the rail jumps to Roles");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("skills"\)\}/, "the rail jumps to Skills");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("capabilities"\)\}/, "the rail jumps to Capabilities");
+
+// Browse cards are decision cards: they expose setup effort, capability fit,
+// and role fit before someone opens the detail drawer.
+assert.match(marketplaceCard, /function setupEffortLabel\(plugin: MarketplacePlugin\)/, "Browse cards derive setup effort copy");
+assert.match(marketplaceCard, /function capabilityPreview\(plugin: MarketplacePlugin\)/, "Browse cards derive a capability preview");
+assert.match(marketplaceCard, /function roleFitLabel\(plugin: MarketplacePlugin\)/, "Browse cards summarize role affinity");
+assert.match(marketplaceCard, /className="marketplace-card__decision"/, "Browse cards render a compact decision metadata line");
+assert.match(marketplaceCard, /className="marketplace-card__decision-chip"/, "decision metadata uses stable chip hooks");
+assert.match(css, /\.marketplace-card__decision \{[\s\S]*?display: flex;/, "Browse card decision metadata has a stable flex layout");
+assert.match(css, /\.marketplace-card__decision-chip \{[\s\S]*?max-width:/, "Browse card decision chips clamp long copy");
 
 // ── Role cards keep their capability map (MCP servers first-class) ──────────
 assert.match(rolesRoute, /mcpServers:\s*string\[\]/, "Roles API should expose mcpServers as a first-class role capability list");

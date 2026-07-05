@@ -4390,7 +4390,8 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
-/* Files tab — a scrollable project tree stacked over a read-only preview. */
+/* Files tab — compact rail stacks tree over preview; fullscreen becomes an
+   IDE-style split: files left, code center, diffs far right. */
 .workspace-rail__files {
   display: flex;
   flex-direction: column;
@@ -4404,6 +4405,63 @@ details[open] > .cave-tool-summary::before {
   overflow: auto;
   padding: 6px 4px;
   border-bottom: 1px solid var(--border-hairline);
+}
+
+.workspace-rail__files--ide {
+  flex-direction: row;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-base, var(--background));
+}
+
+.workspace-rail__files-ide-group {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.workspace-rail__files-tree-pane,
+.workspace-rail__files-editor,
+.workspace-rail__files-diffs {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workspace-rail__files-tree--ide {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  padding: 8px 6px;
+  border-right: 1px solid var(--border-hairline);
+  border-bottom: 0;
+  background: color-mix(in oklch, var(--bg-base) 92%, var(--foreground) 3%);
+}
+
+.workspace-rail__files-preview--ide {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  border-bottom: 0;
+}
+
+.workspace-rail__files-diffs {
+  border-left: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 94%, var(--foreground) 2%);
+}
+
+.workspace-rail__files-diffs .session-changes-panel {
+  height: 100%;
+}
+
+.workspace-rail__files-separator {
+  flex: 0 0 auto;
 }
 
 .workspace-rail__files-preview {

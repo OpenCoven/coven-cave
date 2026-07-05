@@ -447,7 +447,10 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     const el = scrollRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return; // trackpad pinch → ctrlKey; ⌘-scroll → metaKey
+      // Pinch (ctrlKey) or ⌘-scroll (metaKey) always zooms. Plain vertical scroll
+      // also zooms; horizontal scroll is left to the browser to pan the timeline.
+      const isVertical = Math.abs(e.deltaY) > Math.abs(e.deltaX);
+      if (!(e.ctrlKey || e.metaKey || isVertical)) return;
       e.preventDefault();
       const prev = dayWRef.current;
       const next = clampDayW(prev * Math.exp(-e.deltaY * 0.0025));

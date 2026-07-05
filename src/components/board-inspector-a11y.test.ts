@@ -21,10 +21,8 @@ assert.match(
 assert.match(src, /\.finally\(\(\) => \{ if \(!cancelled\) setLoading\(false\); \}\)/, "loading flag only clears while the effect is live");
 assert.match(src, /return \(\) => \{ cancelled = true; \};/, "the GitHub attach effect cancels in-flight work on cleanup");
 
-// ── saveToLibrary doesn't touch state after the inspector closes ─────────────
-assert.match(src, /const mountedRef = useRef\(true\);/, "LinksSection tracks mounted state");
-assert.match(src, /if \(mountedRef\.current\) setSavedToLibrary/, "save badge updates are gated on mounted");
-assert.match(src, /if \(!mountedRef\.current\) return;[\s\S]*?delete next\[url\]/, "the deferred badge-clear bails out if unmounted");
+// ── Integrated Board Inspector stays decoupled from feature/library save UI ──
+assert.doesNotMatch(src, /setSavedToLibrary|\/api\/library\/route-link|Save to Library/, "Library save badge flow stays out of the integrated inspector");
 
 // ── Step toggle is a real checkbox, named by its step ────────────────────────
 assert.match(
