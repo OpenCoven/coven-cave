@@ -2270,6 +2270,7 @@ textarea.required-inputs-control {
 }
 
 .ui-btn-spinner {
+  display: none;
   width: 12px;
   height: 12px;
   border-radius: 50%;
@@ -2277,6 +2278,18 @@ textarea.required-inputs-control {
   border-top-color: currentColor;
   animation: ui-btn-spin 0.7s linear infinite;
   flex-shrink: 0;
+}
+.ui-btn-spinner.is-visible {
+  display: inline-block;
+}
+.ui-btn-icon-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ui-btn-icon-slot.is-hidden {
+  display: none;
 }
 @keyframes ui-btn-spin {
   to { transform: rotate(360deg); }
@@ -7614,8 +7627,7 @@ a.mobile-handoff__link:hover {
     pointer-events: auto !important;
   }
 
-  .browser-toolbar-button,
-  .browser-toolbar-save {
+  .browser-toolbar-button {
     width: var(--touch-target);
     height: var(--touch-target);
     min-width: var(--touch-target);
@@ -11088,6 +11100,52 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   font-weight: 650;
   line-height: 1;
   padding: 4px 7px;
+}
+.marketplace-detail__decision-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.marketplace-detail__decision-card {
+  min-height: 112px;
+  min-width: 0;
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 86%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--bg-panel) 88%, transparent);
+  padding: 10px;
+}
+.marketplace-detail__decision-card strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.25;
+}
+.marketplace-detail__decision-card p {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+.marketplace-detail__decision-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+@media (max-width: 520px) {
+  .marketplace-detail__decision-grid {
+    grid-template-columns: 1fr;
+  }
+  .marketplace-detail__decision-card {
+    min-height: 0;
+  }
 }
 
 /* ── Skill Browser (Roles → Skills tab): rail · card list · SKILL.md detail ── */

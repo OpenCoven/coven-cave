@@ -8,6 +8,7 @@ const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "u
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const marketplaceView = await readFile(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
 const marketplaceCard = await readFile(new URL("./marketplace/marketplace-card.tsx", import.meta.url), "utf8");
+const marketplaceDetail = await readFile(new URL("./marketplace/marketplace-detail.tsx", import.meta.url), "utf8");
 const rolesSection = await readFile(new URL("./marketplace/roles-section.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const rolesRoute = await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8");
@@ -128,6 +129,17 @@ assert.match(marketplaceCard, /className="marketplace-card__decision"/, "Browse 
 assert.match(marketplaceCard, /className="marketplace-card__decision-chip"/, "decision metadata uses stable chip hooks");
 assert.match(css, /\.marketplace-card__decision \{[\s\S]*?display: flex;/, "Browse card decision metadata has a stable flex layout");
 assert.match(css, /\.marketplace-card__decision-chip \{[\s\S]*?max-width:/, "Browse card decision chips clamp long copy");
+
+// The detail drawer repeats those decision facts at a larger, readable scale
+// so opening a card clarifies the install decision instead of hiding it.
+assert.match(marketplaceDetail, /function detailDecisionItems\(plugin: MarketplacePlugin\)/, "detail drawer derives install decision items");
+assert.match(marketplaceDetail, /className="marketplace-detail__decision-grid"/, "detail drawer renders a stable decision summary grid");
+assert.match(marketplaceDetail, /className="marketplace-detail__decision-card"/, "detail drawer renders decision facts as compact cards");
+assert.match(marketplaceDetail, /Setup effort/, "detail drawer labels setup effort explicitly");
+assert.match(marketplaceDetail, /Capability fit/, "detail drawer labels capability fit explicitly");
+assert.match(marketplaceDetail, /Role fit/, "detail drawer labels role fit explicitly");
+assert.match(css, /\.marketplace-detail__decision-grid \{[\s\S]*?grid-template-columns/, "detail decision summary uses a stable grid");
+assert.match(css, /\.marketplace-detail__decision-card \{[\s\S]*?min-height:/, "detail decision cards reserve stable height");
 
 // ── Role cards keep their capability map (MCP servers first-class) ──────────
 assert.match(rolesRoute, /mcpServers:\s*string\[\]/, "Roles API should expose mcpServers as a first-class role capability list");

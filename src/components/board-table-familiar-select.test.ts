@@ -12,8 +12,8 @@ assert.match(
 );
 assert.match(
   boardTable,
-  /className="board-table-familiar-select"[\s\S]*value=\{card\.familiarId \?\? ""\}[\s\S]*onChange=\{\(e\) => onPatch\(card\.id, \{ familiarId: e\.target\.value \|\| null \}\)\}/,
-  "Familiar column should render an inline select that patches card.familiarId",
+  /<StandardSelect[\s\S]*className="board-table-familiar-select"[\s\S]*value=\{card\.familiarId \?\? ""\}[\s\S]*onChange=\{\(next\) => onPatch\(card\.id, \{ familiarId: next \|\| null \}\)\}[\s\S]*options=\{familiarOptions\}/,
+  "Familiar column should render an inline StandardSelect that patches card.familiarId",
 );
 assert.match(
   boardTable,

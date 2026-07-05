@@ -512,7 +512,7 @@ export function CommandPalette({
     // created card's title (e.g. "/task fix login" → "fix login").
     const trimmedTitle = query.trim().replace(/^\/task(\s+|$)/i, "").trim();
     // A query that names a real slash command is a command invocation, not a
-    // task title — "Create task: /save https://…" was a dead end.
+    // task title.
     const createRows: Row[] = trimmedTitle && !slashCanonical
       ? [{ id: "create-task", kind: "create-task", title: trimmedTitle }]
       : [];

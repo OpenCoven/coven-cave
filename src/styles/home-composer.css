@@ -94,7 +94,7 @@
   max-width: 100%;
   background: color-mix(in oklch, var(--bg-raised) 70%, var(--bg-base));
   border: 1px solid var(--border-hairline);
-  border-radius: 22px;
+  border-radius: var(--radius-card);
   overflow: hidden;
   box-shadow: 0 12px 40px color-mix(in oklch, var(--text-primary) 14%, transparent),
               0 1px 0 color-mix(in oklch, var(--foreground) 4%, transparent) inset;
@@ -111,7 +111,7 @@
   z-index: 5;
   display: grid;
   place-items: center;
-  border-radius: 22px;
+  border-radius: var(--radius-card);
   background: color-mix(in oklch, var(--accent-presence) 12%, var(--bg-base) 88%);
   border: 2px dashed color-mix(in oklch, var(--accent-presence) 55%, transparent);
   pointer-events: none;
@@ -207,7 +207,7 @@
   width: 30px;
   height: 30px;
   flex-shrink: 0;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
@@ -325,7 +325,7 @@
   flex-shrink: 0;
   height: 30px;
   padding: 0 10px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid var(--border-hairline);
   background: transparent;
   color: var(--text-secondary);
@@ -346,7 +346,7 @@
   flex-shrink: 0;
   height: 30px;
   padding: 0 8px;
-  border-radius: 9px;
+  border-radius: var(--radius-control);
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
@@ -368,7 +368,7 @@
   gap: 5px;
   flex-shrink: 0;
   padding: 4px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
@@ -404,7 +404,7 @@
   box-sizing: border-box;
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
   border: 1px solid color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 3px 7px 3px 6px;
   flex: 0 1 auto;
   min-width: 0;
@@ -515,7 +515,7 @@
   max-width: 178px;
   padding: 3px 22px 3px 6px;
   border-color: color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
 }
 
@@ -550,7 +550,7 @@
   flex: 0 0 auto;
   min-width: 0;
   padding: 3px;
-  border-radius: 11px;
+  border-radius: var(--radius-control);
   background: var(--bg-base);
   border: 1px solid var(--border-hairline);
 }
@@ -566,7 +566,7 @@
    * active tab is unmistakably the selected one. Hover/active brighten. */
   font-weight: 450;
   padding: 4px 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   border: 1px solid transparent;
   background: transparent;
   color: color-mix(in oklch, var(--text-muted) 68%, transparent);
@@ -650,7 +650,7 @@
   .hc-send-btn {
     min-height: var(--touch-target);
     width: var(--touch-target);
-    border-radius: 999px;
+    border-radius: var(--radius-control);
     padding-inline: 0;
   }
 
@@ -763,7 +763,7 @@
   width: 36px;
   height: 36px;
   padding: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   border: none;
   background: var(--accent-presence);
   color: #fff;
@@ -1005,6 +1005,8 @@
 .home-feed__refresh,
 .home-feed__retry,
 .hc-add-btn,
+.hc-enhance-btn,
+.hc-enhance-undo,
 .hc-model-chip,
 .hc-home-select-trigger,
 .home-composer-card .cave-project-picker__trigger.hc-project-selector {
@@ -1017,6 +1019,8 @@
 .home-feed__refresh:focus-visible,
 .home-feed__retry:focus-visible,
 .hc-add-btn:focus-visible,
+.hc-enhance-btn:focus-visible,
+.hc-enhance-undo:focus-visible,
 .hc-model-chip:focus-visible,
 .hc-home-select-trigger:focus-visible,
 .home-composer-card .cave-project-picker__trigger.hc-project-selector:focus-visible {

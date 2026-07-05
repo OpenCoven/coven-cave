@@ -8,7 +8,6 @@ import type { Card, CardStatus } from "@/lib/cave-board-types";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { GitHubItem } from "@/lib/github-tasks";
 import type { InboxItem } from "@/lib/cave-inbox";
-import type { LibraryReadingItem as ReadingItem } from "@/lib/library-types";
 import { relativeTime } from "@/lib/daily-report";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { SectionHead, EmptyState, QuickLink } from "@/components/daily-report-ui";
@@ -44,12 +43,11 @@ type CockpitData = {
   cards: Card[];
   familiars: Familiar[];
   github: GitHubItem[];
-  reading: ReadingItem[];
   upcoming: InboxItem[];
   sessions: SessionRow[];
 };
 
-const EMPTY: CockpitData = { cards: [], familiars: [], github: [], reading: [], upcoming: [], sessions: [] };
+const EMPTY: CockpitData = { cards: [], familiars: [], github: [], upcoming: [], sessions: [] };
 
 type ConfidenceRow = { id: string; name: string; score: number; factors: ConfidenceFactor[] };
 const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsLast7d: 0, hasActiveSession: false };
@@ -84,7 +82,7 @@ async function getJson<T>(url: string): Promise<T | null> {
 
 const TRENDS_KEY = "cave:cockpit:trends";
 const TREND_DAYS = 7;
-type TrendKey = "needs" | "tasks" | "progress" | "review" | "prs" | "reading";
+type TrendKey = "needs" | "tasks" | "progress" | "review" | "prs";
 type DaySnap = Record<TrendKey, number>;
 type TrendStore = Record<string, DaySnap>; // "YYYY-MM-DD" -> snapshot
 
@@ -190,21 +188,17 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     .filter((i) => i.kind === "reminder" && i.fireAt && new Date(i.fireAt).getTime() > now.getTime())
     .sort((a, b) => new Date(a.fireAt!).getTime() - new Date(b.fireAt!).getTime())
     .slice(0, 5);
-  const readingQueue = data.reading
-    .filter((item) => item.status === "want-to-read" || item.status === "reading")
-    .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime());
-
   // Predictive signals — pure + cheap over already-fetched data.
   const signals = useMemo(
     () =>
       dashboardSignals({
         github: data.github,
-        reading: readingQueue,
+        reading: [],
         sessions: data.sessions,
         familiars: data.familiars,
         nowMs: now.getTime(),
       }),
-    [data.github, readingQueue, data.sessions, data.familiars, now],
+    [data.github, data.sessions, data.familiars, now],
   );
 
   // ── Confidence heatmap: bounded per-familiar contract fetch (≤6) + one shared
@@ -655,46 +649,6 @@ function whenLabel(iso: string, now: Date): string {
   const tomorrow = new Date(now); tomorrow.setDate(now.getDate() + 1);
   if (d.toDateString() === tomorrow.toDateString()) return `Tmrw ${time}`;
   return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${time}`;
-}
-
-// ─── Reading ─────────────────────────────────────────────────────────────────
-
-function ReadingPanel({ items, loaded }: { items: ReadingItem[]; loaded: boolean }) {
-  if (!loaded) return <PanelSkeleton rows={3} />;
-  if (items.length === 0) return <EmptyState icon="ph:books-bold">No reading queued.</EmptyState>;
-  return (
-    <ul className="cockpit-gh">
-      {items.slice(0, 6).map((item) => {
-        const inner = (
-          <>
-            <Icon name="ph:books-bold" className="cockpit-ghrow__icon" aria-hidden />
-            <span className="cockpit-ghrow__title" title={item.title}>{item.title}</span>
-            <span className="cockpit-ghrow__meta">
-              {item.sourceType} · {relativeTime(item.addedAt)}
-            </span>
-          </>
-        );
-        return (
-          <li key={item.id}>
-            {item.url ? (
-              <a
-                className="cockpit-ghrow"
-                href={item.url}
-                onClick={(event) => {
-                  event.preventDefault();
-                  openExternalUrl(item.url!);
-                }}
-              >
-                {inner}
-              </a>
-            ) : (
-              <span className="cockpit-ghrow">{inner}</span>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
 }
 
 // ─── Signals ─────────────────────────────────────────────────────────────────────

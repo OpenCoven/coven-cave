@@ -91,8 +91,6 @@ import {
   buildPromptWithFamiliarStartupContext,
   readFamiliarDailyMemoryStartupContext,
 } from "@/lib/server/familiar-startup-context";
-import { extractLinks } from "@/lib/link-extractor";
-import { routeLinkHandler } from "@/app/api/library/route-link/route";
 import {
   buildSshSpawnArgs,
   isSshRuntime,
@@ -354,36 +352,6 @@ function appendMentionedFilesBlock(prompt: string, absPaths: string[]): string {
     ...absPaths.map((p) => `- ${p}`),
   ].join("\n");
   return prompt ? `${prompt}\n\n${block}` : block;
-}
-
-function scheduleLinkRoute(args: {
-  prompt: string;
-  sessionId: string | null;
-  turnId: string | null;
-  chatTitle: string;
-  familiar: string;
-}) {
-  if (!args.sessionId || !args.turnId) return; // chat-source requires both
-  const { prompt } = args;
-  const urls = extractLinks(prompt);
-  for (const url of urls) {
-    void (async () => {
-      try {
-        await routeLinkHandler({
-          url,
-          source: {
-            kind: "chat",
-            sessionId: args.sessionId!,
-            turnId: args.turnId!,
-            chatTitle: args.chatTitle,
-          },
-          familiar: args.familiar,
-        });
-      } catch (err) {
-        console.warn("[chat-send] routeLink failed:", (err as Error).message);
-      }
-    })();
-  }
 }
 
 async function setDefaultSessionTitleIfMissing(sessionId: string, title: string) {
@@ -898,20 +866,6 @@ function openClawChatResponse(args: {
           conv.activeLeafId = assistantTurnId;
           await saveConversation(conv);
           pushProgress("save-transcript", "Transcript saved", "done");
-          scheduleLinkRoute({
-            prompt: args.promptText,
-            sessionId,
-            turnId: userTurnId,
-            chatTitle,
-            familiar: args.body.familiarId,
-          });
-          scheduleLinkRoute({
-            prompt: assistantText.trim(),
-            sessionId,
-            turnId: assistantTurnId,
-            chatTitle,
-            familiar: args.body.familiarId,
-          });
         }
 
         push({
@@ -1752,24 +1706,6 @@ export async function POST(req: Request) {
         conv.activeLeafId = assistantTurnId;
         await saveConversation(conv);
         pushProgress("save-transcript", "Transcript saved", "done");
-
-        // Fire-and-forget: extract URLs from user prompt and assistant text,
-        // route them to the library. Failures must never affect the chat stream.
-        const prompt = promptText;
-        scheduleLinkRoute({
-          prompt,
-          sessionId: finalSessionId,
-          turnId: userTurnId,
-          chatTitle,
-          familiar: body.familiarId,
-        });
-        scheduleLinkRoute({
-          prompt: assistantText.trim(),
-          sessionId: finalSessionId,
-          turnId: assistantTurnId,
-          chatTitle,
-          familiar: body.familiarId,
-        });
       }
 
       push({

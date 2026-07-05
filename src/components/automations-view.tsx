@@ -2262,6 +2262,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const inboxEmpty = items.length === 0;
   const selectedReminderId = selectedItem?.id ?? null;
   const selectedAutomationId = selectedCodex?.id ?? null;
+  const detailOpen = Boolean(selectedItem || selectedCodex);
 
   // At-a-glance operational summary for the header: how many automations are
   // live vs paused. Crons fire server-side, so they don't contribute a next-fire
@@ -2293,7 +2294,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     >
     <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
       {/* ── Main list ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-w-0 flex-col">
+      <div className={`${detailOpen ? "hidden md:flex" : "flex"} flex-1 min-w-0 flex-col`}>
         {/* Page header */}
         <div className="flex items-center justify-between px-8 pt-8 pb-5">
           <div>
@@ -2434,8 +2435,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       </div>
 
       {/* ── Detail panel ───────────────────────────────────────────────────── */}
-      {(selectedItem || selectedCodex) && (
-        <div className="w-[380px] max-w-[42vw] shrink-0 overflow-hidden" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
+      {detailOpen && (
+        <div className="w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
           {selectedItem && (
             <DetailPanel
               item={selectedItem}

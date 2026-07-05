@@ -60,6 +60,9 @@ assert.match(codexDetailPanel, /className="[^"]*cron-detail-actions/, "cron deta
 assert.match(codexDetailPanel, /Save changes[\s\S]*Run now[\s\S]*Delete/, "cron detail actions prioritize save, then run, with delete last");
 assert.match(codexDetailPanel, /leadingIcon="ph:floppy-disk-bold"/, "save action uses a recognizable icon");
 assert.match(codexDetailPanel, /variant="danger-ghost"[\s\S]*Delete/, "delete remains visually separated as a destructive action");
+assert.match(source, /const detailOpen = Boolean\(selectedItem \|\| selectedCodex\)/, "Schedules tracks whether a detail panel is open");
+assert.match(source, /detailOpen \? "hidden md:flex" : "flex"/, "Schedules hides the list on narrow screens while a detail panel is open");
+assert.match(source, /w-full[\s\S]*md:w-\[380px\][\s\S]*md:max-w-\[42vw\]/, "detail panel becomes full-width on narrow screens and a side rail on desktop");
 
 // List rows + detail-panel close buttons show a visible keyboard focus ring.
 assert.ok(source.includes("focus-ring-inset automation-list-row"), "list rows have a focus ring");
