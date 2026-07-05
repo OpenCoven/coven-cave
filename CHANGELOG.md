@@ -7,6 +7,89 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.139] - 2026-07-05
+
+Security-hardening release on top of v0.0.138. A coordinated batch of fixes
+tightens the trust boundaries around the mobile/tailnet listener, task-chat
+project scoping, webhook CSRF, npm-install elevation, and loopback event
+listeners — alongside the unified-workspace code rail, a marketplace category
+browse, curated automation templates, WCAG-compliant theming, and a styled
+macOS DMG.
+
+### Security
+- **Task-chat project root is now server-authoritative.** The board task-chat
+  launch resolves the project root from the card's `projectId` server-side,
+  rejects a client-supplied root that disagrees with the assignment (403), and
+  authorizes the familiar via `assertProjectAccess` before starting a session
+  — a forged `projectRoot` can no longer root a familiar in an arbitrary
+  directory (#2419).
+- **Tokenless GET webhooks are CSRF-guarded.** In tailnet-trusted, tokenless
+  mode, state-changing webhook GETs now require a same-origin `Origin`/`Referer`
+  header, closing the `Referrer-Policy: no-referrer` cross-site bypass (#2417).
+- **npm installs no longer auto-elevate.** The onboarding installer drops silent
+  `sudo -n`; system-owned prefixes now require the operator to run with sudo
+  themselves, while user-owned prefixes (nvm/fnm/brew) stay one-click (#2418).
+- **Loopback event listeners are scoped to the trusted webview.** The
+  `core:event:allow-listen/unlisten` capability is removed from the broad
+  loopback-browser context and restricted to the main webview (#2421).
+- **Native mobile Serve requires a token at startup**, and the native iOS Serve
+  route stays tokenless only over the tailnet interface (#2415, plus follow-up).
+- **Agent chat attachments are scoped to granted roots** (#2411), **travel chat
+  replay is project-access guarded** (#2413), **marketplace status checks no
+  longer resolve secrets** (#2416), and **GitHub familiar-review prompts are
+  hardened** against injection (#2412).
+
+### Added
+- **Unified workspace + code rail.** A consolidated workspace sidebar with a
+  code rail: Changes foundation, a lazy-pty Terminal tab, a Files tab preview,
+  and nav coupling with rail motion + a mobile sheet (#2359, #2374, #2375, and
+  workspace unification follow-ups). Legacy code mode is retired.
+- **Marketplace: category browse + installed surfaces.** Browse catalog grouped
+  by category (#2399-adjacent), surfaced installed APIs and MCPs, plus new
+  directory-backed skills entries and the Pretext layout skill (#2399, #2358).
+- **Automations: Templates tab** with 18 curated cron templates (#2398).
+- **Evals: export familiar runs** to Hermes Flight Recorder JSONL (#2402), with
+  an HFR observer-hook JSONL export fix.
+- **WCAG-compliant theming** across all appearances plus three a11y-first
+  presets, and broad light-mode / dashboard / marketplace / familiars a11y
+  passes (focus traps, AT announcements, reduced-motion) (#2353, #2355, #2350,
+  #2346, #2357, #2377).
+- **Project identity everywhere** — project avatars (uploaded image or monogram
+  tile), identity tiles on Recent sidebar rows, board-lane avatars, comux header
+  (#2354, #2360, #2365).
+- **Workflow: Beads PR bridge + familiar tracking** (#2367), and prompt drafts
+  enhanced without an API roundtrip.
+- **Styled macOS DMG** installer window (#2400).
+
+### Changed
+- Composer moves to a `StandardSelect` primitive; evals + terminal composer
+  modes removed (#2401). Home composer uses custom dropdowns and a polished
+  command bar.
+- Settings sidebar options flattened (#2401-adjacent); familiar-strip restyled
+  (pill avatars, spring-scale hover, matched sidetrigger radius, dropped overlay
+  badges) (#2392, #2393).
+- Runtime vocabulary cleanup finished across copy; project scoping/ordering
+  stabilized; host runtime selection scoped.
+- External-PR freeze lifted for the Independence Day PR event (#2394, #2397).
+- Consolidated Coven design-language reference + OpenCoven IP protection records
+  added to docs (#2356, #2390).
+
+### Fixed
+- **Updater:** avoid running the direct installer after a native update failure;
+  native updater installer fallback corrected (#2414, #2381).
+- **Mobile/iOS:** trust the sidecar port for handoff serve (#2410); reset stale
+  state and clear the bearer token when changing/reconfiguring hosts.
+- **Chat streaming:** drop late/cancelled OpenClaw stream enqueues after
+  close/abort (#2361, #2362); hydration-safe deep-link takeover with an
+  "Opening chat…" state (#2364, #2351).
+- **Home:** close/dismiss the news carousel (hover + dismiss control).
+- **Familiars:** cancel stale daily-notes loads and stop the poll resurrecting a
+  deleted memory row (#2352).
+- **Layout:** use Next `Script` for inline boot scripts (#2366); project-picker
+  and avatar sizing fixes (#2378).
+- **Marketplace perf:** memoize the card and stop stale catalog loads clobbering
+  the list (#2349).
+
 ## [0.0.138] - 2026-07-04
 
 Patch release on top of v0.0.137. The dashboard cockpit becomes truthful and
