@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
 import { ProjectAvatar } from "@/components/project-avatar";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   clearProjectImage,
   moveProjectImage,
@@ -127,6 +129,14 @@ export function ProjectRow({
         : projectStatus === "recent"
           ? ", active recently"
           : "";
+  const statusText =
+    projectStatus === "running"
+      ? "Running"
+      : projectStatus === "failed"
+        ? "Failed"
+        : projectStatus === "recent"
+          ? "Recent"
+          : "Idle";
   const [showAllChats, setShowAllChats] = useState(false);
   const visibleChats = showAllChats ? chats : chats.slice(0, CHAT_CAP);
   const chatTitles = useMemo(() => disambiguateSessionTitles(chats), [chats]);
@@ -193,11 +203,6 @@ export function ProjectRow({
     imageInputRef.current?.click();
   };
 
-  const openTerminalHere = () => {
-    window.dispatchEvent(new CustomEvent("cave:terminal-open", { detail: { projectRoot: project.root } }));
-    window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "terminal" } }));
-  };
-
   const copyRoot = async () => {
     try {
       await navigator.clipboard.writeText(project.root);
@@ -254,21 +259,22 @@ export function ProjectRow({
   };
 
   return (
-    <article
-      ref={setDropRef}
-      id={`pcard-el:${cardKey}`}
-      data-drop-over={isOver ? "true" : undefined}
-      className={[
-        "group border-b border-[var(--border-hairline)] px-2 transition-colors",
-        density === "compact" ? "py-1.5" : "py-3",
-        isOver
-          ? "rounded-md bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] ring-1 ring-inset ring-[var(--accent-presence)]/50"
-          : "hover:bg-[var(--bg-raised)]/40",
-      ].join(" ")}
-    >
-      <div className="flex min-w-0 items-center gap-2" onContextMenu={openContextMenuAt(setMenu)}>
-        <button
-          type="button"
+    <>
+      <tr
+        ref={setDropRef}
+        id={`pcard-el:${cardKey}`}
+        data-drop-over={isOver ? "true" : undefined}
+        className={[
+          "group projects-table-row",
+          density === "compact" ? "projects-table-row--compact" : "projects-table-row--comfortable",
+          isOver ? "selected ring-1 ring-inset ring-[var(--accent-presence)]/50" : "",
+        ].join(" ")}
+        onContextMenu={openContextMenuAt(setMenu)}
+      >
+        <td>
+          <div className="flex min-w-0 items-center gap-2">
+        <IconButton
+          icon={expanded ? "ph:caret-down" : "ph:caret-right"}
           data-proj-nav
           data-proj-label={project.name}
           onClick={() => setExpanded((value) => !value)}
@@ -285,14 +291,13 @@ export function ProjectRow({
           }}
           aria-expanded={expanded}
           aria-label={`${expanded ? "Collapse" : "Expand"} ${project.name}${statusLabel}`}
-          className="focus-ring -ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
-        >
-          <Icon name={expanded ? "ph:caret-down" : "ph:caret-right"} width={12} aria-hidden />
-        </button>
-        <button
-          type="button"
+          className="-ml-1 h-6 w-6 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+        />
+        <Button
+          variant="ghost"
+          size="xs"
           onClick={pickImage}
-          className="focus-ring relative shrink-0 rounded-md"
+          className="relative h-auto w-auto shrink-0 rounded-[var(--radius-control)] p-0"
           title={imageStatus ?? (hasImage ? "Change project image" : "Set project image")}
           aria-label={`${hasImage ? "Change" : "Set"} image for ${project.name}`}
         >
@@ -312,7 +317,7 @@ export function ProjectRow({
               aria-hidden
             />
           ) : null}
-        </button>
+        </Button>
         <input
           ref={imageInputRef}
           type="file"
@@ -350,21 +355,34 @@ export function ProjectRow({
               }
             }}
             disabled={busy === "name"}
-            className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 text-[13px] font-semibold text-[var(--text-primary)]"
+            className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 text-[13px] font-semibold text-[var(--text-primary)]"
           />
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => setExpanded((value) => !value)}
             aria-expanded={expanded}
-            className="focus-ring min-w-0 flex-1 truncate rounded-md px-1 py-0.5 text-left text-[13px] font-semibold text-[var(--text-primary)] hover:text-[var(--accent-presence)]"
+            className="min-w-0 flex-1 justify-start truncate rounded-[var(--radius-control)] px-1 py-0.5 text-left text-[13px] font-semibold text-[var(--text-primary)] hover:text-[var(--accent-presence)]"
             title={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
           >
             {project.name}
-          </button>
+          </Button>
         )}
+          </div>
+        </td>
 
-        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+        <td>
+          <span className="board-table-cell-status">
+            {projectStatus ? (
+              <span className={`board-table-status-dot ${chatDotClass(projectStatus)}`} aria-hidden />
+            ) : null}
+            <span>{statusText}</span>
+          </span>
+        </td>
+
+        <td>
+          <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
           {stats.running > 0 ? (
             <span
               className="inline-flex items-center gap-1 font-medium text-[var(--accent-presence)]"
@@ -383,94 +401,115 @@ export function ProjectRow({
               {stats.tasks}
             </span>
           ) : null}
-          <span className="rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-0.5">
+          <span className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-0.5">
             {chatCount} {chatCount === 1 ? "session" : "sessions"}
           </span>
-        </span>
+          </span>
+        </td>
 
+        <td>
         {lastActiveLabel ? (
-          <span className="hidden shrink-0 text-[10px] text-[var(--text-muted)] sm:inline" title={`Last active ${lastActiveLabel}`}>
+          <span className="board-table-cell-time" title={`Last active ${lastActiveLabel}`}>
             {lastActiveLabel}
           </span>
-        ) : null}
+        ) : (
+          <span className="board-table-muted">—</span>
+        )}
+        </td>
 
-        <div
-          className={`flex shrink-0 items-center gap-1 transition-opacity motion-reduce:transition-none ${
+        <td style={{ textAlign: "right" }}>
+          <div
+            className={`ml-auto flex shrink-0 items-center justify-end gap-1 transition-opacity motion-reduce:transition-none ${
             confirmDelete
               ? "opacity-100"
               : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
           }`}
         >
-          <button
-            type="button"
+          <IconButton
+            icon="ph:chat-circle-dots-bold"
             onClick={() => onNewChat?.(project.root)}
-            className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
+            className="h-7 w-7 text-[var(--text-muted)]"
             title="New session"
             aria-label={`New session in ${project.name}`}
-          >
-            <Icon name="ph:chat-circle-dots-bold" width={14} aria-hidden />
-          </button>
-          <button
-            type="button"
-            // Launch a terminal in this project's cwd, then jump to the Terminal
-            // surface (the always-mounted terminal instance spawns the shell in
-            // project.root; cave:navigate-mode brings the surface to the foreground).
-            onClick={openTerminalHere}
-            className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-            title="Open terminal"
-            aria-label={`Open terminal in ${project.name}`}
-          >
-            <Icon name="ph:terminal-window-bold" width={14} aria-hidden />
-          </button>
-          <button
-            type="button"
+          />
+          <IconButton
+            icon="ph:pencil-simple-bold"
             onClick={() => { setNameDraft(project.name); setEditingName(true); }}
             aria-label={`Rename ${project.name}`}
             title="Rename"
-            className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:pencil-simple-bold" width={14} aria-hidden />
-          </button>
+            className="h-7 w-7 text-[var(--text-muted)]"
+          />
           {confirmDelete ? (
             <>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="xs"
                 onClick={() => setConfirmDelete(false)}
-                className="focus-ring h-7 rounded-md px-2 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+                className="h-7 rounded-[var(--radius-control)] px-2 text-[11px] text-[var(--text-muted)]"
               >
                 Cancel
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="danger-ghost"
+                size="xs"
                 onClick={() => void deleteProject()}
                 disabled={busy === "delete"}
-                className="focus-ring h-7 rounded-md border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-2 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+                className="h-7 rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-2 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
               >
                 Delete
-              </button>
+              </Button>
             </>
           ) : (
-            <button
-              type="button"
+            <IconButton
+              icon="ph:trash-bold"
               onClick={() => setConfirmDelete(true)}
-              className="focus-ring flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--color-danger)]"
+              danger
+              className="h-7 w-7 text-[var(--text-muted)] hover:text-[var(--color-danger)]"
               title="Delete project"
               aria-label={`Delete ${project.name}`}
-            >
-              <Icon name="ph:trash-bold" width={14} aria-hidden />
-            </button>
+            />
           )}
-        </div>
-      </div>
+          </div>
+          <ContextMenu state={menu} onClose={() => setMenu(null)} ariaLabel={`Actions for ${project.name}`}>
+            <PopoverItem icon="ph:chat-circle-dots-bold" onSelect={() => { setMenu(null); onNewChat?.(project.root); }}>
+              New session
+            </PopoverItem>
+            <PopoverItem icon="ph:pencil-simple-bold" onSelect={() => { setMenu(null); setNameDraft(project.name); setEditingName(true); }}>
+              Rename
+            </PopoverItem>
+            <PopoverItem icon="ph:image-bold" onSelect={() => { setMenu(null); pickImage(); }}>
+              {hasImage ? "Change image…" : "Set image…"}
+            </PopoverItem>
+            {hasImage ? (
+              <PopoverItem icon="ph:minus-circle" onSelect={() => { setMenu(null); void clearProjectImage(project.root); }}>
+                Remove image
+              </PopoverItem>
+            ) : null}
+            <PopoverItem icon={copiedRoot ? "ph:check" : "ph:copy"} onSelect={() => { setMenu(null); void copyRoot(); }}>
+              Copy path
+            </PopoverItem>
+            <PopoverSeparator />
+            <PopoverItem icon="ph:trash-bold" danger onSelect={() => { setMenu(null); setExpanded(true); setConfirmDelete(true); }}>
+              Delete project…
+            </PopoverItem>
+          </ContextMenu>
+        </td>
+      </tr>
 
       {imageStatus ? (
-        <p role="status" className="mt-1 pl-8 text-[11px] text-[var(--text-muted)]">
-          {imageStatus}
-        </p>
+        <tr className="projects-table-detail-row">
+          <td colSpan={5}>
+            <p role="status" className="pl-8 text-[11px] text-[var(--text-muted)]">
+              {imageStatus}
+            </p>
+          </td>
+        </tr>
       ) : null}
 
       {expanded ? (
-        <div className="projects-expand-enter">
+        <tr className="projects-table-detail-row">
+          <td colSpan={5}>
+        <div className="projects-expand-enter projects-table-detail">
       <div className="mt-2 flex min-w-0 items-center gap-2 pl-6">
         <Icon
           name="ph:folder-simple-dashed"
@@ -492,31 +531,31 @@ export function ProjectRow({
               }
             }}
             disabled={busy === "root"}
-            className="focus-ring min-w-0 flex-1 rounded-md border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 font-mono text-[11px] text-[var(--text-secondary)]"
+            className="focus-ring min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-[var(--bg-base)] px-2 py-1 font-mono text-[11px] text-[var(--text-secondary)]"
           />
         ) : (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => {
               setRootDraft(project.root);
               setEditingRoot(true);
             }}
-            className="focus-ring min-w-0 flex-1 truncate rounded-md px-1 py-0.5 text-left font-mono text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            className="min-w-0 flex-1 justify-start truncate rounded-[var(--radius-control)] px-1 py-0.5 text-left font-mono text-[11px] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
             title={project.root}
           >
             {shortRoot(project.root)}
-          </button>
+          </Button>
         )}
         {!editingRoot && (
-          <button
-            type="button"
+          <IconButton
+            icon={copiedRoot ? "ph:check" : "ph:copy"}
+            size="xs"
             onClick={copyRoot}
-            className="focus-ring shrink-0 rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+            className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
             title={copiedRoot ? "Copied" : "Copy path"}
             aria-label={`Copy path ${project.root}`}
-          >
-            <Icon name={copiedRoot ? "ph:check" : "ph:copy"} width={12} aria-hidden />
-          </button>
+          />
         )}
       </div>
 
@@ -525,28 +564,30 @@ export function ProjectRow({
           Color
         </span>
         <div className="flex items-center gap-1.5" role="group" aria-label={`Tile color for ${project.name}`}>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => void setColor(null)}
             disabled={busy === "color"}
             aria-pressed={!project.color}
             title="Auto — tinted from the project path"
             aria-label="Auto color"
-            className={`focus-ring h-4 w-4 shrink-0 rounded-full border border-dashed border-[var(--border-strong)] ${
+            className={`h-4 w-4 shrink-0 rounded-full border border-dashed border-[var(--border-strong)] p-0 ${
               !project.color ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]" : ""
             }`}
             style={{ background: `color-mix(in oklch, ${projectTint(project.root)} 45%, transparent)` }}
           />
           {PROJECT_COLOR_SWATCHES.map((swatch) => (
-            <button
+            <Button
               key={swatch.value}
-              type="button"
+              variant="ghost"
+              size="xs"
               onClick={() => void setColor(swatch.value)}
               disabled={busy === "color"}
               aria-pressed={project.color === swatch.value}
               title={swatch.name}
               aria-label={`${swatch.name} color`}
-              className={`focus-ring h-4 w-4 shrink-0 rounded-full ${
+              className={`h-4 w-4 shrink-0 rounded-full p-0 ${
                 project.color === swatch.value
                   ? "ring-2 ring-[var(--accent-presence)] ring-offset-1 ring-offset-[var(--bg-base)]"
                   : ""
@@ -563,45 +604,49 @@ export function ProjectRow({
             {selectMode ? (
               <>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="xs"
                     onClick={toggleSelectAllVisible}
-                    className="focus-ring rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+                    className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
                   >
                     {allVisibleSelected ? "Clear" : "Select all"}
-                  </button>
+                  </Button>
                   <span className="text-[11px] text-[var(--text-muted)]">
                     {selectedIds.size} selected
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="xs"
                     onClick={exitSelect}
-                    className="focus-ring rounded px-1.5 py-0.5 text-[11px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)]"
+                    className="rounded-[var(--radius-control)] px-1.5 py-0.5 text-[11px] text-[var(--text-muted)]"
                   >
                     Cancel
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="danger-ghost"
+                    size="xs"
                     disabled={bulkDeleting || selectedIds.size === 0}
                     onClick={() => void deleteSelected()}
-                    className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
+                    leadingIcon="ph:trash-bold"
+                    className="rounded-[var(--radius-control)] border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15"
                   >
-                    <Icon name="ph:trash-bold" width={11} aria-hidden />
                     {bulkDeleting ? "Deleting…" : `Delete${selectedIds.size ? ` ${selectedIds.size}` : ""}`}
-                  </button>
+                  </Button>
                 </div>
               </>
             ) : (
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="xs"
                 onClick={() => setSelectMode(true)}
-                className="focus-ring ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+                leadingIcon="ph:list-checks-bold"
+                className="ml-auto rounded-[var(--radius-control)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
               >
-                <Icon name="ph:list-checks-bold" width={12} aria-hidden />
                 Select
-              </button>
+              </Button>
             )}
           </div>
           <SortableContext items={visibleChats.map((s) => s.id)} strategy={verticalListSortingStrategy}>
@@ -624,14 +669,15 @@ export function ProjectRow({
             </ul>
           </SortableContext>
           {chats.length > CHAT_CAP ? (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={() => setShowAllChats((value) => !value)}
               aria-expanded={showAllChats}
-              className="focus-ring mt-1 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-secondary)]"
+              className="mt-1 rounded-[var(--radius-control)] px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
             >
               {showAllChats ? "Show less" : `Show all ${chats.length} sessions`}
-            </button>
+            </Button>
           ) : null}
         </>
       ) : (
@@ -640,33 +686,9 @@ export function ProjectRow({
         </p>
       )}
         </div>
+          </td>
+        </tr>
       ) : null}
-      <ContextMenu state={menu} onClose={() => setMenu(null)} ariaLabel={`Actions for ${project.name}`}>
-        <PopoverItem icon="ph:chat-circle-dots-bold" onSelect={() => { setMenu(null); onNewChat?.(project.root); }}>
-          New session
-        </PopoverItem>
-        <PopoverItem icon="ph:terminal-window-bold" onSelect={() => { setMenu(null); openTerminalHere(); }}>
-          Open terminal
-        </PopoverItem>
-        <PopoverItem icon="ph:pencil-simple-bold" onSelect={() => { setMenu(null); setNameDraft(project.name); setEditingName(true); }}>
-          Rename
-        </PopoverItem>
-        <PopoverItem icon="ph:image-bold" onSelect={() => { setMenu(null); pickImage(); }}>
-          {hasImage ? "Change image…" : "Set image…"}
-        </PopoverItem>
-        {hasImage ? (
-          <PopoverItem icon="ph:minus-circle" onSelect={() => { setMenu(null); void clearProjectImage(project.root); }}>
-            Remove image
-          </PopoverItem>
-        ) : null}
-        <PopoverItem icon={copiedRoot ? "ph:check" : "ph:copy"} onSelect={() => { setMenu(null); void copyRoot(); }}>
-          Copy path
-        </PopoverItem>
-        <PopoverSeparator />
-        <PopoverItem icon="ph:trash-bold" danger onSelect={() => { setMenu(null); setExpanded(true); setConfirmDelete(true); }}>
-          Delete project…
-        </PopoverItem>
-      </ContextMenu>
-    </article>
+    </>
   );
 }

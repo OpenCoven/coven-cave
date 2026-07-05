@@ -144,6 +144,36 @@ test.describe("code rail beside chat", () => {
     await rail.getByText("README.md", { exact: false }).first().click();
     await expect(rail.locator(".workspace-rail__preview")).toBeVisible({ timeout: 15_000 });
     await expect(rail.locator(".workspace-rail__preview-name")).toContainText("README.md");
+
+    // Expanded Files tab should behave like an IDE: file tree left, open file
+    // in the main/code pane, and worktree diffs/changes on the far right.
+    await rail.getByRole("button", { name: "Expand code rail fullscreen" }).click();
+    await expect(rail).toHaveAttribute("data-fullscreen", "true");
+    await expect(rail.locator(".workspace-rail__files--ide")).toBeVisible();
+    const treePane = rail.locator(".workspace-rail__files-tree-pane");
+    const editorPane = rail.locator(".workspace-rail__files-editor");
+    const diffsPane = rail.locator(".workspace-rail__files-diffs");
+    await expect(treePane).toBeVisible();
+    await expect(editorPane).toBeVisible();
+    await expect(diffsPane).toBeVisible();
+    await expect(editorPane.locator(".workspace-rail__preview-name")).toContainText("README.md");
+    await expect(diffsPane.getByText("Worktree")).toBeVisible({ timeout: 15_000 });
+    const treeBox = await treePane.boundingBox();
+    const editorBox = await editorPane.boundingBox();
+    const diffsBox = await diffsPane.boundingBox();
+    expect(treeBox && editorBox && diffsBox).toBeTruthy();
+    expect(treeBox!.x).toBeLessThan(editorBox!.x);
+    expect(editorBox!.x).toBeLessThan(diffsBox!.x);
+    expect(treeBox!.width).toBeGreaterThan(180);
+    expect(diffsBox!.width).toBeGreaterThan(220);
+    expect(editorBox!.width).toBeGreaterThan(treeBox!.width);
+    expect(editorBox!.width).toBeGreaterThan(diffsBox!.width);
+
+    // The expanded panel can collapse back to the compact chat/code rail.
+    await rail.getByRole("button", { name: "Exit code rail fullscreen" }).click();
+    await expect(rail).not.toHaveAttribute("data-fullscreen", "true");
+    await expect(rail.locator(".workspace-rail__files--ide")).toHaveCount(0);
+    await expect(rail.getByRole("button", { name: "Terminal" })).toHaveCount(0);
   });
 
   // PR 3 / Task 3: below the mobile breakpoint there's no room for the
@@ -168,7 +198,7 @@ test.describe("code rail beside chat", () => {
   // under tests/mobile/ (see playwright.config.ts testMatch). A mobile-only test
   // placed here would only ever run under the desktop project and self-skip.
 
-  test("(f) Terminal tab → lazy pty host (not mounted until first opened)", async ({ page }) => {
+  test("(f) Terminal tab → fullscreen-only lazy pty host", async ({ page }) => {
     const filesRef = { count: 0 };
     await routeChanges(page, filesRef);
 
@@ -178,7 +208,15 @@ test.describe("code rail beside chat", () => {
     const rail = page.locator(".workspace-rail");
     await expect(rail).toBeVisible({ timeout: 30_000 });
 
-    // The Terminal tab button exists…
+    // The normal side rail has Changes/Files only; Terminal is reserved for
+    // the user-expanded fullscreen rail.
+    await expect(rail.getByRole("button", { name: "Terminal" })).toHaveCount(0);
+    await expect(rail.locator(".workspace-rail__terminal")).toHaveCount(0);
+
+    await rail.getByRole("button", { name: "Expand code rail fullscreen" }).click();
+    await expect(rail).toHaveAttribute("data-fullscreen", "true");
+
+    // The Terminal tab button appears only after fullscreen expansion…
     const terminalTab = rail.getByRole("button", { name: "Terminal" });
     await expect(terminalTab).toBeVisible();
 

@@ -48,7 +48,7 @@
 
 /* Chat message prose reads in Inter — a neutral grotesque for the ChatGPT/Codex
    look — instead of the rounder geometric UI sans (Geist). Scoped to chat bubbles
-   so library-doc and memory prose (which also use .cave-md) keep the app font.
+   so memory prose (which also uses .cave-md) keeps the app font.
    --font-inter is declared on <html> by next/font (src/app/fonts.ts) and loads
    on demand the first time chat prose renders. */
 .cave-bubble-user .cave-md,
@@ -1917,15 +1917,25 @@ details[open] > .cave-tool-summary::before {
   container-name: composer;
 }
 
-.cave-composer-action-row {
-  display: flex;
+.cave-composer-control-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   min-height: 34px;
   align-items: center;
-  /* Codex-style single control row: attach · selectors (grows) · send.
-     The settings row's flex-grow pushes the send button to the far edge. */
-  justify-content: flex-start;
   gap: 8px;
   color: var(--text-muted);
+}
+
+.cave-composer-utility-row,
+.cave-composer-submit-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.cave-composer-submit-row {
+  justify-content: flex-end;
 }
 
 .cave-composer-icon-button {
@@ -1934,26 +1944,12 @@ details[open] > .cave-tool-summary::before {
   box-shadow: inset 0 1px 0 color-mix(in oklch, var(--foreground) 8%, transparent);
 }
 
-.cave-composer-divider {
-  /* Vertical hairline separating the attach control from the inline selectors
-     (was a full-width horizontal rule between the old stacked rows). */
-  width: 1px;
-  height: 18px;
-  flex: 0 0 auto;
-  align-self: center;
-  margin: 0 2px;
-  background: color-mix(in oklch, var(--foreground) 12%, transparent);
-}
-
 .cave-composer-settings-row {
   display: flex;
   min-width: 0;
-  /* Grow to fill the middle of the single control row so the send button is
-     pushed to the trailing edge (was width:100% when this sat on its own row). */
-  flex: 1 1 auto;
-  width: auto;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   overflow-x: visible;
   overflow-y: visible;
@@ -1974,7 +1970,7 @@ details[open] > .cave-tool-summary::before {
 .cave-composer-settings-row .cave-chat-model-control,
 .cave-composer-select {
   height: 30px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   border-color: color-mix(in oklch, var(--foreground) 10%, transparent);
   background: color-mix(in oklch, var(--bg-surface) 50%, transparent);
   color: var(--text-secondary);
@@ -2007,7 +2003,7 @@ details[open] > .cave-tool-summary::before {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  max-width: 260px;
+  max-width: 240px;
   padding: 0 11px;
   font-size: 11px;
   line-height: 1;
@@ -2053,26 +2049,7 @@ details[open] > .cave-tool-summary::before {
   }
 }
 
-.cave-composer-select select {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  min-width: 100%;
-  height: 100%;
-  appearance: none;
-  border: 0;
-  background: transparent;
-  color: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-weight: 600;
-  opacity: 0;
-  outline: none;
-  padding: 0;
-}
-
-.cave-composer-select select:disabled {
+.cave-composer-select:disabled {
   cursor: default;
   opacity: 0.55;
 }
@@ -2344,62 +2321,6 @@ details[open] > .cave-tool-summary::before {
 }
 
 .cave-chat-model-control__state {
-  flex-shrink: 0;
-  color: var(--text-muted);
-}
-
-/* Pill variant — a native <select> mirroring .hc-familiar-selector, so model
-   selection is the same control type as the familiar picker and (being native)
-   opens in the OS layer instead of a custom popover that the composer card's
-   `overflow: hidden` would clip. */
-.cave-chat-model-pill {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  border: 1px solid color-mix(in oklch, var(--accent-presence) 25%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--accent-presence) 10%, var(--bg-base));
-  padding: 3px 7px 3px 6px;
-  color: var(--text-primary);
-}
-
-.cave-chat-model-pill:hover,
-.cave-chat-model-pill:focus-within {
-  background: color-mix(in oklch, var(--accent-presence) 16%, var(--bg-base));
-  border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
-}
-
-.cave-chat-model-pill > svg {
-  flex-shrink: 0;
-  color: var(--accent-presence);
-}
-
-.cave-chat-model-pill__select {
-  appearance: none;
-  -webkit-appearance: none;
-  border: none;
-  outline: none;
-  background: transparent;
-  cursor: pointer;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 500;
-  font-family: var(--font-mono);
-  max-width: 150px;
-  padding-right: 14px;
-  text-overflow: ellipsis;
-}
-
-.cave-chat-model-pill__select:disabled {
-  cursor: default;
-}
-
-.cave-chat-model-pill__caret {
-  position: absolute;
-  right: 5px;
-  pointer-events: none;
   flex-shrink: 0;
   color: var(--text-muted);
 }
@@ -3614,28 +3535,28 @@ details[open] > .cave-tool-summary::before {
     padding: 0 10px 10px !important;
   }
 
-  .cave-composer-action-row {
+  .cave-composer-control-row {
+    grid-template-columns: minmax(0, 1fr) auto;
     min-height: 48px;
-    /* Phones don't have room for attach · selectors · send on one line, so
-       let the row wrap: attach + send sit on top (spread to the edges) and
-       the selectors drop to their own full-width line below. */
-    flex-wrap: wrap;
-    justify-content: space-between;
+    align-items: start;
+    gap: 8px;
   }
 
-  /* The desktop vertical hairline has no place in the wrapped phone layout. */
-  .cave-composer-divider {
-    display: none;
+  .cave-composer-utility-row {
+    flex-wrap: wrap;
+  }
+
+  .cave-composer-submit-row {
+    align-self: start;
   }
 
   .cave-composer-settings-row {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-column: 1 / -1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
     overflow: visible;
-    /* Force the selectors onto their own row beneath attach/send. */
-    order: 3;
-    flex-basis: 100%;
+    justify-content: stretch;
     width: 100%;
   }
 
@@ -4196,6 +4117,26 @@ details[open] > .cave-tool-summary::before {
   background: var(--bg-surface, var(--background));
 }
 
+.workspace-rail--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-base, var(--background));
+  border: 0;
+}
+
+.workspace-rail--fullscreen .workspace-rail__strip {
+  flex-basis: 44px;
+  padding-top: 10px;
+}
+
+.workspace-rail--fullscreen .workspace-rail__tab {
+  width: 34px;
+  height: 34px;
+}
+
 /* Rail entrance + tab-switch motion.
    - .workspace-rail__body eases in when the rail mounts (opens) — a subtle
      fade + short slide from the right. We animate the inner content, not the
@@ -4449,7 +4390,8 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-muted);
 }
 
-/* Files tab — a scrollable project tree stacked over a read-only preview. */
+/* Files tab — compact rail stacks tree over preview; fullscreen becomes an
+   IDE-style split: files left, code center, diffs far right. */
 .workspace-rail__files {
   display: flex;
   flex-direction: column;
@@ -4463,6 +4405,63 @@ details[open] > .cave-tool-summary::before {
   overflow: auto;
   padding: 6px 4px;
   border-bottom: 1px solid var(--border-hairline);
+}
+
+.workspace-rail__files--ide {
+  flex-direction: row;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-base, var(--background));
+}
+
+.workspace-rail__files-ide-group {
+  display: flex;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.workspace-rail__files-tree-pane,
+.workspace-rail__files-editor,
+.workspace-rail__files-diffs {
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.workspace-rail__files-tree--ide {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  padding: 8px 6px;
+  border-right: 1px solid var(--border-hairline);
+  border-bottom: 0;
+  background: color-mix(in oklch, var(--bg-base) 92%, var(--foreground) 3%);
+}
+
+.workspace-rail__files-preview--ide {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  border-bottom: 0;
+}
+
+.workspace-rail__files-diffs {
+  border-left: 1px solid var(--border-hairline);
+  background: color-mix(in oklch, var(--bg-base) 94%, var(--foreground) 2%);
+}
+
+.workspace-rail__files-diffs .session-changes-panel {
+  height: 100%;
+}
+
+.workspace-rail__files-separator {
+  flex: 0 0 auto;
 }
 
 .workspace-rail__files-preview {

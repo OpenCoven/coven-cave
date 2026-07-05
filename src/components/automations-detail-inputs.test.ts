@@ -79,7 +79,7 @@ assert.match(
 );
 assert.match(
   source,
-  /<Icon name="ph:pencil-simple"/,
+  /leadingIcon="ph:pencil-simple"/,
   "Edit button should use a pencil icon",
 );
 assert.match(

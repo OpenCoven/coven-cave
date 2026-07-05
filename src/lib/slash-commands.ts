@@ -44,11 +44,9 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/canvas", hint: "sketch a UI", description: "Generate a UI artifact inline (or open the Journal's Canvas tab with no prompt).", argPlaceholder: "describe a UI…", section: "view" },
   { name: "/board", hint: "Tasks", description: "Open the Tasks kanban and table view.", section: "view" },
   { name: "/chats", hint: "Chats", description: "Switch back to the Chats view.", section: "view" },
-  { name: "/automations", hint: "Automations", description: "Open Automations.", section: "view" },
-  { name: "/evals", aliases: ["/eval-loops"], hint: "Open Evals", description: "Open Evals.", section: "view" },
+  { name: "/schedules", hint: "Schedules", description: "Open Schedules.", section: "view" },
   { name: "/remind", hint: "new reminder", description: "Create a reminder. Try “/remind in 30m check the build”.", argPlaceholder: "when + text", section: "view" },
 
-  { name: "/terminal", aliases: ["/comux"], hint: "Terminal", description: "Open the integrated terminal view.", section: "view" },
   { name: "/projects", hint: "Projects", description: "Open the project browser and file preview view.", section: "view" },
   { name: "/toggle-agent", hint: "\u2318\u21E7B", description: "Toggle the Familiar Chat side panel.", section: "view" },
 
@@ -57,9 +55,6 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/codex", hint: "codex runtime", description: "Run a task through Codex regardless of active familiar.", argPlaceholder: "task…", section: "launch" },
   { name: "/claude", hint: "claude runtime", description: "Run a task through Claude regardless of active familiar.", argPlaceholder: "task…", section: "launch" },
 
-  // Library
-  { name: "/save", aliases: ["/bookmark", "/read"], hint: "/save <url> [bookmarks|reading|github] [#tag]", description: "Route a URL into the library (auto-classified).", section: "view" },
-  { name: "/research", hint: "research a topic", description: "Research a topic with the active familiar and save the brief to the Library. Bare /research opens the Library.", argPlaceholder: "topic…", section: "view" },
 ];
 
 /** Build a lookup that includes every name + every alias → canonical name. */

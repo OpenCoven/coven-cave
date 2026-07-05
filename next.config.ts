@@ -41,6 +41,11 @@ const nextConfig: NextConfig = {
       "./release/**/*",
       "./.git/**/*",
       "./scripts/**/*",
+      "./.worktrees/**/*",
+      "./tests/**/*",
+      "./src/**/*.test.*",
+      "./apps/**/*.test.*",
+      "./apps/ios/**/build/**/*",
     ],
   },
   // Next's tracer misses runtime-required packages that go through its

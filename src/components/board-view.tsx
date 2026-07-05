@@ -23,6 +23,7 @@ import { BoardGantt } from "@/components/board-gantt";
 import { BoardTable, type GroupBy } from "@/components/board-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { BoardCardStack } from "@/components/board-card-stack";
 import { BoardInspector } from "@/components/board-inspector";
@@ -51,7 +52,7 @@ type Props = {
 
 // First-load placeholder that previews the kanban structure (ghost columns +
 // cards) instead of a bare spinner, matching the app-wide skeleton convention
-// (library/schedules/chat/board-inspector). Reuses the real column classes so
+// (schedules/chat/board-inspector). Reuses the real column classes so
 // it's pixel-matched and theme-aware; the shimmer comes from <Skeleton>.
 function BoardKanbanSkeleton() {
   return (
@@ -901,38 +902,47 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               onCancel={cardSelect.exit}
             >
               <label className="sr-only" htmlFor="board-bulk-move">Move selected tasks to status</label>
-              <select
+              <StandardSelect<CardStatus | "">
                 id="board-bulk-move"
+                label="Move selected tasks to status"
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 value=""
-                onChange={(e) => { if (e.target.value) void bulkMove(e.target.value as CardStatus); }}
-                className="focus-ring h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
-              >
-                <option value="">Move to…</option>
-                {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-              </select>
+                onChange={(next) => { if (next) void bulkMove(next); }}
+                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+                options={[
+                  { value: "", label: "Move to...", disabled: true },
+                  ...STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] })),
+                ]}
+                placeholder="Move to..."
+              />
               <label className="sr-only" htmlFor="board-bulk-assign">Assign selected tasks to a familiar</label>
-              <select
+              <StandardSelect
                 id="board-bulk-assign"
+                label="Assign selected tasks to a familiar"
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 value=""
-                onChange={(e) => { if (e.target.value) void bulkAssign(e.target.value); }}
-                className="focus-ring h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
-              >
-                <option value="">Assign to…</option>
-                {familiars.map((f) => <option key={f.id} value={f.id}>{f.display_name}</option>)}
-              </select>
+                onChange={(next) => { if (next) void bulkAssign(next); }}
+                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+                options={[
+                  { value: "", label: "Assign to...", disabled: true },
+                  ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
+                ]}
+                placeholder="Assign to..."
+              />
               <label className="sr-only" htmlFor="board-bulk-priority">Set priority of selected tasks</label>
-              <select
+              <StandardSelect<CardPriority | "">
                 id="board-bulk-priority"
+                label="Set priority of selected tasks"
                 disabled={bulkBusy || cardSelect.selectedCount === 0}
                 value=""
-                onChange={(e) => { if (e.target.value) void bulkSetPriority(e.target.value as CardPriority); }}
-                className="focus-ring h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
-              >
-                <option value="">Priority…</option>
-                {PRIORITIES.map((p) => <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
-              </select>
+                onChange={(next) => { if (next) void bulkSetPriority(next); }}
+                className="h-6 box-border rounded border border-[var(--border-hairline)] bg-[var(--bg-base)] px-1.5 text-[11px] text-[var(--text-secondary)] disabled:opacity-50"
+                options={[
+                  { value: "", label: "Priority...", disabled: true },
+                  ...PRIORITIES.map((p) => ({ value: p, label: PRIORITY_LABELS[p] })),
+                ]}
+                placeholder="Priority..."
+              />
               <form
                 className="inline-flex items-center gap-1"
                 onSubmit={(e) => { e.preventDefault(); void bulkAddLabel(labelDraft); }}

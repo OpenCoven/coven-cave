@@ -20,6 +20,7 @@ import { Icon } from "@/lib/icon";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { StandardSelect } from "@/components/ui/select";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
@@ -430,11 +431,6 @@ function LinksSection({
 }) {
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  const [savedToLibrary, setSavedToLibrary] = useState<Record<string, "saving" | "done" | "error">>({});
-  // The save flow clears its badge on a 2–3s timer; don't touch state if the
-  // inspector closed in the meantime.
-  const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const links = card.links ?? [];
 
@@ -453,37 +449,6 @@ function LinksSection({
 
   function deleteLink(url: string) {
     onPatch(card.id, { ops: { linkOps: [{ op: "remove", value: url }] } });
-  }
-
-  async function saveToLibrary(url: string) {
-    const setState = (v: "saving" | "done" | "error") => {
-      if (mountedRef.current) setSavedToLibrary((prev) => ({ ...prev, [url]: v }));
-    };
-    const clearLater = (ms: number) => setTimeout(() => {
-      if (!mountedRef.current) return;
-      setSavedToLibrary((prev) => { const next = { ...prev }; delete next[url]; return next; });
-    }, ms);
-    setState("saving");
-    try {
-      let title = url;
-      try { title = new URL(url).hostname.replace(/^www./, ""); } catch { /* use url */ }
-      const res = await fetch("/api/library/bookmarks", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url, title, tags: card.labels ?? [] }),
-      });
-      const json = await res.json().catch(() => null);
-      if (res.ok && json?.ok) {
-        setState("done");
-        clearLater(2000);
-      } else {
-        setState("error");
-        clearLater(3000);
-      }
-    } catch {
-      setState("error");
-      clearLater(3000);
-    }
   }
 
   return (
@@ -510,7 +475,6 @@ function LinksSection({
         <ul style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
           {links.map((link) => {
             const href = safeHref(link);
-            const saveState = savedToLibrary[link];
             return (
               <li
                 key={link}
@@ -561,22 +525,6 @@ function LinksSection({
                   </span>
                 )}
                 <span style={{ display: "flex", alignItems: "center", gap: 2 }} className="step-actions">
-                  {saveState === "error" ? (
-                    <span style={{ fontSize: 10, color: "var(--color-danger)" }} title="Save failed">
-                      err
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="board-toolbar-btn"
-                      style={{ padding: "1px 4px", color: saveState === "done" ? "var(--color-success, #16a34a)" : "var(--text-muted)" }}
-                      onClick={() => { if (!saveState) void saveToLibrary(link); }}
-                      title={saveState === "done" ? "Saved to Library" : "Save to Library"}
-                      disabled={saveState === "saving"}
-                    >
-                      <Icon name={saveState === "done" ? "ph:check" : "ph:bookmark-simple"} width={10} />
-                    </button>
-                  )}
                   <button
                     type="button"
                     className="board-toolbar-btn"
@@ -1102,13 +1050,14 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 <div className="board-drawer-field-label">Status</div>
                 <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
                   <span className={`board-drawer-status-dot board-drawer-status-dot--${card.status}`} aria-hidden />
-                  <select
+                  <StandardSelect<CardStatus>
+                    label="Status"
                     className="board-drawer-field-select board-drawer-field-select--styled"
                     value={card.status}
-                    onChange={(e) => onMoveStatus(card.id, e.target.value as CardStatus)}
-                  >
-                    {STATUSES.map((s) => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-                  </select>
+                    onChange={(next) => onMoveStatus(card.id, next)}
+                    options={STATUSES.map((s) => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))}
+                    showCaret={false}
+                  />
                   <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
                 </div>
               </div>
@@ -1116,13 +1065,14 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 <div className="board-drawer-field-label">Priority</div>
                 <div className="board-drawer-select-shell board-drawer-select-shell--with-leading">
                   <span className={`board-drawer-priority-flag board-drawer-priority-flag--${card.priority}`} aria-hidden />
-                  <select
+                  <StandardSelect<CardPriority>
+                    label="Priority"
                     className="board-drawer-field-select board-drawer-field-select--styled"
                     value={card.priority}
-                    onChange={(e) => onPatch(card.id, { priority: e.target.value as CardPriority })}
-                  >
-                    {PRIORITIES.map((p) => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-                  </select>
+                    onChange={(next) => onPatch(card.id, { priority: next })}
+                    options={PRIORITIES.map((p) => ({ value: p, label: p.charAt(0).toUpperCase() + p.slice(1) }))}
+                    showCaret={false}
+                  />
                   <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
                 </div>
               </div>
@@ -1138,14 +1088,17 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                     <Icon name="ph:user" width={12} className="text-[var(--text-muted)]" />
                   )}
                 </span>
-                <select
+                <StandardSelect
+                  label="Familiar"
                   className="board-drawer-field-select board-drawer-field-select--styled"
                   value={card.familiarId ?? ""}
-                  onChange={(e) => onPatch(card.id, { familiarId: e.target.value || null })}
-                >
-                  <option value="">Unassigned</option>
-                  {familiars.map((f) => <option key={f.id} value={f.id}>{f.display_name}</option>)}
-                </select>
+                  onChange={(next) => onPatch(card.id, { familiarId: next || null })}
+                  options={[
+                    { value: "", label: "Unassigned" },
+                    ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
+                  ]}
+                  showCaret={false}
+                />
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
               </div>
             </div>
@@ -1188,17 +1141,20 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                 <span className="board-drawer-project-icon" aria-hidden>
                   <Icon name="ph:folder" width={12} className="text-[var(--text-muted)]" />
                 </span>
-                <select
+                <StandardSelect
+                  label="Project"
                   className="board-drawer-field-select board-drawer-field-select--styled"
                   value={card.projectId ?? ""}
-                  onChange={(e) => {
-                    const selectedProject = projects.find((project) => project.id === e.target.value) ?? null;
+                  onChange={(next) => {
+                    const selectedProject = projects.find((project) => project.id === next) ?? null;
                     onPatch(card.id, { projectId: selectedProject?.id ?? null, cwd: selectedProject?.root ?? null });
                   }}
-                >
-                  <option value="">No project</option>
-                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-                </select>
+                  options={[
+                    { value: "", label: "No project" },
+                    ...projects.map((project) => ({ value: project.id, label: project.name })),
+                  ]}
+                  showCaret={false}
+                />
                 <Icon name="ph:caret-up-down-bold" width={11} className="board-drawer-select-caret" />
               </div>
               {projects.length === 0 ? (

@@ -100,20 +100,20 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-action-row"[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*aria-label="Send message"/,
-  "Composer should keep Add and Send in the primary row above the dropdown divider",
+  /className="cave-composer-control-row"[\s\S]*className="cave-composer-utility-row"[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*className="cave-composer-submit-row"[\s\S]*aria-label="Send message"/,
+  "Composer should keep attachment and send actions in the footer row with the attachment paperclip affordance",
 );
 
 assert.match(
   source,
-  /className="cave-composer-divider" aria-hidden \/>[\s\S]*className="cave-composer-settings-row" aria-label="Chat response controls"/,
-  "Composer should render a divider line above the model/thinking/speed dropdown row",
+  /className="cave-composer-utility-row"[\s\S]*<ComposerHostChip value=\{composerHostValue\} disabled=\{busy\} onPick=\{setRuntimeHost\} \/>[\s\S]*className="cave-composer-settings-row" aria-label="Chat response controls"/,
+  "Composer should place Host with utility controls before the response-control row",
 );
 
 assert.match(
   source,
-  /className="cave-composer-settings-row" aria-label="Chat response controls">[\s\S]{0,200}label="Thinking"[\s\S]*label="Speed"/,
-  "Composer dropdown row should expose thinking + speed controls",
+  /className="cave-composer-settings-row" aria-label="Chat response controls">[\s\S]*label="Access"[\s\S]*label="Model"[\s\S]*label="Thinking"[\s\S]*label="Speed"/,
+  "Composer dropdown row should expose Access, Model, Thinking, and Speed in order",
 );
 
 // Model selection moved out of the composer UI into the /model slash command.
@@ -151,9 +151,9 @@ assert.match(
 );
 
 assert.match(
-  styles,
-  /\.cave-composer-select select\s*\{[\s\S]*position:\s*absolute[\s\S]*inset:\s*0[\s\S]*width:\s*100%[\s\S]*height:\s*100%[\s\S]*opacity:\s*0/,
-  "Composer select should cover the full pill so clicking anywhere opens the dropdown",
+  source,
+  /<StandardSelect<T>[\s\S]*className="cave-composer-select"[\s\S]*showCaret=\{false\}[\s\S]*renderValue=\{\(\) =>/,
+  "Composer control selects should delegate the full-pill hit target to StandardSelect",
 );
 
 console.log("chat-view-first-class.test.ts: ok");

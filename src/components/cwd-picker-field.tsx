@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Icon } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { ProjectTree } from "@/components/project-tree";
+import { Button } from "@/components/ui/button";
 import { parseListInput } from "@/lib/automations/list-input";
 import type { CaveProject } from "@/lib/cave-projects-types";
 
@@ -73,14 +73,15 @@ export function CwdPickerField({
         spellCheck={false}
       />
       <div className="mt-1 flex items-center justify-between">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="xs"
+          leadingIcon="ph:folder-open"
           onClick={() => setPickerOpen(true)}
-          className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+          className="rounded-[var(--radius-control)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
         >
-          <Icon name="ph:folder-open" width={12} aria-hidden />
           Browse projects…
-        </button>
+        </Button>
         {list.length > 0 && (
           <span className="text-[10px] text-[var(--text-muted)]">
             {list.length} {list.length === 1 ? "directory" : "directories"}
@@ -98,20 +99,20 @@ export function CwdPickerField({
         >
           <div
             ref={dialogRef}
-            className="flex max-h-[80vh] w-[460px] max-w-full flex-col overflow-hidden rounded-lg border border-[var(--border-hairline)] shadow-xl"
+            className="flex max-h-[80vh] w-[460px] max-w-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl"
             style={{ background: "var(--bg-panel)" }}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
               <span className="text-[13px] font-semibold text-[var(--text-primary)]">Working directories</span>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="xs"
                 onClick={() => setPickerOpen(false)}
                 aria-label="Close"
-                className="focus-ring grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-              >
-                <Icon name="ph:x" width={14} />
-              </button>
+                className="grid h-6 w-6 place-items-center rounded-[var(--radius-control)] p-0 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+                leadingIcon="ph:x"
+              />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {projects.length === 0 ? (
@@ -125,17 +126,18 @@ export function CwdPickerField({
                       <span className="min-w-0 flex-1 truncate text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
                         {proj.name}
                       </span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="xs"
                         onClick={() => addCwd(proj.root)}
-                        className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                        className={`shrink-0 rounded-[var(--radius-control)] px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
                           selectedDirs.has(proj.root)
                             ? "text-[var(--accent-presence)]"
                             : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
                         }`}
                       >
                         {selectedDirs.has(proj.root) ? "Added" : "Use root"}
-                      </button>
+                      </Button>
                     </div>
                     <ProjectTree
                       root={proj.root}
@@ -151,14 +153,14 @@ export function CwdPickerField({
               <span className="text-[11px] text-[var(--text-muted)]">
                 {list.length} {list.length === 1 ? "directory" : "directories"} selected
               </span>
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={() => setPickerOpen(false)}
-                className="rounded-md px-3 py-1 text-[12px] font-medium text-white"
-                style={{ background: "var(--accent-presence)" }}
+                className="rounded-[var(--radius-control)] px-3 py-1 text-[12px] font-medium"
               >
                 Done
-              </button>
+              </Button>
             </div>
           </div>
         </div>

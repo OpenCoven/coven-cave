@@ -6,10 +6,17 @@ import { readFileSync } from "node:fs";
 // project-row + session-row + shared helpers). These source-text assertions run
 // against the COMBINED source, so each keeps verifying behavior regardless of
 // which file a given piece now lives in.
+const projectsViewSource = readFileSync(new URL("./projects-view.tsx", import.meta.url), "utf8");
+const projectRowSource = readFileSync(new URL("./projects/project-row.tsx", import.meta.url), "utf8");
+const sessionRowSource = readFileSync(new URL("./projects/session-row.tsx", import.meta.url), "utf8");
+const projectsViewToolbar = projectsViewSource.slice(
+  projectsViewSource.indexOf("<header"),
+  projectsViewSource.indexOf("<main"),
+);
 const projectsView = [
-  readFileSync(new URL("./projects-view.tsx", import.meta.url), "utf8"),
-  readFileSync(new URL("./projects/project-row.tsx", import.meta.url), "utf8"),
-  readFileSync(new URL("./projects/session-row.tsx", import.meta.url), "utf8"),
+  projectsViewSource,
+  projectRowSource,
+  sessionRowSource,
   readFileSync(new URL("./projects/projects-shared.ts", import.meta.url), "utf8"),
 ].join("\n\n");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
@@ -158,7 +165,6 @@ for (const icon of [
   "ph:folder-open-bold",
   "ph:folder-simple-dashed",
   "ph:chat-circle-dots-bold",
-  "ph:terminal-window-bold",
   "ph:trash-bold",
   "ph:pencil-simple-bold",
   "ph:list-checks-bold",
@@ -171,18 +177,7 @@ for (const icon of [
 assert.match(projectsView, /group-hover:opacity-100/, "row actions reveal on hover");
 assert.match(projectsView, /group-focus-within:opacity-100/, "row actions also reveal on keyboard focus");
 assert.match(projectsView, /aria-label=\{`New session in /, "new-session action is labeled per project");
-// Terminal action launches a terminal in the project's cwd, then jumps to the surface.
-assert.match(projectsView, /aria-label=\{`Open terminal in \$\{project\.name\}`\}/, "terminal action labeled per project");
-assert.match(
-  projectsView,
-  /new CustomEvent\("cave:terminal-open", \{ detail: \{ projectRoot: project\.root \} \}\)/,
-  "terminal action launches a terminal scoped to the project's cwd",
-);
-assert.match(
-  projectsView,
-  /new CustomEvent\("cave:navigate-mode", \{ detail: \{ mode: "terminal" \} \}\)/,
-  "terminal action brings the Terminal surface to the foreground",
-);
+assert.doesNotMatch(projectsView, /Open terminal|cave:terminal-open|mode: "terminal"/, "project rows stay focused on chat actions");
 assert.match(projectsView, /aria-label=\{`Rename \$\{project\.name\}`\}/, "rename action labeled per project");
 assert.match(projectsView, /aria-label=\{`Delete \$\{project\.name\}`\}/, "delete action labeled per project");
 assert.match(projectsView, /motion-reduce:transition-none/, "reveal respects reduced motion");
@@ -193,10 +188,39 @@ assert.match(
   /onSubmit=\{handleCreate\}[\s\S]{0,200}?onKeyDown[\s\S]{0,120}?"Escape"[\s\S]{0,80}?setShowForm\(false\)/,
   "new-project form closes on Escape",
 );
+assert.match(projectsViewSource, /import \{ Button \}/, "Projects toolbar/form actions use the shared Button primitive");
+assert.doesNotMatch(projectsViewToolbar, /<button\b/, "Projects toolbar/form should not hand-roll button controls");
+assert.doesNotMatch(
+  projectsViewToolbar,
+  /rounded-md|rounded-lg|rounded(?=\s|")/,
+  "Projects toolbar/form controls should use radius tokens instead of hard-coded radii",
+);
+assert.doesNotMatch(projectsViewSource, /<button\b/, "ProjectsView container should not hand-roll button controls");
+assert.doesNotMatch(
+  projectsViewSource,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "ProjectsView container should use tokenized radii instead of hard-coded rounded classes",
+);
 
-// Project rows render flat — a bottom hairline divider instead of a bordered
-// rounded card box, so the Projects tab reads as a flat list. Vertical padding
-// is density-driven (comfortable vs compact) rather than a fixed py-3.
+// Project rows use the same spreadsheet-grade table shell as the Tasks table,
+// instead of a custom card/list wrapper.
+assert.match(
+  projectsViewSource,
+  /<table className="board-table board-table--grid projects-table"/,
+  "Projects should render through the board table grid shell used by Tasks",
+);
+assert.match(
+  projectsViewSource,
+  /<thead>[\s\S]{0,900}?Project[\s\S]{0,900}?Status[\s\S]{0,900}?Sessions[\s\S]{0,900}?Updated[\s\S]{0,900}?Actions/,
+  "Projects table exposes stable task-table-style columns",
+);
+assert.match(
+  projectsViewSource,
+  /<tbody>[\s\S]{0,220}?visibleProjects\.map\(\(project\)/,
+  "Project rows render inside the table body",
+);
+assert.match(projectRowSource, /<tr[\s\S]*?className=\{\[[\s\S]*?projects-table-row/, "each project renders as a table row");
+assert.match(projectRowSource, /<td colSpan=\{5\}/, "expanded project details span the full Projects table width");
 assert.doesNotMatch(
   projectsView,
   /group rounded-lg border bg-\[var\(--bg-raised\)\]/,
@@ -204,12 +228,7 @@ assert.doesNotMatch(
 );
 assert.match(
   projectsView,
-  /group border-b border-\[var\(--border-hairline\)\] px-2 transition-colors/,
-  "Project rows should be flat rows separated by a hairline divider",
-);
-assert.match(
-  projectsView,
-  /density === "compact" \? "py-1\.5" : "py-3"/,
+  /density === "compact" \? "projects-table-row--compact" : "projects-table-row--comfortable"/,
   "project row vertical padding follows the density preference",
 );
 
@@ -293,6 +312,20 @@ assert.match(projectsView, /import \{ RelativeTime \} from "@\/components\/ui\/r
 assert.match(projectsView, /<RelativeTime iso=\{session\.updated_at\}/, "every session row shows a consistent relative timestamp");
 assert.match(projectsView, /import \{ modelIcon, modelLabel \} from "@\/lib\/model-label"/, "rows render a model chip via the shared model-label helper");
 assert.match(projectsView, /modelLabel\(session\.model\)/, "the model chip shows the shortened model label");
+assert.match(sessionRowSource, /import \{ Button \}/, "session row actions use the shared Button primitive");
+assert.doesNotMatch(sessionRowSource, /<button\b/, "session row should not hand-roll button controls");
+assert.doesNotMatch(
+  sessionRowSource,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "session row controls should use tokenized radii instead of hard-coded rounded classes",
+);
+assert.match(projectRowSource, /import \{ Button \}/, "project row actions use the shared Button primitive");
+assert.doesNotMatch(projectRowSource, /<button\b/, "project row should not hand-roll button controls");
+assert.doesNotMatch(
+  projectRowSource,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "project row controls should use tokenized radii instead of hard-coded rounded classes",
+);
 
 // Project headers carry a glanceable stat line (running · tasks · sessions)
 // derived from the pure projectStats helper.
@@ -379,14 +412,14 @@ assert.ok(
   "both the project header and session rows open a context menu at the cursor",
 );
 assert.match(projectsView, /Actions for \$\{project\.name\}/, "the project header has a context menu");
-assert.match(projectsView, /onSelect=\{\(\) => \{ setMenu\(null\); openTerminalHere\(\); \}\}/, "the menu opens a terminal in the project cwd");
+assert.doesNotMatch(projectsView, /openTerminalHere/, "the project menu stays focused on project actions");
 assert.match(projectsView, /Delete project…/, "project menu offers delete (routes through the inline confirm)");
 assert.match(projectsView, /setExpanded\(true\); setConfirmDelete\(true\)/, "menu delete expands the card and shows the two-step confirm");
 assert.match(projectsView, /Actions for \$\{title\}/, "each session row has a context menu");
 assert.match(projectsView, /Delete chat…/, "session menu offers delete (routes through the inline confirm)");
 assert.match(
   projectsView,
-  /aria-label=\{`Delete thread \$\{title\}`\}[\s\S]{0,520}?<Icon name="ph:x-bold"/,
+  /aria-label=\{`Delete thread \$\{title\}`\}[\s\S]{0,520}?leadingIcon="ph:x-bold"/,
   "each thread row exposes a close-button delete affordance inline",
 );
 // The header actions stay visible while a delete confirm is pending, so a
@@ -396,7 +429,7 @@ assert.match(projectsView, /confirmDelete\s*\?\s*"opacity-100"/, "the action clu
 // Phase 4 — motion + cross-project-move undo.
 // Expand animates in (enter-only; collapse stays instant so collapsed rows stay
 // out of the DOM / rove set), respecting prefers-reduced-motion (CSS).
-assert.match(projectsView, /className="projects-expand-enter"/, "the session list animates in on expand");
+assert.match(projectsView, /className="projects-expand-enter projects-table-detail"/, "the session list animates in on expand");
 // Drag feedback: the dragged row lifts; the drop-target card shows an accent ring.
 assert.match(projectsView, /data-\[dragging=true\]:shadow-/, "the dragged row lifts (shadow) while dragging");
 assert.match(projectsView, /isOver[\s\S]{0,140}?ring-1 ring-inset ring-\[var\(--accent-presence\)\]/, "the drop-target project card shows an accent ring");

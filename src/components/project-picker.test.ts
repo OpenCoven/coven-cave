@@ -27,6 +27,13 @@ assert.match(src, /aria-haspopup="dialog"/, "trigger announces the popover");
 assert.match(src, /role="alert"/, "add-flow failures surface inline, not silently");
 assert.match(src, /sortProjectsAlphabetically\(projects\)/, "picker renders projects alphabetically");
 assert.doesNotMatch(src, /if \(!q\) return projects;/, "unfiltered picker must not expose raw API order");
+assert.match(src, /import \{ Button \}/, "picker trigger uses the shared Button primitive");
+assert.doesNotMatch(src, /<button\b/, "picker should not hand-roll button controls");
+assert.doesNotMatch(
+  src,
+  /rounded-md|rounded-lg|rounded(?=\s|")/,
+  "picker should use shared CSS/tokenized radii instead of hard-coded rounded classes",
+);
 
 // ── Home composer uses the shared custom picker, not an OS-native select ────
 assert.match(homeComposer, /<ProjectPicker[\s\S]*?ariaLabel="Choose project"/, "home composer uses ProjectPicker");

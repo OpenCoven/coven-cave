@@ -1,6 +1,5 @@
 import type { CardGitHubKind, CardGitHubLink } from "@/lib/cave-board-types";
 import type { GitHubItem } from "@/lib/github-tasks";
-import type { LibraryGitHubItem } from "@/lib/library-types";
 
 type MaybeGitHub = Partial<CardGitHubLink> & { url?: string };
 
@@ -61,21 +60,6 @@ export function taskGitHubLinkFromGitHubItem(item: GitHubItem): CardGitHubLink {
     labels: item.labels ?? [],
     source: "assigned",
     updatedAt: item.updatedAt,
-  };
-}
-
-export function libraryItemToTaskGitHubLink(item: LibraryGitHubItem): CardGitHubLink {
-  return {
-    id: item.id || itemId(item.kind, item.repo, item.number, item.url),
-    kind: item.kind,
-    repo: item.repo,
-    number: item.number,
-    title: item.title,
-    url: normalizeUrl(item.url),
-    state: item.state,
-    labels: item.labels ?? [],
-    source: "library",
-    savedAt: item.savedAt,
   };
 }
 

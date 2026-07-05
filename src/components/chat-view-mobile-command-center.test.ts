@@ -85,7 +85,7 @@ assert.match(
 
 assert.match(
   styles,
-  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-panel\s*\{[\s\S]*display\s*:\s*flex[\s\S]*flex-direction\s*:\s*column[\s\S]*\.cave-composer-controls\s*\{[\s\S]*position\s*:\s*static[\s\S]*min-height\s*:\s*100px/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.cave-composer-panel\s*\{[\s\S]*display\s*:\s*flex[\s\S]*flex-direction\s*:\s*column[\s\S]*\.cave-composer-controls\s*\{[\s\S]*position\s*:\s*static[\s\S]*min-height\s*:\s*100px[\s\S]*\.cave-composer-settings-row\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
   "Mobile composer controls should sit in a two-row footer so they never cover multiline text",
 );
 

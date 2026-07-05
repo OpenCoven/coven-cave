@@ -38,14 +38,13 @@ assert.doesNotMatch(source, /⏎ send · ⇧⏎ newline · ↑↓ history · \/ 
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 assert.doesNotMatch(css, /\.hc-keyboard-hint\b/, "unused .hc-keyboard-hint CSS is removed");
 
-// ───────── Task 3: Circular icon-only Send button ─────────
-// The Codex-style composer uses a round arrow button. The visible "Send" text
-// label is gone, but the button keeps an aria-label so screen readers announce
-// it, and the icon-only disc is a full circle.
+// ───────── Task 3: Tokenized icon-only Send button ─────────
+// The visible "Send" text label is gone, but the button keeps an aria-label so
+// screen readers announce it, and its chrome uses the shared control radius.
 assert.match(source, /aria-label="Send"/, "Send button keeps aria-label='Send'");
 assert.doesNotMatch(source, /className="hc-send-label"/, "visible Send text label removed (button is icon-only)");
 assert.doesNotMatch(css, /\.hc-send-label\s*\{/, "old .hc-send-label rule removed");
-assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*999px/, ".hc-send-btn is a circular disc");
+assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*var\(--radius-control\)/, ".hc-send-btn uses the shared control radius");
 
 // ───────── Command-bar hierarchy ─────────
 assert.match(
@@ -53,9 +52,12 @@ assert.match(
   /hc-control-group--who[\s\S]*?<HomeSelect[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?<ProjectPicker[\s\S]*?hc-control-group--run[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?aria-label="Send"/,
   "home composer separates who and run control groups with custom selectors and the send control",
 );
+assert.match(source, /import \{ StandardSelect/, "home composer selectors should delegate to StandardSelect");
+assert.match(source, /<StandardSelect[\s\S]*?popoverClassName="hc-home-select-popover"/, "home composer custom selectors should use the shared select popover");
+assert.doesNotMatch(source, /PopoverBody|PopoverItem|PopoverLabel/, "home composer should not maintain a local dropdown implementation");
 assert.match(
   css,
-  /\.home-composer-card\s*\{[\s\S]*?border-radius:\s*22px;[\s\S]*?box-shadow:\s*0 12px 40px/,
+  /\.home-composer-card\s*\{[\s\S]*?border-radius:\s*var\(--radius-card\);[\s\S]*?box-shadow:\s*0 12px 40px/,
   "home composer card keeps the rounded elevated composer chrome",
 );
 assert.match(
@@ -72,6 +74,38 @@ assert.match(
   css,
   /\.hc-send-btn\s*\{[\s\S]*?background:\s*var\(--accent-presence\);/,
   "active send button keeps the presence accent fill",
+);
+for (const selector of [
+  ".hc-add-btn",
+  ".hc-enhance-btn",
+  ".hc-enhance-undo",
+  ".hc-model-chip",
+  ".hc-familiar-selector",
+  ".hc-home-select-trigger",
+  ".home-composer-card .cave-project-picker__trigger.hc-project-selector",
+  ".hc-dest-pills",
+  ".hc-dest-pill",
+]) {
+  assert.match(
+    css,
+    new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\{[\\s\\S]*?border-radius:\\s*var\\(--radius-control\\)`),
+    `${selector} should use the shared control radius token`,
+  );
+}
+assert.match(
+  css,
+  /\.hc-drop-overlay\s*\{[\s\S]*?border-radius:\s*var\(--radius-card\)/,
+  "drop overlay should follow the card radius token",
+);
+assert.match(
+  css,
+  /\.hc-enhance-btn,\s*[\s\S]*?\.hc-enhance-undo,[\s\S]*?\{[\s\S]*?outline:\s*none;/,
+  "enhance controls should be included in the keyboard focus reset",
+);
+assert.match(
+  css,
+  /\.hc-enhance-btn:focus-visible,\s*[\s\S]*?\.hc-enhance-undo:focus-visible,[\s\S]*?\{[\s\S]*?outline:\s*var\(--ring-width\) solid var\(--ring-focus\);/,
+  "enhance controls should get the standard keyboard focus ring",
 );
 assert.match(
   css,

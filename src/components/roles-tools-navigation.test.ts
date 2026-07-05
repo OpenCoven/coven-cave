@@ -7,7 +7,10 @@ const palette = await readFile(new URL("./command-palette.tsx", import.meta.url)
 const workspace = await readFile(new URL("./workspace.tsx", import.meta.url), "utf8");
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const marketplaceView = await readFile(new URL("./marketplace-view.tsx", import.meta.url), "utf8");
+const marketplaceCard = await readFile(new URL("./marketplace/marketplace-card.tsx", import.meta.url), "utf8");
+const marketplaceDetail = await readFile(new URL("./marketplace/marketplace-detail.tsx", import.meta.url), "utf8");
 const rolesSection = await readFile(new URL("./marketplace/roles-section.tsx", import.meta.url), "utf8");
+const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const rolesRoute = await readFile(new URL("../app/api/roles/route.ts", import.meta.url), "utf8");
 const workspaceMode = await readFile(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 const shortcutsCatalog = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
@@ -89,6 +92,10 @@ assert.match(marketplaceView, /aria-selected=\{section === s\.id\}/, "the active
 assert.match(marketplaceView, /aria-controls=\{`marketplace-panel-\$\{s\.id\}`\}/, "tabs point at their panel via aria-controls");
 assert.match(marketplaceView, /tabIndex=\{section === s\.id \? 0 : -1\}/, "the tablist uses a roving tab stop");
 assert.match(marketplaceView, /e\.key === "ArrowRight"[\s\S]{0,80}?\(i \+ 1\) % SECTIONS\.length/, "Left/Right arrows move between tabs");
+assert.match(marketplaceView, /const sectionSummaries = useMemo/, "the shell derives status summaries for every Marketplace section");
+assert.match(marketplaceView, /className="marketplace-section-overview"/, "the section tabs render as an overview rail, not loose pills");
+assert.match(marketplaceView, /className="marketplace-section-card__metric"/, "each section tab exposes a compact status metric");
+assert.match(marketplaceView, /className="marketplace-section-card__detail"/, "each section tab explains the status metric");
 for (const id of ["browse", "roles", "skills", "capabilities"]) {
   assert.match(
     marketplaceView,
@@ -96,6 +103,10 @@ for (const id of ["browse", "roles", "skills", "capabilities"]) {
     `the ${id} panel is a tabpanel labelled by its tab`,
   );
 }
+assert.match(css, /\.marketplace-section-overview \{[\s\S]*?grid-template-columns/, "Marketplace section overview uses a stable responsive grid");
+assert.match(css, /\.marketplace-section-card \{[\s\S]*?min-height:/, "Marketplace section cards reserve stable height");
+assert.match(css, /\.marketplace-section-card\.is-active \{/, "active Marketplace section card has a distinct state");
+assert.match(css, /@media \(max-width: 680px\)[\s\S]*?\.marketplace-section-overview \{/, "Marketplace section overview has a mobile treatment");
 
 // One search field, scoped per section; the self-contained Capabilities
 // surface owns its own search so the hub hides the shared one there.
@@ -108,6 +119,27 @@ assert.match(marketplaceView, /Your setup/, "the Browse rail carries a Your-setu
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("roles"\)\}/, "the rail jumps to Roles");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("skills"\)\}/, "the rail jumps to Skills");
 assert.match(marketplaceView, /onClick=\{\(\) => selectSection\("capabilities"\)\}/, "the rail jumps to Capabilities");
+
+// Browse cards are decision cards: they expose setup effort, capability fit,
+// and role fit before someone opens the detail drawer.
+assert.match(marketplaceCard, /function setupEffortLabel\(plugin: MarketplacePlugin\)/, "Browse cards derive setup effort copy");
+assert.match(marketplaceCard, /function capabilityPreview\(plugin: MarketplacePlugin\)/, "Browse cards derive a capability preview");
+assert.match(marketplaceCard, /function roleFitLabel\(plugin: MarketplacePlugin\)/, "Browse cards summarize role affinity");
+assert.match(marketplaceCard, /className="marketplace-card__decision"/, "Browse cards render a compact decision metadata line");
+assert.match(marketplaceCard, /className="marketplace-card__decision-chip"/, "decision metadata uses stable chip hooks");
+assert.match(css, /\.marketplace-card__decision \{[\s\S]*?display: flex;/, "Browse card decision metadata has a stable flex layout");
+assert.match(css, /\.marketplace-card__decision-chip \{[\s\S]*?max-width:/, "Browse card decision chips clamp long copy");
+
+// The detail drawer repeats those decision facts at a larger, readable scale
+// so opening a card clarifies the install decision instead of hiding it.
+assert.match(marketplaceDetail, /function detailDecisionItems\(plugin: MarketplacePlugin\)/, "detail drawer derives install decision items");
+assert.match(marketplaceDetail, /className="marketplace-detail__decision-grid"/, "detail drawer renders a stable decision summary grid");
+assert.match(marketplaceDetail, /className="marketplace-detail__decision-card"/, "detail drawer renders decision facts as compact cards");
+assert.match(marketplaceDetail, /Setup effort/, "detail drawer labels setup effort explicitly");
+assert.match(marketplaceDetail, /Capability fit/, "detail drawer labels capability fit explicitly");
+assert.match(marketplaceDetail, /Role fit/, "detail drawer labels role fit explicitly");
+assert.match(css, /\.marketplace-detail__decision-grid \{[\s\S]*?grid-template-columns/, "detail decision summary uses a stable grid");
+assert.match(css, /\.marketplace-detail__decision-card \{[\s\S]*?min-height:/, "detail decision cards reserve stable height");
 
 // ── Role cards keep their capability map (MCP servers first-class) ──────────
 assert.match(rolesRoute, /mcpServers:\s*string\[\]/, "Roles API should expose mcpServers as a first-class role capability list");
@@ -129,6 +161,13 @@ assert.match(
   /Browse the marketplace/,
   "The empty Roles section cross-sells the store — that's the point of the merge",
 );
+assert.match(rolesSection, /function roleCapabilityCount\(role: RoleEntry\)/, "Roles section derives capability counts per role");
+assert.match(rolesSection, /const rolesSetupSummary = useMemo/, "Roles section derives a setup summary from the visible roles");
+assert.match(rolesSection, /className="marketplace-roles-summary"/, "Roles section renders a summary strip before role cards");
+assert.match(rolesSection, /className="marketplace-roles-summary__card"/, "Roles setup summary uses stable summary-card hooks");
+assert.match(rolesSection, /className="plugins-role-card__facts"/, "Role cards render compact decision facts");
+assert.match(css, /\.marketplace-roles-summary \{[\s\S]*?grid-template-columns/, "Roles setup summary uses a responsive grid");
+assert.match(css, /\.plugins-role-card__facts \{[\s\S]*?display: flex;/, "Role card facts have a stable flex layout");
 
 // --- Keyboard shortcuts sheet (CHAT-D11-03) ---
 

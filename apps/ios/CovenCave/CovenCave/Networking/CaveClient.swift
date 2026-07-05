@@ -408,37 +408,6 @@ struct CaveClient {
         return try JSONDecoder().decode(CovenExecResult.self, from: data)
     }
 
-    struct RouteLinkBody: Encodable {
-        struct Source: Encodable {
-            var kind = "slash"
-            var originSessionId: String?
-        }
-        var url: String
-        var familiar: String
-        var source: Source
-        var tags: [String]?
-        var listHint: String?
-    }
-
-    struct RouteLinkResult: Decodable {
-        var ok: Bool
-        var deduped: Bool?
-        var error: String?
-        var item: Item?
-        var classify: Classify?
-        struct Item: Decodable { var title: String? }
-        struct Classify: Decodable { var rule: String? }
-    }
-
-    /// `/save` — route a URL into the library (`POST /api/library/route-link`).
-    func routeLink(_ body: RouteLinkBody) async throws -> RouteLinkResult {
-        let payload = try JSONEncoder().encode(body)
-        let req = try request("api/library/route-link", method: "POST", body: payload)
-        let (data, resp) = try await data(for: req)
-        try Self.check(resp)
-        return try JSONDecoder().decode(RouteLinkResult.self, from: data)
-    }
-
     // MARK: - Theme
 
     /// `GET /api/theme` — the desktop's active theme + resolved colour tokens, so
@@ -509,38 +478,6 @@ struct CaveClient {
         try Self.check(resp)
         do {
             return try JSONDecoder().decode(JournalDayResponse.self, from: data).entry
-        } catch {
-            throw CaveError.decoding(String(describing: error))
-        }
-    }
-
-    /// `GET /api/library/reading` — saved reading list, mapped for display.
-    func libraryReading() async throws -> [LibraryItem] {
-        let req = try request("api/library/reading")
-        let (data, resp) = try await data(for: req)
-        try Self.check(resp)
-        do {
-            return try JSONDecoder().decode(LibraryReadingResponse.self, from: data).items.map {
-                LibraryItem(id: $0.id, title: $0.title ?? $0.url ?? "Untitled",
-                            url: $0.url ?? "", subtitle: $0.sourceType,
-                            familiar: $0.familiar, savedAt: $0.addedAt)
-            }
-        } catch {
-            throw CaveError.decoding(String(describing: error))
-        }
-    }
-
-    /// `GET /api/library/bookmarks` — saved bookmarks, mapped for display.
-    func libraryBookmarks() async throws -> [LibraryItem] {
-        let req = try request("api/library/bookmarks")
-        let (data, resp) = try await data(for: req)
-        try Self.check(resp)
-        do {
-            return try JSONDecoder().decode(LibraryBookmarksResponse.self, from: data).items.map {
-                LibraryItem(id: $0.id, title: $0.title ?? $0.domain ?? $0.url ?? "Untitled",
-                            url: $0.url ?? "", subtitle: $0.domain,
-                            familiar: $0.familiar, savedAt: $0.savedAt)
-            }
         } catch {
             throw CaveError.decoding(String(describing: error))
         }

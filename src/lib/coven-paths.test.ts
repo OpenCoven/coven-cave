@@ -85,6 +85,10 @@ assert.ok(localSkills.includes('path.join(covenHome(), "skills")'));
 assert.doesNotMatch(localSkills, /familiarWorkspace|familiarIds/);
 assert.doesNotMatch(localSkills, /\.openclaw/);
 
+const directorySkills = await readFile("src/lib/server/skills-directory.ts", "utf8");
+assert.ok(directorySkills.includes('path.join(covenHome(), "skills")'));
+assert.doesNotMatch(directorySkills, /path\.join\(process\.cwd\(\), "\.coven"\)/);
+
 const roles = await readFile("src/app/api/roles/route.ts", "utf8");
 assert.doesNotMatch(roles, /\.openclaw/);
 

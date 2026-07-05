@@ -2,8 +2,8 @@
  * Reading hyphenation (automatic word-breaking with hyphens for long-form
  * prose). Pairs with Justify alignment to avoid large inter-word gaps.
  *
- * Scoped to the shared `.cave-md` markdown surface (chat messages, the library
- * doc reader, the memory view) via the `--cave-reading-hyphens` CSS var. The
+ * Scoped to the shared `.cave-md` markdown surface (chat messages, memory
+ * view) via the `--cave-reading-hyphens` CSS var. The
  * default ("off") removes the override so prose uses `manual` (no auto
  * hyphenation). Requires `lang` on <html> (set to "en"); the app's WebKit
  * webview also needs `-webkit-hyphens`, set alongside `hyphens` in CSS.

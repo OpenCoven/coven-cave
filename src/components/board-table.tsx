@@ -10,6 +10,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useRovingTabIndex } from "@/lib/use-roving-tabindex";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { StandardSelect } from "@/components/ui/select";
 
 export type GroupBy = "status" | "familiar" | "project";
 export type SortKey = "title" | "status" | "priority" | "familiar" | "lifecycle" | "startDate" | "endDate" | "updatedAt";
@@ -139,10 +140,13 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
 
   const sorted = useMemo(() => sortCards(cards, sortKey, sortDir, familiars), [cards, sortKey, sortDir, familiars]);
   const groups = useMemo(() => groupCards(sorted, groupBy, familiars, projects), [sorted, groupBy, familiars, projects]);
-  // The familiar <select> options are identical for every row — build them once
-  // instead of rebuilding M <option> elements per row on each render.
+  // The familiar options are identical for every row, so build them once instead
+  // of rebuilding the option data per row on each render.
   const familiarOptions = useMemo(
-    () => familiars.map((f) => <option key={f.id} value={f.id}>{f.display_name}</option>),
+    () => [
+      { value: "", label: "Unassigned" },
+      ...familiars.map((f) => ({ value: f.id, label: f.display_name })),
+    ],
     [familiars],
   );
 
@@ -435,16 +439,15 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                               <span className={`board-table-familiar-avatar${resolvedFamiliar ? "" : " board-table-familiar-avatar--empty"}`} aria-hidden>
                                 {resolvedFamiliar ? <FamiliarAvatar familiar={resolvedFamiliar} size="sm" /> : <Icon name="ph:user" width={9} />}
                               </span>
-                              <select
-                                className="board-table-familiar-select"
-                                value={card.familiarId ?? ""}
-                                aria-label={`Assign familiar for ${card.title}`}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => onPatch(card.id, { familiarId: e.target.value || null })}
-                              >
-                                <option value="">Unassigned</option>
-                                {familiarOptions}
-                              </select>
+                              <span onClick={(e) => e.stopPropagation()}>
+                                <StandardSelect
+                                  label={`Assign familiar for ${card.title}`}
+                                  className="board-table-familiar-select"
+                                  value={card.familiarId ?? ""}
+                                  onChange={(next) => onPatch(card.id, { familiarId: next || null })}
+                                  options={familiarOptions}
+                                />
+                              </span>
                             </span>
                           );
                           break;

@@ -147,11 +147,35 @@ for (const [name, src] of [["overlay", source], ["tray", tray]]) {
 }
 assert.match(
   source,
-  /loading && familiars\.length === 0 \? <option value="">Loading…<\/option> : null/,
-  "the familiar select shows a Loading placeholder while empty",
+  /loading && familiars\.length === 0\s*\?\s*\[\{ value: "", label: "Loading…", disabled: true \}\]/,
+  "the familiar select shows a disabled Loading placeholder through StandardSelect options while empty",
 );
 assert.match(
   tray,
-  /loading && familiars\.length === 0 \? <option value="">Loading…<\/option> : null/,
-  "the tray familiar select shows a Loading placeholder while empty",
+  /loading && familiars\.length === 0\s*\?\s*\[\{ value: "", label: "Loading…", disabled: true \}\]/,
+  "the tray familiar select shows a disabled Loading placeholder through StandardSelect options while empty",
 );
+for (const [name, src] of [["overlay", source], ["tray", tray]]) {
+  assert.ok(src.includes('import { Button } from "@/components/ui/button"'), `${name} action buttons use the shared Button primitive`);
+  assert.ok(src.includes('import { IconButton } from "@/components/ui/icon-button"'), `${name} icon buttons use the shared IconButton primitive`);
+  assert.doesNotMatch(
+    src,
+    /<button\b/,
+    `${name} does not hand-roll button controls`,
+  );
+  assert.match(
+    src,
+    /<StandardSelect[\s\S]{0,320}rounded-\[var\(--radius-control\)\]/,
+    `${name} selector controls use the shared control radius token`,
+  );
+  assert.doesNotMatch(
+    src,
+    /<StandardSelect[\s\S]{0,320}rounded-md/,
+    `${name} selector controls do not hard-code Tailwind's md radius`,
+  );
+  assert.doesNotMatch(
+    src,
+    /rounded-md/,
+    `${name} avoids hard-coded md radius in the quick-chat surface`,
+  );
+}

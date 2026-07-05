@@ -600,6 +600,9 @@ struct ChatView: View {
         case .openBoard:
             app.selectedTab = .tasks
             app.showToast("Opened Tasks", systemImage: "checklist", style: .info)
+        case .openCalendar:
+            app.selectedTab = .calendar
+            app.showToast("Opened Schedules", systemImage: "calendar", style: .info)
         case .openDeveloper(let section):
             devSectionRaw = section
             app.selectedTab = .dev
@@ -609,8 +612,6 @@ struct ChatView: View {
                           style: .info)
         case .sendAsPrompt:
             sendPrompt(args, command: command)
-        case .saveLink:
-            Task { await saveLink(args) }
         case .daemonStatus:
             Task { await runDaemonStatus() }
         case .doctor:
@@ -716,46 +717,6 @@ struct ChatView: View {
         }
         guard let client = app.client else { return }
         thread.send(trimmed, client: client) { app.touch(thread) }
-    }
-
-    private func saveLink(_ args: String) async {
-        guard let client = app.client else { return }
-        let parsed = parseSaveArgs(args)
-        guard let url = parsed.url else {
-            thread.appendSystem("Usage: /save <url> [bookmarks|reading|github] [#tag]", isError: true)
-            app.touch(thread)
-            return
-        }
-        let noteId = thread.appendSystem("Saving \(url) …")
-        app.touch(thread)
-
-        let familiarId = thread.familiarIds.first ?? "cody"
-        let originSessionId = thread.familiarIds.first.flatMap { thread.sessionIds[$0] }
-        let body = CaveClient.RouteLinkBody(
-            url: url,
-            familiar: familiarId,
-            source: .init(originSessionId: originSessionId),
-            tags: parsed.tags.isEmpty ? nil : parsed.tags,
-            listHint: parsed.listHint)
-        do {
-            let result = try await client.routeLink(body)
-            if result.ok {
-                let deduped = result.deduped ?? false
-                let destination = (parsed.listHint ?? "library").capitalized
-                let headline = deduped ? "Already in library" : "Saved to \(destination)"
-                let title = result.item?.title.map { " · \($0)" } ?? ""
-                thread.updateText(noteId, "\(headline)\(title)")
-                app.showToast(headline, systemImage: "bookmark.fill")
-            } else {
-                thread.updateText(noteId, "Couldn’t save: \(result.error ?? "unknown error")",
-                                  isError: true)
-                app.showToast("Couldn’t save link", systemImage: "xmark.circle.fill", style: .error)
-            }
-        } catch {
-            thread.updateText(noteId, "Couldn’t save: \(error.localizedDescription)", isError: true)
-            app.showToast("Couldn’t save link", systemImage: "xmark.circle.fill", style: .error)
-        }
-        app.touch(thread)
     }
 
     private func runDaemonStatus() async {

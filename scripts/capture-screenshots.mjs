@@ -27,9 +27,7 @@ const CAPTURES = [
   { file: "shell.png",    label: "Three-pane shell + chat",      click: "Chat" },
   { file: "chat.png",     label: "Chat view",                    click: "Chat" },
   { file: "board.png",    label: "Board view",                   click: "Board" },
-  { file: "library.png",  label: "Library",                      click: "Library" },
   { file: "calendar.png", label: "Calendar (week view)",         click: "Calendar" },
-  { file: "terminal.png", label: "Terminal surface",             click: "Terminal" },
   { file: "floor.png",    label: "Coven Floor (Home ambient)",   click: "Home" },
 ];
 

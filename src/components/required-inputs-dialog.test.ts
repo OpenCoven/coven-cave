@@ -13,6 +13,8 @@ assert.match(source, /required-inputs-dialog/, "dialog should expose stable body
 // (an unknown/empty familiar makes the daemon reject the run).
 assert.match(source, /familiarOptions/, "dialog should accept the valid familiar list");
 assert.match(source, /input\.control === "familiar"/, "familiar params should render a picker, not a text field");
-assert.match(source, /<select/, "familiar control should render a select of familiars");
+assert.match(source, /StandardSelect/, "familiar control should render the shared custom select");
+assert.doesNotMatch(source, /<select/, "familiar control should not render a native select");
+assert.match(source, /hasMissingRequired/, "dialog should explicitly guard required custom-select values");
 
 console.log("required-inputs-dialog.test.ts: ok");

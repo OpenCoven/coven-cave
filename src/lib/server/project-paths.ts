@@ -47,7 +47,7 @@ const ALLOWED_ROOTS = Array.from(
       process.env.WORKSPACE_ROOT,
       process.env.NEXT_PUBLIC_WORKSPACE_ROOT,
       covenWorkspaceRoot(),
-      // Allow openclaw workspace roots so the Library can read familiar research dirs
+      // Allow openclaw workspace roots so workspace readers can load familiar research dirs.
       process.env.OPENCLAW_WORKSPACE_ROOT,
       path.join(homedir(), ".openclaw", "workspace"),
       process.cwd(),

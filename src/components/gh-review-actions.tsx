@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { generateArtifactCode } from "@/lib/canvas-generate";
@@ -160,19 +161,17 @@ export function GhReviewActions({ pr, familiars }: { pr: PrInfo; familiars: Fami
             <Icon name="ph:sparkle" width={13} />
             {busy === "review" ? "Reviewing…" : "Review with"}
           </button>
-          <select
+          <StandardSelect
+            label="Familiar to review with"
             className="gh-review-familiar"
-            aria-label="Familiar to review with"
             value={familiarId}
-            onChange={(e) => setFamiliarId(e.currentTarget.value)}
+            onChange={setFamiliarId}
+            options={familiars.map((familiar) => ({
+              value: familiar.id,
+              label: familiar.display_name,
+            }))}
             disabled={busy != null}
-          >
-            {familiars.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.display_name}
-              </option>
-            ))}
-          </select>
+          />
         </span>
       )}
 

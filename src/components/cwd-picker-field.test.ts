@@ -18,6 +18,9 @@ assert.match(src, /role="dialog"[\s\S]*?aria-modal="true"/, "the picker is a lab
 assert.match(src, /useFocusTrap\(pickerOpen, dialogRef, \{ onEscape: \(\) => setPickerOpen\(false\) \}\)/, "the picker dismisses via the shared useFocusTrap hook");
 assert.doesNotMatch(src, /onKeyDown=/, "no hand-rolled key handler — the focus trap owns Escape");
 assert.match(src, /list\.includes\(clean\)/, "addCwd dedupes already-listed paths");
+assert.match(src, /import \{ Button \}/, "picker actions use the shared Button primitive");
+assert.doesNotMatch(src, /<button\b/, "picker should not hand-roll button controls");
+assert.doesNotMatch(src, /rounded-md|rounded-lg/, "picker controls should use radius tokens instead of hard-coded radii");
 
 // The cron create dialog uses it (parity with the detail editor — no more
 // raw-path-only textarea).

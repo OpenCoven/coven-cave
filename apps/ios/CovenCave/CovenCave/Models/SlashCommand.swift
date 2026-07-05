@@ -3,8 +3,8 @@ import Foundation
 /// Native slash-command catalog for the iOS app.
 ///
 /// Mirrors the web/TUI vocabulary (`src/lib/slash-commands.ts` →
-/// `coven/crates/coven-cli/src/tui/chat/app.rs`) so a muscle-memory `/clear`,
-/// `/board`, `/save …` does the same thing on the phone as on the desktop.
+/// `coven/crates/coven-cli/src/tui/chat/app.rs`) so a muscle-memory `/clear`
+/// or `/board` does the same thing on the phone as on the desktop.
 /// Aliases are first-class: `/h`, `/cls`, `/q` resolve to their canonical command.
 ///
 /// Each command also carries an `action` (what it does on mobile) and an
@@ -38,9 +38,9 @@ struct SlashCommand: Identifiable, Hashable {
         case familiarPicker        // switch familiar (arg = name) or open the picker
         case openSessions          // jump to the Chats list
         case openBoard             // switch to the Tasks tab
+        case openCalendar          // switch to the Calendar/Schedules tab
         case openDeveloper(String) // switch to Developer and select a section
         case sendAsPrompt          // /run /codex /claude — send the args as a message
-        case saveLink              // /save <url> … — route a URL into the library
         case daemonStatus          // /daemon — fetch + show status inline
         case doctor                // /doctor — run `coven doctor` inline
         case switchModel           // /model — pick or set the chat model
@@ -122,15 +122,9 @@ enum SlashCatalog {
         SlashCommand(name: "/board", hint: "Tasks",
                      description: "Open the Tasks board.",
                      section: .view, availability: .native, action: .openBoard),
-        SlashCommand(name: "/save", aliases: ["/bookmark", "/read"],
-                     hint: "/save <url> [bookmarks|reading|github] [#tag]",
-                     description: "Route a URL into the library (auto-classified).",
-                     argPlaceholder: "url …", section: .view,
-                     availability: .native, action: .saveLink),
-        SlashCommand(name: "/research", hint: "research a topic",
-                     description: "Research a topic and save the brief to the Library — on the desktop for now.",
-                     argPlaceholder: "topic …", section: .view,
-                     availability: .desktopOnly, action: .desktopOnly("Research")),
+        SlashCommand(name: "/schedules", hint: "Schedules",
+                     description: "Open Schedules.",
+                     section: .view, availability: .native, action: .openCalendar),
         SlashCommand(name: "/journal", hint: "Journal",
                      description: "Your daily journal — open it on the desktop.",
                      section: .view, availability: .desktopOnly, action: .desktopOnly("Journal")),
@@ -239,37 +233,4 @@ enum SlashInput {
         guard raw.hasPrefix("/") else { return false }
         return !raw.contains(" ") && !raw.contains("\n")
     }
-}
-
-/// Parsed `/save` arguments — Swift port of `src/lib/slash-save-parser.ts`.
-struct SlashSaveArgs {
-    var url: String?
-    var listHint: String?
-    var tags: [String]
-}
-
-/// `/save <url> [bookmarks|reading|github] [#tag…]`. Returns a nil url when the
-/// first token isn't a valid http(s) URL.
-func parseSaveArgs(_ args: String) -> SlashSaveArgs {
-    let tokens = args
-        .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
-        .map(String.init)
-    guard let first = tokens.first,
-          let url = URL(string: first),
-          let scheme = url.scheme?.lowercased(),
-          scheme == "http" || scheme == "https" else {
-        return SlashSaveArgs(url: nil, listHint: nil, tags: [])
-    }
-    let validHints: Set<String> = ["bookmarks", "reading", "github"]
-    var listHint: String?
-    var tags: [String] = []
-    for token in tokens.dropFirst() {
-        if token.hasPrefix("#") {
-            let tag = String(token.dropFirst())
-            if !tag.isEmpty { tags.append(tag) }
-        } else if validHints.contains(token) {
-            listHint = token
-        }
-    }
-    return SlashSaveArgs(url: first, listHint: listHint, tags: tags)
 }

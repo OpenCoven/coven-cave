@@ -3,6 +3,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");
+const detailPanelControls = source.slice(
+  source.indexOf("function DetailPanel"),
+  source.indexOf("function RowActions"),
+);
+const codexDetailPanel = source.slice(
+  source.indexOf("function CodexDetailPanel"),
+  source.indexOf("function AutomationScheduleRow"),
+);
 
 // Save is gated on a valid, changed form: not busy, dirty, named, and a valid
 // schedule (weekly needs ≥1 day).
@@ -39,26 +47,39 @@ assert.match(
   "the Save button stays disabled while canSave is false",
 );
 
+// Crons detail UX: the panel should read like an operational editor instead of
+// a long undifferentiated form. Key facts are summarized first, editing is
+// grouped into named zones, and primary/destructive actions are separated.
+assert.match(codexDetailPanel, />\s*Cron details\s*</, "cron detail panel uses Cron-specific title copy");
+assert.match(codexDetailPanel, /className="[^"]*cron-detail-summary-grid/, "cron detail panel renders an at-a-glance summary grid");
+assert.match(codexDetailPanel, /<CronDetailSection title="Identity"/, "cron detail groups identity fields");
+assert.match(codexDetailPanel, /<CronDetailSection title="Instructions"/, "cron detail groups prompt fields");
+assert.match(codexDetailPanel, /<CronDetailSection title="Schedule"/, "cron detail groups schedule fields");
+assert.match(codexDetailPanel, /<CronDetailSection title="Runtime"/, "cron detail groups runtime fields");
+assert.match(codexDetailPanel, /className="[^"]*cron-detail-actions/, "cron detail actions live in a dedicated action rail");
+assert.match(codexDetailPanel, /Save changes[\s\S]*Run now[\s\S]*Delete/, "cron detail actions prioritize save, then run, with delete last");
+assert.match(codexDetailPanel, /leadingIcon="ph:floppy-disk-bold"/, "save action uses a recognizable icon");
+assert.match(codexDetailPanel, /variant="danger-ghost"[\s\S]*Delete/, "delete remains visually separated as a destructive action");
+assert.match(source, /const detailOpen = Boolean\(selectedItem \|\| selectedCodex\)/, "Schedules tracks whether a detail panel is open");
+assert.match(source, /detailOpen \? "hidden md:flex" : "flex"/, "Schedules hides the list on narrow screens while a detail panel is open");
+assert.match(source, /w-full[\s\S]*md:w-\[380px\][\s\S]*md:max-w-\[42vw\]/, "detail panel becomes full-width on narrow screens and a side rail on desktop");
+
 // List rows + detail-panel close buttons show a visible keyboard focus ring.
 assert.ok(source.includes("focus-ring-inset automation-list-row"), "list rows have a focus ring");
-assert.ok(source.includes("focus-ring rounded p-1 transition-colors hover:bg-white/5"), "panel close buttons have a focus ring");
-
-// Reminders bulk-select: the shared multi-select hook + toolbar drive it.
-assert.match(source, /useMultiSelect\(reminderVisible/, "reminders use the shared useMultiSelect hook over the visible rows");
-assert.match(source, /<SelectionToolbar/, "select mode renders the shared SelectionToolbar");
-assert.match(
-  source,
-  /role=\{selectMode \? "checkbox" : undefined\}/,
-  "reminder rows flip from button to checkbox role in select mode",
+assert.match(detailPanelControls, /aria-label="Close"[\s\S]{0,220}rounded-\[var\(--radius-control\)\]/, "panel close buttons have a tokenized focusable hit target");
+assert.match(detailPanelControls, /<Button/, "detail panel actions should use the shared Button primitive");
+assert.doesNotMatch(detailPanelControls, /<button\b/, "detail panel actions should not hand-roll button controls");
+assert.doesNotMatch(
+  detailPanelControls,
+  /rounded-full|rounded-md|rounded-lg|rounded(?=\s|")/,
+  "detail panel actions should use radius tokens instead of hard-coded radii",
 );
-assert.match(source, /aria-checked=\{selectMode \? checked : undefined\}/, "checkbox rows expose aria-checked");
-// The three bulk actions exist and hit the right transitions.
-assert.match(source, /bulkPatchReminders\(\{ status: "dismissed" \}\)/, "bulk Pause dismisses the selected reminders");
-assert.match(source, /bulkPatchReminders\(\{ status: "pending" \}\)/, "bulk Resume re-pends the selected reminders");
-assert.match(source, /const bulkDeleteReminders = \(\) =>/, "bulk Delete is wired (deferred + undoable, no async confirm)");
-assert.match(source, /scheduleDelete\(ids,/, "bulk Delete routes through the deferred useUndoDelete helper");
-// Ephemeral inbox items can't be mutated server-side, so they're filtered out.
-assert.match(source, /\.filter\(\(id\) => !id\.startsWith\("eph:"\)\)/, "bulk actions skip ephemeral (eph:) ids");
+
+// The active Schedules surface is narrowed to Calendar + Crons; reminder bulk
+// selection belongs to the older unified Automations surface.
+assert.match(source, /type AutomationTab = "calendar" \| "crons"/, "Schedules exposes only Calendar and Crons tabs");
+assert.doesNotMatch(source, /<SelectionToolbar/, "Schedules no longer renders reminder bulk-select chrome");
+assert.match(source, /initialTab === "calendar" && calendarSlot \? "calendar" : calendarSlot \? "calendar" : "crons"/, "non-calendar deep links land on Crons");
 
 // ── Polling pauses while hidden + async fetch guards ────────────────────────
 // The 15s list poll + 2.5s in-flight run poll otherwise keep firing in a
@@ -111,7 +132,7 @@ console.log("automations-view.test.ts: ok");
 // per-cron runs fan-out doesn't re-fire.
 assert.match(source, /setItems\(\(prev\) => \(arrayContentEqual\(prev, nextItems\) \? prev : nextItems\)\)/, "inbox poll is content-guarded");
 assert.match(source, /setCodexAutos\(\(prev\) => \(arrayContentEqual\(prev, nextAutos\) \? prev : nextAutos\)\)/, "codex poll is content-guarded");
-assert.match(source, /setFlows\(\(prev\) => \(arrayContentEqual\(prev, nextFlows\) \? prev : nextFlows\)\)/, "flows poll is content-guarded");
+assert.doesNotMatch(source, /setFlows\(|listFlows\(/, "Schedules no longer polls Flow docs");
 assert.match(source, /usePausablePoll\(\(\) => \{ void load\(\); \}, 15_000/, "the 15s poll uses the shared pausable-poll hook");
 // Selected-detail syncs only adopt content changes — a new-but-identical
 // reference would re-fire the form reset (cron) or is pointless churn (reminder).
@@ -127,7 +148,7 @@ assert.match(source, /role="img" aria-label="Paused"/, "status dots carry access
 assert.match(source, /<section aria-labelledby=\{headingId\}/, "list sections are labelled landmarks with real headings");
 assert.match(source, /idPrefix="automations"/, "tabs get ids so the panel can reference them");
 assert.match(source, /role="tabpanel"[\s\S]{0,120}aria-labelledby=\{`automations-tab-\$\{activeTab\}`\}/, "the content region is a labelled tabpanel");
-assert.match(source, /if \(e\.key === "Escape"\) \{[\s\S]{0,120}setNewMenuOpen\(false\);[\s\S]{0,60}newBtnRef\.current\?\.focus\(\)/, "the New menu closes on Escape and returns focus to its trigger");
+assert.match(source, /onClose=\{\(\) => \{ setCreateOpen\(false\); setTemplateInitialValues\(undefined\); \}\}/, "the create dialog closes through one reset path");
 assert.match(source, /window\.setTimeout\(\(\) => newBtnRef\.current\?\.focus\(\), 0\)/, "deletes hand focus somewhere stable instead of dropping it on <body>");
 
 // ── 2026-07-03 audit batch C ──────────────────────────────────────────────────
@@ -138,13 +159,9 @@ assert.match(source, /isReminder \? "Reminder details" : "Activity details"/, "n
 assert.match(source, /\{onEdit && isReminder && \(/, "Edit only renders for reminders");
 assert.match(source, /\{isRecurring && isReminder && \(/, "Stop-repeating only renders for reminders");
 assert.doesNotMatch(source, /\{onEdit && !isDailySummary && \(/, "the old summary-only action gate is gone");
-// Reminder run-now confirms like crons and flows — identical Run buttons on the
-// All tab must not behave differently per type.
+// Reminder run-now confirms like crons; the older Flow/All dispatch surface is
+// intentionally absent from this narrowed schedule page.
 assert.match(source, /This fires the reminder immediately\./, "reminder run-now is confirm-gated");
-assert.match(source, /every type confirms before running/, "runEntry documents the uniform confirm");
-// Pause/resume reaches every tab: flows gain a mutation, the All list dispatches.
-assert.match(source, /const toggleFlowActive = useCallback/, "flows have a pause/resume mutation");
-assert.match(source, /saveFlow\(setFlowActive\(flow, !pausing\)\)/, "flow pause persists via the editor's full-doc save convention");
-assert.match(source, /announce\(`\$\{pausing \? "Paused" : "Resumed"\} '\$\{flow\.name\}'\.`\)/, "flow pause/resume announces");
-assert.match(source, /const togglePauseEntry = useCallback/, "the All list dispatches pause per type");
-assert.match(source, /onTogglePause=\{pausable\(entry\) \? onTogglePause : undefined\}/, "non-pausable entries (daily summaries) hide the control");
+assert.doesNotMatch(source, /const toggleFlowActive = useCallback|saveFlow\(setFlowActive|setFlows\(/, "Flow pause/poll mutations are absent");
+assert.match(source, /runAutomation: runCodexNow/, "cron run-now remains wired");
+assert.match(source, /togglePauseAutomation: toggleCodex/, "cron pause/resume remains wired");

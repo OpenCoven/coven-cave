@@ -21,6 +21,7 @@ import { formatTimestamp, formatClock, readDateTimePrefs, useDateTimePrefs } fro
 import { relativeTimeSigned } from "@/lib/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
@@ -36,8 +37,7 @@ import { useResolvedFamiliars, type ResolvedFamiliar } from "@/lib/familiar-reso
 import { automationMatchesFilter } from "@/lib/familiar-multiselect";
 import { AutomationCreateDialog, type AutomationCreateInput, type AutomationCreateInitialValues } from "@/components/automation-create-dialog";
 import { AUTOMATION_TEMPLATES, TEMPLATE_CATEGORIES, type AutomationTemplate } from "@/lib/automation-templates";
-import { listFlows, runFlow, saveFlow, type FlowDoc } from "@/lib/flows";
-import { setActive as setFlowActive } from "@/lib/flow/flow-doc";
+import type { FlowDoc } from "@/lib/flows";
 import {
   buildAutomationEntries,
   filterEntries,
@@ -79,12 +79,9 @@ function linkLabel(link: LinkRef): string {
   return "Memory";
 }
 
-// The Automations surface unifies three primitives under one typed model:
-// reminders, crons (Codex automations), and flows — plus an Activity
-// feed (the full inbox). "all" shows every automation in one list. "calendar"
-// (only present when a calendarSlot is supplied) hosts the Calendar surface so
-// the two former top-level pages share one schedule view.
-type AutomationTab = "all" | "reminders" | "crons" | "flows" | "activity" | "calendar" | "templates";
+// The active Schedules surface is intentionally narrow: Calendar plus Crons.
+// The broader Automations/Flow experience lives on feature/automations-flow.
+type AutomationTab = "calendar" | "crons";
 
 // Fire a cross-surface navigation so "Open" on a flow jumps to its
 // dedicated editor surface (the Workspace owns setMode; see cave:navigate-mode).
@@ -143,8 +140,39 @@ function FieldLabel({ children }: { children: ReactNode }) {
   );
 }
 
+function CronDetailSection({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3 rounded-[var(--radius-control)] border p-3"
+      style={{ borderColor: "var(--border-hairline)", background: "color-mix(in oklch, var(--bg-base) 72%, transparent)" }}>
+      <div>
+        <h3 className="text-[12px] font-semibold" style={{ color: "var(--text-primary)" }}>{title}</h3>
+        {description ? <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>{description}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function CronSummaryTile({ label, value, tone = "default" }: { label: string; value: ReactNode; tone?: "default" | "active" | "paused" | "danger" }) {
+  const valueColor =
+    tone === "active"
+      ? "oklch(0.75 0.1 150)"
+      : tone === "danger"
+        ? "var(--color-danger)"
+        : tone === "paused"
+          ? "var(--text-muted)"
+          : "var(--text-primary)";
+  return (
+    <div className="rounded-[var(--radius-control)] border px-3 py-2"
+      style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}>
+      <p className="text-[9px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>{label}</p>
+      <div className="mt-1 min-w-0 truncate text-[12px] font-medium" style={{ color: valueColor }}>{value}</div>
+    </div>
+  );
+}
+
 const automationFieldBaseClass =
-  "w-full rounded-md border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
+  "w-full rounded-[var(--radius-control)] border bg-[var(--bg-base)] text-[var(--text-primary)] outline-none transition-colors focus:border-[var(--border-strong)]";
 const automationInputClass = `${automationFieldBaseClass} h-8 px-2 text-[12px]`;
 const automationSelectClass = `${automationFieldBaseClass} h-8 px-2 text-[12px]`;
 const automationTextareaClass = `${automationFieldBaseClass} resize-y px-2 py-2 text-[12px] leading-relaxed`;
@@ -228,11 +256,14 @@ function DetailPanel({
         <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
           {isDailySummary ? "Daily summary details" : isReminder ? "Reminder details" : "Activity details"}
         </h2>
-        <button type="button" onClick={onClose} aria-label="Close"
-          className="focus-ring rounded p-1 transition-colors hover:bg-white/5"
-          style={{ color: "var(--text-muted)" }}>
-          <Icon name="ph:x" width={14} aria-hidden />
-        </button>
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={onClose}
+          aria-label="Close"
+          className="rounded-[var(--radius-control)] p-1 text-[var(--text-muted)] transition-colors hover:bg-white/5"
+          leadingIcon="ph:x"
+        />
       </div>
 
       {/* Body */}
@@ -298,7 +329,7 @@ function DetailPanel({
           <div>
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
               style={{ color: "var(--text-muted)" }}>Familiar</p>
-            <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px]"
+            <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] px-2.5 py-1 text-[11px]"
               style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}>
               {familiarLabel(item.familiarId)}
             </span>
@@ -309,15 +340,16 @@ function DetailPanel({
           <div>
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-widest"
               style={{ color: "var(--text-muted)" }}>Link</p>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="xs"
+              leadingIcon="ph:link"
               onClick={() => item.link && onOpenLink?.(item.link)}
-              className="focus-ring inline-flex max-w-full items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] transition-colors hover:bg-white/5"
+              className="max-w-full rounded-[var(--radius-control)] px-2.5 py-1 text-[11px] transition-colors hover:bg-white/5"
               style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}
             >
-              <Icon name="ph:link" width={12} className="shrink-0" />
               <span className="truncate">{linkLabel(item.link)}</span>
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -326,39 +358,63 @@ function DetailPanel({
       <div className="border-t px-5 py-4 space-y-2"
         style={{ borderColor: "var(--border-hairline)" }}>
         {onEdit && isReminder && (
-          <button type="button" disabled={busy} onClick={() => onEdit(item)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
-            style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
-            <Icon name="ph:pencil-simple" width={13} />
+          <Button
+            variant="secondary"
+            fullWidth
+            disabled={busy}
+            onClick={() => onEdit(item)}
+            className="justify-center rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
+            style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+            leadingIcon="ph:pencil-simple"
+          >
             Edit
-          </button>
+          </Button>
         )}
         {isReminder && (
           <>
-            <button type="button" disabled={busy || paused} onClick={() => runNow(item.id)}
-              className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
-              style={{ background: "var(--accent-presence)" }}>
+            <Button
+              variant="primary"
+              fullWidth
+              disabled={busy || paused}
+              onClick={() => runNow(item.id)}
+              className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
+            >
               Run now
-            </button>
-            <button type="button" disabled={busy} onClick={() => togglePaused(item)}
-              className="w-full rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
-              style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
+            </Button>
+            <Button
+              variant="secondary"
+              fullWidth
+              disabled={busy}
+              onClick={() => togglePaused(item)}
+              className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
+              style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+            >
               {paused ? "Resume" : "Pause"}
-            </button>
+            </Button>
           </>
         )}
         {isRecurring && isReminder && (
-          <button type="button" disabled={busy} onClick={() => stopRecurrence(item.id)}
-            className="w-full rounded-lg border py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
-            style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}>
+          <Button
+            variant="secondary"
+            fullWidth
+            disabled={busy}
+            onClick={() => stopRecurrence(item.id)}
+            className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
+            style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
+          >
             Stop repeating
-          </button>
+          </Button>
         )}
-        <button type="button" disabled={busy} onClick={() => removeItem(item.id)}
-          className="w-full rounded-lg py-2 text-[12px] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40"
-          style={{ color: "oklch(0.65 0.18 20)" }}>
+        <Button
+          variant="danger-ghost"
+          fullWidth
+          disabled={busy}
+          onClick={() => removeItem(item.id)}
+          className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-red-900/20 disabled:opacity-40"
+          style={{ color: "oklch(0.65 0.18 20)" }}
+        >
           Delete
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -381,16 +437,17 @@ const ScheduleActionsContext = createContext<ScheduleActions | null>(null);
 // row's own button (never nested), so a click can't also open the detail panel.
 function RowActionButton({ icon, label, text, onClick }: { icon: IconName; label: string; text: string; onClick: () => void }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="xs"
       aria-label={label}
       onClick={onClick}
-      className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10"
+      className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10"
       style={{ color: "var(--text-secondary)" }}
+      leadingIcon={icon}
     >
-      <Icon name={icon} width={11} aria-hidden />
       {text}
-    </button>
+    </Button>
   );
 }
 
@@ -719,74 +776,128 @@ function CodexDetailPanel({
       skill_path: skillPath.trim(),
     });
   };
+  const latestRun = runs[0];
+  const latestRunLabel = latestRun
+    ? `${latestRun.status} ${relTime(latestRun.startedAt)}`
+    : "No runs yet";
 
   return (
     <div className="flex h-full flex-col"
       style={{ background: "var(--bg-raised)", borderLeft: "1px solid var(--border-hairline)" }}>
-      {/* Header */}
-      <div className="flex items-center justify-between border-b px-5 py-3"
+      <div className="border-b px-5 py-4"
         style={{ borderColor: "var(--border-hairline)" }}>
-        <h2 className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
-          Automation details
-        </h2>
-        <button type="button" onClick={onClose} aria-label="Close"
-          className="focus-ring rounded p-1 transition-colors hover:bg-white/5"
-          style={{ color: "var(--text-muted)" }}>
-          <Icon name="ph:x" width={14} aria-hidden />
-        </button>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+              Cron details
+            </p>
+            <h2 className="mt-1 truncate text-[15px] font-semibold" style={{ color: "var(--text-primary)" }}>
+              {name.trim() || auto.name}
+            </h2>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius-control)] border px-2 py-1 text-[11px] font-medium"
+              style={{
+                borderColor: isActive ? "color-mix(in oklch, var(--accent-presence) 45%, transparent)" : "var(--border-hairline)",
+                background: isActive ? "color-mix(in oklch, var(--accent-presence) 14%, transparent)" : "var(--bg-base)",
+                color: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)",
+              }}
+            >
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }} />
+              {isActive ? "Active" : "Paused"}
+            </span>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-white/5"
+              leadingIcon="ph:x"
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Body */}
       <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-        <div>
-          <FieldLabel>Name</FieldLabel>
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            className={automationInputClass}
-            style={fieldStyle}
-          />
+        <div className="cron-detail-summary-grid grid grid-cols-2 gap-2">
+          <CronSummaryTile label="Schedule" value={auto.scheduleHuman || nextRrule || "Not scheduled"} tone={invalidSchedule ? "danger" : "default"} />
+          <CronSummaryTile label="Status" value={isActive ? "Active" : "Paused"} tone={isActive ? "active" : "paused"} />
+          <CronSummaryTile label="Model" value={model.trim() || "Default"} />
+          <CronSummaryTile label="Last run" value={latestRunLabel} tone={latestRun?.status === "failed" ? "danger" : "default"} />
         </div>
 
-        <div>
-          <FieldLabel>Goals</FieldLabel>
-          <textarea
-            value={goals}
-            onChange={(event) => setGoals(event.target.value)}
-            rows={6}
-            className={automationTextareaClass}
-            style={fieldStyle}
-          />
-        </div>
+        <CronDetailSection title="Identity" description="Name and labels used to recognize this cron in Schedules.">
+          <div>
+            <FieldLabel>Name</FieldLabel>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className={automationInputClass}
+              style={fieldStyle}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <FieldLabel>Tags</FieldLabel>
+              <input
+                value={tagsText}
+                onChange={(event) => setTagsText(event.target.value)}
+                className={automationInputClass}
+                style={fieldStyle}
+              />
+            </div>
+            <div>
+              <FieldLabel>Skill</FieldLabel>
+              <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
+            </div>
+          </div>
+        </CronDetailSection>
 
-        <div>
-          <FieldLabel>Deliverables</FieldLabel>
-          <textarea
-            value={deliverables}
-            onChange={(event) => setDeliverables(event.target.value)}
-            rows={5}
-            className={automationTextareaClass}
-            style={fieldStyle}
-          />
-        </div>
+        <CronDetailSection title="Instructions" description="What the cron should do and what output it should leave behind.">
+          <div>
+            <FieldLabel>Goals</FieldLabel>
+            <textarea
+              value={goals}
+              onChange={(event) => setGoals(event.target.value)}
+              rows={5}
+              className={automationTextareaClass}
+              style={fieldStyle}
+            />
+          </div>
+          <div>
+            <FieldLabel>Deliverables</FieldLabel>
+            <textarea
+              value={deliverables}
+              onChange={(event) => setDeliverables(event.target.value)}
+              rows={4}
+              className={automationTextareaClass}
+              style={fieldStyle}
+            />
+          </div>
+        </CronDetailSection>
 
-        <div>
-          <FieldLabel>Schedule</FieldLabel>
-          <div className="mb-2 inline-flex rounded-md border p-0.5"
-            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}>
+        <CronDetailSection title="Schedule" description="Choose the cadence first; use raw RRULE only when the presets are too narrow.">
+          <div className="inline-flex rounded-[var(--radius-control)] border p-0.5"
+            style={{ borderColor: "var(--border-hairline)", background: "var(--bg-base)" }}
+            role="group"
+            aria-label="Schedule mode"
+          >
             {(["weekly", "daily", "raw"] as const).map((mode) => (
-              <button
+              <Button
                 key={mode}
-                type="button"
+                variant="ghost"
+                size="xs"
                 onClick={() => setScheduleMode(mode)}
-                className="rounded px-2 py-1 text-[11px] capitalize transition-colors"
+                aria-pressed={scheduleMode === mode}
+                className="rounded-[var(--radius-control)] px-2 py-1 text-[11px] capitalize"
                 style={{
                   background: scheduleMode === mode ? "rgba(255,255,255,0.08)" : "transparent",
                   color: scheduleMode === mode ? "var(--text-primary)" : "var(--text-muted)",
                 }}
               >
                 {mode}
-              </button>
+              </Button>
             ))}
           </div>
 
@@ -801,15 +912,17 @@ function CodexDetailPanel({
           ) : (
             <div className="space-y-3">
               {scheduleMode === "weekly" && (
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Days of week">
                   {RRULE_DAY_ORDER.map((day) => {
                     const selected = scheduleDays.includes(day);
                     return (
-                      <button
+                      <Button
                         key={day}
-                        type="button"
+                        variant="ghost"
+                        size="xs"
                         onClick={() => toggleDay(day)}
-                        className="rounded-md border px-2 py-1 text-[11px] transition-colors"
+                        aria-pressed={selected}
+                        className="rounded-[var(--radius-control)] border px-2 py-1 text-[11px]"
                         style={{
                           background: selected ? "color-mix(in oklch, var(--accent-presence) 18%, transparent)" : "var(--bg-base)",
                           borderColor: selected ? "color-mix(in oklch, var(--accent-presence) 50%, transparent)" : "var(--border-hairline)",
@@ -817,7 +930,7 @@ function CodexDetailPanel({
                         }}
                       >
                         {RRULE_DAY_LABEL[day]}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
@@ -834,54 +947,54 @@ function CodexDetailPanel({
           <p className="mt-2 break-all font-mono text-[10px]" style={{ color: invalidSchedule ? "oklch(0.7 0.16 35)" : "var(--text-muted)" }}>
             {nextRrule || "RRULE required"}
           </p>
-        </div>
+        </CronDetailSection>
 
-        <div className="grid grid-cols-1 gap-4">
-          <div>
-            <FieldLabel>Status</FieldLabel>
-            <p className="text-[12px]" style={{ color: isActive ? "oklch(0.75 0.1 150)" : "var(--text-muted)" }}>
-              {isActive ? "Active" : "Paused"}
-            </p>
-          </div>
-          <div>
-            <FieldLabel>Model</FieldLabel>
-            <input
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-              className={automationInputClass}
-              style={fieldStyle}
-            />
-          </div>
-          <div>
-            <FieldLabel>Reasoning</FieldLabel>
-            <select
-              value={reasoningEffort}
-              onChange={(event) => setReasoningEffort(event.target.value)}
-              className={automationSelectClass}
-              style={fieldStyle}
-            >
-              {!["low", "medium", "high"].includes(reasoningEffort) && (
-                <option value={reasoningEffort}>{reasoningEffort}</option>
-              )}
-              <option value="low">low</option>
-              <option value="medium">medium</option>
-              <option value="high">high</option>
-            </select>
-          </div>
-          <div>
-            <FieldLabel>Environment</FieldLabel>
-            <select
-              value={executionEnvironment}
-              onChange={(event) => setExecutionEnvironment(event.target.value)}
-              className={automationSelectClass}
-              style={fieldStyle}
-            >
-              {!["worktree", "repo"].includes(executionEnvironment) && (
-                <option value={executionEnvironment}>{executionEnvironment}</option>
-              )}
-              <option value="worktree">worktree</option>
-              <option value="repo">repo</option>
-            </select>
+        <CronDetailSection title="Runtime" description="Where the cron runs and which model settings it should use.">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <FieldLabel>Model</FieldLabel>
+              <input
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                className={automationInputClass}
+                style={fieldStyle}
+              />
+            </div>
+            <div>
+              <FieldLabel>Reasoning</FieldLabel>
+              <StandardSelect
+                label="Reasoning"
+                value={reasoningEffort}
+                onChange={setReasoningEffort}
+                className={automationSelectClass}
+                style={fieldStyle}
+                options={[
+                  ...(!["low", "medium", "high"].includes(reasoningEffort)
+                    ? [{ value: reasoningEffort, label: reasoningEffort }]
+                    : []),
+                  { value: "low", label: "low" },
+                  { value: "medium", label: "medium" },
+                  { value: "high", label: "high" },
+                ]}
+              />
+            </div>
+            <div>
+              <FieldLabel>Environment</FieldLabel>
+              <StandardSelect
+                label="Environment"
+                value={executionEnvironment}
+                onChange={setExecutionEnvironment}
+                className={automationSelectClass}
+                style={fieldStyle}
+                options={[
+                  ...(!["worktree", "repo"].includes(executionEnvironment)
+                    ? [{ value: executionEnvironment, label: executionEnvironment }]
+                    : []),
+                  { value: "worktree", label: "worktree" },
+                  { value: "repo", label: "repo" },
+                ]}
+              />
+            </div>
           </div>
           <div>
             <FieldLabel>Working directories</FieldLabel>
@@ -893,35 +1006,21 @@ function CodexDetailPanel({
               fieldStyle={fieldStyle}
             />
           </div>
-
-          <div>
-            <FieldLabel>Tags</FieldLabel>
-            <input
-              value={tagsText}
-              onChange={(event) => setTagsText(event.target.value)}
-              className={automationInputClass}
-              style={fieldStyle}
-            />
-          </div>
-          <div>
-            <FieldLabel>Skill</FieldLabel>
-            <SkillSelect value={skillPath || null} onChange={(p) => setSkillPath(p ?? "")} className={automationSelectClass} />
-          </div>
-        </div>
+        </CronDetailSection>
 
         {runs.length > 0 && (
-          <div>
-            <FieldLabel>Recent runs</FieldLabel>
+          <CronDetailSection title="Recent runs" description="Open a run to inspect its log without leaving this cron.">
             <ul className="mt-1 space-y-1">
               {runs.slice(0, 10).map((r) => (
                 <li key={r.id}>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="xs"
                     onClick={() => void toggleRunLog(r.id)}
                     aria-expanded={openRunId === r.id}
                     aria-controls={`automation-run-log-${r.id}`}
                     aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
-                    className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-[12px] hover:bg-white/5"
+                    className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[12px] hover:bg-white/5"
                   >
                     <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: runStatusColor(r.status) }} />
                     <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
@@ -929,11 +1028,11 @@ function CodexDetailPanel({
                     <span aria-hidden className="ml-auto shrink-0" style={{ color: "var(--text-muted)", lineHeight: 0 }}>
                       <Icon name={openRunId === r.id ? "ph:caret-down" : "ph:caret-right"} width={11} />
                     </span>
-                  </button>
+                  </Button>
                   {openRunId === r.id && (
                     <pre
                       id={`automation-run-log-${r.id}`}
-                      className="mt-1 max-h-48 overflow-auto rounded bg-[var(--bg-base)] p-2 text-[10px] leading-snug"
+                      className="mt-1 max-h-48 overflow-auto rounded-[var(--radius-control)] bg-[var(--bg-base)] p-2 text-[10px] leading-snug"
                       style={{ color: "var(--text-muted)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}
                     >
                       {runLogLoading ? "Loading…" : (runLog || "(empty log)")}
@@ -942,48 +1041,58 @@ function CodexDetailPanel({
                 </li>
               ))}
             </ul>
-          </div>
+          </CronDetailSection>
         )}
       </div>
 
-      {/* Actions */}
-      <div className="border-t px-5 py-4 space-y-2"
+      <div className="cron-detail-actions border-t px-5 py-4 space-y-3"
         style={{ borderColor: "var(--border-hairline)" }}>
-        <button type="button" disabled={busy} onClick={() => onRun(auto)}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium hover:bg-white/5 disabled:opacity-50">
-          <Icon name="ph:play" width={13} /> Run now
-        </button>
         {saveBlockedReason ? (
           <p className="text-[11px]" style={{ color: "oklch(0.7 0.16 35)" }} role="alert">
             {saveBlockedReason}
           </p>
         ) : null}
-        <button
-          type="button"
+        <Button
+          variant="primary"
+          fullWidth
           disabled={!canSave}
           onClick={save}
-          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
-          style={{ background: "var(--accent-presence)" }}
+          className="justify-center rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors disabled:opacity-40"
+          leadingIcon="ph:floppy-disk-bold"
         >
           {busy ? "Saving..." : "Save changes"}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onToggle(auto)}
-          className="w-full rounded-lg py-2 text-[12px] font-medium text-white transition-colors disabled:opacity-40"
-          style={{ background: isActive ? "oklch(0.45 0.12 20)" : "var(--accent-presence)" }}
-        >
-          {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onDelete(auto)}
-          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-medium text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_12%,transparent)] disabled:opacity-50"
-        >
-          <Icon name="ph:trash" width={13} /> Delete
-        </button>
+        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => onRun(auto)}
+            className="justify-center rounded-[var(--radius-control)] text-[12px] font-medium"
+            leadingIcon="ph:play"
+          >
+            Run now
+          </Button>
+          <Button
+            variant={isActive ? "danger" : "secondary"}
+            disabled={busy}
+            onClick={() => onToggle(auto)}
+            className="justify-center rounded-[var(--radius-control)] text-[12px] font-medium"
+            leadingIcon={isActive ? "ph:pause" : "ph:play"}
+          >
+            {busy ? (isActive ? "Pausing…" : "Activating…") : (isActive ? "Pause" : "Activate")}
+          </Button>
+        </div>
+        <div className="border-t pt-3" style={{ borderColor: "var(--border-hairline)" }}>
+          <Button
+            variant="danger-ghost"
+            disabled={busy}
+            onClick={() => onDelete(auto)}
+            className="rounded-[var(--radius-control)] text-[12px] font-medium"
+            leadingIcon="ph:trash"
+          >
+            Delete
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -1653,7 +1762,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<InboxItem[]>([]);
   const [codexAutos, setCodexAutos] = useState<CodexAutomation[]>([]);
-  const [flows, setFlows] = useState<FlowDoc[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -1665,7 +1773,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   // otherwise it falls to <body> and keyboard users lose their place.
   const newBtnRef = useRef<HTMLButtonElement | null>(null);
   const [activeTab, setActiveTab] = useState<AutomationTab>(
-    initialTab && (initialTab !== "calendar" || calendarSlot) ? initialTab : "all",
+    initialTab === "calendar" && calendarSlot ? "calendar" : calendarSlot ? "calendar" : "crons",
   );
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   // Selected item is either an InboxItem or a CodexAutomation — track by kind
@@ -1687,10 +1795,9 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
 
   const load = useCallback(async () => {
     try {
-      const [inboxRes, codexRes, flowRes] = await Promise.all([
+      const [inboxRes, codexRes] = await Promise.all([
         fetch("/api/inbox", { cache: "no-store" }),
         fetch("/api/codex-automations", { cache: "no-store" }),
-        listFlows().catch(() => ({ ok: false, flows: [] })),
       ]);
       const inboxJson = await inboxRes.json();
       if (!mountedRef.current) return;
@@ -1706,12 +1813,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       if (codexJson.ok) {
         const nextAutos = codexJson.automations ?? [];
         setCodexAutos((prev) => (arrayContentEqual(prev, nextAutos) ? prev : nextAutos));
-      }
-      // Flows are best-effort: a missing daemon/store shouldn't blank the whole
-      // surface, just drop Flow rows from the list.
-      if (flowRes.ok) {
-        const nextFlows = flowRes.flows ?? [];
-        setFlows((prev) => (arrayContentEqual(prev, nextFlows) ? prev : nextFlows));
       }
       setError(null);
     } catch (err) {
@@ -1987,45 +2088,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     }
   }, [load]);
 
-  // ── Flows ───────────────────────────────────────────────────────────────
-  // Cave has no native execution engine, so "run" is daemon-first and returns
-  // { unavailable: true } when the daemon is offline rather than faking a run.
-  const runFlowNow = useCallback(async (flow: FlowDoc) => {
-    if (!(await confirm({ title: `Run “${flow.name}”?`, body: "This spawns an agent session to execute the flow graph.", confirmLabel: "Run" }))) return;
-    setBusyId(`flow:${flow.id}`);
-    try {
-      const res = await runFlow(flow.id);
-      if (res.unavailable) { setError("Flows run through the Coven daemon — it isn't reachable right now."); return; }
-      if (!res.ok) throw new Error(res.error ?? "run failed");
-      announce(`Run started for '${flow.name}'.`);
-      if (res.sessionId) onOpenSession?.(res.sessionId, null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "flow run failed");
-    } finally {
-      setBusyId(null);
-    }
-  }, [confirm, onOpenSession]);
-
-  // Pause/resume a flow. Production triggers only fire while `active`; the flow
-  // editor persists the same full-doc save, so this mirrors its convention.
-  const toggleFlowActive = useCallback(async (flow: FlowDoc) => {
-    const pausing = flow.active;
-    setBusyId(`flow:${flow.id}`);
-    try {
-      const res = await saveFlow(setFlowActive(flow, !pausing));
-      if (!res.ok || !res.flow) throw new Error(res.error ?? "save failed");
-      announce(`${pausing ? "Paused" : "Resumed"} '${flow.name}'.`);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "flow save failed");
-    } finally {
-      setBusyId(null);
-    }
-  }, [load]);
-
   // "Open" routes to each type's dedicated editor surface.
   const openEntry = useCallback((entry: AutomationEntry) => {
-    if (entry.type === "flow") { navigateToMode("flow"); return; }
     // reminders + crons are edited inline here — select their detail panel.
     if (entry.type === "reminder") {
       const item = items.find((i) => i.id === entry.nativeId);
@@ -2043,13 +2107,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     if (entry.type === "cron") {
       const auto = codexAutos.find((a) => a.id === entry.nativeId);
       if (auto) void runCodexNow(auto);
-      return;
     }
-    if (entry.type === "flow") {
-      const flow = flows.find((f) => f.id === entry.nativeId);
-      if (flow) void runFlowNow(flow);
-    }
-  }, [codexAutos, flows, runNow, runCodexNow, runFlowNow]);
+  }, [codexAutos, runNow, runCodexNow]);
 
   // Pause/resume any entry from the "All" list, mirroring runEntry's dispatch.
   const togglePauseEntry = useCallback((entry: AutomationEntry) => {
@@ -2061,13 +2120,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     if (entry.type === "cron") {
       const auto = codexAutos.find((a) => a.id === entry.nativeId);
       if (auto) void toggleCodex(auto);
-      return;
     }
-    if (entry.type === "flow") {
-      const flow = flows.find((f) => f.id === entry.nativeId);
-      if (flow) void toggleFlowActive(flow);
-    }
-  }, [items, codexAutos, flows, togglePaused, toggleCodex, toggleFlowActive]);
+  }, [items, codexAutos, togglePaused, toggleCodex]);
 
   // Daily summaries ride the reminder pipeline into the All list but aren't
   // pausable (the Reminders tab applies the same gate) — hide the control.
@@ -2208,51 +2262,18 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
   const inboxEmpty = items.length === 0;
   const selectedReminderId = selectedItem?.id ?? null;
   const selectedAutomationId = selectedCodex?.id ?? null;
-
-  // ── Unified entries (the "All" tab) ─────────────────────────────────────
-  // Every automation primitive normalized into one typed, recency-sorted list.
-  // Reminders are the schedule-shaped subset (no raw inbox notifications), so
-  // the All list reads as "things you've set up" rather than a notification feed.
-  const allEntries = useMemo(
-    () =>
-      filterEntries(
-        buildAutomationEntries({
-          reminders: items.filter((it) => isScheduleInboxItem(it) && !hiddenIds.has(it.id)),
-          crons: codexAutos.filter((a) => !hiddenIds.has(a.id)),
-          flows,
-        }),
-        q,
-      ),
-    [items, codexAutos, flows, hiddenIds, q],
-  );
-  const typeCounts = useMemo(
-    () =>
-      countByType(
-        buildAutomationEntries({
-          reminders: items.filter(isScheduleInboxItem),
-          crons: codexAutos,
-          flows,
-        }),
-      ),
-    [items, codexAutos, flows],
-  );
+  const detailOpen = Boolean(selectedItem || selectedCodex);
 
   // At-a-glance operational summary for the header: how many automations are
-  // live vs paused, and when the soonest known fire is (reminders carry
-  // nextFireAt; crons/flows fire server-side so they don't contribute a time).
+  // live vs paused. Crons fire server-side, so they don't contribute a next-fire
+  // timestamp in this narrowed Calendar/Crons surface.
   const summary = useMemo(() => {
-    let active = 0;
-    let paused = 0;
-    let soonest: string | undefined;
-    for (const entry of allEntries) {
-      if (entry.state === "paused") paused += 1;
-      else active += 1;
-      if (entry.state === "active" && entry.nextFireAt && (!soonest || entry.nextFireAt < soonest)) {
-        soonest = entry.nextFireAt;
-      }
-    }
-    return { active, paused, soonest };
-  }, [allEntries]);
+    return {
+      active: codexActive.length,
+      paused: codexPaused.length,
+      soonest: undefined as string | undefined,
+    };
+  }, [codexActive.length, codexPaused.length]);
 
   const selectTab = (tab: AutomationTab) => {
     setActiveTab(tab);
@@ -2273,19 +2294,17 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
     >
     <section className="flex h-full" style={{ background: "var(--bg-base)" }}>
       {/* ── Main list ──────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-w-0 flex-col">
+      <div className={`${detailOpen ? "hidden md:flex" : "flex"} flex-1 min-w-0 flex-col`}>
         {/* Page header */}
         <div className="flex items-center justify-between px-8 pt-8 pb-5">
           <div>
             <h1 className="text-[22px] font-semibold" style={{ color: "var(--text-primary)" }}>
-              Automations
+              Schedules
             </h1>
             <p className="mt-0.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
               {activeTab === "calendar"
-                ? "Your reminders, crons, and deadlines on a calendar."
-                : activeTab === "templates"
-                  ? "Start with a scheduled task template."
-                  : "Reminders, crons, and flows — everything that runs for you, in one place."}
+                ? "Calendar deadlines and cron schedules in one place."
+                : "Recurring cron schedules that run your familiar workflows."}
             </p>
             {activeTab !== "calendar" && initialLoadDone && summary.active + summary.paused > 0 && (
               <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -2301,94 +2320,24 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             )}
           </div>
           <div className="flex items-center gap-2">
-            {activeTab === "reminders" && !remindersEmpty && !reminderSelect.selectMode && (
-              <button
-                type="button"
-                onClick={() => reminderSelect.setSelectMode(true)}
-                className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium whitespace-nowrap transition-colors hover:bg-white/5"
-                style={{ background: "var(--bg-raised)", border: "1px solid var(--border-hairline)", color: "var(--text-primary)" }}
-              >
-                <Icon name="ph:check-square" width={13} />
-                Select
-              </button>
-            )}
-            {/* Typed "New" menu — one entry point for the automation types. */}
-            <div className="relative">
-              <Button ref={newBtnRef} className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setNewMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={newMenuOpen}>
-                New
-                <span style={{ display: "flex" }}><Icon name="ph:caret-down" width={11} /></span>
+            {activeTab === "crons" ? (
+              <Button ref={newBtnRef} className="automation-create-chat-btn" leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>
+                New cron
               </Button>
-              {newMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setNewMenuOpen(false)} aria-hidden />
-                  <div
-                    role="menu"
-                    className="absolute right-0 z-50 mt-1.5 w-[260px] overflow-hidden rounded-xl py-1 shadow-xl"
-                    style={{ background: "var(--bg-raised)", border: "1px solid var(--border-hairline)" }}
-                    // role=menu promises menu keyboard behavior: Escape closes
-                    // (focus returns to the trigger), arrows rove the items,
-                    // and focus moves into the menu on open (ref below).
-                    ref={(el) => { if (el && !el.contains(document.activeElement)) el.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')?.focus(); }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        e.preventDefault();
-                        setNewMenuOpen(false);
-                        newBtnRef.current?.focus();
-                        return;
-                      }
-                      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-                      e.preventDefault();
-                      const menu = e.currentTarget;
-                      const focusable = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])')];
-                      const idx = focusable.indexOf(document.activeElement as HTMLElement);
-                      const next = focusable[(idx + (e.key === "ArrowDown" ? 1 : -1) + focusable.length) % focusable.length];
-                      next?.focus();
-                    }}
-                  >
-                    <NewMenuItem
-                      icon={AUTOMATION_TYPE_META.reminder.icon}
-                      accent={AUTOMATION_TYPE_META.reminder.accent}
-                      label="Reminder"
-                      blurb={AUTOMATION_TYPE_META.reminder.blurb}
-                      disabled={!onNewReminder}
-                      onClick={() => { setNewMenuOpen(false); onNewReminder?.(); }}
-                    />
-                    <NewMenuItem
-                      icon={AUTOMATION_TYPE_META.cron.icon}
-                      accent={AUTOMATION_TYPE_META.cron.accent}
-                      label="Cron"
-                      blurb={AUTOMATION_TYPE_META.cron.blurb}
-                      onClick={() => { setNewMenuOpen(false); setCreateOpen(true); }}
-                    />
-                    <NewMenuItem
-                      icon={AUTOMATION_TYPE_META.flow.icon}
-                      accent={AUTOMATION_TYPE_META.flow.accent}
-                      label="Flow"
-                      blurb={AUTOMATION_TYPE_META.flow.blurb}
-                      onClick={() => { setNewMenuOpen(false); navigateToMode("flow"); }}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
+            ) : null}
           </div>
         </div>
 
         <div className="px-8 pb-4">
           <Tabs
             variant="segment"
-            ariaLabel="Automations tabs"
+            ariaLabel="Schedules tabs"
             idPrefix="automations"
             value={activeTab}
             onChange={selectTab}
             items={[
               ...(calendarSlot ? [{ id: "calendar" as const, label: "Calendar" }] : []),
-              { id: "all", label: "All", count: allEntries.length },
-              { id: "reminders", label: "Reminders", count: typeCounts.reminder },
-              { id: "crons", label: "Crons", count: typeCounts.cron },
-              { id: "flows", label: "Flows", count: typeCounts.flow },
-              { id: "activity", label: "Activity", count: items.length },
-              { id: "templates", label: "Templates" },
+              { id: "crons", label: "Crons", count: codexAutos.length },
             ] satisfies TabItem<AutomationTab>[]}
           />
         </div>
@@ -2396,25 +2345,15 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
         {/* Text filter for the active tab. Gated on the UNfiltered presence of
             rows so filtering to zero never hides the box (you can still clear). */}
         {activeTab !== "calendar" && initialLoadDone && !reminderSelect.selectMode && (
-          activeTab === "all" ? typeCounts.reminder + typeCounts.cron + typeCounts.flow > 0
-          : activeTab === "activity" ? items.length > 0
-          : activeTab === "crons" ? codexAutos.length > 0
-          : activeTab === "flows" ? flows.length > 0
-          : items.some(isScheduleInboxItem)
+          codexAutos.length > 0
         ) ? (
           <div className="px-8 pb-4">
             <SearchInput
               value={query}
               onValueChange={setQuery}
               onClear={() => setQuery("")}
-              placeholder={
-                activeTab === "all" ? "Filter automations…"
-                : activeTab === "crons" ? "Filter crons…"
-                : activeTab === "flows" ? "Filter flows…"
-                : activeTab === "activity" ? "Filter activity…"
-                : "Filter reminders…"
-              }
-              aria-label="Filter automations"
+              placeholder="Filter crons…"
+              aria-label="Filter crons"
             />
           </div>
         ) : null}
@@ -2444,22 +2383,6 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
           className={activeTab === "calendar" ? "flex-1 min-h-0 overflow-hidden" : "flex-1 overflow-y-auto px-8 pb-8"}>
           {activeTab === "calendar" ? (
             calendarSlot
-          ) : activeTab === "templates" ? (
-            <TemplatesPanel
-              query={templatesQuery}
-              onQueryChange={setTemplatesQuery}
-              onSelect={(tpl) => {
-                setTemplateInitialValues({
-                  name: tpl.name,
-                  scheduleMode: tpl.scheduleMode,
-                  time: tpl.time,
-                  days: tpl.days,
-                  rawRrule: tpl.rawRrule,
-                  goals: tpl.goals,
-                });
-                setCreateOpen(true);
-              }}
-            />
           ) : !initialLoadDone ? (
             <div className="space-y-2 pt-2">
               {Array.from({ length: 5 }).map((_, index) => (
@@ -2469,39 +2392,12 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
                 />
               ))}
             </div>
-          ) : q && (
-            (activeTab === "all" && allEntries.length === 0) ||
-            (activeTab === "reminders" && remindersEmpty) ||
-            (activeTab === "crons" && codexActive.length + codexPaused.length === 0) ||
-            (activeTab === "flows" && flows.filter((f) => (f.name || "").toLowerCase().includes(q)).length === 0) ||
-            (activeTab === "activity" && inboxFeed.needsYou.length + inboxFeed.active.length + inboxFeed.resolved.length === 0)
-          ) ? (
+          ) : q && codexActive.length + codexPaused.length === 0 ? (
             <EmptyState
               className="mt-12"
               icon="ph:magnifying-glass"
               headline={`No matches for “${query.trim()}”`}
               subtitle="Try a different search term."
-            />
-          ) : activeTab === "all" && allEntries.length === 0 ? (
-            <EmptyState
-              className="mt-12"
-              icon="ph:lightning-bold"
-              headline="No automations yet"
-              subtitle="Reminders, crons, and flows all live here. Use “New” to create one."
-            />
-          ) : activeTab === "reminders" && remindersEmpty ? (
-            <EmptyState
-              className="mt-12"
-              icon="ph:bell"
-              headline="No reminders yet"
-              subtitle="Reminders nudge you or a familiar at a scheduled time."
-              actions={
-                onNewReminder ? (
-                  <Button leadingIcon="ph:plus" onClick={onNewReminder}>
-                    Create via chat
-                  </Button>
-                ) : undefined
-              }
             />
           ) : activeTab === "crons" && automationsEmpty ? (
             <EmptyState
@@ -2511,123 +2407,27 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
               subtitle="A cron runs a familiar on a recurring schedule — set one up to get started."
               actions={<Button leadingIcon="ph:plus" onClick={() => setCreateOpen(true)}>New cron</Button>}
             />
-          ) : activeTab === "flows" && flows.length === 0 ? (
-            <EmptyState
-              className="mt-12"
-              icon="ph:flow-arrow"
-              headline="No flows yet"
-              subtitle="Flows are freeform node graphs you wire on a canvas."
-              actions={<Button leadingIcon="ph:arrow-square-out" onClick={() => navigateToMode("flow")}>Open Flow editor</Button>}
-            />
-          ) : activeTab === "activity" && inboxEmpty ? (
-            <EmptyState
-              className="mt-12"
-              icon="ph:tray"
-              headline="Nothing in your activity feed"
-              subtitle="Fired reminders, responses, and agent notifications all land here."
-            />
           ) : (
             <>
-              {activeTab === "all" ? (
-                <AutomationAllList
-                  entries={allEntries}
-                  busyId={busyId}
-                  familiarLabel={familiarLabel}
-                  onRun={runEntry}
-                  onOpen={openEntry}
-                  onTogglePause={togglePauseEntry}
-                  pausable={entryPausable}
+              {resolvedFamiliars.length > 0 && (
+                <FamiliarMultiSelect
+                  familiars={resolvedFamiliars}
+                  selected={familiarFilter}
+                  onChange={updateFamiliarFilter}
                 />
-              ) : activeTab === "reminders" ? (
-                <>
-                  {reminderSelect.selectMode && (
-                    <SelectionToolbar
-                      allSelected={reminderSelect.allSelected(reminderVisible)}
-                      count={reminderSelect.selectedCount}
-                      onToggleSelectAll={() => reminderSelect.toggleSelectAll(reminderVisible)}
-                      onCancel={reminderSelect.exit}
-                    >
-                      <button
-                        type="button"
-                        disabled={bulkBusy || reminderSelect.selectedCount === 0}
-                        onClick={() => void bulkPatchReminders({ status: "dismissed" })}
-                        className="focus-ring rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
-                      >
-                        Pause
-                      </button>
-                      <button
-                        type="button"
-                        disabled={bulkBusy || reminderSelect.selectedCount === 0}
-                        onClick={() => void bulkPatchReminders({ status: "pending" })}
-                        className="focus-ring rounded px-1.5 py-0.5 text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] disabled:opacity-50"
-                      >
-                        Resume
-                      </button>
-                      <button
-                        type="button"
-                        disabled={bulkBusy || reminderSelect.selectedCount === 0}
-                        onClick={() => void bulkDeleteReminders()}
-                        className="focus-ring inline-flex items-center gap-1 rounded border border-[var(--color-danger)]/50 bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[11px] text-[var(--color-danger)] hover:bg-[var(--color-danger)]/15 disabled:opacity-50"
-                      >
-                        <Icon name="ph:trash-bold" width={11} aria-hidden />
-                        {bulkBusy ? "Working…" : `Delete${reminderSelect.selectedCount ? ` ${reminderSelect.selectedCount}` : ""}`}
-                      </button>
-                    </SelectionToolbar>
-                  )}
-                  <ReminderTaskList
-                    current={current}
-                    paused={paused}
-                    oneShots={oneShots}
-                    history={history}
-                    selectedId={selectedReminderId}
-                    selectMode={reminderSelect.selectMode}
-                    isSelected={reminderSelect.isSelected}
-                    familiarLabel={familiarLabel}
-                    onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
-                    onToggle={reminderSelect.toggle}
-                  />
-                </>
-              ) : activeTab === "activity" ? (
-                <InboxFeedList
-                  needsYou={inboxFeed.needsYou}
-                  active={inboxFeed.active}
-                  resolved={inboxFeed.resolved}
-                  selectedId={selectedReminderId}
-                  familiarLabel={familiarLabel}
-                  onSelect={(item) => { setSelectedItem(item); setSelectedCodex(null); }}
-                />
-              ) : activeTab === "flows" ? (
-                <FlowList
-                  flows={flows}
-                  query={q}
-                  busyId={busyId}
-                  onRun={runFlowNow}
-                  onOpen={() => navigateToMode("flow")}
-                  onTogglePause={toggleFlowActive}
-                />
-              ) : (
-                <>
-                  {resolvedFamiliars.length > 0 && (
-                    <FamiliarMultiSelect
-                      familiars={resolvedFamiliars}
-                      selected={familiarFilter}
-                      onChange={updateFamiliarFilter}
-                    />
-                  )}
-                  <AutomationsPanel
-                    active={codexActive}
-                    paused={codexPaused}
-                    selectedId={selectedAutomationId}
-                    familiarsById={familiarsById}
-                    lastRunById={lastRunById}
-                    onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
-                  />
-                  {familiarFilter.size > 0 && codexActive.length === 0 && codexPaused.length === 0 && (
-                    <p className="mt-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
-                      No crons match this familiar filter.
-                    </p>
-                  )}
-                </>
+              )}
+              <AutomationsPanel
+                active={codexActive}
+                paused={codexPaused}
+                selectedId={selectedAutomationId}
+                familiarsById={familiarsById}
+                lastRunById={lastRunById}
+                onSelect={(auto) => { setSelectedCodex(auto); setSelectedItem(null); }}
+              />
+              {familiarFilter.size > 0 && codexActive.length === 0 && codexPaused.length === 0 && (
+                <p className="mt-2 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                  No crons match this familiar filter.
+                </p>
               )}
             </>
           )}
@@ -2635,8 +2435,8 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
       </div>
 
       {/* ── Detail panel ───────────────────────────────────────────────────── */}
-      {(selectedItem || selectedCodex) && (
-        <div className="w-[380px] max-w-[42vw] shrink-0 overflow-hidden" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
+      {detailOpen && (
+        <div className="w-full min-w-0 shrink-0 overflow-hidden md:w-[380px] md:max-w-[42vw]" style={{ borderLeft: "1px solid var(--border-hairline)" }}>
           {selectedItem && (
             <DetailPanel
               item={selectedItem}

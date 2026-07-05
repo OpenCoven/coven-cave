@@ -447,7 +447,8 @@ export function BoardGantt({ cards, familiars, projects, selectedCardId, onSelec
     const el = scrollRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return; // trackpad pinch → ctrlKey; ⌘-scroll → metaKey
+      // Pinch (ctrlKey) or ⌘-scroll (metaKey) zooms; plain wheel gestures pan.
+      if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       const prev = dayWRef.current;
       const next = clampDayW(prev * Math.exp(-e.deltaY * 0.0025));

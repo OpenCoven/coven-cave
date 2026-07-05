@@ -5,7 +5,7 @@ import SwiftUI
 /// you reach for between chats. A segmented switcher picks the section; each
 /// section owns its own navigation stack.
 enum DevSection: String, CaseIterable, Identifiable {
-    case code, terminal, github, library
+    case code, terminal, github
 
     var id: String { rawValue }
 
@@ -14,7 +14,6 @@ enum DevSection: String, CaseIterable, Identifiable {
         case .code: return "Code"
         case .terminal: return "Terminal"
         case .github: return "GitHub"
-        case .library: return "Library"
         }
     }
 
@@ -23,7 +22,6 @@ enum DevSection: String, CaseIterable, Identifiable {
         case .code: return "folder"
         case .terminal: return "terminal"
         case .github: return "arrow.triangle.branch"
-        case .library: return "books.vertical"
         }
     }
 }
@@ -56,7 +54,6 @@ struct DeveloperView: View {
             case .code: CodeBrowserView()
             case .terminal: TerminalView()
             case .github: GitHubView()
-            case .library: LibraryView()
             }
         }
     }

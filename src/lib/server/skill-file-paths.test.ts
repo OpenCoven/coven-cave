@@ -5,6 +5,9 @@ import path from "node:path";
 import { isAllowedSkillFilePath, isRemovableSkillDir, MAX_SKILL_FILE_PREVIEW_BYTES } from "./skill-file-paths.ts";
 
 const home = await mkdtemp(path.join(tmpdir(), "coven-skill-paths-"));
+const projectRoot = await mkdtemp(path.join(tmpdir(), "coven-skill-project-"));
+const originalCwd = process.cwd();
+process.chdir(projectRoot);
 
 async function touch(relativePath: string, contents = "# preview\n") {
   const fullPath = path.join(home, relativePath);
@@ -13,10 +16,19 @@ async function touch(relativePath: string, contents = "# preview\n") {
   return fullPath;
 }
 
+async function touchProject(relativePath: string, contents = "# preview\n") {
+  const fullPath = path.join(projectRoot, relativePath);
+  await mkdir(path.dirname(fullPath), { recursive: true });
+  await writeFile(fullPath, contents);
+  return fullPath;
+}
+
 const claudeSkill = await touch(path.join(".claude", "skills", "deep-research", "SKILL.md"));
 const covenSkill = await touch(path.join(".coven", "skills", "foo", "SKILL.md"));
+const codexSkill = await touch(path.join(".codex", "skills", "review", "SKILL.md"));
 const codexAutomation = await touch(path.join(".codex", "automations", "daily-check", "automation.toml"), "id = \"daily-check\"\n");
-await touch(path.join(".agents", "skills", "brainstorming", "SKILL.md"));
+const agentsUserSkill = await touch(path.join(".agents", "skills", "brainstorming", "SKILL.md"));
+const agentsProjectSkill = await touchProject(path.join(".agents", "skills", "tdd", "SKILL.md"));
 const claudeSkillSymlink = path.join(home, ".claude", "skills", "brainstorming");
 await symlink(path.join(home, ".agents", "skills", "brainstorming"), claudeSkillSymlink);
 const claudeInstructions = await touch(path.join(".claude", "CLAUDE.md"));
@@ -41,6 +53,21 @@ assert.equal(
   await isAllowedSkillFilePath(covenSkill, home),
   true,
   "a SKILL.md under ~/.coven/skills is allowed",
+);
+assert.equal(
+  await isAllowedSkillFilePath(codexSkill, home),
+  true,
+  "a SKILL.md under ~/.codex/skills is allowed",
+);
+assert.equal(
+  await isAllowedSkillFilePath(agentsUserSkill, home),
+  true,
+  "a SKILL.md under ~/.agents/skills is allowed",
+);
+assert.equal(
+  await isAllowedSkillFilePath(agentsProjectSkill, home),
+  true,
+  "a SKILL.md under project .agents/skills is allowed",
 );
 assert.equal(
   await isAllowedSkillFilePath(codexAutomation, home),
@@ -131,6 +158,21 @@ assert.equal(
   "an immediate child directory of ~/.claude/skills is removable",
 );
 assert.equal(
+  await isRemovableSkillDir(path.join(home, ".codex", "skills", "review"), home),
+  true,
+  "an immediate child directory of ~/.codex/skills is removable",
+);
+assert.equal(
+  await isRemovableSkillDir(path.join(home, ".agents", "skills", "brainstorming"), home),
+  true,
+  "an immediate child directory of ~/.agents/skills is removable",
+);
+assert.equal(
+  await isRemovableSkillDir(path.join(projectRoot, ".agents", "skills", "tdd"), home),
+  true,
+  "an immediate child directory of project .agents/skills is removable",
+);
+assert.equal(
   await isRemovableSkillDir(skillsRoot, home),
   false,
   "the scan root itself is never removable",
@@ -157,4 +199,5 @@ assert.equal(
 );
 assert.equal(await isRemovableSkillDir("", home), false, "empty path is rejected");
 
+process.chdir(originalCwd);
 console.log("skill-file-paths.test.ts: ok");

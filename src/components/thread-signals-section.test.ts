@@ -6,6 +6,9 @@ import type { ThreadSelfReport } from "@/lib/thread-self-report";
 
 const source = readFileSync(new URL("./thread-signals-section.tsx", import.meta.url), "utf8");
 
+assert.match(source, /import \{ Button \}/, "ThreadSignalsSection review actions use the shared Button primitive");
+assert.doesNotMatch(source, /<button\b/, "ThreadSignalsSection should not hand-roll button controls");
+
 function report(overrides: Partial<ThreadSelfReport> & { id: string }): ThreadSelfReport {
   return {
     familiarId: "echo",
@@ -144,8 +147,9 @@ describe("aggregateThreadSignals", () => {
   it("lets you select a review item to unlock a discussion on the topic", () => {
     assert.match(source, /buildThreadSignalDiscussionPrompt/, "seeds the chat with a topic-specific prompt");
     assert.match(source, /new CustomEvent\("cave:agents-new-chat"/, "opens a new chat with the familiar");
-    assert.match(source, /initialPrompt: buildThreadSignalDiscussionPrompt\(item\)/, "primes the chat with the selected item");
-    assert.match(source, /origin: "eval"/, "tags the thread as an eval origin so it migrates to the Evals page");
+    assert.match(source, /Analytics source: \$\{analyticsPath\}/, "ties the discussion back to the familiar analytics page");
+    assert.match(source, /origin: "chat"/, "thread signal discussions stay regular chat threads");
+    assert.doesNotMatch(source, /origin: "eval"/, "thread signal discussions are not routed through Evals");
     assert.match(source, /className="fa-thread-review-item"[\s\S]*onClick=\{\(\) => discussReviewItem\(familiarId, item\)\}/, "each review item is a clickable button");
   });
 });

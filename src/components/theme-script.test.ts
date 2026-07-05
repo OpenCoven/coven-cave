@@ -3,23 +3,25 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./theme-script.tsx", import.meta.url), "utf8");
+const bootScript = readFileSync(new URL("../../public/scripts/theme-init.js", import.meta.url), "utf8");
 
 assert.match(source, /import Script from "next\/script"/, "ThemeScript uses Next Script, not a raw script tag");
 assert.match(source, /strategy="beforeInteractive"/, "ThemeScript should run before hydration");
+assert.match(source, /src="\/scripts\/theme-init.js"/, "ThemeScript should load external theme init script");
 
 // 1. Script defaults theme to "coven" and mode to "dark".
-assert.match(source, /\|\|\s*"coven"/, "theme defaults to coven");
-assert.match(source, /\|\|\s*"dark"/, "mode defaults to dark");
+assert.match(bootScript, /\|\|\s*"coven"/, "theme defaults to coven");
+assert.match(bootScript, /\|\|\s*"dark"/, "mode defaults to dark");
 
 // 2. Script writes BOTH data-theme and data-mode.
-assert.match(source, /setAttribute\(\s*"data-theme"/, "sets data-theme");
-assert.match(source, /setAttribute\(\s*"data-mode"/, "sets data-mode");
+assert.match(bootScript, /setAttribute\(\s*"data-theme"/, "sets data-theme");
+assert.match(bootScript, /setAttribute\(\s*"data-mode"/, "sets data-mode");
 
 // 3. Rename map covers all 4 legacy ids and writes through localStorage.
 for (const legacy of ["mood-c", "sky", "orchid", "midnight"]) {
-  assert.ok(source.includes(`"${legacy}"`), `rename map contains ${legacy}`);
+  assert.ok(bootScript.includes(`"${legacy}"`), `rename map contains ${legacy}`);
 }
-assert.ok(source.includes("setItem"), "writes renamed id back to localStorage");
+assert.ok(bootScript.includes("setItem"), "writes renamed id back to localStorage");
 
 // 4. The pre-hydration allowlist accepts every preset theme plus custom.
 for (const id of [
@@ -41,24 +43,24 @@ for (const id of [
   "trucker",
   "custom",
 ]) {
-  assert.ok(source.includes(`"${id}"`), `valid theme allowlist contains ${id}`);
+  assert.ok(bootScript.includes(`"${id}"`), `valid theme allowlist contains ${id}`);
 }
 
 // 5. Custom theme path applies the mode-matching group.
 assert.match(
-  source,
+  bootScript,
   /cssVars\.light|cssVars\[\s*["']light["']\s*\]/,
   "custom path references light group",
 );
 assert.match(
-  source,
+  bootScript,
   /cssVars\.dark|cssVars\[\s*["']dark["']\s*\]/,
   "custom path references dark group",
 );
 
 // 6. Reads keys via the COVEN_*_KEY constants (or matches their values).
 assert.ok(
-  source.includes("coven-theme") && source.includes("coven-mode"),
+  bootScript.includes("coven-theme") && bootScript.includes("coven-mode"),
   "references both storage keys",
 );
 

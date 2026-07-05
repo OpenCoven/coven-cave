@@ -16,8 +16,8 @@ assert.match(
   inbox,
   // The Calendar tab branch may precede this (calendarSlot is rendered first),
   // so the skeleton ternary need not be the very first child of the list box.
-  /!initialLoadDone \? \([\s\S]*?animate-pulse[\s\S]*?\) : activeTab === "reminders" && remindersEmpty \? \(/,
-  "Schedules shows a skeleton before first load, ahead of the Reminders empty state",
+  /!initialLoadDone \? \([\s\S]*?animate-pulse[\s\S]*?\) : activeTab === "crons" && automationsEmpty \? \(/,
+  "Schedules shows a skeleton before first load, ahead of the Crons empty state",
 );
 
 const chatList = read("./chat-list.tsx");
@@ -99,18 +99,6 @@ assert.match(
   "Vault panel shows skeleton rows while the first /api/vault fetch is in flight",
 );
 
-const retro = read("./retro-runs-view.tsx");
-assert.match(
-  retro,
-  /\{loading \? \(\s*<SkeletonRows/,
-  "Retro runs shows shared skeleton rows on first load instead of hand-rolled divs",
-);
-assert.doesNotMatch(
-  retro,
-  /className="retro-skeleton"/,
-  "Retro runs no longer hand-rolls retro-skeleton placeholder divs",
-);
-
 // More surfaces converted from a bare "Loading…" string to the shared skeleton.
 for (const [file, label] of [
   ["./github-view.tsx", "GitHub activity"],
@@ -122,8 +110,4 @@ for (const [file, label] of [
   assert.doesNotMatch(src, />Loading…</, `${label} no longer shows a bare Loading… line`);
   assert.match(src, /<SkeletonRows/, `${label} shows shared skeleton rows on first load`);
 }
-const docPreview = read("./library-doc-preview.tsx");
-assert.doesNotMatch(docPreview, /library-preview-empty-text">Loading…</, "Library doc preview no longer shows a bare Loading… line");
-assert.match(docPreview, /<SkeletonGroup[\s\S]{0,200}<Skeleton variant="text"/, "Library doc preview shows a document-shaped skeleton on first load");
-
 console.log("surface-loading-states.test.ts: ok");

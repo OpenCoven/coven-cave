@@ -60,6 +60,10 @@ export function roleMatchesQuery(role: RoleEntry, query: string): boolean {
   );
 }
 
+function roleCapabilityCount(role: RoleEntry): number {
+  return role.skills.length + role.tools.length + role.mcpServers.length + role.plugins.length + role.workflows.length;
+}
+
 type Props = {
   roles: RoleEntry[];
   loaded: boolean;
@@ -85,6 +89,38 @@ export function RolesSection({
   onBrowseMarketplace,
 }: Props) {
   const filtered = useMemo(() => roles.filter((role) => roleMatchesQuery(role, query)), [roles, query]);
+  const rolesSetupSummary = useMemo(() => {
+    const familiars = new Set(filtered.map((role) => role.familiar));
+    const mcpServers = new Set(filtered.flatMap((role) => role.mcpServers));
+    const active = filtered.filter((role) => role.active).length;
+    const emptyRoles = filtered.filter((role) => roleCapabilityCount(role) === 0).length;
+    return [
+      {
+        icon: "ph:check-circle" as const,
+        label: "Active roles",
+        value: `${active}/${filtered.length}`,
+        detail: active === filtered.length ? "Every visible role is enabled" : "Enabled for familiar work",
+      },
+      {
+        icon: "ph:users-three" as const,
+        label: "Familiars",
+        value: String(familiars.size),
+        detail: "Owners represented here",
+      },
+      {
+        icon: ICONS.mcpServer,
+        label: "MCP links",
+        value: String(mcpServers.size),
+        detail: "Unique server bindings",
+      },
+      {
+        icon: emptyRoles > 0 ? "ph:warning" as const : "ph:seal-check" as const,
+        label: "Setup gaps",
+        value: emptyRoles > 0 ? String(emptyRoles) : "None",
+        detail: emptyRoles > 0 ? "Roles without capabilities" : "Visible roles have coverage",
+      },
+    ];
+  }, [filtered]);
 
   if (!loaded) {
     return (
@@ -122,9 +158,22 @@ export function RolesSection({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      <div className="marketplace-roles-summary" aria-label="Roles setup summary">
+        {rolesSetupSummary.map((item) => (
+          <div key={item.label} className="marketplace-roles-summary__card">
+            <span className="marketplace-roles-summary__label">
+              <Icon name={item.icon} width={13} aria-hidden />
+              {item.label}
+            </span>
+            <strong>{item.value}</strong>
+            <p>{item.detail}</p>
+          </div>
+        ))}
+      </div>
       {filtered.map((role) => {
         const key = `${role.familiar}:${role.id}`;
+        const capabilityCount = roleCapabilityCount(role);
         return (
           <article
             key={key}
@@ -150,6 +199,20 @@ export function RolesSection({
                   {role.description ? (
                     <p className="mt-0.5 text-[12px] leading-relaxed text-[var(--text-secondary)]">{role.description}</p>
                   ) : null}
+                  <div className="plugins-role-card__facts" aria-label={`${role.name} setup facts`}>
+                    <span className="plugins-role-card__fact">
+                      <Icon name={role.active ? "ph:check-circle" : "ph:circle"} width={11} aria-hidden />
+                      {role.active ? "Enabled" : "Disabled"}
+                    </span>
+                    <span className="plugins-role-card__fact">
+                      <Icon name="ph:lightning-bold" width={11} aria-hidden />
+                      {capabilityCount} {capabilityCount === 1 ? "capability" : "capabilities"}
+                    </span>
+                    <span className="plugins-role-card__fact">
+                      <Icon name={ICONS.mcpServer} width={11} aria-hidden />
+                      {role.mcpServers.length} MCP
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">

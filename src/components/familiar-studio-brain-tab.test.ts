@@ -44,12 +44,12 @@ assert.match(
 );
 assert.match(
   source,
-  /Inherit workspace default: \{defaultHarnessLabel\}/,
+  /label: `Inherit workspace default: \$\{defaultHarnessLabel\}`/,
   "Default runtime copy should clarify that this familiar inherits the workspace default",
 );
 assert.match(
   source,
-  /<optgroup label="Available runtimes">[\s\S]{0,240}harnesses\.map/,
+  /label: "Available runtimes"[\s\S]{0,240}harnesses\.map/,
   "Other available runtimes should be grouped below the inherited default option",
 );
 assert.match(

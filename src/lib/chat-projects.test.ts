@@ -97,11 +97,11 @@ assert.deepEqual(
   "duplicate worktree repo names should include the parent directory and sort alphabetically",
 );
 
-// Eval-discuss threads are migrated to the Evals page and hidden from the chat list.
+// Analytics-spawned discussion threads remain normal chat threads.
 {
-  const evalThread = { ...session("eval-1", "/work/alpha", "2026-06-09T00:00:00.000Z", "cody"), origin: "eval" as const };
-  const visible = filterVisibleChatSessions([...sessions, evalThread], null);
-  assert.ok(!visible.some((s) => s.id === "eval-1"), "eval-origin sessions are excluded from the chat list");
+  const analyticsThread = { ...session("analytics-1", "/work/alpha", "2026-06-09T00:00:00.000Z", "cody"), origin: "chat" as const };
+  const visible = filterVisibleChatSessions([...sessions, analyticsThread], null);
+  assert.ok(visible.some((s) => s.id === "analytics-1"), "analytics discussion sessions stay in the chat list");
   assert.ok(visible.some((s) => s.id === "beta"), "ordinary chat sessions still show");
 }
 

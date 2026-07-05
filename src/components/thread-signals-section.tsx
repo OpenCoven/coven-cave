@@ -2,7 +2,7 @@
 
 import { Fragment } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 import {
   aggregateThreadSignals,
   buildThreadSignalReviewQueue,
@@ -138,10 +138,14 @@ function tableSections(aggregate: ThreadSignalsAggregate): ThreadSignalTableSect
 
 /** Open a new chat with this familiar, primed to discuss the selected topic. */
 function discussReviewItem(familiarId: string, item: ThreadSignalReviewItem) {
+  const analyticsPath = `/dashboard/familiars/${encodeURIComponent(familiarId)}/analytics`;
   window.dispatchEvent(
     new CustomEvent("cave:agents-new-chat", {
-      // origin "eval" routes this thread to the Evals page and hides it from the chat list.
-      detail: { familiarId, initialPrompt: buildThreadSignalDiscussionPrompt(item), origin: "eval" as const },
+      detail: {
+        familiarId,
+        initialPrompt: `${buildThreadSignalDiscussionPrompt(item)}\n\nAnalytics source: ${analyticsPath}`,
+        origin: "chat" as const,
+      },
     }),
   );
 }
@@ -176,20 +180,20 @@ export function ThreadSignalsSection({ familiarId, reports }: { familiarId: stri
           <ul className="fa-thread-review-list">
             {reviewQueue.map((item, index) => (
               <li key={`${item.kind}-${item.title}-${index}`} className={`is-${item.severity}`}>
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   className="fa-thread-review-item"
                   onClick={() => discussReviewItem(familiarId, item)}
                   title={`Discuss "${item.title}" with this familiar`}
                   aria-label={`Discuss ${item.title}`}
+                  leadingIcon={item.severity === "critical" ? "ph:warning-circle" : "ph:info"}
+                  trailingIcon="ph:chat-circle-dots"
                 >
-                  <Icon name={item.severity === "critical" ? "ph:warning-circle" : "ph:info"} aria-hidden />
                   <span>
                     <b>{item.title}</b>
                     {item.detail}
                   </span>
-                  <Icon name="ph:chat-circle-dots" className="fa-thread-review-discuss" aria-hidden />
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

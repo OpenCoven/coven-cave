@@ -6,6 +6,13 @@ const src = await readFile(new URL("./update-available.tsx", import.meta.url), "
 
 // Desktop-only: both surfaces gate on the Tauri desktop hook.
 assert.match(src, /useIsTauriDesktop/, "gates the update UI to the Tauri desktop build");
+assert.match(src, /import \{ Button \}/, "update row actions use the shared Button primitive");
+assert.doesNotMatch(src, /<button\b/, "update row should not hand-roll button controls");
+assert.doesNotMatch(
+  src,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "update row controls should use tokenized radii instead of hard-coded rounded classes",
+);
 
 // Native updater path: check() → downloadAndInstall() → relaunch().
 assert.match(src, /@tauri-apps\/plugin-updater/, "uses the native Tauri updater plugin");

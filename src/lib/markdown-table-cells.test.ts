@@ -4,15 +4,11 @@ import { readFileSync } from "node:fs";
 // The @create-markdown/preview renderer emits table header/row cells as escaped
 // plain text, so **bold**/_em_/`code`/[links] inside a cell show up literally.
 // A shared helper re-renders each cell through the inline path and rebuilds the
-// <table>; the desktop library doc preview and the native iOS WKWebView renderer
-// both wire it in via a `table` customRenderer. (The chat message bubble carries
-// its own inlined copy — see message-bubble-markdown.test.ts.)
+// <table>; the native iOS WKWebView renderer wires it in via a `table`
+// customRenderer. The chat message bubble carries its own inlined copy — see
+// message-bubble-markdown.test.ts.
 
 const helper = readFileSync(new URL("./markdown-table-cells.ts", import.meta.url), "utf8");
-const libraryPreview = readFileSync(
-  new URL("../components/library-doc-preview.tsx", import.meta.url),
-  "utf8",
-);
 const iosEntry = readFileSync(
   new URL("../../apps/ios/markdown/entry.mjs", import.meta.url),
   "utf8",
@@ -44,23 +40,6 @@ assert.match(
   helper,
   /blocks\.filter\(\(b\): b is TableBlock => b\.type === "table"\)/,
   "only table blocks are rebuilt, in document order",
-);
-
-// ── Desktop: library doc preview wires the helper ────────────────
-assert.match(
-  libraryPreview,
-  /import\("@\/lib\/markdown-table-cells"\)/,
-  "library doc preview pulls in the shared table-cell helper",
-);
-assert.match(
-  libraryPreview,
-  /renderTableReplacements\(blocks, renderAsync\)/,
-  "library doc preview builds table replacements",
-);
-assert.match(
-  libraryPreview,
-  /customRenderers: \{ table: \(\) => tables\[tableIdx\+\+\] \?\? "" \}/,
-  "library doc preview supplies tables via the customRenderer",
 );
 
 // ── iOS: WKWebView renderer wires the helper ─────────────────────

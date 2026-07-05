@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
 
 type DirEntry = { name: string; path: string };
 type BrowseResponse = {
@@ -93,32 +93,32 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
     >
       <div
         ref={dialogRef}
-        className="flex max-h-[80vh] w-[520px] max-w-full flex-col overflow-hidden rounded-lg border border-[var(--border-hairline)] shadow-xl"
+        className="flex max-h-[80vh] w-[520px] max-w-full flex-col overflow-hidden rounded-[var(--radius-panel)] border border-[var(--border-hairline)] shadow-xl"
         style={{ background: "var(--bg-panel)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-[var(--border-hairline)] px-3 py-2">
           <span className="text-[13px] font-semibold text-[var(--text-primary)]">Choose a project folder</span>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={onClose}
             aria-label="Close"
-            className="focus-ring grid h-6 w-6 place-items-center rounded text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-          >
-            <Icon name="ph:x" width={14} />
-          </button>
+            className="grid h-6 w-6 place-items-center rounded-[var(--radius-control)] p-0 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+            leadingIcon="ph:x"
+          />
         </div>
 
         <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-2">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="xs"
             disabled={loading || parent === null}
             onClick={() => void load(parent)}
             aria-label="Up one folder"
-            className="focus-ring grid h-7 w-7 shrink-0 place-items-center rounded-md border border-[var(--border-hairline)] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40"
-          >
-            <Icon name="ph:arrow-up" width={13} />
-          </button>
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] disabled:opacity-40"
+            leadingIcon="ph:arrow-up"
+          />
           <span
             className="min-w-0 flex-1 truncate font-mono text-[12px] text-[var(--text-secondary)]"
             title={cwd ?? undefined}
@@ -136,16 +136,17 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             <p className="px-2 py-4 text-[12px] text-[var(--text-muted)]">No subfolders here.</p>
           ) : (
             entries.map((e) => (
-              <button
+              <Button
                 key={e.path}
-                type="button"
+                variant="ghost"
+                size="sm"
                 onClick={() => void load(e.path)}
-                className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
+                className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1.5 text-left text-[13px] text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-raised)]"
+                leadingIcon="ph:folder"
+                trailingIcon="ph:caret-right"
               >
-                <Icon name="ph:folder" width={15} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
                 <span className="min-w-0 flex-1 truncate">{e.name}</span>
-                <Icon name="ph:caret-right" width={12} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
-              </button>
+              </Button>
             ))
           )}
         </div>
@@ -155,24 +156,25 @@ export function DirectoryPickerModal({ open, onClose, onSelect }: DirectoryPicke
             Select the folder you're browsing, or open a subfolder first.
           </span>
           <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={onClose}
-              className="focus-ring rounded-md border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
+              className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-3 py-1 text-[12px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]"
             >
               Cancel
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
               disabled={!cwd}
               onClick={() => {
                 if (cwd) onSelect(cwd);
               }}
-              className="focus-ring rounded-md px-3 py-1 text-[12px] font-medium text-white disabled:opacity-50"
-              style={{ background: "var(--accent-presence)" }}
+              className="rounded-[var(--radius-control)] px-3 py-1 text-[12px] font-medium disabled:opacity-50"
             >
               Select this folder
-            </button>
+            </Button>
           </div>
         </div>
       </div>

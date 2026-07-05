@@ -23,7 +23,7 @@ assert.match(cockpit, /RecentReports/, "cockpit keeps recent daily reports");
 assert.match(cockpit, /\/api\/board/, "cockpit pulls the board snapshot");
 assert.match(cockpit, /\/api\/familiars/, "cockpit pulls the agent roster");
 assert.match(cockpit, /\/api\/github/, "cockpit pulls GitHub activity");
-assert.match(cockpit, /\/api\/library\/reading/, "cockpit pulls the reading queue");
+assert.doesNotMatch(cockpit, /\/api\/library\/reading/, "integrated cockpit should not pull the feature-branch Library queue");
 assert.match(cockpit, /cockpit-kpis/, "cockpit renders the KPI rail");
 
 // World-class additions
@@ -58,17 +58,16 @@ assert.doesNotMatch(cockpit, /Updated \{relativeTime\(now\.toISOString\(\)/, "th
 assert.doesNotMatch(cockpit, /href: "\/#card-"/, "KPI tiles no longer point at the dead bare /#card- hash");
 assert.match(cockpit, /href: "\/\?mode=board"/, "board KPIs drill into the board");
 assert.match(cockpit, /href: "\/\?mode=github"/, "the PRs KPI drills into GitHub");
-assert.match(cockpit, /href: "\/\?mode=library"/, "the reading KPI drills into the library");
+assert.doesNotMatch(cockpit, /href: "\/\?mode=library"/, "integrated cockpit should not route to the feature-branch Library");
 assert.match(cockpit, /href="\/\?mode=calendar"/, "the agenda panel drills into the calendar");
 assert.match(cockpit, /href="\/\?mode=agents"/, "the agents panel drills into the familiars roster");
 assert.match(cockpit, /href="\/dashboard\/familiars\/growth"/, "load/confidence drill into the growth page");
 assert.doesNotMatch(cockpit, /QuickLink href="\/" icon="ph:calendar-bold"/, "the Calendar quick link no longer dead-ends at /");
-assert.doesNotMatch(cockpit, /QuickLink href="\/" icon="ph:books-bold"/, "the Library quick link no longer dead-ends at /");
+assert.doesNotMatch(cockpit, /icon="ph:books-bold" label="Library"/, "Library quick link is isolated to feature/library");
 
 // Rows are destinations, not dead ends.
 assert.match(cockpit, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(f\.id\)\}\/analytics`\}/, "agent rows open the familiar's analytics");
 assert.match(cockpit, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(r\.id\)\}\/analytics`\}/, "confidence rows open the familiar's analytics");
-assert.doesNotMatch(cockpit, /href=\{r\.url \|\| "#"\}/, "reading rows without a URL render as text, not a dead # link");
 assert.match(cockpit, /s\.href \?/, "actionable signals render as links");
 assert.match(cockpit, /openExternalUrl\(s\.href!\)/, "external signal links route through the external-URL helper");
 

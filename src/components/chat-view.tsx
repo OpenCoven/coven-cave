@@ -11,7 +11,6 @@ import { segmentTurn } from "@/lib/turn-segments";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
-import { slashSaveParse } from "@/lib/slash-save-parser";
 import { Icon, type IconName } from "@/lib/icon";
 import { useCopy } from "@/lib/use-copy";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,6 +51,7 @@ import {
 } from "@/lib/file-mention";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { LOCAL_HOST_ID, parseConversationRuntime } from "@/lib/chat-hosts";
 import { ComposerHostChip } from "@/components/composer-host-chip";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
@@ -69,10 +69,8 @@ import { catalogForRuntime } from "@/lib/runtime-models";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { VoiceCallOverlay } from "./voice-call-overlay";
-import { CsvImportModal } from "./csv-import-modal";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
-import { looksLikeCsv } from "@/lib/csv-import";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
 import {
   chatUsagePlanTooltip,
@@ -687,26 +685,26 @@ function ComposerControlSelect<T extends string>({
 }) {
   const selected = options.find((option) => option.value === value)?.label ?? value;
   return (
-    <label className="cave-composer-select" title={`${label}: ${selected}`}>
-      <Icon name={icon} width={13} aria-hidden />
-      <span className="cave-composer-select__label">{label}</span>
-      <span className="cave-composer-select__value" aria-hidden>
-        {selected}
-      </span>
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value as T)}
-        aria-label={label}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <Icon name="ph:caret-down-bold" width={10} aria-hidden className="cave-composer-select__chevron" />
-    </label>
+    <StandardSelect<T>
+      label={label}
+      title={`${label}: ${selected}`}
+      value={value}
+      disabled={disabled}
+      onChange={onChange}
+      className="cave-composer-select"
+      options={options}
+      showCaret={false}
+      renderValue={() => (
+        <>
+          <Icon name={icon} width={13} aria-hidden />
+          <span className="cave-composer-select__label">{label}</span>
+          <span className="cave-composer-select__value" aria-hidden>
+            {selected}
+          </span>
+          <Icon name="ph:caret-down-bold" width={10} aria-hidden className="cave-composer-select__chevron" />
+        </>
+      )}
+    />
   );
 }
 
@@ -2343,8 +2341,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   useEffect(() => {
     onProjectRootChange?.(activeProjectRoot || null);
   }, [activeProjectRoot, onProjectRootChange]);
-  const [csvRaw, setCsvRaw] = useState<string | null>(null);
-  const [csvModalOpen, setCsvModalOpen] = useState(false);
   // Drag-and-drop attach (CHAT-D1-03). The counter tracks nested
   // dragenter/dragleave pairs so transitions across child elements don't
   // flicker the overlay; only file drags (dataTransfer.types includes
@@ -3431,46 +3427,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setTimeout(() => sendRaw(args), 0);
       return true;
     }
-    // /save, /bookmark, /read — route a URL into the library
-    if (command === "/save" || command === "/bookmark" || command === "/read") {
-      const parsed = slashSaveParse(args);
-      if ("error" in parsed) {
-        appendSystem("Usage: /save <url> [bookmarks|reading|github] [#tag]");
-        setInput("");
-        return true;
-      }
-      setInput("");
-      void (async () => {
-        try {
-          const res = await fetch("/api/library/route-link", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              url: parsed.url,
-              source: { kind: "slash", originSessionId: currentSessionRef.current ?? null },
-              familiar: familiar.id,
-              tags: parsed.tags,
-              listHint: parsed.listHint,
-            }),
-          });
-          const json = await res.json() as { ok: boolean; deduped?: boolean; classify?: { rule: string } };
-          if (!json.ok) {
-            appendSystem("Save failed.");
-          } else if (json.deduped) {
-            appendSystem("Already in library.");
-          } else {
-            const list =
-              json.classify?.rule === "github" ? "GitHub" :
-              json.classify?.rule === "article-host" || json.classify?.rule === "paper-host" || json.classify?.rule === "video-host" ? "Reading" :
-              "Bookmarks";
-            appendSystem(`Saved to ${list}.`);
-          }
-        } catch {
-          appendSystem("Save failed.");
-        }
-      })();
-      return true;
-    }
     // Unknown slash command: surface inline rather than send to the harness
     appendSystem(`Unknown command: ${token}. Try /help.`);
     setInput("");
@@ -3931,14 +3887,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [initialPrompt, sessionId]);
 
   const attachFiles = async (files: FileList | File[] | null) => {
-    // Check for CSV files before normal attachment handling
-    if (files?.length) {
-      const csvFiles = Array.from(files).filter((f) => f.name.endsWith(".csv") || f.type === "text/csv");
-      if (csvFiles.length > 0 && csvFiles[0]) {
-        const text = await csvFiles[0].text();
-        if (looksLikeCsv(text)) { setCsvRaw(text); return; }
-      }
-    }
     if (!files?.length) return;
     const selected = Array.from(files).slice(0, Math.max(0, 10 - attachments.length));
     if (selected.length === 0) return;
@@ -5022,23 +4970,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           />
 
           <div className="cave-composer-panel">
-            {csvRaw && !csvModalOpen && (
-              <div className="flex items-center gap-2 border-b border-[var(--border-hairline)]/70 bg-[var(--bg-raised)] px-3 py-1.5">
-                <Icon name="ph:file-text" width={12} className="shrink-0 text-[var(--text-muted)]" />
-                <span className="flex-1 truncate text-[11px] text-[var(--text-secondary)]">CSV detected — import to Library?</span>
-                <button
-                  type="button"
-                  onClick={() => setCsvModalOpen(true)}
-                  className="shrink-0 rounded bg-[var(--accent-presence)] px-2 py-0.5 text-[10px] font-medium text-white hover:opacity-90"
-                >Import</button>
-                <button
-                  type="button"
-                  onClick={() => setCsvRaw(null)}
-                  className="shrink-0 rounded p-0.5 text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                  aria-label="Dismiss"
-                ><Icon name="ph:x-bold" width={9} /></button>
-              </div>
-            )}
             {attachments.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 border-b border-[var(--border-hairline)]/70 px-3 py-2">
                 {attachments.map((attachment) => (
@@ -5105,8 +5036,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   void attachFiles(pastedFiles);
                   return;
                 }
-                const text = e.clipboardData.getData("text/plain");
-                if (looksLikeCsv(text)) { setCsvRaw(text); }
               }}
               placeholder={busy ? "Streaming… (esc to cancel)" : `Message ${familiar.display_name}…  ↵ to send`}
               rows={1}
@@ -5157,74 +5086,46 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
               </div>
             ) : null}
             <div className="cave-composer-controls">
-              <div className="cave-composer-action-row">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={CHAT_ATTACHMENT_ACCEPT}
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    // Snapshot the files and clear the input synchronously so picking the
-                    // SAME file again still fires onChange (e.g. re-attach after the CSV
-                    // or 10-attachment-cap early returns in attachFiles).
-                    const files = e.currentTarget.files ? Array.from(e.currentTarget.files) : null;
-                    e.currentTarget.value = "";
-                    void attachFiles(files);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                  title="Enhance prompt"
-                  aria-label="Enhance prompt"
-                  disabled={busy || enhanceStatus === "loading" || !input.trim()}
-                  onClick={() => void enhancePrompt()}
-                >
-                  <Icon name="ph:sparkle" width={13} aria-hidden />
-                  <span className="hidden sm:inline">Enhance</span>
-                </button>
-                <button
-                  type="button"
-                  className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
-                  title="Attach images, videos, or files"
-                  aria-label="Attach images, videos, or files"
-                  disabled={busy || attachments.length >= 10}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Icon name="ph:plus-bold" width={14} />
-                </button>
-                <button
-                  type="button"
-                  className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
-                  title="Voice"
-                  aria-label="Voice"
-                  disabled={!sessionId}
-                  onClick={() => setVoiceCallOpen(true)}
-                >
-                  <Icon name="ph:microphone" width={15} aria-hidden />
-                </button>
-                {/* Vertical separator between the attach control and the
-                    inline response selectors (was a horizontal rule when the
-                    controls stacked into two rows). */}
-                <div className="cave-composer-divider" aria-hidden />
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={CHAT_ATTACHMENT_ACCEPT}
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  // Snapshot the files and clear the input synchronously so picking the
+                  // SAME file again still fires onChange (e.g. re-attach after the CSV
+                  // or 10-attachment-cap early returns in attachFiles).
+                  const files = e.currentTarget.files ? Array.from(e.currentTarget.files) : null;
+                  e.currentTarget.value = "";
+                  void attachFiles(files);
+                }}
+              />
+              <div className="cave-composer-control-row">
+                <div className="cave-composer-utility-row">
+                  <button
+                    type="button"
+                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                    title="Attach images, videos, or files"
+                    aria-label="Attach images, videos, or files"
+                    disabled={busy || attachments.length >= 10}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Icon name="ph:paperclip" width={14} aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                    title="Voice"
+                    aria-label="Voice"
+                    disabled={!sessionId}
+                    onClick={() => setVoiceCallOpen(true)}
+                  >
+                    <Icon name="ph:microphone" width={15} aria-hidden />
+                  </button>
+                  <ComposerHostChip value={composerHostValue} disabled={busy} onPick={setRuntimeHost} />
+                </div>
                 <div className="cave-composer-settings-row" aria-label="Chat response controls">
-                  <ComposerControlSelect
-                    label="Thinking"
-                    icon="ph:sparkle-bold"
-                    value={thinkingEffort}
-                    options={THINKING_OPTIONS}
-                    disabled={busy}
-                    onChange={setThinkingEffort}
-                  />
-                  <ComposerControlSelect
-                    label="Speed"
-                    icon="ph:lightning-bold"
-                    value={responseSpeed}
-                    options={SPEED_OPTIONS}
-                    disabled={busy}
-                    onChange={setResponseSpeed}
-                  />
                   <ComposerControlSelect
                     label="Access"
                     icon="ph:shield-warning"
@@ -5243,47 +5144,62 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       onChange={(id) => handleSelectModel(id)}
                     />
                   ) : null}
-                  <ComposerHostChip value={composerHostValue} disabled={busy} onPick={setRuntimeHost} />
+                  <ComposerControlSelect
+                    label="Thinking"
+                    icon="ph:sparkle-bold"
+                    value={thinkingEffort}
+                    options={THINKING_OPTIONS}
+                    disabled={busy}
+                    onChange={setThinkingEffort}
+                  />
+                  <ComposerControlSelect
+                    label="Speed"
+                    icon="ph:lightning-bold"
+                    value={responseSpeed}
+                    options={SPEED_OPTIONS}
+                    disabled={busy}
+                    onChange={setResponseSpeed}
+                  />
                 </div>
-                {busy ? (
+                <div className="cave-composer-submit-row">
                   <button
                     type="button"
-                    onClick={cancelSend}
-                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
-                    title="Cancel (esc)"
-                    aria-label="Cancel response"
+                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                    title="Enhance prompt"
+                    aria-label="Enhance prompt"
+                    disabled={busy || enhanceStatus === "loading" || !input.trim()}
+                    onClick={() => void enhancePrompt()}
                   >
-                    <Icon name="ph:x-bold" width={13} aria-hidden />
+                    <Icon name="ph:sparkle" width={13} aria-hidden />
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void send()}
-                    disabled={!input.trim() && attachments.length === 0}
-                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
-                    title={`Send message (${keys.enter})`}
-                    aria-label="Send message"
-                  >
-                    <Icon name="ph:arrow-up-bold" width={13} aria-hidden />
-                  </button>
-                )}
+                  {busy ? (
+                    <button
+                      type="button"
+                      onClick={cancelSend}
+                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[color-mix(in_oklch,var(--color-danger)_90%,transparent)] text-white transition-colors hover:bg-[var(--color-danger)]"
+                      title="Cancel (esc)"
+                      aria-label="Cancel response"
+                    >
+                      <Icon name="ph:x-bold" width={13} aria-hidden />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void send()}
+                      disabled={!input.trim() && attachments.length === 0}
+                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                      title={`Send message (${keys.enter})`}
+                      aria-label="Send message"
+                    >
+                      <Icon name="ph:arrow-up-bold" width={13} aria-hidden />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
         </div>
       </footer>
-      {csvRaw && csvModalOpen && (
-        <CsvImportModal
-          raw={csvRaw}
-          familiar={familiar.id}
-          onImport={(count) => {
-            setCsvModalOpen(false);
-            setCsvRaw(null);
-            void count;
-          }}
-          onClose={() => setCsvModalOpen(false)}
-        />
-      )}
       {voiceCallOpen && sessionId && (
         <VoiceCallOverlay
           familiar={familiar}

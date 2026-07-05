@@ -36,17 +36,7 @@ function read(file: string) {
   );
 }
 
-// 4. library-doc-list.tsx search input has an accessible name.
-{
-  const src = read("library-doc-list.tsx");
-  assert.match(
-    src,
-    /<input[\s\S]*?aria-label="[^"]+"/,
-    "library doc-list search input has aria-label",
-  );
-}
-
-// 5. chat-view.tsx transcript container is an announced log region.
+// 4. chat-view.tsx transcript container is an announced log region.
 // NOTE: the explicit aria-live="polite"/aria-relevant="additions" attributes
 // were deliberately removed in b3e1825 ("remove redundant transcript
 // live-region attributes") because role="log" already carries an implicit
@@ -58,7 +48,7 @@ function read(file: string) {
   assert.match(threadBlock, /role="log"/, "chat thread has role=log (implicit aria-live=polite)");
 }
 
-// 6. inbox-toast.tsx root has aria-live + aria-atomic.
+// 5. inbox-toast.tsx root has aria-live + aria-atomic.
 {
   const src = read("inbox-toast.tsx");
   assert.match(src, /aria-live="polite"/, "inbox-toast has aria-live=polite");

@@ -42,5 +42,13 @@ assert.match(view, /onUnpublish=\{unpublish\}/, "FlowView should wire toolbar un
 // a 2.5s run-poll tick doesn't re-render it (2026-07-03 world-class pass).
 assert.match(source, /export const FlowToolbar = memo\(FlowToolbarImpl\)/, "FlowToolbar is memoized");
 assert.match(view, /onUndo=\{onUndo\}/, "the toolbar receives a stable undo handler (inline lambdas would defeat the memo)");
+assert.match(source, /import \{ Button \}/, "FlowToolbar actions use the shared Button primitive");
+assert.match(source, /import \{ IconButton \}/, "FlowToolbar icon actions use the shared IconButton primitive");
+assert.doesNotMatch(source, /<button\b/, "FlowToolbar should not hand-roll button controls");
+assert.doesNotMatch(
+  source,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "FlowToolbar should not hard-code rectangular radius classes",
+);
 
 console.log("flow-toolbar.test.ts OK");

@@ -6,7 +6,9 @@ import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { StandardSelect } from "@/components/ui/select";
 import { arrayContentEqual } from "@/lib/array-content-equal";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useCopy } from "@/lib/use-copy";
@@ -224,21 +226,19 @@ function PatSetupModal({
         aria-modal="true"
         aria-labelledby="github-pat-modal-title"
         onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-md rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-elevated)] p-6 shadow-2xl"
+        className="gh-pat-dialog"
       >
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Icon name="ph:github-logo" width={18} className="text-[var(--text-secondary)]" />
             <h3 id="github-pat-modal-title" className="text-[15px] font-semibold">Connect GitHub</h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
+          <IconButton
+            icon="ph:x"
+            size="sm"
             aria-label="Close"
-            className="rounded-md p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]"
-          >
-            <Icon name="ph:x" width={14} />
-          </button>
+            onClick={onClose}
+          />
         </div>
 
         <p className="text-[12px] text-[var(--text-muted)] mb-1">
@@ -268,7 +268,7 @@ function PatSetupModal({
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
               placeholder="your-username"
-              className="w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
+              className="gh-input"
             />
           </div>
 
@@ -284,7 +284,7 @@ function PatSetupModal({
               value={pat}
               onChange={(e) => setPat(e.target.value)}
               placeholder="ghp_…"
-              className="w-full rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:border-[var(--accent-presence)] focus:outline-none"
+              className="gh-input"
             />
           </div>
 
@@ -293,20 +293,22 @@ function PatSetupModal({
           )}
 
           <div className="flex items-center justify-between mt-4">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={() => void openExternalUrl(GITHUB_PAT_URL)}
-              className="border-0 bg-transparent p-0 text-[11px] text-[var(--accent-presence)] hover:underline"
             >
               Generate a PAT on GitHub →
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
+              variant="primary"
+              size="sm"
               disabled={(!pat.trim() && !usernameInput.trim()) || saving}
-              className="rounded-lg bg-[var(--accent-presence)] px-4 py-1.5 text-[12px] font-medium text-white disabled:opacity-40 hover:opacity-90 transition-opacity"
+              loading={saving}
             >
               {saving ? "Verifying…" : "Save"}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -440,16 +442,16 @@ function OpenChatAction({
 
   return (
     <div className="gh-action-wrap">
-      <button
-        type="button"
+      <Button
+        size="xs"
+        variant="secondary"
+        leadingIcon="ph:chat-circle-dots"
         onClick={handleClick}
         disabled={busy}
         title={title}
-        className="gh-action-btn"
       >
-        <Icon name="ph:chat-circle-dots" width={12} />
-        <span className="gh-action-btn-label">{label}</span>
-      </button>
+        {label}
+      </Button>
 
       {error && <span className="gh-action-error" role="img" aria-label={`Error: ${error}`} title={error}>!</span>}
 
@@ -583,16 +585,16 @@ function SafeMergeAction({
 
   return (
     <div className="gh-action-wrap">
-      <button
-        type="button"
+      <Button
+        size="xs"
+        variant="secondary"
+        leadingIcon="ph:git-merge"
         onClick={startSafeMerge}
         disabled={busy}
         title="Safely merge from a worktree"
-        className="gh-action-btn"
       >
-        <Icon name="ph:git-merge" width={12} />
-        <span className="gh-action-btn-label">{busy ? "Prep…" : "Merge"}</span>
-      </button>
+        {busy ? "Prep…" : "Merge"}
+      </Button>
       {error && <span className="gh-action-error" role="img" aria-label={`Error: ${error}`} title={error}>!</span>}
     </div>
   );
@@ -624,15 +626,15 @@ function AddToBoardAction({
 
   return (
     <div className="gh-action-wrap">
-      <button
-        type="button"
+      <Button
+        size="xs"
+        variant="secondary"
+        leadingIcon="ph:kanban"
         onClick={(e) => open("board", e)}
         title="Add to task"
-        className="gh-action-btn"
       >
-        <Icon name="ph:kanban" width={12} />
-        <span className="gh-action-btn-label">Task</span>
-      </button>
+        Task
+      </Button>
       {mode && (
         <div className="gh-action-popover gh-action-popover--wide" onClick={(e) => e.stopPropagation()}>
           <GitHubActionPopover
@@ -1119,14 +1121,14 @@ function GitHubComments({
                     </div>
                   )}
                 </div>
-                <button
-                  type="button"
-                  className="gh-composer-submit"
+                <Button
+                  size="sm"
+                  variant="primary"
                   onClick={() => void postComment()}
                   disabled={!draft.trim() || posting}
                 >
                   {posting ? "Posting…" : "Comment"}
-                </button>
+                </Button>
               </div>
             </div>
           ) : (
@@ -1338,17 +1340,17 @@ function GitHubItemGlassPanel({
             familiars={familiars}
             onJumpToSession={onJumpToSession}
           />
-          <a
-            href={item.url}
-            className="gh-action-btn"
+          <Button
+            size="xs"
+            variant="secondary"
+            leadingIcon="ph:arrow-square-out"
             onClick={(e) => {
               e.preventDefault();
               openExternalUrl(item.url);
             }}
           >
-            <Icon name="ph:arrow-square-out" width={12} />
-            <span className="gh-action-btn-label">GitHub</span>
-          </a>
+            GitHub
+          </Button>
         </div>
       </div>
     </aside>
@@ -1751,32 +1753,33 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
               </button>
             )}
           </div>
-          <select
+          <StandardSelect
+            label="Filter by organization"
             className="gh-select"
             value={orgFilter}
-            onChange={(e) => setOrgFilter(e.target.value)}
+            onChange={setOrgFilter}
             title={repoFilter !== "all" ? "Org is locked to the selected repo — clear the repo to change it" : "Filter by organization"}
-            aria-label="Filter by organization"
             disabled={orgOptions.length === 0 || repoFilter !== "all"}
-          >
-            <option value="all">All orgs</option>
-            {orgOptions.map((o) => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </select>
-          <select
+            options={[
+              { value: "all", label: "All orgs" },
+              ...orgOptions.map((org) => ({ value: org, label: org })),
+            ]}
+          />
+          <StandardSelect
+            label="Filter by repository"
             className="gh-select"
             value={repoFilter}
-            onChange={(e) => setRepoFilter(e.target.value)}
+            onChange={setRepoFilter}
             title="Filter by repository"
-            aria-label="Filter by repository"
             disabled={repoOptions.length === 0}
-          >
-            <option value="all">All repos</option>
-            {repoOptions.map((r) => (
-              <option key={r} value={r}>{orgFilter === "all" ? r : (r.split("/")[1] ?? r)}</option>
-            ))}
-          </select>
+            options={[
+              { value: "all", label: "All repos" },
+              ...repoOptions.map((repo) => ({
+                value: repo,
+                label: orgFilter === "all" ? repo : (repo.split("/")[1] ?? repo),
+              })),
+            ]}
+          />
           <span className="gh-select-sep" aria-hidden />
           <div className="gh-compact-group" role="group" aria-label="Group rows">
             {(["none", "org", "repo"] as GroupBy[]).map((g) => {
@@ -1804,28 +1807,26 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
         </div>
 
         <div className="gh-compact-actions">
-          <button
-            type="button"
+          <Button
+            size="xs"
+            variant="secondary"
+            leadingIcon="ph:key"
             onClick={() => setShowPatModal(true)}
             title={patStatus?.hasPat ? "Manage GitHub PAT" : "Connect GitHub PAT"}
             aria-label={patStatus?.hasPat ? "GitHub PAT connected — manage" : "Connect GitHub PAT"}
-            className={`gh-compact-icon-button ${patStatus?.hasPat ? "" : "gh-compact-icon-button--labeled"}`}
           >
-            <Icon name="ph:key" width={11} />
             {patStatus?.hasPat ? null : "Add PAT"}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <IconButton
+            icon="ph:arrows-clockwise"
+            size="sm"
             onClick={() => {
               refreshActivity();
               reloadCards();
             }}
             title="Refresh (⌘R)"
             aria-label="Refresh GitHub activity"
-            className="gh-compact-icon-button"
-          >
-            <Icon name="ph:arrows-clockwise" width={13} />
-          </button>
+          />
         </div>
       </header>
 
@@ -2090,19 +2091,17 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                             familiars={familiars}
                             onJumpToSession={onJumpToSession}
                           />
-                          <a
-                            href={item.url}
+                          <IconButton
+                            icon="ph:arrow-square-out"
+                            size="xs"
                             title="Open on GitHub"
                             aria-label="Open on GitHub"
-                            className="gh-action-btn gh-action-btn--icon"
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
                               openExternalUrl(item.url);
                             }}
-                          >
-                            <Icon name="ph:arrow-square-out" width={11} />
-                          </a>
+                          />
                         </div>
                       </td>
                     </tr>

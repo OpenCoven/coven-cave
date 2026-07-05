@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/lib/icon";
 import { useShellBanners } from "@/lib/shell-banners";
 
@@ -380,9 +381,9 @@ export function OpenCovenToolsUpdate() {
   };
 
   const accentBtn =
-    "settings-touch-action focus-ring gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50";
+    "settings-touch-action gap-1.5 rounded-[var(--radius-control)] bg-[var(--accent-presence)] px-3 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50";
   const ghostBtn =
-    "settings-touch-action focus-ring gap-1.5 rounded-md border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
+    "settings-touch-action gap-1.5 rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
   const footerStatusText =
     diagnosticsStatus === "copied"
       ? "Diagnostics copied"
@@ -422,7 +423,7 @@ export function OpenCovenToolsUpdate() {
                 </p>
               ) : null}
               {busy && job?.tail ? (
-                <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
+                <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 font-mono text-[11px] leading-4 text-[var(--text-muted)]">
                   {job.tail}
                 </pre>
               ) : null}
@@ -434,29 +435,31 @@ export function OpenCovenToolsUpdate() {
                   Updating... {formatElapsed(job.elapsedMs)}
                 </span>
               ) : tool.outdated || toolNeedsCompatibilityUpdate(tool) ? (
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
+                  size="xs"
                   onClick={() => void updateTool(tool.id)}
                   className={accentBtn}
+                  leadingIcon="ph:arrow-down-bold"
                 >
-                  <Icon name="ph:arrow-down-bold" width={12} />
                   Update {tool.label}
-                </button>
+                </Button>
               ) : (
                 <span className="text-[12px] text-[var(--text-muted)]">
                   {toolStatusText(tool)}
                 </span>
               )}
               {!busy ? (
-                <button
-                  type="button"
+                <Button
+                  variant="secondary"
+                  size="xs"
                   onClick={() => void copyCommand(tool)}
                   className={ghostBtn}
                   aria-live="polite"
+                  leadingIcon={copiedCommand === tool.id ? "ph:check-bold" : "ph:terminal-window"}
                 >
-                  <Icon name={copiedCommand === tool.id ? "ph:check-bold" : "ph:terminal-window"} width={12} />
                   {copiedCommand === tool.id ? "Copied" : "Copy command"}
-                </button>
+                </Button>
               ) : null}
             </div>
           </div>
@@ -467,33 +470,30 @@ export function OpenCovenToolsUpdate() {
           {footerStatusText}
         </span>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="xs"
             onClick={() => void copyDiagnostics()}
             className={`${ghostBtn} cave-fill-btn`}
             data-state={diagnosticsStatus}
             aria-live="polite"
+            leadingIcon={
+              diagnosticsStatus === "copied"
+                ? "ph:check-bold"
+                : diagnosticsStatus === "failed"
+                  ? "ph:warning"
+                  : "ph:copy"
+            }
           >
-            <Icon
-              name={
-                diagnosticsStatus === "copied"
-                  ? "ph:check-bold"
-                  : diagnosticsStatus === "failed"
-                    ? "ph:warning"
-                    : "ph:copy"
-              }
-              width={12}
-              aria-hidden
-            />
             {diagnosticsStatus === "copied"
               ? "Copied"
               : diagnosticsStatus === "failed"
                 ? "Copy failed"
                 : "Copy diagnostics"}
-          </button>
-          <button type="button" onClick={() => void load()} className={ghostBtn} disabled={checking}>
+          </Button>
+          <Button variant="secondary" size="xs" onClick={() => void load()} className={ghostBtn} disabled={checking}>
             Check tools
-          </button>
+          </Button>
         </div>
       </div>
     </>

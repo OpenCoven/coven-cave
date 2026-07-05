@@ -32,6 +32,15 @@ assert.match(source, /Resolve route/, "panel should expose a visible execution-r
 assert.match(source, /\/api\/opencoven\/executions/, "panel should request OpenCoven execution-service plans");
 assert.match(source, /Build execution plan/, "panel should expose a visible execution-plan builder");
 assert.match(source, /executionPlan/, "panel should show execution-plan state from OpenCoven execution services");
+assert.match(source, /import \{ Button \}/, "panel actions should use the shared Button primitive");
+assert.match(source, /StandardSelect/, "panel selectors should use the shared StandardSelect primitive");
+assert.doesNotMatch(source, /<button\b/, "panel should not hand-roll button controls");
+assert.doesNotMatch(source, /<select\b/, "route selectors should use custom popover controls, not native selects");
+assert.doesNotMatch(
+  source,
+  /\brounded(?!-\[var\(--radius-(?:control|card)\)\]|-full)\b|rounded-(?:sm|md|lg|xl|2xl)\b|rounded-\[(?!var\(--radius-(?:control|card)\))/,
+  "submission panel should use shared card/control radius tokens",
+);
 assert.doesNotMatch(source, /clawhub|openclaw/i, "submission panel must not point authors at external publishing paths");
 assert.match(capabilitiesView, /OpenCovenSubmissionPanel/, "Capabilities tab should render the OpenCoven submission panel");
 

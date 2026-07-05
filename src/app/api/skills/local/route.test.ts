@@ -1,6 +1,6 @@
 // @ts-nocheck
 // The Skills tab lists shared/local tool skills only: Coven-global skills and
-// the user's own Claude Code skills. Per-familiar skills are private familiar
+// the user's own agent skills. Per-familiar skills are private familiar
 // workspace data and must not appear in the catalogue.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -13,6 +13,16 @@ assert.match(
   /scanClaudeUserSkills\(\)/,
   "User-level Claude skills (~/.claude/skills) are included in the local skills listing",
 );
+assert.match(
+  route,
+  /scanCodexUserSkills\(\)/,
+  "User-level Codex skills (~/.codex/skills) are included in the local skills listing",
+);
+assert.match(
+  route,
+  /scanAgentSharedSkills\(\)/,
+  "Shared .agents/skills roots are included in the local skills listing",
+);
 
 assert.doesNotMatch(
   route,
@@ -24,6 +34,21 @@ assert.match(
   scan,
   /path\.join\(homedir\(\), "\.claude", "skills"\), "user"/,
   "scanClaudeUserSkills scans ~/.claude/skills and labels entries \"user\"",
+);
+assert.match(
+  scan,
+  /path\.join\(homedir\(\), "\.codex", "skills"\), "codex-user"/,
+  "scanCodexUserSkills scans ~/.codex/skills and labels entries \"codex-user\"",
+);
+assert.match(
+  scan,
+  /path\.join\(projectRoot, "\.agents", "skills"\), "agents-project"/,
+  "scanAgentSharedSkills scans project .agents/skills",
+);
+assert.match(
+  scan,
+  /path\.join\(homedir\(\), "\.agents", "skills"\), "agents-user"/,
+  "scanAgentSharedSkills scans ~/.agents/skills",
 );
 
 assert.match(

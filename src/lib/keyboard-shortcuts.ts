@@ -43,7 +43,6 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: "⌘\\", description: "Toggle the list panel" },
       { keys: "⌃`", description: "Toggle the integrated terminal (desktop app)" },
       { keys: "⌘1–⌘8", description: "Jump to a sidebar surface (Home … Code)" },
-      { keys: "⌘0", description: "Jump to the Library" },
       { keys: "⌘9", description: "Jump to Projects (Chat surface)" },
       { keys: "⌘[ / ⌘]", description: "Previous / next surface" },
       { keys: "⌥1–⌥9", description: "Select the Nth familiar" },

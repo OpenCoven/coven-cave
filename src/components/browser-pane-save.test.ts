@@ -6,13 +6,7 @@ const source = await readFile(new URL("./browser-pane.tsx", import.meta.url), "u
 
 assert.match(source, /from "@\/components\/ui\/icon-button"/,
   "browser-pane imports IconButton");
-assert.match(source, /icon="ph:bookmark-simple"/,
-  "renders a bookmark-simple IconButton");
-assert.match(source, /aria-label="Save to library"/,
-  "Save button has aria-label");
-assert.match(source, /\/api\/library\/route-link/,
-  "POSTs to route-link endpoint");
-assert.match(source, /kind: "browser"/,
-  "uses browser source kind");
+assert.doesNotMatch(source, /aria-label="Save to library"|browser-toolbar-save|\/api\/library\/route-link/,
+  "integrated Browser should not expose Library save actions while Library is on feature/library");
 
-console.log("browser-pane-save: 5 assertions passed");
+console.log("browser-pane-save: ok");

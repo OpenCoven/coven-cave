@@ -20,7 +20,8 @@ import {
   type OnConnectStartParams,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { catalogNode } from "@/lib/flow/flow-catalog";
 import type { FlowDoc, FlowLayoutOrientation, FlowPosition } from "@/lib/flow/flow-doc";
 import {
@@ -315,50 +316,56 @@ if (syncedViewKey !== viewKey) {
   return (
     <div className="flow-canvas" aria-label={`${doc.name} canvas`} onDoubleClick={handlePaneDoubleClick}>
       <div className="flow-canvas-toolbar">
-        <button type="button" className="flow-canvas-tool flow-canvas-add" onClick={handleAddCenter} title="Add node (or double-click the canvas)">
-          <Icon name="ph:plus" width={15} />
-          <span>Add node</span>
-        </button>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="xs"
+          leadingIcon="ph:plus"
+          className="flow-canvas-tool flow-canvas-add"
+          onClick={handleAddCenter}
+          title="Add node (or double-click the canvas)"
+        >
+          Add node
+        </Button>
+        <IconButton
+          icon="ph:graph"
+          size="sm"
+          active={showMiniMap}
           className={`flow-canvas-tool${showMiniMap ? " is-active" : ""}`}
           aria-pressed={showMiniMap}
+          aria-label={showMiniMap ? "Hide minimap" : "Show minimap"}
           onClick={() => setShowMiniMap((v) => !v)}
           title={showMiniMap ? "Hide minimap" : "Show minimap"}
-        >
-          <Icon name="ph:graph" width={14} />
-        </button>
+        />
         <div className="flow-canvas-layout-toggle" role="group" aria-label="Flow layout orientation">
-          <button
-            type="button"
+          <IconButton
+            icon="ph:columns"
+            size="sm"
+            active={layoutOrientation === "horizontal"}
             className={`flow-canvas-tool flow-canvas-layout-tool${layoutOrientation === "horizontal" ? " is-active" : ""}`}
             aria-pressed={layoutOrientation === "horizontal"}
             aria-label="Use horizontal layout"
             title="Use horizontal layout"
             onClick={() => props.onLayoutOrientation("horizontal")}
-          >
-            <Icon name="ph:columns" width={14} />
-          </button>
-          <button
-            type="button"
+          />
+          <IconButton
+            icon="ph:rows"
+            size="sm"
+            active={layoutOrientation === "vertical"}
             className={`flow-canvas-tool flow-canvas-layout-tool${layoutOrientation === "vertical" ? " is-active" : ""}`}
             aria-pressed={layoutOrientation === "vertical"}
             aria-label="Use vertical layout"
             title="Use vertical layout"
             onClick={() => props.onLayoutOrientation("vertical")}
-          >
-            <Icon name="ph:rows" width={14} />
-          </button>
+          />
         </div>
-        <button
-          type="button"
+        <IconButton
+          icon="ph:squares-four"
+          size="sm"
           className="flow-canvas-tool"
           onClick={props.onTidy}
           title="Tidy up workflow"
           aria-label="Tidy up workflow"
-        >
-          <Icon name="ph:squares-four" width={14} />
-        </button>
+        />
       </div>
       <ReactFlow
         key={`${doc.id}:${viewResetKey}`}

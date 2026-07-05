@@ -72,8 +72,7 @@ export type ConversationFile = {
   modelIntent?: ConversationModelIntent;
   runtime?: string;
   title?: string;
-  /** Provenance — defaults to "chat". "eval" threads are surfaced in the Evals
-   *  page and hidden from the chat list. */
+  /** Provenance — defaults to "chat". */
   origin?: SessionOrigin;
   createdAt: string;
   updatedAt: string;

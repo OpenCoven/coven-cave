@@ -244,7 +244,7 @@ export function formatChatRecency(
 /**
  * Verbose date honoring the date preference's ORDERING (month-first vs
  * day-first), keeping the month name (+ optional year/weekday) — so non-chat
- * date displays (library list, memory inspector, calendar header) follow the
+ * date displays (memory inspector, calendar header) follow the
  * user's regional date order without being forced into the compact "06.19"
  * form. `ddmm` → day-first ("19 Jun" / "19 Jun 2026"); anything else (mmdd, the
  * chat-only "off") → month-first ("Jun 19" / "Jun 19, 2026"). Accepts an ISO

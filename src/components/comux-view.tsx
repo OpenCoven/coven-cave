@@ -116,7 +116,7 @@ type Props = {
   /** Center column slot — the familiar conversation. When provided (the Code
    *  workspace), the projects view lays out three columns in the Codex position:
    *  the file-tree explorer (left), this chat (center), and the preview / Changes
-   *  review (right). Omitted elsewhere (e.g. the Library projects browser), where
+   *  review (right). Omitted elsewhere, where
    *  comux stays two-column (tree | preview/changes). */
   centerSlot?: ReactNode;
   /** Code mode moves project/thread navigation into the primary shell sidebar.
@@ -126,7 +126,7 @@ type Props = {
   /** Remove the left file-tree explorer column entirely (project header,
    *  Terminal/New chat, in-project search, sessions, and the FILES tree), so the
    *  surface is just the conversation + preview/Changes. The Code surface sets
-   *  this; the Library projects browser keeps its tree. */
+   *  this; standalone project browsers keep their tree. */
   hideFileTree?: boolean;
 };
 
@@ -687,23 +687,6 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
     });
     return id;
   }, [daemonProjectRoot, selectedProjectRoot, sessions.length, terminalLayout]);
-
-  // Cross-surface launch: other surfaces (e.g. the Projects page) open a
-  // terminal in a specific project by dispatching `cave:terminal-open` with the
-  // project root. Only the canonical terminal instance handles it so a single
-  // session is created, and it spawns in that project's cwd via addSession.
-  useEffect(() => {
-    // Gate on `active` so that when several ComuxView instances are mounted
-    // (e.g. the hidden Terminal surface plus the visible Code workspace), only
-    // the active one opens a session — otherwise a single event spawns two.
-    if (view !== "terminal" || !active) return;
-    const onTerminalOpen = (event: Event) => {
-      const detail = (event as CustomEvent<{ projectRoot?: string }>).detail;
-      addSession(detail?.projectRoot);
-    };
-    window.addEventListener("cave:terminal-open", onTerminalOpen as EventListener);
-    return () => window.removeEventListener("cave:terminal-open", onTerminalOpen as EventListener);
-  }, [view, active, addSession]);
 
   useEffect(() => {
     const activeTerminal = view === "terminal" && active;
@@ -1878,8 +1861,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                       )}
                     </div>
                     {/* Right-click a project → act on it without selecting it
-                        first (start a chat/terminal in any project's cwd, copy
-                        or reveal its path). One menu serves the whole list. */}
+                        first (start a chat, copy, or reveal its path). One
+                        menu serves the whole list. */}
                     <ContextMenu
                       state={projectMenu}
                       onClose={() => setProjectMenu(null)}
@@ -1907,16 +1890,6 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                           >
                             New chat
                           </PopoverItem>
-                          <PopoverItem
-                            icon="ph:terminal-window-bold"
-                            onSelect={() => {
-                              setProjectMenu(null);
-                              addSession(projectMenuTarget.root);
-                            }}
-                          >
-                            Open terminal
-                          </PopoverItem>
-                          <PopoverSeparator />
                           <PopoverItem
                             icon="ph:copy"
                             onSelect={() => {
@@ -2147,8 +2120,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
 
                 {/* Center column — the familiar conversation (Codex position:
                     file tree on the left, chat in the middle, preview/Changes on
-                    the right). Only the Code workspace passes a centerSlot; the
-                    Library projects browser stays two-column. */}
+                    the right). Only the Code workspace passes a centerSlot;
+                    standalone project browsers stay two-column. */}
                 {centerSlot ? (
                   <div
                     className="comux-center-column flex min-w-0 min-h-0 flex-col overflow-hidden border-b border-[var(--border-hairline)] xl:border-b-0 xl:border-r"

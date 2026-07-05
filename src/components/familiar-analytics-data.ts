@@ -1,4 +1,3 @@
-import type { EvalLoopState } from "@/components/eval-loop-panel";
 import {
   buildFamiliarCardStats,
   type CovenMemoryEntry,
@@ -25,10 +24,6 @@ type ContractResponse =
   | { ok: true; report: ContractReport }
   | { ok: false; report?: ContractReport; error?: string };
 
-type EvalLoopResponse =
-  | { ok: true; state: EvalLoopState | null }
-  | { ok: false; state?: EvalLoopState | null; error?: string };
-
 type SessionsResponse =
   | { ok: true; sessions: SessionRow[] }
   | { ok: false; sessions?: SessionRow[]; error?: string };
@@ -53,7 +48,6 @@ export type FamiliarAnalyticsData = {
   familiarId: string;
   familiars: Familiar[];
   contractReport: ContractReport | null;
-  evalLoopState: EvalLoopState | null;
   sessions: SessionRow[];
   covenEntries: CovenMemoryEntry[];
   retroSnapshot: RetroRunsSnapshot;
@@ -66,7 +60,6 @@ export type FamiliarAnalyticsModel = {
   familiarId: string;
   familiar: Familiar | null;
   contractReport: ContractReport | null;
-  evalLoopState: EvalLoopState | null;
   growthReport: FamiliarGrowthReport | null;
   confidence: ConfidenceScore;
   healRequests: SelfHealRequest[];
@@ -125,20 +118,6 @@ function retroStateFor(snapshot: RetroRunsSnapshot, familiarId: string): RetroFa
   return snapshot.familiars.find((state) => state.familiarId === familiarId) ?? null;
 }
 
-/**
- * The daemon proxy can hand back either an EvalLoopState directly or a wrapped
- * `{ state: EvalLoopState }` envelope (the live daemon double-wraps). Normalize
- * to the inner state so downstream `iterations`/`track_counts` reads are safe.
- */
-function normalizeEvalLoopState(raw: EvalLoopState | null | undefined): EvalLoopState | null {
-  if (!raw || typeof raw !== "object") return null;
-  const candidate = raw as EvalLoopState & { state?: EvalLoopState | null };
-  if (!Array.isArray(candidate.iterations) && candidate.state && typeof candidate.state === "object") {
-    return candidate.state;
-  }
-  return candidate;
-}
-
 function responseError(response: { ok: boolean; error?: string }, fallback: string): string | null {
   return response.ok ? null : response.error ?? fallback;
 }
@@ -148,7 +127,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
   const [
     familiarsJson,
     contractJson,
-    evalLoopJson,
     sessionsJson,
     memoryJson,
     retroJson,
@@ -157,7 +135,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
   ] = await Promise.all([
     fetchResource<FamiliarsResponse>("/api/familiars", { ok: false, familiars: [] }),
     fetchResource<ContractResponse>(`/api/familiars/${encodedId}/contract`, { ok: false }),
-    fetchResource<EvalLoopResponse>(`/api/skills/eval-loop/${encodedId}`, { ok: false, state: null }),
     fetchResource<SessionsResponse>("/api/sessions/list", { ok: false, sessions: [] }),
     fetchResource<CovenMemoryResponse>("/api/coven-memory", { ok: false, entries: [] }),
     fetchResource<RetroApiResponse>("/api/retro-runs", { ok: false }),
@@ -168,7 +145,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
   const errors = [
     responseError(familiarsJson, "familiars unavailable"),
     responseError(contractJson, "contract unavailable"),
-    responseError(evalLoopJson, "eval-loop unavailable"),
     responseError(sessionsJson, "sessions unavailable"),
     responseError(memoryJson, "memory unavailable"),
     responseError(retroJson, "retro runs unavailable"),
@@ -179,7 +155,6 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
     familiarId,
     familiars: familiarsJson.familiars ?? [],
     contractReport: contractJson.report ?? null,
-    evalLoopState: normalizeEvalLoopState(evalLoopJson.state),
     sessions: sessionsJson.sessions ?? [],
     covenEntries: memoryJson.entries ?? [],
     retroSnapshot: retroJson.snapshot ?? EMPTY_SNAPSHOT,
@@ -214,7 +189,6 @@ export function buildFamiliarAnalyticsModel(data: FamiliarAnalyticsData): Famili
   });
   const healRequests = deriveHealRequests({
     familiarId: data.familiarId,
-    evalLoopState: data.evalLoopState,
     contractReport: data.contractReport,
     growthReport,
   });
@@ -223,7 +197,6 @@ export function buildFamiliarAnalyticsModel(data: FamiliarAnalyticsData): Famili
     familiarId: data.familiarId,
     familiar,
     contractReport: data.contractReport,
-    evalLoopState: data.evalLoopState,
     growthReport,
     confidence,
     healRequests,

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { isSplittablePage, PAGE_DRAG_MIME } from "./page-drag.ts";
 
 test("most pages are splittable", () => {
-  for (const m of ["chat", "board", "library", "journal", "github", "evals", "marketplace"]) {
+  for (const m of ["chat", "board", "journal", "github", "marketplace"]) {
     assert.equal(isSplittablePage(m), true, `${m} should be splittable`);
   }
 });

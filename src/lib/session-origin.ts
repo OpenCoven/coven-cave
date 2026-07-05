@@ -8,7 +8,6 @@ export const SESSION_ORIGINS: readonly SessionOrigin[] = [
   "cron",
   "heartbeat",
   "call",
-  "eval",
 ] as const;
 
 export const ORIGIN_LABEL: Record<SessionOrigin, string> = {
@@ -18,7 +17,6 @@ export const ORIGIN_LABEL: Record<SessionOrigin, string> = {
   cron: "cron",
   heartbeat: "heartbeat",
   call: "call",
-  eval: "eval",
 };
 
 export const ORIGIN_ICON: Record<SessionOrigin, IconName> = {
@@ -28,7 +26,6 @@ export const ORIGIN_ICON: Record<SessionOrigin, IconName> = {
   cron: "ph:alarm-fill",
   heartbeat: "ph:heartbeat",
   call: "ph:magic-wand-fill",
-  eval: "ph:flask",
 };
 
 /**

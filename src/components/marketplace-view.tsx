@@ -12,6 +12,7 @@ import { Icon, type IconName } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs } from "@/components/ui/tabs";
+import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarketplaceCard } from "@/components/marketplace/marketplace-card";
 import { MarketplaceDetail } from "@/components/marketplace/marketplace-detail";
@@ -70,6 +71,12 @@ const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities">, string> 
   browse: "Search the marketplace",
   roles: "Search roles",
   skills: "Search skills",
+};
+
+type SectionSummary = {
+  metric: string;
+  detail: string;
+  status: "loading" | "ready" | "error";
 };
 
 const KIND_TABS: ReadonlyArray<{ id: KindFilter; label: string }> = [
@@ -198,13 +205,15 @@ export function MarketplaceViewSurface({
     }
   }, []);
 
-  const loadSkills = useCallback(async () => {
+  const loadSkills = useCallback(async (search = "") => {
     skillsCtl.current?.abort();
     const ctl = new AbortController();
     skillsCtl.current = ctl;
     setSkillsLoaded(false);
     try {
-      const res = await fetch("/api/skills/directory", { cache: "no-store", signal: ctl.signal });
+      const trimmed = search.trim();
+      const url = trimmed ? `/api/skills/directory?q=${encodeURIComponent(trimmed)}` : "/api/skills/directory";
+      const res = await fetch(url, { cache: "no-store", signal: ctl.signal });
       const json = (await res.json()) as {
         ok?: boolean;
         entries?: SkillBrowserEntry[];
@@ -236,6 +245,14 @@ export function MarketplaceViewSurface({
     };
   }, [load, loadRoles, loadSkills]);
 
+  useEffect(() => {
+    if (section !== "skills") return;
+    const timeout = window.setTimeout(() => {
+      void loadSkills(query);
+    }, query.trim() ? 250 : 0);
+    return () => window.clearTimeout(timeout);
+  }, [section, query, loadSkills]);
+
   // "/" focuses the hub search from anywhere on the surface (unless typing).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -266,6 +283,7 @@ export function MarketplaceViewSurface({
   }, [plugins]);
   const kindCounts = useMemo(() => countByKind(plugins), [plugins]);
   const installedCount = useMemo(() => plugins.filter((p) => p.installed).length, [plugins]);
+  const installedSkillCount = useMemo(() => skills.filter((skill) => skill.installed || skill.local).length, [skills]);
 
   const rolesSummary = useMemo(() => {
     const mcpServerNames = new Set<string>();
@@ -276,6 +294,56 @@ export function MarketplaceViewSurface({
     }
     return { activeRoles, totalRoles: roles.length, mcpServers: mcpServerNames.size };
   }, [roles]);
+
+  const sectionSummaries = useMemo<Record<MarketplaceSection, SectionSummary>>(() => {
+    const browseReadyDetail =
+      installedCount > 0 ? `${installedCount} added` : `${Math.max(categories.length - 1, 0)} categories`;
+    const rolesReadyDetail =
+      rolesSummary.activeRoles > 0
+        ? `${rolesSummary.activeRoles} active`
+        : `${rolesSummary.mcpServers} MCP servers`;
+    const skillsReadyDetail =
+      installedSkillCount > 0 ? `${installedSkillCount} installed` : "Directory ready";
+
+    return {
+      browse: {
+        metric: error ? "Offline" : loaded ? `${plugins.length} tools` : "Loading",
+        detail: loaded ? browseReadyDetail : "Catalog sync",
+        status: error ? "error" : loaded ? "ready" : "loading",
+      },
+      roles: {
+        metric: rolesError ? "Offline" : rolesLoaded ? `${rolesSummary.totalRoles} roles` : "Loading",
+        detail: rolesLoaded ? rolesReadyDetail : "Role manifests",
+        status: rolesError ? "error" : rolesLoaded ? "ready" : "loading",
+      },
+      skills: {
+        metric: skillsError ? "Offline" : skillsLoaded ? `${skills.length} skills` : "Loading",
+        detail: skillsLoaded ? skillsReadyDetail : "Local + registry",
+        status: skillsError ? "error" : skillsLoaded ? "ready" : "loading",
+      },
+      capabilities: {
+        metric: activeHarness ? activeHarness : "Runtime map",
+        detail: "Compare agent support",
+        status: "ready",
+      },
+    };
+  }, [
+    activeHarness,
+    categories.length,
+    error,
+    installedCount,
+    installedSkillCount,
+    loaded,
+    plugins.length,
+    rolesError,
+    rolesLoaded,
+    rolesSummary.activeRoles,
+    rolesSummary.mcpServers,
+    rolesSummary.totalRoles,
+    skills.length,
+    skillsError,
+    skillsLoaded,
+  ]);
 
   const activeCollection = useMemo(
     () => COLLECTIONS.find((c) => c.id === collectionId) ?? null,
@@ -473,13 +541,13 @@ export function MarketplaceViewSurface({
           ) : null}
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-4 flex flex-col gap-3">
           {/* Section tabs — the merged surface's primary navigation. */}
           <div
             ref={tablistRef}
             role="tablist"
             aria-label="Marketplace sections"
-            className="flex flex-wrap gap-1"
+            className="marketplace-section-overview"
             onKeyDown={(e) => {
               if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
               e.preventDefault();
@@ -496,30 +564,35 @@ export function MarketplaceViewSurface({
               }
             }}
           >
-            {SECTIONS.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                role="tab"
-                id={`marketplace-tab-${s.id}`}
-                aria-selected={section === s.id}
-                aria-controls={`marketplace-panel-${s.id}`}
-                tabIndex={section === s.id ? 0 : -1}
-                onClick={() => selectSection(s.id)}
-                className={`focus-ring flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] transition-colors ${
-                  section === s.id
-                    ? "bg-[var(--text-primary)] text-[var(--bg-base)]"
-                    : "text-[var(--text-muted)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
-                }`}
-              >
-                <Icon name={s.icon} width={14} />
-                {s.label}
-              </button>
-            ))}
+            {SECTIONS.map((s) => {
+              const summary = sectionSummaries[s.id];
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="tab"
+                  id={`marketplace-tab-${s.id}`}
+                  aria-selected={section === s.id}
+                  aria-controls={`marketplace-panel-${s.id}`}
+                  aria-label={`${s.label}: ${summary.metric}. ${summary.detail}`}
+                  tabIndex={section === s.id ? 0 : -1}
+                  data-status={summary.status}
+                  onClick={() => selectSection(s.id)}
+                  className={`marketplace-section-card focus-ring ${section === s.id ? "is-active" : ""}`}
+                >
+                  <span className="marketplace-section-card__top">
+                    <Icon name={s.icon} width={15} aria-hidden />
+                    <span className="marketplace-section-card__label">{s.label}</span>
+                  </span>
+                  <span className="marketplace-section-card__metric">{summary.metric}</span>
+                  <span className="marketplace-section-card__detail">{summary.detail}</span>
+                </button>
+              );
+            })}
           </div>
 
           {section === "browse" ? (
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <Tabs
                 items={KIND_TABS}
                 value={kind}
@@ -532,16 +605,13 @@ export function MarketplaceViewSurface({
               <label className="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
                 <span className="sr-only">Sort plugins</span>
                 <Icon name="ph:sort-ascending" width={14} aria-hidden />
-                <select
+                <StandardSelect
+                  label="Sort plugins"
                   value={sort}
-                  onChange={(e) => setSort(e.target.value as SortKey)}
-                  aria-label="Sort plugins"
+                  onChange={(next) => setSort(next as SortKey)}
                   className="focus-ring cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[12px] text-[var(--text-primary)]"
-                >
-                  {SORT_OPTIONS.map((o) => (
-                    <option key={o.id} value={o.id}>{o.label}</option>
-                  ))}
-                </select>
+                  options={SORT_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
+                />
               </label>
             </div>
           ) : null}
@@ -750,7 +820,7 @@ export function MarketplaceViewSurface({
             query={query}
             onClearQuery={() => setQuery("")}
             onCreateSkill={() => selectSection("capabilities")}
-            onChanged={loadSkills}
+            onChanged={() => void loadSkills(query)}
           />
         </div>
       ) : (

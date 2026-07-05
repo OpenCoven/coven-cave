@@ -15,7 +15,8 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
-  const data: SkillDirectoryListResponse = await listSkillDirectoryEntriesWithLocal();
+export async function GET(req: Request) {
+  const query = new URL(req.url).searchParams.get("q") ?? undefined;
+  const data: SkillDirectoryListResponse = await listSkillDirectoryEntriesWithLocal(query);
   return NextResponse.json(data);
 }

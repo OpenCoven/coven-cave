@@ -1,8 +1,8 @@
 /**
  * Reading letter-spacing (tracking) for long-form prose.
  *
- * Scoped to the shared `.cave-md` markdown surface (chat messages, the library
- * doc reader, the memory view) via the `--cave-reading-tracking` CSS var. It
+ * Scoped to the shared `.cave-md` markdown surface (chat messages, memory
+ * view) via the `--cave-reading-tracking` CSS var. It
  * deliberately does NOT touch the app's other ~74 letter-spacing declarations
  * (uppercase eyebrows, heading tightening), which are intentional.
  *

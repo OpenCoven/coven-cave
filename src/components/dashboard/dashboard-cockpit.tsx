@@ -39,18 +39,15 @@ import { openExternalUrl } from "@/lib/open-external";
 
 // ─── Data shapes (client-fetched) ──────────────────────────────────────────────
 
-type ReadingItem = { id: string; title: string; url?: string; sourceType?: string; status?: string };
-
 type CockpitData = {
   cards: Card[];
   familiars: Familiar[];
   github: GitHubItem[];
-  reading: ReadingItem[];
   upcoming: InboxItem[];
   sessions: SessionRow[];
 };
 
-const EMPTY: CockpitData = { cards: [], familiars: [], github: [], reading: [], upcoming: [], sessions: [] };
+const EMPTY: CockpitData = { cards: [], familiars: [], github: [], upcoming: [], sessions: [] };
 
 type ConfidenceRow = { id: string; name: string; score: number; factors: ConfidenceFactor[] };
 const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsLast7d: 0, hasActiveSession: false };
@@ -58,7 +55,7 @@ const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, las
 // Draggable panel layout — order per column, persisted to localStorage.
 const LAYOUT_KEY = "cave:cockpit:layout";
 type Layout = { main: string[]; rail: string[] };
-const DEFAULT_LAYOUT: Layout = { main: ["needs", "signals", "board", "today"], rail: ["agents", "confidence", "load", "github", "agenda", "reading"] };
+const DEFAULT_LAYOUT: Layout = { main: ["needs", "signals", "board", "today"], rail: ["agents", "confidence", "load", "github", "agenda"] };
 
 /** Merge a saved order with the defaults: keep known ids in saved order, append
  *  any new defaults, drop anything unknown (survives version changes). */
@@ -85,7 +82,7 @@ async function getJson<T>(url: string): Promise<T | null> {
 
 const TRENDS_KEY = "cave:cockpit:trends";
 const TREND_DAYS = 7;
-type TrendKey = "needs" | "tasks" | "progress" | "review" | "prs" | "reading";
+type TrendKey = "needs" | "tasks" | "progress" | "review" | "prs";
 type DaySnap = Record<TrendKey, number>;
 type TrendStore = Record<string, DaySnap>; // "YYYY-MM-DD" -> snapshot
 
@@ -153,7 +150,6 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     };
     void getJson<{ cards: Card[] }>("/api/board").then((r) => put("cards", r?.cards ?? []));
     void getJson<{ familiars: Familiar[] }>("/api/familiars").then((r) => put("familiars", r?.familiars ?? []));
-    void getJson<{ items: ReadingItem[] }>("/api/library/reading").then((r) => put("reading", r?.items ?? []));
     void getJson<{ items: InboxItem[] }>("/api/inbox?status=pending").then((r) => put("upcoming", r?.items ?? []));
     void getJson<{ sessions: SessionRow[] }>("/api/sessions/list").then((r) => put("sessions", r?.sessions ?? []));
     void Promise.all([
@@ -186,28 +182,23 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   const prsToReview = data.github.filter(
     (g) => g.kind === "review_request" || (g.kind === "pr" && g.state !== "closed"),
   );
-  const readingQueue = data.reading.filter((r) => r.status === "want-to-read" || r.status === "reading");
   const runningSessions = data.sessions.filter((s) => (s.status ?? "").toLowerCase() === "running");
 
   const upcoming = data.upcoming
     .filter((i) => i.kind === "reminder" && i.fireAt && new Date(i.fireAt).getTime() > now.getTime())
     .sort((a, b) => new Date(a.fireAt!).getTime() - new Date(b.fireAt!).getTime())
     .slice(0, 5);
-
   // Predictive signals — pure + cheap over already-fetched data.
   const signals = useMemo(
     () =>
       dashboardSignals({
         github: data.github,
-        // Only the *active* queue (want-to-read / reading) — counting done and
-        // abandoned items made "Reading queue is large (N)" contradict the
-        // "To read" KPI, which uses this same filter.
-        reading: data.reading.filter((r) => r.status === "want-to-read" || r.status === "reading"),
+        reading: [],
         sessions: data.sessions,
         familiars: data.familiars,
         nowMs: now.getTime(),
       }),
-    [data.github, data.reading, data.sessions, data.familiars, now],
+    [data.github, data.sessions, data.familiars, now],
   );
 
   // ── Confidence heatmap: bounded per-familiar contract fetch (≤6) + one shared
@@ -261,7 +252,6 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     { icon: "ph:lightning-bold", value: (byStatus.get("running") ?? 0) + runningSessions.length, label: "In progress", accent: "green", src: "cards", metric: "progress", href: "/?mode=board" },
     { icon: "ph:git-merge", value: byStatus.get("review") ?? 0, label: "In review", accent: "blue", src: "cards", metric: "review", href: "/?mode=board" },
     { icon: "ph:git-pull-request", value: prsToReview.length, label: "PRs to review", accent: "amber", src: "github", metric: "prs", href: "/?mode=github" },
-    { icon: "ph:books-bold", value: readingQueue.length, label: "To read", accent: "blue", src: "reading", metric: "reading", href: "/?mode=library" },
   ];
 
   // ── 7-day KPI trends: load history; snapshot today once the live data is in ──
@@ -269,7 +259,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   useEffect(() => {
     try { const raw = localStorage.getItem(TRENDS_KEY); if (raw) setTrends(JSON.parse(raw) as TrendStore); } catch { /* ignore */ }
   }, []);
-  const coreReady = ready.has("cards") && ready.has("github") && ready.has("reading");
+  const coreReady = ready.has("cards") && ready.has("github");
   useEffect(() => {
     if (!coreReady) return;
     const snap = Object.fromEntries(kpis.map((k) => [k.metric, k.value])) as DaySnap;
@@ -358,10 +348,6 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
         <Panel title="Up next" icon="ph:calendar-bold" count={upcoming.length || undefined} href="/?mode=calendar">
           <AgendaPanel items={upcoming} now={now} loaded={ready.has("upcoming")} />
         </Panel>);
-      case "reading": return (
-        <Panel title="Reading" icon="ph:books-bold" count={readingQueue.length || undefined} hint={readingQueue.length ? undefined : "queue empty"} href="/?mode=library">
-          <ReadingPanel items={readingQueue} loaded={ready.has("reading")} />
-        </Panel>);
       default: return null;
     }
   };
@@ -422,9 +408,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
           <QuickLink href="/" icon="ph:house-bold" label="Home" sub="Your cave" />
           <QuickLink href="/?mode=board" icon="ph:kanban-bold" label="Board" sub="Cards & tasks" />
           <QuickLink href="/dashboard/familiars/growth" icon="ph:chart-bar-bold" label="Growth" sub="Familiar performance" />
-          <QuickLink href="/?mode=evals" icon="ph:flask" label="Evals" sub="Suites, loops, freshness" />
           <QuickLink href="/?mode=calendar" icon="ph:calendar-bold" label="Calendar" sub="Reminders & agenda" />
-          <QuickLink href="/?mode=library" icon="ph:books-bold" label="Library" sub="Saved knowledge" />
           <QuickLink href="/settings" icon="ph:gear-six" label="Settings" sub="Preferences" />
         </div>
       </div>
@@ -432,7 +416,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       <RecentReports reports={model.recentReports} now={now} hasFeatured={Boolean(model.featuredReport)} />
 
       <footer className="dr-footer">
-        This cockpit reads your local board, inbox, agents, GitHub, and reading list. Everything stays on your machine.
+        This cockpit reads your local board, inbox, agents, and GitHub. Everything stays on your machine.
       </footer>
     </div>
   );
@@ -489,10 +473,10 @@ function SortableWidget({ id, children }: { id: string; children: ReactNode }) {
 
 // ─── KPI tile ────────────────────────────────────────────────────────────────────
 
-type KpiSpec = { icon: IconName; value: number; label: string; accent: "rose" | "lavender" | "green" | "blue" | "amber"; metric: TrendKey; src?: keyof CockpitData; href?: string };
+type KpiSpec = { icon: IconName; value: number; label: string; accent: "rose" | "lavender" | "green" | "blue" | "amber" | "teal"; metric: TrendKey; src?: keyof CockpitData; href?: string };
 const KPI_ACCENT: Record<KpiSpec["accent"], string> = {
   rose: "var(--color-danger)", lavender: "var(--accent-presence)", green: "var(--color-success)",
-  blue: "var(--color-info)", amber: "var(--color-warning)",
+  blue: "var(--color-info)", amber: "var(--color-warning)", teal: "oklch(0.68 0.12 190)",
 };
 
 function KpiTile({ icon, value, label, accent, href, loading, series }: KpiSpec & { loading: boolean; series: SparkPoint[] }) {
@@ -667,42 +651,6 @@ function whenLabel(iso: string, now: Date): string {
   return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${time}`;
 }
 
-// ─── Reading ─────────────────────────────────────────────────────────────────────
-
-function ReadingPanel({ items, loaded }: { items: ReadingItem[]; loaded: boolean }) {
-  if (!loaded) return <PanelSkeleton rows={2} />;
-  if (items.length === 0) return <EmptyState icon="ph:books-bold">Reading queue is clear.</EmptyState>;
-  return (
-    <ul className="cockpit-reading">
-      {items.slice(0, 5).map((r) => {
-        const reading = r.status === "reading";
-        const inner = (
-          <>
-            <span className="cockpit-dot" style={{ background: reading ? "var(--accent-presence)" : "var(--text-muted)" }} />
-            <span className="cockpit-readrow__title" title={r.title}>{r.title}</span>
-            {host(r.url) ? <span className="cockpit-readrow__host">{host(r.url)}</span> : null}
-          </>
-        );
-        return (
-          <li key={r.id}>
-            {r.url ? (
-              <a className="cockpit-readrow" href={r.url} target="_blank" rel="noreferrer">{inner}</a>
-            ) : (
-              // No URL → nothing to open; a dead href="#" link would just
-              // scroll-jump and lie to assistive tech.
-              <span className="cockpit-readrow">{inner}</span>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-function host(url?: string): string | null {
-  if (!url) return null;
-  try { return new URL(url).host.replace(/^www\./, ""); } catch { return null; }
-}
-
 // ─── Signals ─────────────────────────────────────────────────────────────────────
 
 const SIGNAL_ICON: Record<DashboardSignal["severity"], IconName> = { warn: "ph:warning", info: "ph:info" };
@@ -720,7 +668,7 @@ function SignalsPanel({ signals }: { signals: DashboardSignal[] }) {
           <li key={s.id}>
             {s.href ? (
               // An actionable signal takes you to where you can act on it —
-              // the stalled PR, the library, the familiar's analytics.
+              // the stalled PR, the board, the familiar's analytics.
               <a
                 className={`cockpit-signal cockpit-signal--${s.severity} cockpit-signal--link`}
                 href={s.href}

@@ -37,6 +37,38 @@ function kindLabel(kind: MarketplacePlugin["kind"]) {
   return "Skill";
 }
 
+function setupEffortLabel(plugin: MarketplacePlugin) {
+  if (!plugin.available) return { icon: "ph:warning" as const, label: "Unavailable" };
+  if (plugin.requiresSetup && !plugin.configured) {
+    const fields = plugin.requiredConfig.length;
+    return {
+      icon: "ph:key" as const,
+      label: fields > 0 ? `${fields} credential${fields === 1 ? "" : "s"}` : "Needs setup",
+    };
+  }
+  if (plugin.requiresSetup && plugin.configured) return { icon: "ph:check-circle" as const, label: "Configured" };
+  if (plugin.policy.authentication === "ON_INSTALL") return { icon: "ph:lock-simple" as const, label: "OAuth on first use" };
+  if (plugin.remoteUrl) return { icon: "ph:cloud-bold" as const, label: "Remote endpoint" };
+  return { icon: "ph:check-circle" as const, label: "No setup" };
+}
+
+function capabilityPreview(plugin: MarketplacePlugin) {
+  const capabilities = plugin.capabilities.length > 0 ? plugin.capabilities : plugin.keywords;
+  if (capabilities.length === 0) return "Core capability";
+  const first = capabilities.slice(0, 2).join(", ");
+  const more = capabilities.length > 2 ? ` +${capabilities.length - 2}` : "";
+  return `${first}${more}`;
+}
+
+function roleFitLabel(plugin: MarketplacePlugin) {
+  const roles = plugin.roleAffinity.flatMap((entry) => entry.roles).filter(Boolean);
+  if (roles.length === 0) return "General fit";
+  const unique = [...new Set(roles)];
+  const first = unique.slice(0, 2).join(", ");
+  const more = unique.length > 2 ? ` +${unique.length - 2}` : "";
+  return `${first}${more}`;
+}
+
 export const MarketplaceCard = memo(function MarketplaceCard({
   plugin,
   busy,
@@ -46,6 +78,9 @@ export const MarketplaceCard = memo(function MarketplaceCard({
   onConfigure,
 }: Props) {
   const state = pluginBadgeState(plugin);
+  const setup = setupEffortLabel(plugin);
+  const capability = capabilityPreview(plugin);
+  const roleFit = roleFitLabel(plugin);
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-panel)] p-4">
       <div className="flex items-start justify-between gap-3">
@@ -83,6 +118,20 @@ export const MarketplaceCard = memo(function MarketplaceCard({
         )}
       </div>
       <p className="line-clamp-2 text-[12px] text-[var(--text-muted)]">{plugin.description}</p>
+      <div
+        className="marketplace-card__decision"
+        aria-label={`Decision notes: ${setup.label}; ${capability}; ${roleFit}`}
+      >
+        <span className="marketplace-card__decision-chip" title={setup.label}>
+          <Icon name={setup.icon} width={11} aria-hidden /> {setup.label}
+        </span>
+        <span className="marketplace-card__decision-chip" title={capability}>
+          <Icon name="ph:lightning-bold" width={11} aria-hidden /> {capability}
+        </span>
+        <span className="marketplace-card__decision-chip" title={roleFit}>
+          <Icon name="ph:mask-happy" width={11} aria-hidden /> {roleFit}
+        </span>
+      </div>
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--text-muted)]">
         <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">
           <Icon name={kindIcon(plugin.kind)} width={11} aria-hidden />{" "}

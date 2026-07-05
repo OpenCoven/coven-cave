@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Icon } from "@/lib/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { StandardSelect } from "@/components/ui/select";
 import { copyText } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/relative-time";
 import { useDateTimePrefs } from "@/lib/datetime-format";
@@ -18,6 +19,7 @@ import type { HarnessCapabilityManifest } from "@/components/capability-card";
 import {
   filterCapabilityItems,
   normalizeCapabilities,
+  type CapabilitiesOperatorView,
   type CapabilityMapItem,
   type CapabilityStatus,
   type CapabilityType,
@@ -67,6 +69,13 @@ const MARKDOWN_PREVIEW_FILE_NAMES = new Set(["skill.md", "claude.md", "agents.md
 // it renders through the same styled preview, so the gate accepts it too.
 const AUTOMATION_PREVIEW_FILE_NAME = "automation.toml";
 
+type CapabilityDecisionItem = {
+  icon: Parameters<typeof Icon>[0]["name"];
+  label: string;
+  value: string;
+  detail: string;
+};
+
 function readUrlParam(name: string): string | null {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get(name);
@@ -108,6 +117,83 @@ function isMarkdownPreviewable(path?: string): boolean {
   if (filename === AUTOMATION_PREVIEW_FILE_NAME) return true;
   if (!normalized.endsWith(".md")) return false;
   return MARKDOWN_PREVIEW_FILE_NAMES.has(filename);
+}
+
+function capabilityDecisionSummary({
+  operatorView,
+  filteredItems,
+  harnessFilter,
+  typeFilter,
+  statusFilter,
+  query,
+  scannedAt,
+}: {
+  operatorView: CapabilitiesOperatorView;
+  filteredItems: CapabilityMapItem[];
+  harnessFilter: string | null;
+  typeFilter: CapabilityType | "all";
+  statusFilter: CapabilityStatus | "all";
+  query: string;
+  scannedAt: string | null;
+}): CapabilityDecisionItem[] {
+  const selectedHarness =
+    harnessFilter
+      ? operatorView.harnesses.find((harness) => harness.id === harnessFilter)?.label ??
+        operatorView.items.find((item) => item.harnessId === harnessFilter)?.harnessLabel ??
+        harnessFilter
+      : "All runtimes";
+  const activeFilters = [
+    selectedHarness,
+    typeFilter !== "all" ? TYPE_LABEL[typeFilter] : null,
+    statusFilter !== "all" ? `${STATUS_LABEL[statusFilter]} status` : null,
+    query.trim() ? `"${query.trim()}"` : null,
+  ].filter(Boolean);
+  const issueCount = operatorView.summary.warnings + operatorView.summary.disabled;
+  const hasActiveFilter = Boolean(query.trim() || harnessFilter || typeFilter !== "all" || statusFilter !== "all");
+  const filterDetail =
+    hasActiveFilter
+      ? activeFilters.join(" · ")
+      : "All runtimes, types, and statuses";
+  const nextAction =
+    filteredItems.length === 0
+      ? { value: "Clear filters", detail: "No rows match this scope." }
+      : issueCount > 0
+        ? { value: "Review issues", detail: "Warnings and disabled MCP servers need the first pass." }
+        : query.trim() || harnessFilter || typeFilter !== "all" || statusFilter !== "all"
+          ? { value: "Inspect matches", detail: "Open a row for path, command, and preview details." }
+          : { value: "Open a row", detail: "Pick a capability to inspect provenance and copy details." };
+
+  return [
+    {
+      icon: "ph:sliders-horizontal",
+      label: "Visible scope",
+      value: `${filteredItems.length} of ${operatorView.items.length}`,
+      detail: filterDetail,
+    },
+    {
+      icon: issueCount > 0 ? "ph:warning-fill" : "ph:seal-check",
+      label: "Needs attention",
+      value: issueCount === 0 ? "Clear" : `${issueCount} issue${issueCount === 1 ? "" : "s"}`,
+      detail:
+        issueCount === 0
+          ? "No warnings or disabled MCP servers in the current map."
+          : `${operatorView.summary.warnings} warnings · ${operatorView.summary.disabled} disabled`,
+    },
+    {
+      icon: "ph:clock-counter-clockwise",
+      label: "Last scan",
+      value: scannedAt ? relativeTime(scannedAt) : "Not scanned",
+      detail: scannedAt
+        ? `${operatorView.summary.harnesses} runtime${operatorView.summary.harnesses === 1 ? "" : "s"} scanned`
+        : "Refresh to load daemon state.",
+    },
+    {
+      icon: filteredItems.length === 0 ? "ph:x" : issueCount > 0 ? "ph:wrench" : "ph:caret-right",
+      label: "Next action",
+      value: nextAction.value,
+      detail: nextAction.detail,
+    },
+  ];
 }
 
 export function CapabilitiesViewSurface({
@@ -346,6 +432,19 @@ export function CapabilitiesViewSurface({
   };
 
   const readinessStatus = operatorView.summary.warnings > 0 ? "warning" : operatorView.summary.disabled > 0 ? "disabled" : "all";
+  const decisionItems = useMemo(
+    () =>
+      capabilityDecisionSummary({
+        operatorView,
+        filteredItems,
+        harnessFilter,
+        typeFilter,
+        statusFilter,
+        query,
+        scannedAt,
+      }),
+    [operatorView, filteredItems, harnessFilter, typeFilter, statusFilter, query, scannedAt],
+  );
 
   return (
     <div className="capabilities-view flex h-full min-w-0 flex-col bg-background text-foreground">
@@ -399,6 +498,8 @@ export function CapabilitiesViewSurface({
             <CapabilitiesEmpty onRefresh={() => void load(true)} />
           ) : (
             <>
+              <CapabilityDecisionSummary items={decisionItems} />
+
               <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                 <label className="focus-within:ring-ring flex min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-[12px] focus-within:ring-1">
                   <Icon name="ph:magnifying-glass" width={13} className="shrink-0 text-muted-foreground" />
@@ -426,18 +527,19 @@ export function CapabilitiesViewSurface({
                     </kbd>
                   )}
                 </label>
-                <select
+                <StandardSelect
+                  label="Filter by status"
                   value={statusFilter}
-                  onChange={(e) => applyStatusFilter(e.target.value as CapabilityStatus | "all")}
+                  onChange={(next) => applyStatusFilter(next as CapabilityStatus | "all")}
                   className="focus-ring h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground"
-                  aria-label="Filter by status"
-                >
-                  <option value="all">All statuses</option>
-                  <option value="enabled">Enabled</option>
-                  <option value="available">Available</option>
-                  <option value="disabled">Disabled</option>
-                  <option value="warning">Warnings</option>
-                </select>
+                  options={[
+                    { value: "all", label: "All statuses" },
+                    { value: "enabled", label: "Enabled" },
+                    { value: "available", label: "Available" },
+                    { value: "disabled", label: "Disabled" },
+                    { value: "warning", label: "Warnings" },
+                  ]}
+                />
               </div>
 
               {/* Summary tiles double as the primary type/status filters. */}
@@ -541,6 +643,23 @@ export function CapabilitiesViewSurface({
       <footer className="shrink-0 border-t border-border px-3 py-1.5 text-center text-[10px] text-muted-foreground">
         ⌘R refresh · search narrows the operator map · read-only
       </footer>
+    </div>
+  );
+}
+
+function CapabilityDecisionSummary({ items }: { items: CapabilityDecisionItem[] }) {
+  return (
+    <div className="capabilities-decision mb-3" aria-label="Capability decision summary">
+      {items.map((item) => (
+        <div key={item.label} className="capabilities-decision__card">
+          <span className="capabilities-decision__label">
+            <Icon name={item.icon} width={12} aria-hidden />
+            {item.label}
+          </span>
+          <strong>{item.value}</strong>
+          <p>{item.detail}</p>
+        </div>
+      ))}
     </div>
   );
 }
@@ -956,7 +1075,7 @@ function CapabilityPreviewModal({
 }) {
   // Focus trap: keep keyboard focus inside the dialog, focus it on open, wire
   // Escape, and restore focus to the trigger on close — matching every other
-  // modal in the app (board-inspector, library-doc-preview, …).
+  // modal in the app (board-inspector, marketplace detail, …).
   const dialogRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(true, dialogRef, { onEscape: onClose });
 

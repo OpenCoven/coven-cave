@@ -64,5 +64,20 @@ assert.match(view, /setPinnedDataForNodes/, "Flow view should pin stored executi
 assert.match(view, /onLoadRunData=\{loadRunData\}/, "Flow executions should delegate debug/copy-to-editor actions to Flow view");
 assert.match(view, /onRetryRun=\{retryRun\}/, "Flow executions should delegate retry actions to Flow view");
 assert.match(view, /setTab\("editor"\)/, "Inspecting a run should return the user to the editor canvas");
+assert.match(executions, /import \{ Button \}/, "FlowExecutions actions use the shared Button primitive");
+assert.match(runSteps, /import \{ Button \}/, "FlowRunSteps labelled actions use the shared Button primitive");
+assert.match(runSteps, /import \{ IconButton \}/, "FlowRunSteps icon actions use the shared IconButton primitive");
+assert.doesNotMatch(executions, /<button\b/, "FlowExecutions should not hand-roll button controls");
+assert.doesNotMatch(runSteps, /<button\b/, "FlowRunSteps should not hand-roll button controls");
+assert.doesNotMatch(
+  executions,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "FlowExecutions should not hard-code rectangular radius classes",
+);
+assert.doesNotMatch(
+  runSteps,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "FlowRunSteps should not hard-code rectangular radius classes",
+);
 
 console.log("flow-executions.test.ts OK");

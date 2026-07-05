@@ -58,11 +58,6 @@ const contracts: RouteContract[] = [
   { route: "/github/activity", methods: ["GET"], kind: "json" },
   { route: "/github/assigned", methods: ["GET"], kind: "json" },
   { route: "/github/repos", methods: ["GET"], kind: "json" },
-  { route: "/evals/runs", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/evals/groups", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
-  { route: "/evals/thread-states", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
-  { route: "/evals/queue", methods: ["GET", "POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
-  { route: "/evals/suites", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows/run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/flows/runs", methods: ["GET", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -95,18 +90,6 @@ const contracts: RouteContract[] = [
   { route: "/journal", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/knowledge", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
   { route: "/launch", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
-  { route: "/library/all", methods: ["GET"], kind: "json" },
-  { route: "/library/article", methods: ["GET"], kind: "json" },
-  { route: "/library/bookmarks", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true },
-  { route: "/library/chat", methods: ["POST"], kind: "stream", readsJson: true },
-  { route: "/library/doc", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded", pathGuard: true },
-  { route: "/library/github", methods: ["GET", "POST", "DELETE"], kind: "json", readsJson: true },
-  { route: "/library/github-repo", methods: ["GET"], kind: "json" },
-  { route: "/library/pdf", methods: ["GET"], kind: "stream" },
-  { route: "/library/reading", methods: ["GET", "POST", "PATCH", "DELETE"], kind: "json", readsJson: true },
-  { route: "/library/research", methods: ["POST"], kind: "stream", readsJson: true },
-  { route: "/library/route-link", methods: ["POST"], kind: "json", readsJson: true },
-  { route: "/library", methods: ["GET"], kind: "json" },
   { route: "/mobile-handoff", methods: ["GET", "POST"], kind: "json", readsJson: true },
   { route: "/mobile-token/refresh", methods: ["POST"], kind: "json" },
   { route: "/mcp", methods: ["GET"], kind: "json" },
@@ -156,10 +139,10 @@ const contracts: RouteContract[] = [
   { route: "/sessions", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/skills/file", methods: ["GET"], kind: "json", pathGuard: true },
   { route: "/skills/eval-loop/[familiarId]", methods: ["GET"], kind: "json" },
-  { route: "/skills/eval-loop/[familiarId]/run", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
-  { route: "/skills/eval-loop/[familiarId]/run-lock", methods: ["DELETE"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/skills/directory", methods: ["GET"], kind: "json" },
   { route: "/skills/directory/[slug]", methods: ["GET"], kind: "json" },
+  { route: "/skills/directory/install", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
+  { route: "/skills/directory/use", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/skills/local", methods: ["GET", "DELETE"], kind: "json" },
   { route: "/skills", methods: ["GET"], kind: "json" },
   { route: "/theme", methods: ["GET", "PUT"], kind: "json", readsJson: true, invalidJson: "guarded" },
@@ -241,50 +224,6 @@ for (const contract of contracts) {
   if (contract.pathGuard) {
     assert.match(source, /path not allowed|collection path not allowed/, `${contract.route} must preserve path-deny errors`);
     assert.match(source, /status:\s*403/, `${contract.route} path guard must preserve 403 response`);
-  }
-  if (contract.route === "/library") {
-    assert.match(
-      source,
-      /function realpathOrResolve\(value: string\)[\s\S]*fs\.realpathSync\(resolved\)/,
-      `${contract.route} should canonicalize familiar research roots through realpath`,
-    );
-    assert.match(
-      source,
-      /const root = realpathOrResolve\((?:researchRoot|RESEARCH_ROOT)\);[\s\S]*const resolved = realpathOrResolve\(p\);[\s\S]*resolved\.startsWith\(root \+ path\.sep\)/,
-      `${contract.route} should allow symlinked familiar research paths only within the real research root`,
-    );
-    assert.doesNotMatch(
-      source,
-      /resolveAllowedProjectPath/,
-      `${contract.route} should not reject symlinked familiar research dirs via the global project-root allowlist`,
-    );
-  }
-  if (contract.route === "/library/doc") {
-    assert.match(
-      source,
-      /function realpathOrResolveFromBase\(base: string, value: string\)[\s\S]*path\.resolve\(base, value\)[\s\S]*fs\.realpathSync\(resolved\)/,
-      `${contract.route} should canonicalize candidate document paths from a trusted base`,
-    );
-    assert.match(
-      source,
-      /function listResearchEntries\(root: string, familiarRoot: string\)[\s\S]*fs\.readdirSync\(dir, \{ withFileTypes: true \}\)[\s\S]*isWithinRoot\(realPath, root\)[\s\S]*relativeToFamiliar/,
-      `${contract.route} should build an allowlist from trusted research-root entries`,
-    );
-    assert.match(
-      source,
-      /const requestedAbsolute = isAbsolute \? normalizeAbsolutePath\(input, root\) : null;[\s\S]*const requestedRelative = isAbsolute \? null : normalizeRelativeId\(input\);[\s\S]*listResearchEntries\(root, familiar\.root\)\.find/,
-      `${contract.route} should use user input only to select from the trusted research allowlist`,
-    );
-    assert.match(
-      source,
-      /readFamiliarLibraryWorkspaces\(\)/,
-      `${contract.route} should resolve document roots from configured familiar workspaces`,
-    );
-    assert.doesNotMatch(
-      source,
-      /resolveAllowedProjectPath/,
-      `${contract.route} should not reject symlinked familiar research dirs via the global project-root allowlist`,
-    );
   }
   if (contract.localOriginGuard) {
     assert.match(source, /isLocalOrigin|rejectNonLocalRequest/, `${contract.route} must preserve local-origin guard`);

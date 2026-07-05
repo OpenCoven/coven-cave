@@ -199,49 +199,6 @@ async function probeLocalhost(port: number): Promise<boolean> {
   }
 }
 
-function SaveToLibraryButton({
-  url, title, activeFamiliar,
-}: { url: string | null; title: string; activeFamiliar: string | null }) {
-  const [state, setState] = useState<"idle" | "saving" | "saved" | "dedup" | "err">("idle");
-  if (!url) return null;
-
-  const handleSave = async () => {
-    if (!activeFamiliar) return;
-    setState("saving");
-    try {
-      const res = await fetch("/api/library/route-link", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          url,
-          source: { kind: "browser", tabUrl: url, tabTitle: title },
-          familiar: activeFamiliar,
-        }),
-      });
-      const json = await res.json() as { ok: boolean; deduped?: boolean };
-      if (!json.ok) setState("err");
-      else if (json.deduped) setState("dedup");
-      else setState("saved");
-    } catch { setState("err"); }
-    finally { setTimeout(() => setState("idle"), 3000); }
-  };
-
-  if (state === "saved") {
-    return (
-      <IconButton className="browser-toolbar-save" icon="ph:check-bold" aria-label="Save to library" title="Saved" onClick={handleSave} />
-    );
-  }
-  if (state === "dedup") {
-    return (
-      <IconButton className="browser-toolbar-save" icon="ph:bookmark-simple-fill" aria-label="Save to library" title="Already in library" onClick={handleSave} />
-    );
-  }
-  return (
-    <IconButton className="browser-toolbar-save" icon="ph:bookmark-simple" aria-label="Save to library" title="Save to library" onClick={handleSave} />
-  );
-}
-
-
 // ── Native-overlay occlusion ─────────────────────────────────────────
 // The embedded browser webview is an OS-level layer painted ABOVE the entire
 // DOM — no z-index puts onboarding, modals, or the command palette over it.
@@ -931,12 +888,6 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
             title="Home" aria-label="Home">
             <Icon name="ph:house-bold" width={13} />
           </button>
-          {/* Save to library */}
-          <SaveToLibraryButton
-            url={activeTab?.url ?? null}
-            title={tabTitles[activeTabId] ?? activeTab?.title ?? ""}
-            activeFamiliar={activeFamiliarId}
-          />
           {/* Open in system browser */}
           <button type="button"
             onClick={() => {

@@ -49,6 +49,40 @@ assert.match(
   "renders the keyboard hint footer below the scrolling content",
 );
 
+// Marketplace Capabilities should answer the operator's first decision before
+// the dense map: what scope is visible, what needs attention, when it was
+// scanned, and what the next useful action is.
+assert.match(
+  source,
+  /function capabilityDecisionSummary\(/,
+  "Capabilities should derive a compact operator decision summary",
+);
+assert.match(
+  source,
+  /<CapabilityDecisionSummary items=\{decisionItems\} \/>/,
+  "Capabilities should render the decision summary before filters and the map",
+);
+assert.match(
+  source,
+  /aria-label="Capability decision summary"/,
+  "Capabilities decision summary should have a stable accessible label",
+);
+assert.match(
+  source,
+  /Visible scope[\s\S]*Needs attention[\s\S]*Last scan[\s\S]*Next action/,
+  "Capabilities decision summary should expose scope, attention, scan, and next-action cards",
+);
+assert.match(
+  globals,
+  /\.capabilities-decision\s*\{[\s\S]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/,
+  "Capabilities decision summary should use a four-card responsive grid",
+);
+assert.match(
+  globals,
+  /\.capabilities-decision__card\s*\{[\s\S]*border-radius:\s*8px;/,
+  "Capabilities decision cards should use the marketplace 8px card radius",
+);
+
 // ⌘R keydown handler wired to load(true).
 assert.match(
   source,
@@ -112,7 +146,7 @@ assert.match(
 assert.match(source, /capabilities-view/, "Capabilities surface should expose a mobile hit-area root hook");
 assert.match(
   globals,
-  /@media \(max-width: 767px\) \{[\s\S]*\.capabilities-view button,[\s\S]*\.capabilities-view select,[\s\S]*\.capabilities-view label:has\(input\)[\s\S]*min-height:\s*var\(--touch-target\)/,
+  /@media \(max-width: 767px\) \{[\s\S]*\.capabilities-view button,[\s\S]*\.capabilities-view \[aria-haspopup="menu"\],[\s\S]*\.capabilities-view label:has\(input\)[\s\S]*min-height:\s*var\(--touch-target\)/,
   "Capabilities mobile controls should meet the shared touch target",
 );
 

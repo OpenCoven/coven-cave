@@ -9,6 +9,7 @@ import {
   PopoverLabel,
   PopoverSeparator,
 } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 import { DirectoryPickerModal } from "@/components/directory-picker-modal";
 import { ProjectAvatar } from "@/components/project-avatar";
 import { addChatProject } from "@/lib/chat-add-project";
@@ -154,9 +155,9 @@ export function ProjectPicker({
 
   return (
     <>
-      <button
+      <Button
         ref={triggerRef}
-        type="button"
+        variant="ghost"
         className={`cave-project-picker__trigger focus-ring${className ? ` ${className}` : ""}`}
         onClick={() => (open ? close() : setOpen(true))}
         aria-haspopup="dialog"
@@ -174,7 +175,7 @@ export function ProjectPicker({
           {selected ? selected.name : "No project"}
         </span>
         <Icon name="ph:caret-up-down-bold" width={10} aria-hidden />
-      </button>
+      </Button>
       <Popover
         open={open}
         onOpenChange={(next) => (next ? setOpen(true) : close())}

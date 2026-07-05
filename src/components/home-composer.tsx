@@ -38,12 +38,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { ProjectPicker } from "@/components/project-picker";
-import {
-  Popover,
-  PopoverBody,
-  PopoverItem,
-  PopoverLabel,
-} from "@/components/ui/popover";
+import { StandardSelect, type StandardSelectGroup, type StandardSelectOption } from "@/components/ui/select";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
@@ -78,14 +73,7 @@ const PLACEHOLDERS: Record<Destination, string> = {
   board: "Describe a new task…",
 };
 
-type HomeSelectOption = {
-  value: string;
-  label: string;
-  icon?: IconName;
-  leading?: ReactNode;
-  detail?: string;
-  disabled?: boolean;
-};
+type HomeSelectOption = StandardSelectOption<string>;
 
 type HomeSelectGroup = {
   label?: string;
@@ -111,77 +99,42 @@ function HomeSelect({
   disabled?: boolean;
   className?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const selected = groups.flatMap((group) => group.options).find((option) => option.value === value);
-
-  const close = () => setOpen(false);
+  const selectGroups: StandardSelectGroup<string>[] = groups.map((group) => ({
+    label: group.label ?? "",
+    options: group.options,
+  }));
 
   return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={["hc-familiar-selector", "hc-home-select-trigger", className ?? ""]
-          .filter(Boolean)
-          .join(" ")}
-        aria-label={ariaLabel}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        disabled={disabled}
-        title={selected?.detail ?? selected?.label ?? ariaLabel}
-        onClick={() => (open ? close() : setOpen(true))}
-      >
-        {selected?.leading ?? (
-          <Icon name={selected?.icon ?? icon} width={13} className="hc-familiar-glyph" aria-hidden />
-        )}
-        {label ? <span className="hc-command-select-label">{label}</span> : null}
-        <span className="hc-home-select-value">{selected?.label ?? "None"}</span>
-        <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-      </button>
-      <Popover
-        open={open}
-        onOpenChange={(next) => (next ? setOpen(true) : close())}
-        anchorRef={triggerRef}
-        placement="bottom-start"
-        minWidth={220}
-        className="hc-home-select-popover"
-        ariaLabel={ariaLabel}
-      >
-        <PopoverBody role="menu" ariaLabel={ariaLabel}>
-          {groups.map((group, groupIndex) => (
-            <div key={group.label ?? groupIndex} className="hc-home-select-group">
-              {group.label ? <PopoverLabel>{group.label}</PopoverLabel> : null}
-              {group.options.map((option) => (
-                <PopoverItem
-                  key={option.value}
-                  leading={
-                    option.leading ?? (
-                      <Icon name={option.icon ?? icon} width={13} aria-hidden />
-                    )
-                  }
-                  checked={option.value === value}
-                  active={option.value === value}
-                  disabled={option.disabled}
-                  onSelect={() => {
-                    if (option.disabled) return;
-                    onChange(option.value);
-                    close();
-                  }}
-                >
-                  <span className="hc-home-select-option">
-                    <span className="hc-home-select-option__label">{option.label}</span>
-                    {option.detail ? (
-                      <span className="hc-home-select-option__detail">{option.detail}</span>
-                    ) : null}
-                  </span>
-                </PopoverItem>
-              ))}
-            </div>
-          ))}
-        </PopoverBody>
-      </Popover>
-    </>
+    <StandardSelect
+      label={ariaLabel}
+      value={value}
+      onChange={onChange}
+      options={selectGroups}
+      className={["hc-familiar-selector", "hc-home-select-trigger", className ?? ""]
+        .filter(Boolean)
+        .join(" ")}
+      disabled={disabled}
+      title={selected?.detail ?? selected?.label ?? ariaLabel}
+      popoverClassName="hc-home-select-popover"
+      groupClassName="hc-home-select-group"
+      showCaret={false}
+      renderValue={(selectedOption) => (
+        <>
+          {selectedOption?.leading ?? (
+            <Icon
+              name={selectedOption?.icon ?? icon}
+              width={13}
+              className="hc-familiar-glyph"
+              aria-hidden
+            />
+          )}
+          {label ? <span className="hc-command-select-label">{label}</span> : null}
+          <span className="hc-home-select-value">{selectedOption?.label ?? "None"}</span>
+          <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
+        </>
+      )}
+    />
   );
 }
 

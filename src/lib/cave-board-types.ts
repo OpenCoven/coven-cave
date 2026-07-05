@@ -32,7 +32,7 @@ export type CardGitHubLink = {
   url: string;
   state?: string;
   labels: string[];
-  source?: "library" | "assigned" | "manual" | "legacy-link";
+  source?: "assigned" | "manual" | "legacy-link";
   savedAt?: string;
   updatedAt?: string;
 };

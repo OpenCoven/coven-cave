@@ -1,7 +1,7 @@
 // @ts-nocheck
-// The Automations surface (nav id `inbox`) unifies the three "runs for you"
-// primitives — reminders, crons, flows — plus an Activity feed, all
-// under one typed model. This pins the renamed surface + its tab structure.
+// The Schedules surface (nav id `inbox`) is the slimmed-down schedule home:
+// Calendar plus Crons only. Full Automations/Flow work lives on the feature
+// branch and must not be surfaced from the main navigation.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -12,99 +12,73 @@ const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.
 const notificationBell = readFileSync(new URL("./notification-bell.tsx", import.meta.url), "utf8");
 const slashCommands = readFileSync(new URL("../lib/slash-commands.ts", import.meta.url), "utf8");
 
-// ── The surface is "Automations" everywhere it's named ──────────────────────
+// ── The surface is "Schedules" everywhere it's named ────────────────────────
 assert.match(
   sidebar,
-  /\{ id: "inbox", label: "Automations", iconName: "ph:lightning-bold"/,
-  "Sidebar should label the unified surface Automations",
+  /\{ id: "inbox", label: "Schedules", iconName: "ph:calendar-check"/,
+  "Sidebar should label the slim surface Schedules",
 );
 assert.match(
   workspace,
-  /inbox: "Automations"/,
-  "Workspace title map should call the surface Automations",
+  /inbox: "Schedules"/,
+  "Workspace title map should call the surface Schedules",
 );
 assert.match(
   mobileTabs,
-  /\{ id: "inbox", label: "Auto", ariaLabel: "Automations", iconName: "ph:lightning-bold" \}/,
-  "Mobile bottom tab uses a short visible Automations label and full aria label",
+  /\{ id: "inbox", label: "Sched", ariaLabel: "Schedules", iconName: "ph:calendar-check" \}/,
+  "Mobile bottom tab uses a short visible Schedules label and full aria label",
 );
 assert.match(
   notificationBell,
-  /Open Automations/,
-  "Notification bell routes users to the renamed Automations surface",
+  /Open Schedules/,
+  "Notification bell routes users to the renamed Schedules surface",
 );
 assert.match(
   slashCommands,
-  /name: "\/automations", hint: "Automations", description: "Open Automations\."/,
-  "A /automations slash command opens the surface",
+  /name: "\/schedules", hint: "Schedules", description: "Open Schedules\."/,
+  "A /schedules slash command opens the surface",
 );
 assert.match(
   workspace,
-  /case "\/automations":\s*\n\s*case "\/inbox":/,
-  "/automations and the legacy /inbox alias both route to the inbox mode",
+  /case "\/schedules":\s*\n\s*case "\/automations":\s*\n\s*case "\/inbox":/,
+  "/schedules plus legacy /automations and /inbox aliases route to the inbox mode",
 );
 
-// ── Unified typed tab model ─────────────────────────────────────────────────
+// ── Slim typed tab model ────────────────────────────────────────────────────
 assert.match(
   automations,
-  /type AutomationTab = "all" \| "reminders" \| "crons" \| "flows" \| "activity"/,
-  "Surface exposes the five-way unified tab union",
+  /type AutomationTab = "calendar" \| "crons"/,
+  "Surface exposes only Calendar and Crons tabs",
 );
 assert.match(
   automations,
-  // Defaults to "all"; an optional initialTab (e.g. the Calendar deep-link)
+  // Defaults to Calendar when present; otherwise Crons remains usable alone.
   // may override on mount.
-  /const \[activeTab, setActiveTab\] = useState<AutomationTab>\([\s\S]*?: "all",?\s*\)/,
-  "Surface defaults to the unified All tab",
+  /const \[activeTab, setActiveTab\] = useState<AutomationTab>\([\s\S]*calendarSlot \? "calendar" : "crons",?\s*\)/,
+  "Surface defaults to Calendar when it has a calendar slot",
 );
-assert.match(automations, /<h1[\s\S]*?>\s*Automations\s*<\/h1>/, "Surface header reads Automations");
+assert.match(automations, /<h1[\s\S]*?>\s*Schedules\s*<\/h1>/, "Surface header reads Schedules");
 assert.match(automations, /<Tabs[\s\S]{0,200}variant="segment"/, "Tabs use the shared segment Tabs");
 
-// Tabs present, in order, each with a count.
-assert.match(automations, /\{ id: "all", label: "All", count: allEntries\.length \}/, "All tab over the unified entry list");
-assert.match(automations, /\{ id: "reminders", label: "Reminders", count: typeCounts\.reminder \}/, "Reminders tab");
-assert.match(automations, /\{ id: "crons", label: "Crons", count: typeCounts\.cron \}/, "Crons tab (renamed from Automations)");
-assert.doesNotMatch(automations, /\{ id: "workflows", label: "Workflows"/, "Workflows tab should be removed now that Flow owns this surface");
-assert.match(automations, /\{ id: "flows", label: "Flows", count: typeCounts\.flow \}/, "Flows tab");
-assert.match(automations, /\{ id: "activity", label: "Activity", count: items\.length \}/, "Activity tab over the full inbox feed");
+// Tabs present, in order.
+assert.match(automations, /\{ id: "calendar" as const, label: "Calendar" \}/, "Calendar tab");
+assert.match(automations, /\{ id: "crons", label: "Crons", count: codexAutos\.length \}/, "Crons tab");
+assert.doesNotMatch(automations, /\{ id: "all", label: "All"/, "All tab moved out with Automations");
+assert.doesNotMatch(automations, /\{ id: "reminders", label: "Reminders"/, "Reminders tab moved out with Automations");
+assert.doesNotMatch(automations, /\{ id: "flows", label: "Flows"/, "Flows tab moved to the feature branch");
+assert.doesNotMatch(automations, /\{ id: "activity", label: "Activity"/, "Activity tab moved out with Automations");
+assert.doesNotMatch(automations, /\{ id: "templates", label: "Templates"/, "Templates tab moved out with Automations");
 assert.match(
   automations,
-  /id: "all"[\s\S]*id: "reminders"[\s\S]*id: "crons"[\s\S]*id: "flows"[\s\S]*id: "activity"/,
-  "tabs ordered All, Reminders, Crons, Flows, Activity",
+  /id: "calendar"[\s\S]*id: "crons"/,
+  "tabs ordered Calendar, Crons",
 );
+assert.doesNotMatch(sidebar, /\{ id: "flow", label: "Flow"/, "Flow nav is hidden from the active branch");
 
-// ── The four primitives are merged through one pure model ────────────────────
-assert.match(
-  automations,
-  /from "@\/lib\/automations\/automation-entry"/,
-  "Surface builds its unified list from the shared automation-entry model",
-);
-assert.match(automations, /buildAutomationEntries\(\{/, "All entries come from buildAutomationEntries");
-assert.match(automations, /countByType\(/, "Tab counts come from countByType");
-assert.match(automations, /function AutomationAllList/, "All tab renders through a unified list component");
-assert.match(automations, /function AutomationTypeChip/, "Each entry carries a type chip");
-assert.doesNotMatch(automations, /function WorkflowList/, "Legacy Workflows list component should be removed from Automations");
-assert.match(automations, /function FlowList/, "Flows tab renders flows");
-assert.match(automations, /function InboxFeedList/, "Activity tab renders through the inbox feed-list component");
-
-// Flows are loaded alongside reminders + crons. Legacy workflow manifests are no longer shown here.
-assert.doesNotMatch(automations, /listWorkflows\(\)/, "Surface should not load legacy workflow manifests");
-assert.match(automations, /listFlows\(\)/, "Surface loads flow docs");
-// Run is daemon-first and honest when offline.
-assert.doesNotMatch(automations, /runWorkflow\(/, "Surface should not expose legacy workflow runs");
-assert.match(automations, /runFlow\(flow\.id\)/, "Flows run via the flow run client");
-assert.match(automations, /isn't reachable right now/, "Run surfaces an honest message when the daemon is offline");
-
-// "Open" on a flow jumps to its dedicated editor surface.
-assert.match(automations, /cave:navigate-mode/, "Open routes to a dedicated editor surface via the navigation bridge");
-assert.doesNotMatch(automations, /navigateToMode\("roles"\)/, "Legacy workflow opens should not route users to Roles");
-assert.match(automations, /navigateToMode\("flow"\)/, "Flows open in the Flow editor surface");
-
-// Reminders are still the schedule-shaped inbox subset.
-assert.match(
-  automations,
-  /function isScheduleInboxItem\(item: InboxItem\): boolean \{[\s\S]*item\.kind === "reminder" \|\| item\.kind === "daily-summary"/,
-  "Reminders tab includes reminder-style inbox items, including daily summaries",
-);
+assert.doesNotMatch(automations, /listFlows\(\)/, "Schedules does not load flow docs");
+assert.doesNotMatch(automations, /runFlow\(flow\.id\)/, "Schedules does not run flows");
+assert.doesNotMatch(automations, /navigateToMode\("flow"\)/, "Schedules does not route into Flow");
+assert.doesNotMatch(workspace, /mode === "flow" \?\s*\(\s*<FlowView/, "Persisted Flow mode does not render FlowView on the active branch");
+assert.match(workspace, /targetMode === "flow"[\s\S]{0,80}setMode\("inbox"\)/, "Flow navigation events normalize to Schedules");
 
 console.log("schedules-tabs.test.ts: ok");

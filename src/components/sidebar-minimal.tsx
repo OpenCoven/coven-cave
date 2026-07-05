@@ -6,9 +6,9 @@
  * Layout (top to bottom):
  *   1. Familiar scope selector + New chat CTA
  *   2. App destinations grouped by purpose:
- *      Work  (Home / Chat / Tasks / Automations)
- *      Tools (Browser / Terminal / Code / Library / Roles / Flow / GitHub)
- *   3. Footer: Notifications, Settings
+ *      Work  (Home / Chat / Tasks / Schedules)
+ *      Tools (Browser / Marketplace / GitHub)
+ *   3. Footer: Dashboard, Settings
  */
 
 import React from "react";
@@ -35,23 +35,17 @@ export type FolderMode =
   | "board"
   | "calendar"
   | "inbox"
-  | "terminal"
   | "browser"
   | "github"
   | "roles"
   | "marketplace"
   | "flow"
-  | "evals"
   | "submissions"
-  | "library"
   | "capabilities"
-  | "journal"
-  | "retro";
+  | "journal";
 
 export type AddonsConfig = {
   github?: boolean;
-  library?: boolean;
-  terminal?: boolean;
   browser?: boolean;
   flow?: boolean;
   groupchat?: boolean;
@@ -97,8 +91,8 @@ const FOLDER_MODES: Array<{
   badge?: (props: SidebarMinimalProps) => string | undefined;
   group: "work" | "tools" | "addons";
   kbd?: string;
-  // One-line hover/long-press help. Differentiates the surfaces that read
-  // alike at a glance — especially Roles (who) vs Flow (automation).
+  // One-line hover/long-press help. Differentiates surfaces that read alike at
+  // a glance.
   description: string;
 }> = [
   // Work
@@ -107,14 +101,10 @@ const FOLDER_MODES: Array<{
   { id: "groupchat", label: "Group", iconName: "ph:users-three", group: "work", description: "Group chat — broadcast to a coven of familiars at once" },
   { id: "board", label: "Tasks", iconName: "ph:kanban", group: "work", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", group: "work", description: "Your daily journal and generated sketches" },
-  { id: "inbox", label: "Automations", iconName: "ph:lightning-bold", group: "work", kbd: "⌘4", description: "Calendar, reminders, crons, and flows in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
+  { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", group: "work", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
   // Tools
   { id: "browser", label: "Browser", iconName: "ph:globe", group: "tools", kbd: "⌘5", description: "Built-in web browser" },
-  { id: "terminal", label: "Terminal", iconName: "ph:terminal-window", group: "tools", kbd: "⌘6", description: "Shell session in your project" },
-  { id: "library", label: "Library", iconName: "ph:books", group: "tools", kbd: "⌘0", description: "Saved docs, links, and reading" },
   { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", group: "tools", description: "Browse the store and manage your familiars' roles, skills, and capabilities" },
-  { id: "flow", label: "Flow", iconName: "ph:flow-arrow", group: "tools", description: "Freeform n8n-style automation editor — wire nodes on a canvas" },
-  { id: "evals", label: "Evals", iconName: "ph:flask", group: "tools", description: "Run test-case eval suites against a familiar and track pass rates" },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
   // Add-ons (gated)
@@ -229,7 +219,7 @@ function FolderRow({
       <span className="sidebar-folder-label">{label}</span>
       {badge && <span className="sidebar-badge">{badge}</span>}
       {/* The ⌘-number shortcut is no longer shown as a chip here: the numbers
-          don't ascend with row position (e.g. ⌘0 Code sits above ⌘6 Library),
+          don't ascend with row position,
           so a visible column read as scrambled. The binding still works, the
           hover/title tooltip still names it, and the Shortcuts sheet (⌘/)
           is the canonical, complete catalog. */}
@@ -246,11 +236,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
     onOpenSession,
     activeSessionId,
     addons,
-    notificationBadgeCount,
-    onOpenInbox,
   } = props;
-
-  const unreadCount = notificationBadgeCount ?? 0;
 
   // Arrow-key navigation across the nav rows (Work + Tools): one tab stop,
   // Up/Down moves focus, Home/End jumps. Uses the shared roving-tabindex hook.
@@ -265,13 +251,10 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
 
   // Gated surfaces are hidden from the nav until enabled in Settings → Add-ons
   // (all default off). This keeps the default Cave to a simple core — Home, Chat,
-  // Board, Automations — with everything else opt-in.
+  // Board, Schedules — with everything else opt-in.
   const visibleFolderModes = FOLDER_MODES.filter((fm) => {
     if (fm.id === "github") return addons?.github === true;
-    if (fm.id === "library") return addons?.library === true;
-    if (fm.id === "terminal") return addons?.terminal === true;
     if (fm.id === "browser") return addons?.browser === true;
-    if (fm.id === "flow") return addons?.flow === true;
     if (fm.id === "groupchat") return addons?.groupchat === true;
     if (fm.id === "journal") return addons?.journal === true;
     return true;
@@ -347,7 +330,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
         <RecentActivityRollup activeSessionId={activeSessionId} onOpenSession={onOpenSession} />
       </div>
 
-      {/* Bottom: Dashboard + Notifications + Settings */}
+      {/* Bottom: Dashboard + Settings */}
       <div className="sidebar-foot">
         {/* Dashboard is a standalone Next route (/dashboard), not a workspace
             mode — navigate with a real link rather than onModeChange. */}
@@ -362,30 +345,6 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
           </span>
           <span className="sidebar-foot-label">Dashboard</span>
         </a>
-        {onOpenInbox ? (
-          <button
-            type="button"
-            className="sidebar-foot-btn"
-            onClick={onOpenInbox}
-            aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
-            title={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
-          >
-            <span className="sidebar-foot-icon-cell" aria-hidden="true">
-              <Icon
-                name={unreadCount > 0 ? "ph:bell-fill" : "ph:bell"}
-                width={CAVE_ICON_SIZE.sidePanelNav}
-                height={CAVE_ICON_SIZE.sidePanelNav}
-                className="sidebar-foot-icon"
-              />
-            </span>
-            <span className="sidebar-foot-label">Notifications</span>
-            {unreadCount > 0 ? (
-              <span className="sidebar-foot-badge" aria-hidden="true">
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </span>
-            ) : null}
-          </button>
-        ) : null}
         <button
           type="button"
           className="sidebar-foot-btn"

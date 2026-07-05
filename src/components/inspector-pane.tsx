@@ -6,7 +6,6 @@ import type { Familiar } from "@/lib/types";
 import type { InboxItem } from "@/lib/cave-inbox";
 import { FamiliarAnalyticsView } from "@/components/familiar-analytics-view";
 import { SyntaxBlock, MarkdownBlock } from "@/components/message-bubble";
-import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { SnoozeMenu } from "@/components/snooze-menu";
 import { Icon, type IconName } from "@/lib/icon";
 import { SkeletonRows } from "@/components/ui/skeleton";
@@ -1415,18 +1414,6 @@ function FamiliarCapabilityPanel({ familiar }: { familiar: Familiar | null }) {
         </CapSection>
       ) : null}
 
-      {/* ── Section 7: Eval Loop ─────────────────────────────────────────── */}
-      <section>
-        <header className="mb-1.5 flex items-baseline justify-between">
-          <h3 className="text-[10px] uppercase tracking-widest text-[var(--text-secondary)]">
-            Skill: eval-loop
-          </h3>
-        </header>
-        <EvalLoopPanel
-          familiarId={familiar.id}
-          familiarName={familiar.display_name}
-        />
-      </section>
     </div>
   );
 }

@@ -6,8 +6,8 @@ const settings = await readFile(
   new URL("./settings-shell.tsx", import.meta.url),
   "utf8",
 );
-const themeScript = await readFile(
-  new URL("./theme-script.tsx", import.meta.url),
+const themeBootScript = await readFile(
+  new URL("../../public/scripts/theme-init.js", import.meta.url),
   "utf8",
 );
 const layout = await readFile(
@@ -58,13 +58,13 @@ assert.match(
 );
 
 assert.match(
-  themeScript,
+  themeBootScript,
   /html\.style\.setProperty\(cssName, group\[name\]\)/,
   "ThemeScript should apply custom vars via setProperty so existing inline styles are preserved",
 );
 
 assert.match(
-  themeScript,
+  themeBootScript,
   /applyGroup\(cssVars\.theme\)[\s\S]*modeGroup[\s\S]*applyGroup\(modeGroup\)/,
   "ThemeScript should apply both theme-level (fonts/radius) and selected-mode CSS var groups",
 );
@@ -82,7 +82,7 @@ assert.match(
 );
 
 assert.match(
-  themeScript,
+  themeBootScript,
   /name\.indexOf\("--"\) === 0 \? name : "--" \+ name/,
   "ThemeScript should accept tweakcn's bare-name keys by prefixing -- when missing",
 );
@@ -299,20 +299,15 @@ assert.match(
   /<ReadingHyphensController \/>/,
   "Root layout should mount the reading hyphenation controller so saved setting applies on load",
 );
-assert.match(
+assert.doesNotMatch(
   fontSettings,
-  /Drop cap/,
-  "Typography (FontSettings) should expose a Drop cap control",
+  /Drop cap|READING_DROPCAP|applyReadingDropcap/,
+  "Typography should not expose Library-only drop-cap controls in the integrated app",
 );
-assert.match(
-  fontSettings,
-  /aria-pressed=\{dropcap === option\}/,
-  "Drop cap buttons should expose the selected state to assistive tech",
-);
-assert.match(
+assert.doesNotMatch(
   layout,
-  /<ReadingDropcapController \/>/,
-  "Root layout should mount the drop-cap controller so saved setting applies on load",
+  /ReadingDropcapController/,
+  "Root layout should not mount the Library-only drop-cap controller",
 );
 
 assert.match(
@@ -367,7 +362,7 @@ assert.match(
   "Root layout should mount the corner-radius controller so saved radius applies on load",
 );
 assert.match(
-  themeScript,
+  themeBootScript,
   /localStorage\.getItem\("cave:corner-radius"\)[\s\S]*--radius-control/,
   "ThemeScript should apply the saved corner radius before paint (no flash)",
 );

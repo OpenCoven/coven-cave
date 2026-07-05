@@ -9,7 +9,6 @@ export type SalemPathfinderSurface =
   | "home"
   | "projects"
   | "board"
-  | "library"
   | "workflows"
   | "chat";
 

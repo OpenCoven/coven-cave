@@ -36,6 +36,63 @@ function kindLabel(kind: MarketplacePlugin["kind"]) {
   return "Skill";
 }
 
+function detailDecisionItems(plugin: MarketplacePlugin) {
+  const requiredFields = plugin.requiredConfig.length;
+  const capabilities = plugin.capabilities.length > 0 ? plugin.capabilities : plugin.keywords;
+  const roles = [...new Set(plugin.roleAffinity.flatMap((entry) => entry.roles).filter(Boolean))];
+  const setup = !plugin.available
+    ? {
+      icon: "ph:warning" as const,
+      value: "Unavailable",
+      detail: "This listing cannot be added from Cave right now.",
+    }
+    : plugin.requiresSetup && !plugin.configured
+      ? {
+        icon: "ph:key" as const,
+        value: requiredFields > 0 ? `${requiredFields} credential${requiredFields === 1 ? "" : "s"}` : "Needs setup",
+        detail: "Add it now, then finish credentials before runtime use.",
+      }
+      : plugin.requiresSetup && plugin.configured
+        ? {
+          icon: "ph:check-circle" as const,
+          value: "Configured",
+          detail: "Credentials are already saved for this installation.",
+        }
+        : plugin.policy.authentication === "ON_INSTALL"
+          ? {
+            icon: "ph:lock-simple" as const,
+            value: "OAuth on first use",
+            detail: "No key entry here; authorize when the tool runs.",
+          }
+          : plugin.remoteUrl
+            ? {
+              icon: "ph:cloud-bold" as const,
+              value: "Remote endpoint",
+              detail: "Cave connects to the hosted endpoint for execution.",
+            }
+            : {
+              icon: "ph:check-circle" as const,
+              value: "No setup",
+              detail: "Available immediately after adding to Cave.",
+            };
+
+  return [
+    { label: "Setup effort", ...setup },
+    {
+      label: "Capability fit",
+      icon: "ph:lightning-bold" as const,
+      value: capabilities.length > 0 ? capabilities.slice(0, 3).join(", ") : "Core capability",
+      detail: capabilities.length > 3 ? `${capabilities.length - 3} more capability signals in the catalog.` : "Primary ways this listing extends a familiar.",
+    },
+    {
+      label: "Role fit",
+      icon: "ph:mask-happy" as const,
+      value: roles.length > 0 ? roles.slice(0, 3).join(", ") : "General fit",
+      detail: roles.length > 3 ? `${roles.length - 3} more mapped roles.` : "Best matching familiar role assignments.",
+    },
+  ];
+}
+
 export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   type ConnState = { state: "idle" | "testing" | "reachable" | "unreachable"; message?: string };
@@ -60,6 +117,7 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
   }, [plugin.id]);
   useFocusTrap(true, ref, { onEscape: onClose });
   const state = pluginBadgeState(plugin);
+  const decisionItems = detailDecisionItems(plugin);
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
       <div
@@ -86,6 +144,19 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
         </div>
 
         {plugin.description ? <p className="text-[13px] text-[var(--text-primary)]">{plugin.description}</p> : null}
+
+        <div className="marketplace-detail__decision-grid" aria-label="Install decision summary">
+          {decisionItems.map((item) => (
+            <div key={item.label} className="marketplace-detail__decision-card">
+              <span className="marketplace-detail__decision-label">
+                <Icon name={item.icon} width={12} aria-hidden />
+                {item.label}
+              </span>
+              <strong>{item.value}</strong>
+              <p>{item.detail}</p>
+            </div>
+          ))}
+        </div>
 
         <div className="flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]">
           <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border-hairline)] px-2 py-0.5">

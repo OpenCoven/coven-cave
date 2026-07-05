@@ -8,7 +8,6 @@ import {
   type FamiliarAnalyticsModel,
 } from "@/components/familiar-analytics-data";
 import { EmptyState } from "@/components/ui/empty-state";
-import { EvalLoopPanel } from "@/components/eval-loop-panel";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { ThreadSignalsSection } from "@/components/thread-signals-section";
 import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requests";
@@ -268,8 +267,8 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
   const contract = model.contractReport;
   const contractPass = contract ? contract.properties.filter((p) => p.pass).length : 0;
   const contractTotal = contract ? contract.properties.length : 0;
-  const acceptRate = growth?.retroAcceptRate ?? null;
-  const evals = model.evalLoopState?.iterations?.length ?? 0;
+  const threadCount = model.threadReports.length;
+  const responseEvents = model.responseConfidenceRollup.eventCount;
 
   return [
     {
@@ -279,14 +278,6 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
       value: growth ? growth.healthLabel : "—",
       sub: growth ? `${growth.sessionsLast7d} session${growth.sessionsLast7d === 1 ? "" : "s"} · 7d` : "no data",
       tone: growth?.healthLabel === "stalled" ? "bad" : growth?.healthLabel === "quiet" ? "warn" : "good",
-    },
-    {
-      key: "evals",
-      icon: "ph:arrows-clockwise-bold",
-      label: "Eval acceptance",
-      value: acceptRate != null ? `${Math.round(acceptRate * 100)}%` : evals === 0 ? "Not run" : "—",
-      sub: evals === 0 && acceptRate == null ? "loop idle" : `${evals} iteration${evals === 1 ? "" : "s"}`,
-      tone: acceptRate == null ? undefined : acceptRate >= 0.6 ? "good" : acceptRate >= 0.3 ? "warn" : "bad",
     },
     {
       key: "contract",
@@ -308,8 +299,15 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
       key: "signals",
       icon: "ph:waveform-bold",
       label: "Thread signals",
-      value: String(model.threadReports.length),
-      sub: model.threadReports.length === 1 ? "report" : "reports",
+      value: String(threadCount),
+      sub: threadCount === 1 ? "report" : "reports",
+    },
+    {
+      key: "responses",
+      icon: "ph:chart-bar-bold",
+      label: "Responses",
+      value: String(responseEvents),
+      sub: responseEvents === 1 ? "confidence event" : "confidence events",
     },
   ];
 }
@@ -459,18 +457,6 @@ export function FamiliarAnalyticsContent({
         count={`${model.threadReports.length} ${model.threadReports.length === 1 ? "report" : "reports"}`}
       >
         <ThreadSignalsSection familiarId={model.familiarId} reports={model.threadReports} />
-      </FaSection>
-
-      <FaSection id="fa-eval" title="Eval Loop" count={`${model.evalLoopState?.iterations?.length ?? 0} iterations`}>
-        {model.familiar ? (
-          <EvalLoopPanel
-            familiarId={model.familiar.id}
-            familiarName={familiarName}
-            responseConfidenceRollup={model.responseConfidenceRollup}
-          />
-        ) : (
-          <EmptyState compact icon="ph:arrows-clockwise-bold" headline="Eval loop unavailable." />
-        )}
       </FaSection>
 
       <ContractCompliance report={model.contractReport} />

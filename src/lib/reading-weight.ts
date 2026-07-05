@@ -1,8 +1,8 @@
 /**
  * Reading font-weight (the base weight of long-form prose body text).
  *
- * Scoped to the shared `.cave-md` markdown surface (chat messages, the library
- * doc reader, the memory view) via the `--cave-reading-weight` CSS var. Bold
+ * Scoped to the shared `.cave-md` markdown surface (chat messages, memory
+ * view) via the `--cave-reading-weight` CSS var. Bold
  * (`.cave-md strong`, 650) and headings (650/600) set their own weights, so
  * this only shifts normal text. The default ("normal") removes the override.
  *

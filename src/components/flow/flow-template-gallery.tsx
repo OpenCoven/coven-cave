@@ -12,6 +12,8 @@
 
 import { useState } from "react";
 import { Icon } from "@/lib/icon";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { FLOW_TEMPLATES, type FlowTemplate } from "@/lib/flow/flow-templates";
 
 const CATEGORY_LABEL: Record<FlowTemplate["category"], string> = {
@@ -72,46 +74,50 @@ export function FlowTemplateGallery({ onUse, onClose, isEmpty }: FlowTemplateGal
         </div>
         <div className="flow-template-gallery-header-right">
           {!isEmpty && (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              size="xs"
               className="flow-template-gallery-blank"
               onClick={onClose}
               title="Start blank instead"
             >
               Start blank
-            </button>
+            </Button>
           )}
           {onClose && !isEmpty && (
-            <button
-              type="button"
+            <IconButton
+              icon="ph:x"
+              size="sm"
               className="flow-template-gallery-close"
               onClick={onClose}
               aria-label="Close gallery"
-            >
-              <Icon name="ph:x" width={15} />
-            </button>
+            />
           )}
         </div>
       </div>
 
       {/* Category filter pills */}
       <div className="flow-template-gallery-filters">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="xs"
           className={`flow-template-filter-pill${filter === "all" ? " is-active" : ""}`}
+          aria-pressed={filter === "all"}
           onClick={() => setFilter("all")}
         >
           All
-        </button>
+        </Button>
         {categories.map((cat) => (
-          <button
+          <Button
             key={cat}
-            type="button"
+            variant="ghost"
+            size="xs"
             className={`flow-template-filter-pill${filter === cat ? " is-active" : ""}`}
+            aria-pressed={filter === cat}
             onClick={() => setFilter(cat)}
           >
             {CATEGORY_LABEL[cat]}
-          </button>
+          </Button>
         ))}
       </div>
 
@@ -147,33 +153,32 @@ export function FlowTemplateGallery({ onUse, onClose, isEmpty }: FlowTemplateGal
             </div>
 
             {/* Action */}
-            <button
-              type="button"
+            <Button
+              variant="primary"
+              size="xs"
+              leadingIcon="ph:arrow-right-bold"
+              aria-busy={busy === template.id || undefined}
               className="flow-template-card-use"
-              disabled={busy === template.id}
+              disabled={busy != null}
               onClick={() => void handleUse(template)}
             >
-              {busy === template.id ? (
-                <Icon name="ph:circle-notch-bold" width={13} className="flow-template-card-spinner" />
-              ) : (
-                <Icon name="ph:arrow-right-bold" width={13} />
-              )}
               Use template
-            </button>
+            </Button>
           </div>
         ))}
       </div>
 
       {isEmpty && (
         <div className="flow-template-gallery-blank-row">
-          <button
-            type="button"
+          <Button
+            variant="secondary"
+            size="sm"
+            leadingIcon="ph:plus"
             className="flow-template-gallery-blank-btn"
             onClick={onClose}
           >
-            <Icon name="ph:plus" width={14} />
             Start with a blank flow instead
-          </button>
+          </Button>
         </div>
       )}
     </div>

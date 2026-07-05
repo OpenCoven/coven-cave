@@ -49,9 +49,9 @@ for (const rel of [
 assert.doesNotMatch(model, /canvasArtifacts|generateArtifact|refineArtifact|loadCanvas/, "AppModel should drop canvas state/actions");
 assert.doesNotMatch(model, /loadReading|setReadingStatus|deleteReading|setReadingProgress|var reading:/, "AppModel should drop reading state/actions");
 assert.doesNotMatch(client, /canvasArtifacts|saveCanvasArtifact|deleteCanvasArtifact|api\/canvas/, "CaveClient should drop the canvas endpoints");
-// The old *mutable* Reading surface stays gone. The read-only Library
-// (Developer › Library) legitimately GETs /api/library/reading, so that path is
-// allowed — only the removed reading mutations are forbidden.
+// The old *mutable* Reading surface stays gone. Library endpoints are isolated
+// by scripts/ios-library-isolation.test.mjs, so this guard only covers the
+// removed reading mutations.
 assert.doesNotMatch(client, /func reading\(\)|updateReading|deleteReading|setReadingProgress/, "CaveClient should drop the old mutable reading endpoints");
 assert.doesNotMatch(slash, /\/canvas|buildSketchPrompt|case sketch/, "the /canvas slash command should be removed");
 
