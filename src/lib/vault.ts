@@ -285,7 +285,7 @@ export function getVaultMetadataStatuses(): VaultMappingStatus[] {
         key, ref: entry.ref, description: entry.description ?? null,
         storage: "1password",
         required: entry.required ?? false,
-        status: "configured" as VaultStatus, hasValue: true,
+        status: "configured" as VaultStatus, hasValue: false,
       };
     }
 
