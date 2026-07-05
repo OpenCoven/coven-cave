@@ -11,7 +11,7 @@ import {
  * Applies the saved reading text-alignment on load and keeps it in sync across
  * tabs. Mounted in the root layout (mirrors ReadingTrackingController) so the
  * `--cave-reading-align` var is set on cold load — reading surfaces (chat,
- * library, memory) render outside Settings, so the picker's own mount effect
+ * memory) render outside Settings, so the picker's own mount effect
  * isn't enough.
  */
 export function ReadingAlignController() {

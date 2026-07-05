@@ -124,6 +124,8 @@ assert.match(
   "reset restores the default hyphenation",
 );
 
+assert.match(src, /Applies to chat and memory\./, "reading text copy should only name integrated app surfaces");
+assert.doesNotMatch(src, /Applies to chat, library, and memory\./, "feature-branch Library should not appear in integrated Settings copy");
 assert.doesNotMatch(src, /Drop cap|READING_DROPCAP|applyReadingDropcap/, "Library-only drop-cap controls stay out of integrated Settings");
 
 console.log("settings-fonts.test.ts OK");

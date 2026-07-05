@@ -19,7 +19,7 @@ import { resolveAllowedProjectSubpath } from "@/lib/server/project-paths";
  *   ```
  *
  * The server resolves the path against the project-root allowlist (the SAME
- * guard the Code/Library surfaces use — anything outside a granted root is
+ * guard the Code/file-preview surfaces use — anything outside a granted root is
  * silently dropped), reads the file under a size cap, and turns it into a
  * {@link ChatAttachment}. Images ride through as a bounded base64 data URL so
  * the chat surface can preview them; text files carry their (truncated) text;

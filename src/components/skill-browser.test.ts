@@ -70,6 +70,14 @@ assert.match(src, /function sourceKey\(skill: SkillBrowserEntry\)/, "normalizes 
 assert.match(src, /function sourceSummary\(source: string, skills: SkillBrowserEntry\[\]\)/, "summarizes skills from the same source");
 assert.match(src, /function specificSkillName\(skill: SkillBrowserEntry\)/, "derives a specific skill name for directory rows");
 assert.match(src, /--skill \$\{quoteCliArg\(specific\)\}/, "install command targets specific skills with --skill");
+assert.match(src, /function skillDecisionItems\(skill: SkillBrowserEntry\)/, "detail pane derives install decision items");
+assert.match(src, /className="skill-browser__decision"/, "detail pane renders a compact decision summary");
+assert.match(src, /className="skill-browser__decision-card"/, "detail decision summary uses stable card hooks");
+assert.match(src, /Install state/, "detail decision summary labels install state");
+assert.match(src, /Trust signal/, "detail decision summary labels trust signal");
+assert.match(src, /Source/, "detail decision summary labels source");
+assert.match(css, /\.skill-browser__decision \{[\s\S]*?grid-template-columns/, "detail decision summary uses a responsive grid");
+assert.match(css, /\.skill-browser__decision-card \{[\s\S]*?min-height:/, "detail decision cards reserve stable height");
 assert.match(src, /copyText\(installCommand\(selected\)\)/, "detail pane can copy the install command");
 assert.match(src, /function handleInstall\(\)/, "detail pane can install a selected directory skill");
 assert.match(src, /fetch\("\/api\/skills\/directory\/install"/, "install action calls the guarded install route");

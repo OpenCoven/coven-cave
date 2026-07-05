@@ -958,7 +958,7 @@ function CapabilityPreviewModal({
 }) {
   // Focus trap: keep keyboard focus inside the dialog, focus it on open, wire
   // Escape, and restore focus to the trigger on close — matching every other
-  // modal in the app (board-inspector, library-doc-preview, …).
+  // modal in the app (board-inspector, marketplace detail, …).
   const dialogRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(true, dialogRef, { onEscape: onClose });
 

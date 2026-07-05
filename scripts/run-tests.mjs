@@ -417,7 +417,6 @@ export const SUITES = {
     "src/components/chat-archive-nudge.test.ts",
     "src/lib/theme-palettes.test.ts",
     "src/lib/theme-contrast-audit.test.ts",
-    "src/lib/title-enricher.test.ts",
     "src/lib/url-safety.test.ts",
     "src/lib/use-focus-trap.test.ts",
     "src/lib/use-prefers-reduced-motion.test.ts",

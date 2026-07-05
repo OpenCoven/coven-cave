@@ -5,8 +5,8 @@
 // `**bold**`, `_em_`, `` `code` `` and `[links]` inside a cell render literally.
 // We re-render each cell through the inline (paragraph) path and rebuild the
 // <table>, then feed the result back via a `table` customRenderer that returns
-// these positionally. Used by the desktop library doc preview and the native
-// iOS WKWebView renderer; the chat message bubble carries its own inlined copy.
+// these positionally. Used by the native iOS WKWebView renderer; the chat
+// message bubble carries its own inlined copy.
 
 import { parse, type Block } from "@create-markdown/core";
 

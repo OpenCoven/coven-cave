@@ -11,7 +11,7 @@ import {
  * Applies the saved reading line-spacing on load and keeps it in sync across
  * tabs. Mounted in the root layout (mirrors ScreenMagnificationController) so
  * the `--cave-reading-leading` var is set on cold load — reading surfaces
- * (chat, library, memory) render outside Settings, so the picker's own mount
+ * (chat, memory) render outside Settings, so the picker's own mount
  * effect isn't enough.
  */
 export function ReadingLeadingController() {

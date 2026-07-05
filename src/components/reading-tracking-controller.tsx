@@ -11,7 +11,7 @@ import {
  * Applies the saved reading letter-spacing on load and keeps it in sync across
  * tabs. Mounted in the root layout (mirrors ReadingLeadingController) so the
  * `--cave-reading-tracking` var is set on cold load — reading surfaces (chat,
- * library, memory) render outside Settings, so the picker's own mount effect
+ * memory) render outside Settings, so the picker's own mount effect
  * isn't enough.
  */
 export function ReadingTrackingController() {

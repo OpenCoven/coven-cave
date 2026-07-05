@@ -116,7 +116,7 @@ type Props = {
   /** Center column slot — the familiar conversation. When provided (the Code
    *  workspace), the projects view lays out three columns in the Codex position:
    *  the file-tree explorer (left), this chat (center), and the preview / Changes
-   *  review (right). Omitted elsewhere (e.g. the Library projects browser), where
+   *  review (right). Omitted elsewhere, where
    *  comux stays two-column (tree | preview/changes). */
   centerSlot?: ReactNode;
   /** Code mode moves project/thread navigation into the primary shell sidebar.
@@ -126,7 +126,7 @@ type Props = {
   /** Remove the left file-tree explorer column entirely (project header,
    *  Terminal/New chat, in-project search, sessions, and the FILES tree), so the
    *  surface is just the conversation + preview/Changes. The Code surface sets
-   *  this; the Library projects browser keeps its tree. */
+   *  this; standalone project browsers keep their tree. */
   hideFileTree?: boolean;
 };
 
@@ -2120,8 +2120,8 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
 
                 {/* Center column — the familiar conversation (Codex position:
                     file tree on the left, chat in the middle, preview/Changes on
-                    the right). Only the Code workspace passes a centerSlot; the
-                    Library projects browser stays two-column. */}
+                    the right). Only the Code workspace passes a centerSlot;
+                    standalone project browsers stay two-column. */}
                 {centerSlot ? (
                   <div
                     className="comux-center-column flex min-w-0 min-h-0 flex-col overflow-hidden border-b border-[var(--border-hairline)] xl:border-b-0 xl:border-r"

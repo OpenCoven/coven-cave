@@ -7294,8 +7294,8 @@ a.mobile-handoff__link:hover {
 
 /* ─── Mobile bottom tabs ───────────────────────────────────────────────
    Sticky bottom navigation strip rendered by the Shell on mobile/tablet
-   viewports (≤1023px). Five fixed destinations (Home / Chat / Board /
-   Inbox / Library); active tab adopts var(--accent-presence). Sits above
+   viewports (≤1023px). Fixed destinations (Home / Chat / Board / Inbox);
+   active tab adopts var(--accent-presence). Sits above
    the detail panel and below any modal/drawer scrim. */
 .mobile-bottom-tabs {
   position: sticky;

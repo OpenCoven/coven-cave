@@ -1,8 +1,8 @@
 /**
  * Reading text-alignment for long-form prose.
  *
- * Scoped to the shared `.cave-md` markdown surface (chat messages, the library
- * doc reader, the memory view) via the `--cave-reading-align` CSS var. It
+ * Scoped to the shared `.cave-md` markdown surface (chat messages, memory
+ * view) via the `--cave-reading-align` CSS var. It
  * deliberately does NOT touch the app's other ~59 text-align declarations
  * (buttons, labels, layout), which are intentional.
  *

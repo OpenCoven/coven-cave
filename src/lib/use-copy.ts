@@ -5,7 +5,7 @@ import { copyText } from "@/lib/clipboard";
 
 /**
  * Copy-to-clipboard with transient "copied" feedback — the shared shape behind
- * the various copy buttons (debug pane, library preview, GitHub rows, …) that
+ * the various copy buttons (debug pane, GitHub rows, …) that
  * each used to re-implement the same `useState` + `setTimeout` dance.
  *
  * Uses the context-safe {@link copyText} (not `navigator.clipboard` directly),

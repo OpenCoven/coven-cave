@@ -348,7 +348,7 @@ export function FontSettings() {
       </SettingsGroup>
 
       {/* Reading text — one shared caption, then compact label/control rows. */}
-      <SettingsGroup label="Reading text" description="Applies to chat, library, and memory.">
+      <SettingsGroup label="Reading text" description="Applies to chat and memory.">
           <ReadingRow label="Line spacing">
             <div className={segWrap}>
               {READING_LEADING_OPTIONS.map((option) => (

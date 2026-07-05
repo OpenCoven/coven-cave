@@ -1,8 +1,8 @@
 /**
  * Max reading width (the line-length / measure cap for long-form prose).
  *
- * Scoped to the shared `.cave-md` markdown surface (chat messages, the library
- * doc reader, the memory view) via the `--cave-reading-width` CSS var, which
+ * Scoped to the shared `.cave-md` markdown surface (chat messages, memory
+ * view) via the `--cave-reading-width` CSS var, which
  * caps `.cave-md`'s max-width. The default ("full") removes the override so
  * `.cave-md` fills its container as before.
  *

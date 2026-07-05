@@ -668,7 +668,7 @@ function SignalsPanel({ signals }: { signals: DashboardSignal[] }) {
           <li key={s.id}>
             {s.href ? (
               // An actionable signal takes you to where you can act on it —
-              // the stalled PR, the library, the familiar's analytics.
+              // the stalled PR, the board, the familiar's analytics.
               <a
                 className={`cockpit-signal cockpit-signal--${s.severity} cockpit-signal--link`}
                 href={s.href}

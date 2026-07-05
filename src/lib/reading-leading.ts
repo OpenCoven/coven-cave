@@ -1,8 +1,8 @@
 /**
  * Reading line-spacing (line-height for long-form prose).
  *
- * Scoped to the shared `.cave-md` markdown surface (chat messages, the library
- * doc reader, the memory view) via the `--cave-reading-leading` CSS var — it
+ * Scoped to the shared `.cave-md` markdown surface (chat messages, memory
+ * view) via the `--cave-reading-leading` CSS var — it
  * deliberately does NOT touch the app's other ~83 hard-coded line-heights
  * (icons, chips, headings), which are intentionally tight.
  *
