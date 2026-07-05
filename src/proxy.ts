@@ -121,7 +121,10 @@ function hasSafeContentType(req: NextRequest) {
 function isProductionWebhookGet(pathname: string, method: string) {
   return (
     method === "GET" &&
-    (pathname === "/api/flows/webhook" || pathname.startsWith("/api/flows/webhook/"))
+    (pathname === "/api/flows/webhook" ||
+      pathname.startsWith("/api/flows/webhook/") ||
+      pathname === "/api/flows/webhook-test" ||
+      pathname.startsWith("/api/flows/webhook-test/"))
   );
 }
 
