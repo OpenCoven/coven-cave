@@ -35,9 +35,10 @@ assert.doesNotMatch(
   "picker should use shared CSS/tokenized radii instead of hard-coded rounded classes",
 );
 
-// ── Home composer uses the shared custom picker, not an OS-native select ────
-assert.match(homeComposer, /<ProjectPicker[\s\S]*?ariaLabel="Choose project"/, "home composer uses ProjectPicker");
-assert.doesNotMatch(homeComposer, /<select[\s\S]*?aria-label="Choose project"/, "home composer project picker is custom");
+// ── Home composer: project picker removed from toolbar (project context in headline) ────
+// Project selection logic remains via selectedProject; the picker UI was removed
+// when the toolbar was consolidated into a single row.
+assert.doesNotMatch(homeComposer, /className="hc-project-selector"/, "home composer project selector CSS class is removed");
 
 // ── Styled ──────────────────────────────────────────────────────────────────
 assert.match(css, /\.cave-project-picker__trigger/, "trigger styled");

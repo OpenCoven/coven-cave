@@ -1043,35 +1043,6 @@ export function HomeComposer({
             </div>
           ) : null}
 
-        {/* Mode strip — the composer's primary intent switch (Chat vs Task)
-            leads the card, above the textarea, so it reads as the top-level
-            mode rather than one control buried among the per-send config. */}
-        <div className="hc-mode-strip">
-          <div
-            className="hc-dest-pills"
-            role="radiogroup"
-            aria-label="Send to"
-            ref={destGroupRef}
-            onKeyDown={handleDestKeyDown}
-          >
-            {DESTINATIONS.map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                role="radio"
-                aria-checked={destination === d.id}
-                tabIndex={destination === d.id ? 0 : -1}
-                className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
-                onClick={() => setDestination(d.id)}
-                title={d.label}
-              >
-                <Icon name={d.icon} width={12} aria-hidden />
-                <span className="hc-dest-label">{d.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
         {/* Textarea */}
         <textarea
           ref={textareaRef}
@@ -1150,69 +1121,9 @@ export function HomeComposer({
           </div>
         )}
 
-        {destination === "chat" ? (
-          <div className="hc-run-rail" aria-label="Run settings">
-            <span className="hc-run-rail__accent" aria-hidden>
-              <Icon name="ph:sliders-horizontal" width={13} />
-            </span>
-            <div className="hc-run-rail__controls">
-              <HomeSelect
-                icon="ph:terminal-window"
-                value={selectedRuntimeModelValue}
-                onChange={handleSelectRuntimeModel}
-                groups={runtimeModelSelectGroups}
-                ariaLabel="Choose runtime and model"
-                disabled={!selectedFamiliarId || sending}
-                className="hc-runtime-model-selector"
-              />
-
-              <HomeSelect
-                label="Think"
-                icon="ph:sparkle-bold"
-                value={thinkingEffort}
-                onChange={(value) => setThinkingEffort(value as CommandThinkingEffort)}
-                groups={[
-                  {
-                    options: COMMAND_THINKING_OPTIONS.map((option) => ({
-                      ...option,
-                      icon: "ph:sparkle-bold",
-                    })),
-                  },
-                ]}
-                ariaLabel="Choose thinking effort"
-                disabled={sending}
-                className="hc-command-select"
-              />
-
-              <HomeSelect
-                label="Speed"
-                icon="ph:lightning-bold"
-                value={responseSpeed}
-                onChange={(value) => setResponseSpeed(value as CommandResponseSpeed)}
-                groups={[
-                  {
-                    options: COMMAND_RESPONSE_SPEED_OPTIONS.map((option) => ({
-                      ...option,
-                      icon: "ph:lightning-bold",
-                    })),
-                  },
-                ]}
-                ariaLabel="Choose response speed"
-                disabled={sending}
-                className="hc-command-select"
-              />
-
-              <ComposerHostChip
-                value={runtimeHost ?? LOCAL_HOST_ID}
-                disabled={sending}
-                onPick={(id) => setRuntimeHost(id === LOCAL_HOST_ID ? null : id)}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        {/* Action bar */}
+        {/* Action bar — single-row toolbar: [+] [Chat/Task] [access chip]  ···  [●] [model] [think] [🎤] [↑] */}
         <div className="hc-action-bar">
+          {/* Left cluster: attach + destination + familiar (access chip) */}
           <div className="hc-control-group hc-control-group--who">
             <input
               ref={fileInputRef}
@@ -1231,11 +1142,35 @@ export function HomeComposer({
               aria-label="Attach files"
               title="Attach files"
             >
-              <Icon name="ph:paperclip" width={15} aria-hidden />
+              <Icon name="ph:plus-bold" width={15} aria-hidden />
             </button>
 
+            <div
+              className="hc-dest-pills"
+              role="radiogroup"
+              aria-label="Send to"
+              ref={destGroupRef}
+              onKeyDown={handleDestKeyDown}
+            >
+              {DESTINATIONS.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
+                  role="radio"
+                  aria-checked={destination === d.id}
+                  tabIndex={destination === d.id ? 0 : -1}
+                  onClick={() => setDestination(d.id)}
+                  disabled={sending}
+                >
+                  <Icon name={d.icon} width={14} aria-hidden />
+                  <span className="hc-dest-label">{d.label}</span>
+                </button>
+              ))}
+            </div>
+
             <HomeSelect
-              icon="ph:sparkle"
+              icon="ph:warning-circle"
               value={selectedFamiliarId}
               onChange={(value) => {
                 if (value) onSetActiveFamiliar(value);
@@ -1243,47 +1178,50 @@ export function HomeComposer({
               groups={familiarSelectGroups}
               ariaLabel="Choose chat agent"
               disabled={visibleFamiliars.length === 0 || sending}
-            />
-
-            <ProjectPicker
-              projects={projects}
-              value={selectedProjectId || null}
-              onChange={setSelectedProjectId}
-              allowNoProject
-              familiarId={selectedFamiliarId || null}
-              createProject={createProject}
-              disabled={sending}
-              ariaLabel="Choose project"
-              className="hc-project-selector"
+              className="hc-access-chip"
             />
           </div>
 
+          {/* Right cluster: status · model · thinking · mic · send */}
           <div className="hc-control-group hc-control-group--run">
-            {enhanceOriginal != null && (
-              <button
-                type="button"
-                className="hc-enhance-undo"
-                onClick={revertEnhance}
-                disabled={sending}
-                title="Undo enhance"
-              >
-                Undo
-              </button>
-            )}
+            <span className="hc-status-dot" aria-hidden="true" />
+
+            <HomeSelect
+              icon="ph:lightning-bold"
+              value={selectedRuntimeModelValue}
+              onChange={handleSelectRuntimeModel}
+              groups={runtimeModelSelectGroups}
+              ariaLabel="Choose runtime and model"
+              disabled={!selectedFamiliarId || sending}
+              className="hc-runtime-model-selector"
+            />
+
+            <HomeSelect
+              label="Think"
+              icon="ph:sparkle-bold"
+              value={thinkingEffort}
+              onChange={(value) => setThinkingEffort(value as CommandThinkingEffort)}
+              groups={[
+                {
+                  options: COMMAND_THINKING_OPTIONS.map((option) => ({
+                    ...option,
+                    icon: "ph:sparkle-bold",
+                  })),
+                },
+              ]}
+              ariaLabel="Choose thinking effort"
+              disabled={sending}
+              className="hc-command-select"
+            />
+
             <button
               type="button"
-              className={`hc-enhance-btn${enhanceStatus === "loading" ? " loading" : ""}`}
-              onClick={() => void enhancePrompt()}
-              disabled={!text.trim() || sending || enhanceStatus === "loading"}
-              aria-label="Enhance prompt"
-              title="Enhance prompt"
+              className="hc-mic-btn"
+              aria-label="Voice input"
+              title="Voice input"
+              disabled={sending}
             >
-              {enhanceStatus === "loading" ? (
-                <span className="hc-spinner" />
-              ) : (
-                <Icon name="ph:sparkle" width={13} aria-hidden />
-              )}
-              <span className="hc-enhance-label">Enhance</span>
+              <Icon name="ph:microphone" width={15} aria-hidden />
             </button>
 
             <button

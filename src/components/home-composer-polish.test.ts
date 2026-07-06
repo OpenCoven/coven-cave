@@ -47,20 +47,22 @@ assert.doesNotMatch(css, /\.hc-send-label\s*\{/, "old .hc-send-label rule remove
 assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*var\(--radius-control\)/, ".hc-send-btn uses the shared control radius");
 
 // ───────── Command-bar hierarchy ─────────
+// New: single-row toolbar — context left, run controls right.
+// Attach, destination, and access chip are in the left group; model/thinking/mic/send in the right.
 assert.match(
   source,
-  /hc-control-group--who[\s\S]*?<HomeSelect[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?<ProjectPicker[\s\S]*?hc-control-group--run[\s\S]*?aria-label="Enhance prompt"[\s\S]*?aria-label="Send"/,
-  "home composer keeps context controls separate from enhance and send in the main input shell",
+  /hc-control-group--who[\s\S]*?ph:plus-bold[\s\S]*?className="hc-dest-pills"[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"[\s\S]*?ph:warning-circle[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip/,
+  "home composer left cluster has plus-attach + Chat/Task destination + warning-circle access chip for the familiar",
 );
 assert.match(
   source,
-  /className="hc-run-rail"[\s\S]*?aria-label="Run settings"[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<ComposerHostChip/,
-  "runtime/model, thinking, speed, and host live in the secondary run-settings rail",
+  /hc-control-group--run[\s\S]*?hc-status-dot[\s\S]*?ariaLabel="Choose runtime and model"[\s\S]*?ariaLabel="Choose thinking effort"[\s\S]*?hc-mic-btn[\s\S]*?aria-label="Send"/,
+  "home composer right cluster has status dot, model, thinking, mic, and send",
 );
 assert.doesNotMatch(
   source,
-  /hc-control-group--run[\s\S]*?Choose runtime and model[\s\S]*?aria-label="Send"/,
-  "runtime/model controls should not compete with enhance and send in the main action bar",
+  /className="hc-run-rail"/,
+  "the secondary run-settings rail is removed from the home composer",
 );
 assert.match(source, /import \{ StandardSelect/, "home composer selectors should delegate to StandardSelect");
 assert.match(source, /<StandardSelect[\s\S]*?popoverClassName="hc-home-select-popover"/, "home composer custom selectors should use the shared select popover");
@@ -72,13 +74,14 @@ assert.match(
 );
 assert.match(
   css,
-  /\.hc-action-bar\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?gap:\s*8px 14px;[\s\S]*?padding:\s*10px 14px 14px;/,
-  "home composer action bar keeps compact spacing between context and submit clusters",
+  /\.hc-action-bar\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?gap:\s*6px 10px;[\s\S]*?padding:\s*8px 12px 12px;/,
+  "home composer action bar uses compact single-toolbar spacing",
 );
+// Run rail removed; its CSS survives as dead code for now (radius etc. still tested below).
 assert.match(
   css,
-  /\.hc-run-rail\s*\{[\s\S]*?display:\s*flex;[\s\S]*?background:[\s\S]*?color-mix/,
-  "run settings rail is a distinct secondary surface",
+  /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*999px/,
+  "send button is pill-shaped (border-radius 999px)",
 );
 assert.match(
   css,
@@ -87,19 +90,14 @@ assert.match(
 );
 assert.match(
   css,
-  /\.hc-send-btn\s*\{[\s\S]*?background:\s*var\(--accent-presence\);/,
-  "active send button keeps the presence accent fill",
+  /\.hc-send-btn\s*\{[\s\S]*?background:\s*color-mix\(in oklch,\s*var\(--text-primary\)/,
+  "active send button uses dark text-primary fill (Codex-style dark pill)",
 );
 for (const selector of [
   ".hc-add-btn",
-  ".hc-enhance-btn",
-  ".hc-enhance-undo",
-  ".hc-model-chip",
   ".hc-familiar-selector",
   ".hc-home-select-trigger",
-  ".home-composer-card .cave-project-picker__trigger.hc-project-selector",
-  ".hc-dest-pills",
-  ".hc-dest-pill",
+  ".hc-mic-btn",
 ]) {
   assert.match(
     css,
