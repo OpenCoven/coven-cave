@@ -38,13 +38,18 @@ assert.doesNotMatch(source, /⏎ send · ⇧⏎ newline · ↑↓ history · \/ 
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 assert.doesNotMatch(css, /\.hc-keyboard-hint\b/, "unused .hc-keyboard-hint CSS is removed");
 
+const sendButtonRule = Array.from(css.matchAll(/\.hc-send-btn\s*\{[\s\S]*?\n\}/g), (match) => match[0]).find((rule) =>
+  /background:\s*color-mix\(in oklch,\s*var\(--text-primary\)/.test(rule),
+);
+assert.ok(sendButtonRule, "base .hc-send-btn rule exists");
+
 // ───────── Task 3: Tokenized icon-only Send button ─────────
 // The visible "Send" text label is gone, but the button keeps an aria-label so
-// screen readers announce it, and its chrome uses the shared control radius.
+// screen readers announce it, and its chrome is a compact pill.
 assert.match(source, /aria-label="Send"/, "Send button keeps aria-label='Send'");
 assert.doesNotMatch(source, /className="hc-send-label"/, "visible Send text label removed (button is icon-only)");
 assert.doesNotMatch(css, /\.hc-send-label\s*\{/, "old .hc-send-label rule removed");
-assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*var\(--radius-control\)/, ".hc-send-btn uses the shared control radius");
+assert.doesNotMatch(sendButtonRule, /border-radius:\s*var\(--radius-control\)/, ".hc-send-btn no longer uses the shared control radius (now pill-shaped)");
 
 // ───────── Command-bar hierarchy ─────────
 // New: single-row toolbar — context left, run controls right.
@@ -79,8 +84,8 @@ assert.match(
 );
 // Run rail removed; its CSS survives as dead code for now (radius etc. still tested below).
 assert.match(
-  css,
-  /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*999px/,
+  sendButtonRule,
+  /border-radius:\s*999px/,
   "send button is pill-shaped (border-radius 999px)",
 );
 assert.match(
@@ -89,8 +94,8 @@ assert.match(
   "custom selector triggers keep button styling while reading as compact selects",
 );
 assert.match(
-  css,
-  /\.hc-send-btn\s*\{[\s\S]*?background:\s*color-mix\(in oklch,\s*var\(--text-primary\)/,
+  sendButtonRule,
+  /background:\s*color-mix\(in oklch,\s*var\(--text-primary\)/,
   "active send button uses dark text-primary fill (Codex-style dark pill)",
 );
 for (const selector of [
