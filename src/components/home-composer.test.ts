@@ -337,8 +337,8 @@ for (const [name, src] of [
   // the slash term on its Escape-dismiss flag: `(!slashDismissed && …)`.)
   assert.match(
     src,
-    /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\|[\s\S]{0,40}slashSuggestions\.length > 0/,
-    `${name} combobox ARIA must reflect every inline menu (slash, /model, /skill)`,
+    /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\|[\s\S]{0,80}slashSuggestions\.length > 0/,
+    `${name} combobox ARIA must reflect every inline menu (slash, /model, /skill, /prompt)`,
   );
 }
 
@@ -349,8 +349,8 @@ for (const [name, src] of [
 // ARIA.
 assert.match(
   source,
-  /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\| \(!slashDismissed && slashSuggestions\.length > 0\);/,
-  "HomeComposer combobox ARIA reflects every inline menu (slash, /model, /skill)",
+  /const menuOpen =\s*modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\|\s*\(!slashDismissed && \(slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0\)\);/,
+  "HomeComposer combobox ARIA reflects every inline menu (slash, /model, /skill, /prompt, Skills group)",
 );
 
 // ── /skill + /skills inline picker (mirrors /model) ──────────────────────────
@@ -361,7 +361,12 @@ assert.match(
   /<HomeSlashMenu[\s\S]*?ariaLabel="Skills"[\s\S]*?preview=\{<SkillDetailPreview/,
   "HomeComposer renders a Skills picker listbox (via HomeSlashMenu) with the skill detail preview",
 );
-assert.match(source, /buildSkillPrompt\(skill\)/, "HomeComposer invokes a skill by starting a chat with the skill prompt");
+assert.match(source, /buildSkillPrompt\(skill, args\)/, "HomeComposer invokes a skill by starting a chat with the skill prompt (typed arguments ride along)");
+assert.match(
+  source,
+  /skill\.argumentHint && !args && text\.trim\(\)\.toLowerCase\(\) !== filled\.toLowerCase\(\)/,
+  "A hinted skill autofills /skill <id> for argument editing instead of starting a chat",
+);
 
 // ── Destination pills are an accessible single-select radiogroup ─────────────
 assert.match(

@@ -86,4 +86,13 @@ assert.match(modal, /breadcrumb=\{\["Chat", "Prompt snippets"\]\}/, "modal is bu
 const emptyState = await readFile(new URL("../components/chat-empty-state.tsx", import.meta.url), "utf8");
 assert.match(emptyState, /onOpenPromptSnippets/, "empty state exposes the snippets entry point");
 
+// ── Home composer parity ─────────────────────────────────────────────────────
+const homeComposer = await readFile(new URL("../components/home-composer.tsx", import.meta.url), "utf8");
+assert.match(homeComposer, /promptSlashOptions\(text, prompts\)/, "home computes the inline /prompt options");
+assert.match(homeComposer, /fetch\("\/api\/prompts"/, "home sources templates from /api/prompts");
+assert.match(homeComposer, /useState<PromptOption\[\]>\(BUILTIN_PROMPTS\)/, "home picker is seeded with the built-ins");
+assert.match(homeComposer, /command === "\/prompt" \|\| command === "\/prompts"/, "home dispatches /prompt and /prompts");
+assert.match(homeComposer, /const insertPromptTemplate = useCallback/, "home has the template-insert helper");
+assert.doesNotMatch(homeComposer, /onStartChat\([^)]*promptInsertion/, "a template body never starts a chat directly");
+
 console.log("slash-prompt.test.ts: ok");
