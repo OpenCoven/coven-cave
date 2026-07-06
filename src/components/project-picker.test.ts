@@ -35,10 +35,11 @@ assert.doesNotMatch(
   "picker should use shared CSS/tokenized radii instead of hard-coded rounded classes",
 );
 
-// ── Home composer: project picker removed from toolbar (project context in headline) ────
-// Project selection logic remains via selectedProject; the picker UI was removed
-// when the toolbar was consolidated into a single row.
-assert.doesNotMatch(homeComposer, /className="hc-project-selector"/, "home composer project selector CSS class is removed");
+// ── Home composer: project picker rendered in the toolbar ───────────────────
+// The selector lets the user choose which project a new chat runs in (mirrors
+// the chat composer). It's a standalone ProjectPicker with the hc-project-selector
+// styling — its own search popover, so it can't nest in the ⚙ Options menu.
+assert.match(homeComposer, /className="hc-project-selector"/, "home composer renders the project selector in its toolbar");
 
 // ── Styled ──────────────────────────────────────────────────────────────────
 assert.match(css, /\.cave-project-picker__trigger/, "trigger styled");
