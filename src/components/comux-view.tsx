@@ -1749,7 +1749,7 @@ export function ComuxView({ view, sessions: daemonSessions, onOpenSession, onNew
                         <button
                           type="button"
                           onClick={() => onNewChat(selectedProject.root)}
-                          className="flex h-7 items-center gap-1 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-white hover:opacity-85"
+                          className="flex h-7 items-center gap-1 rounded-md bg-[var(--accent-presence)] px-2.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-85"
                         >
                           <Icon name="ph:chat-circle-dots" width={12} />
                           New chat

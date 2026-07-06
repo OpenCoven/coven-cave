@@ -483,6 +483,7 @@ export const SUITES = {
 	    "src/components/ui/button.test.ts",
 	    "src/components/ui/popover.test.ts",
     "src/components/ui/overflow-menu.test.ts",
+    "src/components/minimalism-invariants.test.ts",
     "src/components/ui/select.test.ts",
     "src/components/ui/context-menu.test.ts",
     "src/components/ui/undo-toast.test.ts",
