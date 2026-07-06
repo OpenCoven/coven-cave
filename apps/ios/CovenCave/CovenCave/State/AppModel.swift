@@ -758,9 +758,21 @@ final class AppModel {
     /// the current token keeps working until it actually expires, at which
     /// point refreshConnection lands in `.needsAuth` with re-pair guidance.
     private func refreshAccessTokenIfNeeded() async {
-        guard let client,
-              let token = CaveConnection.accessToken,
-              let expiry = CaveInvite.tokenExpiry(token) else { return }
+        guard let client, let token = CaveConnection.accessToken else { return }
+        guard let expiry = CaveInvite.tokenExpiry(token) else {
+            // Legacy raw-secret pairing: no expiry, so the rolling renewal
+            // below can never fire and the device stays on a never-expiring
+            // credential forever. The refresh route accepts the raw secret as
+            // a valid credential precisely to offer this migration path —
+            // exchange it once for a signed 30-day token. After the swap the
+            // stored token has an expiry, so this branch never runs again; on
+            // failure (offline, tokenless server) the raw secret keeps
+            // working and the next connect retries.
+            if let fresh = await client.refreshAccessToken() {
+                CaveConnection.saveAccessToken(fresh)
+            }
+            return
+        }
         let renewalWindow: TimeInterval = 7 * 24 * 3600
         let secondsUntilExpiry = expiry.timeIntervalSinceNow
         guard secondsUntilExpiry > 0 && secondsUntilExpiry < renewalWindow else { return }

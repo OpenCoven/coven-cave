@@ -560,6 +560,7 @@ export const SUITES = {
     "src/lib/message-feedback.test.ts",
     "src/lib/server/message-feedback-store.test.ts",
     "src/components/detail-split-host.test.ts",
+    "src/lib/server/chat-stop-registry.test.ts",
   ],
   api: [
     "scripts/dependency-policy.test.mjs",
@@ -720,6 +721,7 @@ export const SUITES = {
     "scripts/ios-auto-reconnect.test.mjs",
     "scripts/ios-self-healing-sync.test.mjs",
     "scripts/ios-connection-stability.test.mjs",
+    "scripts/ios-legacy-token-migration.test.mjs",
     "scripts/ios-connect-paste.test.mjs",
     "scripts/ios-connect-screen-ux.test.mjs",
     "scripts/ios-theme-list-background.test.mjs",
