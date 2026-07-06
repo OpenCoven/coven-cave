@@ -76,8 +76,13 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /FOLDER_MODES\.map\(\(fm, i\) =>/,
-  "Sidebar should render every folder mode directly",
+  /VISIBLE_MODES\.map\(\(fm, i\) =>/,
+  "Sidebar renders the visible folder modes (navHidden surfaces filtered out)",
+);
+assert.match(
+  source,
+  /const VISIBLE_MODES = FOLDER_MODES\.filter\(\(fm\) => !fm\.navHidden\)/,
+  "VISIBLE_MODES drops navHidden surfaces (Browser) from the rendered nav",
 );
 
 assert.match(
@@ -157,10 +162,12 @@ assert.doesNotMatch(
   "Library should not be a root add-on gate in the integrated sidebar",
 );
 
+// Browser stays in FOLDER_MODES (so ⌘5 + the ⌘K "Go to" launcher still reach
+// it) but is navHidden, so it renders no sidebar row — summoned on demand.
 assert.match(
   source,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description:/,
-  "Browser is the first Tools surface after Schedules, on ⌘5",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  "Browser is kept for ⌘5/palette but hidden from the sidebar rows (navHidden)",
 );
 
 assert.doesNotMatch(source, /id:\s*"terminal"/, "Terminal is not a standalone sidebar destination");
@@ -249,12 +256,13 @@ assert.doesNotMatch(
   "footer should not render an unread reminders badge",
 );
 
-// Default visible entries include browser and marketplace.
+// Marketplace stays a visible entry; Browser is now summoned on demand
+// (navHidden), so it must NOT appear among the rendered VISIBLE_MODES rows.
 // (Capabilities moved to a tab on the Roles page — no standalone entry.)
 assert.match(
   source,
-  /id:\s*"browser"[^}]*label:\s*"Browser"/,
-  "browser stays visible",
+  /id:\s*"browser"[^}]*navHidden:\s*true/,
+  "browser is navHidden (kept for ⌘5/palette, not a sidebar row)",
 );
 assert.doesNotMatch(source, /id:\s*"terminal"/, "terminal does not stay visible");
 assert.match(
@@ -384,18 +392,19 @@ assert.match(
   "The 56px rail has no room for text — the version line hides there",
 );
 
-// Quiet cluster (§8): occasional destinations (Browser, Marketplace, GitHub)
-// stay in the same flat list but render muted-until-hover, with the first
-// quiet row opening a spacing gap instead of a divider.
+// Quiet cluster (§8): occasional destinations (Marketplace, GitHub) stay in the
+// same flat list but render muted-until-hover, with the first quiet row opening
+// a spacing gap instead of a divider. (Browser is now navHidden, so Marketplace
+// leads the quiet cluster.)
 assert.match(
   source,
-  /\{ id: "browser",[^}]*quiet: true \}/,
-  "Browser is visually demoted to the quiet cluster",
+  /\{ id: "marketplace",[^}]*quiet: true \}/,
+  "Marketplace is in the quiet cluster",
 );
 assert.match(
   source,
-  /quietLead=\{Boolean\(fm\.quiet\) && !FOLDER_MODES\[i - 1\]\?\.quiet\}/,
-  "the first quiet row opens the spacing gap",
+  /quietLead=\{Boolean\(fm\.quiet\) && !VISIBLE_MODES\[i - 1\]\?\.quiet\}/,
+  "the first quiet row opens the spacing gap (indexed on the VISIBLE list)",
 );
 assert.match(
   styles,
