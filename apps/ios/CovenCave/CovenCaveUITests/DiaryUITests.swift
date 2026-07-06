@@ -17,22 +17,37 @@ final class DiaryUITests: XCTestCase {
         // A saved tokenless host makes the app spend ~10s on the "Connecting
         // to your desktop…" spinner before needsAuth lands it on the Connect
         // screen — wait for the screen itself, not a fixed delay.
-        //
-        // Pairing invite arrives via TEST_RUNNER_CAVE_TEST_INVITE (xcodebuild
-        // strips the prefix). TYPED into the field, not pasted — the paste-
-        // permission sheet is hosted by a system process XCUITest can't reach.
+        // Prefer a runner-provided invite (typed into the field) to avoid iOS
+        // paste-permission prompts; fall back to the host-seeded clipboard.
         let invite = ProcessInfo.processInfo.environment["CAVE_TEST_INVITE"] ?? ""
         let connectTitle = app.staticTexts["Connect to Cave"]
-        if connectTitle.waitForExistence(timeout: 45), !invite.isEmpty {
-            let field = app.textFields.firstMatch
-            XCTAssertTrue(field.waitForExistence(timeout: 10), "Connect screen should have the host field")
-            // Cursor to the end of the prefilled host, wipe it, type the invite.
-            field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
-            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
-            field.typeText(invite)
+        if connectTitle.waitForExistence(timeout: 45) {
+            if !invite.isEmpty {
+                let field = app.textFields.firstMatch
+                XCTAssertTrue(field.waitForExistence(timeout: 10), "Connect screen should have the host field")
+                // Cursor to the end of the prefilled host, wipe it, type the invite.
+                field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+                field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
+                field.typeText(invite)
+            } else {
+                // The host pre-seeds the simulator clipboard with a covencave://
+                // pairing invite (simctl pbcopy); drive Paste → Connect. The only
+                // "Paste" *button* is the Desktop field's (the step chips are
+                // static text).
+                let paste = app.buttons["Paste"].firstMatch
+                XCTAssertTrue(paste.waitForExistence(timeout: 10), "Connect screen should offer Paste")
+                paste.tap()
+
+                // Reading the clipboard may raise the system paste-permission alert.
+                let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+                for label in ["Allow Paste", "Allow"] {
+                    let allow = springboard.alerts.buttons[label]
+                    if allow.waitForExistence(timeout: 3) { allow.tap(); break }
+                }
+            }
 
             let connect = app.buttons["Connect desktop"]
-            XCTAssertTrue(connect.waitForExistence(timeout: 5), "Connect button should exist")
+            XCTAssertTrue(connect.waitForExistence(timeout: 5), "Connect button should exist after entering invite")
             connect.tap()
         }
 
@@ -71,9 +86,8 @@ final class DiaryUITests: XCTestCase {
                   v(0.345, 0.457)])                                                  // o
 
         // Pen-lift (3.5s) → Vision → ink soak → streamed reply. Leave the app
-        // UNDISTURBED for the pen-lift + recognition window: waitForExistence
-        // polls accessibility snapshots continuously, which can starve the
-        // in-app timers. Sparse one-shot probes instead.
+        // undisturbed for the pen-lift + recognition window: waitForExistence
+        // polls accessibility snapshots continuously, which can starve in-app timers.
         Thread.sleep(forTimeInterval: 12)
         let reply = app.staticTexts.matching(
             NSPredicate(format: "label BEGINSWITH 'The diary replies:'")
