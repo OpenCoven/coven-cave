@@ -69,6 +69,17 @@ assert.match(preview, /const LAUNCHPAD_CAP = 6/, "the launchpad caps its list");
 assert.match(preview, /onClick=\{\(\) => onOpenPath\(f\.path\)\}/, "each changed file opens in the preview");
 assert.match(preview, /if \(path \|\| !projectRoot \|\| !onOpenPath\) return/, "the status fetch only runs for an empty, openable preview");
 
+// Code-file fit: reading a highlighted file lifts SyntaxBlock's chat clamp so
+// the block fills the pane instead of stopping at 520px with a dead "Show
+// more" footer (bead cave-7zg). The modifier only applies to the read-mode
+// SyntaxBlock branch — markdown, images, editor, loading, and error keep the
+// plain padded body.
+assert.match(
+  preview,
+  /!loading && !error && !editing && file\?\.kind === "text" && !isMarkdownPath\(path\)\s*\?\s*" workspace-rail__preview-body--code"/,
+  "the --code fill modifier is gated to the read-mode SyntaxBlock branch",
+);
+
 // ─── cave-chat.css: fullscreen sizes to its containing block ─────────────────
 // Sizing via inset alone keeps this correct regardless of what the containing
 // block is: historically the mode wrapper (.cave-mode-fade retained a
@@ -82,5 +93,22 @@ const fullscreenBlock = css.slice(
 );
 assert.match(fullscreenBlock, /inset: 0/, "fullscreen fills via inset");
 assert.doesNotMatch(fullscreenBlock, /100vw|100vh/, "fullscreen never sizes to the viewport (containing-block offset would clip the right pane)");
+
+// ─── cave-chat.css: --code preview fills the pane (cave-7zg) ──────────────────
+assert.match(
+  css,
+  /\.workspace-rail__preview-body--code \.cave-code-wrap \{[^}]*max-height: none/,
+  "--code lifts the chat transcript's 520px clamp on the code wrap",
+);
+assert.match(
+  css,
+  /\.workspace-rail__preview-body--code \.cave-code-expand \{[^}]*display: none/,
+  "--code hides the Show more footer (nothing to expand once unclamped)",
+);
+assert.match(
+  css,
+  /\.workspace-rail__preview-body--code \{[^}]*overflow: hidden/,
+  "--code body stops double-scrolling — the wrap scrolls internally",
+);
 
 console.log("rail-files-panel.test.ts OK");

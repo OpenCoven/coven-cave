@@ -313,7 +313,16 @@ export function RailFilePreview({
           </div>
         )}
       </header>
-      <div className={`workspace-rail__preview-body${editing ? " workspace-rail__preview-body--edit" : ""}`}>
+      <div
+        className={`workspace-rail__preview-body${editing ? " workspace-rail__preview-body--edit" : ""}${
+          // Reading a highlighted code file: let the pane own the height so the
+          // block fills it and scrolls internally, instead of keeping the chat
+          // transcript's 520px clamp + "Show more" footer (see cave-chat.css).
+          !loading && !error && !editing && file?.kind === "text" && !isMarkdownPath(path)
+            ? " workspace-rail__preview-body--code"
+            : ""
+        }`}
+      >
         {loading ? (
           <div className="workspace-rail__preview-skeleton" aria-busy="true" aria-label="Loading file">
             {["94%", "82%", "97%", "70%", "88%", "60%"].map((w, i) => (
