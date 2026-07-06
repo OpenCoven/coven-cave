@@ -52,21 +52,23 @@ function setupEffortLabel(plugin: MarketplacePlugin) {
   return { icon: "ph:check-circle" as const, label: "No setup" };
 }
 
+// label is the clamped chip text; full is the untruncated list for the
+// tooltip — a "+3" chip whose title repeats the same "+3" hides the rest.
 function capabilityPreview(plugin: MarketplacePlugin) {
   const capabilities = plugin.capabilities.length > 0 ? plugin.capabilities : plugin.keywords;
-  if (capabilities.length === 0) return "Core capability";
+  if (capabilities.length === 0) return { label: "Core capability", full: "Core capability" };
   const first = capabilities.slice(0, 2).join(", ");
   const more = capabilities.length > 2 ? ` +${capabilities.length - 2}` : "";
-  return `${first}${more}`;
+  return { label: `${first}${more}`, full: capabilities.join(", ") };
 }
 
 function roleFitLabel(plugin: MarketplacePlugin) {
   const roles = plugin.roleAffinity.flatMap((entry) => entry.roles).filter(Boolean);
-  if (roles.length === 0) return "General fit";
+  if (roles.length === 0) return { label: "General fit", full: "General fit" };
   const unique = [...new Set(roles)];
   const first = unique.slice(0, 2).join(", ");
   const more = unique.length > 2 ? ` +${unique.length - 2}` : "";
-  return `${first}${more}`;
+  return { label: `${first}${more}`, full: unique.join(", ") };
 }
 
 export const MarketplaceCard = memo(function MarketplaceCard({
@@ -122,16 +124,16 @@ export const MarketplaceCard = memo(function MarketplaceCard({
       <p className="line-clamp-2 text-[12px] text-[var(--text-muted)]">{plugin.description}</p>
       <div
         className="marketplace-card__decision"
-        aria-label={`Decision notes: ${setup.label}; ${capability}; ${roleFit}`}
+        aria-label={`Decision notes: ${setup.label}; ${capability.full}; ${roleFit.full}`}
       >
         <span className="marketplace-card__decision-chip" title={setup.label}>
           <Icon name={setup.icon} width={11} aria-hidden /> {setup.label}
         </span>
-        <span className="marketplace-card__decision-chip" title={capability}>
-          <Icon name="ph:lightning-bold" width={11} aria-hidden /> {capability}
+        <span className="marketplace-card__decision-chip" title={capability.full}>
+          <Icon name="ph:lightning-bold" width={11} aria-hidden /> {capability.label}
         </span>
-        <span className="marketplace-card__decision-chip" title={roleFit}>
-          <Icon name="ph:mask-happy" width={11} aria-hidden /> {roleFit}
+        <span className="marketplace-card__decision-chip" title={roleFit.full}>
+          <Icon name="ph:mask-happy" width={11} aria-hidden /> {roleFit.label}
         </span>
       </div>
       <div className="marketplace-card__meta">

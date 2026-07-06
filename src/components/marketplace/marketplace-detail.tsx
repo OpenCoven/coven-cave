@@ -82,13 +82,13 @@ function detailDecisionItems(plugin: MarketplacePlugin) {
       label: "Capability fit",
       icon: "ph:lightning-bold" as const,
       value: capabilities.length > 0 ? capabilities.slice(0, 3).join(", ") : "Core capability",
-      detail: capabilities.length > 3 ? `${capabilities.length - 3} more capability signals in the catalog.` : "Primary ways this listing extends a familiar.",
+      detail: capabilities.length > 3 ? `And ${capabilities.length - 3} more — full list below.` : "Primary ways this listing extends a familiar.",
     },
     {
       label: "Role fit",
       icon: "ph:mask-happy" as const,
       value: roles.length > 0 ? roles.slice(0, 3).join(", ") : "General fit",
-      detail: roles.length > 3 ? `${roles.length - 3} more mapped roles.` : "Best matching familiar role assignments.",
+      detail: roles.length > 3 ? `And ${roles.length - 3} more — full list below.` : "Best matching familiar role assignments.",
     },
   ];
 }
@@ -119,7 +119,7 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
   const state = pluginBadgeState(plugin);
   const decisionItems = detailDecisionItems(plugin);
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex justify-end bg-[var(--backdrop-scrim)]" onClick={onClose}>
       <div
         ref={ref}
         role="dialog"
@@ -219,7 +219,10 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
                 Test connection
               </Button>
               {conn.state === "reachable" || conn.state === "unreachable" ? (
-                <span className={`inline-flex items-center gap-1 text-[11px] ${conn.state === "reachable" ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"}`}>
+                <span
+                  role="status"
+                  className={`inline-flex items-center gap-1 text-[11px] ${conn.state === "reachable" ? "text-[var(--text-primary)]" : "text-[var(--danger-text)]"}`}
+                >
                   <Icon name={conn.state === "reachable" ? "ph:check-circle" : "ph:warning"} width={12} aria-hidden />
                   {conn.message}
                 </span>

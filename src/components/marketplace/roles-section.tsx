@@ -3,8 +3,8 @@
 // Roles section of the Marketplace hub — role cards with per-capability rows
 // (skills, MCP servers, tools, plugins, workflows). Extracted from the old
 // standalone Roles page (plugins-view) when Roles and Marketplace merged into
-// one surface; the plugins-role-* class hooks are kept so existing styling and
-// tap-target rules keep applying.
+// one surface. Chips style themselves with utilities; the one surviving CSS
+// hook is plugins-role-chip--mcp (accent tint for MCP server chips).
 
 import { useMemo } from "react";
 import { Icon, type IconName } from "@/lib/icon";
@@ -306,7 +306,7 @@ function CapabilityRow({
                   type="button"
                   onClick={() => onOpen(item)}
                   title={openHint ? `${openHint}: ${item}` : item}
-                  className={`plugins-role-chip plugins-role-chip--${tone} plugins-role-chip--action focus-ring inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:text-[var(--accent-text)]`}
+                  className={`${tone === "mcp" ? "plugins-role-chip--mcp " : ""}focus-ring inline-flex items-center gap-1 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-primary)] hover:border-[var(--border-strong)] hover:text-[var(--accent-text)]`}
                 >
                   <Icon name={icon} width={10} aria-hidden />
                   {item}
@@ -314,7 +314,7 @@ function CapabilityRow({
               ) : (
                 <span
                   key={item}
-                  className={`plugins-role-chip plugins-role-chip--${tone} inline-flex items-center gap-1 rounded-md bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-secondary)]`}
+                  className={`${tone === "mcp" ? "plugins-role-chip--mcp " : ""}inline-flex items-center gap-1 rounded-md bg-[var(--bg-raised)] px-2 py-1 text-[11px] text-[var(--text-secondary)]`}
                 >
                   {tone === "mcp" ? <Icon name={icon} width={10} aria-hidden /> : null}
                   {item}

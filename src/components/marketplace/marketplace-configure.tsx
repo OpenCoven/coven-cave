@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { SkeletonRows } from "@/components/ui/skeleton";
 import { Icon } from "@/lib/icon";
 import { useAnnouncer } from "@/components/ui/live-region";
 
@@ -66,7 +67,12 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
 
   useEffect(() => {
     if (open) {
+      // Full reset — the dialog stays mounted between opens, and `results` is
+      // keyed by field key, so without this a stale "Valid — @login" from the
+      // last session (or another plugin sharing a key) survives into this one.
       setDrafts({});
+      setResults({});
+      setError(null);
       void load(true);
     }
   }, [open, load]);
@@ -140,23 +146,29 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
       footerActions={<Button variant="secondary" size="sm" onClick={onClose}>Done</Button>}
     >
       <div className="flex flex-col gap-4">
-        <p className="text-[12px] text-[var(--text-muted)]">
-          {displayName} needs the following before its tools can run. Secrets are saved in the
-          encrypted local vault or stored as 1Password references.
-        </p>
+        {!loaded || fields.length > 0 ? (
+          <p className="text-[12px] text-[var(--text-muted)]">
+            {displayName} needs the following before its tools can run. Secrets are saved in the
+            encrypted local vault or stored as 1Password references.
+          </p>
+        ) : null}
         {error ? (
-          <p className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
+          <p role="alert" className="rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
             {error}
           </p>
         ) : null}
         {!loaded ? (
-          <p className="text-[12px] text-[var(--text-muted)]">Loading…</p>
+          <SkeletonRows count={3} />
+        ) : fields.length === 0 && !error ? (
+          <p className="text-[12px] text-[var(--text-muted)]">
+            Nothing to set up — {displayName} has no required values. You can close this dialog.
+          </p>
         ) : (
           fields.map((f) => (
             <div key={f.key} className="flex flex-col gap-1.5 rounded-lg border border-[var(--border-hairline)] p-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[13px] font-medium text-[var(--text-primary)]">{f.title}</span>
-                <span className={`inline-flex items-center gap-1 text-[11px] ${f.satisfied ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"}`}>
+                <span className={`inline-flex items-center gap-1 text-[11px] ${f.satisfied ? "text-[var(--text-primary)]" : "text-[var(--color-warning)]"}`}>
                   <Icon name={f.satisfied ? "ph:check-circle" : "ph:warning"} width={12} aria-hidden />
                   {f.satisfied ? `Set${f.source === "encrypted" ? " · encrypted" : f.source === "vault" ? " · 1Password" : ""}` : "Not set"}
                 </span>
@@ -192,7 +204,7 @@ export function MarketplaceConfigure({ pluginId, displayName, open, onClose, onC
                 ) : null}
               </div>
               {results[f.key] && results[f.key].state !== "idle" && results[f.key].state !== "testing" ? (
-                <p className={`inline-flex items-center gap-1 text-[11px] ${results[f.key].state === "valid" ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"}`}>
+                <p className={`inline-flex items-center gap-1 text-[11px] ${results[f.key].state === "valid" ? "text-[var(--text-primary)]" : "text-[var(--danger-text)]"}`}>
                   <Icon name={results[f.key].state === "valid" ? "ph:check-circle" : "ph:warning"} width={11} aria-hidden />
                   {results[f.key].message}
                 </p>
