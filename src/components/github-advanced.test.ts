@@ -77,6 +77,9 @@ assert.match(source, /entry\.kind === "review"[\s\S]{0,120}<ReviewEntry/, "revie
 assert.match(source, /function CommentReactions/, "a reaction summary component exists");
 assert.match(source, /<CommentReactions reactions=\{entry\.comment\.reactions\}/, "reactions render under each comment");
 assert.match(source, /const REACTION_EMOJI:/, "reaction slugs map to emoji glyphs");
+assert.doesNotMatch(source, /import \{[\s\S]{0,120}\bFragment\b/, "github-view does not import unused Fragment");
+assert.match(source, /const REACTION_LABEL:/, "reaction slugs map to accessible labels");
+assert.match(source, /aria-label=\{`\$\{r\.count\} \$\{REACTION_LABEL\[r\.content\]/, "reaction chips expose their reaction type to assistive tech");
 assert.match(boardCss, /\.gh-reaction \{/, "reaction chips are styled");
 assert.match(boardCss, /\.gh-review-entry \{/, "review timeline entries are styled");
 assert.match(boardCss, /\.gh-review-entry\.is-approved \{ border-left-color:var\(--color-success\)/, "approved reviews get a success accent");
@@ -91,6 +94,8 @@ assert.match(checksRoute, /\/commits\/\$\{sha\}\/check-runs/, "checks route read
 assert.match(checksRoute, /\/commits\/\$\{sha\}\/status/, "checks route reads the legacy combined status");
 assert.match(checksRoute, /summarizeChecks\(runs as CheckRun\[\], combinedState\)/, "checks route rolls up a single summary");
 assert.match(checksRoute, /detailsUrl:[\s\S]{0,60}details_url/, "each run carries its logs URL");
+assert.match(checksRoute, /if \(!runsResp\.res\.ok && !statusResp\.res\.ok\)/, "checks route errors when both upstream CI requests fail");
+assert.match(checksRoute, /github error \(\$\{runsResp\.res\.status\}, \$\{statusResp\.res\.status\}\)/, "checks route reports the failed upstream status pair");
 
 // The detail panel renders an expandable checks section for PRs only.
 assert.match(source, /function GitHubChecks/, "the checks section component exists");
