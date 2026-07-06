@@ -4769,7 +4769,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             title={newTurnsCount ? `${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""}` : undefined}
           >
             <Icon name="ph:caret-down-bold" width={12} />
-            {newTurnsCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[10px] font-semibold text-white">{newTurnsCount}</span>}
+            {newTurnsCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[10px] font-semibold text-[var(--accent-presence-foreground)]">{newTurnsCount}</span>}
           </button>
         )}
       </div>
@@ -5217,7 +5217,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       type="button"
                       onClick={() => void send()}
                       disabled={!input.trim() && attachments.length === 0}
-                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
                       title={`Send message (${keys.enter})`}
                       aria-label="Send message"
                     >
