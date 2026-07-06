@@ -163,8 +163,8 @@ assert.match(
 
 assert.match(
   sidebar,
-  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description:/,
-  "Sidebar Browser keeps its shortcut hint",
+  /\{ id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true \}/,
+  "Browser is kept for ⌘5/palette but navHidden from the sidebar rows",
 );
 
 assert.doesNotMatch(sidebar, /id:\s*"terminal"/, "Sidebar does not expose Terminal as a standalone destination");

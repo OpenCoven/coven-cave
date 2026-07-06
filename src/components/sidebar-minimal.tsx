@@ -86,6 +86,11 @@ const FOLDER_MODES: Array<{
    *  tabindex, same click targets — but quiet rows render muted-until-hover
    *  and the first one opens a spacing gap, so daily destinations read first. */
   quiet?: boolean;
+  /** Kept in the list (so the command palette's "Go to" launcher and the
+   *  ⌘-number shortcut still reach it) but NOT rendered as a sidebar row. For
+   *  surfaces you summon on demand rather than navigate to daily — the Browser
+   *  opens itself when a link/URL is clicked, so it needn't sit in the nav. */
+  navHidden?: boolean;
 }> = [
   { id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description: "Overview and quick actions" },
   { id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description: "Talk with your familiars — 1:1 or a Group tab for a whole coven" },
@@ -94,12 +99,19 @@ const FOLDER_MODES: Array<{
   { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your daily journal and generated sketches" },
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
-  { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", quiet: true },
+  // Browser is summoned on demand (a clicked link/URL opens it, plus ⌘5 and the
+  // ⌘K palette) rather than navigated to daily, so it's kept in the list for
+  // those launchers but hidden from the sidebar rows.
+  { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", navHidden: true },
   { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities", quiet: true },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
   { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
 ];
+
+// Rows actually rendered in the sidebar — everything except on-demand surfaces
+// (navHidden), which stay in FOLDER_MODES for the ⌘K palette + ⌘-number launcher.
+const VISIBLE_MODES = FOLDER_MODES.filter((fm) => !fm.navHidden);
 
 export { FOLDER_MODES };
 
@@ -220,7 +232,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       </div>
 
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
-        {FOLDER_MODES.map((fm, i) => (
+        {VISIBLE_MODES.map((fm, i) => (
           <FolderRow
             key={fm.id}
             id={fm.id}
@@ -233,7 +245,9 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             kbd={fm.kbd}
             description={fm.description}
             quiet={fm.quiet}
-            quietLead={Boolean(fm.quiet) && !FOLDER_MODES[i - 1]?.quiet}
+            // Index the VISIBLE list, not FOLDER_MODES — a navHidden entry between
+            // quiet rows must not throw off the "first quiet row" gap.
+            quietLead={Boolean(fm.quiet) && !VISIBLE_MODES[i - 1]?.quiet}
             onClick={() => handleModeSelect(fm.id)}
           />
         ))}
