@@ -17,6 +17,7 @@ import {
   taskGitHubLinkFromGitHubItem,
 } from "@/lib/task-github";
 import { Icon } from "@/lib/icon";
+import { useCopy } from "@/lib/use-copy";
 import { useIsCoarsePointer } from "@/lib/use-viewport";
 import type { IconName } from "@/lib/icon";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
@@ -957,6 +958,93 @@ function StepsSection({
   );
 }
 
+// ── Debug ─────────────────────────────────────────────────────────────────────
+// Raw card internals — ids, paths, retry/timeout knobs, and the full card JSON.
+// Collapsed by default like Lifecycle (power-user info), but every stored field
+// stays reachable from the drawer: progressive disclosure, not capability loss.
+
+function DebugKVRow({ k, v }: { k: string; v: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, padding: "2px 0", fontSize: 11 }}>
+      <span style={{ flexShrink: 0, color: "var(--text-muted)" }}>{k}</span>
+      <span
+        style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "ui-monospace, monospace", fontSize: 10.5, color: "var(--text-secondary)" }}
+        title={v}
+      >
+        {v}
+      </span>
+    </div>
+  );
+}
+
+function CopyJsonButton({ getText }: { getText: () => string }) {
+  const { copied, copy } = useCopy();
+  return (
+    <button
+      type="button"
+      className="board-toolbar-btn"
+      style={{ fontSize: 10, padding: "2px 8px" }}
+      onClick={() => copy(getText())}
+    >
+      <Icon name={copied ? "ph:check-bold" : "ph:copy"} width={10} />
+      {copied ? "Copied" : "Copy JSON"}
+    </button>
+  );
+}
+
+function DebugSection({ card }: { card: Card }) {
+  const [open, setOpen] = useState(false);
+  const timeoutMs = card.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const rows: Array<[string, string]> = [
+    ["card id", card.id],
+    ["session", card.sessionId ?? "—"],
+    ["project", card.projectId ?? "—"],
+    ["cwd", card.cwd ?? "—"],
+    ["template", card.template ?? "—"],
+    ["lifecycle", card.lifecycleAt ? `${card.lifecycle} · since ${card.lifecycleAt}` : card.lifecycle],
+    ["retries", `${card.retryCount}/${card.maxRetries}`],
+    ["timeout", timeoutMs % 60_000 === 0 ? `${timeoutMs / 60_000}m` : `${timeoutMs}ms`],
+    ["needs human", card.needsHuman ? "yes" : "no"],
+  ];
+  return (
+    <div className="board-drawer-field">
+      <div className="board-drawer-field-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          <Icon name="ph:bug-bold" width={11} />
+          Debug
+        </span>
+        <button
+          type="button"
+          className="board-toolbar-btn"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          title={open ? "Hide debug details" : "Show debug details"}
+          style={{ fontSize: 10, padding: "2px 8px" }}
+        >
+          <Icon name={open ? "ph:caret-up" : "ph:caret-down"} width={11} />
+          {open ? "Hide" : "Show"}
+        </button>
+      </div>
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid var(--border-hairline)", background: "var(--bg-base)" }}>
+            {rows.map(([k, v]) => (
+              <DebugKVRow key={k} k={k} v={v} />
+            ))}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Raw card</span>
+            <CopyJsonButton getText={() => JSON.stringify(card, null, 2)} />
+          </div>
+          <pre style={{ maxHeight: 260, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, padding: 8, borderRadius: 8, border: "1px solid var(--border-hairline)", background: "var(--bg-base)", fontFamily: "ui-monospace, monospace", fontSize: 10, lineHeight: 1.5, color: "var(--text-secondary)" }}>
+            {JSON.stringify(card, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BoardInspector({ card, familiars, sessions, projects, onClose, onPatch, onMoveStatus, onDelete, onCardReplaced, onJumpToSession, onOpenTaskChat, onOpenUrl, chatLinking = false, chatLinkError }: Props) {
   const dtPrefs = useDateTimePrefs();
   const [closing, setClosing] = useState(false);
@@ -1298,7 +1386,18 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   <div className="board-drawer-lifecycle-row">
                     <LifecycleBadge lifecycle={card.lifecycle} needsHuman={card.needsHuman} />
                     {card.lifecycle === "running" && <TimeoutBadge runningSince={card.runningSince} timeoutMs={card.timeoutMs} />}
+                    {card.retryCount > 0 && (
+                      <span className="board-drawer-count-pill" title={`Retried ${card.retryCount} of ${card.maxRetries} times`}>
+                        retry {card.retryCount}/{card.maxRetries}
+                      </span>
+                    )}
                   </div>
+                  {card.lifecycleReason ? (
+                    <p style={{ margin: 0, fontSize: 10.5, overflowWrap: "anywhere", color: card.lifecycle === "failed" ? "var(--color-danger)" : "var(--text-muted)" }}>
+                      <span style={{ marginRight: 6, fontSize: 9.5, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-muted)" }}>Reason</span>
+                      {card.lifecycleReason}
+                    </p>
+                  ) : null}
                   {moves.length > 0 && (
                     <div className="board-drawer-lifecycle-actions">
                       {moves.map((m) => (
@@ -1321,10 +1420,18 @@ export function BoardInspector({ card, familiars, sessions, projects, onClose, o
                   <span><span className="board-drawer-stamp-label">Created</span> {`${formatDate(card.createdAt, dtPrefs, { year: true })} ${formatClock(card.createdAt, dtPrefs)}`}</span>
                   <span className="board-drawer-stamp-sep">·</span>
                   <span><span className="board-drawer-stamp-label">Updated</span> {`${formatDate(card.updatedAt, dtPrefs, { year: true })} ${formatClock(card.updatedAt, dtPrefs)}`}</span>
+                  {card.lifecycleAt ? (
+                    <>
+                      <span className="board-drawer-stamp-sep">·</span>
+                      <span><span className="board-drawer-stamp-label">State since</span> {`${formatDate(card.lifecycleAt, dtPrefs, { year: true })} ${formatClock(card.lifecycleAt, dtPrefs)}`}</span>
+                    </>
+                  ) : null}
                 </div>
               </>
             )}
           </div>
+
+          <DebugSection card={card} />
         </div>
 
         <div className="board-drawer-footer">
