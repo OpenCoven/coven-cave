@@ -43,6 +43,8 @@ export type InboxMedia = {
   narrative?: {
     text: string;
     familiarId: string;
+    /** Display name at generation time — survives familiar renames/deletes. */
+    familiarName?: string;
     generatedAt: string;
     factsHash: string;
   } | null;

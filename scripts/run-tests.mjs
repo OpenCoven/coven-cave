@@ -139,6 +139,7 @@ export const SUITES = {
     "src/lib/daily-summary-notifications.test.ts",
     "src/lib/daily-summary-refresh.test.ts",
     "src/lib/daily-report-facts.test.ts",
+    "src/lib/daily-narrative.test.ts",
     "src/components/dev-cache-reset-script.test.ts",
     "src/components/pwa-register.test.ts",
     "src/lib/readable-text-color.test.ts",
@@ -761,6 +762,7 @@ const STRIP_TYPES_MJS = new Set([
 // Tests whose import graph reaches the "@/..." path alias and therefore need
 // the alias-resolving loader (`scripts/test-alias-register.mjs`).
 const ALIAS_LOADER = new Set([
+  "src/lib/daily-narrative.test.ts",
   "src/lib/use-code-rail.test.ts",
   "src/lib/cave-familiar-images.test.ts",
   "src/lib/cave-project-images.test.ts",

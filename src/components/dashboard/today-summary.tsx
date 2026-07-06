@@ -37,7 +37,19 @@ export function TodaySummary({
       />
       <div className="dash-today__grid">
         <div className="dr-panel dash-today__panel">
-          {hasBody ? (
+          {summary.narrative?.text ? (
+            <>
+              <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>
+                {summary.narrative.text}
+              </p>
+              <p className="dr-narrative-byline">
+                <Icon name="ph:sparkle" aria-hidden />
+                Written by {summary.narrative.familiarName || "a familiar"}
+                {" · "}
+                {relativeTime(summary.narrative.generatedAt, now)}
+              </p>
+            </>
+          ) : hasBody ? (
             <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>
               {summary.body}
             </p>

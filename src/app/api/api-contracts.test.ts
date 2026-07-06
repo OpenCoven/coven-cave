@@ -274,8 +274,18 @@ for (const contract of contracts) {
   );
   assert.match(
     dailySummarySource,
-    /narrative:\s*existing\.media\?\.narrative/,
+    /narrative:\s*narrativeInput \?\? existing\.media\?\.narrative/,
     "/inbox/daily-summary fact refreshes must preserve the narrative layered on top",
+  );
+  assert.match(
+    dailySummarySource,
+    /function sanitizeNarrative/,
+    "/inbox/daily-summary must validate client-submitted narratives before storing",
+  );
+  assert.match(
+    dailySummarySource,
+    /NARRATIVE_MAX_STORED_CHARS/,
+    "/inbox/daily-summary must bound stored narrative length",
   );
 }
 

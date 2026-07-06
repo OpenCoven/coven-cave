@@ -412,7 +412,25 @@ export default async function DailyReportPage({ params }: Props) {
         >
           <div className="dr-panel">
             <h2 className="dr-panel__title">Summary</h2>
-            <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>{item.body}</p>
+            {item.media?.narrative?.text ? (
+              <>
+                <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>
+                  {item.media.narrative.text}
+                </p>
+                <p className="dr-narrative-byline">
+                  <Icon name="ph:sparkle" aria-hidden />
+                  Written by {item.media.narrative.familiarName || "a familiar"}
+                  {" · "}
+                  {relativeTime(item.media.narrative.generatedAt)}
+                </p>
+                <h3 className="dr-panel__subtitle">By the numbers</h3>
+                <p className="dr-summary-body dr-summary-body--muted" style={{ whiteSpace: "pre-line" }}>
+                  {item.body}
+                </p>
+              </>
+            ) : (
+              <p className="dr-summary-body" style={{ whiteSpace: "pre-line" }}>{item.body}</p>
+            )}
           </div>
           {item.media?.imageUrl ? (
             <img

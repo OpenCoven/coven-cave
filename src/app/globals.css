@@ -9084,6 +9084,17 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 }
 .dr-panel__title { margin: 0 0 12px; font-size: 14px; font-weight: 620; }
 .dr-summary-body { margin: 0; white-space: pre-line; line-height: 1.75; font-size: 14px; color: var(--text-secondary); }
+.dr-summary-body--muted { font-size: 13px; color: var(--text-muted); }
+.dr-narrative-byline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.dr-narrative-byline svg { color: var(--accent-presence); }
+.dr-panel__subtitle { margin: 16px 0 8px; font-size: 12px; font-weight: 620; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
 .dr-cardimg {
   display: block;
   width: 100%;

@@ -41,6 +41,8 @@ export type TodaySummary = {
   recentSessions: string[];
   /** Structured day-in-review facts — null on items generated before Phase B. */
   report: DailyReportPayload | null;
+  /** Familiar-written narrative for today, or null before one generates. */
+  narrative: { text: string; familiarName?: string; generatedAt: string } | null;
 };
 
 export type DashboardModel = {
@@ -83,6 +85,7 @@ export function buildDashboardModel(items: InboxItem[], now: Date): DashboardMod
         generatedAt: todayItem.media?.generatedAt ?? todayItem.firedAt ?? todayItem.updatedAt ?? null,
         recentSessions: parseRecentSessions(todayItem.body),
         report: todayItem.media?.report ?? null,
+        narrative: todayItem.media?.narrative ?? null,
       }
     : null;
 

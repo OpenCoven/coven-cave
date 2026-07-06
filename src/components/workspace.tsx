@@ -62,6 +62,7 @@ import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import {
   dailySummaryAutoKey,
+  dateSlug,
   ensureDailySummaryNotification,
 } from "@/lib/daily-summary-notifications";
 import {
@@ -69,6 +70,11 @@ import {
   dailySummarySignature,
   shouldRefreshDailySummary,
 } from "@/lib/daily-summary-refresh";
+import {
+  NARRATIVE_RETRY_MS,
+  generateDailyNarrative,
+  shouldRegenerateNarrative,
+} from "@/lib/daily-narrative";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
@@ -362,6 +368,8 @@ export function Workspace() {
   const dailySummarySignatureRef = useRef<string | null>(null);
   const dailySummaryAttemptAtRef = useRef(0);
   const dailySummaryInFlightRef = useRef(false);
+  const narrativeInFlightRef = useRef(false);
+  const narrativeAttemptAtRef = useRef(0);
   const sessionsLoadedRef = useRef(sessionsLoaded);
   sessionsLoadedRef.current = sessionsLoaded;
   const modeRef = useRef(mode);
@@ -877,6 +885,62 @@ export function Workspace() {
   usePausablePoll(() => refreshDailySummary(true), DAILY_REFRESH_POLL_MS, {
     enabled: sessionsLoaded,
   });
+
+  // Layer a familiar-written narrative on today's report once its facts
+  // exist. One-shot generation through the chat bridge; every failure path is
+  // silent — the deterministic count-line body simply remains the summary.
+  useEffect(() => {
+    if (!sessionsLoaded || daemonOffline || narrativeInFlightRef.current) return;
+    const now = new Date();
+    const item = inboxItems.find((it) => it.auto === dailySummaryAutoKey(now));
+    const report = item?.media?.report;
+    const stats = item?.media?.stats;
+    if (!report?.factsHash || !stats) return;
+    if (
+      !shouldRegenerateNarrative({
+        narrative: item.media?.narrative,
+        factsHash: report.factsHash,
+        now,
+      })
+    ) {
+      return;
+    }
+    if (now.getTime() - narrativeAttemptAtRef.current < NARRATIVE_RETRY_MS) return;
+    const familiar = familiars.find((f) => f.id === activeId) ?? familiars[0];
+    if (!familiar) return;
+    narrativeAttemptAtRef.current = now.getTime();
+    narrativeInFlightRef.current = true;
+    void (async () => {
+      try {
+        const dayLabel = new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(
+          now,
+        );
+        const { text, error } = await generateDailyNarrative({
+          familiarId: familiar.id,
+          report,
+          stats,
+          dayLabel,
+        });
+        if (error || !text) return;
+        await fetch("/api/inbox/daily-summary", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sessions: sessionsRef.current,
+            date: dateSlug(now),
+            narrative: {
+              text,
+              familiarId: familiar.id,
+              familiarName: familiar.display_name || familiar.name,
+              factsHash: report.factsHash,
+            },
+          }),
+        }).catch(() => undefined);
+      } finally {
+        narrativeInFlightRef.current = false;
+      }
+    })();
+  }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId]);
 
   const openOnboarding = useCallback(() => setOnboardingOpen(true), []);
   const closeOnboarding = useCallback(() => {

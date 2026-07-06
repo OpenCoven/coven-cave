@@ -22,12 +22,43 @@ export const dynamic = "force-dynamic";
 
 startScheduler();
 
+const NARRATIVE_MAX_STORED_CHARS = 4_000;
+
+type NarrativePatch = NonNullable<NonNullable<InboxItem["media"]>["narrative"]>;
+
+/** Validate a client-submitted narrative: required fields present, control
+ *  characters stripped, length bounded. Returns null (ignored) when invalid. */
+function sanitizeNarrative(
+  input: { text?: string; familiarId?: string; familiarName?: string; factsHash?: string } | undefined,
+  generatedAt: string,
+): NarrativePatch | null {
+  if (!input) return null;
+  if (typeof input.text !== "string" || typeof input.familiarId !== "string") return null;
+  if (typeof input.factsHash !== "string" || !input.factsHash) return null;
+  // eslint-disable-next-line no-control-regex
+  const text = input.text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim();
+  if (!text) return null;
+  return {
+    text: text.slice(0, NARRATIVE_MAX_STORED_CHARS),
+    familiarId: input.familiarId.slice(0, 128),
+    ...(typeof input.familiarName === "string" && input.familiarName.trim()
+      ? { familiarName: input.familiarName.trim().slice(0, 128) }
+      : {}),
+    generatedAt,
+    factsHash: input.factsHash.slice(0, 64),
+  };
+}
+
 export async function POST(req: Request) {
   if (!isLocalOrigin(req)) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
-  let body: { sessions?: SessionRow[]; date?: string } = {};
+  let body: {
+    sessions?: SessionRow[];
+    date?: string;
+    narrative?: { text?: string; familiarId?: string; familiarName?: string; factsHash?: string };
+  } = {};
   try {
     body = await req.json();
   } catch {
@@ -42,6 +73,11 @@ export async function POST(req: Request) {
   }
 
   const sessions = Array.isArray(body.sessions) ? body.sessions : [];
+
+  // Familiar-written narrative submitted by the client. Validated hard — it
+  // is generated text headed for persistent storage: non-empty, bounded, and
+  // stripped of control characters. Invalid → ignored, never an error.
+  const narrativeInput = sanitizeNarrative(body.narrative, now.toISOString());
 
   // Day-in-review facts the client can't see, gathered outside the inbox
   // lock (GitHub can take seconds; the lock serializes every inbox write).
@@ -74,8 +110,12 @@ export async function POST(req: Request) {
         title: draft.title,
         body: draft.body,
         link: draft.link,
-        // A fact-only refresh must not discard the narrative layered on top.
-        media: { ...draft.media, narrative: existing.media?.narrative ?? null },
+        // A validated narrative submission replaces the stored one; a
+        // fact-only refresh must not discard the narrative layered on top.
+        media: {
+          ...draft.media,
+          narrative: narrativeInput ?? existing.media?.narrative ?? null,
+        },
         updatedAt: now.toISOString(),
       };
       file.items = file.items.map((item) => (item.id === existing.id ? refreshed : item));
