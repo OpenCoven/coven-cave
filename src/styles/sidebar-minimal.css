@@ -268,7 +268,7 @@
   scrollbar-color: var(--border-hairline) transparent;
   /* Sections are separated by whitespace alone (no rules) for a calmer,
      Codex-style nav. */
-  gap: 16px;
+  gap: 4px;
   padding: 2px 0 2px;
 }
 
@@ -887,8 +887,8 @@
 
 .sidebar-folder-row,
 .sidebar-actions--footer .sidebar-action-row {
-  gap: 7px;
-  min-height: 34px;
+  gap: 6px;
+  min-height: 30px;
   border-radius: var(--radius-control);
   padding: 0 8px;
   color: var(--text-secondary);
