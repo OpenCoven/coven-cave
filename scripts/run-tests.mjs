@@ -414,6 +414,7 @@ export const SUITES = {
     "src/lib/memory-inspector.test.ts",
     "src/lib/memory-source-context.test.ts",
     "src/lib/onboarding-familiars.test.ts",
+    "src/lib/onboarding-gate.test.ts",
     "src/lib/onboarding-install-queue.test.ts",
     "src/app/onboarding-install-route.test.ts",
     "src/lib/openclaw-agents.test.ts",
