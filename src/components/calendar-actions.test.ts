@@ -90,7 +90,9 @@ assert.match(ws, /onSnooze=\{snoozeInboxItem\}/, "CalendarView must receive onSn
 assert.match(view, /if \(!e\.altKey \|\| \(e\.key !== "ArrowUp" && e\.key !== "ArrowDown"\)\) return;/, "events only reschedule on Alt+↑/↓");
 assert.match(view, /const step = \(e\.shiftKey \? 60 : 15\) \* \(e\.key === "ArrowDown" \? 1 : -1\)/, "Alt+↑/↓ nudges ±15min, Alt+Shift by an hour");
 assert.match(view, /onReschedule\(ev\.item\.id, slot\.toISOString\(\)\)/, "keyboard nudge persists through onReschedule");
-assert.match(view, /Alt\+↑↓ reschedule/, "the footer documents the keyboard reschedule");
+// Documented in the ⌘/ Shortcuts sheet since the footer hint bar retired (§8).
+const shortcutsCatalog = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
+assert.match(shortcutsCatalog, /Calendar: reschedule the focused event/, "the Shortcuts sheet documents the keyboard reschedule");
 
 // ───────── a11y: announcements + non-visual affordances ─────────
 assert.match(view, /import \{ useAnnouncer \} from "@\/components\/ui\/live-region"/, "CalendarView imports the shared announcer");

@@ -59,11 +59,24 @@ assert.match(
   "MonthView cell must add ring-1 ring-inset on today",
 );
 
-// ───────── Task 5: Keyboard hints footer ─────────
-assert.match(
+// ───────── Task 5: Keyboard hints ─────────
+// The always-visible footer hint bar was retired (§8 chrome diet); the
+// bindings are documented in the canonical ⌘/ Shortcuts sheet instead.
+const shortcuts = await readFile(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
+assert.doesNotMatch(
   source,
-  /← → navigate · T today · D Day · W Week · M Month · A Agenda/,
-  "CalendarView must render the keyboard-hints footer string",
+  /← → navigate · T today/,
+  "CalendarView no longer renders a permanent keyboard-hints footer",
+);
+assert.match(
+  shortcuts,
+  /Calendar: Day \/ Week \/ Month \/ Agenda view/,
+  "the calendar view-switch keys are documented in the Shortcuts sheet catalog",
+);
+assert.match(
+  shortcuts,
+  /Calendar: jump to today/,
+  "the calendar Today key is documented in the Shortcuts sheet catalog",
 );
 
 // ───────── Task 6: + Add event toolbar button ─────────
