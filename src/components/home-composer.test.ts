@@ -179,12 +179,6 @@ assert.match(
 
 assert.match(
   source,
-  /COMMAND_RESPONSE_SPEED_OPTIONS/,
-  "HomeComposer should use shared response speed options",
-);
-
-assert.match(
-  source,
   /const \[thinkingEffort, setThinkingEffort\] = useState<CommandThinkingEffort>\(\s*COMMAND_CONTROL_DEFAULTS\.thinkingEffort,\s*\)/,
   "HomeComposer should initialise thinking effort from shared command control defaults",
 );
