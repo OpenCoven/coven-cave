@@ -22,6 +22,9 @@ import {
   bearerFromReferer,
   shouldRequireMobileAccessCredential,
   timingSafeEqualString,
+  isHtmlNavigationRequest,
+  accessGatePage,
+  ACCESS_TOKEN_QUERY_PARAM,
 } from "./proxy-helpers.ts";
 
 // ─── isLoopbackHost ────────────────────────────────────────────────────────
@@ -282,6 +285,45 @@ assert.equal(timingSafeEqualString("12345", "12346"), false);
   const right = "a".repeat(1023) + "b";
   assert.equal(timingSafeEqualString(left, right), false);
   assert.equal(timingSafeEqualString(left, left), true);
+}
+
+// ─── isHtmlNavigationRequest ───────────────────────────────────────────────
+// Only browser PAGE navigations (HTML-accepting GET outside /api/) qualify
+// for the HTML access gate; everything else must keep the JSON 401 envelope.
+const BROWSER_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+assert.equal(isHtmlNavigationRequest("GET", "/", BROWSER_ACCEPT), true);
+assert.equal(isHtmlNavigationRequest("GET", "/dashboard/familiars/growth", BROWSER_ACCEPT), true);
+assert.equal(
+  isHtmlNavigationRequest("GET", "/api/familiars", BROWSER_ACCEPT),
+  false,
+  "API routes keep JSON even for HTML-accepting clients",
+);
+assert.equal(isHtmlNavigationRequest("GET", "/api", BROWSER_ACCEPT), false, "bare /api is an API path");
+assert.equal(
+  isHtmlNavigationRequest("GET", "/apidocs", BROWSER_ACCEPT),
+  true,
+  "prefix match must not swallow non-API paths that merely start with 'api'",
+);
+assert.equal(isHtmlNavigationRequest("POST", "/", BROWSER_ACCEPT), false, "mutations keep JSON");
+assert.equal(isHtmlNavigationRequest("HEAD", "/", BROWSER_ACCEPT), false, "HEAD keeps JSON");
+assert.equal(isHtmlNavigationRequest("GET", "/", "application/json"), false, "fetch/curl keep JSON");
+assert.equal(isHtmlNavigationRequest("GET", "/", null), false, "no Accept header keeps JSON");
+
+// ─── accessGatePage ────────────────────────────────────────────────────────
+{
+  const page = accessGatePage();
+  assert.match(page, /Access token required/);
+  // The form re-enters the audited query-token exchange — the input MUST be
+  // named exactly ACCESS_TOKEN_QUERY_PARAM and submit via GET.
+  assert.match(page, new RegExp(`name="${ACCESS_TOKEN_QUERY_PARAM}"`));
+  assert.match(page, /method="get"/);
+  assert.match(page, /type="password"/, "token input must not echo on screen");
+  assert.doesNotMatch(page, /<script/i, "gate page must be script-free (CSP-immune, no new surface)");
+  assert.doesNotMatch(page, /didn&rsquo;t verify/, "neutral prompt shows no failure note");
+
+  const invalid = accessGatePage({ invalidToken: true });
+  assert.match(invalid, /didn&rsquo;t verify/, "supplied-but-invalid tokens get the expiry hint");
+  assert.match(invalid, /role="alert"/);
 }
 
 console.log("proxy-behavior.test.ts: ok");

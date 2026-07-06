@@ -82,6 +82,25 @@ assert.match(
 assert.match(source, /if \(queryVerification\.ok\)/, "invalid query tokens should not overwrite the access cookie");
 assert.match(source, /maxAge/, "signed mobile cookie lifetime should track token expiry");
 assert.match(source, /req\.method === "GET" \|\| req\.method === "HEAD"/, "mobile token bootstrap should avoid redirects for mutating requests");
+
+// ── HTML access gate for unauthenticated browser navigations ──────────────
+// Same 401 fail-closed posture; only the body differs by client. The page's
+// form re-enters the query-token exchange above — no new auth logic.
+assert.match(
+  source,
+  /isHtmlNavigationRequest\(req\.method, req\.nextUrl\.pathname, req\.headers\.get\("accept"\)\)/,
+  "unauthenticated browser page navigations should get the HTML access gate",
+);
+assert.match(
+  source,
+  /if \(!verification\) \{[\s\S]*?accessGatePage\(\{ invalidToken: suppliedTokens\.length > 0 \}\)[\s\S]*?status: 401[\s\S]*?return jsonError\(401, "unauthorized"\);[\s\S]*?\}/,
+  "the HTML gate must live inside the failed-verification branch, still 401, with the JSON envelope retained for non-navigations",
+);
+assert.match(
+  source,
+  /"cache-control": "no-store"/,
+  "the access gate page must never be cached",
+);
 assert.match(
   sidecarBridgeSource,
   /__COVEN_CAVE_SIDECAR_AUTH_REQUIRED__/,

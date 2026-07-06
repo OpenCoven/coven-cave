@@ -14,6 +14,8 @@ import {
   isAllowedRequestSource,
   bearerFromReferer,
   shouldRequireMobileAccessCredential,
+  isHtmlNavigationRequest,
+  accessGatePage,
 } from "./proxy-helpers";
 import { isValidMobileAccessCredential } from "./lib/mobile-access-token.ts";
 
@@ -81,6 +83,20 @@ async function mobileAccessGate(req: NextRequest) {
   const queryToken = req.nextUrl.searchParams.get(ACCESS_TOKEN_QUERY_PARAM);
   const verification = await mobileAccessVerification(req, expected, suppliedTokens);
   if (!verification) {
+    // Browser page navigations get an HTML access page instead of a raw JSON
+    // dead end. Same 401, same fail-closed posture — the page's form submits
+    // the token as ACCESS_TOKEN_QUERY_PARAM, re-entering the audited
+    // query-token exchange below. API routes and non-browser clients keep the
+    // machine-readable envelope.
+    if (isHtmlNavigationRequest(req.method, req.nextUrl.pathname, req.headers.get("accept"))) {
+      return new NextResponse(accessGatePage({ invalidToken: suppliedTokens.length > 0 }), {
+        status: 401,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store",
+        },
+      });
+    }
     return jsonError(401, "unauthorized");
   }
 
