@@ -218,7 +218,6 @@ export const SUITES = {
     "src/components/projects/projects-hub.test.ts",
     "src/lib/projects/selected-project.test.ts",
     "src/components/dnd-context-stable-ids.test.ts",
-    "src/lib/projects/projects-ui-state.test.ts",
     "src/lib/projects/session-glyph.test.ts",
     "src/lib/projects/project-stats.test.ts",
     "src/lib/projects/type-ahead.test.ts",

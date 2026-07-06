@@ -38,6 +38,10 @@
   border-right: 1px solid var(--border-hairline);
 }
 
+/* Motion audit: the only transitions on this surface are color-only (no
+   movement), and globals.css collapses every transition/animation duration
+   under prefers-reduced-motion; scrolling goes through smoothScrollBehavior().
+   Nothing here needs its own reduced-motion override. */
 .projects-list-row {
   display: flex;
   align-items: center;
@@ -168,4 +172,12 @@
      row would never wrap. */
   .projects-detail-head__row { flex-wrap: wrap; }
   .projects-detail-head__title { min-width: 10rem; }
+}
+
+/* Sidebar-band widths: the chat split can pinch this surface to ~200–480px.
+   Only one pane shows down here (the 640px collapse already fired), so give
+   its content the chrome's padding back. */
+@container projects (max-width: 420px) {
+  .projects-hub__list { padding: 6px; }
+  .projects-hub__detail { padding: 12px 12px 20px; }
 }

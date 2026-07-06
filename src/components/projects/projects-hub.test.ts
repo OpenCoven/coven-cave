@@ -3,7 +3,7 @@
 // that are about the hub's shape rather than the surface's behavior (those
 // live in ../projects-view.test.ts).
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const shell = readFileSync(new URL("../projects-view.tsx", import.meta.url), "utf8");
 const list = readFileSync(new URL("./project-list.tsx", import.meta.url), "utf8");
@@ -129,5 +129,46 @@ assert.match(sections, /useAnnouncer\(\)/, "grant changes are announced to assis
 assert.match(sections, /announce\(`\$\{next \? "Granted" : "Revoked"\}/, "the announcement names the action");
 assert.match(detail, /<GrantsSection project=\{project\} familiars=\{familiars\}/, "the detail pane mounts the Grants section");
 assert.match(shell, /familiars=\{familiars\}/, "the shell threads the familiar roster down");
+
+// ── PR3: announcer coverage, arrow-key pane hand-off, dead-code stays dead ───
+// Every identity mutation announces its outcome; failures speak assertively.
+assert.match(detail, /useAnnouncer\(\)/, "the detail pane announces its mutations");
+assert.match(detail, /announce\(`Renamed to \$\{next\}\.`\)/, "rename success is announced");
+assert.match(detail, /announce\("Project folder updated\."\)/, "root change success is announced");
+assert.match(detail, /announce\(`Deleted project \$\{project\.name\}\.`\)/, "project delete is announced");
+assert.match(detail, /announce\("Path copied\."\)/, "copy path is announced");
+assert.match(detail, /Color set to/, "color changes are announced by swatch name");
+assert.equal(
+  (detail.match(/"assertive"/g) ?? []).length >= 4,
+  true,
+  "rename/root/color/delete failures announce assertively",
+);
+assert.match(shell, /useAnnouncer\(\)/, "the shell announces create/undo outcomes");
+assert.match(shell, /announce\(`Created project \$\{name\}\.`\)/, "project creation is announced");
+assert.match(shell, /announce\("Move undone\."\)/, "undoing a move is announced");
+assert.match(shell, /announce\("Delete undone\."\)/, "undoing a bulk delete is announced");
+// Move + bulk delete themselves speak through the UndoToast's role="status" —
+// the shell must NOT double-announce them.
+assert.doesNotMatch(shell, /announce\(`Moved/, "the move itself speaks only through the UndoToast");
+
+// Arrow keys hand focus between the panes: → selects and enters the detail,
+// ← returns to the selected list row (text fields keep their caret).
+assert.match(list, /e\.key === "ArrowRight"[\s\S]{0,120}?onEnterDetail\?\.\(\)/, "ArrowRight on a row hands focus into the detail pane");
+assert.match(shell, /onEnterDetail=\{focusDetailPane\}/, "the shell wires the ArrowRight hand-off");
+assert.match(shell, /e\.key !== "ArrowLeft"/, "ArrowLeft in the detail hands focus back to the list");
+assert.match(shell, /INPUT\|TEXTAREA\|SELECT/, "the ArrowLeft hand-off never steals the caret from a field");
+assert.match(shell, /ref=\{detailRef\}\s+tabIndex=\{-1\}\s+role="region"/, "the detail pane is a focusable named region");
+
+// The narrow collapse has a sidebar-band refinement, not just the 640px flip.
+assert.match(css, /@container projects \(max-width: 420px\)/, "the 200–480px sidebar band tightens the pane padding");
+
+// The old table's dead weight stays deleted: board.css no longer carries any
+// projects-* rules (projects.css is the canonical home) and the expand/density
+// persistence helpers are gone with the UI that used them.
+const boardCss = readFileSync(new URL("../../styles/board.css", import.meta.url), "utf8");
+assert.doesNotMatch(boardCss, /projects-table|projects-session-count|projects-session-chip|board-table-cell-sessions|board-table-cell-status--idle/, "board.css carries no projects-surface rules");
+for (const dead of ["../../lib/projects/projects-ui-state.ts", "../../lib/projects/use-projects-ui-state.ts"]) {
+  assert.equal(existsSync(new URL(dead, import.meta.url)), false, `${dead} stays deleted`);
+}
 
 console.log("projects-hub.test.ts: ok");
