@@ -1,0 +1,36 @@
+// @ts-nocheck
+// Home two-column footer: static Continue/News lists replace the marquee
+// carousel — resume affordance on the newest session, display-boundary title
+// cleaning, no auto-scroll animation left anywhere on Home.
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const composer = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const cont = await readFile(new URL("./home/home-continue-column.tsx", import.meta.url), "utf8");
+const news = await readFile(new URL("./home/home-news-column.tsx", import.meta.url), "utf8");
+const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
+
+// Composer renders the columns, not the carousel.
+assert.match(composer, /<HomeContinueColumn/, "composer renders the Continue column");
+assert.match(composer, /<HomeNewsColumn/, "composer renders the News column");
+assert.doesNotMatch(composer, /HomeDigestCarousel/, "digest carousel is gone from Home");
+
+// Continue column: display-boundary title cleaning + resume-first row.
+assert.match(cont, /sessionDisplayTitle/, "titles go through the session-title cleaner");
+assert.match(cont, /home-col-card--primary/, "newest session gets the prominent resume card");
+assert.match(cont, /archived_at/, "archived sessions are excluded");
+assert.match(cont, /onOpenSession\?\.\(s\.id, s\.familiarId \?\? null\)/, "cards resume via onOpenSession");
+
+// News column reuses the pure digest builder (filtering/thumbnails/ages).
+assert.match(news, /buildDigestCards\(\{ items: \[\], sessions: \[\], rssItems: rss, nowMs \}\)/,
+  "news reuses buildDigestCards with empty inbox/sessions");
+assert.match(news, /openExternalUrl/, "headlines open externally");
+
+// The marquee is fully retired.
+assert.doesNotMatch(css, /home-digest/, "digest CSS removed");
+assert.doesNotMatch(css, /marquee/, "marquee animation removed");
+assert.match(css, /\.home-columns\s*\{[\s\S]*?grid-template-columns: 1fr 1fr/, "two-column grid");
+assert.match(css, /@media \(max-width: 720px\)\s*\{[\s\S]*?\.home-columns\s*\{[\s\S]*?grid-template-columns: 1fr/,
+  "columns stack on narrow viewports");
+
+console.log("home-columns.test.ts: ok");

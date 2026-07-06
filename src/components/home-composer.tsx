@@ -42,7 +42,8 @@ import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
+import { HomeContinueColumn } from "@/components/home/home-continue-column";
+import { HomeNewsColumn } from "@/components/home/home-news-column";
 import { HomeSuggestions } from "@/components/home/home-suggestions";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
@@ -163,7 +164,7 @@ type Props = {
   /** Submit a slash command. Mirrors the chat composer's escape hatch so
    *  `/inbox`, `/board`, `/remind …` etc. work from the home screen too. */
   onSlash?: (command: string, args: string) => void;
-  /** Resume a recent chat from the daily-summary carousel's session cards. */
+  /** Resume a recent chat from the Continue column's session cards. */
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
 };
 
@@ -523,7 +524,7 @@ export function HomeComposer({
     }, 80);
   }, []);
 
-  // Maps a familiar id to its display name for the daily-summary carousel.
+  // Maps a familiar id to its display name for the Continue column.
   const familiarNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const f of familiars) m.set(f.id, f.display_name);
@@ -1286,13 +1287,16 @@ export function HomeComposer({
         onPick={insertPrompt}
       />
 
-      {/* Daily summary — an ambient auto-scrolling digest of today's activity
-          and the freshest headlines; pauses on hover so a card can be read. */}
-      <HomeDigestCarousel
-        sessions={sessions}
-        familiarNameById={familiarNameById}
-        onOpenSession={onOpenSession}
-      />
+      {/* Two-column footer — resume-first recent chats + freshest headlines.
+          Static lists (no marquee): scannable, unclipped, keyboard-friendly. */}
+      <div className="home-columns">
+        <HomeContinueColumn
+          sessions={sessions}
+          familiarNameById={familiarNameById}
+          onOpenSession={onOpenSession}
+        />
+        <HomeNewsColumn />
+      </div>
     </div>
   );
 }

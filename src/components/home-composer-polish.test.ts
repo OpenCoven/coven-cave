@@ -122,14 +122,14 @@ assert.match(
 
 // ── "Jump back in" recent-chats strip REMOVED ──
 // The standalone recents strip was dropped from the home surface; resume now
-// lives only in the Daily-summary carousel's session cards.
-assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler (used by the digest)");
+// lives only in the two-column footer's Continue column.
+assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler (used by the Continue column)");
 assert.doesNotMatch(source, /const recentSessions = useMemo/, "the recents memo is gone");
 assert.doesNotMatch(source, /Jump back in/, "the recents strip label is gone");
 assert.doesNotMatch(source, /className="home-recent/, "the recents strip markup is gone");
 assert.doesNotMatch(css, /\.home-recent\b/, "the recents strip CSS is removed");
-// Resume still reaches the digest carousel.
-assert.match(source, /<HomeDigestCarousel/, "HomeComposer renders the daily-summary carousel");
-assert.match(source, /onOpenSession=\{onOpenSession\}/, "the carousel receives the resume handler");
+// Resume still reaches the Continue column.
+assert.match(source, /<HomeContinueColumn/, "HomeComposer renders the Continue column");
+assert.match(source, /onOpenSession=\{onOpenSession\}/, "the Continue column receives the resume handler");
 
 console.log("home-composer-polish.test.ts: ok");
