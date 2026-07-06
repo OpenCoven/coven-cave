@@ -14,11 +14,17 @@ import { SectionHead, EmptyState, QuickLink } from "@/components/daily-report-ui
 import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
 import { DonutChart } from "@/components/ui/charts/donut-chart";
 import { TrendChart } from "@/components/ui/charts/trend-chart";
-import { familiarMiniProfiles, familiarLoadSeries, dashboardSignals, type DashboardSignal } from "@/lib/dashboard-analytics";
 import { Heatmap } from "@/components/ui/charts/heatmap";
-import { deriveConfidenceScore, type ConfidenceFactor } from "@/lib/familiar-confidence";
+import {
+  familiarMiniProfiles, familiarLoadSeries, dashboardSignals, type DashboardSignal, type FamiliarMiniProfile,
+} from "@/lib/dashboard-analytics";
+import {
+  deriveCovenVitals, deriveCovenInsight, covenSessionsSeries,
+  type FamiliarInsightRow, type CovenVitals,
+} from "@/lib/coven-analytics";
+import { deriveConfidenceScore, type ConfidenceScore, type ConfidenceFactor } from "@/lib/familiar-confidence";
 import { deriveGrowthReport } from "@/lib/familiar-growth-signals";
-import { buildFamiliarCardStats, type FamiliarCardStats } from "@/components/familiars-view-stats";
+import { buildFamiliarCardStats, type FamiliarCardStats, type CovenMemoryEntry } from "@/components/familiars-view-stats";
 import type { ContractReport } from "@/lib/familiar-contract";
 import type { RetroRunsSnapshot } from "@/lib/retro-runs";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
@@ -45,17 +51,26 @@ type CockpitData = {
   github: GitHubItem[];
   upcoming: InboxItem[];
   sessions: SessionRow[];
+  memory: CovenMemoryEntry[];
 };
 
-const EMPTY: CockpitData = { cards: [], familiars: [], github: [], upcoming: [], sessions: [] };
+const EMPTY: CockpitData = { cards: [], familiars: [], github: [], upcoming: [], sessions: [], memory: [] };
 
-type ConfidenceRow = { id: string; name: string; score: number; factors: ConfidenceFactor[] };
 const EMPTY_STATS: FamiliarCardStats = { memoryCount: 0, latestMemory: null, lastSessionAt: null, sessionsLast7d: 0, hasActiveSession: false };
 
-// Draggable panel layout — order per column, persisted to localStorage.
-const LAYOUT_KEY = "cave:cockpit:layout";
+// Contracts are fetched per-familiar; bound the fan-out for large covens. Rows
+// beyond the cap still show activity/health (which need no contract) — they
+// just read "—" for confidence.
+const CONTRACT_FETCH_CAP = 12;
+
+// Draggable secondary panels — order per column, persisted to localStorage. The
+// insights hero (vitals + coven read + familiar table) is fixed above the grid.
+const LAYOUT_KEY = "cave:cockpit:layout:v2";
 type Layout = { main: string[]; rail: string[] };
-const DEFAULT_LAYOUT: Layout = { main: ["needs", "signals", "board", "today"], rail: ["agents", "confidence", "load", "github", "agenda"] };
+const DEFAULT_LAYOUT: Layout = {
+  main: ["usage", "signals", "needs", "board", "today"],
+  rail: ["confidence", "agents", "load", "github", "agenda"],
+};
 
 /** Merge a saved order with the defaults: keep known ids in saved order, append
  *  any new defaults, drop anything unknown (survives version changes). */
@@ -78,11 +93,11 @@ async function getJson<T>(url: string): Promise<T | null> {
   }
 }
 
-// ─── 7-day KPI trends (persisted client-side, keyed by day) ──────────────────────
+// ─── 7-day vitals trends (persisted client-side, keyed by day) ────────────────────
 
-const TRENDS_KEY = "cave:cockpit:trends";
+const TRENDS_KEY = "cave:cockpit:trends:v2";
 const TREND_DAYS = 7;
-type TrendKey = "needs" | "tasks" | "progress" | "review" | "prs";
+type TrendKey = "confidence" | "active" | "sessions" | "accept" | "contract" | "needs";
 type DaySnap = Record<TrendKey, number>;
 type TrendStore = Record<string, DaySnap>; // "YYYY-MM-DD" -> snapshot
 
@@ -117,6 +132,17 @@ const STATUS_META: Record<CardStatus, { label: string; color: string }> = {
 };
 const STATUS_ORDER: CardStatus[] = ["running", "review", "blocked", "inbox", "backlog", "done"];
 
+const HEALTH_META: Record<NonNullable<FamiliarInsightRow["health"]>, { label: string; tone: "good" | "warn" | "bad" | "calm" }> = {
+  active: { label: "Active", tone: "good" },
+  steady: { label: "Steady", tone: "calm" },
+  quiet: { label: "Quiet", tone: "warn" },
+  stalled: { label: "Stalled", tone: "bad" },
+};
+
+const TIER_TONE: Record<string, "good" | "warn" | "bad" | "calm"> = {
+  Trusted: "good", Reliable: "calm", Developing: "warn", Low: "bad",
+};
+
 // ─── Root ───────────────────────────────────────────────────────────────────────
 
 export function DashboardCockpit({ model }: { model: DashboardModel }) {
@@ -124,23 +150,20 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   useMinuteTick();    // keep the "Updated Nm ago" pill honest between polls
   const [data, setData] = useState<CockpitData>(EMPTY);
   // Each source populates independently so a panel renders the moment its data
-  // lands — the slow ones (sessions) never block the fast ones (board, agents).
+  // lands — the slow ones (sessions) never block the fast ones (board, familiars).
   const [ready, setReady] = useState<ReadonlySet<keyof CockpitData>>(new Set());
   // Truthful freshness: stamped when fetched data actually lands (not render
   // time), so a backgrounded tab shows real staleness when you come back.
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   // Keep setState off an unmounted tree: the polled `load` may resolve after
-  // unmount. A ref survives across the stable `load` identity (a plain `let`
-  // would be recreated every render and never flip to false on cleanup).
+  // unmount. A ref survives across the stable `load` identity.
   const aliveRef = useRef(true);
   useEffect(() => {
     aliveRef.current = true;
     return () => { aliveRef.current = false; };
   }, []);
 
-  // Each source populates independently so a panel renders the moment its data
-  // lands. Stable identity so the poll interval isn't torn down each render.
   const load = useCallback(() => {
     const put = <K extends keyof CockpitData>(key: K, value: CockpitData[K]) => {
       if (!aliveRef.current) return;
@@ -152,6 +175,7 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     void getJson<{ familiars: Familiar[] }>("/api/familiars").then((r) => put("familiars", r?.familiars ?? []));
     void getJson<{ items: InboxItem[] }>("/api/inbox?status=pending").then((r) => put("upcoming", r?.items ?? []));
     void getJson<{ sessions: SessionRow[] }>("/api/sessions/list").then((r) => put("sessions", r?.sessions ?? []));
+    void getJson<{ entries: CovenMemoryEntry[] }>("/api/coven-memory").then((r) => put("memory", r?.entries ?? []));
     void Promise.all([
       getJson<{ items: GitHubItem[] }>("/api/github/activity"),
       getJson<{ items: GitHubItem[] }>("/api/github/assigned"),
@@ -167,8 +191,9 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   usePausablePoll(load, 30_000);
 
   const now = model.date;
+  const nowMs = now.getTime();
 
-  // ── Derived ──
+  // ── Derived board figures ──
   const open = data.cards.filter((c) => c.status !== "done");
   const byStatus = useMemo(() => {
     const m = new Map<CardStatus, number>();
@@ -182,87 +207,142 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   const prsToReview = data.github.filter(
     (g) => g.kind === "review_request" || (g.kind === "pr" && g.state !== "closed"),
   );
-  const runningSessions = data.sessions.filter((s) => (s.status ?? "").toLowerCase() === "running");
 
   const upcoming = data.upcoming
-    .filter((i) => i.kind === "reminder" && i.fireAt && new Date(i.fireAt).getTime() > now.getTime())
+    .filter((i) => i.kind === "reminder" && i.fireAt && new Date(i.fireAt).getTime() > nowMs)
     .sort((a, b) => new Date(a.fireAt!).getTime() - new Date(b.fireAt!).getTime())
     .slice(0, 5);
+
   // Predictive signals — pure + cheap over already-fetched data.
   const signals = useMemo(
-    () =>
-      dashboardSignals({
-        github: data.github,
-        reading: [],
-        sessions: data.sessions,
-        familiars: data.familiars,
-        nowMs: now.getTime(),
-      }),
-    [data.github, data.sessions, data.familiars, now],
+    () => dashboardSignals({
+      github: data.github, reading: [], sessions: data.sessions, familiars: data.familiars, nowMs,
+    }),
+    [data.github, data.sessions, data.familiars, nowMs],
   );
 
-  // ── Confidence heatmap: bounded per-familiar contract fetch (≤6) + one shared
-  //    retro-runs call. Fetch is keyed on the visible familiar set; the heatmap
-  //    rows recompute from live sessions without re-fetching. ──
+  // ── Per-familiar contract fetch (bounded) + one shared retro-runs snapshot.
+  //    Keyed on the visible familiar set; rows recompute from live sessions. ──
   const [confidenceRaw, setConfidenceRaw] = useState<{
-    fams: Familiar[]; contracts: (ContractReport | null)[]; snapshot: RetroRunsSnapshot | null;
+    contractsById: Map<string, ContractReport | null>; snapshot: RetroRunsSnapshot | null;
   } | null>(null);
-  const confidenceFams = data.familiars.slice(0, 6);
-  const confidenceKey = confidenceFams.map((f) => f.id).join(",");
+  const contractFams = data.familiars.slice(0, CONTRACT_FETCH_CAP);
+  const contractKey = contractFams.map((f) => f.id).join(",");
   useEffect(() => {
-    if (!confidenceKey) { setConfidenceRaw(null); return; }
+    if (!contractKey) { setConfidenceRaw(null); return; }
     let alive = true;
-    const fams = confidenceKey.split(",").map((id) => confidenceFams.find((f) => f.id === id)!).filter(Boolean);
+    const ids = contractKey.split(",");
     void Promise.all([
       getJson<{ snapshot?: RetroRunsSnapshot }>("/api/retro-runs"),
-      ...fams.map((f) => getJson<{ report?: ContractReport }>(`/api/familiars/${encodeURIComponent(f.id)}/contract`)),
+      ...ids.map((id) => getJson<{ report?: ContractReport }>(`/api/familiars/${encodeURIComponent(id)}/contract`)),
     ]).then(([retro, ...contracts]) => {
       if (!alive || !aliveRef.current) return;
-      setConfidenceRaw({
-        fams,
-        contracts: contracts.map((c) => c?.report ?? null),
-        snapshot: retro?.snapshot ?? null,
-      });
+      const contractsById = new Map<string, ContractReport | null>();
+      ids.forEach((id, i) => contractsById.set(id, contracts[i]?.report ?? null));
+      setConfidenceRaw({ contractsById, snapshot: retro?.snapshot ?? null });
     });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confidenceKey]);
+  }, [contractKey]);
 
-  const confidence = useMemo<ConfidenceRow[]>(() => {
-    if (!confidenceRaw) return [];
-    const snapshot = confidenceRaw.snapshot;
-    return confidenceRaw.fams.map((f, i) => {
-      const stats = buildFamiliarCardStats({
-        familiars: [f],
-        sessions: data.sessions.filter((s) => s.familiarId === f.id),
-        covenEntries: [],
-      }).get(f.id) ?? EMPTY_STATS;
-      const retroState = snapshot?.familiars.find((r) => r.familiarId === f.id) ?? null;
-      const growthReport = deriveGrowthReport({ familiar: f, stats, retroState });
-      const c = deriveConfidenceScore({ contractReport: confidenceRaw.contracts[i] ?? null, growthReport, familiar: f });
-      return { id: f.id, name: f.display_name, score: c.score, factors: c.factors };
+  // ── Per-familiar insight rows (+ full confidence for the heatmap). Growth and
+  //    activity derive from sessions/memory for every familiar; confidence only
+  //    for those whose contract was fetched. ──
+  const perFamiliar = useMemo(() => {
+    if (data.familiars.length === 0) return [] as { row: FamiliarInsightRow; confidence: ConfidenceScore | null }[];
+    const statsById = buildFamiliarCardStats({
+      familiars: data.familiars, sessions: data.sessions, covenEntries: data.memory,
     });
-  }, [confidenceRaw, data.sessions]);
+    const profiles = familiarMiniProfiles(data.familiars, data.sessions, nowMs);
+    const profileById = new Map<string, FamiliarMiniProfile>(profiles.map((p) => [p.id, p]));
+    const snapshot = confidenceRaw?.snapshot ?? null;
+    const contractsById = confidenceRaw?.contractsById ?? null;
 
-  // Every tile with a value that lives on another surface is a drill-down to
-  // that surface ("Needs you" stays put — its panel is right below).
+    return data.familiars.map((f) => {
+      const stats = statsById.get(f.id) ?? EMPTY_STATS;
+      const profile = profileById.get(f.id);
+      const retroState = snapshot?.familiars.find((r) => r.familiarId === f.id) ?? null;
+      const growth = deriveGrowthReport({ familiar: f, stats, retroState, now: nowMs });
+      const hasContract = contractsById?.has(f.id) ?? false;
+      const contract = hasContract ? contractsById!.get(f.id) ?? null : null;
+      const confidence = hasContract
+        ? deriveConfidenceScore({ contractReport: contract, growthReport: growth, familiar: f })
+        : null;
+      const row: FamiliarInsightRow = {
+        id: f.id,
+        name: f.display_name,
+        role: f.role || f.model || f.harness || "Familiar",
+        color: f.color || "var(--accent-presence)",
+        emoji: f.emoji ?? null,
+        avatarUrl: f.avatarUrl ?? null,
+        active: (f.active_sessions ?? 0) > 0 || stats.hasActiveSession,
+        confidenceScore: confidence ? confidence.score : null,
+        confidenceLabel: confidence ? confidence.label : null,
+        health: growth.healthLabel,
+        sessions7d: stats.sessionsLast7d,
+        trend: profile?.trend ?? [],
+        contractPass: contract ? contract.properties.filter((p) => p.pass).length : 0,
+        contractTotal: contract ? contract.properties.length : 0,
+        lastActiveAt: stats.lastSessionAt,
+      };
+      return { row, confidence };
+    });
+  }, [data.familiars, data.sessions, data.memory, confidenceRaw, nowMs]);
+
+  const insightRows = useMemo(() => perFamiliar.map((x) => x.row), [perFamiliar]);
+  const heatmapRows = useMemo<ConfidenceRow[]>(
+    () => perFamiliar
+      .filter((x) => x.confidence)
+      .map((x) => ({ id: x.row.id, name: x.row.name, score: x.confidence!.score, factors: x.confidence!.factors })),
+    [perFamiliar],
+  );
+
+  // ── Coven vitals + the plain-language read that leads the page ──
+  const vitals = useMemo<CovenVitals>(
+    () => deriveCovenVitals({
+      rows: insightRows,
+      sessions: data.sessions,
+      retro: confidenceRaw?.snapshot
+        ? { accepted: confidenceRaw.snapshot.summary.accepted, reverted: confidenceRaw.snapshot.summary.reverted }
+        : null,
+      nowMs,
+    }),
+    [insightRows, data.sessions, confidenceRaw, nowMs],
+  );
+  const covenInsight = useMemo(() => deriveCovenInsight({ vitals, rows: insightRows }), [vitals, insightRows]);
+  const covenSeries = useMemo(() => covenSessionsSeries(data.sessions, nowMs, 14), [data.sessions, nowMs]);
+
+  // ── Vitals KPI specs. Every tile is a live analytics figure with a 7-day
+  //    trend; each carries the direction that reads as "good" so the delta is
+  //    colored by meaning, and drills into the surface that owns the number. ──
+  const contractPct = vitals.contractTotal ? Math.round((vitals.contractPass / vitals.contractTotal) * 100) : null;
+  const acceptPct = vitals.retroAcceptRate != null ? Math.round(vitals.retroAcceptRate * 100) : null;
   const kpis: KpiSpec[] = [
-    { icon: "ph:warning-circle", value: model.needsAttention.length, label: "Needs you", accent: "rose", metric: "needs" },
-    { icon: "ph:kanban-bold", value: open.length, label: "Active tasks", accent: "lavender", src: "cards", metric: "tasks", href: "/?mode=board" },
-    { icon: "ph:lightning-bold", value: (byStatus.get("running") ?? 0) + runningSessions.length, label: "In progress", accent: "green", src: "cards", metric: "progress", href: "/?mode=board" },
-    { icon: "ph:git-merge", value: byStatus.get("review") ?? 0, label: "In review", accent: "blue", src: "cards", metric: "review", href: "/?mode=board" },
-    { icon: "ph:git-pull-request", value: prsToReview.length, label: "PRs to review", accent: "amber", src: "github", metric: "prs", href: "/?mode=github" },
+    { icon: "ph:seal-check", value: vitals.avgConfidence, label: "Coven confidence", sub: vitals.confidenceTier ?? "no scores yet", accent: "teal", metric: "confidence", good: "up", href: "/dashboard/familiars/growth" },
+    { icon: "ph:sparkle", value: vitals.activeFamiliars, label: "Active familiars", sub: `${vitals.familiarCount} in coven`, accent: "green", metric: "active", good: "up", src: "familiars", href: "/?mode=agents" },
+    { icon: "ph:heartbeat", value: vitals.sessions7d, label: "Sessions · 7d", sub: wowSub(vitals.sessionsWowDelta), accent: "lavender", metric: "sessions", good: "up", src: "sessions", href: "/?mode=agents" },
+    { icon: "ph:flag-checkered", value: acceptPct, suffix: "%", label: "Retro accept rate", sub: retroSub(vitals), accent: "blue", metric: "accept", good: "up", href: "/dashboard/familiars/growth" },
+    { icon: "ph:list-checks-bold", value: contractPct, suffix: "%", label: "Contract health", sub: contractSub(vitals), accent: "amber", metric: "contract", good: "up", href: "/dashboard/familiars/growth" },
+    { icon: "ph:warning-circle", value: model.needsAttention.length, label: "Needs you", sub: model.caughtUp ? "all clear" : "open items", accent: "rose", metric: "needs", good: "down" },
   ];
 
-  // ── 7-day KPI trends: load history; snapshot today once the live data is in ──
+  // ── 7-day vitals trends: load history; snapshot today once the feeding data
+  //    is in (familiars + confidence). ──
   const [trends, setTrends] = useState<TrendStore>({});
   useEffect(() => {
     try { const raw = localStorage.getItem(TRENDS_KEY); if (raw) setTrends(JSON.parse(raw) as TrendStore); } catch { /* ignore */ }
   }, []);
-  const coreReady = ready.has("cards") && ready.has("github");
+  const vitalsReady = ready.has("cards") && ready.has("familiars") && (confidenceRaw !== null || data.familiars.length === 0);
   useEffect(() => {
-    if (!coreReady) return;
-    const snap = Object.fromEntries(kpis.map((k) => [k.metric, k.value])) as DaySnap;
+    if (!vitalsReady) return;
+    const snap: DaySnap = {
+      confidence: vitals.avgConfidence ?? 0,
+      active: vitals.activeFamiliars,
+      sessions: vitals.sessions7d,
+      accept: acceptPct ?? 0,
+      contract: contractPct ?? 0,
+      needs: model.needsAttention.length,
+    };
     setTrends((prev) => {
       const store: TrendStore = { ...prev, [dayKey(now)]: snap };
       const days = Object.keys(store).sort();
@@ -271,9 +351,9 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       return store;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coreReady]);
+  }, [vitalsReady, vitals.avgConfidence, vitals.activeFamiliars, vitals.sessions7d, acceptPct, contractPct, model.needsAttention.length]);
 
-  // ── Draggable layout ──
+  // ── Draggable secondary layout ──
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -303,18 +383,22 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   const isVisible = (id: string) => {
     if (id === "needs") return !model.caughtUp;
     if (id === "signals") return signals.length > 0;
-    if (id === "confidence") return confidence.length > 0;
+    if (id === "confidence") return heatmapRows.length > 0;
     return true;
   };
   const widget = (id: string): ReactNode => {
     switch (id) {
+      case "usage": return (
+        <Panel title="Activity over time" icon="ph:graph-bold" hint="last 14 days">
+          <UsagePanel series={covenSeries} load={familiarLoadSeries(data.familiars, data.sessions, nowMs, 7, 4)} loaded={ready.has("sessions")} total={vitals.sessions7d} delta={vitals.sessionsWowDelta} />
+        </Panel>);
       case "signals": return signals.length === 0 ? null : (
         <Panel title="Signals" icon="ph:waveform-bold" count={signals.length}>
           <SignalsPanel signals={signals} />
         </Panel>);
-      case "confidence": return confidence.length === 0 ? null : (
-        <Panel title="Confidence" icon="ph:seal-check" href="/dashboard/familiars/growth">
-          <ConfidencePanel rows={confidence} />
+      case "confidence": return heatmapRows.length === 0 ? null : (
+        <Panel title="Performance matrix" icon="ph:squares-four" href="/dashboard/familiars/growth">
+          <ConfidencePanel rows={heatmapRows} />
         </Panel>);
       case "needs": return model.caughtUp ? null : (
         <Panel title="Needs attention" icon="ph:warning-circle" count={model.needsAttention.length}>
@@ -326,11 +410,11 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
         </Panel>);
       case "today": return <TodaySummary summary={model.todaySummary} featured={model.featuredReport} now={now} />;
       case "agents": return (
-        <Panel title="Agents" icon="ph:sparkle" count={data.familiars.length || undefined} href="/?mode=agents">
+        <Panel title="Familiars" icon="ph:users-three" count={data.familiars.length || undefined} href="/?mode=agents">
           <AgentsPanel familiars={data.familiars} sessions={data.sessions} loaded={ready.has("familiars")} />
         </Panel>);
       case "load": {
-        const series = familiarLoadSeries(data.familiars, data.sessions, Date.now(), 7, 4);
+        const series = familiarLoadSeries(data.familiars, data.sessions, nowMs, 7, 4);
         return (
           <Panel title="Familiar load" icon="ph:chart-bar-bold" href="/dashboard/familiars/growth">
             {series.length > 0 ? (
@@ -358,11 +442,9 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       <header className="cockpit-head">
         <div>
           <p className="cockpit-eyebrow">
-            <Icon name={greetIcon(now)} aria-hidden /> {greeting(now)} · {longDate(now)}
+            <Icon name="ph:graph-bold" aria-hidden /> Coven insights · {longDate(now)}
           </p>
-          <h1 className="cockpit-title">
-            {model.caughtUp ? "All caught up" : `${model.needsAttention.length} ${model.needsAttention.length === 1 ? "thing needs" : "things need"} you`}
-          </h1>
+          <h1 className="cockpit-title">{covenInsight.headline}</h1>
         </div>
         <div className="cockpit-head__meta">
           {/* The pill doubles as a manual refresh — the label stays truthful
@@ -380,12 +462,33 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
         </div>
       </header>
 
-      {/* KPI rail */}
+      {/* Plain-language coven read — the "what you should know" line */}
+      <CovenInsightBanner insight={covenInsight} />
+
+      {/* Vitals rail */}
       <div className="cockpit-kpis">
-        {kpis.map((k) => <KpiTile key={k.label} {...k} loading={k.src ? !ready.has(k.src) : false} series={seriesFor(trends, k.metric, now)} />)}
+        {kpis.map((k) => <KpiTile key={k.label} {...k} loading={k.src ? !ready.has(k.src) : k.value == null} series={seriesFor(trends, k.metric, now)} />)}
       </div>
 
-      {/* Main grid — panels drag to rearrange (hover for the grip) */}
+      {/* Familiar insights — the centerpiece table */}
+      <section className="cockpit-panel cockpit-panel--wide" aria-label="Familiar insights">
+        <div className="cockpit-panel__head">
+          <span className="cockpit-panel__title">
+            <Icon name="ph:users-three" className="cockpit-panel__icon" aria-hidden />
+            Familiar insights
+            {insightRows.length ? <span className="cockpit-panel__count">{insightRows.length}</span> : null}
+          </span>
+          <span className="cockpit-panel__hint">confidence · activity · contract</span>
+          <a className="cockpit-panel__more" href="/dashboard/familiars/growth" aria-label="Open familiar growth">
+            <Icon name="ph:arrow-right-bold" aria-hidden />
+          </a>
+        </div>
+        <div className="cockpit-panel__body">
+          <FamiliarInsightsTable rows={insightRows} loaded={ready.has("familiars")} />
+        </div>
+      </section>
+
+      {/* Secondary panels — drag to rearrange (hover for the grip) */}
       <DndContext id="dashboard-cockpit" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <div className="cockpit-grid">
           {(["main", "rail"] as const).map((col) => {
@@ -416,8 +519,24 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
       <RecentReports reports={model.recentReports} now={now} hasFeatured={Boolean(model.featuredReport)} />
 
       <footer className="dr-footer">
-        This cockpit reads your local board, inbox, agents, and GitHub. Everything stays on your machine.
+        This cockpit reads your local board, inbox, familiars, sessions, and GitHub. Everything stays on your machine.
       </footer>
+    </div>
+  );
+}
+
+// ─── Coven insight banner ────────────────────────────────────────────────────────
+
+const INSIGHT_ICON: Record<"good" | "warn" | "bad", IconName> = {
+  good: "ph:check-circle-bold", warn: "ph:warning-circle", bad: "ph:warning-fill",
+};
+function CovenInsightBanner({ insight }: { insight: { headline: string; detail: string; tone: "good" | "warn" | "bad" } }) {
+  return (
+    <div className={`coven-insight coven-insight--${insight.tone}`} role="note">
+      <Icon name={INSIGHT_ICON[insight.tone]} className="coven-insight__icon" aria-hidden />
+      <span className="coven-insight__text">
+        <b>{insight.headline}.</b> {insight.detail}
+      </span>
     </div>
   );
 }
@@ -471,18 +590,26 @@ function SortableWidget({ id, children }: { id: string; children: ReactNode }) {
   );
 }
 
-// ─── KPI tile ────────────────────────────────────────────────────────────────────
+// ─── Vitals KPI tile ─────────────────────────────────────────────────────────────
 
-type KpiSpec = { icon: IconName; value: number; label: string; accent: "rose" | "lavender" | "green" | "blue" | "amber" | "teal"; metric: TrendKey; src?: keyof CockpitData; href?: string };
+type KpiSpec = {
+  icon: IconName; value: number | null; suffix?: string; label: string; sub?: string;
+  accent: "rose" | "lavender" | "green" | "blue" | "amber" | "teal";
+  metric: TrendKey; good: "up" | "down"; src?: keyof CockpitData; href?: string;
+};
 const KPI_ACCENT: Record<KpiSpec["accent"], string> = {
   rose: "var(--color-danger)", lavender: "var(--accent-presence)", green: "var(--color-success)",
   blue: "var(--color-info)", amber: "var(--color-warning)", teal: "oklch(0.68 0.12 190)",
 };
 
-function KpiTile({ icon, value, label, accent, href, loading, series }: KpiSpec & { loading: boolean; series: SparkPoint[] }) {
+function KpiTile({ icon, value, suffix, label, sub, accent, good, href, loading, series }: KpiSpec & { loading: boolean; series: SparkPoint[] }) {
   const color = KPI_ACCENT[accent];
   const pts = series.map((p) => p.value).filter((v): v is number => v != null);
   const delta = pts.length >= 2 ? pts[pts.length - 1] - pts[0] : 0;
+  // Color the delta by meaning, not direction: a rise in a "good=up" metric is
+  // progress (success); a rise in a "good=down" metric (Needs you) is load.
+  const beneficial = delta === 0 ? null : (delta > 0) === (good === "up");
+  const display = loading || value == null ? "—" : `${value}${suffix ?? ""}`;
   const inner = (
     <>
       <span className="cockpit-kpi__top">
@@ -490,22 +617,137 @@ function KpiTile({ icon, value, label, accent, href, loading, series }: KpiSpec 
           <Icon name={icon} aria-hidden />
         </span>
         {!loading && delta !== 0 ? (
-          // Every KPI here is a workload queue, so rising is load and falling
-          // is relief — color the delta by what it means, not by direction.
           <span
-            className={`cockpit-kpi__delta cockpit-kpi__delta--${delta > 0 ? "up" : "down"}`}
-            title={`${delta > 0 ? "+" : ""}${delta} over ${TREND_DAYS} days`}
+            className={`cockpit-kpi__delta cockpit-kpi__delta--${beneficial ? "good" : "bad"}`}
+            title={`${delta > 0 ? "+" : ""}${delta}${suffix ?? ""} over ${TREND_DAYS} days`}
           >
-            {delta > 0 ? "▲" : "▼"} {Math.abs(delta)}
+            {delta > 0 ? "▲" : "▼"} {Math.abs(delta)}{suffix ?? ""}
           </span>
         ) : null}
       </span>
-      <span className="cockpit-kpi__value">{loading ? "—" : value}</span>
+      <span className="cockpit-kpi__value">{display}</span>
       <span className="cockpit-kpi__label">{label}</span>
+      {sub ? <span className="cockpit-kpi__sub">{sub}</span> : null}
       <Sparkline points={series} color={color} height={22} />
     </>
   );
   return href ? <a className="cockpit-kpi" href={href}>{inner}</a> : <div className="cockpit-kpi">{inner}</div>;
+}
+
+function wowSub(delta: number): string {
+  if (delta > 0) return `▲ ${delta} vs last week`;
+  if (delta < 0) return `▼ ${Math.abs(delta)} vs last week`;
+  return "level with last week";
+}
+function retroSub(v: CovenVitals): string {
+  const runs = v.retroAccepted + v.retroReverted;
+  if (runs === 0) return "no retro runs";
+  return `${v.retroAccepted}/${runs} accepted`;
+}
+function contractSub(v: CovenVitals): string {
+  if (v.contractTotal === 0) return "no contracts";
+  return `${v.contractPass}/${v.contractTotal} passing`;
+}
+
+// ─── Familiar insights table (centerpiece) ────────────────────────────────────────
+
+function FamiliarInsightsTable({ rows, loaded }: { rows: FamiliarInsightRow[]; loaded: boolean }) {
+  const sorted = useMemo(
+    () => [...rows].sort((a, b) => {
+      // Scored familiars first (highest confidence), then by recent activity.
+      const ca = a.confidenceScore ?? -1, cb = b.confidenceScore ?? -1;
+      if (cb !== ca) return cb - ca;
+      return b.sessions7d - a.sessions7d;
+    }),
+    [rows],
+  );
+  if (!loaded) return <PanelSkeleton rows={4} />;
+  if (rows.length === 0) return <EmptyState icon="ph:users-three-bold">No familiars in your coven yet.</EmptyState>;
+  return (
+    <div className="cockpit-fam" role="table" aria-label="Familiar insights">
+      <div className="cockpit-fam__head" role="row">
+        <span role="columnheader">Familiar</span>
+        <span role="columnheader">Confidence</span>
+        <span role="columnheader">Activity</span>
+        <span role="columnheader" className="cockpit-fam__trendcol">7-day sessions</span>
+        <span role="columnheader" className="cockpit-fam__contractcol">Contract</span>
+        <span role="columnheader" className="cockpit-fam__lastcol">Last active</span>
+      </div>
+      {sorted.map((r) => (
+        <a key={r.id} className="cockpit-fam__row" role="row" href={`/dashboard/familiars/${encodeURIComponent(r.id)}/analytics`}>
+          <span className="cockpit-fam__who" role="cell">
+            <span className="cockpit-fam__avatar" style={{ background: r.color }}>
+              {r.avatarUrl ? <img src={r.avatarUrl} alt="" /> : (r.emoji || r.name.slice(0, 1).toUpperCase())}
+              {r.active ? <span className="cockpit-fam__on" title="Active session" /> : null}
+            </span>
+            <span className="cockpit-fam__id">
+              <b className="cockpit-fam__name" title={r.name}>{r.name}</b>
+              <span className="cockpit-fam__role" title={r.role}>{r.role}</span>
+            </span>
+          </span>
+          <span className="cockpit-fam__conf" role="cell">
+            {r.confidenceScore != null ? (
+              <>
+                <span className="cockpit-fam__score">{r.confidenceScore}</span>
+                {r.confidenceLabel ? <Badge tone={TIER_TONE[r.confidenceLabel] ?? "calm"}>{r.confidenceLabel}</Badge> : null}
+              </>
+            ) : <span className="cockpit-fam__dash" title="No contract fetched yet">—</span>}
+          </span>
+          <span className="cockpit-fam__act" role="cell">
+            {r.health ? <Badge tone={HEALTH_META[r.health].tone}>{HEALTH_META[r.health].label}</Badge> : null}
+            <span className="cockpit-fam__sessions">{r.sessions7d}<i>/7d</i></span>
+          </span>
+          <span className="cockpit-fam__trend cockpit-fam__trendcol" role="cell">
+            {r.trend.length ? <Sparkline points={r.trend} color={r.color} height={22} /> : <span className="cockpit-fam__dash">—</span>}
+          </span>
+          <span className="cockpit-fam__contract cockpit-fam__contractcol" role="cell">
+            {r.contractTotal > 0 ? (
+              <span className={`cockpit-fam__ratio${r.contractPass === r.contractTotal ? " is-pass" : " is-warn"}`}>
+                <Icon name={r.contractPass === r.contractTotal ? "ph:check-circle-bold" : "ph:warning-circle"} aria-hidden />
+                {r.contractPass}/{r.contractTotal}
+              </span>
+            ) : <span className="cockpit-fam__dash">—</span>}
+          </span>
+          <span className="cockpit-fam__last cockpit-fam__lastcol" role="cell">
+            {r.lastActiveAt ? (relativeTime(r.lastActiveAt) || "just now") : <span className="cockpit-fam__dash">never</span>}
+          </span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function Badge({ tone, children }: { tone: "good" | "warn" | "bad" | "calm"; children: ReactNode }) {
+  return <span className={`cockpit-badge cockpit-badge--${tone}`}>{children}</span>;
+}
+
+// ─── Usage over time ───────────────────────────────────────────────────────────────
+
+function UsagePanel({ series, load, loaded, total, delta }: {
+  series: SparkPoint[]; load: ReturnType<typeof familiarLoadSeries>; loaded: boolean; total: number; delta: number;
+}) {
+  if (!loaded) return <PanelSkeleton rows={3} />;
+  const any = series.some((p) => (p.value ?? 0) > 0);
+  if (!any) return <EmptyState icon="ph:graph-bold">No sessions in the last 14 days.</EmptyState>;
+  return (
+    <div className="cockpit-usage">
+      <div className="cockpit-usage__figure">
+        <span className="cockpit-usage__big">{total}</span>
+        <span className="cockpit-usage__unit">sessions this week</span>
+        <span className={`cockpit-usage__delta cockpit-usage__delta--${delta >= 0 ? "up" : "down"}`}>
+          {delta > 0 ? `▲ ${delta}` : delta < 0 ? `▼ ${Math.abs(delta)}` : "level"} vs last week
+        </span>
+      </div>
+      <div className="cockpit-usage__spark"><Sparkline points={series} color="var(--accent-presence)" height={48} /></div>
+      {load.length > 0 ? (
+        <ul className="cockpit-usage__legend">
+          {load.map((s) => (
+            <li key={s.id}><span className="cockpit-dot" style={{ background: s.color }} />{s.label}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 }
 
 // ─── Board snapshot ──────────────────────────────────────────────────────────────
@@ -549,7 +791,7 @@ function BoardSnapshot({ byStatus, total, active, loaded, familiars }: {
   );
 }
 
-// ─── Agents ──────────────────────────────────────────────────────────────────────
+// ─── Familiars roster ──────────────────────────────────────────────────────────────
 
 function AgentsPanel({ familiars, sessions, loaded }: { familiars: Familiar[]; sessions: SessionRow[]; loaded: boolean }) {
   const profiles = useMemo(() => familiarMiniProfiles(familiars, sessions, Date.now()), [familiars, sessions]);
@@ -686,7 +928,9 @@ function SignalsPanel({ signals }: { signals: DashboardSignal[] }) {
   );
 }
 
-// ─── Confidence heatmap ──────────────────────────────────────────────────────────
+// ─── Confidence / performance heatmap ────────────────────────────────────────────
+
+type ConfidenceRow = { id: string; name: string; score: number; factors: ConfidenceFactor[] };
 
 /** Pretty label for a confidence factor key (e.g. "accept_rate" → "Accept"). */
 function prettyFactor(label: string): string {
@@ -735,18 +979,6 @@ function PanelSkeleton({ rows }: { rows: number }) {
   return <div className="cockpit-skel">{Array.from({ length: rows }).map((_, i) => <span key={i} className="cockpit-skel__row" />)}</div>;
 }
 
-function greeting(now: Date): string {
-  const h = now.getHours();
-  if (h < 5) return "Late night";
-  if (h < 12) return "Good morning";
-  if (h < 17) return "Good afternoon";
-  if (h < 21) return "Good evening";
-  return "Good night";
-}
-function greetIcon(now: Date): IconName {
-  const h = now.getHours();
-  return h < 6 || h >= 19 ? "ph:moon" : "ph:sun";
-}
 function longDate(now: Date): string {
   return now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 }
