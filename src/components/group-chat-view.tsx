@@ -23,6 +23,8 @@ import { extractNextPaths } from "@/lib/next-paths";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Popover } from "@/components/ui/popover";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { MessageBubble } from "@/components/message-bubble";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -84,7 +86,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   // @mention autocomplete in the composer.
   const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  // Whether the transcript is scrolled to the bottom. When the reader has
+  // scrolled up to review history, new streaming content must NOT yank them
+  // back down — instead we surface a "jump to latest" pill.
+  const [showJump, setShowJump] = useState(false);
+  const stickToBottomRef = useRef(true);
   const dtPrefs = useDateTimePrefs();
+  const confirm = useConfirm();
+  const { announce } = useAnnouncer();
 
   const addBtnRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -95,6 +104,10 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   const pendingCaretRef = useRef<number | null>(null);
   const groupsRef = useRef<CovenGroup[]>(groups);
   groupsRef.current = groups;
+  // Live mirror of the transcript so retry can read the answered user turn
+  // without re-creating its callback on every streaming token.
+  const transcriptRef = useRef<GroupTurn[]>(transcript);
+  transcriptRef.current = transcript;
 
   const byId = useMemo(() => {
     const m = new Map<string, ResolvedFamiliar>();
@@ -130,11 +143,44 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
     if (activeId) saveTranscript(activeId, transcript);
   }, [activeId, transcript]);
 
-  // --- autoscroll to newest -----------------------------------------------
+  // --- autoscroll to newest, but only when the reader is already at the bottom
+  // Streaming replies grow the transcript constantly; force-scrolling on every
+  // update would fight a reader who scrolled up to re-read an earlier answer.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    if (stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+      setShowJump(false);
+    } else {
+      // Something new landed while scrolled up — offer a jump affordance.
+      setShowJump(true);
+    }
   }, [transcript]);
+
+  // When the active group changes, snap to the bottom of its transcript.
+  useEffect(() => {
+    stickToBottomRef.current = true;
+    setShowJump(false);
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [activeId]);
+
+  const onTranscriptScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // 48px slop so a near-bottom position still counts as "stuck to bottom".
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+    stickToBottomRef.current = atBottom;
+    if (atBottom) setShowJump(false);
+  }, []);
+
+  const jumpToLatest = useCallback(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    stickToBottomRef.current = true;
+    setShowJump(false);
+  }, []);
 
   // --- restore caret after a programmatic draft rewrite (mention insert) ---
   useEffect(() => {
@@ -146,6 +192,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       el.focus();
       el.setSelectionRange(caret, caret);
     }
+  }, [draft]);
+
+  // --- auto-grow the composer to fit its content (capped at max-height) -----
+  // Covers typing, @mention inserts, and the collapse back to one row on send.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [draft]);
 
   const persistGroups = useCallback((next: CovenGroup[]) => {
@@ -198,6 +253,20 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       if (activeId === id) setActiveId(next[0]?.id ?? null);
     },
     [persistGroups, activeId],
+  );
+
+  // Deleting a coven drops its transcript irreversibly, so confirm first.
+  const requestDeleteGroup = useCallback(
+    async (id: string, name: string) => {
+      const ok = await confirm({
+        title: `Delete “${name || "this coven"}”?`,
+        body: "This removes the coven and its transcript on this device. The familiars and their individual chats are untouched.",
+        confirmLabel: "Delete coven",
+        danger: true,
+      });
+      if (ok) deleteGroup(id);
+    },
+    [confirm, deleteGroup],
   );
 
   const toggleParticipant = useCallback(
@@ -338,13 +407,16 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         status: "queued",
         createdAt: at,
       }));
+      // The user just sent — snap them to the bottom regardless of prior scroll.
+      stickToBottomRef.current = true;
+      setShowJump(false);
       setTranscript((prev) => [...prev, userTurn, ...replies]);
       setDraft("");
       setMention(null);
       setBusy(true);
       const controller = new AbortController();
       abortRef.current = controller;
-      await Promise.all(
+      const settled = await Promise.all(
         replies.map((r) =>
           streamOne(
             group,
@@ -361,8 +433,18 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
       );
       abortRef.current = null;
       setBusy(false);
+      // The streaming bubbles are visual-only — announce the outcome for AT.
+      const failed = settled.filter((r) => r.status === "error").length;
+      const total = settled.length;
+      if (failed === 0) {
+        announce(`All ${total} familiar${total === 1 ? "" : "s"} replied.`);
+      } else if (failed === total) {
+        announce(`All ${total} ${total === 1 ? "reply" : "replies"} failed.`, "assertive");
+      } else {
+        announce(`${total - failed} of ${total} familiars replied; ${failed} failed.`, "assertive");
+      }
     },
-    [busy, streamOne, byId],
+    [busy, streamOne, byId, announce],
   );
 
   // The composer and "click a next-path suggestion to send" chips both go
@@ -372,6 +454,60 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
+
+  // Re-run a single familiar's reply after a failure (or a cancel), reusing the
+  // original user turn's text + targeting so the roundtable context is identical.
+  const retryReply = useCallback(
+    async (reply: GroupReply) => {
+      const group = activeGroupRef.current;
+      if (!group || busy || abortRef.current) return;
+      const userTurn = transcriptRef.current.find(
+        (t): t is GroupUserTurn => t.role === "user" && t.id === reply.replyTo,
+      );
+      if (!userTurn) return;
+      const rosterParticipants: RosterParticipant[] = [
+        ...group.familiarIds.map((id) => ({
+          id,
+          name: byId.get(id)?.display_name ?? id,
+          role: byId.get(id)?.role ?? "",
+          kind: "familiar" as const,
+        })),
+        { id: "__human__", name: "You", role: "", kind: "human" as const },
+      ];
+      // Reset the failed bubble in place so it re-enters the streaming state.
+      const fresh: GroupReply = {
+        ...reply,
+        sessionId: group.sessions[reply.familiarId] ?? reply.sessionId ?? null,
+        text: "",
+        status: "queued",
+        error: undefined,
+        activity: undefined,
+      };
+      updateReply(reply.id, () => fresh);
+      setBusy(true);
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const settled = await streamOne(
+        group,
+        fresh,
+        renderCovenRoundtablePrompt({
+          participants: rosterParticipants,
+          receivingFamiliarId: fresh.familiarId,
+          userText: userTurn.text,
+          targeted: Boolean(userTurn.targetFamiliarIds && userTurn.targetFamiliarIds.length > 0),
+        }),
+        controller.signal,
+      );
+      abortRef.current = null;
+      setBusy(false);
+      const name = byId.get(fresh.familiarId)?.display_name ?? "Familiar";
+      announce(
+        settled.status === "error" ? `${name} failed again.` : `${name} replied.`,
+        settled.status === "error" ? "assertive" : "polite",
+      );
+    },
+    [busy, byId, updateReply, streamOne, announce],
+  );
 
   // --- @mention autocomplete ----------------------------------------------
   const mentionable = useMemo<MentionableFamiliar[]>(() => {
@@ -447,9 +583,14 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                 const members = g.familiarIds.map((id) => byId.get(id)).filter(Boolean) as ResolvedFamiliar[];
                 const isActive = g.id === activeId;
                 return (
-                  <li key={g.id}>
-                    <div
-                      className="group/coven flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5"
+                  // Row = a real button (keyboard + roving focus). The delete
+                  // control is a sibling overlay, not a nested button (which is
+                  // invalid HTML and traps keyboard focus).
+                  <li key={g.id} className="group/coven relative">
+                    <button
+                      type="button"
+                      className="focus-ring flex w-full items-center gap-2 rounded-md px-2 py-1.5 pr-8 text-left transition-colors hover:bg-[var(--bg-raised)]"
+                      aria-current={isActive ? "true" : undefined}
                       style={isActive ? { background: "var(--bg-raised)" } : undefined}
                       onClick={() => setActiveId(g.id)}
                     >
@@ -471,19 +612,16 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                           {members.length} familiar{members.length === 1 ? "" : "s"} · <RelativeTime iso={g.updatedAt} />
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        className="opacity-0 transition-opacity group-hover/coven:opacity-100"
-                        title="Delete coven"
-                        aria-label={`Delete ${g.name}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteGroup(g.id);
-                        }}
-                      >
-                        <Icon name="ph:trash" width={14} height={14} />
-                      </button>
-                    </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="focus-ring absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--text-muted)] opacity-0 transition-opacity hover:text-[var(--text-primary)] focus-visible:opacity-100 group-hover/coven:opacity-100"
+                      title="Delete coven"
+                      aria-label={`Delete ${g.name}`}
+                      onClick={() => void requestDeleteGroup(g.id, g.name)}
+                    >
+                      <Icon name="ph:trash" width={14} height={14} />
+                    </button>
                   </li>
                 );
               })}
@@ -605,7 +743,15 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
             </header>
 
             {/* Transcript */}
-            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+            <div className="relative min-h-0 flex-1">
+            <div
+              ref={scrollRef}
+              onScroll={onTranscriptScroll}
+              role="log"
+              aria-label="Coven transcript"
+              aria-live="off"
+              className="h-full overflow-y-auto px-4 py-4"
+            >
               {threads.length === 0 ? (
                 <div className="grid h-full place-items-center">
                   <EmptyState
@@ -694,6 +840,19 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                                   onOpenUrl={onOpenUrl}
                                   showTimestamp={false}
                                 />
+                                {r.status === "error" ? (
+                                  <div className="mt-1.5">
+                                    <Button
+                                      size="xs"
+                                      variant="secondary"
+                                      leadingIcon="ph:arrow-clockwise"
+                                      onClick={() => void retryReply(r)}
+                                      disabled={busy}
+                                    >
+                                      Retry
+                                    </Button>
+                                  </div>
+                                ) : null}
                                 {r.status === "done" && suggestions.length > 0 ? (
                                   <div className="cave-next-paths mt-1.5">
                                     {suggestions.map((s, i) => {
@@ -725,6 +884,24 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                     );
                   })}
                 </div>
+              )}
+            </div>
+              {/* Jump-to-latest: shown when new replies land while the reader has
+                  scrolled up. Clicking snaps back to the newest message. */}
+              {showJump && (
+                <button
+                  type="button"
+                  onClick={jumpToLatest}
+                  className="focus-ring absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-medium shadow-md"
+                  style={{
+                    background: "var(--bg-raised)",
+                    borderColor: "var(--border-hairline)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  <Icon name="ph:arrow-down" width={13} height={13} />
+                  {busy ? "New replies" : "Jump to latest"}
+                </button>
               )}
             </div>
 
@@ -770,6 +947,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                     }
                   }}
                   rows={1}
+                  aria-label={activeGroup ? `Message the ${activeGroup.name} coven` : "Message the coven"}
                   placeholder={
                     participants.length === 0
                       ? "Add familiars to this coven first…"

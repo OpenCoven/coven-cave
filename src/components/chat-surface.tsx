@@ -5,8 +5,9 @@ import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panel
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
 import { ProjectsView } from "@/components/projects-view";
+import { GroupChatView } from "@/components/group-chat-view";
 import { InspectorPane } from "@/components/inspector-pane";
-import { CHAT_OPEN_PROJECTS_EVENT } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_OPEN_COVEN_EVENT, consumeCovenTabPending } from "@/lib/chat-tab-events";
 import { DebugPane } from "@/components/debug-pane";
 import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { WorkspaceRail } from "@/components/workspace-rail";
@@ -53,7 +54,7 @@ const chatStorage = {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type FamiliarsScope = "conversation" | "memory" | "projects";
+type FamiliarsScope = "conversation" | "memory" | "projects" | "coven";
 
 export type RightPanelKind = "inspector" | "changes" | "debug";
 
@@ -499,6 +500,17 @@ export function ChatSurface({
     return () => window.removeEventListener(CHAT_OPEN_PROJECTS_EVENT, open);
   }, []);
 
+  // The retired standalone `groupchat` mode now lands here as a tab: the
+  // Workspace redirects it to chat and fires this event so the Group tab opens.
+  // On a fresh mount (redirect from another surface) the event can beat this
+  // listener, so we also consume a retained latch the Workspace sets first.
+  useEffect(() => {
+    if (consumeCovenTabPending()) setScope("coven");
+    const open = () => setScope("coven");
+    window.addEventListener(CHAT_OPEN_COVEN_EVENT, open);
+    return () => window.removeEventListener(CHAT_OPEN_COVEN_EVENT, open);
+  }, []);
+
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -520,6 +532,7 @@ export function ChatSurface({
             items={[
               { id: "conversation", label: "Sessions" },
               { id: "projects", label: "Projects" },
+              { id: "coven", label: "Group", icon: "ph:users-three", title: "Group chat — broadcast one prompt to a coven of familiars" },
             ]}
           />
           {/* Mobile / narrow-pane code-rail toggle. On desktop the rail is a
@@ -562,6 +575,17 @@ export function ChatSurface({
           />
         ) : scope === "projects" ? (
           <ProjectsView sessions={sessions} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
+        ) : scope === "coven" ? (
+          // Group Chat ("coven") lives here as a first-class chat tab instead of
+          // a standalone surface. It broadcasts one prompt to several familiars,
+          // each answering in its own resumable session (see GroupChatView).
+          <div className="flex min-h-0 min-w-0 flex-1">
+            <GroupChatView
+              familiars={resolvedFamiliars}
+              onSessionStarted={onSessionStarted}
+              onOpenUrl={onOpenUrl}
+            />
+          </div>
         ) : (
           <Group
             className="flex min-h-0 min-w-0 flex-1"

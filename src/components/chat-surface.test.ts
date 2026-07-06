@@ -80,6 +80,19 @@ assert.match(
   /\{\s*id:\s*"projects",\s*label:\s*"Projects"\s*\}/,
   "ChatSurface should label the secondary primary tab Projects instead of Traces",
 );
+
+// Group Chat ("coven") is folded in as a first-class scope tab (retiring the
+// standalone groupchat page); it renders GroupChatView for the coven scope.
+assert.match(
+  chatSurface,
+  /\{\s*id:\s*"coven",\s*label:\s*"Group"/,
+  "ChatSurface should expose the Group Chat tab",
+);
+assert.match(
+  chatSurface,
+  /scope === "coven" \?[\s\S]*<GroupChatView[\s\S]*familiars=\{resolvedFamiliars\}/,
+  "ChatSurface should render GroupChatView for the coven scope",
+);
 // Familiar selection now lives in the global top menu bar (and the sidebar /
 // mobile top-bar switcher), so the chat header carries only its scope tabs —
 // no duplicate switcher here.

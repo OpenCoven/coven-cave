@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 const view = readFileSync(new URL("./group-chat-view.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
+const chatSurface = readFileSync(new URL("./chat-surface.tsx", import.meta.url), "utf8");
 const mode = readFileSync(new URL("../lib/workspace-mode.ts", import.meta.url), "utf8");
 
 test("GroupChatView broadcasts via /api/chat/send and reuses pure helpers", () => {
@@ -77,18 +78,74 @@ test("Group chat transcript uses avatar author rows with recency", () => {
   );
 });
 
-test("Group Chat is wired into navigation", () => {
-  assert.match(mode, /\| "groupchat"/, "groupchat is a valid WorkspaceMode");
-  assert.match(sidebar, /id: "groupchat", label: "Group"/, "sidebar exposes the Group surface");
-  assert.match(workspace, /groupchat: "Group Chat"/, "groupchat mode has a title");
-  assert.match(
-    workspace,
-    /mode === "groupchat" \?\s*\(\s*<GroupChatView/,
-    "workspace renders GroupChatView for the groupchat mode",
-  );
-  assert.match(
+test("Group Chat is a tab inside the Chat surface, not a standalone page", () => {
+  // The mode still exists purely as a redirect target for legacy deep links.
+  assert.match(mode, /\| "groupchat"/, "groupchat stays a valid WorkspaceMode for redirects");
+  assert.match(workspace, /groupchat: "Group Chat"/, "groupchat keeps a title entry");
+
+  // The standalone page is retired: the Workspace no longer imports or renders
+  // GroupChatView, and redirects the legacy mode into the Chat surface's tab.
+  assert.doesNotMatch(
     workspace,
     /import \{ GroupChatView \} from "@\/components\/group-chat-view"/,
-    "workspace imports GroupChatView",
+    "workspace no longer imports GroupChatView (it moved into ChatSurface)",
   );
+  assert.doesNotMatch(
+    workspace,
+    /mode === "groupchat" \?\s*\(\s*<GroupChatView/,
+    "workspace no longer renders a standalone GroupChatView surface",
+  );
+  assert.match(
+    workspace,
+    /if \(next === "groupchat"\)[\s\S]*setModeRaw\("chat"\)[\s\S]*CHAT_OPEN_COVEN_EVENT/,
+    "workspace redirects the groupchat mode into chat + opens the coven tab",
+  );
+
+  // The standalone left-nav destination is gone.
+  assert.doesNotMatch(
+    sidebar,
+    /id: "groupchat", label: "Group"/,
+    "sidebar no longer exposes a standalone Group destination",
+  );
+
+  // ChatSurface owns Group Chat now: it imports GroupChatView, offers a Group
+  // scope tab, listens for the open-coven event, and renders it for that scope.
+  assert.match(
+    chatSurface,
+    /import \{ GroupChatView \} from "@\/components\/group-chat-view"/,
+    "ChatSurface imports GroupChatView",
+  );
+  assert.match(
+    chatSurface,
+    /\{\s*id:\s*"coven",\s*label:\s*"Group"/,
+    "ChatSurface exposes a Group tab",
+  );
+  assert.match(
+    chatSurface,
+    /scope === "coven" \?[\s\S]*<GroupChatView/,
+    "ChatSurface renders GroupChatView for the coven scope",
+  );
+  assert.match(
+    chatSurface,
+    /addEventListener\(CHAT_OPEN_COVEN_EVENT/,
+    "ChatSurface opens the Group tab when the workspace redirects the legacy mode",
+  );
+});
+
+test("Group chat is a world-class chat surface (a11y + resilience)", () => {
+  // Smart autoscroll: never yank a reader who scrolled up; offer a jump pill.
+  assert.match(view, /stickToBottomRef/, "tracks whether the transcript is pinned to the bottom");
+  assert.match(view, /onTranscriptScroll/, "recomputes stickiness on scroll");
+  assert.match(view, /jumpToLatest/, "offers a jump-to-latest affordance");
+  // Transcript is an accessible log region.
+  assert.match(view, /role="log"/, "transcript is exposed as a log region");
+  // Destructive delete is confirmed and outcomes are announced to AT.
+  assert.match(view, /const confirm = useConfirm\(\)/, "coven delete is guarded by a confirm dialog");
+  assert.match(view, /requestDeleteGroup/, "delete routes through the confirm wrapper");
+  assert.match(view, /const \{ announce \} = useAnnouncer\(\)/, "broadcast outcomes are announced");
+  // Coven rows are real buttons (keyboard-accessible), with aria-current.
+  assert.match(view, /aria-current=\{isActive \? "true" : undefined\}/, "the active coven row is marked aria-current");
+  // A failed familiar reply can be retried in place.
+  assert.match(view, /const retryReply = useCallback/, "failed replies can be retried");
+  assert.match(view, /onClick=\{\(\) => void retryReply\(r\)\}/, "the Retry control re-runs a single familiar");
 });

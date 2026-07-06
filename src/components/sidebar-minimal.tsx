@@ -84,8 +84,9 @@ const FOLDER_MODES: Array<{
   description: string;
 }> = [
   { id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description: "Overview and quick actions" },
-  { id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description: "Talk with your familiars" },
-  { id: "groupchat", label: "Group", iconName: "ph:users-three", description: "Group chat — broadcast to a coven of familiars at once" },
+  { id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description: "Talk with your familiars — 1:1 or a Group tab for a whole coven" },
+  // Group Chat ("coven") is no longer a standalone destination — it lives as the
+  // Group tab inside Chat. The `groupchat` mode still exists as a redirect target.
   { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your daily journal and generated sketches" },
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },

@@ -25,7 +25,6 @@ import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { RailInspector } from "@/components/inspector-pane";
 import { SalemChatPanel } from "@/components/salem/salem-widget";
 import { FamiliarsView } from "@/components/familiars-view";
-import { GroupChatView } from "@/components/group-chat-view";
 import {
   getFamiliarScope,
   setFamiliarScope,
@@ -48,7 +47,7 @@ import {
 } from "@/components/lazy-surfaces";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
 import { OpenCovenSubmissionPage } from "@/components/opencoven-submission-page";
-import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
+import { CHAT_OPEN_PROJECTS_EVENT, CHAT_FOCUS_PROJECT_EVENT, CHAT_OPEN_COVEN_EVENT, markCovenTabPending } from "@/lib/chat-tab-events";
 import { HomeComposer } from "@/components/home-composer";
 import { ChatSurface, type RightPanelKind } from "@/components/chat-surface";
 import { MobileHandoffModal } from "@/components/mobile-handoff-modal";
@@ -248,7 +247,22 @@ export function Workspace() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [mode, setMode] = useState<WorkspaceMode>("home");
+  const [mode, setModeRaw] = useState<WorkspaceMode>("home");
+  // Group Chat retired its standalone page — it's now a tab inside the Chat
+  // surface. Any request for the legacy `groupchat` mode (nav, deep link,
+  // palette, keyboard, drag-to-split) is redirected to chat and opens the Group
+  // tab, so `mode` is never actually "groupchat" and the surface never flashes.
+  const setMode = useCallback((next: WorkspaceMode) => {
+    if (next === "groupchat") {
+      // Set the latch synchronously so a freshly-mounting ChatSurface opens the
+      // Group tab on mount; the event covers an already-mounted ChatSurface.
+      markCovenTabPending();
+      setModeRaw("chat");
+      window.setTimeout(() => window.dispatchEvent(new CustomEvent(CHAT_OPEN_COVEN_EVENT)), 0);
+      return;
+    }
+    setModeRaw(next);
+  }, []);
   // Chat mode swaps the left nav for the ChatSidebar (project-grouped threads).
   // Its back control returns to the surface the user came from.
   const [lastNonChatMode, setLastNonChatMode] = useState<WorkspaceMode>("home");
@@ -1838,12 +1852,6 @@ export function Workspace() {
         onInboxItemChanged={refreshInbox}
         onSessionsChanged={loadSessions}
         onOpenTask={(cardId) => onPaletteIntent({ kind: "focus-card", cardId })}
-        onOpenUrl={openUrlInAppBrowser}
-      />
-    ) : mode === "groupchat" ? (
-      <GroupChatView
-        familiars={resolvedFamiliars}
-        onSessionStarted={loadSessions}
         onOpenUrl={openUrlInAppBrowser}
       />
     ) : mode === "board" ? (
