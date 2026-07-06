@@ -1150,6 +1150,67 @@ export function HomeComposer({
           </div>
         )}
 
+        {destination === "chat" ? (
+          <div className="hc-run-rail" aria-label="Run settings">
+            <span className="hc-run-rail__accent" aria-hidden>
+              <Icon name="ph:sliders-horizontal" width={13} />
+            </span>
+            <div className="hc-run-rail__controls">
+              <HomeSelect
+                icon="ph:terminal-window"
+                value={selectedRuntimeModelValue}
+                onChange={handleSelectRuntimeModel}
+                groups={runtimeModelSelectGroups}
+                ariaLabel="Choose runtime and model"
+                disabled={!selectedFamiliarId || sending}
+                className="hc-runtime-model-selector"
+              />
+
+              <HomeSelect
+                label="Think"
+                icon="ph:sparkle-bold"
+                value={thinkingEffort}
+                onChange={(value) => setThinkingEffort(value as CommandThinkingEffort)}
+                groups={[
+                  {
+                    options: COMMAND_THINKING_OPTIONS.map((option) => ({
+                      ...option,
+                      icon: "ph:sparkle-bold",
+                    })),
+                  },
+                ]}
+                ariaLabel="Choose thinking effort"
+                disabled={sending}
+                className="hc-command-select"
+              />
+
+              <HomeSelect
+                label="Speed"
+                icon="ph:lightning-bold"
+                value={responseSpeed}
+                onChange={(value) => setResponseSpeed(value as CommandResponseSpeed)}
+                groups={[
+                  {
+                    options: COMMAND_RESPONSE_SPEED_OPTIONS.map((option) => ({
+                      ...option,
+                      icon: "ph:lightning-bold",
+                    })),
+                  },
+                ]}
+                ariaLabel="Choose response speed"
+                disabled={sending}
+                className="hc-command-select"
+              />
+
+              <ComposerHostChip
+                value={runtimeHost ?? LOCAL_HOST_ID}
+                disabled={sending}
+                onPick={(id) => setRuntimeHost(id === LOCAL_HOST_ID ? null : id)}
+              />
+            </div>
+          </div>
+        ) : null}
+
         {/* Action bar */}
         <div className="hc-action-bar">
           <div className="hc-control-group hc-control-group--who">
@@ -1198,65 +1259,6 @@ export function HomeComposer({
           </div>
 
           <div className="hc-control-group hc-control-group--run">
-            {/* Runtime/model, Think, and Speed configure a chat send — they're
-                meaningless for creating a board task, so they collapse out when
-                the Task mode is selected, leaving just the submit affordance. */}
-            {destination === "chat" ? (
-              <>
-                <HomeSelect
-                  icon="ph:terminal-window"
-                  value={selectedRuntimeModelValue}
-                  onChange={handleSelectRuntimeModel}
-                  groups={runtimeModelSelectGroups}
-                  ariaLabel="Choose runtime and model"
-                  disabled={!selectedFamiliarId || sending}
-                  className="hc-runtime-model-selector"
-                />
-
-                <HomeSelect
-                  label="Think"
-                  icon="ph:sparkle-bold"
-                  value={thinkingEffort}
-                  onChange={(value) => setThinkingEffort(value as CommandThinkingEffort)}
-                  groups={[
-                    {
-                      options: COMMAND_THINKING_OPTIONS.map((option) => ({
-                        ...option,
-                        icon: "ph:sparkle-bold",
-                      })),
-                    },
-                  ]}
-                  ariaLabel="Choose thinking effort"
-                  disabled={sending}
-                  className="hc-command-select"
-                />
-
-                <HomeSelect
-                  label="Speed"
-                  icon="ph:lightning-bold"
-                  value={responseSpeed}
-                  onChange={(value) => setResponseSpeed(value as CommandResponseSpeed)}
-                  groups={[
-                    {
-                      options: COMMAND_RESPONSE_SPEED_OPTIONS.map((option) => ({
-                        ...option,
-                        icon: "ph:lightning-bold",
-                      })),
-                    },
-                  ]}
-                  ariaLabel="Choose response speed"
-                  disabled={sending}
-                  className="hc-command-select"
-                />
-
-                <ComposerHostChip
-                  value={runtimeHost ?? LOCAL_HOST_ID}
-                  disabled={sending}
-                  onPick={(id) => setRuntimeHost(id === LOCAL_HOST_ID ? null : id)}
-                />
-              </>
-            ) : null}
-
             {enhanceOriginal != null && (
               <button
                 type="button"

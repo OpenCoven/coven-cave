@@ -383,8 +383,8 @@ assert.match(
 // creating a board task, so they render only while the Chat mode is selected.
 assert.match(
   source,
-  /destination === "chat" \? \(\s*<>[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<\/>\s*\) : null/,
-  "Runtime/model, Think, and Speed controls collapse out of the action bar when Task is selected",
+  /destination === "chat" \? \(\s*<div className="hc-run-rail" aria-label="Run settings">[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<\/div>\s*\) : null/,
+  "Runtime/model, Think, and Speed controls collapse out of the composer when Task is selected",
 );
 
 // ── Model selection moved to the /model slash command ────────────────────────

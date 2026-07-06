@@ -164,11 +164,9 @@
 }
 
 /* ── Action bar ──────────────────────────────────────────────────────────────
- *   One balanced row: a compact "who" cluster anchored left and the "run"
- *   config cluster anchored right (pushed there with margin-left:auto). The
- *   intent switch (Chat/Task) no longer lives here — it leads the card as a
- *   mode strip above the textarea — so the bar reads as pure send config. The
- *   larger column gap (vs the intra-group gap) keeps the clusters distinct. */
+ *   The main shell carries immediate composition controls: attach,
+ *   familiar/project, prompt enhancement, and send. Runtime config lives in the
+ *   tucked rail below so it stays available without crowding the textarea. */
 .hc-action-bar {
   display: flex;
   align-items: center;
@@ -192,11 +190,49 @@
   flex: 0 1 auto;
 }
 
-/* The run cluster is content-sized and pinned to the right edge. */
+/* The submit cluster is content-sized and pinned to the right edge. */
 .hc-control-group--run {
   flex: 0 1 auto;
   justify-content: flex-end;
   margin-left: auto;
+}
+
+/* ── Run settings rail ───────────────────────────────────────────────────── */
+.hc-run-rail {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 14px 2px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 70%, transparent);
+  border-radius: calc(var(--radius-control) + 4px);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--bg-base) 86%, var(--accent-presence) 6%),
+      color-mix(in oklch, var(--bg-base) 92%, var(--bg-raised) 8%)
+    );
+}
+
+.hc-run-rail__accent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  color: color-mix(in oklch, var(--accent-presence) 82%, var(--text-muted));
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+}
+
+.hc-run-rail__controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
 }
 
 /* ── Attach button (paperclip) ───────────────────────────────────────────── */
@@ -477,6 +513,20 @@
   max-width: 142px;
 }
 
+.hc-run-rail .hc-runtime-model-selector {
+  flex: 1 1 240px;
+  max-width: 320px;
+}
+
+.hc-run-rail .hc-command-select {
+  flex: 0 1 148px;
+}
+
+.hc-run-rail .cave-composer-host-chip {
+  flex: 0 1 230px;
+  min-width: 0;
+}
+
 .hc-home-select-popover {
   min-width: 220px;
 }
@@ -612,6 +662,30 @@
     padding: 10px;
   }
 
+  .hc-run-rail {
+    margin: 0 10px 0;
+    padding: 8px;
+  }
+
+  .hc-run-rail__accent {
+    display: none;
+  }
+
+  .hc-run-rail__controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.74fr) minmax(0, 0.74fr);
+    gap: 8px;
+  }
+
+  .hc-run-rail .hc-runtime-model-selector {
+    max-width: none;
+  }
+
+  .hc-run-rail .cave-composer-host-chip {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
   .hc-familiar-selector {
     flex: 1 1 0;
     min-width: 0;
@@ -691,16 +765,40 @@
     justify-content: stretch;
   }
 
-  .hc-control-group--who,
-  .hc-control-group--run {
+  .hc-control-group--who {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .hc-control-group--run {
+    display: grid;
     order: 4;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) var(--touch-target);
+    grid-template-columns: minmax(0, 1fr) var(--touch-target);
     margin-left: 0;
+  }
+
+  .hc-run-rail {
+    margin: 0 10px 0;
+    padding: 8px;
+  }
+
+  .hc-run-rail__accent {
+    display: none;
+  }
+
+  .hc-run-rail__controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.74fr) minmax(0, 0.74fr);
+    gap: 8px;
+  }
+
+  .hc-run-rail .hc-runtime-model-selector {
+    max-width: none;
+  }
+
+  .hc-run-rail .cave-composer-host-chip {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .hc-familiar-selector {
@@ -1008,6 +1106,7 @@
 .hc-enhance-btn,
 .hc-enhance-undo,
 .hc-model-chip,
+.hc-run-rail,
 .hc-home-select-trigger,
 .home-composer-card .cave-project-picker__trigger.hc-project-selector {
   outline: none;
@@ -1022,6 +1121,7 @@
 .hc-enhance-btn:focus-visible,
 .hc-enhance-undo:focus-visible,
 .hc-model-chip:focus-visible,
+.hc-run-rail:focus-within,
 .hc-home-select-trigger:focus-visible,
 .home-composer-card .cave-project-picker__trigger.hc-project-selector:focus-visible {
   outline: var(--ring-width) solid var(--ring-focus);
