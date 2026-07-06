@@ -77,18 +77,27 @@ jobs:
       matrix:
         include:
           - platform: macos-15-intel
+            family: macos
             label: macOS Intel (DMG, signed + notarized)
             args: "--bundles dmg"
             arch_suffix: x86_64
           - platform: macos-15
+            family: macos
             label: macOS Apple Silicon (DMG, signed + notarized)
             args: "--bundles dmg"
             arch_suffix: aarch64
           - platform: ubuntu-22.04
-            label: Linux (AppImage)
+            family: linux
+            label: Linux (AppImage, ubuntu-22.04)
             args: '-vv --bundles appimage --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
-            arch_suffix: ""
+            dist_suffix: ubuntu-22.04
+          - platform: ubuntu-24.04
+            family: linux
+            label: Linux (AppImage, ubuntu-24.04)
+            args: '-vv --bundles appimage --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
+            dist_suffix: ubuntu-24.04
           - platform: windows-latest
+            family: windows
             label: Windows (MSI)
             args: '--bundles msi --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
             arch_suffix: ""
@@ -118,13 +127,13 @@ jobs:
 
       - name: Install Linux dependencies
         if: >-
-          matrix.platform == 'ubuntu-22.04' &&
+          matrix.family == 'linux' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
+            libayatana-appindicator3-dev \
             libfuse2 \
             librsvg2-dev \
             patchelf \
@@ -153,7 +162,7 @@ jobs:
       # steps. Runs only on the macOS leg.
       - name: Stage Apple API key
         if: >-
-          startsWith(matrix.platform, 'macos-') &&
+          matrix.family == 'macos' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         run: |
@@ -174,7 +183,7 @@ jobs:
 
       - name: Import Apple signing certificate
         if: >-
-          startsWith(matrix.platform, 'macos-') &&
+          matrix.family == 'macos' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         run: |
@@ -218,11 +227,11 @@ jobs:
       - name: Build with tauri-action
         if: >-
           (
-            matrix.platform == 'ubuntu-22.04' &&
+            matrix.family == 'linux' &&
             (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
           ) ||
           (
-            matrix.platform == 'windows-latest' &&
+            matrix.family == 'windows' &&
             (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
           )
         uses: tauri-apps/tauri-action@1ddc7b49b13c3038297360482fcb3e058764d7c9 # v0.6.2
@@ -232,7 +241,7 @@ jobs:
           # AppImages. linuxdeploy is itself an AppImage, so force its
           # extract-and-run fallback instead of letting AppImage startup fail
           # with Tauri's opaque "failed to run linuxdeploy" wrapper error.
-          APPIMAGE_EXTRACT_AND_RUN: ${{ matrix.platform == 'ubuntu-22.04' && '1' || '' }}
+          APPIMAGE_EXTRACT_AND_RUN: ${{ matrix.family == 'linux' && '1' || '' }}
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: "CovenCave ${{ env.RELEASE_TAG }}"
@@ -247,11 +256,11 @@ jobs:
       - name: Sign Linux/Windows updater artifact
         if: >-
           (
-            matrix.platform == 'ubuntu-22.04' &&
+            matrix.family == 'linux' &&
             (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
           ) ||
           (
-            matrix.platform == 'windows-latest' &&
+            matrix.family == 'windows' &&
             (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows')
           )
         shell: bash
@@ -272,9 +281,41 @@ jobs:
             gh release upload "$RELEASE_TAG" "${artifact}.sig" --clobber
           done
 
+      # Disambiguate Linux AppImages by build environment so the two Ubuntu
+      # matrix entries (ubuntu-22.04, ubuntu-24.04) upload distinct artifacts.
+      # Without this, both produce CovenCave_<version>_amd64.AppImage and the
+      # second upload overwrites the first. The dist_suffix is appended before
+      # the extension, e.g. CovenCave_0.0.140_amd64_ubuntu-24.04.AppImage.
+      - name: Suffix Linux AppImage with dist tag
+        if: >-
+          matrix.family == 'linux' &&
+          matrix.dist_suffix != '' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t appimages < <(find src-tauri/target/release/bundle -name '*.AppImage' -type f | sort)
+          if [ "${#appimages[@]}" -eq 0 ]; then
+            echo "::error::No AppImage found to rename"
+            exit 1
+          fi
+          src="${appimages[0]}"
+          dir="$(dirname "$src")"
+          base="$(basename "$src")"
+          stem="${base%.AppImage}"
+          dst="$dir/${stem}_${{ matrix.dist_suffix }}.AppImage"
+          echo "Renaming $base → ${stem}_${{ matrix.dist_suffix }}.AppImage"
+          mv "$src" "$dst"
+          # Re-upload under the disambiguated name and remove the original.
+          # The original was uploaded by tauri-action earlier in this job.
+          gh release upload "$RELEASE_TAG" "$dst" --clobber
+          gh release delete-asset "$RELEASE_TAG" "$base" --yes
+
       - name: Build macOS DMG with custom release script
         if: >-
-          startsWith(matrix.platform, 'macos-') &&
+          matrix.family == 'macos' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         env:
@@ -302,7 +343,7 @@ jobs:
       # legs gives users a native binary per arch.
       - name: Suffix macOS DMG with arch
         if: >-
-          startsWith(matrix.platform, 'macos-') &&
+          matrix.family == 'macos' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         run: |
@@ -336,7 +377,7 @@ jobs:
       # v0.0.13–v0.0.15.
       - name: Verify macOS DMG is notarized
         if: >-
-          startsWith(matrix.platform, 'macos-') &&
+          matrix.family == 'macos' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         shell: bash
         run: |
@@ -367,7 +408,7 @@ jobs:
 
       - name: Upload macOS DMG to GitHub Release
         if: >-
-          startsWith(matrix.platform, 'macos-') &&
+          matrix.family == 'macos' &&
           (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos')
         uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.3.3
         with:
@@ -380,7 +421,7 @@ jobs:
   checksums:
     name: Publish SHA256SUMS
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: success()
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -472,7 +513,7 @@ jobs:
   updater-manifest:
     name: Publish updater manifest (latest.json)
     needs: build
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: success()
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
