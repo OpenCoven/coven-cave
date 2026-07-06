@@ -782,10 +782,16 @@ function compactCount(n: number): string {
   return `${k >= 100 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, "")}k`;
 }
 
+// Session-lifetime profile cache: reopening a person's card is instant and
+// doesn't respend the GitHub rate limit. Profiles change rarely enough that a
+// page-load-scoped cache never going stale in practice is the right trade.
+const profileCache = new Map<string, UserProfile>();
+
 /**
  * Floating GitHub profile card. Anchored under the clicked chip, clamped to the
  * viewport, focus-trapped, and dismissed on Escape / outside click. Fetches the
- * public profile on open; a since-closed selection's response is dropped.
+ * public profile on open (cache-first); a since-closed selection's response is
+ * dropped.
  */
 function UserProfileCard({
   login,
@@ -801,14 +807,22 @@ function UserProfileCard({
   useFocusTrap(true, cardRef, { onEscape: onClose, focusFirst: false });
 
   useEffect(() => {
+    const cached = profileCache.get(login);
+    if (cached) {
+      setState({ status: "ready", profile: cached });
+      return;
+    }
     let cancelled = false;
     setState({ status: "loading" });
     fetch(`/api/github/user?login=${encodeURIComponent(login)}`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
-        if (data?.ok) setState({ status: "ready", profile: data as UserProfile });
-        else setState({ status: "error" });
+        if (data?.ok) {
+          const profile = data as UserProfile;
+          profileCache.set(login, profile);
+          setState({ status: "ready", profile });
+        } else setState({ status: "error" });
       })
       .catch(() => { if (!cancelled) setState({ status: "error" }); });
     return () => { cancelled = true; };
@@ -1395,6 +1409,7 @@ function GitHubComments({
                     <div key={c.id} className="gh-comment gh-comment--inline">
                       <CommentHeader comment={c} />
                       <CommentBody comment={c} repo={repo} />
+                      <CommentReactions reactions={c.reactions} />
                     </div>
                   ))}
                 </div>
@@ -1568,26 +1583,48 @@ function checkDuration(startedAt: string | null, completedAt: string | null): st
 
 function useGitHubChecks(item: GitHubItem | null, enabled: boolean): ChecksState {
   const [state, setState] = useState<ChecksState>({ status: "idle" });
+  const [tick, setTick] = useState(0);
   const repo = item?.repo ?? null;
   const number = item?.number ?? null;
+  // Tracks the last-fetched PR so a live-refresh of the SAME PR is silent (no
+  // skeleton flash, list stays mounted) while switching PRs shows loading.
+  const keyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!enabled || !repo || number == null) {
+      keyRef.current = null;
       setState({ status: "idle" });
       return;
     }
+    const key = `${repo}#${number}`;
+    const silent = keyRef.current === key;
+    keyRef.current = key;
     let cancelled = false;
-    setState({ status: "loading" });
+    if (!silent) setState({ status: "loading" });
     fetch(`/api/github/checks?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
         if (data?.ok) setState({ status: "ready", data: data as ChecksResult });
-        else setState({ status: "error" });
+        else if (!silent) setState({ status: "error" }); // a failed refresh keeps the last good list
       })
-      .catch(() => { if (!cancelled) setState({ status: "error" }); });
+      .catch(() => { if (!cancelled && !silent) setState({ status: "error" }); });
     return () => { cancelled = true; };
-  }, [enabled, repo, number]);
+  }, [enabled, repo, number, tick]);
+
+  // Live-refresh while CI is still running: poll every 30s until the rollup
+  // leaves "pending". Fetches are skipped while the tab is hidden (the interval
+  // itself is a no-op then) so a backgrounded tab doesn't spend rate limit —
+  // mirroring the surface's own activity-poll discipline.
+  const rollup = state.status === "ready" ? state.data.rollup : null;
+  useEffect(() => {
+    if (rollup !== "pending") return;
+    const id = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      setTick((t) => t + 1);
+    }, 30_000);
+    return () => window.clearInterval(id);
+  }, [rollup]);
 
   return state;
 }

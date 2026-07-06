@@ -104,4 +104,26 @@ assert.match(source, /gh-check-logs[\s\S]{0,200}openExternalUrl\(r\.detailsUrl!\
 assert.match(boardCss, /\.gh-checks-list \{/, "the checks list is styled");
 assert.match(boardCss, /\.gh-checks-rollup--failing \{ color:var\(--color-danger\)/, "the failing rollup pill is danger-tinted");
 
+// ── Wave 2 polish ─────────────────────────────────────────────────────────────
+
+// Profile cache: reopening a person's card is instant and doesn't respend the
+// rate limit — cache-first, populated on the first successful fetch.
+assert.match(source, /const profileCache = new Map<string, UserProfile>\(\)/, "a session-lifetime profile cache exists");
+assert.match(source, /const cached = profileCache\.get\(login\);[\s\S]{0,120}status: "ready", profile: cached/, "the card serves a cached profile without refetching");
+assert.match(source, /profileCache\.set\(login, profile\)/, "a fetched profile populates the cache");
+
+// Checks live-refresh: while the rollup is pending, poll every 30s; the same-PR
+// refresh is silent (no skeleton flash) and a hidden tab spends no rate limit.
+assert.match(source, /if \(rollup !== "pending"\) return;[\s\S]{0,240}setInterval[\s\S]{0,160}30_000/, "a pending rollup schedules a 30s live-refresh");
+assert.match(source, /document\.hidden\) return;[\s\S]{0,60}setTick/, "the live-refresh skips fetching while the tab is hidden");
+assert.match(source, /const silent = keyRef\.current === key;[\s\S]{0,120}if \(!silent\) setState\(\{ status: "loading" \}\)/, "a same-PR refresh keeps the list mounted (no loading flash)");
+assert.match(source, /else if \(!silent\) setState\(\{ status: "error" \}\)/, "a failed silent refresh keeps the last good list");
+
+// Reaction parity: inline review-thread comments (GraphQL) carry reactionGroups
+// mapped to the same REST slugs the timeline chips render.
+assert.match(commentsRoute, /reactionGroups\{content reactors\{totalCount\}\}/, "the GraphQL thread query requests reactionGroups");
+assert.match(commentsRoute, /const GQL_REACTION: Record<string, string> = \{[\s\S]{0,200}THUMBS_UP: "\+1"/, "GraphQL reaction enums map to REST slugs");
+assert.match(commentsRoute, /reactions: gqlReactions\(co\.reactionGroups\)/, "thread comments carry their reaction counts");
+assert.match(source, /thread\.comments\.map\(\(c\) => \([\s\S]{0,300}<CommentReactions reactions=\{c\.reactions\}/, "reactions render under inline thread comments");
+
 console.log("github-advanced.test.ts OK");

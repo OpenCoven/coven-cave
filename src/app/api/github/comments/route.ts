@@ -91,6 +91,30 @@ function reactions(raw: unknown): Reaction[] {
   return out;
 }
 
+// GraphQL ReactionContent enum → the REST reaction slug the client renders.
+const GQL_REACTION: Record<string, string> = {
+  THUMBS_UP: "+1",
+  THUMBS_DOWN: "-1",
+  LAUGH: "laugh",
+  HOORAY: "hooray",
+  CONFUSED: "confused",
+  HEART: "heart",
+  ROCKET: "rocket",
+  EYES: "eyes",
+};
+
+/** Map GraphQL reactionGroups (inline thread comments) to the REST-slug shape. */
+function gqlReactions(raw: unknown): Reaction[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Reaction[] = [];
+  for (const g of raw as Array<Record<string, unknown>>) {
+    const slug = GQL_REACTION[String(g.content ?? "")];
+    const count = (g.reactors as { totalCount?: unknown } | undefined)?.totalCount;
+    if (slug && typeof count === "number" && count > 0) out.push({ content: slug, count });
+  }
+  return out;
+}
+
 async function ghFetch(path: string, token: string | null) {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
@@ -138,6 +162,7 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
                   databaseId author{login avatarUrl url}
                   body createdAt path diffHunk url
                   authorAssociation
+                  reactionGroups{content reactors{totalCount}}
                 }
               }
             }
@@ -168,6 +193,7 @@ async function fetchReviewThreads(owner: string, name: string, number: number, t
             createdAt: typeof co.createdAt === "string" ? co.createdAt : null,
             url: typeof co.url === "string" ? co.url : null,
             authorAssociation: typeof co.authorAssociation === "string" ? co.authorAssociation : null,
+            reactions: gqlReactions(co.reactionGroups),
           };
         })
       : [];
