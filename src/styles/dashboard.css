@@ -306,6 +306,12 @@
   white-space: nowrap;
 }
 
+.settings-tool-action {
+  height: 28px;
+  min-height: 28px;
+  line-height: 1;
+}
+
 .settings-mobile-switch {
   min-width: 64px;
   min-height: var(--touch-target);

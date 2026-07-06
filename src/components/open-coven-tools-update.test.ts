@@ -6,6 +6,7 @@ const src = await readFile(new URL("./open-coven-tools-update.tsx", import.meta.
 const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
 const shell = await readFile(new URL("./shell.tsx", import.meta.url), "utf8");
 const status = await readFile(new URL("../lib/opencoven-tools-status.ts", import.meta.url), "utf8");
+const dashboardCss = await readFile(new URL("../styles/dashboard.css", import.meta.url), "utf8");
 const runner = await readFile(new URL("../../scripts/run-tests.mjs", import.meta.url), "utf8");
 
 assert.match(src, /import \{ Button \}/, "OpenCoven tools actions use the shared Button primitive");
@@ -50,8 +51,18 @@ assert.match(src, /sidecarTokenPresent/, "diagnostics include whether the sideca
 assert.match(src, /Check tools/, "component offers a manual re-check");
 assert.match(
   src,
-  /const ghostBtn =[\s\S]*settings-touch-action/,
-  "About tools footer buttons should use the shared Settings action touch target",
+  /const toolActionBtn =[\s\S]*settings-tool-action/,
+  "About tools actions should use the compact Settings tool action class",
+);
+assert.doesNotMatch(
+  src,
+  /const (accentBtn|ghostBtn) =[\s\S]*settings-touch-action/,
+  "About tools actions should not inherit the tall Settings touch-action target",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-tool-action\s*\{[\s\S]*?height:\s*28px[\s\S]*?min-height:\s*28px/,
+  "Settings tool actions should match the compact desktop header button height",
 );
 assert.match(status, /minimumVersion: "0\.0\.49"/, "coven CLI compatibility floor is explicit in the status source");
 assert.match(status, /minimumVersion: "0\.0\.22"/, "coven-code compatibility floor is explicit in the status source");
