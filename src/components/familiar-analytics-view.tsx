@@ -8,17 +8,23 @@ import {
   type FamiliarAnalyticsModel,
 } from "@/components/familiar-analytics-data";
 import { EmptyState } from "@/components/ui/empty-state";
+import { PulseBars } from "@/components/ui/pulse-bars";
+import { RelativeTime } from "@/components/ui/relative-time";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { Sparkline, type SparkPoint } from "@/components/ui/sparkline";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { ThreadSignalsSection } from "@/components/thread-signals-section";
 import { escalateBlockers, type SelfHealRequest } from "@/lib/familiar-heal-requests";
 import type { ConfidenceScore } from "@/lib/familiar-confidence";
 import type { ContractReport } from "@/lib/familiar-contract";
 import { Icon } from "@/lib/icon";
 import { deriveAnalyticsInsight } from "@/lib/familiar-analytics-insight";
+import { pulseTotal } from "@/lib/session-pulse";
 import {
   RESPONSE_CONFIDENCE_EMPTY_STATE,
   RESPONSE_CONFIDENCE_FACTOR_KEYS,
   aggregateThreadSignals,
+  type ResponseConfidenceEvent,
   type ResponseConfidenceFactorKey,
   type ResponseConfidenceRollup,
 } from "@/lib/thread-self-report";
@@ -28,6 +34,7 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { announce } = useAnnouncer();
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (quiet) setRefreshing(true);
@@ -35,13 +42,14 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
     setError(null);
     try {
       setData(await loadFamiliarAnalyticsData(familiarId));
+      if (quiet) announce("Analytics refreshed.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "analytics data unavailable");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [familiarId]);
+  }, [announce, familiarId]);
 
   useEffect(() => {
     void load();
@@ -68,26 +76,34 @@ export function FamiliarAnalyticsView({ familiarId }: { familiarId: string }) {
         </div>
       ) : null}
       {model ? <FamiliarAnalyticsContent model={model} onRefresh={() => void load({ quiet: true })} refreshing={refreshing} /> : (
-        <EmptyState compact icon="ph:users-three-bold" headline="No familiar analytics available." />
+        <EmptyState
+          compact
+          icon="ph:users-three-bold"
+          headline="No familiar analytics available."
+          subtitle="Analytics appear once this familiar has run a session."
+        />
       )}
     </main>
   );
 }
 
-/** Section shell — shared head (title + count) wrapper used by every panel. */
+/** Section shell — shared head (title + count) wrapper used by every panel.
+ *  The section carries its `id` so KPI tiles can deep-link straight to it. */
 function FaSection({
   id,
   title,
   count,
+  wide = false,
   children,
 }: {
   id: string;
   title: string;
   count: ReactNode;
+  wide?: boolean;
   children: ReactNode;
 }) {
   return (
-    <section className="fa-section" aria-labelledby={`${id}-title`}>
+    <section id={id} className={`fa-section${wide ? " fa-section--wide" : ""}`} aria-labelledby={`${id}-title`}>
       <div className="fa-section__head">
         <h2 id={`${id}-title`} className="fa-section__title">{title}</h2>
         <span>{count}</span>
@@ -99,7 +115,7 @@ function FaSection({
 
 const ConfidenceBreakdown = memo(function ConfidenceBreakdown({ confidence }: { confidence: ConfidenceScore }) {
   return (
-    <FaSection id="fa-confidence" title="Confidence Breakdown" count={`${confidence.factors.length} factors`}>
+    <FaSection id="fa-confidence" title="Confidence breakdown" count={`${confidence.factors.length} factors`}>
       <div className="fa-factor-list">
         {confidence.factors.map((factor) => (
           <div key={factor.label} className="fa-factor">
@@ -128,22 +144,58 @@ const RESPONSE_CONFIDENCE_LABELS: Record<ResponseConfidenceFactorKey, string> = 
   evidence: "Evidence",
 };
 
+/** Trend line of per-response confidence scores, oldest → newest. */
+function buildResponseTrend(events: ResponseConfidenceEvent[]): SparkPoint[] {
+  return [...events]
+    .sort((a, b) => Date.parse(a.responseAt) - Date.parse(b.responseAt))
+    .map((event) => ({
+      label: new Date(event.responseAt).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+      value: event.overallConfidence,
+    }));
+}
+
+function trendColor(averageConfidence: number): string {
+  if (averageConfidence >= 70) return "var(--color-success)";
+  if (averageConfidence >= 50) return "var(--accent-presence)";
+  return "var(--color-danger)";
+}
+
 const ResponseConfidenceSection = memo(function ResponseConfidenceSection({
   rollup,
+  events,
 }: {
   rollup: ResponseConfidenceRollup;
+  events: ResponseConfidenceEvent[];
 }) {
   if (rollup.eventCount === 0) {
     return <EmptyState compact icon="ph:chart-bar-bold" headline={RESPONSE_CONFIDENCE_EMPTY_STATE} />;
   }
+  const trend = buildResponseTrend(events);
 
   return (
     <div className="fa-response-confidence">
+      {trend.length >= 2 ? (
+        <figure
+          className="fa-response-trend"
+          role="img"
+          aria-label={`Confidence trend across ${rollup.eventCount} responses, averaging ${rollup.averageConfidence} of 100`}
+        >
+          <Sparkline points={trend} color={trendColor(rollup.averageConfidence)} height={56} />
+          <figcaption aria-hidden>
+            Per-response confidence, oldest to newest · hover for scores
+          </figcaption>
+        </figure>
+      ) : null}
       <div className="fa-thread-score-grid">
         <ScoreTile label="Avg confidence" value={rollup.averageConfidence} />
         <ScoreTile label="Low confidence" value={rollup.lowConfidenceCount} />
         <ScoreTile label="Events" value={rollup.eventCount} />
-        <ScoreTile label="Newest" value={rollup.newestEvent?.overallConfidence ?? 0} />
+        <ScoreTile label="Latest" value={rollup.newestEvent?.overallConfidence ?? 0} />
       </div>
       <div className="fa-response-factor-grid" aria-label="Response confidence factor averages">
         {RESPONSE_CONFIDENCE_FACTOR_KEYS.map((key) => (
@@ -180,7 +232,14 @@ function ScoreTile({ label, value }: { label: string; value: number }) {
 
 const SelfHealList = memo(function SelfHealList({ requests }: { requests: SelfHealRequest[] }) {
   if (requests.length === 0) {
-    return <EmptyState compact icon="ph:check-circle-bold" headline="No self-heal requests." />;
+    return (
+      <EmptyState
+        compact
+        icon="ph:check-circle-bold"
+        headline="No self-heal requests."
+        subtitle="Nothing needs attention right now."
+      />
+    );
   }
   return (
     <div className="fa-heal-list">
@@ -199,8 +258,13 @@ const SelfHealList = memo(function SelfHealList({ requests }: { requests: SelfHe
 });
 
 const ContractCompliance = memo(function ContractCompliance({ report }: { report: ContractReport | null }) {
+  const passCount = report ? report.properties.filter((property) => property.pass).length : 0;
   return (
-    <FaSection id="fa-contract" title="Contract Compliance" count={report?.pass ? "passing" : "needs review"}>
+    <FaSection
+      id="fa-contract"
+      title="Contract compliance"
+      count={report ? `${passCount}/${report.properties.length} · ${report.pass ? "passing" : "needs review"}` : "no report"}
+    >
       {report ? (
         <div className="fa-contract-grid">
           {report.properties.map((property) => (
@@ -211,7 +275,12 @@ const ContractCompliance = memo(function ContractCompliance({ report }: { report
           ))}
         </div>
       ) : (
-        <EmptyState compact icon="ph:file-text" headline="No contract report available." />
+        <EmptyState
+          compact
+          icon="ph:file-text"
+          headline="No contract report available."
+          subtitle="This familiar's identity contract hasn't been evaluated yet."
+        />
       )}
     </FaSection>
   );
@@ -259,7 +328,16 @@ const ConfidenceRing = memo(function ConfidenceRing({ confidence }: { confidence
   );
 });
 
-type Kpi = { key: string; icon: Parameters<typeof Icon>[0]["name"]; label: string; value: string; sub: string; tone?: "good" | "warn" | "bad" };
+type Kpi = {
+  key: string;
+  icon: Parameters<typeof Icon>[0]["name"];
+  label: string;
+  value: string;
+  sub: string;
+  tone?: "good" | "warn" | "bad";
+  /** Where the tile drills through to — a section anchor or a route. */
+  href: string;
+};
 
 /** Derive the at-a-glance KPI tiles from the model's (otherwise buried) signals. */
 function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kpi[] {
@@ -278,6 +356,7 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
       value: growth ? growth.healthLabel : "—",
       sub: growth ? `${growth.sessionsLast7d} session${growth.sessionsLast7d === 1 ? "" : "s"} · 7d` : "no data",
       tone: growth?.healthLabel === "stalled" ? "bad" : growth?.healthLabel === "quiet" ? "warn" : "good",
+      href: "/dashboard/familiars/growth",
     },
     {
       key: "contract",
@@ -286,6 +365,7 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
       value: contractTotal ? `${contractPass}/${contractTotal}` : "—",
       sub: contract ? (contract.pass ? "passing" : "needs review") : "no report",
       tone: !contractTotal ? undefined : contract?.pass ? "good" : "warn",
+      href: "#fa-contract",
     },
     {
       key: "heal",
@@ -294,6 +374,7 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
       value: String(healRequestCount),
       sub: healRequestCount === 0 ? "all clear" : healRequestCount === 1 ? "open request" : "open requests",
       tone: healRequestCount === 0 ? "good" : "warn",
+      href: "#fa-heal",
     },
     {
       key: "signals",
@@ -301,6 +382,7 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
       label: "Thread signals",
       value: String(threadCount),
       sub: threadCount === 1 ? "report" : "reports",
+      href: "#fa-thread-signals",
     },
     {
       key: "responses",
@@ -308,6 +390,7 @@ function deriveKpis(model: FamiliarAnalyticsModel, healRequestCount: number): Kp
       label: "Responses",
       value: String(responseEvents),
       sub: responseEvents === 1 ? "confidence event" : "confidence events",
+      href: "#fa-response-confidence",
     },
   ];
 }
@@ -335,7 +418,7 @@ const AnalyticsInsightBanner = memo(function AnalyticsInsightBanner({
   );
 });
 
-/** Scannable KPI row — surfaces growth, eval, contract, and heal signals up top. */
+/** Scannable KPI row — each tile drills through to the section it summarizes. */
 const FamiliarKpis = memo(function FamiliarKpis({
   model,
   healRequestCount,
@@ -345,18 +428,20 @@ const FamiliarKpis = memo(function FamiliarKpis({
 }) {
   const kpis = deriveKpis(model, healRequestCount);
   return (
-    <div className="fa-kpis" role="list" aria-label="Key metrics">
+    <ul className="fa-kpis" aria-label="Key metrics">
       {kpis.map((kpi) => (
-        <div key={kpi.key} className={`fa-kpi${kpi.tone ? ` fa-kpi--${kpi.tone}` : ""}`} role="listitem">
-          <div className="fa-kpi__head">
-            <Icon name={kpi.icon} aria-hidden />
-            <span className="fa-kpi__label">{kpi.label}</span>
-          </div>
-          <strong className="fa-kpi__value">{kpi.value}</strong>
-          <span className="fa-kpi__sub">{kpi.sub}</span>
-        </div>
+        <li key={kpi.key}>
+          <a className={`fa-kpi${kpi.tone ? ` fa-kpi--${kpi.tone}` : ""} focus-ring`} href={kpi.href}>
+            <span className="fa-kpi__head">
+              <Icon name={kpi.icon} aria-hidden />
+              <span className="fa-kpi__label">{kpi.label}</span>
+            </span>
+            <strong className="fa-kpi__value">{kpi.value}</strong>
+            <span className="fa-kpi__sub">{kpi.sub}</span>
+          </a>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 });
 
@@ -380,6 +465,7 @@ export function FamiliarAnalyticsContent({
     const escalated = escalateBlockers(model.familiarId, threadSignalsAggregate, model.healRequests);
     return [...escalated, ...model.healRequests];
   }, [model.familiarId, model.healRequests, threadSignalsAggregate]);
+  const pulseSessions = pulseTotal(model.sessionPulse);
 
   return (
     <>
@@ -420,11 +506,23 @@ export function FamiliarAnalyticsContent({
           <div>
             <p className="retro-eyebrow">
               <Icon name="ph:chart-bar-bold" aria-hidden />
-              Familiar Analytics
+              Familiar analytics
             </p>
             <h1>{familiarName}</h1>
             <p>{familiarRole}</p>
           </div>
+        </div>
+        <div className="fa-header__pulse">
+          <span className="fa-pulse__label">14-day pulse</span>
+          <PulseBars
+            pulse={model.sessionPulse}
+            label={`14-day activity: ${pulseSessions} session${pulseSessions === 1 ? "" : "s"}`}
+            showTips
+          />
+          <span className="fa-pulse__meta">
+            {pulseSessions} session{pulseSessions === 1 ? "" : "s"} · last active{" "}
+            <RelativeTime iso={model.growthReport?.lastActiveAt} fallback="never" />
+          </span>
         </div>
         <ConfidenceRing confidence={model.confidence} />
       </header>
@@ -433,33 +531,36 @@ export function FamiliarAnalyticsContent({
 
       <FamiliarKpis model={model} healRequestCount={healRequests.length} />
 
-      <ConfidenceBreakdown confidence={model.confidence} />
+      <div className="fa-grid">
+        <FaSection
+          id="fa-response-confidence"
+          title="Response confidence"
+          wide
+          count={`${model.responseConfidenceRollup.eventCount} ${model.responseConfidenceRollup.eventCount === 1 ? "event" : "events"}`}
+        >
+          <ResponseConfidenceSection rollup={model.responseConfidenceRollup} events={model.responseConfidenceEvents} />
+        </FaSection>
 
-      <FaSection
-        id="fa-response-confidence"
-        title="Response Confidence"
-        count={`${model.responseConfidenceRollup.eventCount} ${model.responseConfidenceRollup.eventCount === 1 ? "event" : "events"}`}
-      >
-        <ResponseConfidenceSection rollup={model.responseConfidenceRollup} />
-      </FaSection>
+        <ConfidenceBreakdown confidence={model.confidence} />
 
-      <FaSection
-        id="fa-heal"
-        title="Self-Heal Requests"
-        count={`${healRequests.length} ${healRequests.length === 1 ? "request" : "requests"}`}
-      >
-        <SelfHealList requests={healRequests} />
-      </FaSection>
+        <FaSection
+          id="fa-heal"
+          title="Self-heal requests"
+          count={`${healRequests.length} ${healRequests.length === 1 ? "request" : "requests"}`}
+        >
+          <SelfHealList requests={healRequests} />
+        </FaSection>
 
-      <FaSection
-        id="fa-thread-signals"
-        title="Thread Signals"
-        count={`${model.threadReports.length} ${model.threadReports.length === 1 ? "report" : "reports"}`}
-      >
-        <ThreadSignalsSection familiarId={model.familiarId} reports={model.threadReports} />
-      </FaSection>
+        <FaSection
+          id="fa-thread-signals"
+          title="Thread signals"
+          count={`${model.threadReports.length} ${model.threadReports.length === 1 ? "report" : "reports"}`}
+        >
+          <ThreadSignalsSection familiarId={model.familiarId} reports={model.threadReports} />
+        </FaSection>
 
-      <ContractCompliance report={model.contractReport} />
+        <ContractCompliance report={model.contractReport} />
+      </div>
     </>
   );
 }

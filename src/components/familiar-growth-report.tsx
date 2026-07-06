@@ -3,14 +3,15 @@
 import { useMemo } from "react";
 import { Icon } from "@/lib/icon";
 import type { IconName } from "@/lib/icon";
+import { PulseBars } from "@/components/ui/pulse-bars";
 import { RelativeTime } from "@/components/ui/relative-time";
 import type { FamiliarCardStats } from "@/components/familiars-view-stats";
 import type { FamiliarGrowthReport as FamiliarGrowthReportModel, GrowthSignal } from "@/lib/familiar-growth-signals";
+import { buildSessionPulse, pulseDelta, pulseTotal } from "@/lib/session-pulse";
 import type { RetroOutcome, RetroRun, RetroTrack } from "@/lib/retro-runs";
 import type { Familiar, SessionRow } from "@/lib/types";
 
 const TRACKS: RetroTrack[] = ["synthesis", "prompt", "memory"];
-const DAY_MS = 24 * 60 * 60_000;
 
 function percent(value: number | null): string {
   return value == null ? "No data" : `${Math.round(value * 100)}%`;
@@ -30,6 +31,14 @@ function signalIcon(signal: GrowthSignal): IconName {
   if (signal.severity === "crit") return "ph:warning-circle-fill";
   if (signal.severity === "warn") return "ph:warning-circle";
   return "ph:info-bold";
+}
+
+/** Accept-rate tone aligned with the growth thresholds (0.35 stall / 0.5 low). */
+function rateTone(rate: number | null): "good" | "warn" | "bad" | "none" {
+  if (rate == null) return "none";
+  if (rate < 0.35) return "bad";
+  if (rate < 0.5) return "warn";
+  return "good";
 }
 
 function OutcomePill({ outcome }: { outcome: RetroOutcome }) {
@@ -72,19 +81,15 @@ function RunRow({ run }: { run: RetroRun }) {
   );
 }
 
-function buildSessionTrend(sessions: SessionRow[], familiarId: string, now: number) {
-  return Array.from({ length: 14 }, (_, index) => {
-    const daysBack = 13 - index;
-    const day = new Date(now - daysBack * DAY_MS);
-    const key = day.toISOString().slice(0, 10);
-    const count = sessions.filter((session) => {
-      if (session.familiarId !== familiarId) return false;
-      const updated = Date.parse(session.updated_at);
-      if (!Number.isFinite(updated)) return false;
-      return new Date(updated).toISOString().slice(0, 10) === key;
-    }).length;
-    return { key, label: day.toLocaleDateString(undefined, { month: "short", day: "numeric" }), count };
-  });
+/** Week-over-week movement chip — the number's direction, not just its value. */
+function DeltaChip({ delta }: { delta: number }) {
+  const tone = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
+  const sign = delta > 0 ? `+${delta}` : delta < 0 ? String(delta) : "±0";
+  return (
+    <span className={`growth-delta growth-delta--${tone}`}>
+      {sign} vs prior 7d
+    </span>
+  );
 }
 
 export function FamiliarGrowthReport({
@@ -101,11 +106,14 @@ export function FamiliarGrowthReport({
   now?: number;
 }) {
   const nowMs = now ?? Date.now();
-  const sessionTrend = useMemo(
-    () => buildSessionTrend(sessions, familiar.id, nowMs),
+  const pulse = useMemo(
+    () => buildSessionPulse(sessions, familiar.id, nowMs),
     [familiar.id, nowMs, sessions],
   );
-  const maxSessions = Math.max(1, ...sessionTrend.map((day) => day.count));
+  const weekDelta = pulseDelta(pulse);
+  const totalSessions14d = pulseTotal(pulse);
+  const acceptedRuns = TRACKS.reduce((sum, track) => sum + report.trackStats[track].accepted, 0);
+  const totalRuns = TRACKS.reduce((sum, track) => sum + report.trackStats[track].total, 0);
 
   return (
     <article className="growth-report" aria-label={`Growth report for ${familiar.display_name}`}>
@@ -125,64 +133,69 @@ export function FamiliarGrowthReport({
 
       <section className="growth-summary" aria-label="Growth summary">
         <div className="growth-summary__item">
-          <Icon name="ph:heartbeat" aria-hidden />
-          <span>{report.healthLabel}</span>
-          <p>Health signal</p>
-        </div>
-        <div className="growth-summary__item">
           <Icon name="ph:clock-countdown" aria-hidden />
-          <span>{report.sessionsLast7d}</span>
+          <span className="growth-summary__value">{report.sessionsLast7d}</span>
           <p>Sessions last 7d</p>
+          <DeltaChip delta={weekDelta.delta} />
         </div>
         <div className="growth-summary__item">
           <Icon name="ph:check-circle-bold" aria-hidden />
-          <span>{percent(report.retroAcceptRate)}</span>
+          <span className="growth-summary__value">{percent(report.retroAcceptRate)}</span>
           <p>Retro accept rate</p>
+          <small>{totalRuns > 0 ? `${acceptedRuns}/${totalRuns} runs accepted` : "no retro runs yet"}</small>
+        </div>
+        <div className="growth-summary__item">
+          <Icon name="ph:brain-bold" aria-hidden />
+          <span className="growth-summary__value">{stats ? stats.memoryCount : "—"}</span>
+          <p>{stats?.memoryCount === 1 ? "Memory entry" : "Memory entries"}</p>
+          <small>
+            {stats?.latestMemory ? (
+              <>updated <RelativeTime iso={stats.latestMemory.updatedAt} now={nowMs} /></>
+            ) : (
+              "no memory yet"
+            )}
+          </small>
         </div>
         <div className="growth-summary__item">
           <Icon name="ph:clock-bold" aria-hidden />
-          <span><RelativeTime iso={report.lastActiveAt} now={nowMs} fallback="never" /></span>
+          <span className="growth-summary__value"><RelativeTime iso={report.lastActiveAt} now={nowMs} fallback="never" /></span>
           <p>Last active</p>
         </div>
       </section>
 
       <section className="growth-section" aria-labelledby="growth-activity">
         <div className="growth-section__head">
-          <h4 id="growth-activity">Activity Trends</h4>
-          <span>{sessionTrend.reduce((sum, day) => sum + day.count, 0)} sessions in 14d</span>
+          <h4 id="growth-activity">Activity trends</h4>
+          <span>{totalSessions14d} session{totalSessions14d === 1 ? "" : "s"} in 14d</span>
         </div>
-        <div className="growth-bars" role="img" aria-label="Session activity over the last 14 days">
-          {sessionTrend.map((day) => (
-            <span key={day.key} className="growth-bar" title={`${day.label}: ${day.count} sessions`}>
-              <i style={{ height: `${Math.max(8, (day.count / maxSessions) * 100)}%` }} />
-            </span>
-          ))}
-        </div>
-        <div className="growth-memory-line">
-          <Icon name="ph:brain-bold" aria-hidden />
-          <span>
-            {stats
-              ? `${stats.memoryCount} memory ${stats.memoryCount === 1 ? "entry" : "entries"}`
-              : "Memory trend derived from current signals"}
-          </span>
-          {stats?.latestMemory ? <RelativeTime iso={stats.latestMemory.updatedAt} now={nowMs} /> : null}
-        </div>
+        <PulseBars
+          pulse={pulse}
+          size="lg"
+          showTips
+          label={`Session activity over the last 14 days: ${totalSessions14d} session${totalSessions14d === 1 ? "" : "s"}`}
+        />
       </section>
 
-      <section className="growth-section" aria-labelledby="growth-eval">
+      <section className="growth-section" aria-labelledby="growth-retro-tracks">
         <div className="growth-section__head">
-          <h4 id="growth-eval">Eval Performance</h4>
+          <h4 id="growth-retro-tracks">Retro performance</h4>
           <span>{report.recentRuns.length} recent runs</span>
         </div>
         <div className="growth-track-grid">
           {TRACKS.map((track) => {
             const item = report.trackStats[track];
             const rate = item.total > 0 ? item.accepted / item.total : null;
+            const tone = rateTone(rate);
             return (
               <div key={track} className="growth-track-card">
                 <span>{trackLabel(track)}</span>
                 <b>{item.total}</b>
-                <p>{percent(rate)} accepted</p>
+                <p>{rate == null ? "no runs yet" : `${percent(rate)} accepted`}</p>
+                {rate != null ? (
+                  <div className={`growth-track-meter growth-track-meter--${tone}`} aria-hidden>
+                    <i style={{ width: `${Math.round(rate * 100)}%` }} />
+                  </div>
+                ) : null}
               </div>
             );
           })}
@@ -198,7 +211,7 @@ export function FamiliarGrowthReport({
 
       <section className="growth-section" aria-labelledby="growth-opportunities">
         <div className="growth-section__head">
-          <h4 id="growth-opportunities">Growth Opportunities</h4>
+          <h4 id="growth-opportunities">Growth opportunities</h4>
           <span>Derived signals</span>
         </div>
         <div className="growth-signals">

@@ -8,6 +8,7 @@ import type { ContractReport } from "@/lib/familiar-contract";
 import { deriveGrowthReport, type FamiliarGrowthReport } from "@/lib/familiar-growth-signals";
 import { deriveHealRequests, type SelfHealRequest } from "@/lib/familiar-heal-requests";
 import type { RetroFamiliarState, RetroRunsSnapshot } from "@/lib/retro-runs";
+import { buildSessionPulse, type PulseDay } from "@/lib/session-pulse";
 import {
   aggregateResponseConfidenceEvents,
   type ResponseConfidenceEvent,
@@ -66,6 +67,8 @@ export type FamiliarAnalyticsModel = {
   threadReports: ThreadSelfReport[];
   responseConfidenceEvents: ResponseConfidenceEvent[];
   responseConfidenceRollup: ResponseConfidenceRollup;
+  /** Per-day session counts for the trailing 14 days (oldest first). */
+  sessionPulse: PulseDay[];
   errors: string[];
 };
 
@@ -164,14 +167,18 @@ export async function loadFamiliarAnalyticsData(familiarId: string): Promise<Fam
   };
 }
 
-export function buildFamiliarAnalyticsModel(data: FamiliarAnalyticsData): FamiliarAnalyticsModel {
+export function buildFamiliarAnalyticsModel(
+  data: FamiliarAnalyticsData,
+  now: number = Date.now(),
+): FamiliarAnalyticsModel {
   const familiar = data.familiars.find((item) => item.id === data.familiarId) ?? null;
+  const familiarSessions = data.sessions.filter((session) => session.familiarId === data.familiarId);
   // Scope the stats computation to the single familiar this view renders rather
   // than bucketing every familiar's sessions/memory just to read one entry.
   const stats = familiar
     ? buildFamiliarCardStats({
         familiars: [familiar],
-        sessions: data.sessions.filter((session) => session.familiarId === familiar.id),
+        sessions: familiarSessions,
         covenEntries: data.covenEntries.filter((entry) => entry.familiar_id === familiar.id),
       }).get(familiar.id) ?? emptyStats()
     : emptyStats();
@@ -203,6 +210,7 @@ export function buildFamiliarAnalyticsModel(data: FamiliarAnalyticsData): Famili
     threadReports: data.threadReports,
     responseConfidenceEvents: data.responseConfidenceEvents,
     responseConfidenceRollup: aggregateResponseConfidenceEvents(data.responseConfidenceEvents),
+    sessionPulse: buildSessionPulse(familiarSessions, data.familiarId, now),
     errors: data.errors,
   };
 }

@@ -9502,6 +9502,10 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
     linear-gradient(180deg, color-mix(in oklch, var(--color-success) 7%, transparent), transparent 280px),
     var(--bg-base);
   color: var(--text-primary);
+  /* Layout responds to the pane, not the viewport — the surface can be docked
+     into panes narrower than the window. */
+  container-type: inline-size;
+  container-name: growth;
 }
 .growth-surface--standalone {
   height: auto;
@@ -9511,6 +9515,46 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   background: transparent;
 }
 .growth-hero { margin-bottom: 18px; }
+/* Roster health triage — how many familiars need attention, at a glance. */
+.growth-triage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.growth-triage__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+}
+.growth-triage__chip--stalled {
+  color: var(--color-danger);
+  background: color-mix(in oklch, var(--color-danger) 10%, transparent);
+  border-color: color-mix(in oklch, var(--color-danger) 34%, var(--border-hairline));
+}
+.growth-triage__chip--quiet {
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+  border-color: color-mix(in oklch, var(--color-warning) 34%, var(--border-hairline));
+}
+.growth-triage__chip--steady {
+  color: var(--color-info);
+  background: color-mix(in oklch, var(--color-info) 10%, transparent);
+  border-color: color-mix(in oklch, var(--color-info) 34%, var(--border-hairline));
+}
+.growth-triage__chip--active {
+  color: var(--color-success);
+  background: color-mix(in oklch, var(--color-success) 10%, transparent);
+  border-color: color-mix(in oklch, var(--color-success) 34%, var(--border-hairline));
+}
 .growth-layout {
   display: grid;
   grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
@@ -9553,7 +9597,17 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border-color: var(--border-hairline);
   background: color-mix(in oklch, var(--accent-presence) 8%, var(--bg-raised));
 }
-.growth-familiar__avatar { width: 34px; height: 34px; border-radius: 10px; }
+.growth-familiar__avatar { width: 34px; height: 34px; border-radius: 10px; object-fit: cover; }
+.growth-familiar__copy .pulse-bars { margin-top: 7px; }
+/* Per-row analytics deep link — quiet until hovered, aligned under the copy. */
+.growth-familiar__analytics {
+  display: inline-flex;
+  margin: 2px 0 0 54px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-decoration: none;
+}
+.growth-familiar__analytics:hover { color: var(--accent-presence); }
 .growth-familiar__copy {
   display: block;
   min-width: 0;
@@ -9638,7 +9692,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   background: var(--bg-raised);
 }
 .growth-summary__item svg { color: var(--accent-presence); }
-.growth-summary__item span {
+.growth-summary__item .growth-summary__value {
   display: block;
   min-height: 28px;
   margin-top: 10px;
@@ -9655,6 +9709,36 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   color: var(--text-muted);
   font-size: 12px;
 }
+.growth-summary__item small {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+/* Week-over-week movement chip — direction is the signal, tinted accordingly. */
+.growth-delta {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.growth-delta--up {
+  color: var(--color-success);
+  background: color-mix(in oklch, var(--color-success) 10%, transparent);
+  border-color: color-mix(in oklch, var(--color-success) 34%, var(--border-hairline));
+}
+.growth-delta--down {
+  color: var(--color-warning);
+  background: color-mix(in oklch, var(--color-warning) 10%, transparent);
+  border-color: color-mix(in oklch, var(--color-warning) 34%, var(--border-hairline));
+}
+.growth-delta--flat { color: var(--text-muted); }
 .growth-section {
   min-width: 0;
   padding: 16px;
@@ -9678,37 +9762,6 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   color: var(--text-muted);
   font-size: 12px;
 }
-.growth-bars {
-  display: grid;
-  grid-template-columns: repeat(14, minmax(8px, 1fr));
-  gap: 6px;
-  height: 72px;
-  align-items: end;
-}
-.growth-bar {
-  display: flex;
-  align-items: end;
-  height: 72px;
-  border-radius: 5px;
-  background: color-mix(in oklch, var(--bg-base) 76%, transparent);
-}
-.growth-bar i {
-  display: block;
-  width: 100%;
-  min-height: 8px;
-  border-radius: 5px;
-  background: linear-gradient(180deg, var(--accent-presence), var(--color-info));
-}
-.growth-memory-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-.growth-memory-line svg { color: var(--accent-presence); }
 .growth-track-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -9739,6 +9792,22 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   color: var(--text-secondary);
   font-size: 12px;
 }
+/* Accept-rate meter — tone thresholds match GROWTH_THRESHOLDS (0.35 / 0.5). */
+.growth-track-meter {
+  overflow: hidden;
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 7%, transparent);
+}
+.growth-track-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-success);
+}
+.growth-track-meter--warn i { background: var(--color-warning); }
+.growth-track-meter--bad i { background: var(--color-danger); }
 .growth-run-list {
   display: flex;
   min-width: 0;
@@ -9758,6 +9827,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   min-width: 0;
   padding: 12px;
   border: 1px solid var(--border-hairline);
+  border-left-width: 3px;
   border-radius: var(--radius-control);
   background: var(--bg-base);
 }
@@ -9777,6 +9847,24 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .growth-signal--info svg { color: var(--color-info); }
 .growth-signal--warn svg { color: var(--color-warning); }
 .growth-signal--crit svg { color: var(--color-danger); }
+.growth-signal--info { border-left-color: var(--color-info); }
+.growth-signal--warn { border-left-color: var(--color-warning); }
+.growth-signal--crit { border-left-color: var(--color-danger); }
+
+/* Pane-width responsiveness — mirrors the old viewport media rules but fires
+   on the surface's own width. */
+@container growth (max-width: 920px) {
+  .growth-layout { grid-template-columns: 1fr; }
+  .growth-sidebar { position: static; }
+  .growth-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .growth-signals { grid-template-columns: 1fr; }
+}
+@container growth (max-width: 560px) {
+  .growth-report__header { flex-direction: column; }
+  .growth-summary,
+  .growth-track-grid { grid-template-columns: 1fr; }
+  .growth-section__head { align-items: flex-start; flex-direction: column; }
+}
 
 /* ── Familiar Analytics ──────────────────────────────────────────────────── */
 .fa-page {
@@ -9793,6 +9881,10 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   padding: 24px;
   background: var(--bg-base);
   color: var(--text-primary);
+  /* The same component renders full-page and inside the narrow inspector tab —
+     layout must respond to the pane, not the viewport. */
+  container-type: inline-size;
+  container-name: fa;
 }
 .fa-topbar {
   display: flex;
@@ -9827,6 +9919,27 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   align-items: center;
   gap: 14px;
   min-width: 0;
+}
+/* Hero pulse — 14 days of session activity between identity and the ring. */
+.fa-header__pulse {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex: 0 1 300px;
+  min-width: 150px;
+  /* Bars stay bar-shaped: cap how wide each day can stretch. */
+  max-width: 320px;
+}
+.fa-pulse__label {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.fa-pulse__meta {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 .fa-header h1 {
   margin: 4px 0 3px;
@@ -9926,7 +10039,15 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
+.fa-kpis li {
+  display: grid;
+  min-width: 0;
+}
+/* Each KPI tile is a drill-through link to the section it summarizes. */
 .fa-kpi {
   display: flex;
   flex-direction: column;
@@ -9936,7 +10057,17 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   border-left: 3px solid var(--border-hairline);
   border-radius: var(--radius-card);
   background: var(--bg-surface);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--duration-fast, 120ms) ease, border-color var(--duration-fast, 120ms) ease;
 }
+.fa-kpi:hover {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, var(--border-hairline));
+  background: var(--bg-hover);
+}
+.fa-kpi--good:hover { border-left-color: var(--color-success); }
+.fa-kpi--warn:hover { border-left-color: var(--color-warning); }
+.fa-kpi--bad:hover { border-left-color: var(--color-danger); }
 .fa-kpi--good { border-left-color: var(--color-success); }
 .fa-kpi--warn { border-left-color: var(--color-warning); }
 .fa-kpi--bad { border-left-color: var(--color-danger); }
@@ -9960,6 +10091,14 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-kpi--warn .fa-kpi__value { color: var(--color-warning); }
 .fa-kpi--bad .fa-kpi__value { color: var(--color-danger); }
 .fa-kpi__sub { color: var(--text-muted); font-size: 11px; }
+/* Sections flow in two columns on wide panes; `--wide` spans both. */
+.fa-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.fa-section--wide { grid-column: 1 / -1; }
 .fa-section {
   display: flex;
   flex-direction: column;
@@ -10069,6 +10208,19 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+/* Per-response confidence trend — the section's time axis. */
+.fa-response-trend {
+  margin: 0;
+  padding: 12px 12px 8px;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-base);
+}
+.fa-response-trend figcaption {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 .fa-response-factor-grid {
   display: grid;
@@ -10447,6 +10599,42 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
 .fa-contract-item.is-pass svg { color: var(--color-success); }
 .fa-contract-item.is-fail svg { color: var(--color-danger); }
 
+/* Pane-width responsiveness — the analytics view also renders in the narrow
+   inspector tab, where viewport media queries never fire. */
+@container fa (max-width: 880px) {
+  .fa-grid { grid-template-columns: 1fr; }
+  .fa-response-factor-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container fa (max-width: 620px) {
+  .fa-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .fa-header__pulse {
+    flex-basis: auto;
+    width: 100%;
+  }
+  .fa-ring {
+    width: 86px;
+    height: 86px;
+  }
+  .fa-section__head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .fa-factor {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .fa-response-factor-grid,
+  .fa-thread-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fa-thread-review-list,
+  .fa-thread-grid { grid-template-columns: 1fr; }
+  .fa-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tsc-head { align-items: flex-start; flex-direction: column; }
+  .tsc-scores { grid-template-columns: 1fr; }
+}
+
 /* ── Thread Signal Card ──────────────────────────────────────────────────── */
 .tsc-card {
   display: flex;
@@ -10552,16 +10740,11 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .retro-select { width: 100%; }
   .retro-content { grid-template-columns: 1fr; }
   .retro-familiar-panel { position: static; }
-  .growth-layout { grid-template-columns: 1fr; }
-  .growth-sidebar { position: static; }
-  .growth-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .growth-signals { grid-template-columns: 1fr; }
-  .fa-response-factor-grid,
-  .fa-thread-review-list,
-  .fa-thread-score-grid,
-  .fa-thread-grid { grid-template-columns: 1fr; }
 }
 
+/* Growth + analytics pane-width rules live in @container growth/fa blocks —
+   only the containers' own padding stays viewport-based (a container query
+   cannot style the container itself). */
 @media (max-width: 560px) {
   .retro-surface { padding: 16px; }
   .retro-hero { flex-direction: column; }
@@ -10570,26 +10753,7 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .retro-run-row__top { align-items: stretch; flex-direction: column; }
   .retro-pill { width: max-content; }
   .growth-surface { padding: 16px; }
-  .growth-report__header { flex-direction: column; }
-  .growth-summary,
-  .growth-track-grid { grid-template-columns: 1fr; }
-  .growth-section__head { align-items: flex-start; flex-direction: column; }
   .fa-page { padding: 16px; }
-  .fa-header,
-  .fa-section__head {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .fa-ring {
-    width: 86px;
-    height: 86px;
-  }
-  .fa-factor {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-  }
-  .tsc-head { align-items: flex-start; flex-direction: column; }
-  .tsc-scores { grid-template-columns: 1fr; }
 }
 
 /* Recommended follow-up: the agent lists next steps best-first, so the top

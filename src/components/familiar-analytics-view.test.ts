@@ -366,6 +366,44 @@ describe("FamiliarAnalyticsView", () => {
     assert.match(source, /responseConfidenceRollup\.eventCount/, "KPI row includes response confidence event count");
   });
 
+  it("derives a 14-day session pulse and renders it in the hero", async () => {
+    mockFetchFor("trusted");
+    const data = await loadFamiliarAnalyticsData("cody");
+    const model = buildFamiliarAnalyticsModel(data, Date.parse("2026-06-25T20:00:00.000Z"));
+
+    assert.equal(model.sessionPulse.length, 14);
+    // All ten mock sessions land on 2026-06-25 — the newest pulse day.
+    assert.equal(model.sessionPulse[13].count, 10);
+    assert.equal(model.sessionPulse[13].key, "2026-06-25");
+    assert.match(source, /<PulseBars/, "hero renders the pulse bars");
+    assert.match(source, /model\.sessionPulse/, "pulse is wired to the model");
+  });
+
+  it("makes each KPI tile a drill-through link to the section it summarizes", () => {
+    assert.match(source, /href: "#fa-contract"/);
+    assert.match(source, /href: "#fa-heal"/);
+    assert.match(source, /href: "#fa-thread-signals"/);
+    assert.match(source, /href: "#fa-response-confidence"/);
+    assert.match(source, /href: "\/dashboard\/familiars\/growth"/, "activity KPI links to the growth page");
+    assert.match(source, /href=\{kpi\.href\}/, "tiles render as anchors");
+    assert.match(source, /<section id=\{id\}/, "sections carry the ids the tiles target");
+  });
+
+  it("charts the response-confidence trend and announces refreshes", () => {
+    assert.match(source, /function buildResponseTrend/, "trend is derived from the raw events");
+    assert.match(source, /<Sparkline points=\{trend\}/, "trend renders as a sparkline");
+    assert.match(source, /useAnnouncer/, "view announces state changes");
+    assert.match(source, /announce\("Analytics refreshed\."\)/, "manual refresh is announced");
+  });
+
+  it("lays sections out in a container-responsive grid (inspector-pane safe)", () => {
+    const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+    assert.match(source, /className="fa-grid"/, "sections are wrapped in the grid");
+    assert.match(globals, /\.fa-grid\s*\{/, ".fa-grid rule exists");
+    assert.match(globals, /container-name: fa/, ".fa-page is a size container");
+    assert.match(globals, /@container fa \(max-width: 880px\)/, "grid collapses by pane width, not viewport");
+  });
+
   it("makes .fa-page own its vertical scroll (html/body are overflow:hidden)", () => {
     const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
     const block = globals.match(/\.fa-page\s*\{[^}]*\}/);
