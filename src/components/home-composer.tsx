@@ -45,6 +45,7 @@ import { HomeContinueColumn } from "@/components/home/home-continue-column";
 import { HomeNewsColumn } from "@/components/home/home-news-column";
 import { HomeSuggestions } from "@/components/home/home-suggestions";
 import { HomeSelect, type HomeSelectGroup } from "@/components/home/home-select";
+import { HomeSlashMenu } from "@/components/home/home-slash-menu";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
@@ -839,95 +840,56 @@ export function HomeComposer({
         {/* Slash suggestion popover — anchored above the card so it doesn't
             push the rest of the layout when it opens. */}
         {modelMenuActive && modelOptions ? (
-          <div className="hc-slash-menu">
-            <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Models">
-              {modelOptions.map((m, i) => {
-                const active = i === slashIdx;
-                return (
-                  <li key={m.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onMouseEnter={() => setSlashIdx(i)}
-                      onClick={() => {
-                        handleSelectModel(m.id);
-                        onToast(`Model set to ${m.id}.`);
-                        setText("");
-                        textareaRef.current?.focus();
-                      }}
-                      className={`hc-slash-row${active ? " active" : ""}`}
-                    >
-                      <span className="hc-slash-name">{m.label}</span>
-                      <span className="hc-slash-desc">{m.id}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="hc-slash-footer">↑↓ navigate · Enter switch · Esc cancel</div>
-          </div>
+          <HomeSlashMenu
+            listboxId={slashListboxId}
+            ariaLabel="Models"
+            items={modelOptions.map((m) => ({ key: m.id, name: m.label, desc: m.id }))}
+            activeIndex={slashIdx}
+            footer="↑↓ navigate · Enter switch · Esc cancel"
+            onHover={setSlashIdx}
+            onPick={(i) => {
+              const m = modelOptions[i];
+              if (!m) return;
+              handleSelectModel(m.id);
+              onToast(`Model set to ${m.id}.`);
+              setText("");
+              textareaRef.current?.focus();
+            }}
+          />
         ) : skillMenuActive && skillOptions ? (
-          <div className="hc-slash-menu">
-            <div className="hc-slash-body">
-              <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Skills">
-                {skillOptions.map((s, i) => {
-                  const active = i === slashIdx;
-                  return (
-                    <li key={s.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        onMouseEnter={() => setSlashIdx(i)}
-                        onClick={() => invokeSkill(s)}
-                        className={`hc-slash-row${active ? " active" : ""}`}
-                      >
-                        <span className="hc-slash-name">{s.name}</span>
-                        <span className="hc-slash-desc">{s.description || s.id}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              <SkillDetailPreview skill={skillOptions[slashIdx] ?? skillOptions[0] ?? null} />
-            </div>
-            <div className="hc-slash-footer">↑↓ navigate · Enter run · Tab complete · Esc cancel</div>
-          </div>
+          <HomeSlashMenu
+            listboxId={slashListboxId}
+            ariaLabel="Skills"
+            items={skillOptions.map((s) => ({ key: s.id, name: s.name, desc: s.description || s.id }))}
+            activeIndex={slashIdx}
+            footer="↑↓ navigate · Enter run · Tab complete · Esc cancel"
+            onHover={setSlashIdx}
+            onPick={(i) => {
+              const s = skillOptions[i];
+              if (s) invokeSkill(s);
+            }}
+            preview={<SkillDetailPreview skill={skillOptions[slashIdx] ?? skillOptions[0] ?? null} />}
+          />
         ) : !slashDismissed && slashSuggestions.length > 0 ? (
-          <div className="hc-slash-menu">
-            <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Slash commands">
-              {slashSuggestions.map((cmd, i) => {
-                const active = i === slashIdx;
-                return (
-                  <li
-                    key={cmd.name}
-                    role="option"
-                    id={`${slashListboxId}-opt-${i}`}
-                    aria-selected={active}
-                  >
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onMouseEnter={() => setSlashIdx(i)}
-                      onClick={() => {
-                        setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
-                        textareaRef.current?.focus();
-                      }}
-                      className={`hc-slash-row${active ? " active" : ""}`}
-                    >
-                      <span className="hc-slash-name">{cmd.name}</span>
-                      <span className="hc-slash-desc">{cmd.description}</span>
-                      {cmd.argPlaceholder ? (
-                        <span className="hc-slash-arg">{cmd.argPlaceholder}</span>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="hc-slash-footer">
-              ↑↓ navigate · Enter run · Tab complete · type space to dismiss
-            </div>
-          </div>
+          <HomeSlashMenu
+            listboxId={slashListboxId}
+            ariaLabel="Slash commands"
+            items={slashSuggestions.map((cmd) => ({
+              key: cmd.name,
+              name: cmd.name,
+              desc: cmd.description,
+              arg: cmd.argPlaceholder || undefined,
+            }))}
+            activeIndex={slashIdx}
+            footer="↑↓ navigate · Enter run · Tab complete · type space to dismiss"
+            onHover={setSlashIdx}
+            onPick={(i) => {
+              const cmd = slashSuggestions[i];
+              if (!cmd) return;
+              setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
+              textareaRef.current?.focus();
+            }}
+          />
         ) : null}
 
         <div

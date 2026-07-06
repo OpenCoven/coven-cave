@@ -261,26 +261,53 @@ assert.doesNotMatch(
 // aria-activedescendant conveys the highlight while focus stays in the textarea.
 
 const chatSource = await readFile(new URL("./chat-view.tsx", import.meta.url), "utf8");
+// HomeComposer delegates its popover JSX to the shared HomeSlashMenu component
+// (Task 6: collapse the three near-duplicate popovers into one); ChatView still
+// inlines its own menus, so the ARIA/JSX assertions below check each in its
+// own source file rather than looping over a single `src`.
+const slashMenu = await readFile(new URL("./home/home-slash-menu.tsx", import.meta.url), "utf8");
+
+assert.match(
+  slashMenu,
+  /id=\{listboxId\} role="listbox" aria-label=\{ariaLabel\}/,
+  "HomeSlashMenu should render a labelled listbox with a stable id",
+);
+assert.match(
+  slashMenu,
+  /role="option"\s+id=\{`\$\{listboxId\}-opt-\$\{i\}`\}\s+aria-selected=\{active\}/,
+  "HomeSlashMenu rows should be options with stable ids and aria-selected on the highlighted row",
+);
+assert.match(
+  slashMenu,
+  /role="option"[\s\S]{0,200}?<button\s+type="button"\s+tabIndex=\{-1\}/,
+  "HomeSlashMenu option buttons must be out of the tab order — focus stays in the textarea, aria-activedescendant conveys selection",
+);
+assert.match(
+  source,
+  /<HomeSlashMenu[\s\S]*?listboxId=\{slashListboxId\}[\s\S]*?ariaLabel="Slash commands"/,
+  "HomeComposer should render its slash-command menu through HomeSlashMenu with the shared listbox id and a 'Slash commands' label",
+);
+
+assert.match(
+  chatSource,
+  /id=\{slashListboxId\} role="listbox" aria-label="Slash commands"/,
+  "ChatView slash menu should be a labelled listbox with a stable id",
+);
+assert.match(
+  chatSource,
+  /role="option"\s+id=\{`\$\{slashListboxId\}-opt-\$\{i\}`\}\s+aria-selected=\{active\}/,
+  "ChatView slash rows should be options with stable ids and aria-selected on the highlighted row",
+);
+assert.match(
+  chatSource,
+  /role="option"[\s\S]{0,200}?<button\s+type="button"\s+tabIndex=\{-1\}/,
+  "ChatView option buttons must be out of the tab order — focus stays in the textarea, aria-activedescendant conveys selection",
+);
 
 for (const [name, src] of [
   ["HomeComposer", source],
   ["ChatView", chatSource],
 ]) {
-  assert.match(
-    src,
-    /id=\{slashListboxId\} role="listbox" aria-label="Slash commands"/,
-    `${name} slash menu should be a labelled listbox with a stable id`,
-  );
-  assert.match(
-    src,
-    /role="option"\s+id=\{`\$\{slashListboxId\}-opt-\$\{i\}`\}\s+aria-selected=\{active\}/,
-    `${name} slash rows should be options with stable ids and aria-selected on the highlighted row`,
-  );
-  assert.match(
-    src,
-    /role="option"[\s\S]{0,200}?<button\s+type="button"\s+tabIndex=\{-1\}/,
-    `${name} option buttons must be out of the tab order — focus stays in the textarea, aria-activedescendant conveys selection`,
-  );
   assert.match(src, /aria-autocomplete="list"/, `${name} composer textarea should expose list autocomplete`);
   assert.match(src, /aria-haspopup="listbox"/, `${name} composer textarea should advertise the listbox popup`);
   assert.match(
@@ -328,7 +355,11 @@ assert.match(
 // ── /skill + /skills inline picker (mirrors /model) ──────────────────────────
 assert.match(source, /skillSlashOptions\(text, skills\)/, "HomeComposer offers inline /skill autocomplete");
 assert.match(source, /command === "\/skill" \|\| command === "\/skills"/, "HomeComposer handles the /skill and /skills commands");
-assert.match(source, /role="listbox" aria-label="Skills"/, "HomeComposer renders a Skills picker listbox");
+assert.match(
+  source,
+  /<HomeSlashMenu[\s\S]*?ariaLabel="Skills"[\s\S]*?preview=\{<SkillDetailPreview/,
+  "HomeComposer renders a Skills picker listbox (via HomeSlashMenu) with the skill detail preview",
+);
 assert.match(source, /buildSkillPrompt\(skill\)/, "HomeComposer invokes a skill by starting a chat with the skill prompt");
 
 // ── Destination pills are an accessible single-select radiogroup ─────────────
