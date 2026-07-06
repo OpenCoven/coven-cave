@@ -83,7 +83,10 @@ export default async function DailyReportPage({ params }: Props) {
     return out;
   };
   const recentSessions = parseRecentSessions(item.body);
-  const generatedAt = item.firedAt ?? item.updatedAt ?? null;
+  // media.generatedAt moves on every in-place refresh; firedAt stays at the
+  // day's first generation, so prefer the former for a truthful timestamp.
+  const generatedAt = item.media?.generatedAt ?? item.firedAt ?? item.updatedAt ?? null;
+  const isToday = parsedDate ? slugFor(parsedDate) === slugFor(new Date()) : false;
   const totalEvents = stats
     ? stats.reminders + stats.responses + stats.familiars + stats.sessions
     : 0;
@@ -124,8 +127,14 @@ export default async function DailyReportPage({ params }: Props) {
           <div className="dr-meta-row">
             <span className="dr-meta-row__item">
               <Icon name="ph:clock" aria-hidden />
-              Generated {generatedAt ? relativeTime(generatedAt) : "today"}
+              Updated {generatedAt ? relativeTime(generatedAt) : "today"}
             </span>
+            {isToday ? (
+              <span className="dr-meta-row__item">
+                <Icon name="ph:arrows-clockwise" aria-hidden />
+                Live — refreshes today
+              </span>
+            ) : null}
             {breakdown.openItems.length > 0 ? (
               <span className="dr-meta-row__item">
                 <Icon name="ph:warning-circle" aria-hidden />

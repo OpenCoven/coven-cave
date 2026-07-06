@@ -77,7 +77,7 @@ export function buildDashboardModel(items: InboxItem[], now: Date): DashboardMod
         body: todayItem.body ?? "",
         imageUrl: todayItem.media?.imageUrl ?? null,
         alt: todayItem.media?.alt ?? "",
-        generatedAt: todayItem.firedAt ?? todayItem.updatedAt ?? null,
+        generatedAt: todayItem.media?.generatedAt ?? todayItem.firedAt ?? todayItem.updatedAt ?? null,
         recentSessions: parseRecentSessions(todayItem.body),
       }
     : null;

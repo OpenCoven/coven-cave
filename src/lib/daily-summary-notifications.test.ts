@@ -1,8 +1,10 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import {
+  buildDailySummaryContent,
   buildDailySummaryNotification,
   dailySummaryAutoKey,
+  reportSessionTitle,
   shouldCreateDailySummary,
 } from "./daily-summary-notifications.ts";
 
@@ -112,5 +114,85 @@ assert.equal(
   null,
   "empty days should not produce a noisy daily summary notification",
 );
+
+// The content builder skips the auto-key dedup so the refresh path can rebuild
+// today's report in place.
+const refreshed = buildDailySummaryContent({
+  now,
+  items: [{ ...baseItem, auto: dailySummaryAutoKey(now) }],
+  sessions: [],
+});
+assert.ok(refreshed, "content builder should rebuild even when today's report already exists");
+assert.equal(
+  buildDailySummaryContent({ now, items: [], sessions: [] }),
+  null,
+  "content builder should still return null on an empty day",
+);
+
+// Session-title hygiene: harness transcripts leak markdown into titles.
+assert.equal(
+  reportSessionTitle({ title: "## Prior conversation **User:** Merge PR #26 **" }),
+  "Untitled session",
+  "prior-conversation preamble leaks should fall back to a neutral title",
+);
+assert.equal(
+  reportSessionTitle({ title: "## Fix the **flaky** `packEventColumns` test" }),
+  "Fix the flaky packEventColumns test",
+  "markdown syntax should be stripped, not rendered as literal characters",
+);
+assert.equal(reportSessionTitle({ title: "   " }), "Untitled session");
+const longTitle = "Refactor the entire inbox scheduler pipeline to support recurrence windows and quiet hours";
+assert.ok(
+  reportSessionTitle({ title: longTitle }).length <= 64,
+  "report titles should truncate to a report-sized string",
+);
+assert.match(reportSessionTitle({ title: longTitle }), /…$/);
+
+const sessionAt = (id, title, hoursAgo) => ({
+  id,
+  title,
+  status: "completed",
+  updated_at: new Date(now.getTime() - hoursAgo * 60 * 60 * 1000).toISOString(),
+  created_at: "2026-06-18T08:00:00.000Z",
+  project_root: "/repo/coven-cave",
+  harness: "codex",
+  model: "gpt-5",
+  exit_code: 0,
+  archived_at: null,
+  familiarId: "sage",
+});
+const hygieneDraft = buildDailySummaryContent({
+  now,
+  items: [],
+  sessions: [
+    sessionAt("h1", "## Prior conversation **User:** Merge PR #26 **", 1),
+    sessionAt("h2", "Refresh task: Wire Cave", 2),
+    sessionAt("h3", "refresh task: wire cave", 3),
+    sessionAt("h4", "Ship calendar fixes", 4),
+    sessionAt("h5", "Audit the flow surface", 5),
+    sessionAt("h6", "Polish marketplace cards", 6),
+    sessionAt("h7", "Tune terminal mirror", 7),
+    sessionAt("h8", "Rework project picker", 8),
+    sessionAt("h9", "Harden avatar storage", 9),
+  ],
+});
+assert.ok(hygieneDraft);
+assert.doesNotMatch(
+  hygieneDraft.body,
+  /Prior conversation|##|\*\*/,
+  "the Recent line must not leak raw markdown from session titles",
+);
+assert.equal(
+  hygieneDraft.body.match(/Refresh task: Wire Cave/gi)?.length ?? 0,
+  1,
+  "repeated session titles should be deduped case-insensitively",
+);
+const recentLine = hygieneDraft.body.split("\n").find((line) => line.startsWith("Recent:")) ?? "";
+assert.equal(
+  recentLine.split(" · ").length,
+  6,
+  "the Recent line should cap at 6 deduped sessions",
+);
+assert.doesNotMatch(recentLine, /Harden avatar storage/, "sessions past the cap are dropped");
 
 console.log("daily-summary-notifications.test.ts: ok");
