@@ -13,13 +13,15 @@ import { useMinuteTick } from "@/lib/use-minute-tick";
 import { normalizeProjectRoot, sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
 import { deriveProjectStatus } from "@/lib/project-status";
 import { addChatProject } from "@/lib/chat-add-project";
-import type { SessionRow } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
 import { stripTaskPrefix } from "@/lib/projects/session-glyph";
 import { applyManualOrder, readSessionOrder } from "@/lib/chat-session-order";
 import { applyProjectOverrides, setProjectOverride, clearProjectOverride } from "@/lib/chat-project-overrides";
 import { useProjectOverrides } from "@/lib/use-project-overrides";
 import { useProjects } from "@/lib/use-projects";
+import { useRefreshOnFocus } from "@/lib/use-refresh-on-focus";
+import type { Card } from "@/lib/cave-board-types";
 import {
   PROJECTS_SELECTED_KEY,
   parseStoredProjectId,
@@ -49,13 +51,15 @@ function pathBasename(p: string): string {
 
 type ProjectsViewProps = {
   sessions?: SessionRow[];
+  /** Familiar roster for the detail pane's Grants section. */
+  familiars?: Familiar[];
   onNewChat?: (projectRoot: string) => void;
   onSessionsChanged?: () => void;
   /** When set, only projects this familiar has been granted are shown. */
   activeFamiliarId?: string | null;
 };
 
-export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, activeFamiliarId = null }: ProjectsViewProps) {
+export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessionsChanged, activeFamiliarId = null }: ProjectsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const minuteTick = useMinuteTick(); // keep "last active" relative times + the active filter current
   const {
@@ -154,6 +158,25 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   useEffect(() => {
     setOrder(readSessionOrder());
   }, []);
+
+  // Board cards for the detail pane's Tasks section: ONE fetch per mount, then
+  // refetch on window refocus (throttled) — never per selection switch. The
+  // Tasks section filters client-side by projectId/cwd.
+  const [boardCards, setBoardCards] = useState<Card[]>([]);
+  const loadBoardCards = async () => {
+    try {
+      const res = await fetch("/api/board", { cache: "no-store" });
+      const json = await res.json();
+      if (json?.ok && Array.isArray(json.cards)) setBoardCards(json.cards as Card[]);
+    } catch {
+      /* transient — the Tasks section keeps the last known cards */
+    }
+  };
+  useEffect(() => {
+    void loadBoardCards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useRefreshOnFocus(loadBoardCards);
 
   // "/" jumps to the projects filter (GitHub-style) while this surface is shown,
   // unless the user is already typing in a field or holding a modifier.
@@ -686,6 +709,8 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
                   project={selectedProject}
                   chats={chatsByRoot.get(normalizeProjectRoot(selectedProject.root)) ?? []}
                   allProjects={projects}
+                  boardCards={boardCards}
+                  familiars={familiars}
                   onRename={renameProject}
                   onUpdateRoot={updateRoot}
                   onUpdateColor={updateColor}

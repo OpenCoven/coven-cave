@@ -616,7 +616,7 @@ export function ChatSurface({
             }}
           />
         ) : scope === "projects" ? (
-          <ProjectsView sessions={sessions} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
+          <ProjectsView sessions={sessions} familiars={familiars} onNewChat={startProjectChat} onSessionsChanged={onSessionsChanged} activeFamiliarId={activeFamiliarId} />
         ) : scope === "coven" ? (
           // Group Chat ("coven") lives here as a first-class chat tab instead of
           // a standalone surface. It broadcasts one prompt to several familiars,
