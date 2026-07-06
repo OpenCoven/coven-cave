@@ -236,20 +236,72 @@ Non-negotiables, all with existing primitives:
 - **Compact by default, touch-safe on mobile**: 44px `--touch-target`,
   ≥16px inputs on touch (iOS zoom), safe-area insets tokenized.
 
-## 8. Shipping checklist for a new surface
+## 8. Chrome discipline & progressive disclosure
+
+Density (§1) is about how much *content* fits; chrome discipline is about how
+little *machinery* is allowed to sit on top of it. Powerful ≠ busy: every
+capability stays reachable, but visibility is earned, not granted.
+
+### The chrome budget
+
+A surface header (or toolbar) shows at most **three always-visible actions plus
+one overflow**. Everything else moves down the disclosure ladder. Tab strips
+count: two stacked strips on one surface is over budget — merge or demote one.
+Badges are chrome too: a badge means **live state** (running, failed, unread);
+static metadata is muted text, not a pill.
+
+### The disclosure ladder
+
+Place every control on the lowest rung it can live on, by
+`frequency × destructiveness`:
+
+1. **Always visible** — the surface's primary verb(s) and anything used
+   constantly (search, the single CTA).
+2. **Reveal on hover/focus** — per-row/per-card secondary actions. Use the
+   shared `.reveal-scope` / `.reveal-on-hover` utilities (`globals.css`), never
+   ad-hoc opacity: they guarantee keyboard parity (`:focus-within` reveal),
+   touch parity (permanently visible on coarse pointers), a11y-tree presence
+   (opacity-hide only), and token-driven motion.
+3. **Overflow menu** — occasional actions. Use `ui/overflow-menu.tsx`
+   (`OverflowMenu`): the standard "⋯" trigger + `PopoverItem` menu with
+   `aria-haspopup`/`aria-expanded`, auto-close on select, and the Popover
+   scaffold's Escape/focus-return for free.
+4. **⌘K only** — rare, global, or expert actions. Anything relocated off rungs
+   1–3 **must** be registered in the command palette so it stays one keystroke
+   away.
+
+**Relocation, never removal.** Minimalism passes may move a control down the
+ladder; deleting a capability needs its own decision. Every relocated control
+stays reachable in ≤2 interactions.
+
+### Quiet hierarchy
+
+- **One hairline per boundary.** Where two panes or a card and its container
+  meet, exactly one border owns the seam — no double hairlines.
+- **Prefer surface steps to borders.** Inside a card, separate regions with
+  the elevation ladder (§2) and spacing, not nested boxes.
+- **Selection summons tools.** Bulk-action toolbars appear with selection and
+  leave with it (`ui/selection-toolbar.tsx`), not as permanent chrome.
+- **Panels open on demand, closed by default.** Inspectors, debug panes, and
+  secondary rails start closed; opening is one action (toolbar, overflow, or
+  ⌘K) and the state persists per the surface's conventions.
+
+## 9. Shipping checklist for a new surface
 
 1. Tokens only — no hardcoded colors, radii, or font sizes; verify in dark
    *and* light, plus one non-default theme.
 2. Reuse the primitives (`src/components/ui/`: Button, EmptyState, Skeleton,
    Popover, Modal, ViewHeader, SearchInput…) before writing new ones.
-3. Empty, loading, and error states designed — each ending with a next step.
-4. Announcer calls on mutations; focus rings; Escape/focus-return on anything
+3. Chrome within budget (§8): ≤3 always-visible actions + one `OverflowMenu`;
+   secondary row actions on `.reveal-on-hover`; relocated actions in ⌘K.
+4. Empty, loading, and error states designed — each ending with a next step.
+5. Announcer calls on mutations; focus rings; Escape/focus-return on anything
    that opens; reduced-motion story for anything that moves.
-5. Container queries for narrow-pane behavior; lazy-load if the chunk is
+6. Container queries for narrow-pane behavior; lazy-load if the chunk is
    heavy; respect the bundle budget.
-6. Copy: sentence case, terse, one flourish maximum, domain nouns not
+7. Copy: sentence case, terse, one flourish maximum, domain nouns not
    synonyms.
-7. Source-text pin tests for the contracts you'd be sad to lose (this repo's
+8. Source-text pin tests for the contracts you'd be sad to lose (this repo's
    convention — see the existing `*.test.ts` pin suites).
 
 ---
