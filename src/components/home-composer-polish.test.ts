@@ -49,8 +49,18 @@ assert.match(css, /\.hc-send-btn\s*\{[\s\S]*?border-radius:\s*var\(--radius-cont
 // ───────── Command-bar hierarchy ─────────
 assert.match(
   source,
-  /hc-control-group--who[\s\S]*?<HomeSelect[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?<ProjectPicker[\s\S]*?hc-control-group--run[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?aria-label="Send"/,
-  "home composer separates who and run control groups with custom selectors and the send control",
+  /hc-control-group--who[\s\S]*?<HomeSelect[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?<ProjectPicker[\s\S]*?hc-control-group--run[\s\S]*?aria-label="Enhance prompt"[\s\S]*?aria-label="Send"/,
+  "home composer keeps context controls separate from enhance and send in the main input shell",
+);
+assert.match(
+  source,
+  /className="hc-run-rail"[\s\S]*?aria-label="Run settings"[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<ComposerHostChip/,
+  "runtime/model, thinking, speed, and host live in the secondary run-settings rail",
+);
+assert.doesNotMatch(
+  source,
+  /hc-control-group--run[\s\S]*?Choose runtime and model[\s\S]*?aria-label="Send"/,
+  "runtime/model controls should not compete with enhance and send in the main action bar",
 );
 assert.match(source, /import \{ StandardSelect/, "home composer selectors should delegate to StandardSelect");
 assert.match(source, /<StandardSelect[\s\S]*?popoverClassName="hc-home-select-popover"/, "home composer custom selectors should use the shared select popover");
@@ -63,7 +73,12 @@ assert.match(
 assert.match(
   css,
   /\.hc-action-bar\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?gap:\s*8px 14px;[\s\S]*?padding:\s*10px 14px 14px;/,
-  "home composer action bar wraps with distinct spacing between who and run clusters",
+  "home composer action bar keeps compact spacing between context and submit clusters",
+);
+assert.match(
+  css,
+  /\.hc-run-rail\s*\{[\s\S]*?display:\s*flex;[\s\S]*?background:[\s\S]*?color-mix/,
+  "run settings rail is a distinct secondary surface",
 );
 assert.match(
   css,
@@ -109,8 +124,8 @@ assert.match(
 );
 assert.match(
   css,
-  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-control-group--who,\s*\.hc-control-group--run\s*\{[\s\S]*?display:\s*grid;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)\s*var\(--touch-target\);/,
-  "mobile who and run clusters wrap as readable custom selector grids",
+  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-control-group--who\s*\{[\s\S]*?display:\s*grid;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*var\(--touch-target\);[\s\S]*?\.hc-run-rail\s*\{[\s\S]*?\.hc-run-rail__controls\s*\{[\s\S]*?display:\s*grid;/,
+  "mobile context, send, and run rail controls wrap as readable custom selector grids",
 );
 
 // ── "Jump back in" recent-chats strip REMOVED ──
