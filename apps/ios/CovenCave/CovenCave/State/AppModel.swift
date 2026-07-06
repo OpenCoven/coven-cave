@@ -57,6 +57,12 @@ final class AppModel {
     /// pushes the card, and clears it (mirrors `threadToOpen`).
     var cardToOpen: BoardCard?
 
+    /// The Diary (Pencil-handwriting experiment) is presented from `RootView`,
+    /// ABOVE the connectionState switch — a transient flap to `.checking`
+    /// swaps `MainTabView` out and would destroy any cover presented from
+    /// within it, dismissing the diary mid-reply and aborting its stream.
+    var diaryPresented = false
+
     /// The active confirmation toast, auto-dismissed by the overlay.
     var toast: ToastMessage?
 

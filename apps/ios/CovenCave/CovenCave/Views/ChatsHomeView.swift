@@ -15,8 +15,6 @@ struct ChatsHomeView: View {
     @Environment(AppModel.self) private var app
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showNewChat = false
-    /// The Diary — the experimental Pencil-handwriting page (iPad only).
-    @State private var showDiary = false
     @State private var query = ""
     /// Drives the accent glow on the search field while it's being edited.
     @FocusState private var searchFocused: Bool
@@ -59,9 +57,6 @@ struct ChatsHomeView: View {
                     showNewChat = false
                     open(.thread(thread))
                 }
-            }
-            .fullScreenCover(isPresented: $showDiary) {
-                DiaryView()
             }
             .refreshable {
                 await app.loadFamiliars()
@@ -413,9 +408,11 @@ struct ChatsHomeView: View {
 
             // The Diary — Pencil-handwriting experiment. iPad only: the page is
             // sized for Pencil writing, so the entry point hides on iPhone.
+            // Presented from RootView (app.diaryPresented) so a connection
+            // flap swapping the tab tree can't dismiss it mid-reply.
             if sizeClass == .regular {
                 Button {
-                    showDiary = true
+                    app.diaryPresented = true
                 } label: {
                     Image(systemName: "book.closed")
                         .font(.system(.title3, weight: .medium))

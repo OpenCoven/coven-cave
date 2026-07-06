@@ -74,12 +74,20 @@ final class DiaryUITests: XCTestCase {
         stroke(CGVector(dx: 0.655, dy: 0.55), CGVector(dx: 0.69, dy: 0.485))
         stroke(CGVector(dx: 0.69, dy: 0.485), CGVector(dx: 0.655, dy: 0.42))
 
-        // Pen-lift (3.5s) → Vision → ink soak → streamed reply. The reply Text
-        // carries "The diary replies: …" as its accessibility label.
+        // Pen-lift (3.5s) → Vision → ink soak → streamed reply. Leave the app
+        // UNDISTURBED for the pen-lift + recognition window: waitForExistence
+        // polls accessibility snapshots continuously, which can starve the
+        // in-app timers. Sparse one-shot probes instead.
+        Thread.sleep(forTimeInterval: 12)
         let reply = app.staticTexts.matching(
             NSPredicate(format: "label BEGINSWITH 'The diary replies:'")
         ).firstMatch
-        XCTAssertTrue(reply.waitForExistence(timeout: 120), "the diary should write a reply out on the page")
+        var replyAppeared = false
+        for _ in 0..<24 {
+            if reply.exists { replyAppeared = true; break }
+            Thread.sleep(forTimeInterval: 5)
+        }
+        XCTAssertTrue(replyAppeared, "the diary should write a reply out on the page")
 
         // Let the quill finish for anyone watching the simulator.
         Thread.sleep(forTimeInterval: 25)
