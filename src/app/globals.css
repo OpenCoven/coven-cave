@@ -10508,18 +10508,48 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   .cave-fill-btn::before { transition: none; }
 }
 
-/* Codex inline file-edit card: a mutation tool call rendered in the chat
-   transcript as `[icon] Edited <file>  +N −M  [Review]` instead of the
-   collapsed tool block. Horizontal flex row, hairline border. */
+/* Codex inline file-edit card: a mutation tool call rendered visibly in the
+   chat transcript. The summary stays compact; expanding shows the diff body
+   using the same details pattern as other tool calls. */
 .cave-edit-card {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  display: block;
   padding: 0.4rem 0.6rem;
-  border: 1px solid var(--border-hairline);
   border-radius: 0.625rem;
   background: var(--bg-raised);
   font-size: 12px;
+}
+.cave-edit-card__summary {
+  display: grid !important;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
+}
+.cave-edit-card__summary::-webkit-details-marker {
+  display: none;
+}
+.cave-edit-card__summary::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: none;
+  background-color: var(--text-muted);
+  opacity: 0.65;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 4l4 4-4 4' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  mask-position: center;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 4l4 4-4 4' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  transition: transform 0.15s ease;
+}
+details[open] > .cave-edit-card__summary::before {
+  transform: rotate(90deg);
 }
 .cave-edit-card__icon {
   flex: none;
@@ -10531,6 +10561,11 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   flex: 1 1 auto;
   align-items: center;
   gap: 0.5rem;
+}
+.cave-edit-card > .cave-tool-io {
+  margin-top: 0.55rem;
+  border-top: 1px solid var(--border-hairline);
+  padding-top: 0.55rem;
 }
 .cave-edit-card__title {
   min-width: 0;

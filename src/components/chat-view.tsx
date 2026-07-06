@@ -111,7 +111,7 @@ import { toolArgDetail, toolArgSummary } from "@/lib/tool-arg-summary";
 import { toolVisual } from "@/lib/tool-visual";
 import { toolReadableFields, prettyToolOutput, type ReadableField } from "@/lib/tool-readable";
 import { useShowThinking } from "@/lib/reasoning-visibility";
-import { toolInputAsDiff, toolTargetFile } from "@/lib/tool-input-diff";
+import { toolInputAsDiff, toolTargetFile, toolTargetPath } from "@/lib/tool-input-diff";
 import { diffStat } from "@/lib/tool-edit-stat";
 import { findMatchingTurnIds } from "@/lib/transcript-find";
 import { isSyntheticLocalModel, type ChatModelState } from "@/lib/chat-model-state";
@@ -5607,7 +5607,7 @@ function TurnRowImpl({
             {!turn.pending && turn.tools?.length
               ? (() => {
                   const isEditCard = (t: ToolEvent) =>
-                    toolInputAsDiff(t.name, t.input) != null && toolTargetFile(t.name, t.input) != null;
+                    toolInputAsDiff(t.name, t.input) != null;
                   const editCards = turn.tools.filter(isEditCard);
                   const otherTools = turn.tools.filter((t) => !isEditCard(t));
                   return (
@@ -5862,7 +5862,7 @@ function EditCardActions({ targetFile }: { targetFile: string }) {
   };
 
   return (
-    <span className="cave-edit-card__actions">
+    <span className="cave-edit-card__actions" onClick={(e) => e.stopPropagation()}>
       {err ? <span className="cave-edit-card__error" title={err}>{err}</span> : null}
       <button type="button" className="cave-edit-card__review focus-ring" onClick={review}>
         Review
@@ -5904,6 +5904,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   // structured before/after diff instead of the raw JSON payload; null for
   // every other tool (or unparseable input) falls back to the plain block.
   const inputDiff = toolInputAsDiff(tool.name, tool.input);
+  const targetPath = toolTargetPath(tool.name, tool.input);
   // Click-to-open: a file tool's target opens in the Code workspace preview.
   // Dispatched as an event; the comux pane (Code/Terminal) handles it, and the
   // workspace switches to Code mode first when neither is showing.
@@ -5924,25 +5925,48 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
   };
   const visual = toolVisual(tool.name);
   // Codex-style inline edit card: a mutation tool (Edit/Write/MultiEdit/
-  // NotebookEdit, i.e. `isEditTool`) with a known target file renders as a
-  // compact `[icon] Edited <basename>  +N −M  [Review]` row instead of the
-  // collapsed tool block. Review opens the comux diff via the same
-  // `cave:open-file-diff` event the default block dispatches.
-  if (isEditTool && targetFile) {
+  // NotebookEdit, i.e. `isEditTool`) stays visible in the transcript as a
+  // compact details summary, and expands to the structured code diff. Review
+  // opens the comux diff when the input carries an absolute target path.
+  if (isEditTool) {
     const stat = diffStat(inputDiff ?? "");
-    const base = targetFile.split("/").pop() || targetFile;
+    const displayPath = targetPath ?? (argSummary || tool.name);
+    const base = displayPath.split("/").pop() || displayPath;
     return (
-      <div className="cave-edit-card">
-        <Icon name="ph:pencil-simple" width={16} className="cave-edit-card__icon" aria-hidden />
-        <span className="cave-edit-card__body">
-          <span className="cave-edit-card__title">Edited {base}</span>
-          <span className="cave-edit-card__stat">
-            <span className="cave-edit-card__ins">+{stat.insertions}</span>{" "}
-            <span className="cave-edit-card__del">−{stat.deletions}</span>
+      <details className="cave-tool-block cave-edit-card" data-default-collapsed="true" data-tool-category={visual.category}>
+        <summary className="cave-edit-card__summary">
+          <Icon name="ph:pencil-simple" width={16} className="cave-edit-card__icon" aria-hidden />
+          <span className="cave-edit-card__body">
+            <span className="cave-edit-card__title">Edited {base}</span>
+            <span className="cave-edit-card__stat">
+              <span className="cave-edit-card__ins">+{stat.insertions}</span>{" "}
+              <span className="cave-edit-card__del">−{stat.deletions}</span>
+            </span>
           </span>
-        </span>
-        <EditCardActions targetFile={targetFile} />
-      </div>
+          <span className={[
+            "rounded px-1.5 py-0.5 font-mono text-[10px]",
+            tool.status === "error"
+              ? "bg-[color-mix(in_oklch,var(--color-danger)_20%,transparent)] text-[var(--color-danger)]"
+              : tool.status === "running"
+                ? "bg-[color-mix(in_oklch,var(--color-warning)_20%,transparent)] text-[var(--color-warning)]"
+                : "bg-[color-mix(in_oklch,var(--color-success)_18%,transparent)] text-[var(--color-success)]",
+          ].join(" ")}>
+            {tool.status}
+          </span>
+          <DurationText durationMs={tool.durationMs} />
+          {targetFile ? <EditCardActions targetFile={targetFile} /> : null}
+        </summary>
+        <div className="cave-tool-io mt-2">
+          <div className="cave-tool-io-label">Code changes</div>
+          <SyntaxBlock text={inputDiff} lang="diff" />
+        </div>
+        {tool.output ? (
+          <div className="cave-tool-io mt-2">
+            <div className="cave-tool-io-label">Output</div>
+            <SyntaxBlock text={prettyToolOutput(tool.output)} />
+          </div>
+        ) : null}
+      </details>
     );
   }
   return (

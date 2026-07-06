@@ -175,6 +175,11 @@ assert.match(
 );
 assert.match(
   turnRow,
+  /const isEditCard = \(t: ToolEvent\) =>\s*toolInputAsDiff\(t\.name, t\.input\) != null;/,
+  "any structured file mutation diff stays visible inline, even when the tool input only has a relative path",
+);
+assert.match(
+  turnRow,
   /otherTools\.length \? <ToolGroup tools=\{otherTools\}/,
   "non-edit tool activity still collapses into the designated ToolGroup",
 );
@@ -1011,11 +1016,18 @@ assert.ok(
 );
 
 // Codex inline file-edit card: Edit/Write/MultiEdit/NotebookEdit tool calls
-// render as a compact `Edited <file>  +N −M  Review` card in the transcript.
+// render as a visible details card in the transcript. The collapsed summary
+// shows when/status + what file changed; expanding the same card shows the
+// actual diff, matching the Bash/tool-use disclosure pattern.
 assert.match(source, /cave-edit-card/, "mutation tools render as an inline Codex edit card");
 assert.match(source, /diffStat/, "edit card derives a +/- stat");
 assert.match(source, /Review/, "edit card has a Review action");
 assert.match(globalsSrc, /\.cave-edit-card/, "edit card styling exists");
+assert.match(
+  source,
+  /if \(isEditTool\) \{[\s\S]*<details className="cave-tool-block cave-edit-card"[\s\S]*Edited \{base\}[\s\S]*<DurationText durationMs=\{tool\.durationMs\} \/>[\s\S]*Code changes[\s\S]*<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*<\/details>/,
+  "edit cards should use the same expandable tool details pattern and include the code diff in chat",
+);
 
 // Inline "Undo" reverts the edited file to its last committed state via the
 // changes revert API, resolving the repo-relative path through a context, and
