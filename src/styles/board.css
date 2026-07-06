@@ -639,28 +639,8 @@
   align-items:center;
   gap:6px;
 }
-.gh-compact-group {
-  display:flex;
-  align-items:center;
-  gap:2px;
-}
-.gh-compact-group-button {
-  display:inline-flex;
-  align-items:center;
-  height:var(--gh-control-h);
-  border-radius:6px;
-  padding:0 8px;
-  color:var(--text-muted);
-  font-size:11px;
-  line-height:1;
-  transition:background-color .12s,color .12s;
-}
-.gh-compact-group-button:hover { color:var(--text-secondary); background:var(--bg-hover); }
-.gh-compact-group-button.is-active {
-  color:var(--text-primary);
-  background:var(--bg-raised);
-  font-weight:600;
-}
+/* .gh-compact-group / .gh-select-sep retired — grouping moved into the
+   header overflow menu (§8). */
 .gh-compact-actions {
   display:flex;
   align-items:center;
@@ -743,7 +723,6 @@
 .gh-select:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text-primary); background-color:var(--bg-hover); }
 .gh-select:focus-visible { outline:none; border-color:var(--accent-presence); }
 .gh-select:disabled { opacity:.45; cursor:not-allowed; }
-.gh-select-sep { width:1px; height:calc(var(--gh-control-h) - 8px); background:var(--border-hairline); }
 
 /* Free-text search box for the GitHub activity list. */
 .gh-search { display:inline-flex; align-items:center; gap:5px; height:var(--gh-control-h); max-width:200px; padding:0 6px; border:1px solid var(--border-hairline); border-radius:var(--radius-control); background-color:var(--bg-base); transition:border-color .12s; }
@@ -764,6 +743,11 @@
 .gh-group-count { display:inline-flex; align-items:center; min-width:16px; height:15px; padding:0 5px; border-radius:9999px; background:var(--bg-base); color:var(--text-muted); font-size:9.5px; font-weight:600; }
 
 .gh-actions { display:inline-flex; align-items:center; gap:4px; justify-content:flex-end; }
+/* Reveal exceptions (§8 — state never hides): the selected row keeps its
+   actions visible, and a row whose action errored must keep the error badge
+   on screen. */
+.gh-row.is-selected .gh-actions.reveal-on-hover,
+.gh-actions.reveal-on-hover:has(.gh-action-error) { opacity:1; }
 .gh-action-wrap { position:relative; display:inline-flex; }
 .gh-action-error { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; margin-left:4px; border-radius:50%; background:var(--color-danger); color:#fff; font-size:10px; font-weight:700; }
 .gh-action-popover { position:absolute; top:calc(100% + 4px); right:0; z-index:60; min-width:220px; padding:8px; border:1px solid var(--border-hairline); border-radius:10px; background:var(--bg-elevated); box-shadow:0 12px 30px rgba(0,0,0,.18); }
