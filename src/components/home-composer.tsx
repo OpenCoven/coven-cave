@@ -27,7 +27,6 @@ import {
   type SkillOption,
 } from "@/lib/slash-skill";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
-import type { ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
@@ -39,13 +38,14 @@ import { ProjectPicker } from "@/components/project-picker";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
+import { catalogForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeContinueColumn } from "@/components/home/home-continue-column";
 import { HomeNewsColumn } from "@/components/home/home-news-column";
 import { HomeSuggestions } from "@/components/home/home-suggestions";
 import { HomeSelect, type HomeSelectGroup } from "@/components/home/home-select";
 import { HomeSlashMenu } from "@/components/home/home-slash-menu";
+import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
@@ -202,7 +202,8 @@ export function HomeComposer({
     () => new Map(resolvedFamiliars.map((familiar) => [familiar.id, familiar])),
     [resolvedFamiliars],
   );
-  const [modelState, setModelState] = useState<ChatModelState | null>(null);
+  const { modelState, selectModel: handleSelectModel, selectRuntime: handleSelectRuntime } =
+    useHomeModelState(selectedFamiliarId);
   const { projects, createProject } = useProjects({ familiarId: selectedFamiliarId || null });
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
@@ -275,109 +276,6 @@ export function HomeComposer({
     if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) return;
     setSelectedProjectId(projects[0]?.id ?? "");
   }, [projects, selectedProjectId]);
-
-  // Show the selected familiar's effective model on the home composer. No session
-  // exists here, so GET keys on familiarId only. The `cancelled` flag drops any
-  // out-of-order response when the selection changes mid-flight.
-  useEffect(() => {
-    if (!selectedFamiliarId) {
-      setModelState(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/chat/model-state?familiarId=${encodeURIComponent(selectedFamiliarId)}`,
-          { cache: "no-store" },
-        );
-        const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
-        if (cancelled) return;
-        setModelState(json.ok && json.state ? json.state : null);
-      } catch {
-        if (!cancelled) setModelState(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedFamiliarId]);
-
-  // A pick at home is sticky per familiar: PATCH familiar-default (the in-chat
-  // picker's no-session path). The new chat inherits it at send time.
-  const handleSelectModel = useCallback(
-    (modelId: string) => {
-      if (!selectedFamiliarId) return;
-      void (async () => {
-        try {
-          const res = await fetch("/api/chat/model-state", {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              familiarId: selectedFamiliarId,
-              model: modelId,
-              scope: "familiar-default",
-            }),
-          });
-          const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
-          if (json.ok && json.state) setModelState(json.state);
-        } catch {
-          /* keep prior state; the effect refetches when the familiar changes */
-        }
-      })();
-    },
-    [selectedFamiliarId],
-  );
-
-  const refetchModelState = useCallback(() => {
-    if (!selectedFamiliarId) return;
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/chat/model-state?familiarId=${encodeURIComponent(selectedFamiliarId)}`,
-          { cache: "no-store" },
-        );
-        const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
-        if (json.ok && json.state) setModelState(json.state);
-      } catch {
-        /* keep the optimistic value */
-      }
-    })();
-  }, [selectedFamiliarId]);
-
-  const handleSelectRuntime = useCallback(
-    (runtime: string, selectedModel?: string) => {
-      if (!selectedFamiliarId) return;
-      const nextModel = selectedModel || defaultModelForRuntime(runtime);
-      setModelState((current) => ({
-        familiarId: selectedFamiliarId,
-        runtime: current?.runtime ?? null,
-        harness: runtime,
-        effectiveModel: nextModel,
-        source: "familiar-default",
-        applicationState: "saved",
-        reason: "Selected from the home composer.",
-      }));
-      void (async () => {
-        try {
-          const res = await fetch("/api/config", {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              familiars: {
-                [selectedFamiliarId]: { harness: runtime, model: nextModel },
-              },
-            }),
-          });
-          const json = (await res.json().catch(() => ({ ok: false }))) as { ok?: boolean };
-          if (json.ok) refetchModelState();
-        } catch {
-          refetchModelState();
-        }
-      })();
-    },
-    [refetchModelState, selectedFamiliarId],
-  );
 
   // Mirror the chat composer's matching rule: surface only while the user is
   // still typing the command token (no whitespace yet).

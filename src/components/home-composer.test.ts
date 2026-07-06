@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
 const homeSelect = await readFile(new URL("./home/home-select.tsx", import.meta.url), "utf8");
+const modelStateHook = await readFile(new URL("./home/use-home-model-state.ts", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 const destinations = source.match(/const DESTINATIONS:[\s\S]*?\n\];/)?.[0] ?? "";
 const handleKeyDownBlock = source.match(/const handleKeyDown = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
@@ -114,9 +115,9 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  source,
+  modelStateHook,
   /body: JSON\.stringify\(\{[\s\S]*?\[selectedFamiliarId\]: \{ harness: runtime, model: nextModel \},[\s\S]*?\}\)/,
-  "HomeComposer should persist runtime and model together when the combined selector changes runtime",
+  "useHomeModelState should persist runtime and model together when the combined selector changes runtime",
 );
 
 assert.doesNotMatch(
@@ -407,15 +408,15 @@ assert.doesNotMatch(
 );
 
 assert.match(
-  source,
+  modelStateHook,
   /\/api\/chat\/model-state\?familiarId=/,
-  "HomeComposer still GETs model-state (for the current model + harness)",
+  "useHomeModelState still GETs model-state (for the current model + harness)",
 );
 
 assert.match(
-  source,
+  modelStateHook,
   /scope: "familiar-default"/,
-  "HomeComposer persists a /model pick as the familiar default",
+  "useHomeModelState persists a /model pick as the familiar default",
 );
 
 assert.match(
@@ -431,9 +432,9 @@ assert.match(
 );
 
 assert.doesNotMatch(
-  source,
+  modelStateHook,
   /scope: "session"/,
-  "HomeComposer must not use session scope — there is no session at home",
+  "useHomeModelState must not use session scope — there is no session at home",
 );
 
 // The home prompt draft survives a reload: text initialises from localStorage,
