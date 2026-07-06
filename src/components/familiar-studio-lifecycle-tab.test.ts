@@ -24,4 +24,9 @@ assert.match(source, /canMoveDown/, "Rows expose canMoveDown prop for disabled-e
 assert.match(source, /ph:arrow-up-bold/, "Move-up icon is wired");
 assert.match(source, /ph:arrow-down-bold/, "Move-down icon is wired");
 
+// The roster order here is distinct from the avatar-strip pin order in
+// Appearance — the hint cross-links so users find both (2026-07-06).
+assert.match(source, /avatar strip's pinned order/, "lifecycle hint disambiguates roster order from pin order");
+assert.match(source, /window\.location\.hash = "appearance"/, "lifecycle hint links to Appearance");
+
 console.log("familiar-studio-lifecycle-tab.test.ts: ok");

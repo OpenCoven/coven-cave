@@ -93,4 +93,13 @@ assert.match(
   "Brain workspace should collapse to one column on narrow surfaces",
 );
 
+// ── Reflection: autoSelfReport toggle (2026-07-06) ───────────────────────────
+// The config field was wired end-to-end (GET /api/familiars → chat-view's
+// session-close self-report) but had no UI. It saves through the tab's shared
+// /api/config patch helper; `null` deletes the key (resolved default: false).
+assert.match(source, /Auto self-report/, "Brain tab exposes the auto self-report toggle");
+assert.match(source, /role="switch"[\s\S]{0,80}aria-checked=\{draftAutoSelfReport\}/, "the toggle is a proper switch");
+assert.match(source, /autoSelfReport: next \? true : null/, "off deletes the config key instead of writing false");
+assert.match(source, /if \("autoSelfReport" in patch\) setDraftAutoSelfReport/, "failed saves revert the toggle draft");
+
 console.log("familiar-studio-brain-tab.test.ts: ok");

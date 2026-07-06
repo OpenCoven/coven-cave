@@ -1190,6 +1190,10 @@ function AppearanceSection() {
   const [activeTheme, setActiveTheme] = useState<ActiveTheme>("coven");
   const [mode, setMode] = useState<ModePref>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
+  // Below the shell's FamiliarStudioProvider — lets the pin-order hint open
+  // Familiars directly on the Lifecycle tab (the app-wide roster order lives
+  // there, distinct from the avatar-strip pin order set here).
+  const { setActiveTab: setStudioTab } = useFamiliarStudio();
 
   // Mirror the active theme + resolved tokens to the daemon on change (and mount)
   // so cross-device clients can read it. Best-effort; failures are swallowed.
@@ -1576,6 +1580,18 @@ function AppearanceSection() {
                 </div>
                 <div className="text-[11px] text-[var(--text-muted)]">
                   Drag to set the order pinned familiars appear in the avatar strip.
+                  The app-wide roster order is separate —{" "}
+                  <button
+                    type="button"
+                    className="focus-ring underline underline-offset-2 hover:text-[var(--text-primary)]"
+                    onClick={() => {
+                      setStudioTab("lifecycle");
+                      window.location.hash = "familiars";
+                    }}
+                  >
+                    set it in Familiars › Lifecycle
+                  </button>
+                  .
                 </div>
               </div>
               <FamiliarPinOrder />
