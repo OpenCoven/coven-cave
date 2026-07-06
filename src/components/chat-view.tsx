@@ -17,11 +17,9 @@ import { useCopy } from "@/lib/use-copy";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
-import { useFamiliarImages } from "@/lib/cave-familiar-images";
-import { useFamiliarOverrides } from "@/lib/cave-familiar-overrides";
-import { resolveFamiliar } from "@/lib/familiar-resolve";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { FamiliarIcon } from "@/components/familiar-icon";
+import { ChatEmptyState } from "@/components/chat-empty-state";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
@@ -255,6 +253,9 @@ type Props = {
   openFindQuery?: string;
   openFindNonce?: number;
   daemonRunning?: boolean;
+  /** Workspace-owned session list; the starting page's "Continue" row reads it
+   *  so no extra fetch rides on every new chat. */
+  sessions?: SessionRow[];
   onSessionStarted?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
   onBack?: () => void;
@@ -769,110 +770,9 @@ function splitReasoning(text: string): { visible: string; reasoning: string } {
 }
 
 // ── ChatEmptyState ────────────────────────────────────────────────────────────
-// Shown when a chat session has no turns yet. Gives the user clear affordance
-// to start a conversation rather than staring at a blank pane.
-
-const STARTER_PROMPTS = [
-  "Review my recent changes",
-  "Plan a feature and break it into board cards",
-  "Summarise what I worked on today",
-];
-
-function ChatEmptyState({
-  familiar,
-  onPrompt,
-  projectId,
-  onProjectChange,
-  projects,
-  createProject,
-  fileMentions = false,
-}: {
-  familiar: Familiar;
-  onPrompt?: (text: string) => void;
-  /** Selected predetermined project for the chat runtime root. */
-  projectId?: string | null;
-  /** Updates the project used for the next send. */
-  onProjectChange?: (value: string) => void;
-  projects: CaveProject[];
-  /** From useProjects() — enables the picker's "Add project…" row. */
-  createProject?: (name: string, root: string) => Promise<CaveProject | null>;
-  /** True when the chat knows a project root, so `@` opens the file picker (CHAT-D1-04). */
-  fileMentions?: boolean;
-}) {
-  const project =
-    projectId === NO_PROJECT_ID
-      ? null
-      : (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
-  // App-contextual starters; the last is project-aware when a root is known.
-  const prompts = [
-    ...STARTER_PROMPTS,
-    project ? `Start a task in ${project.name}` : "Start a focused task",
-  ];
-
-  return (
-    <div className="cave-chat-empty select-none">
-      <div className="cave-chat-empty-shell">
-        <div className="cave-chat-empty-familiar">
-          <div className="cave-chat-empty-mark">
-            <FamiliarIcon familiar={familiar} size="lg" />
-          </div>
-          <div className="cave-chat-empty-familiar-copy">
-            <h2 className="cave-chat-empty-title">
-              {familiar.display_name}
-            </h2>
-            <p className="cave-chat-empty-meta">
-              <span>{familiar.harness}</span>
-              {fileMentions ? <span>project files ready</span> : null}
-            </p>
-          </div>
-        </div>
-
-        {onProjectChange && (
-          <div className="cave-chat-empty-project">
-            <span className="cave-chat-empty-project-head">
-              <Icon name="ph:folder-open" width={14} aria-hidden />
-              <span className="cave-chat-empty-project-label">Project</span>
-              <ProjectPicker
-                projects={projects}
-                value={projectId ?? null}
-                onChange={onProjectChange}
-                allowNoProject
-                familiarId={familiar.id}
-                createProject={createProject}
-                ariaLabel="Project for this chat"
-              />
-            </span>
-            {project ? (
-              <span className="cave-chat-empty-project-root">
-                {project.root}
-              </span>
-            ) : null}
-          </div>
-        )}
-
-        {onPrompt && (
-          <div className="cave-chat-empty-prompts" aria-label="Starter prompts">
-            {prompts.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => onPrompt(p)}
-                className="cave-chat-empty-prompt"
-              >
-                <span>{p}</span>
-                <Icon name="ph:arrow-right-bold" width={13} aria-hidden />
-              </button>
-            ))}
-          </div>
-        )}
-
-        <p className="cave-chat-empty-hint">
-          Ready for the next thread.
-        </p>
-      </div>
-    </div>
-  );
-}
+// The familiar's task-aware starting page lives in chat-empty-state.tsx; this
+// view arms/executes its "Start a task" card-follows-chat flow (see
+// handleEvent's "session" case).
 
 /** Codex/ChatGPT-style overflow menu. Collapses the session's secondary
  *  controls — project switch, voice call, debug — into a single kebab so the
@@ -2070,7 +1970,7 @@ async function chatBridgeFailureMessage(res: Response): Promise<string> {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, sessions, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2201,6 +2101,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
+  const { announce } = useAnnouncer();
+  // "Start a task" (card-follows-chat): the starting page arms this, and the
+  // stream's "session" event — where the session id is born — creates the
+  // linked board card from the first prompt. State renders the armed chip; the
+  // ref is what handleEvent reads mid-stream (one-shot, cleared on fire).
+  const [taskArmed, setTaskArmed] = useState(false);
+  const taskArmedRef = useRef(false);
+  const armTask = () => {
+    taskArmedRef.current = true;
+    setTaskArmed(true);
+    inputRef.current?.focus();
+  };
+  const disarmTask = () => {
+    taskArmedRef.current = false;
+    setTaskArmed(false);
+  };
   // In-chat "final nudge" — surfaces when the linked task hits `completed`
   // lifecycle. Dismiss is persisted per-session in localStorage so the banner
   // doesn't reappear on every reload after the user waved it off.
@@ -3038,6 +2954,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setBusy(false);
     abortRef.current = null;
     setLinkedContext(null);
+    // An armed "Start a task" belongs to the thread it was armed on.
+    taskArmedRef.current = false;
+    setTaskArmed(false);
     setFlowTranscriptFallback(null);
     if (!sessionId) {
       setTurns([]);
@@ -3920,6 +3839,49 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     inputRef.current?.focus();
   };
 
+  // "Start a task" tail end: the first send's "session" event hands over the
+  // session id, and the card follows the chat. Fire-and-forget — a failed card
+  // create must never disturb the running stream.
+  const createLinkedTaskCard = async (forSessionId: string, promptText: string) => {
+    const firstLine = promptText.split("\n")[0]?.trim() ?? "";
+    const title = (firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine) || "New task";
+    try {
+      const res = await fetch("/api/board", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title,
+          familiarId: familiar.id,
+          projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
+          cwd: activeProjectRoot || null,
+          sessionId: forSessionId,
+          status: "running",
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok || !json.card) throw new Error(json.error ?? "failed to create task card");
+      const card = json.card as Card;
+      const task = {
+        id: card.id,
+        title: card.title,
+        status: card.status,
+        priority: card.priority,
+        lifecycle: card.lifecycle,
+        labels: card.labels,
+        cwd: card.cwd,
+        projectId: card.projectId ?? null,
+        notes: card.notes?.trim() || null,
+      };
+      // Optimistic: the Task chip appears now; the conversation reload keeps it.
+      setLinkedContext((prev) =>
+        prev?.task ? prev : { task, tasks: [task, ...(prev?.tasks ?? [])], github: prev?.github ?? [] },
+      );
+      announce("Task card created and linked to this chat.");
+    } catch {
+      announce("Could not create the task card — the chat continues unlinked.", "assertive");
+    }
+  };
+
   const handleEvent = (
     ev: StreamEvent,
     assistantId: string,
@@ -3934,6 +3896,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           currentSessionRef.current = ev.sessionId;
           setHistoryState("loaded");
           onSessionStarted?.(ev.sessionId);
+        }
+        if (taskArmedRef.current) {
+          // One-shot: clear before the async create so a second session event
+          // (or a retried send) can't double-create the card.
+          taskArmedRef.current = false;
+          setTaskArmed(false);
+          void createLinkedTaskCard(ev.sessionId, request.text);
         }
         persistLiveTurns(turnsRef.current, assistantId, liveGeneration.controller, liveGeneration.sessionId);
         return;
@@ -4613,6 +4582,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 projects={projects}
                 createProject={createProject}
                 fileMentions={Boolean(mentionRoot)}
+                sessionId={sessionId}
+                sessions={sessions}
+                linkedContext={linkedContext}
+                daemonRunning={daemonRunning}
+                modelId={
+                  modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+                    ? modelState.effectiveModel
+                    : familiar.model ?? null
+                }
+                taskArmed={taskArmed}
+                onArmTask={armTask}
+                onDisarmTask={disarmTask}
               />
             )
           ) : null}
@@ -5252,19 +5233,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 });
 
 // ── TurnRow ────────────────────────────────────────────────────────────────────
-
-function FamiliarIcon({ familiar, size = "sm" }: { familiar: Familiar; size?: "sm" | "md" | "lg" | "xl" }) {
-  const overrides = useGlyphOverrides();
-  const images = useFamiliarImages();
-  const familiarOverrides = useFamiliarOverrides();
-  const resolved = resolveFamiliar(familiar, {
-    override: familiarOverrides[familiar.id],
-    image: images[familiar.id],
-    glyphOverride: overrides[familiar.id],
-    archived: false,
-  });
-  return <FamiliarAvatar familiar={resolved} size={size} />;
-}
 
 // Split a prose run into ordered segments, replacing every complete renderable
 // HTML/React fenced block with an inline ChatArtifactViewer. Text on either
