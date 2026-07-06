@@ -2339,10 +2339,20 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
           )}
 
           {activity?.authed === false && (
-            <span className="gh-compact-auth gh-compact-auth--public">public API</span>
+            <span
+              className="gh-compact-auth gh-compact-auth--public"
+              title="Public API — add a PAT for private repos + review requests"
+            >
+              public API
+            </span>
           )}
           {activity?.authed === true && (
-            <span className="gh-compact-auth gh-compact-auth--authed">authenticated</span>
+            <span
+              className="gh-compact-auth gh-compact-auth--authed"
+              title="Authenticated — private repos included"
+            >
+              authenticated
+            </span>
           )}
 
           {activity?.rateLimit && (
