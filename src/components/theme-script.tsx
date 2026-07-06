@@ -27,18 +27,18 @@
  * adding new fonts, changing fallback chains, or editing pair choices.
  */
 
-import Script from "next/script";
-
 /**
  * External boot script that runs synchronously before hydration.
  * Must be placed in <head>.
+ *
+ * Rendered as a plain <script src> from the server-component RootLayout: it
+ * lands in the initial SSR <head> and executes render-blocking, before first
+ * paint (flash-free). It deliberately does NOT use `next/script` — that is a
+ * client component, and routing a boot <script> through it makes React 19 /
+ * Next 16 log "Encountered a script tag while rendering React component —
+ * scripts inside React components are never executed when rendering on the
+ * client." A server-rendered <script> has no client-render path, so no warning.
  */
 export function ThemeScript() {
-  return (
-    <Script
-      id="theme-init"
-      src="/scripts/theme-init.js"
-      strategy="beforeInteractive"
-    />
-  );
+  return <script id="theme-init" src="/scripts/theme-init.js" />;
 }

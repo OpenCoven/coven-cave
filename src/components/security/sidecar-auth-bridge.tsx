@@ -1,6 +1,4 @@
 // Exported for the behavioral test; injected verbatim as an inline <script>.
-import Script from "next/script";
-
 export const SIDECAR_AUTH_BRIDGE = `
 (() => {
   const tokenParam = "covenCaveToken";
@@ -82,10 +80,15 @@ export function SidecarAuthBridge() {
   const authRequirementScript = `window.__COVEN_CAVE_SIDECAR_AUTH_REQUIRED__ = ${JSON.stringify(
     sidecarAuthRequired(),
   )};`;
+  // Plain server-rendered <script>, NOT next/script: that is a client component
+  // and routing a boot <script> through it makes React 19 / Next 16 log "scripts
+  // inside React components are never executed when rendering on the client." A
+  // server-rendered inline <script> executes at HTML parse — before hydration,
+  // so window.fetch is patched before any app code runs — and has no
+  // client-render path, so no warning.
   return (
-    <Script
+    <script
       id="sidecar-auth-bridge"
-      strategy="beforeInteractive"
       dangerouslySetInnerHTML={{
         __html: `${authRequirementScript}\n${SIDECAR_AUTH_BRIDGE}`,
       }}

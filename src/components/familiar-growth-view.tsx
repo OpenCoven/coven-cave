@@ -205,10 +205,12 @@ export function FamiliarGrowthView({
           >
             <Icon name="ph:arrows-clockwise-bold" aria-hidden />
           </button>
-          <a className="retro-btn" href={`/dashboard/familiars/${encodeURIComponent(selected.familiar.id)}/analytics`}>
-            <Icon name="ph:chart-bar-bold" aria-hidden />
-            Analytics
-          </a>
+          {selected ? (
+            <a className="retro-btn" href={`/dashboard/familiars/${encodeURIComponent(selected.familiar.id)}/analytics`}>
+              <Icon name="ph:chart-bar-bold" aria-hidden />
+              Analytics
+            </a>
+          ) : null}
         </div>
       </header>
 

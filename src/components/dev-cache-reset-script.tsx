@@ -1,5 +1,3 @@
-import Script from "next/script";
-
 const DEV_CACHE_RESET_SCRIPT = `
 (function () {
   try {
@@ -51,10 +49,14 @@ const DEV_CACHE_RESET_SCRIPT = `
 
 export function DevCacheResetScript() {
   if (process.env.NODE_ENV !== "development") return null;
+  // Plain server-rendered <script>, NOT next/script: that is a client component
+  // and routing a boot <script> through it makes React 19 / Next 16 log
+  // "scripts inside React components are never executed when rendering on the
+  // client." A server-rendered inline <script> executes at HTML parse (before
+  // hydration) and has no client-render path, so no warning.
   return (
-    <Script
+    <script
       id="dev-cache-reset"
-      strategy="beforeInteractive"
       // biome-ignore lint/security/noDangerouslySetInnerHtml: development-only stale SW cleanup before hydration
       dangerouslySetInnerHTML={{ __html: DEV_CACHE_RESET_SCRIPT }}
     />
