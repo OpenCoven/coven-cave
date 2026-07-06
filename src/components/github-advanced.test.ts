@@ -45,6 +45,13 @@ assert.match(source, /fetch\(`\/api\/github\/user\?login=/, "the card fetches th
 assert.match(source, /useFocusTrap\(true, cardRef/, "the profile card traps focus and closes on Escape");
 assert.match(source, /aria-modal="true"[\s\S]{0,80}aria-label=\{`GitHub profile for/, "the profile card is a labelled modal dialog");
 assert.match(boardCss, /\.gh-profile-card \{[\s\S]*?position:fixed;/, "the profile card is a fixed floating panel");
+// The card must portal to <body> so its fixed positioning escapes the
+// workspace's transformed content area (otherwise it lands offset by the nav).
+assert.match(source, /import \{ createPortal \} from "react-dom"/, "the profile card uses createPortal");
+assert.match(source, /createPortal\(\s*<UserProfileCard[\s\S]{0,120}document\.body/, "the profile card portals to document.body");
+// github-view carries its own stylesheet so the surface is styled even when it
+// loads before the Board surface (both are code-split; board.css lived only in board-view).
+assert.match(source, /import "@\/styles\/board\.css"/, "github-view imports board.css directly");
 assert.match(boardCss, /\.gh-person--button/, "the clickable person chip has a button affordance style");
 
 // ── Advanced conversation (reviews + reactions) ───────────────────────────────

@@ -1,5 +1,10 @@
 "use client";
 
+// The GitHub surface's styles (every `gh-*` class) live in board.css. Import it
+// here so the surface is styled even when it loads before the Board surface —
+// both views are code-split, and board.css was previously only pulled in by
+// board-view, so opening GitHub first left this surface unstyled.
+import "@/styles/board.css";
 import {
   createContext,
   Fragment,
@@ -9,6 +14,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { Icon, type IconName } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -937,9 +943,14 @@ function GitHubProfileProvider({ children }: { children: React.ReactNode }) {
   return (
     <ProfileViewerContext.Provider value={viewer}>
       {children}
-      {open && (
-        <UserProfileCard login={open.login} anchor={open.anchor} onClose={() => setOpen(null)} />
-      )}
+      {/* Portal to <body> so the fixed-position card escapes the workspace's
+          transformed content area — otherwise `position:fixed` resolves against
+          that transformed ancestor and the card lands offset by the nav width. */}
+      {open && typeof document !== "undefined" &&
+        createPortal(
+          <UserProfileCard login={open.login} anchor={open.anchor} onClose={() => setOpen(null)} />,
+          document.body,
+        )}
     </ProfileViewerContext.Provider>
   );
 }
