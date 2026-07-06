@@ -2550,6 +2550,42 @@ details[open] > .cave-tool-summary::before {
   opacity: 0.45;
 }
 
+/* Ultra-minimal header (pointer devices): at rest only the ⋮ kebab and the
+ * find affordance show; the quick actions (thinking, debug, delete, reflect)
+ * and the lone "link a task" + reveal on header hover or keyboard focus. They
+ * keep their layout slot (no reflow on reveal). Touch devices — which have no
+ * hover — skip this and show everything. The kebab still holds every action,
+ * so nothing becomes hover-only. */
+@media (hover: hover) and (pointer: fine) {
+  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find),
+  .cave-chat-linked-context .cave-chat-linked-chip--link-task {
+    opacity: 0;
+    transform: translateX(4px);
+    pointer-events: none;
+    transition:
+      opacity var(--duration-fast) var(--ease-standard),
+      transform var(--duration-fast) var(--ease-standard);
+  }
+
+  .cave-chat-linear-header:hover .cave-chat-session-actions > .focus-ring,
+  .cave-chat-session-actions:focus-within > .focus-ring,
+  .cave-chat-session-actions:has([aria-expanded="true"]) > .focus-ring,
+  .cave-chat-linear-header:hover .cave-chat-linked-context .cave-chat-linked-chip--link-task,
+  .cave-chat-linked-context:focus-within .cave-chat-linked-chip--link-task {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cave-chat-session-actions > .focus-ring:not(.cave-chat-actions-kebab):not(.cave-chat-find),
+  .cave-chat-linked-context .cave-chat-linked-chip--link-task {
+    transition: none;
+    transform: none;
+  }
+}
+
 .voice-call-overlay {
   position: fixed;
   inset: 0;
