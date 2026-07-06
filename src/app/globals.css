@@ -12277,11 +12277,17 @@ details[open] > .cave-edit-card__summary::before {
 @media (prefers-reduced-motion: reduce) { .skill-browser__skeleton span { animation: none; } }
 
 @media (max-width: 900px) {
-  /* Narrow panes: the rail becomes a horizontal strip. It is the ONLY
-     category control — hiding it stranded 681-900px panes with whatever
+  /* Narrow panes: the rail becomes a horizontal strip spanning the top and
+     the browser re-lays as a grid (strip / list · detail). The rail is the
+     ONLY category control — hiding it stranded 681-900px panes with whatever
      category was last picked and no way to change it. */
+  .skill-browser {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
   .skill-browser__rail {
-    flex: 0 0 auto;
+    grid-column: 1 / -1;
     flex-direction: row;
     gap: 4px;
     overflow-x: auto;
@@ -12298,10 +12304,13 @@ details[open] > .cave-edit-card__summary::before {
   .skill-browser__cat-label { flex: 0 0 auto; }
 }
 @media (max-width: 680px) {
-  .skill-browser { flex-direction: column; }
+  /* Single column: strip / list / detail (the ≤900px grid handles columns). */
+  .skill-browser {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1.2fr) minmax(0, 1fr);
+  }
+  .skill-browser__rail { grid-column: 1; }
   .skill-browser__list {
-    flex: 0 0 min(360px, 58%);
-    max-height: 58%;
     border-right: 0;
     border-bottom: 1px solid var(--border-hairline);
   }
