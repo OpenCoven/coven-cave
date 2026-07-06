@@ -49,6 +49,34 @@
 .cave-host-status--unknown { color: var(--text-muted); }
 .cave-host-status--unknown .cave-host-dot--inline { background: var(--text-muted); }
 
+/* Inline host picker — the radiogroup rendered inside the composer Options panel
+   (and the standalone chip's popover). Full-width rows so the status reads on the
+   trailing edge. */
+.cave-host-choices { display: flex; flex-direction: column; gap: 3px; }
+.cave-host-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.cave-host-choice:hover { background: var(--bg-raised); color: var(--text-primary); }
+.cave-host-choice.is-selected {
+  border-color: color-mix(in oklch, var(--accent-presence) 40%, transparent);
+  background: color-mix(in oklch, var(--accent-presence) 12%, transparent);
+  color: var(--text-primary);
+}
+.cave-host-choice--connect { color: var(--text-muted); }
+.cave-host-choice--connect:hover { color: var(--text-primary); }
+
 /* Connect-new-host dialog */
 .cave-connect-host { display: flex; flex-direction: column; gap: 12px; }
 .cave-connect-host__hint { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-muted); }

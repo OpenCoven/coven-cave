@@ -106,25 +106,25 @@ assert.match(
 
 assert.match(
   source,
-  /className="cave-composer-utility-row"[\s\S]*<ComposerHostChip value=\{composerHostValue\} disabled=\{busy\} onPick=\{setRuntimeHost\} \/>[\s\S]*className="cave-composer-settings-row" aria-label="Chat response controls"/,
-  "Composer should place Host with utility controls before the response-control row",
+  /className="cave-composer-utility-row"[\s\S]*<ComposerOptionsMenu[\s\S]*hostValue=\{composerHostValue\}/,
+  "Composer places the collapsed Options menu in the utility row (host lives inside it now)",
 );
 
 assert.match(
   source,
-  /className="cave-composer-settings-row" aria-label="Chat response controls">[\s\S]*label="Access"[\s\S]*label="Model"[\s\S]*label="Thinking"[\s\S]*label="Speed"/,
-  "Composer dropdown row should expose Access, Model, Thinking, and Speed in order",
+  /sections=\{\[[\s\S]*label: "Access"[\s\S]*label: "Model"[\s\S]*label: "Thinking"[\s\S]*label: "Speed"/,
+  "The Options menu exposes Access, Model, Thinking, and Speed sections in order",
 );
 
 // Model selection moved out of the composer UI into the /model slash command.
 assert.doesNotMatch(source, /ChatModelControl/, "the model picker is gone from the chat composer");
 assert.match(source, /command === "\/model"/, "the chat composer handles the /model command");
 
-assert.match(
-  source,
-  /className="cave-composer-select__value" aria-hidden[\s\S]*\{selected\}/,
-  "Composer select pills should render a separate visual value so the native select can own the whole hit target",
-);
+// Options render as inline radio pills — no nested StandardSelect popover in the panel.
+const optionsSource = readFileSync(new URL("./composer-options-menu.tsx", import.meta.url), "utf8");
+assert.match(optionsSource, /role="radio"/, "Options choices are radio pills");
+assert.match(optionsSource, /composer-options__choice/, "Options choices use the choice-pill class");
+assert.doesNotMatch(source, /StandardSelect/, "the composer no longer wraps controls in StandardSelect pills");
 
 assert.match(
   source,
@@ -146,14 +146,8 @@ assert.match(
 
 assert.match(
   styles,
-  /\.cave-composer-settings-row\s*\{[\s\S]*flex-wrap:\s*wrap[\s\S]*overflow-x:\s*visible/,
-  "Composer settings row should wrap controls instead of clipping or hiding available row width",
-);
-
-assert.match(
-  source,
-  /<StandardSelect<T>[\s\S]*className="cave-composer-select"[\s\S]*showCaret=\{false\}[\s\S]*renderValue=\{\(\) =>/,
-  "Composer control selects should delegate the full-pill hit target to StandardSelect",
+  /\.composer-options__choices\s*\{[\s\S]*flex-wrap:\s*wrap/,
+  "Options menu choices wrap instead of clipping when a control has many options",
 );
 
 console.log("chat-view-first-class.test.ts: ok");
