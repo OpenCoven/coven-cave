@@ -32,27 +32,35 @@ assert.match(
 );
 assert.match(
   shell,
-  /<div className="shell-top" data-tauri-drag-region=""(?: onPointerDown=\{onTitlebarPointerDown\})?>[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="">\{renderedTopBar\}<\/div>/,
+  /<div className="shell-top" data-tauri-drag-region="deep">[\s\S]*?\{navToggle\}[\s\S]*?<div className="shell-top__bar" data-tauri-drag-region="deep">\{renderedTopBar\}<\/div>/,
   "the top bar row leads with the nav toggle before the rendered top bar",
 );
+// `deep` (not the bare attribute) is load-bearing: Tauri drag.js only drags a
+// bare region on DIRECT presses on the attributed element, so empty chrome
+// inside .menu-bar/.top-bar children would short-circuit the composedPath walk
+// and never drag. `deep` covers the whole subtree while drag.js's clickable
+// check keeps buttons/inputs/focusable widgets working. The drag itself is an
+// ACL-gated IPC call — see capabilities/loopback-window-drag.json (the webview
+// is an external http://127.0.0.1 origin, a REMOTE ACL context, so it needs an
+// explicit remote-scoped grant; without it start_dragging is silently denied).
 assert.equal(
-  shell.match(/<div className="shell-top" data-tauri-drag-region=""(?: onPointerDown=\{onTitlebarPointerDown\})?>/g)?.length,
+  shell.match(/<div className="shell-top" data-tauri-drag-region="deep">/g)?.length,
   2,
-  "both shell top bars (placeholder + desktop) should expose the Tauri drag region on the titlebar container",
+  "both shell top bars (placeholder + desktop) should expose the deep Tauri drag region on the titlebar container",
+);
+assert.doesNotMatch(
+  shell,
+  /startDragging|onTitlebarPointerDown/,
+  "shell should not hand-roll a startDragging pointer handler — Tauri drag.js owns the drag (and double-click zoom) via the deep drag-region attributes",
 );
 assert.equal(
-  shell.match(/onPointerDown=\{onTitlebarPointerDown\}/g)?.length,
-  2,
-  "every shell-top wires the native startDragging handler so the window drags on external-URL webviews",
-);
-assert.equal(
-  shell.match(/<div className="shell-top__bar" data-tauri-drag-region="">/g)?.length,
+  shell.match(/<div className="shell-top__bar" data-tauri-drag-region="deep">/g)?.length,
   2,
   "both rendered top-bar wrappers should remain draggable when their empty chrome is clicked",
 );
 assert.match(
   shell,
-  /<div className="shell-titlebar-drag-lane" data-tauri-drag-region="" aria-hidden="true" \/>\s*\{navToggle\}/,
+  /<div className="shell-titlebar-drag-lane" data-tauri-drag-region="deep" aria-hidden="true" \/>\s*\{navToggle\}/,
   "the desktop top bar should expose a dedicated non-interactive drag lane before its controls",
 );
 assert.match(

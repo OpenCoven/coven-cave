@@ -74,7 +74,13 @@ export function TrayQuickChat() {
   return (
     <main className="min-h-screen bg-[var(--bg-base)] text-[var(--fg-primary)]">
       <section className="flex min-h-screen flex-col border border-[var(--border-hairline)] bg-[var(--bg-panel)]">
-        <header className="quick-chat-overlay__header">
+        {/* The tray window is created with decorations(false) (see lib.rs), so
+            without a drag region it cannot be moved at all. Tauri's injected
+            drag.js turns any empty-chrome press in this subtree into a native
+            window drag (`deep` semantics; the icon buttons still block it),
+            gated by capabilities/loopback-window-drag.json. Inert in plain
+            browsers. */}
+        <header className="quick-chat-overlay__header" data-tauri-drag-region="deep">
           <div className="flex min-w-0 items-center gap-2">
             {selectedFamiliar ? (
               <FamiliarMark familiar={selectedFamiliar} size="md" />

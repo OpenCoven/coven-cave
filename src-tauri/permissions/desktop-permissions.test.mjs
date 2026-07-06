@@ -9,6 +9,9 @@ const loopbackBrowserCapability = JSON.parse(
 const loopbackMainEventsCapability = JSON.parse(
   readFileSync(new URL("../capabilities/loopback-main-events.json", import.meta.url), "utf8"),
 );
+const loopbackWindowDragCapability = JSON.parse(
+  readFileSync(new URL("../capabilities/loopback-window-drag.json", import.meta.url), "utf8"),
+);
 const defaultPermissions = readFileSync(new URL("./default.toml", import.meta.url), "utf8");
 const commandPermissions = readFileSync(new URL("./pty.toml", import.meta.url), "utf8");
 const browserRust = readFileSync(new URL("../src/browser.rs", import.meta.url), "utf8");
@@ -16,6 +19,8 @@ const ptyRust = readFileSync(new URL("../src/pty.rs", import.meta.url), "utf8");
 const libRust = readFileSync(new URL("../src/lib.rs", import.meta.url), "utf8");
 const browserPane = readFileSync(new URL("../../src/components/browser-pane.tsx", import.meta.url), "utf8");
 const bottomTerminal = readFileSync(new URL("../../src/components/bottom-terminal.tsx", import.meta.url), "utf8");
+const shellTsx = readFileSync(new URL("../../src/components/shell.tsx", import.meta.url), "utf8");
+const trayQuickChat = readFileSync(new URL("../../src/components/tray-quick-chat.tsx", import.meta.url), "utf8");
 
 const requiredPermissionIds = [
   "allow-pty-start",
@@ -231,6 +236,63 @@ test("privileged PTY commands require the trusted main webview at runtime", () =
       `${command} must reject untrusted child webviews and localhost origins before handling PTY state`,
     );
   }
+});
+
+// The main webview loads from an external http://127.0.0.1 URL, which the
+// capability ACL treats as a REMOTE execution context — capabilities without a
+// matching remote.urls block (like default.json) do not apply there at all.
+// Titlebar drag / drag-region double-click therefore need this explicit
+// remote-scoped grant; without it Tauri's drag.js and any startDragging()
+// call are silently denied and the window can never be dragged (the CSS
+// app-region hint is equally inert on external URLs).
+test("loopback app webviews can drive native window drag for the seamless titlebar", () => {
+  assert.deepEqual(
+    loopbackWindowDragCapability.windows,
+    ["main", "quick-chat"],
+    "drag permissions cover the main shell and the decoration-less quick-chat tray window (which is otherwise unmovable)",
+  );
+  assert.deepEqual(
+    loopbackWindowDragCapability.platforms,
+    ["linux", "macOS", "windows"],
+    "window-drag permissions are desktop-only and must not leak into mobile Tauri builds",
+  );
+  for (const origin of [
+    "http://127.0.0.1:3000/",
+    "http://localhost:3000/",
+    "http://[::1]:3000/",
+    "http://127.0.0.1:64203/",
+    "http://localhost:64203/",
+    "http://[::1]:64203/",
+  ]) {
+    assert.ok(
+      capabilityAllowsOrigin(loopbackWindowDragCapability, origin),
+      `loopback origin ${origin} must be allowed to start a native window drag`,
+    );
+  }
+  assert.equal(
+    capabilityAllowsOrigin(loopbackWindowDragCapability, "http://example.com:64203/"),
+    false,
+    "remote non-loopback origins should stay denied",
+  );
+  assert.deepEqual(
+    loopbackWindowDragCapability.permissions,
+    ["core:window:allow-start-dragging", "core:window:allow-internal-toggle-maximize"],
+    "the drag capability grants exactly the drag + drag-region double-click commands and nothing else",
+  );
+
+  // The web side must actually mark the drag handles: `deep` covers empty
+  // chrome anywhere inside the titlebar subtree while drag.js's clickable
+  // check keeps controls working. Bare (valueless) regions only drag on
+  // direct presses on the attributed element, which is why the shell uses
+  // `deep` everywhere.
+  assert.ok(
+    shellTsx.includes('<div className="shell-top" data-tauri-drag-region="deep">'),
+    "the shell titlebar must be a deep Tauri drag region",
+  );
+  assert.ok(
+    trayQuickChat.includes('<header className="quick-chat-overlay__header" data-tauri-drag-region="deep">'),
+    "the quick-chat tray header must be a deep Tauri drag region so the decoration-less window can be moved",
+  );
 });
 
 test("browser event labels use the same native prefix in Rust and React", () => {

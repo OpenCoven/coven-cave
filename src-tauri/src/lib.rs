@@ -1188,8 +1188,10 @@ pub fn run() {
             // very top (the traffic-light buttons float over it) and
             // `hidden_title` drops the centered "CovenCave" label, so the
             // toolbar reads as one continuous strip. The web side reserves room
-            // for the traffic lights and makes the bar draggable (see
-            // `[data-tauri-titlebar]` in globals.css). No-op on Windows/Linux.
+            // for the traffic lights (`[data-tauri-titlebar]` in globals.css)
+            // and marks the bar `data-tauri-drag-region="deep"`; the drag is
+            // an ACL-gated IPC call, granted to this loopback origin by
+            // capabilities/loopback-window-drag.json. No-op on Windows/Linux.
             #[cfg(target_os = "macos")]
             {
                 main_window = main_window
