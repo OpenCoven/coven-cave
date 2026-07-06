@@ -502,6 +502,28 @@ server.on("upgrade", (req, socket, head) => {
 server.keepAliveTimeout = 75_000;
 server.headersTimeout = 80_000;
 
-server.listen(port, hostname, () => {
-  console.log(`> Ready on http://${hostname}:${port}`);
-});
+function startListening(attempt: number = 0): void {
+  const currentPort = port + attempt;
+  const maxAttempts = 10;
+
+  server.listen(currentPort, hostname, () => {
+    console.log(`> Ready on http://${hostname}:${currentPort}`);
+    // Export the final port so wrapper scripts (dev-app.sh, etc.) can discover it.
+    if (process.env.PORT !== String(currentPort)) {
+      process.env.PORT = String(currentPort);
+    }
+  });
+
+  server.once("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE" && attempt < maxAttempts) {
+      console.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
+      server.removeAllListeners("error");
+      startListening(attempt + 1);
+    } else {
+      console.error(err);
+      process.exit(1);
+    }
+  });
+}
+
+startListening();
