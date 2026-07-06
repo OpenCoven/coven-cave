@@ -17,11 +17,9 @@ import { fileURLToPath } from "node:url";
 
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-// Temporary debt: another live session holds the edit claim on chat-view.tsx
-// (multi-session coordination §1), so its two accent/text-white instances are
-// tracked on bead cave-6pe.7 instead of being fixed here. Remove this entry
-// with that bead.
-const ACCENT_WHITE_ALLOWLIST = new Set(["components/chat-view.tsx"]);
+// No entries — the chat-view.tsx debt from cave-6pe.7 was repaid. Add a file
+// here only for claim-gated coordination cases, with a bead reference.
+const ACCENT_WHITE_ALLOWLIST = new Set([]);
 
 function* walk(dir) {
   for (const entry of readdirSync(dir)) {
