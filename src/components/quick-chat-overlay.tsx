@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   COMMAND_RESPONSE_SPEED_OPTIONS,
   COMMAND_THINKING_OPTIONS,
@@ -12,7 +12,8 @@ import { IconButton } from "@/components/ui/icon-button";
 import { StandardSelect } from "@/components/ui/select";
 import { Icon } from "@/lib/icon";
 import { useQuickChat } from "@/lib/use-quick-chat";
-import type { Familiar } from "@/lib/types";
+import { useFocusTrap } from "@/lib/use-focus-trap";
+import { FamiliarMark, QuickChatSelect, QuickChatThread } from "@/components/quick-chat-controls";
 
 type Props = {
   open: boolean;
@@ -23,14 +24,12 @@ type Props = {
   activeFamiliarId?: string | null;
 };
 
-function initials(familiar: Familiar): string {
-  return (familiar.display_name || familiar.id)
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
+// One-tap starters for a cold thread — they fill the composer, not send.
+const QUICK_CHAT_SUGGESTIONS = [
+  "Summarize what needs my attention",
+  "Draft a short status update",
+  "What changed recently?",
+];
 
 export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamiliarId }: Props) {
   const {
@@ -40,7 +39,8 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
     selectedFamiliar,
     draft,
     setDraft,
-    answer,
+    messages,
+    hasThread,
     error,
     sessionId,
     sendState,
@@ -51,9 +51,13 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
     setResponseSpeed,
     send,
     cancel,
+    newThread,
+    regenerate,
   } = useQuickChat({ preferredFamiliarId: activeFamiliarId ?? null });
 
   const sending = sendState === "sending";
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   // Anchor the popover directly beneath its menubar trigger so it reads as a
   // dropdown from the bar (with a caret pointing up at the icon) rather than a
@@ -90,27 +94,32 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
     return () => window.removeEventListener("resize", measure);
   }, [open]);
 
-  // Escape closes the popover while it's open.
+  // Trap focus inside the dropdown while open: Tab cycles within it, Escape
+  // closes it, and focus returns to the menubar trigger on close.
+  useFocusTrap(open, dialogRef, { onEscape: onClose, focusFirst: false });
+
+  // Land the caret in the composer on open. Deferred to an effect (not
+  // `autoFocus`) so it runs *after* useFocusTrap has captured the trigger as
+  // the return-focus target — otherwise autofocus would steal it and closing
+  // wouldn't restore focus to the menubar button.
   useEffect(() => {
     if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    const id = requestAnimationFrame(() => composerRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [open]);
 
   const onTextareaKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      const cmdEnter = (event.metaKey || event.ctrlKey) && event.key === "Enter";
+      // Enter sends; Shift+Enter inserts a newline; IME composition is left alone.
+      const plainEnter =
+        event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing;
+      if (cmdEnter || plainEnter) {
         event.preventDefault();
-        if (!sending) void send();
+        if (!sending && draft.trim()) void send();
       }
     },
-    [send, sending],
+    [draft, send, sending],
   );
 
   const openFull = useCallback(() => {
@@ -118,6 +127,15 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
     onOpenFullSession?.(sessionId, selectedFamiliarId);
     onClose();
   }, [onClose, onOpenFullSession, selectedFamiliarId, sessionId]);
+
+  const pickSuggestion = useCallback(
+    (value: string) => {
+      setDraft(value);
+      // Move the caret into the composer so the user can tweak-and-send.
+      requestAnimationFrame(() => composerRef.current?.focus());
+    },
+    [setDraft],
+  );
 
   if (!open) return null;
 
@@ -137,17 +155,24 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
         />
       ) : null}
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Quick chat"
         className="quick-chat-overlay"
         style={anchor ? { top: anchor.top, right: anchor.right } : undefined}
       >
-        <header className="flex items-center justify-between border-b border-[var(--border-hairline)] px-4 py-3">
+        <header className="quick-chat-overlay__header">
           <div className="flex min-w-0 items-center gap-2">
-            <Icon name="ph:chat-circle-dots" width={18} aria-hidden />
+            {selectedFamiliar ? (
+              <FamiliarMark familiar={selectedFamiliar} size="md" />
+            ) : (
+              <Icon name="ph:chat-circle-dots" width={20} aria-hidden />
+            )}
             <div className="min-w-0">
-              <h2 className="truncate text-sm font-semibold">Quick chat</h2>
+              <h2 className="truncate text-sm font-semibold">
+                {selectedFamiliar ? selectedFamiliar.display_name : "Quick chat"}
+              </h2>
               <p className="truncate text-xs text-[var(--fg-muted)]">
                 {/* While the roster loads, say so — "No familiar selected" reads
                     as an error/empty state when it's really just cold. */}
@@ -155,32 +180,42 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
               </p>
             </div>
           </div>
-          <IconButton
-            onClick={onClose}
-            icon="ph:x"
-            aria-label="Close quick chat"
-            title="Close"
-            size="sm"
-          />
+          <div className="flex items-center gap-1">
+            <IconButton
+              onClick={newThread}
+              disabled={!hasThread}
+              icon="ph:plus"
+              aria-label="New chat"
+              title="New chat"
+              size="sm"
+            />
+            <IconButton
+              onClick={onClose}
+              icon="ph:x"
+              aria-label="Close quick chat"
+              title="Close"
+              size="sm"
+            />
+          </div>
         </header>
 
-        <div className="flex items-center gap-2 border-b border-[var(--border-hairline)] px-4 py-2">
-          <Icon name="ph:at" width={14} aria-hidden />
-          <StandardSelect
+        <div className="quick-chat-overlay__controls">
+          <QuickChatSelect
             label="Familiar"
             value={selectedFamiliarId ?? ""}
             onChange={(next) => setSelectedFamiliarId(next || null)}
             disabled={loading || familiars.length === 0}
-            className="min-w-0 flex-1 rounded-[var(--radius-control)] bg-transparent text-sm outline-none"
+            className="flex-1"
             options={
               loading && familiars.length === 0
                 ? [{ value: "", label: "Loading…", disabled: true }]
-                : familiars.map((familiar) => ({ value: familiar.id, label: familiar.display_name }))
+                : familiars.map((familiar) => ({
+                    value: familiar.id,
+                    label: familiar.display_name,
+                    leading: <FamiliarMark familiar={familiar} size="sm" />,
+                  }))
             }
           />
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 border-b border-[var(--border-hairline)] px-4 py-2">
           <StandardSelect
             label="Choose thinking effort"
             value={thinkingEffort}
@@ -199,90 +234,59 @@ export function QuickChatOverlay({ open, onClose, onOpenFullSession, activeFamil
           />
         </div>
 
-        <div className="px-4 py-3">
-          {selectedFamiliar ? (
-            <div className="mb-3 flex items-center gap-2 text-xs text-[var(--fg-muted)]">
-              {selectedFamiliar.avatarUrl ? (
-                <img
-                  src={selectedFamiliar.avatarUrl}
-                  alt=""
-                  className="h-6 w-6 rounded-sm object-cover"
-                />
-              ) : (
-                <span className="grid h-6 w-6 place-items-center rounded-sm bg-[var(--bg-elevated)] text-[10px] font-semibold text-[var(--fg-primary)]">
-                  {initials(selectedFamiliar)}
-                </span>
-              )}
-              <span className="min-w-0 truncate">{selectedFamiliar.role}</span>
-            </div>
-          ) : null}
+        <QuickChatThread
+          messages={messages}
+          familiar={selectedFamiliar}
+          emptyIcon="ph:chat-circle-dots"
+          emptyTitle={selectedFamiliar ? `Ask ${selectedFamiliar.display_name} anything` : "Ask a familiar anything"}
+          emptyHint="Replies stream right here · @name to switch familiar · Enter to send"
+          suggestions={QUICK_CHAT_SUGGESTIONS}
+          onSuggestion={pickSuggestion}
+          onRegenerate={sending ? undefined : regenerate}
+        />
 
-          <label className="block text-xs font-medium text-[var(--fg-muted)]" htmlFor="quick-chat-overlay-draft">
-            Message
-          </label>
+        <footer className="quick-chat-overlay__composer">
+          {error ? (
+            <p className="quick-chat-overlay__error" role="alert">
+              {error}
+            </p>
+          ) : null}
           <textarea
+            ref={composerRef}
             id="quick-chat-overlay-draft"
             value={draft}
-            autoFocus
+            aria-label="Message"
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onTextareaKeyDown}
-            placeholder="@sage summarize what needs attention"
-            className="mt-2 h-24 w-full resize-none rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-sm outline-none focus:border-[var(--accent-presence)]"
+            placeholder={selectedFamiliar ? `Message @${selectedFamiliar.id}…` : "@sage summarize what needs attention"}
+            className="quick-chat-overlay__input"
           />
-
-          {error ? (
-            <div className="mt-2 flex items-center justify-between gap-2 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-elevated)] px-3 py-2 text-xs text-[var(--fg-primary)]">
-              <span className="min-w-0 truncate">{error}</span>
+          <div className="quick-chat-overlay__actions">
+            <Button
+              size="sm"
+              variant="ghost"
+              leadingIcon="ph:arrow-square-out"
+              onClick={openFull}
+              disabled={!sessionId}
+            >
+              Open in full chat
+            </Button>
+            <div className="flex items-center gap-2">
+              {sending ? (
+                <Button variant="secondary" size="sm" onClick={cancel}>
+                  Stop
+                </Button>
+              ) : null}
               <Button
-                size="xs"
+                variant="primary"
+                size="sm"
+                leadingIcon="ph:sparkle"
                 onClick={() => void send()}
-                disabled={sending}
+                disabled={sending || loading || !draft.trim()}
               >
-                Retry
+                Send
               </Button>
             </div>
-          ) : null}
-
-          <div
-            className="mt-3 max-h-48 min-h-24 overflow-auto rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] p-3 text-sm"
-            aria-live="polite"
-          >
-            {answer ? (
-              <p className="whitespace-pre-wrap leading-6">{answer}</p>
-            ) : sending ? (
-              <p className="text-[var(--fg-muted)]">Thinking...</p>
-            ) : (
-              <p className="text-[var(--fg-muted)]">The reply will appear here.</p>
-            )}
-          </div>
-        </div>
-
-        <footer className="flex items-center justify-between gap-3 border-t border-[var(--border-hairline)] px-4 py-3">
-          <Button
-            size="sm"
-            leadingIcon="ph:arrow-square-out"
-            onClick={openFull}
-            disabled={!sessionId}
-          >
-            Open in full chat
-          </Button>
-          <div className="flex items-center gap-2">
-            {sending ? (
-              <Button
-                variant="secondary"
-                onClick={cancel}
-              >
-                Cancel
-              </Button>
-            ) : null}
-            <Button
-              variant="primary"
-              leadingIcon="ph:sparkle"
-              onClick={() => void send()}
-              disabled={sending || loading}
-            >
-              Send
-            </Button>
           </div>
         </footer>
       </div>

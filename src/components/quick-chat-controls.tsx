@@ -1,8 +1,14 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
+import { MarkdownBlock } from "@/components/message-bubble";
+import { copyText } from "@/lib/clipboard";
+import type { QuickChatMessage } from "@/lib/use-quick-chat";
 
 export type QuickChatSelectOption<T extends string> = StandardSelectOption<T>;
 
@@ -63,5 +69,176 @@ export function QuickChatSelect<T extends string>({
         </>
       )}
     />
+  );
+}
+
+// ── Conversation thread ──────────────────────────────────────────────────────
+// Shared between the in-app dropdown and the Tauri standalone window so the two
+// render identical turns. Owns its own scroll container + auto-scroll and marks
+// it as a polite live region so streamed replies are announced.
+
+function QuickChatBubble({
+  message,
+  familiar,
+  isLastAssistant,
+  onRegenerate,
+}: {
+  message: QuickChatMessage;
+  familiar: Familiar | null;
+  isLastAssistant: boolean;
+  onRegenerate?: () => void;
+}) {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  if (message.role === "user") {
+    return (
+      <div className="quick-chat-turn quick-chat-turn--user">
+        <div className="quick-chat-bubble quick-chat-bubble--user">
+          <p className="whitespace-pre-wrap break-words leading-6">{message.text}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const streaming = message.pending;
+  const canAct = !streaming && message.text.length > 0;
+  return (
+    <div className="quick-chat-turn quick-chat-turn--familiar">
+      {familiar ? (
+        <FamiliarMark familiar={familiar} size="sm" />
+      ) : (
+        <span className="grid h-5 w-5 place-items-center rounded-[var(--radius-control)] bg-[var(--bg-elevated)]">
+          <Icon name="ph:sparkle" width={12} aria-hidden />
+        </span>
+      )}
+      <div className="quick-chat-bubble quick-chat-bubble--familiar">
+        {message.text ? (
+          streaming ? (
+            // Render partial text plainly while it streams — re-parsing markdown
+            // per token is wasteful and flashes half-open code fences.
+            <p className="whitespace-pre-wrap break-words leading-6">
+              {message.text}
+              <span className="quick-chat-caret" aria-hidden />
+            </p>
+          ) : (
+            <div className="quick-chat-md">
+              <MarkdownBlock text={message.text} />
+            </div>
+          )
+        ) : streaming ? (
+          <span className="quick-chat-typing" aria-label="Thinking…">
+            <i />
+            <i />
+            <i />
+          </span>
+        ) : (
+          <p className="text-[var(--fg-muted)]">No response.</p>
+        )}
+
+        {message.error ? (
+          <p className="quick-chat-turn__error">{message.error}</p>
+        ) : null}
+
+        {canAct ? (
+          <div className="quick-chat-turn__actions">
+            <IconButton
+              icon={copied === message.id ? "ph:check" : "ph:copy"}
+              size="xs"
+              aria-label={copied === message.id ? "Copied" : "Copy reply"}
+              title="Copy reply"
+              onClick={() => {
+                void copyText(message.text).then((ok) => {
+                  if (ok) setCopied(message.id);
+                });
+              }}
+            />
+            {isLastAssistant && onRegenerate ? (
+              <IconButton
+                icon="ph:arrow-clockwise"
+                size="xs"
+                aria-label="Regenerate reply"
+                title="Regenerate"
+                onClick={onRegenerate}
+              />
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export function QuickChatThread({
+  messages,
+  familiar,
+  emptyIcon = "ph:chat-circle-dots",
+  emptyTitle,
+  emptyHint,
+  suggestions,
+  onSuggestion,
+  onRegenerate,
+}: {
+  messages: QuickChatMessage[];
+  familiar: Familiar | null;
+  emptyIcon?: IconName;
+  emptyTitle: string;
+  emptyHint: string;
+  suggestions?: string[];
+  onSuggestion?: (value: string) => void;
+  onRegenerate?: () => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lastText = messages.length > 0 ? messages[messages.length - 1].text : "";
+
+  // Keep the newest turn in view as it streams.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length, lastText]);
+
+  const lastAssistantId = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") return messages[i].id;
+    }
+    return null;
+  })();
+
+  return (
+    <div ref={scrollRef} className="quick-chat-thread" aria-live="polite">
+      {messages.length === 0 ? (
+        <div className="quick-chat-empty">
+          <span className="quick-chat-empty__glyph" aria-hidden>
+            <Icon name={emptyIcon} width={22} />
+          </span>
+          <p className="quick-chat-empty__title">{emptyTitle}</p>
+          <p className="quick-chat-empty__hint">{emptyHint}</p>
+          {suggestions && suggestions.length > 0 ? (
+            <div className="quick-chat-empty__chips">
+              {suggestions.map((suggestion) => (
+                <Button
+                  key={suggestion}
+                  size="xs"
+                  variant="secondary"
+                  className="quick-chat-chip"
+                  onClick={() => onSuggestion?.(suggestion)}
+                >
+                  {suggestion}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        messages.map((message) => (
+          <QuickChatBubble
+            key={message.id}
+            message={message}
+            familiar={familiar}
+            isLastAssistant={message.id === lastAssistantId}
+            onRegenerate={onRegenerate}
+          />
+        ))
+      )}
+    </div>
   );
 }

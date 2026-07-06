@@ -29,23 +29,29 @@ assert.match(
 );
 assert.match(
   source,
-  /event\.key === "Escape"[\s\S]*onClose\(\)/,
-  "Escape closes the overlay via a window keydown listener",
+  /useFocusTrap\(open, dialogRef, \{ onEscape: onClose/,
+  "overlay traps focus while open — Tab cycles within it, Escape closes, focus returns to the trigger",
 );
 assert.match(
   source,
-  /window\.addEventListener\("keydown"/,
-  "overlay listens for keydown while open",
+  /<QuickChatThread[\s\S]*messages=\{messages\}/,
+  "overlay renders the shared multi-turn conversation thread",
 );
 assert.match(
   source,
   /onOpenFullSession\?\.\(sessionId, selectedFamiliarId\)/,
-  "overlay opens the saved session in the full app",
+  "overlay opens the saved session (the whole thread's context) in the full app",
+);
+const controls = readFileSync(new URL("./quick-chat-controls.tsx", import.meta.url), "utf8");
+assert.match(
+  controls,
+  /aria-live="polite"/,
+  "the shared thread announces streamed replies via a polite live region",
 );
 assert.match(
-  source,
-  /aria-live="polite"/,
-  "overlay answer pane announces streamed text",
+  controls,
+  /MarkdownBlock/,
+  "familiar replies render markdown through the shared MarkdownBlock",
 );
 assert.match(
   source,
@@ -133,6 +139,31 @@ assert.match(
   /<QuickChatOverlay[\s\S]*?activeFamiliarId=\{activeId\}/,
   "workspace passes its active familiar to the quick-chat popover",
 );
+
+// ── Multi-turn conversation: the dropdown holds a real back-and-forth ────────
+assert.match(
+  hook,
+  /messages: QuickChatMessage\[\]/,
+  "the hook exposes the conversation as a list of turns, not a single answer",
+);
+assert.match(
+  hook,
+  /sessionId: resume \? sessionIdRef\.current \?\? undefined : undefined/,
+  "follow-up turns resume the same daemon session so context carries over",
+);
+assert.match(
+  hook,
+  /setDraft\(""\);/,
+  "the composer draft is cleared the moment a turn is sent (no stale resend)",
+);
+assert.match(
+  hook,
+  /if \(selectedIdRef\.current !== id\) newThread\(\);/,
+  "switching to a different familiar starts a fresh thread",
+);
+for (const fn of ["newThread", "regenerate", "cancel"]) {
+  assert.ok(hook.includes(`${fn},`), `the hook exposes ${fn}() to its consumers`);
+}
 
 console.log("quick-chat-overlay.test.ts OK");
 
