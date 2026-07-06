@@ -49,8 +49,8 @@ export const RUNTIME_MODEL_CATALOG: Record<string, RuntimeModelCatalog> = {
   },
   opencode: {
     runtime: "opencode",
-    provider: "openai",
-    models: [{ id: "openai/gpt-5.5", label: "GPT-5.5" }],
+    provider: null,
+    models: [],
     allowCustom: true,
   },
   hermes: {
