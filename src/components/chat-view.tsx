@@ -5800,24 +5800,43 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
 // five ToolBlock/ToolGroup render sites.
 const ToolProjectRootContext = createContext<string | null>(null);
 
-// Review + Undo actions for the Codex-style inline edit card. Review opens the
-// comux diff (unchanged behavior); Undo reverts the edited file to its last
-// committed state via `/api/changes` (which auto-snapshots the tree to a
-// checkpoint first, so the revert is itself recoverable). Undo requires a
-// two-step arm→confirm to avoid an accidental one-click revert, and is only
-// offered when the target resolves to a repo-relative path under the project
-// root.
-function EditCardActions({ targetFile }: { targetFile: string }) {
+// Review + Undo actions for the Codex-style inline edit card. Review adapts to
+// where the edit can actually be reviewed: a file under the session's project
+// root jumps to its diff in the code rail's Changes panel (cumulative diff +
+// checkpoint/undo tools); anything else — familiar-workspace docs, repo-less
+// sessions, relative paths — opens an in-chat modal with this edit's diff, so
+// the button never lands on an empty Changes list or silently does nothing.
+// Undo reverts the edited file to its last committed state via `/api/changes`
+// (which auto-snapshots the tree to a checkpoint first, so the revert is
+// itself recoverable). Undo requires a two-step arm→confirm to avoid an
+// accidental one-click revert, and is only offered when the target resolves to
+// a repo-relative path under the project root.
+function EditCardActions({
+  targetFile,
+  diff,
+  displayPath,
+}: {
+  targetFile: string | null;
+  diff: string;
+  displayPath: string;
+}) {
   const projectRoot = useContext(ToolProjectRootContext);
   const relPath =
-    projectRoot && targetFile.startsWith(projectRoot)
+    projectRoot && targetFile && targetFile.startsWith(projectRoot)
       ? targetFile.slice(projectRoot.length).replace(/^\/+/, "")
       : null;
   const [state, setState] = useState<"idle" | "armed" | "reverting" | "reverted" | "error">("idle");
   const [err, setErr] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const base = displayPath.split("/").pop() || displayPath;
 
-  const review = () =>
-    window.dispatchEvent(new CustomEvent("cave:open-file-diff", { detail: { path: targetFile } }));
+  const review = () => {
+    if (relPath && targetFile) {
+      window.dispatchEvent(new CustomEvent("cave:open-file-diff", { detail: { path: targetFile } }));
+    } else {
+      setReviewOpen(true);
+    }
+  };
 
   const doUndo = async () => {
     if (!projectRoot || !relPath) return;
@@ -5842,9 +5861,31 @@ function EditCardActions({ targetFile }: { targetFile: string }) {
   return (
     <span className="cave-edit-card__actions" onClick={(e) => e.stopPropagation()}>
       {err ? <span className="cave-edit-card__error" title={err}>{err}</span> : null}
-      <button type="button" className="cave-edit-card__review focus-ring" onClick={review}>
+      <button
+        type="button"
+        className="cave-edit-card__review focus-ring"
+        onClick={review}
+        title={
+          relPath
+            ? "Review this file's pending diff in the Changes panel"
+            : "Review this edit's diff"
+        }
+      >
         Review
       </button>
+      <Modal
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
+        breadcrumb={["Review", base]}
+        wide
+      >
+        <div className="cave-review-modal">
+          <p className="cave-review-modal__path" title={displayPath}>
+            {displayPath}
+          </p>
+          <SyntaxBlock text={diff} lang="diff" />
+        </div>
+      </Modal>
       {relPath ? (
         state === "reverted" ? (
           <span className="cave-edit-card__reverted">Reverted</span>
@@ -5932,7 +5973,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             {tool.status}
           </span>
           <DurationText durationMs={tool.durationMs} />
-          {targetFile ? <EditCardActions targetFile={targetFile} /> : null}
+          <EditCardActions targetFile={targetFile} diff={inputDiff ?? ""} displayPath={displayPath} />
         </summary>
         <div className="cave-tool-io mt-2">
           <div className="cave-tool-io-label">Code changes</div>

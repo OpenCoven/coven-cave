@@ -1060,6 +1060,29 @@ assert.match(source, /cave-edit-card/, "mutation tools render as an inline Codex
 assert.match(source, /diffStat/, "edit card derives a +/- stat");
 assert.match(source, /Review/, "edit card has a Review action");
 assert.match(globalsSrc, /\.cave-edit-card/, "edit card styling exists");
+
+// Review adapts to where the edit can actually be reviewed: a file under the
+// session's project root jumps to the code rail's Changes diff; anything else
+// (familiar-workspace docs, repo-less sessions, relative paths) opens an
+// in-chat modal with this edit's diff instead of dispatching an event nothing
+// can service. The actions row renders on every edit card — not only when an
+// absolute target path exists — so Review is always available.
+assert.match(
+  source,
+  /if \(relPath && targetFile\) \{[\s\S]{0,200}cave:open-file-diff[\s\S]{0,200}setReviewOpen\(true\)/,
+  "Review falls back to the in-chat diff modal when the Changes panel can't show the file",
+);
+assert.match(
+  source,
+  /<Modal[\s\S]{0,200}open=\{reviewOpen\}[\s\S]{0,600}<SyntaxBlock text=\{diff\} lang="diff" \/>/,
+  "the review modal renders this edit's structured diff",
+);
+assert.match(
+  source,
+  /<EditCardActions targetFile=\{targetFile\} diff=\{inputDiff \?\? ""\} displayPath=\{displayPath\} \/>/,
+  "edit-card actions render unconditionally (Review works without an absolute target path)",
+);
+assert.match(globalsSrc, /\.cave-review-modal/, "review modal styling exists");
 assert.match(
   source,
   /if \(isEditTool\) \{[\s\S]*<details className="cave-tool-block cave-edit-card"[\s\S]*Edited \{base\}[\s\S]*<DurationText durationMs=\{tool\.durationMs\} \/>[\s\S]*Code changes[\s\S]*<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*<\/details>/,

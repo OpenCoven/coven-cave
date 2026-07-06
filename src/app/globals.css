@@ -11094,6 +11094,23 @@ details[open] > .cave-edit-card__summary::before {
   font-size: 11px;
   color: var(--color-danger);
 }
+/* Review modal for edits the Changes panel can't show (file outside the
+   project root, or no repo-linked session): this edit's diff, full-size. */
+.cave-review-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.cave-review-modal__path {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
 
 /* Quick-chat reveal: an in-app popover anchored top-right under the top bar,
    opened by the top-bar chat-circle icon. The Tauri standalone window
