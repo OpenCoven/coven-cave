@@ -1,8 +1,15 @@
 import SwiftUI
 import PencilKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
+import os
 // Vision's request types predate Sendable; @preconcurrency quiets the strict-
 // concurrency warning for the recognize() closure capture.
 @preconcurrency import Vision
+
+/// Diary flow tracing — `log stream --predicate 'subsystem == "ai.opencoven.cave"'`
+/// on the simulator shows pen-lift arming/firing, recognition, and stream state.
+private let diaryLog = Logger(subsystem: "ai.opencoven.cave", category: "diary")
 
 /// The Diary — an experimental iPad surface styled after Tom Riddle's diary.
 ///
@@ -250,6 +257,7 @@ struct DiaryView: View {
     /// Pen activity: fade out a finished reply (the page clears itself for the
     /// next exchange) and (re)arm the pen-lift timer that triggers recognition.
     private func strokesChanged() {
+        diaryLog.info("strokesChanged: phase=\(String(describing: phase)) strokes=\(drawing.strokes.count)")
         guard phase == .idle else { return }
         hint = nil
         if !revealedReply.isEmpty && replyOpacity == 1 {
@@ -262,6 +270,7 @@ struct DiaryView: View {
             // words and strokes must not submit a half-written message.
             try? await Task.sleep(for: .milliseconds(3500))
             guard !Task.isCancelled, phase == .idle, !drawing.strokes.isEmpty else { return }
+            diaryLog.info("pen-lift: firing submit")
             await submit()
         }
     }
@@ -271,26 +280,39 @@ struct DiaryView: View {
     @MainActor
     private func submit() async {
         guard let client = app.client, let familiar = currentFamiliar else {
-            showHint("The diary is not connected.")
+            // A transient connection flap empties the familiar roster (and can
+            // drop the client). The written message is still on the page —
+            // retry shortly instead of dropping it and going silent forever.
+            diaryLog.warning("submit: no client/familiar (client=\(app.client != nil) familiars=\(app.familiars.count)) — retrying in 2.5s")
+            showHint("The diary is reaching for your desktop…")
+            penLiftTask = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(2500))
+                guard !Task.isCancelled, phase == .idle, !drawing.strokes.isEmpty else { return }
+                await submit()
+            }
             return
         }
         // A stray dot or hairline (an accidental tap) isn't a message — clear
         // it quietly instead of running recognition and nagging with a hint.
         let bounds = drawing.bounds
         if bounds.width < 14 && bounds.height < 14 {
+            diaryLog.info("submit: stray mark cleared (bounds \(bounds.width)x\(bounds.height))")
             drawing = PKDrawing()
             return
         }
         phase = .recognizing
+        diaryLog.info("submit: recognizing \(drawing.strokes.count) strokes")
 
         let text: String
         do {
             text = try await DiaryHandwriting.recognize(drawing)
         } catch {
+            diaryLog.error("submit: recognition failed: \(error.localizedDescription)")
             phase = .idle
             showHint("The diary squints… it can't quite read that.")
             return
         }
+        diaryLog.info("submit: recognized \"\(text)\"")
         guard !text.isEmpty else {
             phase = .idle
             showHint("The diary can't read that — try writing a little larger.")
@@ -533,6 +555,22 @@ enum DiaryHandwriting {
         }
         guard let cgImage = composited.cgImage else { return "" }
 
+        // Thicken the ink before recognition: pen strokes are ~3pt hairlines
+        // at this render scale, right at the edge of what Vision's handwriting
+        // model resolves — thin, widely-spaced strokes read as nothing at all.
+        // Morphology-minimum dilates dark-on-white strokes.
+        let dilated: CGImage = {
+            let input = CIImage(cgImage: cgImage)
+            let filter = CIFilter.morphologyMinimum()
+            filter.inputImage = input
+            filter.radius = 3
+            guard let output = filter.outputImage,
+                  let rendered = CIContext().createCGImage(output, from: input.extent) else {
+                return cgImage
+            }
+            return rendered
+        }()
+
         return try await withCheckedThrowingContinuation { continuation in
             let request = VNRecognizeTextRequest { request, error in
                 if let error {
@@ -551,7 +589,7 @@ enum DiaryHandwriting {
 
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    try VNImageRequestHandler(cgImage: cgImage).perform([request])
+                    try VNImageRequestHandler(cgImage: dilated).perform([request])
                 } catch {
                     continuation.resume(throwing: error)
                 }

@@ -47,32 +47,28 @@ final class DiaryUITests: XCTestCase {
         let canvas = app.otherElements["Diary page. Write your message here with Apple Pencil."]
         let surface: XCUIElement = canvas.waitForExistence(timeout: 10) ? canvas : app.windows.firstMatch
 
-        func stroke(_ a: CGVector, _ b: CGVector) {
-            surface.coordinate(withNormalizedOffset: a)
-                .press(forDuration: 0.06, thenDragTo: surface.coordinate(withNormalizedOffset: b))
+        // A polyline draws as chained 2-point strokes sharing endpoints — the
+        // pixels read as one continuous pen line. Vision's handwriting model
+        // returned "" for giant, sparse block capitals; compact connected
+        // lowercase reads reliably (with the app-side ink dilation).
+        func polyline(_ points: [CGVector]) {
+            for i in 0..<(points.count - 1) {
+                surface.coordinate(withNormalizedOffset: points[i])
+                    .press(forDuration: 0.05, thenDragTo: surface.coordinate(withNormalizedOffset: points[i + 1]))
+            }
         }
+        func v(_ x: Double, _ y: Double) -> CGVector { CGVector(dx: x, dy: y) }
 
-        // H E L L O in straight block strokes across the middle of the page.
-        // H
-        stroke(CGVector(dx: 0.15, dy: 0.42), CGVector(dx: 0.15, dy: 0.55))
-        stroke(CGVector(dx: 0.22, dy: 0.42), CGVector(dx: 0.22, dy: 0.55))
-        stroke(CGVector(dx: 0.15, dy: 0.485), CGVector(dx: 0.22, dy: 0.485))
-        // E
-        stroke(CGVector(dx: 0.28, dy: 0.42), CGVector(dx: 0.28, dy: 0.55))
-        stroke(CGVector(dx: 0.28, dy: 0.42), CGVector(dx: 0.35, dy: 0.42))
-        stroke(CGVector(dx: 0.28, dy: 0.485), CGVector(dx: 0.34, dy: 0.485))
-        stroke(CGVector(dx: 0.28, dy: 0.55), CGVector(dx: 0.35, dy: 0.55))
-        // L
-        stroke(CGVector(dx: 0.41, dy: 0.42), CGVector(dx: 0.41, dy: 0.55))
-        stroke(CGVector(dx: 0.41, dy: 0.55), CGVector(dx: 0.46, dy: 0.55))
-        // L
-        stroke(CGVector(dx: 0.52, dy: 0.42), CGVector(dx: 0.52, dy: 0.55))
-        stroke(CGVector(dx: 0.52, dy: 0.55), CGVector(dx: 0.57, dy: 0.55))
-        // O (diamond — Vision's language correction rounds it off)
-        stroke(CGVector(dx: 0.655, dy: 0.42), CGVector(dx: 0.62, dy: 0.485))
-        stroke(CGVector(dx: 0.62, dy: 0.485), CGVector(dx: 0.655, dy: 0.55))
-        stroke(CGVector(dx: 0.655, dy: 0.55), CGVector(dx: 0.69, dy: 0.485))
-        stroke(CGVector(dx: 0.69, dy: 0.485), CGVector(dx: 0.655, dy: 0.42))
+        // "hello" in compact lowercase print across the middle of the page.
+        polyline([v(0.200, 0.440), v(0.200, 0.485)])                                 // h stem
+        polyline([v(0.200, 0.468), v(0.218, 0.458), v(0.218, 0.485)])                // h hump
+        polyline([v(0.242, 0.470), v(0.272, 0.470), v(0.268, 0.458), v(0.250, 0.456),
+                  v(0.242, 0.470), v(0.247, 0.483), v(0.271, 0.482)])                // e
+        polyline([v(0.292, 0.438), v(0.292, 0.485)])                                 // l
+        polyline([v(0.312, 0.438), v(0.312, 0.485)])                                 // l
+        polyline([v(0.345, 0.457), v(0.356, 0.461), v(0.360, 0.4715), v(0.356, 0.482),
+                  v(0.345, 0.486), v(0.334, 0.482), v(0.330, 0.4715), v(0.334, 0.461),
+                  v(0.345, 0.457)])                                                  // o
 
         // Pen-lift (3.5s) → Vision → ink soak → streamed reply. Leave the app
         // UNDISTURBED for the pen-lift + recognition window: waitForExistence
