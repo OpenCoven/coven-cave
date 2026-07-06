@@ -70,10 +70,11 @@ assert.match(preview, /onClick=\{\(\) => onOpenPath\(f\.path\)\}/, "each changed
 assert.match(preview, /if \(path \|\| !projectRoot \|\| !onOpenPath\) return/, "the status fetch only runs for an empty, openable preview");
 
 // ─── cave-chat.css: fullscreen sizes to its containing block ─────────────────
-// .cave-mode-fade retains a transform (animation-fill-mode: both), so the mode
-// wrapper — not the viewport — is the containing block for the fixed rail.
-// width:100vw on top of that offset pushed the diffs pane off-screen; the rule
-// must size via inset alone. Root cause tracked as bead cave-cco.
+// Sizing via inset alone keeps this correct regardless of what the containing
+// block is: historically the mode wrapper (.cave-mode-fade retained a
+// transform), now the true viewport (root cause fixed in cave-cco). width/
+// height:100v* stacked on a containing-block offset is what clipped the
+// diffs pane — the rule must never size to viewport units.
 const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 const fullscreenBlock = css.slice(
   css.indexOf(".workspace-rail--fullscreen {"),
