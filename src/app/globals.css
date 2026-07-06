@@ -7975,6 +7975,245 @@ a.mobile-handoff__link:hover {
   }
 }
 
+.workflow-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 180;
+  display: flex;
+  justify-content: flex-end;
+  background: color-mix(in oklch, black 18%, transparent);
+}
+
+.workflow-dialog {
+  width: min(760px, calc(100vw - 72px));
+  max-height: 100dvh;
+  overflow-y: auto;
+  border-left: 1px solid color-mix(in oklch, var(--border-hairline) 92%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in oklch, var(--bg-raised) 62%, transparent), transparent 220px),
+    var(--bg-panel);
+  box-shadow: -22px 0 54px color-mix(in oklch, black 34%, transparent);
+}
+
+.automation-create-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 0;
+  color: var(--text-primary);
+}
+
+.automation-create-dialog__hero {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -18px -20px 2px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid color-mix(in oklch, var(--border-hairline) 84%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 94%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+
+.workflow-eyebrow {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.automation-create-dialog__hero h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.workflow-icon-button {
+  display: grid;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: var(--radius-control);
+}
+
+.automation-create-dialog__section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in oklch, var(--border-hairline) 86%, transparent);
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--bg-raised) 34%, transparent);
+}
+
+.automation-create-dialog__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding-bottom: 2px;
+}
+
+.automation-create-dialog__section-header h3 {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.workflow-field,
+.automation-create-dialog__field {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.workflow-field > span,
+.automation-create-dialog__field > span {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.automation-create-dialog__primary-grid,
+.automation-create-dialog__prompt-grid,
+.automation-create-dialog__runtime-grid,
+.automation-create-dialog__scope-grid {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.automation-create-dialog__primary-grid {
+  grid-template-columns: minmax(220px, 0.8fr) minmax(300px, 1.2fr);
+  align-items: start;
+}
+
+.automation-create-dialog__prompt-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.automation-create-dialog__runtime-grid,
+.automation-create-dialog__scope-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.automation-create-dialog__field--wide {
+  grid-column: 1 / -1;
+}
+
+.automation-create-dialog__schedule-card,
+.automation-create-dialog__schedule-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.automation-create-dialog__segment-control {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: var(--radius-control);
+  padding: 2px;
+}
+
+.automation-create-dialog__day-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.automation-create-dialog__rrule {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.automation-create-dialog :is(input, textarea, select) {
+  min-width: 0;
+}
+
+.automation-create-dialog textarea {
+  min-height: 92px;
+}
+
+.automation-create-dialog .workflow-run-input-field {
+  min-height: 116px;
+}
+
+.automation-create-dialog .workflow-field > div[role="group"] {
+  margin-bottom: 0;
+}
+
+.automation-create-dialog__footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 -20px;
+  padding: 12px 20px calc(12px + max(0px, var(--sai-bottom)));
+  border-top: 1px solid color-mix(in oklch, var(--border-hairline) 84%, transparent);
+  background: color-mix(in oklch, var(--bg-panel) 94%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+
+@media (max-width: 920px) {
+  .workflow-dialog {
+    width: min(100vw, 680px);
+  }
+
+  .automation-create-dialog__primary-grid,
+  .automation-create-dialog__prompt-grid,
+  .automation-create-dialog__runtime-grid,
+  .automation-create-dialog__scope-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .workflow-dialog-backdrop {
+    background: var(--bg-panel);
+  }
+
+  .workflow-dialog {
+    width: 100vw;
+    border-left: 0;
+    box-shadow: none;
+  }
+
+  .automation-create-dialog {
+    padding-inline: 14px;
+  }
+
+  .automation-create-dialog__hero,
+  .automation-create-dialog__footer {
+    margin-inline: -14px;
+    padding-inline: 14px;
+  }
+}
+
 .chat-scope-tabs--minimal {
   min-height: 38px;
   background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
