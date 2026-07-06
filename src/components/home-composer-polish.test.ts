@@ -38,31 +38,31 @@ assert.doesNotMatch(source, /⏎ send · ⇧⏎ newline · ↑↓ history · \/ 
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 assert.doesNotMatch(css, /\.hc-keyboard-hint\b/, "unused .hc-keyboard-hint CSS is removed");
 
-const sendButtonRule = Array.from(css.matchAll(/\.hc-send-btn\s*\{[\s\S]*?\n\}/g), (match) => match[0]).find((rule) =>
-  /background:\s*color-mix\(in oklch,\s*var\(--text-primary\)/.test(rule),
-);
-assert.ok(sendButtonRule, "base .hc-send-btn rule exists");
-
-// ───────── Task 3: Tokenized icon-only Send button ─────────
-// The visible "Send" text label is gone, but the button keeps an aria-label so
-// screen readers announce it, and its chrome is a compact pill.
+// ───────── Task 3: chat-parity Send button ─────────
+// The bespoke home send pill is gone — the button reuses the chat composer's
+// accent-filled icon button, keeping an aria-label for screen readers.
 assert.match(source, /aria-label="Send"/, "Send button keeps aria-label='Send'");
 assert.doesNotMatch(source, /className="hc-send-label"/, "visible Send text label removed (button is icon-only)");
 assert.doesNotMatch(css, /\.hc-send-label\s*\{/, "old .hc-send-label rule removed");
-assert.doesNotMatch(sendButtonRule, /border-radius:\s*var\(--radius-control\)/, ".hc-send-btn no longer uses the shared control radius (now pill-shaped)");
-
-// ───────── Command-bar hierarchy ─────────
-// New: single-row toolbar — context left, run controls right.
-// Attach, destination, and access chip are in the left group; model/thinking/mic/send in the right.
+assert.doesNotMatch(css, /\.hc-send-btn\s*\{/, "bespoke .hc-send-btn CSS removed (chat composer button styles apply)");
 assert.match(
   source,
-  /hc-control-group--who[\s\S]*?ph:plus-bold[\s\S]*?className="hc-dest-pills"[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"[\s\S]*?ph:warning-circle[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip/,
-  "home composer left cluster has plus-attach + Chat/Task destination + warning-circle access chip for the familiar",
+  /bg-\[var\(--accent-presence\)\][\s\S]{0,400}?aria-label="Send"/,
+  "send button uses the chat composer's accent-filled icon-button chrome",
+);
+
+// ───────── Command-bar hierarchy ─────────
+// Chat-composer footer: utility cluster (attach · voice · Options) plus the
+// home-only destination pills and agent picker left; enhance · send right.
+assert.match(
+  source,
+  /cave-composer-utility-row[\s\S]*?ph:paperclip[\s\S]*?ph:microphone[\s\S]*?<ComposerOptionsMenu[\s\S]*?className="hc-dest-pills"[\s\S]*?role="radiogroup"[\s\S]*?aria-label="Send to"[\s\S]*?ph:warning-circle[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip/,
+  "home composer utility cluster has attach + voice + Options + Chat/Task destination + warning-circle access chip",
 );
 assert.match(
   source,
-  /hc-control-group--run[\s\S]*?hc-status-dot[\s\S]*?ariaLabel="Choose runtime and model"[\s\S]*?ariaLabel="Choose thinking effort"[\s\S]*?hc-mic-btn[\s\S]*?aria-label="Send"/,
-  "home composer right cluster has status dot, model, thinking, mic, and send",
+  /cave-composer-submit-row[\s\S]*?aria-label="Enhance prompt"[\s\S]*?aria-label="Send"/,
+  "home composer submit cluster has enhance and send",
 );
 assert.doesNotMatch(
   source,
@@ -73,36 +73,24 @@ assert.match(source, /import \{ StandardSelect/, "home composer selectors should
 assert.match(source, /<StandardSelect[\s\S]*?popoverClassName="hc-home-select-popover"/, "home composer custom selectors should use the shared select popover");
 assert.doesNotMatch(source, /PopoverBody|PopoverItem|PopoverLabel/, "home composer should not maintain a local dropdown implementation");
 assert.match(
-  css,
-  /\.home-composer-card\s*\{[\s\S]*?border-radius:\s*var\(--radius-card\);[\s\S]*?box-shadow:\s*0 12px 40px/,
-  "home composer card keeps the rounded elevated composer chrome",
+  source,
+  /className=\{`home-composer-card cave-composer-panel\$\{dropActive \? " is-drop-active" : ""\}`\}/,
+  "home composer card reuses the chat composer's panel chrome (cave-composer-panel)",
 );
 assert.match(
   css,
-  /\.hc-action-bar\s*\{[\s\S]*?flex-wrap:\s*wrap;[\s\S]*?gap:\s*6px 10px;[\s\S]*?padding:\s*8px 12px 12px;/,
-  "home composer action bar uses compact single-toolbar spacing",
+  /\.home-composer-card\s*\{[\s\S]*?position: relative;[\s\S]*?max-width: 100%;/,
+  "home composer card keeps only layout rules — visual chrome comes from cave-composer-panel",
 );
-// Run rail removed; its CSS survives as dead code for now (radius etc. still tested below).
-assert.match(
-  sendButtonRule,
-  /border-radius:\s*999px/,
-  "send button is pill-shaped (border-radius 999px)",
-);
+assert.doesNotMatch(css, /\.hc-action-bar\b/, "the bespoke action-bar CSS is gone (chat composer footer styles apply)");
 assert.match(
   css,
   /\.hc-home-select-trigger\s*\{[\s\S]*?border:\s*1px solid[\s\S]*?text-align:\s*left;/,
   "custom selector triggers keep button styling while reading as compact selects",
 );
-assert.match(
-  sendButtonRule,
-  /background:\s*color-mix\(in oklch,\s*var\(--text-primary\)/,
-  "active send button uses dark text-primary fill (Codex-style dark pill)",
-);
 for (const selector of [
-  ".hc-add-btn",
   ".hc-familiar-selector",
   ".hc-home-select-trigger",
-  ".hc-mic-btn",
 ]) {
   assert.match(
     css,
@@ -112,23 +100,24 @@ for (const selector of [
 }
 assert.match(
   css,
-  /\.hc-drop-overlay\s*\{[\s\S]*?border-radius:\s*var\(--radius-card\)/,
-  "drop overlay should follow the card radius token",
+  /\.hc-drop-overlay\s*\{[\s\S]*?border-radius:\s*inherit/,
+  "drop overlay inherits the panel radius",
+);
+// Enhance is a chat-parity icon button (shared .focus-ring focus treatment).
+assert.match(
+  source,
+  /className="cave-composer-icon-button focus-ring[\s\S]{0,300}?aria-label="Enhance prompt"/,
+  "enhance is a chat-style icon button with the shared focus ring",
+);
+assert.match(
+  source,
+  /role="status"[\s\S]*?Prompt improved[\s\S]*?aria-label="Revert prompt enhancement"/,
+  "a post-enhance status strip offers a one-tap revert (chat parity)",
 );
 assert.match(
   css,
-  /\.hc-enhance-btn,\s*[\s\S]*?\.hc-enhance-undo,[\s\S]*?\{[\s\S]*?outline:\s*none;/,
-  "enhance controls should be included in the keyboard focus reset",
-);
-assert.match(
-  css,
-  /\.hc-enhance-btn:focus-visible,\s*[\s\S]*?\.hc-enhance-undo:focus-visible,[\s\S]*?\{[\s\S]*?outline:\s*var\(--ring-width\) solid var\(--ring-focus\);/,
-  "enhance controls should get the standard keyboard focus ring",
-);
-assert.match(
-  css,
-  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-control-group--who\s*\{[\s\S]*?display:\s*grid;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*var\(--touch-target\);[\s\S]*?\.hc-run-rail\s*\{[\s\S]*?\.hc-run-rail__controls\s*\{[\s\S]*?display:\s*grid;/,
-  "mobile context, send, and run rail controls wrap as readable custom selector grids",
+  /@container \(max-width: 620px\)\s*\{[\s\S]*?\.hc-familiar-selector\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);[\s\S]*?\.hc-dest-pill\s*\{[\s\S]*?min-height:\s*var\(--touch-target\);/,
+  "phone composer keeps thumb-sized home-only controls (agent picker, destination pills)",
 );
 
 // ── "Jump back in" recent-chats strip REMOVED ──

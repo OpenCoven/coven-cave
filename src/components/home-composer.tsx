@@ -36,6 +36,9 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { StandardSelect, type StandardSelectGroup, type StandardSelectOption } from "@/components/ui/select";
+import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
+import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
+import { useKeySymbols } from "@/lib/platform-keys";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
@@ -49,6 +52,7 @@ import {
 } from "@/lib/chat-attachments";
 import {
   COMMAND_CONTROL_DEFAULTS,
+  COMMAND_RESPONSE_SPEED_OPTIONS,
   COMMAND_THINKING_OPTIONS,
   type CommandResponseSpeed,
   type CommandThinkingEffort,
@@ -167,7 +171,8 @@ const HOME_DRAFT_KEY = "cave:home-composer-draft:v1";
 const HOME_DRAFT_WRITE_DELAY_MS = 250;
 // Persisted ↑/↓ prompt-history recall stack for the home composer.
 const HOME_HISTORY_KEY = "cave:home-composer-history:v1";
-const RUNTIME_MODEL_SEPARATOR = "::";
+// Composer textarea growth cap — mirrors the chat composer (13 lines + padding).
+const HOME_COMPOSER_MAX_HEIGHT = 332;
 
 function readHomeDraft(): string {
   if (typeof window === "undefined") return "";
@@ -186,15 +191,6 @@ function writeHomeDraft(text: string) {
   } catch {
     /* best effort */
   }
-}
-
-function runtimeModelValue(runtime: string, model: string): string {
-  return `${runtime}${RUNTIME_MODEL_SEPARATOR}${model}`;
-}
-
-function parseRuntimeModelValue(value: string): { runtime: string; model: string } {
-  const [runtime = "", model = ""] = value.split(RUNTIME_MODEL_SEPARATOR);
-  return { runtime, model };
 }
 
 // ─── HomeComposer ─────────────────────────────────────────────────────────────
@@ -299,7 +295,7 @@ export function HomeComposer({
       : runtimeModelOptions.some((model) => model.id === modelState?.effectiveModel)
         ? modelState!.effectiveModel
         : runtimeModelOptions[0]?.id ?? "";
-  const selectedRuntimeModelValue = runtimeModelValue(selectedRuntime, selectedModelId);
+  const keys = useKeySymbols();
   const familiarSelectGroups = useMemo<HomeSelectGroup[]>(
     () => [
       {
@@ -326,31 +322,13 @@ export function HomeComposer({
     ],
     [resolvedFamiliarById, visibleFamiliars],
   );
-  const runtimeModelSelectGroups = useMemo<HomeSelectGroup[]>(
+  const runtimeSectionOptions = useMemo(
     () =>
-      COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => {
-        const models = runtimeModelOptionsFor(adapter.id);
-        return {
-          label: adapter.label,
-          options:
-            models.length === 0
-              ? [
-                  {
-                    value: runtimeModelValue(adapter.id, ""),
-                    label: "Runtime managed",
-                    detail: adapter.label,
-                    icon: "ph:terminal-window",
-                  },
-                ]
-              : models.map((model) => ({
-                  value: runtimeModelValue(adapter.id, model.id),
-                  label: model.label,
-                  detail: adapter.label,
-                  icon: "ph:terminal-window" as IconName,
-                })),
-        };
-      }),
-    [runtimeModelOptionsFor],
+      COMPATIBILITY_ADAPTERS.filter((adapter) => adapter.chatSupported).map((adapter) => ({
+        value: adapter.id,
+        label: adapter.label,
+      })),
+    [],
   );
 
   useEffect(() => {
@@ -462,19 +440,6 @@ export function HomeComposer({
     [refetchModelState, selectedFamiliarId],
   );
 
-  const handleSelectRuntimeModel = useCallback(
-    (value: string) => {
-      const { runtime, model } = parseRuntimeModelValue(value);
-      if (!runtime) return;
-      if (runtime === selectedRuntime) {
-        handleSelectModel(model || defaultModelForRuntime(runtime));
-        return;
-      }
-      handleSelectRuntime(runtime, model);
-    },
-    [handleSelectModel, handleSelectRuntime, selectedRuntime],
-  );
-
   // Mirror the chat composer's matching rule: surface only while the user is
   // still typing the command token (no whitespace yet).
   const slashSuggestions: SlashCommand[] = useMemo(() => {
@@ -563,13 +528,21 @@ export function HomeComposer({
     return m;
   }, [familiars]);
 
-  // Auto-grow textarea
+  // Auto-grow textarea — chat-composer sizing: start at one line, grow with
+  // content, and hand overflow to a scrollbar past the max-height cap.
   const autoGrow = useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
+    const computedMaxHeight = Number.parseFloat(window.getComputedStyle(el).maxHeight);
+    const maxHeight = Number.isFinite(computedMaxHeight) ? computedMaxHeight : HOME_COMPOSER_MAX_HEIGHT;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }, []);
+
+  useEffect(() => {
+    autoGrow();
+  }, [text, autoGrow]);
 
   // ── Attachments ──────────────────────────────────────────────────────────
   // Paperclip stages picked files (cap 10, mirroring the chat composer); they
@@ -1012,7 +985,7 @@ export function HomeComposer({
         ) : null}
 
         <div
-          className={`home-composer-card${dropActive ? " is-drop-active" : ""}`}
+          className={`home-composer-card cave-composer-panel${dropActive ? " is-drop-active" : ""}`}
           onDragEnter={(e) => {
             if (!hasDraggedFiles(e.dataTransfer.types)) return;
             e.preventDefault();
@@ -1045,43 +1018,8 @@ export function HomeComposer({
             </div>
           ) : null}
 
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          className="hc-textarea"
-          placeholder={PLACEHOLDERS[destination]}
-          rows={3}
-          value={text}
-          onChange={(e) => { setText(e.target.value); autoGrow(); if (enhanceOriginal != null) setEnhanceOriginal(null); }}
-          onPaste={(e) => {
-            // Paste-to-attach: clipboard files (screenshots, copied files) stage
-            // as attachments. Only preventDefault when files were consumed so a
-            // plain-text paste is untouched.
-            const pastedFiles = Array.from(e.clipboardData.items)
-              .filter((item) => item.kind === "file")
-              .map((item) => item.getAsFile())
-              .filter((file): file is File => file !== null);
-            if (pastedFiles.length > 0) {
-              e.preventDefault();
-              void addFiles(pastedFiles);
-            }
-          }}
-          onKeyDown={handleKeyDown}
-          disabled={sending}
-          aria-label="Ask anything"
-          aria-autocomplete="list"
-          aria-haspopup="listbox"
-          aria-expanded={menuOpen}
-          aria-controls={menuOpen ? slashListboxId : undefined}
-          aria-activedescendant={
-            menuOpen ? `${slashListboxId}-opt-${slashIdx}` : undefined
-          }
-          inputMode="text"
-          enterKeyHint="send"
-        />
-
-        {/* Staged attachments — a count + clear-all header over the chips
-            (each chip has its own remove control; mirrors chat). */}
+        {/* Staged attachments — chat-style strip above the textarea, plus a
+            count + clear-all header (each chip has its own remove control). */}
         {attachments.length > 0 && (
           <div className="hc-attachments-wrap">
             <div className="hc-attachments-head">
@@ -1123,122 +1061,197 @@ export function HomeComposer({
           </div>
         )}
 
-        {/* Action bar — single-row toolbar: [+] [Chat/Task] [access chip]  ···  [●] [model] [think] [🎤] [↑] */}
-        <div className="hc-action-bar">
-          {/* Left cluster: attach + destination + familiar (access chip) */}
-          <div className="hc-control-group hc-control-group--who">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hc-file-input"
-              onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }}
-              tabIndex={-1}
-              aria-hidden
-            />
+        {/* Textarea */}
+        <textarea
+          ref={textareaRef}
+          className="hc-textarea cave-composer-input w-full resize-none bg-transparent px-4 pt-3 pb-2 leading-6 text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] md:text-sm"
+          placeholder={PLACEHOLDERS[destination]}
+          rows={1}
+          value={text}
+          onChange={(e) => { setText(e.target.value); if (enhanceOriginal != null) setEnhanceOriginal(null); }}
+          onPaste={(e) => {
+            // Paste-to-attach: clipboard files (screenshots, copied files) stage
+            // as attachments. Only preventDefault when files were consumed so a
+            // plain-text paste is untouched.
+            const pastedFiles = Array.from(e.clipboardData.items)
+              .filter((item) => item.kind === "file")
+              .map((item) => item.getAsFile())
+              .filter((file): file is File => file !== null);
+            if (pastedFiles.length > 0) {
+              e.preventDefault();
+              void addFiles(pastedFiles);
+            }
+          }}
+          onKeyDown={handleKeyDown}
+          disabled={sending}
+          aria-label="Ask anything"
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
+          aria-expanded={menuOpen}
+          aria-controls={menuOpen ? slashListboxId : undefined}
+          aria-activedescendant={
+            menuOpen ? `${slashListboxId}-opt-${slashIdx}` : undefined
+          }
+          inputMode="text"
+          enterKeyHint="send"
+        />
+
+        {/* Enhance revert strip — mirrors the chat composer's post-enhance
+            status row: confirms the swap and offers a one-tap revert. */}
+        {enhanceOriginal !== null ? (
+          <div className="flex items-center gap-2 border-t border-[var(--border-hairline)]/60 px-3 py-1.5 text-[11px] text-[var(--text-muted)]" role="status">
+            <Icon name="ph:check" width={12} aria-hidden />
+            <span className="min-w-0 flex-1 truncate">Prompt improved</span>
             <button
               type="button"
-              className="hc-add-btn"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={sending}
-              aria-label="Attach files"
-              title="Attach files"
+              onClick={revertEnhance}
+              className="focus-ring rounded px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
+              aria-label="Revert prompt enhancement"
+              title="Revert prompt enhancement"
             >
-              <Icon name="ph:plus-bold" width={15} aria-hidden />
+              Revert
             </button>
-
-            <div
-              className="hc-dest-pills"
-              role="radiogroup"
-              aria-label="Send to"
-              ref={destGroupRef}
-              onKeyDown={handleDestKeyDown}
-            >
-              {DESTINATIONS.map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
-                  role="radio"
-                  aria-checked={destination === d.id}
-                  tabIndex={destination === d.id ? 0 : -1}
-                  onClick={() => setDestination(d.id)}
-                  disabled={sending}
-                >
-                  <Icon name={d.icon} width={14} aria-hidden />
-                  <span className="hc-dest-label">{d.label}</span>
-                </button>
-              ))}
-            </div>
-
-            <HomeSelect
-              icon="ph:warning-circle"
-              value={selectedFamiliarId}
-              onChange={(value) => {
-                if (value) onSetActiveFamiliar(value);
-              }}
-              groups={familiarSelectGroups}
-              ariaLabel="Choose chat agent"
-              disabled={visibleFamiliars.length === 0 || sending}
-              className="hc-access-chip"
-            />
           </div>
+        ) : null}
 
-          {/* Right cluster: status · model · thinking · mic · send */}
-          <div className="hc-control-group hc-control-group--run">
-            <span className="hc-status-dot" aria-hidden="true" />
+        {/* Controls — chat-composer footer: utility cluster (attach · voice ·
+            Options) plus the home-only destination pills and agent picker on
+            the left; enhance · send hug the right. */}
+        <div className="cave-composer-controls">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hc-file-input"
+            onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }}
+            tabIndex={-1}
+            aria-hidden
+          />
+          <div className="cave-composer-control-row">
+            <div className="cave-composer-utility-row">
+              <button
+                type="button"
+                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                title="Attach images, videos, or files"
+                aria-label="Attach images, videos, or files"
+                disabled={sending || attachments.length >= 10}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Icon name="ph:paperclip" width={14} aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                title="Voice input (coming soon)"
+                aria-label="Voice input"
+                disabled
+              >
+                <Icon name="ph:microphone" width={15} aria-hidden />
+              </button>
+              <ComposerOptionsMenu
+                hostValue={runtimeHost ?? LOCAL_HOST_ID}
+                onHostPick={setRuntimeHost}
+                disabled={sending}
+                indicator={
+                  thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+                  responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed
+                }
+                sections={[
+                  {
+                    id: "runtime",
+                    label: "Runtime",
+                    value: selectedRuntime,
+                    options: runtimeSectionOptions,
+                    onChange: (id: string) => handleSelectRuntime(id),
+                  } satisfies ComposerOptionSection,
+                  ...(runtimeModelOptions.length > 0
+                    ? [{
+                        id: "model",
+                        label: "Model",
+                        value: selectedModelId,
+                        options: runtimeModelOptions.map((m) => ({ value: m.id, label: m.label })),
+                        onChange: (id: string) => handleSelectModel(id),
+                      } satisfies ComposerOptionSection]
+                    : []),
+                  {
+                    id: "thinking",
+                    label: "Thinking",
+                    value: thinkingEffort,
+                    options: COMMAND_THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+                    onChange: (v: string) => setThinkingEffort(v as CommandThinkingEffort),
+                  } satisfies ComposerOptionSection,
+                  {
+                    id: "speed",
+                    label: "Speed",
+                    value: responseSpeed,
+                    options: COMMAND_RESPONSE_SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+                    onChange: (v: string) => setResponseSpeed(v as CommandResponseSpeed),
+                  } satisfies ComposerOptionSection,
+                ]}
+              />
 
-            <HomeSelect
-              icon="ph:lightning-bold"
-              value={selectedRuntimeModelValue}
-              onChange={handleSelectRuntimeModel}
-              groups={runtimeModelSelectGroups}
-              ariaLabel="Choose runtime and model"
-              disabled={!selectedFamiliarId || sending}
-              className="hc-runtime-model-selector"
-            />
+              <div
+                className="hc-dest-pills"
+                role="radiogroup"
+                aria-label="Send to"
+                ref={destGroupRef}
+                onKeyDown={handleDestKeyDown}
+              >
+                {DESTINATIONS.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    className={`hc-dest-pill${destination === d.id ? " active" : ""}`}
+                    role="radio"
+                    aria-checked={destination === d.id}
+                    tabIndex={destination === d.id ? 0 : -1}
+                    onClick={() => setDestination(d.id)}
+                    disabled={sending}
+                  >
+                    <Icon name={d.icon} width={14} aria-hidden />
+                    <span className="hc-dest-label">{d.label}</span>
+                  </button>
+                ))}
+              </div>
 
-            <HomeSelect
-              label="Think"
-              icon="ph:sparkle-bold"
-              value={thinkingEffort}
-              onChange={(value) => setThinkingEffort(value as CommandThinkingEffort)}
-              groups={[
-                {
-                  options: COMMAND_THINKING_OPTIONS.map((option) => ({
-                    ...option,
-                    icon: "ph:sparkle-bold",
-                  })),
-                },
-              ]}
-              ariaLabel="Choose thinking effort"
-              disabled={sending}
-              className="hc-command-select"
-            />
-
-            <button
-              type="button"
-              className="hc-mic-btn"
-              aria-label="Voice input"
-              title="Voice input (coming soon)"
-              disabled
-            >
-              <Icon name="ph:microphone" width={15} aria-hidden />
-            </button>
-
-            <button
-              type="button"
-              className={`hc-send-btn${sending ? " sending" : ""}${!text.trim() && attachments.length === 0 ? " empty" : ""}`}
-              onClick={() => void handleSubmit()}
-              disabled={(!text.trim() && attachments.length === 0) || sending}
-              aria-label="Send"
-            >
-              {sending ? (
-                <span className="hc-spinner" />
-              ) : (
-                <Icon name="ph:arrow-up-bold" width={14} aria-hidden />
-              )}
-            </button>
+              <HomeSelect
+                icon="ph:warning-circle"
+                value={selectedFamiliarId}
+                onChange={(value) => {
+                  if (value) onSetActiveFamiliar(value);
+                }}
+                groups={familiarSelectGroups}
+                ariaLabel="Choose chat agent"
+                disabled={visibleFamiliars.length === 0 || sending}
+                className="hc-access-chip"
+              />
+            </div>
+            <div className="cave-composer-submit-row">
+              <button
+                type="button"
+                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)] disabled:opacity-40"
+                title="Enhance prompt"
+                aria-label="Enhance prompt"
+                disabled={sending || enhanceStatus === "loading" || !text.trim()}
+                onClick={() => enhancePrompt()}
+              >
+                <Icon name="ph:sparkle" width={13} aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSubmit()}
+                disabled={(!text.trim() && attachments.length === 0) || sending}
+                className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                title={`Send message (${keys.enter})`}
+                aria-label="Send"
+              >
+                {sending ? (
+                  <span className="hc-spinner" />
+                ) : (
+                  <Icon name="ph:arrow-up-bold" width={13} aria-hidden />
+                )}
+              </button>
+            </div>
           </div>
         </div>
         </div>
