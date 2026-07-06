@@ -1,4 +1,5 @@
 import type { InboxItem, InboxMedia, ItemKind, ItemStatus, LinkRef, Recurrence } from "./cave-inbox";
+import { sanitizeSessionTitle } from "./cave-chat-titles.ts";
 import type { SessionRow } from "./types";
 
 export type DailySummaryDraft = {
@@ -42,10 +43,35 @@ function dayLabel(date: Date): string {
   return new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(date);
 }
 
+const REPORT_TITLE_MAX = 64;
+
+// Session titles come from harness transcripts and can leak raw markdown
+// ("## Prior conversation **User:** Merge PR #26 **"). The report body is
+// rendered as plain text, so markdown syntax must be stripped, not rendered.
+const MD_HEADING_RE = /^#{1,6}\s+/;
+const MD_EMPHASIS_RE = /(\*\*|__|[*_`])/g;
+const PRIOR_CONVERSATION_LEAK_RE = /^prior conversation\b/i;
+
+/** Session title as it should appear in the daily report: sanitized of
+ *  harness-preamble leaks (via sanitizeSessionTitle), stripped of markdown
+ *  syntax, truncated to a report-sized string. Falls back to "Untitled
+ *  session" when nothing survives. */
+export function reportSessionTitle(session: Pick<SessionRow, "title">): string {
+  const sanitized = sanitizeSessionTitle(session.title);
+  if (!sanitized) return "Untitled session";
+  const stripped = sanitized
+    .replace(MD_HEADING_RE, "")
+    .replace(MD_EMPHASIS_RE, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!stripped || PRIOR_CONVERSATION_LEAK_RE.test(stripped)) return "Untitled session";
+  if (stripped.length <= REPORT_TITLE_MAX) return stripped;
+  return `${stripped.slice(0, REPORT_TITLE_MAX - 1).trimEnd()}…`;
+}
+
 function sessionSummaryLine(session: SessionRow): string {
-  const title = session.title?.trim() || "Untitled session";
   const diff = session.diff ? ` (+${session.diff.additions} -${session.diff.deletions})` : "";
-  return `${title}${diff}`;
+  return `${reportSessionTitle(session)}${diff}`;
 }
 
 function xmlEscape(value: string): string {
@@ -56,7 +82,7 @@ function xmlEscape(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function dateSlug(date: Date): string {
+export function dateSlug(date: Date): string {
   const y = date.getFullYear();
   const m = `${date.getMonth() + 1}`.padStart(2, "0");
   const d = `${date.getDate()}`.padStart(2, "0");
@@ -76,13 +102,20 @@ export function shouldCreateDailySummary(items: InboxItem[], now = new Date()): 
   return !items.some((item) => item.auto === key);
 }
 
-export function buildDailySummaryNotification({
+/** Server-side enrichments threaded into the builder. Phase B fills this in
+ *  (merged PRs, completed board cards); Phase A only reserves the seam. */
+export type DailySummaryExtras = Record<string, never>;
+
+type BuildContentInput = BuildInput & { extras?: DailySummaryExtras };
+
+/** Build today's report content unconditionally (no auto-key dedup check) —
+ *  the refresh path rebuilds an existing item in place. Returns null only when
+ *  the day is empty. */
+export function buildDailySummaryContent({
   items,
   sessions,
   now = new Date(),
-}: BuildInput): DailySummaryDraft | null {
-  if (!shouldCreateDailySummary(items, now)) return null;
-
+}: BuildContentInput): DailySummaryDraft | null {
   const todayReminders = items.filter(
     (item) =>
       item.kind === "reminder" &&
@@ -120,7 +153,17 @@ export function buildDailySummaryNotification({
     plural(agentNotifications.length, "familiar update", "familiar updates"),
     plural(todaySessions.length, "session", "sessions") + " updated",
   ];
-  const topSessions = todaySessions.slice(0, 3).map(sessionSummaryLine);
+  // Dedupe repeated titles (retried/refreshed runs share one) case-insensitively,
+  // keeping the most recent occurrence — the list is already sorted newest-first.
+  const seenTitles = new Set<string>();
+  const topSessions: string[] = [];
+  for (const session of todaySessions) {
+    if (topSessions.length >= 6) break;
+    const titleKey = reportSessionTitle(session).toLowerCase();
+    if (seenTitles.has(titleKey)) continue;
+    seenTitles.add(titleKey);
+    topSessions.push(sessionSummaryLine(session));
+  }
   if (topSessions.length > 0) lines.push(`Recent: ${topSessions.join(" · ")}`);
 
   const sentAt = now.toISOString();
@@ -184,21 +227,39 @@ export function buildDailySummaryNotification({
   };
 }
 
+/** First-of-the-day create path: null once today's report already exists.
+ *  Refresh flows should use {@link buildDailySummaryContent} directly. */
+export function buildDailySummaryNotification({
+  items,
+  sessions,
+  now = new Date(),
+}: BuildInput): DailySummaryDraft | null {
+  if (!shouldCreateDailySummary(items, now)) return null;
+  return buildDailySummaryContent({ items, sessions, now });
+}
+
 export async function ensureDailySummaryNotification({
   items,
   sessions,
   now = new Date(),
-}: EnsureInput): Promise<"created" | "skipped" | "failed"> {
-  if (!buildDailySummaryNotification({ items, sessions, now })) return "skipped";
+}: EnsureInput): Promise<"created" | "updated" | "skipped" | "failed"> {
+  if (!buildDailySummaryContent({ items, sessions, now })) return "skipped";
   try {
     const res = await fetch("/api/inbox/daily-summary", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessions }),
+      // The date pins the payload to the day it was computed for, so a request
+      // racing midnight can't overwrite the new day's report server-side.
+      body: JSON.stringify({ sessions, date: dateSlug(now) }),
     });
     if (!res.ok) return "failed";
-    const json = (await res.json().catch(() => null)) as { ok?: boolean; created?: boolean } | null;
-    return json?.ok && json.created ? "created" : "skipped";
+    const json = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      created?: boolean;
+      updated?: boolean;
+    } | null;
+    if (!json?.ok) return "failed";
+    return json.created ? "created" : json.updated ? "updated" : "skipped";
   } catch {
     return "failed";
   }

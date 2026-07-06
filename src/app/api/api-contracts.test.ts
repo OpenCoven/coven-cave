@@ -252,6 +252,16 @@ for (const contract of contracts) {
     /media:\s*draft\.media/,
     "/inbox/daily-summary should persist the generated media card",
   );
+  assert.match(
+    dailySummarySource,
+    /broadcastUpdated\(/,
+    "/inbox/daily-summary refreshes must broadcast an updated event (created would re-toast)",
+  );
+  assert.match(
+    dailySummarySource,
+    /dateMismatch/,
+    "/inbox/daily-summary must reject payloads computed for a different day (midnight-rollover race)",
+  );
 }
 
 // CHAT-D5-02: cancelling a streaming response (Esc/Stop) must persist an

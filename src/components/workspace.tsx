@@ -61,10 +61,14 @@ import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import {
-  buildDailySummaryNotification,
   dailySummaryAutoKey,
   ensureDailySummaryNotification,
 } from "@/lib/daily-summary-notifications";
+import {
+  DAILY_REFRESH_POLL_MS,
+  dailySummarySignature,
+  shouldRefreshDailySummary,
+} from "@/lib/daily-summary-refresh";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
@@ -351,7 +355,13 @@ export function Workspace() {
   // often; the listener should not resubscribe on either.
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
+  // Daily-summary refresh state: the day key whose cycle we're in, the input
+  // signature and time of the last POST attempt, and an in-flight latch. All
+  // reset when the day key rolls over (midnight).
   const dailySummaryRequestedRef = useRef<string | null>(null);
+  const dailySummarySignatureRef = useRef<string | null>(null);
+  const dailySummaryAttemptAtRef = useRef(0);
+  const dailySummaryInFlightRef = useRef(false);
   const sessionsLoadedRef = useRef(sessionsLoaded);
   sessionsLoadedRef.current = sessionsLoaded;
   const modeRef = useRef(mode);
@@ -813,18 +823,60 @@ export function Workspace() {
     return () => es.close();
   }, []);
 
+  // Keep today's report live: create it on first activity, then refresh it in
+  // place whenever its inputs change (throttled server-writes; the report
+  // freezes for good once the day key rolls over).
+  const refreshDailySummary = useCallback(
+    (force: boolean) => {
+      if (!sessionsLoaded || dailySummaryInFlightRef.current) return;
+      const now = new Date();
+      const key = dailySummaryAutoKey(now);
+      if (dailySummaryRequestedRef.current !== key) {
+        // New day (or first run) — start a fresh refresh cycle.
+        dailySummaryRequestedRef.current = key;
+        dailySummarySignatureRef.current = null;
+        dailySummaryAttemptAtRef.current = 0;
+      }
+      const signature = dailySummarySignature({ items: inboxItems, sessions, now });
+      const hasItem = inboxItems.some((item) => item.auto === key);
+      const refresh = shouldRefreshDailySummary({
+        hasItem,
+        signature,
+        lastSignature: dailySummarySignatureRef.current,
+        lastAttemptAt: dailySummaryAttemptAtRef.current,
+        now,
+        force,
+      });
+      if (!refresh) return;
+      dailySummarySignatureRef.current = signature;
+      dailySummaryAttemptAtRef.current = now.getTime();
+      dailySummaryInFlightRef.current = true;
+      void ensureDailySummaryNotification({ items: inboxItems, sessions, now })
+        .then((result) => {
+          if (result === "failed") {
+            // Retry on the next input change once the min interval passes.
+            dailySummarySignatureRef.current = null;
+          } else if (result === "skipped" && !hasItem) {
+            // Empty day — nothing was posted; keep the create path immediate
+            // for when the first activity lands.
+            dailySummarySignatureRef.current = null;
+            dailySummaryAttemptAtRef.current = 0;
+          }
+        })
+        .finally(() => {
+          dailySummaryInFlightRef.current = false;
+        });
+    },
+    [inboxItems, sessions, sessionsLoaded],
+  );
   useEffect(() => {
-    if (!sessionsLoaded) return;
-    const now = new Date();
-    const key = dailySummaryAutoKey(now);
-    if (dailySummaryRequestedRef.current === key) return;
-    const draft = buildDailySummaryNotification({ items: inboxItems, sessions, now });
-    if (!draft) return;
-    dailySummaryRequestedRef.current = key;
-    void ensureDailySummaryNotification({ items: inboxItems, sessions, now }).then((result) => {
-      if (result === "failed") dailySummaryRequestedRef.current = null;
-    });
-  }, [inboxItems, sessions, sessionsLoaded]);
+    refreshDailySummary(false);
+  }, [refreshDailySummary]);
+  // Fallback tick: forces an attempt even with an unchanged signature, and
+  // rolls the refresh cycle past midnight for an app that stays open.
+  usePausablePoll(() => refreshDailySummary(true), DAILY_REFRESH_POLL_MS, {
+    enabled: sessionsLoaded,
+  });
 
   const openOnboarding = useCallback(() => setOnboardingOpen(true), []);
   const closeOnboarding = useCallback(() => {

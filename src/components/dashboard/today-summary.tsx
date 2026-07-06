@@ -29,7 +29,11 @@ export function TodaySummary({
       <SectionHead
         icon="ph:newspaper"
         title="Today's report"
-        hint={summary.generatedAt ? `Generated ${relativeTime(summary.generatedAt, now)}` : undefined}
+        hint={
+          summary.generatedAt
+            ? `Updated ${relativeTime(summary.generatedAt, now)} · live`
+            : "Live — refreshes today"
+        }
       />
       <div className="dash-today__grid">
         <div className="dr-panel dash-today__panel">
