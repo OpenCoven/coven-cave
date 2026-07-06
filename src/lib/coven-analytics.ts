@@ -162,8 +162,16 @@ function capitalize(text: string): string {
  * most pressing concern (stalled → quiet) or, when all is well, a positive.
  * Tone reflects the worst live signal.
  */
-export function deriveCovenInsight(input: { vitals: CovenVitals; rows: FamiliarInsightRow[] }): CovenInsight {
+export function deriveCovenInsight(input: { vitals: CovenVitals; rows: FamiliarInsightRow[]; familiarsLoaded?: boolean }): CovenInsight {
   const { vitals, rows } = input;
+
+  if (input.familiarsLoaded === false) {
+    return {
+      headline: "Loading familiars",
+      detail: "Fetching the coven roster before reading activity, confidence, and contract health.",
+      tone: "warn",
+    };
+  }
 
   if (vitals.familiarCount === 0) {
     return {

@@ -67,6 +67,9 @@ assert.match(cockpit, /Sessions · 7d/, "a weekly-sessions usage vital is surfac
 assert.match(cockpit, /Retro accept rate/, "a retro accept-rate performance vital is surfaced");
 assert.match(cockpit, /Contract health/, "a contract-health performance vital is surfaced");
 assert.match(cockpit, /Needs you/, "the attention vital is kept");
+assert.match(cockpit, /contractFetchPartial/, "capped contract/confidence KPI coverage is explicitly tracked");
+assert.match(cockpit, /first \$\{fetched\}\/\$\{total\} \$\{verb\}/, "partial KPI subtitles show first-N familiar coverage");
+assert.match(cockpit, /familiarsLoaded: ready\.has\("familiars"\)/, "empty-coven insight is gated until familiars load");
 
 // ── Truthful freshness + drill-throughs everywhere ──
 

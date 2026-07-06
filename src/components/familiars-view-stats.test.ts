@@ -16,6 +16,8 @@ const sessions = [
   { id: "s1", familiarId: "f1", updated_at: minutesAgo(2), project_root: "/r", harness: "claude", title: "t", status: "running", exit_code: null, archived_at: null, created_at: minutesAgo(10) },
   { id: "s2", familiarId: "f1", updated_at: daysAgo(1), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(1) },
   { id: "s3", familiarId: "f1", updated_at: daysAgo(8), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(8) },
+  { id: "s5", familiarId: "f1", updated_at: minutesAgo(1), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(9) },
+  { id: "s6", familiarId: "f1", updated_at: minutesAgo(1), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: minutesAgo(1), created_at: minutesAgo(1) },
   { id: "s4", familiarId: "f2", updated_at: daysAgo(3), project_root: "/r", harness: "claude", title: "t", status: "stopped", exit_code: 0, archived_at: null, created_at: daysAgo(3) },
 ];
 
@@ -31,9 +33,9 @@ const stats = buildFamiliarCardStats({ familiars, sessions, covenEntries, now: N
 const f1 = stats.get("f1");
 assert.equal(f1?.memoryCount, 2, "f1 has 2 memories");
 assert.equal(f1?.latestMemory?.title, "Latest f1 memory", "f1 latest memory is the most-recent one");
-assert.equal(f1?.lastSessionAt, sessions[0].updated_at, "f1 last session is the most-recent");
+assert.equal(f1?.lastSessionAt, sessions[0].created_at, "f1 last session uses the newest non-archived session start");
 assert.equal(f1?.sessionsLast7d, 2, "f1 has 2 sessions in the last 7d (s1 and s2; s3 is excluded at 8d)");
-assert.equal(f1?.hasActiveSession, true, "f1 has an active session (2min < 5min)");
+assert.equal(f1?.hasActiveSession, false, "f1 has no session start in the active window");
 
 // f2
 const f2 = stats.get("f2");
@@ -67,6 +69,14 @@ const edge5m = buildFamiliarCardStats({
   now: NOW,
 });
 assert.equal(edge5m.get("y")?.hasActiveSession, false, "session at exactly 5min ago is not active");
+
+const activeCreated = buildFamiliarCardStats({
+  familiars: [{ id: "a", display_name: "A", role: "" }],
+  sessions: [{ id: "recent", familiarId: "a", updated_at: minutesAgo(1), project_root: "/r", harness: "c", title: "t", status: "s", exit_code: 0, archived_at: null, created_at: minutesAgo(1) }],
+  covenEntries: [],
+  now: NOW,
+});
+assert.equal(activeCreated.get("a")?.hasActiveSession, true, "recent non-archived session start is active");
 
 // Empty inputs
 const empty = buildFamiliarCardStats({ familiars: [], sessions: [], covenEntries: [], now: NOW });
