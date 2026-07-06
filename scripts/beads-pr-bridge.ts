@@ -1,11 +1,6 @@
 #!/usr/bin/env node --experimental-strip-types
-import { execFileSync } from "node:child_process";
-import {
-  prStateNote,
-  summarizePullRequest,
-  type GitHubPullRequestInput,
-  type PullRequestSummary,
-} from "../src/lib/beads-pr-management.ts";
+import { summarizePullRequest } from "../src/lib/beads-pr-management.ts";
+import { applyBeadUpdate, ghPrList, planBeadUpdates } from "./beads-pr-shared.ts";
 
 type Options = {
   repo: string | null;
@@ -13,14 +8,6 @@ type Options = {
   apply: boolean;
   json: boolean;
   limit: string;
-};
-
-type BeadUpdate = {
-  id: string;
-  pr: number;
-  url: string;
-  note: string;
-  applied: boolean;
 };
 
 function parseArgs(argv: string[]): Options {
@@ -69,61 +56,6 @@ Default mode is report-only. Pass --pr NUMBER before --apply when you want to
 update one PR's linked beads without touching unrelated open PRs.`);
 }
 
-function ghPrList(opts: Options): GitHubPullRequestInput[] {
-  if (!opts.repo) throw new Error("--repo OWNER/REPO is required");
-  const stdout = execFileSync(
-    "gh",
-    [
-      "pr",
-      "list",
-      "--repo",
-      opts.repo,
-      "--state",
-      "open",
-      "--limit",
-      opts.limit,
-      "--json",
-      [
-        "number",
-        "title",
-        "url",
-        "isDraft",
-        "headRefName",
-        "baseRefName",
-        "mergeStateStatus",
-        "reviewDecision",
-        "statusCheckRollup",
-        "updatedAt",
-        "body",
-        "labels",
-      ].join(","),
-    ],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-  );
-  const parsed = JSON.parse(stdout) as unknown;
-  if (!Array.isArray(parsed)) throw new Error("gh pr list returned non-array JSON");
-  return parsed as GitHubPullRequestInput[];
-}
-
-function planBeadUpdates(summaries: PullRequestSummary[]): BeadUpdate[] {
-  const updates: BeadUpdate[] = [];
-  for (const summary of summaries) {
-    const note = prStateNote(summary);
-    for (const id of summary.beadIds) {
-      updates.push({ id, pr: summary.number, url: summary.url, note, applied: false });
-    }
-  }
-  return updates;
-}
-
-function applyBeadUpdate(update: BeadUpdate): BeadUpdate {
-  execFileSync("bd", ["update", update.id, "--external-ref", update.url, "--append-notes", update.note], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return { ...update, applied: true };
-}
-
 function renderText(result: ReturnType<typeof run>) {
   const lines = [
     `GitHub PR bridge: ${result.summaries.length} open PR${result.summaries.length === 1 ? "" : "s"} scanned`,
@@ -138,7 +70,8 @@ function renderText(result: ReturnType<typeof run>) {
 }
 
 function run(opts: Options) {
-  const prs = ghPrList(opts);
+  if (!opts.repo) throw new Error("--repo OWNER/REPO is required");
+  const prs = ghPrList(opts.repo, opts.limit);
   const filtered = opts.pr === null ? prs : prs.filter((pr) => pr.number === opts.pr);
   const summaries = filtered.map(summarizePullRequest);
   const planned = planBeadUpdates(summaries);

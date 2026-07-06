@@ -40,6 +40,8 @@
     "beads:prs": "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave",
     "beads:prs:json": "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave --json",
     "beads:prs:apply": "node --experimental-strip-types scripts/beads-pr-bridge.ts --repo OpenCoven/coven-cave --apply",
+    "beads:prs:patrol": "node --experimental-strip-types scripts/beads-pr-patrol.ts --repo OpenCoven/coven-cave",
+    "beads:prs:patrol:apply": "node --experimental-strip-types scripts/beads-pr-patrol.ts --repo OpenCoven/coven-cave --apply",
     "hfr:export": "node --experimental-strip-types scripts/coven-hfr-export.ts",
     "beads:sync": "bd dolt pull && bd dolt push",
     "beads:doctor": "bd doctor && bd lint",
