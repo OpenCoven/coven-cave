@@ -54,7 +54,7 @@ export function HomeSuggestions({ projectName, onPick }: Props) {
   );
 
   return (
-    <div className="home-suggestions" aria-label="Suggested prompts">
+    <div className="home-suggestions" role="group" aria-label="Suggested prompts">
       {suggestions.map((s) => (
         <button
           key={s.id}
