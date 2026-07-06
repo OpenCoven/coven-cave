@@ -64,6 +64,10 @@ async function setup(page: Page) {
     window.localStorage.setItem("cave:active-familiar", "nova");
     window.localStorage.setItem("cave:familiar:nova:last-surface", "chat");
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    // Nav is minimized-by-default; keep it expanded here so the chat layout keeps
+    // its full width (see cave:shell:min-applied — the sidebar-minimize flag).
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),
