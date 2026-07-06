@@ -642,6 +642,7 @@ export const SUITES = {
     "src/lib/server/skill-file-paths.test.ts",
     "src/lib/server/automation-log-paths.test.ts",
     "src/lib/server/user-avatar-file.test.ts",
+    "src/app/api/profile-route.test.ts",
     "src/lib/voice/registry.test.ts",
     "src/lib/voice/hydrate-instructions.test.ts",
     "src/lib/voice/append-voice-turn.test.ts",
