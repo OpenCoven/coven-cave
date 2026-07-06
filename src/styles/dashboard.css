@@ -426,6 +426,16 @@
   background: var(--bg-base);
   border: 1px solid var(--border-hairline);
 }
+.dash-today__chip--link {
+  text-decoration: none;
+  color: var(--color-info);
+  border-color: color-mix(in oklch, var(--color-info) 38%, transparent);
+  background: color-mix(in oklch, var(--color-info) 9%, transparent);
+}
+.dash-today__chip--link:hover {
+  border-color: color-mix(in oklch, var(--color-info) 55%, transparent);
+  background: color-mix(in oklch, var(--color-info) 15%, transparent);
+}
 
 /* Greeting eyebrow icon — replaces the old presence dot with a sun/moon. */
 .dr-eyebrow__icon { font-size: 0.85rem; color: var(--accent-presence); }

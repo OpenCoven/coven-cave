@@ -10,7 +10,11 @@ import {
   buildDailySummaryContent,
   dailySummaryAutoKey,
   dateSlug,
+  type DailySummaryExtras,
 } from "@/lib/daily-summary-notifications";
+import { completedCardsForDay, unionMergedPrs } from "@/lib/daily-report-facts";
+import { fetchMergedPrsForDay } from "@/lib/server/github-merged";
+import { loadBoard } from "@/lib/cave-board";
 import type { SessionRow } from "@/lib/types";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
@@ -37,11 +41,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, created: false, updated: false, dateMismatch: true });
   }
 
+  const sessions = Array.isArray(body.sessions) ? body.sessions : [];
+
+  // Day-in-review facts the client can't see, gathered outside the inbox
+  // lock (GitHub can take seconds; the lock serializes every inbox write).
+  // Each source degrades to "absent" — never an error, never a blocked write.
+  const [githubPrs, board] = await Promise.all([
+    fetchMergedPrsForDay(now).catch(() => null),
+    loadBoard().catch(() => null),
+  ]);
+  const extras: DailySummaryExtras = {
+    prsMerged: unionMergedPrs(githubPrs, sessions, now),
+    cardsCompleted: board ? completedCardsForDay(board.cards, now) : undefined,
+  };
+
   const result = await withInboxLock(async () => {
     const file = await loadInbox();
     const draft = buildDailySummaryContent({
       items: file.items,
-      sessions: Array.isArray(body.sessions) ? body.sessions : [],
+      sessions,
+      extras,
       now,
     });
     if (!draft) return null;
@@ -55,7 +74,8 @@ export async function POST(req: Request) {
         title: draft.title,
         body: draft.body,
         link: draft.link,
-        media: { ...draft.media },
+        // A fact-only refresh must not discard the narrative layered on top.
+        media: { ...draft.media, narrative: existing.media?.narrative ?? null },
         updatedAt: now.toISOString(),
       };
       file.items = file.items.map((item) => (item.id === existing.id ? refreshed : item));

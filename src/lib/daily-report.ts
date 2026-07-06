@@ -15,6 +15,10 @@ export type DailyReportStats = {
   responses: number;
   familiars: number;
   sessions: number;
+  /** Day-in-review counts — absent (not zero) on reports generated before
+   *  Phase B or when the source (GitHub PAT, board file) was unavailable. */
+  prsMerged?: number;
+  cardsCompleted?: number;
 };
 
 /** Parse a `YYYY-MM-DD` slug into a local Date at midnight. */
@@ -270,10 +274,16 @@ export function parseStatsFromBody(body: string | undefined): DailyReportStats |
   if (reminders === null && responses === null && familiars === null && sessions === null) {
     return null;
   }
+  // Day-in-review lines are optional — absent stays absent (never zero), so
+  // pre-Phase-B bodies keep their original shape.
+  const prsMerged = count(/(\d+)\s+PRs?\s+merged/i);
+  const cardsCompleted = count(/(\d+)\s+cards?\s+completed/i);
   return {
     reminders: reminders ?? 0,
     responses: responses ?? 0,
     familiars: familiars ?? 0,
     sessions: sessions ?? 0,
+    ...(prsMerged !== null ? { prsMerged } : {}),
+    ...(cardsCompleted !== null ? { cardsCompleted } : {}),
   };
 }

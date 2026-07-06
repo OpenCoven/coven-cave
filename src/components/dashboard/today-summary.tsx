@@ -46,6 +46,28 @@ export function TodaySummary({
               Today&apos;s summary is still taking shape — it fills in as activity lands.
             </p>
           )}
+          {summary.report?.prsMerged && summary.report.prsMerged.length > 0 ? (
+            <div className="dash-today__sessions" aria-label="Merged pull requests">
+              <span className="dash-today__sessions-label">
+                <Icon name="ph:git-pull-request" aria-hidden />
+                Shipped
+              </span>
+              <div className="dash-today__chips">
+                {summary.report.prsMerged.map((pr) => (
+                  <a
+                    key={`${pr.repo}#${pr.number}`}
+                    className="dash-today__chip dash-today__chip--link"
+                    href={pr.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={pr.title}
+                  >
+                    {pr.repo.split("/").pop()}#{pr.number}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {summary.recentSessions.length > 0 ? (
             <div className="dash-today__sessions" aria-label="Recent sessions">
               <span className="dash-today__sessions-label">

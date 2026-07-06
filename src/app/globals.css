@@ -9092,6 +9092,62 @@ a.dr-row:hover .dr-row__open { color: var(--accent-presence); transform: transla
   box-shadow: 0 24px 60px -36px color-mix(in oklch, var(--accent-presence) 70%, #000);
 }
 
+/* Day-in-review: sessions grouped by project ------------------------------- */
+.dr-groups { display: grid; gap: 14px; }
+.dr-group {
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-panel);
+  background: var(--bg-raised);
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+.dr-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.dr-group__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 620;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dr-group__label svg { color: var(--color-success); flex: none; }
+.dr-diffstat {
+  display: inline-flex;
+  gap: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.dr-diffstat__add { color: var(--color-success); }
+.dr-diffstat__del { color: var(--color-danger); }
+.dr-pr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  align-self: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-decoration: none;
+  color: var(--color-info);
+  border: 1px solid color-mix(in oklch, var(--color-info) 38%, transparent);
+  background: color-mix(in oklch, var(--color-info) 9%, transparent);
+}
+.dr-pr-chip:hover {
+  border-color: color-mix(in oklch, var(--color-info) 55%, transparent);
+  background: color-mix(in oklch, var(--color-info) 15%, transparent);
+}
+
 /* Dashboard quick links ----------------------------------------------------- */
 /* Six links: 2 cols (mobile) → 3 cols, so rows always fill evenly (no orphan). */
 .dr-quicklinks {

@@ -138,6 +138,7 @@ export const SUITES = {
     "src/app/dashboard-runtime-smoke.test.ts",
     "src/lib/daily-summary-notifications.test.ts",
     "src/lib/daily-summary-refresh.test.ts",
+    "src/lib/daily-report-facts.test.ts",
     "src/components/dev-cache-reset-script.test.ts",
     "src/components/pwa-register.test.ts",
     "src/lib/readable-text-color.test.ts",

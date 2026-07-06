@@ -1,6 +1,16 @@
 import type { InboxItem, InboxMedia, ItemKind, ItemStatus, LinkRef, Recurrence } from "./cave-inbox";
-import { sanitizeSessionTitle } from "./cave-chat-titles.ts";
+import {
+  buildSessionGroups,
+  dailyFactsHash,
+  reportSessionTitle,
+  type CompletedCard,
+  type MergedPr,
+} from "./daily-report-facts.ts";
 import type { SessionRow } from "./types";
+
+// Title hygiene lives in daily-report-facts.ts (shared with the day-in-review
+// payload); re-exported here for existing consumers.
+export { reportSessionTitle };
 
 export type DailySummaryDraft = {
   kind: Extract<ItemKind, "daily-summary">;
@@ -43,32 +53,6 @@ function dayLabel(date: Date): string {
   return new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(date);
 }
 
-const REPORT_TITLE_MAX = 64;
-
-// Session titles come from harness transcripts and can leak raw markdown
-// ("## Prior conversation **User:** Merge PR #26 **"). The report body is
-// rendered as plain text, so markdown syntax must be stripped, not rendered.
-const MD_HEADING_RE = /^#{1,6}\s+/;
-const MD_EMPHASIS_RE = /(\*\*|__|[*_`])/g;
-const PRIOR_CONVERSATION_LEAK_RE = /^prior conversation\b/i;
-
-/** Session title as it should appear in the daily report: sanitized of
- *  harness-preamble leaks (via sanitizeSessionTitle), stripped of markdown
- *  syntax, truncated to a report-sized string. Falls back to "Untitled
- *  session" when nothing survives. */
-export function reportSessionTitle(session: Pick<SessionRow, "title">): string {
-  const sanitized = sanitizeSessionTitle(session.title);
-  if (!sanitized) return "Untitled session";
-  const stripped = sanitized
-    .replace(MD_HEADING_RE, "")
-    .replace(MD_EMPHASIS_RE, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!stripped || PRIOR_CONVERSATION_LEAK_RE.test(stripped)) return "Untitled session";
-  if (stripped.length <= REPORT_TITLE_MAX) return stripped;
-  return `${stripped.slice(0, REPORT_TITLE_MAX - 1).trimEnd()}…`;
-}
-
 function sessionSummaryLine(session: SessionRow): string {
   const diff = session.diff ? ` (+${session.diff.additions} -${session.diff.deletions})` : "";
   return `${reportSessionTitle(session)}${diff}`;
@@ -102,9 +86,13 @@ export function shouldCreateDailySummary(items: InboxItem[], now = new Date()): 
   return !items.some((item) => item.auto === key);
 }
 
-/** Server-side enrichments threaded into the builder. Phase B fills this in
- *  (merged PRs, completed board cards); Phase A only reserves the seam. */
-export type DailySummaryExtras = Record<string, never>;
+/** Server-side enrichments threaded into the builder — facts the client
+ *  can't see. `undefined` fields mean "source unavailable" (section absent),
+ *  not "nothing happened". */
+export type DailySummaryExtras = {
+  prsMerged?: MergedPr[];
+  cardsCompleted?: CompletedCard[];
+};
 
 type BuildContentInput = BuildInput & { extras?: DailySummaryExtras };
 
@@ -114,6 +102,7 @@ type BuildContentInput = BuildInput & { extras?: DailySummaryExtras };
 export function buildDailySummaryContent({
   items,
   sessions,
+  extras,
   now = new Date(),
 }: BuildContentInput): DailySummaryDraft | null {
   const todayReminders = items.filter(
@@ -138,11 +127,16 @@ export function buildDailySummaryContent({
     .filter((session) => !session.archived_at && isSameLocalDay(session.updated_at, now))
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
+  const prsMerged = extras?.prsMerged;
+  const cardsCompleted = extras?.cardsCompleted;
+
   if (
     todayReminders.length === 0 &&
     waitingResponses.length === 0 &&
     agentNotifications.length === 0 &&
-    todaySessions.length === 0
+    todaySessions.length === 0 &&
+    (prsMerged?.length ?? 0) === 0 &&
+    (cardsCompleted?.length ?? 0) === 0
   ) {
     return null;
   }
@@ -153,6 +147,12 @@ export function buildDailySummaryContent({
     plural(agentNotifications.length, "familiar update", "familiar updates"),
     plural(todaySessions.length, "session", "sessions") + " updated",
   ];
+  // Only claim day-in-review counts when the source was actually consulted —
+  // an unconfigured PAT or unreadable board omits the line entirely.
+  if (prsMerged !== undefined) lines.push(plural(prsMerged.length, "PR") + " merged");
+  if (cardsCompleted !== undefined) {
+    lines.push(plural(cardsCompleted.length, "card") + " completed");
+  }
   // Dedupe repeated titles (retried/refreshed runs share one) case-insensitively,
   // keeping the most recent occurrence — the list is already sorted newest-first.
   const seenTitles = new Set<string>();
@@ -172,7 +172,33 @@ export function buildDailySummaryContent({
     responses: waitingResponses.length,
     familiars: agentNotifications.length,
     sessions: todaySessions.length,
+    ...(prsMerged !== undefined ? { prsMerged: prsMerged.length } : {}),
+    ...(cardsCompleted !== undefined ? { cardsCompleted: cardsCompleted.length } : {}),
   };
+  const sessionGroups = buildSessionGroups(sessions, now);
+  const report = {
+    ...(prsMerged !== undefined ? { prsMerged } : {}),
+    ...(cardsCompleted !== undefined ? { cardsCompleted } : {}),
+    sessionGroups,
+    factsHash: dailyFactsHash({ stats, prsMerged, cardsCompleted, sessionGroups }),
+    refreshedAt: sentAt,
+  };
+  // Second SVG row for the day-in-review counts; omitted when neither source
+  // was consulted so pre-Phase-B cards keep their exact layout.
+  const shipCells: { value: number; label: string }[] = [];
+  if (prsMerged !== undefined) shipCells.push({ value: prsMerged.length, label: "prs merged" });
+  if (cardsCompleted !== undefined) {
+    shipCells.push({ value: cardsCompleted.length, label: "cards completed" });
+  }
+  const shipRow = shipCells.length
+    ? `
+  <g font-family="Inter, system-ui, sans-serif" font-weight="800">
+    ${shipCells.map((cell, i) => `<text x="${92 + i * 288}" y="480" fill="#ffffff" font-size="44">${cell.value}</text>`).join("\n    ")}
+  </g>
+  <g fill="#b9b0c8" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="700">
+    ${shipCells.map((cell, i) => `<text x="${92 + i * 288}" y="516">${xmlEscape(cell.label)}</text>`).join("\n    ")}
+  </g>`
+    : "";
   const day = dayLabel(now);
   const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
@@ -203,7 +229,7 @@ export function buildDailySummaryContent({
     <text x="300" y="410">responses</text>
     <text x="508" y="410">familiars</text>
     <text x="716" y="410">sessions</text>
-  </g>
+  </g>${shipRow}
 </svg>`.trim();
 
   return {
@@ -220,6 +246,7 @@ export function buildDailySummaryContent({
       alt: `Daily summary generated image for ${day}`,
       stats,
       generatedAt: sentAt,
+      report,
     },
     fireAt: sentAt,
     firedAt: sentAt,
@@ -232,10 +259,11 @@ export function buildDailySummaryContent({
 export function buildDailySummaryNotification({
   items,
   sessions,
+  extras,
   now = new Date(),
-}: BuildInput): DailySummaryDraft | null {
+}: BuildContentInput): DailySummaryDraft | null {
   if (!shouldCreateDailySummary(items, now)) return null;
-  return buildDailySummaryContent({ items, sessions, now });
+  return buildDailySummaryContent({ items, sessions, extras, now });
 }
 
 export async function ensureDailySummaryNotification({
@@ -243,7 +271,12 @@ export async function ensureDailySummaryNotification({
   sessions,
   now = new Date(),
 }: EnsureInput): Promise<"created" | "updated" | "skipped" | "failed"> {
-  if (!buildDailySummaryContent({ items, sessions, now })) return "skipped";
+  // Once today's item exists, always POST: the server folds in facts the
+  // client can't see (merged PRs, board cards), so an unchanged client view
+  // does not mean an unchanged report. Creation stays gated on client-visible
+  // activity to keep empty days quiet.
+  const exists = !shouldCreateDailySummary(items, now);
+  if (!exists && !buildDailySummaryContent({ items, sessions, now })) return "skipped";
   try {
     const res = await fetch("/api/inbox/daily-summary", {
       method: "POST",

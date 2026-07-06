@@ -2,6 +2,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { homedir } from "node:os";
 import { computeNextOccurrence, type Recurrence } from "@/lib/inbox-recurrence";
+import type { DailyReportPayload } from "./daily-report-facts.ts";
 import { writeJsonAtomic } from "./server/atomic-write.ts";
 
 const INBOX_PATH = path.join(homedir(), ".coven", "cave-inbox.json");
@@ -31,8 +32,20 @@ export type InboxMedia = {
     responses: number;
     familiars: number;
     sessions: number;
+    /** Optional day-in-review counts — absent on items generated before Phase B. */
+    prsMerged?: number;
+    cardsCompleted?: number;
   };
   generatedAt: string;
+  /** Structured day-in-review facts, frozen per refresh. Absent on old items. */
+  report?: DailyReportPayload | null;
+  /** Familiar-written narrative layered on the facts (Phase C). */
+  narrative?: {
+    text: string;
+    familiarId: string;
+    generatedAt: string;
+    factsHash: string;
+  } | null;
 };
 
 export type InboxItem = {

@@ -23,4 +23,12 @@ assert.match(page, /ItemRow/, "report should render deep-linkable item rows");
 assert.match(page, /href="\/dashboard"/, "report should link back to the dashboard");
 assert.match(page, /dr-page/, "report should use the shared daily-report surface styling");
 
+// Day-in-review sections (Phase B) render from the frozen media.report facts,
+// with the flat body-recovered list kept as the pre-Phase-B fallback.
+assert.match(page, /item\.media\?\.report/, "report should read the structured day-in-review facts");
+assert.match(page, /Merged pull requests/, "report should list PRs merged during the day");
+assert.match(page, /Sessions by project/, "report should group sessions by project");
+assert.match(page, /Cards completed/, "report should list board cards finished during the day");
+assert.match(page, /Recent sessions/, "pre-Phase-B reports should keep the flat recovered session list");
+
 console.log("daily-report-page.test.ts: ok");

@@ -195,4 +195,63 @@ assert.equal(
 );
 assert.doesNotMatch(recentLine, /Harden avatar storage/, "sessions past the cap are dropped");
 
+// ── Day-in-review extras (Phase B) ──────────────────────────────────────────
+const extras = {
+  prsMerged: [
+    {
+      repo: "OpenCoven/coven-cave",
+      number: 2497,
+      title: "keep today's report live",
+      url: "https://github.com/OpenCoven/coven-cave/pull/2497",
+      mergedAt: "2026-06-18T17:00:00.000Z",
+    },
+  ],
+  cardsCompleted: [
+    { id: "c1", title: "Ship it", projectId: null, familiarId: null, completedAt: "2026-06-18T15:00:00.000Z" },
+    { id: "c2", title: "Close it", projectId: null, familiarId: null, completedAt: "2026-06-18T16:00:00.000Z" },
+  ],
+};
+const enriched = buildDailySummaryContent({
+  now,
+  items: [],
+  sessions: [sessionAt("e1", "Ship the parser", 1)],
+  extras,
+});
+assert.ok(enriched);
+assert.match(enriched.body, /1 PR merged/, "body should carry the merged-PR count line");
+assert.match(enriched.body, /2 cards completed/, "body should carry the completed-cards count line");
+assert.equal(enriched.media.stats.prsMerged, 1, "stats should freeze the merged-PR count");
+assert.equal(enriched.media.stats.cardsCompleted, 2, "stats should freeze the completed-card count");
+assert.equal(
+  enriched.media.report?.prsMerged?.[0]?.number,
+  2497,
+  "media.report should carry the structured merged PRs",
+);
+assert.equal(
+  enriched.media.report?.sessionGroups?.[0]?.sessions?.[0]?.title,
+  "Ship the parser",
+  "media.report should carry sessions grouped by project",
+);
+assert.ok(enriched.media.report?.factsHash, "media.report should carry a facts hash");
+assert.match(
+  decodeURIComponent(enriched.media.imageUrl),
+  /prs merged/,
+  "the generated card should show the day-in-review row when sources were consulted",
+);
+
+// Sources not consulted → no count lines, no claims (absent, not zero).
+const unenriched = buildDailySummaryContent({
+  now,
+  items: [],
+  sessions: [sessionAt("e2", "Ship the parser", 1)],
+});
+assert.ok(unenriched);
+assert.doesNotMatch(unenriched.body, /PRs? merged|cards? completed/);
+assert.equal(unenriched.media.stats.prsMerged, undefined);
+assert.doesNotMatch(decodeURIComponent(unenriched.media.imageUrl), /prs merged/);
+
+// A day with nothing client-visible but merged PRs still deserves a report.
+const prOnly = buildDailySummaryContent({ now, items: [], sessions: [], extras });
+assert.ok(prOnly, "a PR-only day should still produce a report");
+
 console.log("daily-summary-notifications.test.ts: ok");

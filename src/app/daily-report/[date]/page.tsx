@@ -77,18 +77,26 @@ export default async function DailyReportPage({ params }: Props) {
       const s = statBySlug.get(slugFor(d));
       out.push({
         label: d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }),
-        value: s ? s[metric] : null,
+        // Optional metrics are absent on pre-Phase-B reports — chart as gaps.
+        value: s ? (s[metric] ?? null) : null,
       });
     }
     return out;
   };
   const recentSessions = parseRecentSessions(item.body);
+  // Structured day-in-review facts — frozen per refresh, absent on old items.
+  const report = item.media?.report ?? null;
   // media.generatedAt moves on every in-place refresh; firedAt stays at the
   // day's first generation, so prefer the former for a truthful timestamp.
   const generatedAt = item.media?.generatedAt ?? item.firedAt ?? item.updatedAt ?? null;
   const isToday = parsedDate ? slugFor(parsedDate) === slugFor(new Date()) : false;
   const totalEvents = stats
-    ? stats.reminders + stats.responses + stats.familiars + stats.sessions
+    ? stats.reminders +
+      stats.responses +
+      stats.familiars +
+      stats.sessions +
+      (stats.prsMerged ?? 0) +
+      (stats.cardsCompleted ?? 0)
     : 0;
 
   return (
@@ -184,6 +192,26 @@ export default async function DailyReportPage({ params }: Props) {
               accent="green"
               trend={trendFor("sessions")}
             />
+            {typeof stats.prsMerged === "number" ? (
+              <MetricCard
+                icon="ph:git-pull-request"
+                value={stats.prsMerged}
+                label="PRs merged"
+                caption="Shipped to main"
+                accent="blue"
+                trend={trendFor("prsMerged")}
+              />
+            ) : null}
+            {typeof stats.cardsCompleted === "number" ? (
+              <MetricCard
+                icon="ph:kanban-bold"
+                value={stats.cardsCompleted}
+                label="Cards completed"
+                caption="Board work finished"
+                accent="amber"
+                trend={trendFor("cardsCompleted")}
+              />
+            ) : null}
           </section>
         ) : null}
 
@@ -224,8 +252,103 @@ export default async function DailyReportPage({ params }: Props) {
           </section>
         ) : null}
 
-        {/* Sessions — recovered from the frozen summary body (daemon-backed). */}
-        {recentSessions.length > 0 ? (
+        {/* Shipped — PRs merged during this day (day-in-review facts). */}
+        {report?.prsMerged && report.prsMerged.length > 0 ? (
+          <section className="dr-section" aria-label="Merged pull requests">
+            <SectionHead
+              icon="ph:git-pull-request"
+              title="Merged pull requests"
+              count={report.prsMerged.length}
+            />
+            <div className="dr-list">
+              {report.prsMerged.map((pr) => (
+                <a
+                  key={`${pr.repo}#${pr.number}`}
+                  className="dr-row"
+                  href={pr.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ ["--row-accent" as string]: "var(--color-info)" }}
+                >
+                  <span className="dr-row__icon">
+                    <Icon name="ph:git-pull-request" aria-hidden />
+                  </span>
+                  <span className="dr-row__body">
+                    <span className="dr-row__title">{pr.title}</span>
+                    <span className="dr-row__metaline">
+                      <span className="dr-tag">
+                        {pr.repo}#{pr.number}
+                      </span>
+                      <span className="dr-row__time">merged {relativeTime(pr.mergedAt)}</span>
+                    </span>
+                  </span>
+                  <span className="dr-row__open">
+                    <span>Open</span>
+                    <Icon name="ph:arrow-right-bold" aria-hidden />
+                  </span>
+                </a>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {/* Sessions grouped by project (structured facts), falling back to the
+            flat list recovered from the frozen body on pre-Phase-B reports. */}
+        {report?.sessionGroups && report.sessionGroups.length > 0 ? (
+          <section className="dr-section" aria-label="Sessions by project">
+            <SectionHead
+              icon="ph:graph-bold"
+              title="Sessions by project"
+              count={report.sessionGroups.length}
+            />
+            <div className="dr-groups">
+              {report.sessionGroups.map((group) => (
+                <div key={group.key} className="dr-group">
+                  <div className="dr-group__head">
+                    <span className="dr-group__label">
+                      <Icon name="ph:code-bold" aria-hidden />
+                      {group.label}
+                    </span>
+                    {group.additions + group.deletions > 0 ? (
+                      <span className="dr-diffstat">
+                        <span className="dr-diffstat__add">+{group.additions}</span>
+                        <span className="dr-diffstat__del">-{group.deletions}</span>
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="dr-list">
+                    {group.sessions.map((session) => (
+                      <div
+                        key={session.id}
+                        className="dr-row"
+                        style={{ ["--row-accent" as string]: "var(--color-success)" }}
+                      >
+                        <span className="dr-row__icon">
+                          <Icon name="ph:code-bold" aria-hidden />
+                        </span>
+                        <span className="dr-row__body">
+                          <span className="dr-row__title">{session.title}</span>
+                        </span>
+                        {session.pr?.url ? (
+                          <a
+                            className="dr-pr-chip"
+                            href={session.pr.url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <Icon name="ph:git-pull-request" aria-hidden />
+                            {session.pr.repo?.split("/").pop() ?? session.pr.repo}
+                            {typeof session.pr.number === "number" ? `#${session.pr.number}` : ""}
+                          </a>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : recentSessions.length > 0 ? (
           <section className="dr-section" aria-label="Recent sessions">
             <SectionHead
               icon="ph:graph-bold"
@@ -242,6 +365,41 @@ export default async function DailyReportPage({ params }: Props) {
                     <span className="dr-row__title">{line}</span>
                   </span>
                 </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {/* Board cards finished today. */}
+        {report?.cardsCompleted && report.cardsCompleted.length > 0 ? (
+          <section className="dr-section" aria-label="Cards completed">
+            <SectionHead
+              icon="ph:kanban-bold"
+              title="Cards completed"
+              count={report.cardsCompleted.length}
+            />
+            <div className="dr-list">
+              {report.cardsCompleted.map((card) => (
+                <a
+                  key={card.id}
+                  className="dr-row"
+                  href={`/#card-${card.id}`}
+                  style={{ ["--row-accent" as string]: "var(--color-warning)" }}
+                >
+                  <span className="dr-row__icon">
+                    <Icon name="ph:kanban-bold" aria-hidden />
+                  </span>
+                  <span className="dr-row__body">
+                    <span className="dr-row__title">{card.title}</span>
+                    <span className="dr-row__metaline">
+                      <span className="dr-row__time">completed {relativeTime(card.completedAt)}</span>
+                    </span>
+                  </span>
+                  <span className="dr-row__open">
+                    <span>Open</span>
+                    <Icon name="ph:arrow-right-bold" aria-hidden />
+                  </span>
+                </a>
               ))}
             </div>
           </section>

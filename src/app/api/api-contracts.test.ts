@@ -262,6 +262,21 @@ for (const contract of contracts) {
     /dateMismatch/,
     "/inbox/daily-summary must reject payloads computed for a different day (midnight-rollover race)",
   );
+  assert.match(
+    dailySummarySource,
+    /fetchMergedPrsForDay\(now\)\.catch\(/,
+    "/inbox/daily-summary should gather merged PRs server-side, degrading to absent on failure",
+  );
+  assert.match(
+    dailySummarySource,
+    /loadBoard\(\)\.catch\(/,
+    "/inbox/daily-summary should gather completed cards server-side, degrading to absent on failure",
+  );
+  assert.match(
+    dailySummarySource,
+    /narrative:\s*existing\.media\?\.narrative/,
+    "/inbox/daily-summary fact refreshes must preserve the narrative layered on top",
+  );
 }
 
 // CHAT-D5-02: cancelling a streaming response (Esc/Stop) must persist an
