@@ -9,6 +9,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { MarkdownBlock } from "@/components/message-bubble";
 import { copyText } from "@/lib/clipboard";
 
@@ -359,6 +361,21 @@ export function SkillBrowser({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState<BusyState>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [copiedInstall, setCopiedInstall] = useState(false);
+  const { announce } = useAnnouncer();
+
+  // Notices are transient feedback, not state — without this they lingered
+  // indefinitely ("Install command copied" an hour later reads as broken).
+  useEffect(() => {
+    if (!notice) return;
+    const t = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [notice]);
+  useEffect(() => {
+    if (!copiedInstall) return;
+    const t = window.setTimeout(() => setCopiedInstall(false), 1500);
+    return () => window.clearTimeout(t);
+  }, [copiedInstall]);
 
   const counts = useMemo(
     () => ({
@@ -482,6 +499,7 @@ export function SkillBrowser({
     if (!selected) return;
     try {
       await copyText(installCommand(selected));
+      setCopiedInstall(true);
       setNotice("Install command copied");
     } catch {
       setNotice("Could not copy install command");
@@ -501,7 +519,7 @@ export function SkillBrowser({
       });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; alreadyInstalled?: boolean };
       if (!res.ok || !json.ok) {
-        setNotice(json.error ? `Install failed: ${json.error}` : `Install failed (${res.status})`);
+        setNotice(json.error ? `Install failed: ${json.error}` : "Install failed. Try again.");
         return;
       }
       setNotice(json.alreadyInstalled ? "Skill already installed" : "Skill installed");
@@ -522,7 +540,7 @@ export function SkillBrowser({
     });
     const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; prompt?: string };
     if (!res.ok || !json.ok || !json.prompt) {
-      setNotice(json.error ? `Use failed: ${json.error}` : `Use failed (${res.status})`);
+      setNotice(json.error ? `Use failed: ${json.error}` : "Couldn't fetch the skill prompt. Try again.");
       return null;
     }
     return json.prompt;
@@ -579,11 +597,14 @@ export function SkillBrowser({
       });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !json.ok) {
-        setNotice(json.error ? `Delete failed: ${json.error}` : `Delete failed (${res.status})`);
+        setNotice(json.error ? `Delete failed: ${json.error}` : "Delete failed. Try again.");
         return;
       }
       setConfirmingDelete(false);
       setSelectedKey(null);
+      // The selection jumps to the next skill and the local notice resets with
+      // it, so the confirmation goes through the shared live region instead.
+      announce("Skill deleted", "polite");
       onChanged?.();
     } catch (err) {
       setNotice(err instanceof Error ? `Delete failed: ${err.message}` : "Delete failed");
@@ -616,7 +637,7 @@ export function SkillBrowser({
       </nav>
 
       {/* ── Card list ────────────────────────────────────────────────── */}
-      <div className="skill-browser__list" role="listbox" aria-label="Skills">
+      <div className="skill-browser__list">
         <div className="skill-browser__leaderboard">
           <div>
             <p className="skill-browser__leaderboard-kicker">Skills Leaderboard</p>
@@ -624,8 +645,10 @@ export function SkillBrowser({
           </div>
           <div className="skill-browser__ecosystem">
             <div className="skill-browser__ecosystem-command">
-              <span>Try it now</span>
-              <code>{ecosystemCommand}</code>
+              {/* The command tracks the selection — say so, or a generic
+                  "Try it now" silently changes meaning three columns over. */}
+              <span>{selected ? `Install ${selected.name}` : "Try it now"}</span>
+              <code title={ecosystemCommand}>{ecosystemCommand}</code>
             </div>
             <div className="skill-browser__agent-strip" aria-label="Available for these agents">
               {FEATURED_AGENT_LABELS.map((name) => (
@@ -714,26 +737,45 @@ export function SkillBrowser({
           ) : null}
         </div>
         {!loaded ? (
-          <div className="skill-browser__note" aria-hidden>
+          <div className="skill-browser__note" role="status">
             Loading skills…
           </div>
         ) : skills.length === 0 ? (
-          <div className="skill-browser__empty">
-            <Icon name="ph:puzzle-piece" width={22} aria-hidden />
-            <p>No directory skills found.</p>
-            {onCreateSkill ? (
-              <Button variant="secondary" size="xs" className="skill-browser__empty-action" onClick={onCreateSkill}>
-                Open Capabilities
-              </Button>
-            ) : null}
-          </div>
+          <EmptyState
+            compact
+            icon="ph:puzzle-piece"
+            headline="No skills yet"
+            subtitle="Nothing turned up in your skill roots or the directory."
+            actions={
+              onCreateSkill ? (
+                <Button variant="secondary" size="xs" onClick={onCreateSkill}>
+                  Open Capabilities
+                </Button>
+              ) : undefined
+            }
+          />
         ) : rankedVisible.length === 0 ? (
-          <div className="skill-browser__empty">
-            <p>No skills match “{query.trim()}”.</p>
-            <Button variant="secondary" size="xs" className="skill-browser__empty-action" onClick={onClearQuery}>
-              Clear search
-            </Button>
-          </div>
+          <EmptyState
+            compact
+            icon="ph:magnifying-glass"
+            headline={query.trim() ? `No skills match “${query.trim()}”` : "No skills match these filters"}
+            subtitle="Try a different search, topic, or category."
+            actions={
+              <Button
+                variant="secondary"
+                size="xs"
+                onClick={() => {
+                  onClearQuery();
+                  setCategory("all");
+                  setBrowse("all");
+                  setTopic("all");
+                  setAgent("all");
+                }}
+              >
+                Clear filters
+              </Button>
+            }
+          />
         ) : (
           rankedVisible.map((skill, index) => {
             const key = skillKey(skill);
@@ -744,8 +786,7 @@ export function SkillBrowser({
               <Button
                 key={key}
                 variant="ghost"
-                role="option"
-                aria-selected={isSel}
+                aria-pressed={isSel}
                 className={`skill-browser__card${isSel ? " is-active" : ""}`}
                 onClick={() => setSelectedKey(key)}
               >
@@ -830,13 +871,13 @@ export function SkillBrowser({
                 ))}
               </div>
               <div className="skill-browser__install">
-                <code>{installCommand(selected)}</code>
+                <code title={installCommand(selected)}>{installCommand(selected)}</code>
                 <IconButton
-                  icon="ph:copy"
+                  icon={copiedInstall ? "ph:check" : "ph:copy"}
                   size="sm"
                   className="skill-browser__action"
                   onClick={handleCopyInstall}
-                  title="Copy install command"
+                  title={copiedInstall ? "Copied" : "Copy install command"}
                   aria-label="Copy install command"
                 />
                 <Button
@@ -951,9 +992,13 @@ export function SkillBrowser({
                 <MarkdownBlock text={body} className="cave-md--expanded" />
               ) : (
                 // 403 (path outside allow-listed roots), empty file, or error —
-                // show the scanned description so the pane is never blank.
+                // show the scanned description so the pane is never blank. For
+                // a local skill whose file SHOULD be readable, say the read
+                // failed instead of passing it off as "no preview".
                 <p className="skill-browser__fallback">
-                  {selected.description || "No preview available for this skill."}
+                  {preview.status === "error" && selectedPath
+                    ? `Couldn’t read this skill’s SKILL.md.${selected.description ? ` ${selected.description}` : ""}`
+                    : selected.description || "No preview available for this skill."}
                 </p>
               )}
             </div>

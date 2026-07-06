@@ -12277,7 +12277,25 @@ details[open] > .cave-edit-card__summary::before {
 @media (prefers-reduced-motion: reduce) { .skill-browser__skeleton span { animation: none; } }
 
 @media (max-width: 900px) {
-  .skill-browser__rail { display: none; }
+  /* Narrow panes: the rail becomes a horizontal strip. It is the ONLY
+     category control — hiding it stranded 681-900px panes with whatever
+     category was last picked and no way to change it. */
+  .skill-browser__rail {
+    flex: 0 0 auto;
+    flex-direction: row;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px 10px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-hairline);
+  }
+  .skill-browser__cat {
+    flex: 0 0 auto;
+    padding: 5px 9px;
+    white-space: nowrap;
+  }
+  .skill-browser__cat-label { flex: 0 0 auto; }
 }
 @media (max-width: 680px) {
   .skill-browser { flex-direction: column; }

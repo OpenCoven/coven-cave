@@ -231,7 +231,7 @@ export function CapabilitiesViewSurface({
       const res = await fetch(url, { cache: "no-store" });
       const json = (await res.json()) as CapabilitiesResponse;
       if (!json.ok) {
-        setError(json.error ?? `daemon http ${res.status}`);
+        setError(json.error ?? "Couldn't reach the Coven daemon.");
         setItems([]);
         setCovenSkills([]);
         setScannedAt(null);
@@ -400,9 +400,27 @@ export function CapabilitiesViewSurface({
     }
   }, []);
 
-  const openLocalPath = useCallback((path?: string) => {
+  const openLocalPath = useCallback(async (path?: string) => {
     if (!path || !path.startsWith("/")) return;
-    window.open(`file://${path}`, "_blank", "noopener");
+    // Browsers block file:// navigation from an http(s) origin, so the old
+    // window.open silently did nothing on the web. Desktop opens via Tauri;
+    // the web falls back to copying the path and the action label says so.
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("shell_open", { url: path });
+        return;
+      } catch {
+        // fall through to the clipboard
+      }
+    }
+    try {
+      await copyText(path);
+      setCopiedKey("open");
+      window.setTimeout(() => setCopiedKey(null), 1200);
+    } catch {
+      setCopiedKey(null);
+    }
   }, []);
 
   const applyHarnessFilter = (id: string | null) => {
@@ -887,9 +905,9 @@ function CapabilityDetails({
               onClick={() => void onCopy("path", item.sourcePath)}
             />
             <InspectorAction
-              icon="ph:file-text"
-              label="Open file"
-              onClick={() => onOpenPath(item.sourcePath)}
+              icon={copiedKey === "open" ? "ph:check" : "ph:file-text"}
+              label={copiedKey === "open" ? "Path copied" : "Open file"}
+              onClick={() => void onOpenPath(item.sourcePath)}
             />
           </>
         ) : null}
@@ -1083,7 +1101,7 @@ function CapabilityPreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--backdrop-scrim)] p-4 backdrop-blur-sm"
       onClick={onClose}
       role="dialog"
       aria-modal="true"

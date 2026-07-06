@@ -190,6 +190,10 @@ assert.match(css, /\.skill-browser__activity \{/, "CSS includes the 8-week activ
 assert.match(css, /\.skill-browser__activity-bar \{/, "CSS includes individual activity bars");
 assert.match(css, /\.skill-browser__card \{[\s\S]*?min-height: 72px;/, "skill cards reserve enough height for activity and install stats");
 assert.match(css, /\.skill-browser__card\.is-active \{/, "the selected card is highlighted");
-assert.match(css, /@media \(max-width: 900px\)[\s\S]*?\.skill-browser__rail \{ display: none;/, "the rail collapses on small screens");
+assert.match(
+  css,
+  /@media \(max-width: 900px\)[\s\S]*?\.skill-browser__rail \{[\s\S]*?flex-direction: row/,
+  "the rail becomes a horizontal strip on small screens — it is the only category control, so it must never be display:none",
+);
 
 console.log("skill-browser.test.ts OK");
