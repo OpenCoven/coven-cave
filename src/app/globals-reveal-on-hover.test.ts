@@ -35,6 +35,11 @@ assert.match(
 );
 assert.match(
   globals,
+  /\.reveal-on-hover\[aria-pressed="true"\]/,
+  "a control carrying live pressed state stays visible (state never hides)",
+);
+assert.match(
+  globals,
   /\.reveal-scope:hover \.reveal-on-hover/,
   "hovering the scope reveals its controls",
 );

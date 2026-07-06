@@ -76,7 +76,7 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /FOLDER_MODES\.map\(\(fm\) =>/,
+  /FOLDER_MODES\.map\(\(fm, i\) =>/,
   "Sidebar should render every folder mode directly",
 );
 
@@ -382,6 +382,30 @@ assert.match(
   styles,
   /\.shell-nav--rail \.sidebar-version \{[^}]*display: none/,
   "The 56px rail has no room for text — the version line hides there",
+);
+
+// Quiet cluster (§8): occasional destinations (Browser, Marketplace, GitHub)
+// stay in the same flat list but render muted-until-hover, with the first
+// quiet row opening a spacing gap instead of a divider.
+assert.match(
+  source,
+  /\{ id: "browser",[^}]*quiet: true \}/,
+  "Browser is visually demoted to the quiet cluster",
+);
+assert.match(
+  source,
+  /quietLead=\{Boolean\(fm\.quiet\) && !FOLDER_MODES\[i - 1\]\?\.quiet\}/,
+  "the first quiet row opens the spacing gap",
+);
+assert.match(
+  styles,
+  /\.sidebar-folder-row--quiet \{[^}]*color: var\(--text-muted\);/,
+  "quiet rows read muted at rest",
+);
+assert.match(
+  styles,
+  /\.sidebar-folder-row--quiet-lead \{[^}]*margin-top: var\(--space-3\);/,
+  "the quiet cluster opens with spacing, not a hairline divider",
 );
 
 console.log("sidebar-minimal.test.ts (shell-ia-lastmile) OK");

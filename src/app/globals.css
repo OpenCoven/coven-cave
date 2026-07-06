@@ -452,7 +452,10 @@ select {
 }
 .reveal-scope:hover .reveal-on-hover,
 .reveal-scope:focus-within .reveal-on-hover,
-.reveal-on-hover:focus-visible {
+.reveal-on-hover:focus-visible,
+/* A control carrying live state (pinned, fullscreen…) is a status indicator,
+   not just an action — badges/state never hide (§8). */
+.reveal-on-hover[aria-pressed="true"] {
   opacity: 1;
 }
 @media (hover: none) and (pointer: coarse) {
@@ -6224,10 +6227,12 @@ button:active > .edge-rail-chip {
   color: var(--text-primary);
 }
 
-/* Tasks quick action (folded in from the desktop menu bar) — an icon button
-   with a small open-task count badge. */
+/* Task quick actions live in the overflow menu now (§8 chrome budget); the
+   wrapper keeps the open-task count badge floating over the "⋯" trigger so
+   the live signal survives the relocation. */
 .top-bar__tasks {
   position: relative;
+  display: inline-flex;
 }
 
 .top-bar__tasks-badge {
@@ -7190,9 +7195,6 @@ a.mobile-handoff__link:hover {
       width: 100%;
       height: 100%;
       border-radius: calc(var(--radius-control) - 1px);
-    }
-    .top-bar__actions .top-bar__tasks-enrich {
-      display: none;
     }
   }
   .notification-bell__popover {

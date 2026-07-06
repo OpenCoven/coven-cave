@@ -507,9 +507,31 @@
   color: var(--text-primary);
 }
 
+/* Quiet cluster (§8 quiet hierarchy): occasional destinations stay in the same
+   flat list (one roving tab stop, same targets) but read muted until hover,
+   focus, or active — and the first quiet row opens a spacing gap instead of a
+   divider (surface step, no extra hairline). */
+.sidebar-folder-row--quiet {
+  color: var(--text-muted);
+}
+
+.sidebar-folder-row--quiet:hover,
+.sidebar-folder-row--quiet:focus-visible,
+.sidebar-folder-row--quiet.sidebar-folder-row--active {
+  color: var(--text-primary);
+}
+
+.sidebar-folder-row--quiet-lead {
+  margin-top: var(--space-3);
+}
+
 .sidebar-folder-icon {
   flex-shrink: 0;
   opacity: 0.6;
+}
+
+.sidebar-folder-row--quiet .sidebar-folder-icon {
+  opacity: 0.45;
 }
 
 .sidebar-folder-row--active .sidebar-folder-icon,

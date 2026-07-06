@@ -29,4 +29,22 @@ assert.doesNotMatch(src, /workspace-rail__soon/, "Terminal placeholder is gone")
 assert.match(src, /onTogglePin/, "pin control wired");
 assert.match(src, /onCollapse/, "collapse control wired");
 assert.match(src, /changeCount > 0/, "shows a change-count badge");
+// Progressive disclosure (§8): pin + fullscreen reveal on header hover /
+// focus-within via the shared utility; collapse stays always visible.
+assert.match(src, /workspace-rail__head reveal-scope/, "rail header is the reveal scope");
+assert.match(
+  src,
+  /focus-ring reveal-on-hover\$\{pinned \? " is-on" : ""\}/,
+  "pin reveals on hover/focus (and stays visible while pinned via aria-pressed)",
+);
+assert.match(
+  src,
+  /focus-ring reveal-on-hover\$\{isFullscreen \? " is-on" : ""\}/,
+  "fullscreen toggle reveals on hover/focus",
+);
+assert.doesNotMatch(
+  src,
+  /aria-label="Collapse code rail"[\s\S]{0,120}reveal-on-hover|reveal-on-hover[^\n]*aria-label="Collapse code rail"/,
+  "collapse stays always visible (primary verb)",
+);
 console.log("workspace-rail.test.ts OK");

@@ -3,6 +3,8 @@
 import { Icon, CAVE_ICON_SIZE } from "@/lib/icon";
 import { NotificationBell } from "@/components/notification-bell";
 import { FamiliarQuickSwitch } from "@/components/familiar-quick-switch";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem } from "@/components/ui/popover";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
@@ -188,31 +190,37 @@ export function TopBar(props: Props) {
             <Icon name="ph:chat-circle-dots" width={CAVE_ICON_SIZE.headerAction} height={CAVE_ICON_SIZE.headerAction} />
           </button>
         ) : null}
-        {onEnrichTasks ? (
-          <button
-            type="button"
-            className="top-bar__icon-btn top-bar__tasks-enrich"
-            onClick={onEnrichTasks}
-            disabled={enrichingTasks || !activeFamiliar}
-            aria-label={activeFamiliar ? enrichLabel : "Select a familiar to enhance tasks"}
-            title={activeFamiliar ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
-          >
-            <Icon name="ph:sparkle" width={CAVE_ICON_SIZE.headerAction} height={CAVE_ICON_SIZE.headerAction} />
-          </button>
-        ) : null}
-        {onViewTasks ? (
-          <button
-            type="button"
-            className="top-bar__icon-btn top-bar__tasks"
-            onClick={onViewTasks}
-            aria-label={taskCount && taskCount > 0 ? `View tasks — ${taskCount} open` : "View tasks"}
-            title="View tasks"
-          >
-            <Icon name="ph:kanban" width={CAVE_ICON_SIZE.headerAction} height={CAVE_ICON_SIZE.headerAction} />
+        {/* Chrome budget (design language §8): the task quick actions moved to
+            the overflow menu — occasional verbs don't earn always-visible
+            chrome. The open-task badge stays on the trigger so the live count
+            survives the relocation. */}
+        {onEnrichTasks || onViewTasks ? (
+          <span className="top-bar__tasks">
+            <OverflowMenu ariaLabel="More actions" size="md" placement="bottom-end">
+              {onEnrichTasks ? (
+                <PopoverItem
+                  icon="ph:sparkle"
+                  disabled={enrichingTasks || !activeFamiliar}
+                  onSelect={onEnrichTasks}
+                  title={activeFamiliar ? ENRICH_TASKS_TITLE : "Select a familiar to enhance tasks"}
+                >
+                  {activeFamiliar ? enrichLabel : "Select a familiar to enhance tasks"}
+                </PopoverItem>
+              ) : null}
+              {onViewTasks ? (
+                <PopoverItem icon="ph:kanban" onSelect={onViewTasks}>
+                  {taskCount && taskCount > 0
+                    ? `View tasks — ${taskCount > 99 ? "99+" : taskCount} open`
+                    : "View tasks"}
+                </PopoverItem>
+              ) : null}
+            </OverflowMenu>
             {taskCount && taskCount > 0 ? (
-              <span className="top-bar__tasks-badge">{taskCount > 99 ? "99+" : taskCount}</span>
+              <span className="top-bar__tasks-badge" aria-hidden="true">
+                {taskCount > 99 ? "99+" : taskCount}
+              </span>
             ) : null}
-          </button>
+          </span>
         ) : null}
         <button
           type="button"

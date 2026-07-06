@@ -222,6 +222,7 @@ export function PopoverItem({
   danger,
   disabled,
   checked,
+  title,
 }: {
   icon?: IconName;
   /** Rich leading visual (e.g. a ProjectAvatar); wins over `icon`. */
@@ -231,6 +232,9 @@ export function PopoverItem({
   active?: boolean;
   danger?: boolean;
   disabled?: boolean;
+  /** Native tooltip / AT description for items whose label abbreviates a
+   *  longer explanation. */
+  title?: string;
   /** When set (true/false) the item is a menuitemradio with aria-checked and a
    *  trailing check glyph — for mutually exclusive option groups. */
   checked?: boolean;
@@ -249,6 +253,7 @@ export function PopoverItem({
       onClick={onSelect}
       data-active={active || undefined}
       disabled={disabled}
+      title={title}
       role={radio ? "menuitemradio" : "menuitem"}
       aria-checked={radio ? checked : undefined}
     >

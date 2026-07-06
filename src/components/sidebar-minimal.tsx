@@ -82,6 +82,10 @@ const FOLDER_MODES: Array<{
   // One-line hover/long-press help. Differentiates surfaces that read alike at
   // a glance.
   description: string;
+  /** Visual demotion (§8 quiet hierarchy): still one flat list — same roving
+   *  tabindex, same click targets — but quiet rows render muted-until-hover
+   *  and the first one opens a spacing gap, so daily destinations read first. */
+  quiet?: boolean;
 }> = [
   { id: "home", label: "Home", iconName: "ph:house-bold", kbd: "⌘1", description: "Overview and quick actions" },
   { id: "chat", label: "Chat", iconName: "ph:chats", kbd: "⌘2", description: "Talk with your familiars — 1:1 or a Group tab for a whole coven" },
@@ -90,11 +94,11 @@ const FOLDER_MODES: Array<{
   { id: "board", label: "Tasks", iconName: "ph:kanban", kbd: "⌘3", description: "Track tasks across projects", badge: (p) => badgeText(p.boardOpenCount) },
   { id: "journal", label: "Journal", iconName: "ph:book-open", description: "Your daily journal and generated sketches" },
   { id: "inbox", label: "Schedules", iconName: "ph:calendar-check", kbd: "⌘4", description: "Calendar and crons in one place", badge: (p) => badgeText(p.scheduleNeedsCount) },
-  { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser" },
-  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities" },
+  { id: "browser", label: "Browser", iconName: "ph:globe", kbd: "⌘5", description: "Built-in web browser", quiet: true },
+  { id: "marketplace", label: "Marketplace", iconName: "ph:storefront-bold", description: "Browse the store and manage your familiars' roles, skills, and capabilities", quiet: true },
   // Submissions (OpenCoven runtime/harness submit) is hidden from the nav; the
   // mode + page remain reachable programmatically but aren't surfaced here.
-  { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount) },
+  { id: "github", label: "GitHub", iconName: "ph:github-logo", description: "Issues and PRs assigned to you", badge: (p) => badgeText(p.githubAssignedCount), quiet: true },
 ];
 
 export { FOLDER_MODES };
@@ -108,6 +112,8 @@ function FolderRow({
   badge,
   kbd,
   description,
+  quiet,
+  quietLead,
   onClick,
 }: {
   id: string;
@@ -117,6 +123,10 @@ function FolderRow({
   badge?: string;
   kbd?: string;
   description?: string;
+  quiet?: boolean;
+  /** First quiet row opens the spacing gap between the daily destinations
+   *  and the demoted cluster (surface step, no divider — §8). */
+  quietLead?: boolean;
   onClick: () => void;
 }) {
   // Splittable pages can be dragged into the main area to open beside the
@@ -134,7 +144,7 @@ function FolderRow({
   return (
     <button
       type="button"
-      className={`sidebar-folder-row${active ? " sidebar-folder-row--active" : ""}`}
+      className={`sidebar-folder-row${active ? " sidebar-folder-row--active" : ""}${quiet ? " sidebar-folder-row--quiet" : ""}${quietLead ? " sidebar-folder-row--quiet-lead" : ""}`}
       aria-current={active ? "page" : undefined}
       title={title}
       draggable={draggable || undefined}
@@ -210,7 +220,7 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
       </div>
 
       <div className="sidebar-nav-scroll" ref={navScrollRef}>
-        {FOLDER_MODES.map((fm) => (
+        {FOLDER_MODES.map((fm, i) => (
           <FolderRow
             key={fm.id}
             id={fm.id}
@@ -222,6 +232,8 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             badge={fm.badge?.(props)}
             kbd={fm.kbd}
             description={fm.description}
+            quiet={fm.quiet}
+            quietLead={Boolean(fm.quiet) && !FOLDER_MODES[i - 1]?.quiet}
             onClick={() => handleModeSelect(fm.id)}
           />
         ))}
