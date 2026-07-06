@@ -695,6 +695,7 @@ final class AppModel {
         guard connection != nil, connectionState == .connected else { return }
         if let client, await client.ping() {
             await refreshAccessTokenIfNeeded()
+            flushQueuedMessages()
             return
         }
         guard connectionState == .connected else { return }
@@ -740,6 +741,7 @@ final class AppModel {
             }
             connectionState = .connected
             await refreshAccessTokenIfNeeded()
+            flushQueuedMessages()
             if reloadLoadedSurfaces {
                 await refreshLoadedSurfaces()
             } else {
@@ -750,6 +752,28 @@ final class AppModel {
             connectionState = .needsAuth(pairingMessage())
         case .none:
             connectionState = .unreachable("Couldn’t reach the desktop. Is it on the tailnet and running?")
+        }
+    }
+
+    /// Send every message composed while offline, oldest first per thread,
+    /// now that the desktop is reachable again. Fire-and-forget: replies
+    /// stream in like any send, and a re-drop mid-flush re-queues cleanly
+    /// (the next reconnect picks it back up). Guarded so overlapping
+    /// reconnect signals (foreground probe + path monitor) flush once.
+    private var flushingQueued = false
+    func flushQueuedMessages() {
+        guard let client, !flushingQueued else { return }
+        let pending = threads.filter { thread in thread.messages.contains { $0.isQueued } }
+        guard !pending.isEmpty else { return }
+        flushingQueued = true
+        Task {
+            defer { flushingQueued = false }
+            for thread in pending {
+                await thread.replayQueued(client: client) { [weak self] in
+                    guard let self else { return }
+                    self.touch(thread)
+                }
+            }
         }
     }
 
