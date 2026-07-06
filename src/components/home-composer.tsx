@@ -17,8 +17,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { ComposerHostChip } from "@/components/composer-host-chip";
-import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import type { Familiar, SessionRow } from "@/lib/types";
 import { Icon, type IconName } from "@/lib/icon";
 import { modelSlashOptions, resolveModelArg } from "@/lib/slash-model";
@@ -37,7 +35,6 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
-import { ProjectPicker } from "@/components/project-picker";
 import { StandardSelect, type StandardSelectGroup, type StandardSelectOption } from "@/components/ui/select";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
@@ -52,7 +49,6 @@ import {
 } from "@/lib/chat-attachments";
 import {
   COMMAND_CONTROL_DEFAULTS,
-  COMMAND_RESPONSE_SPEED_OPTIONS,
   COMMAND_THINKING_OPTIONS,
   type CommandResponseSpeed,
   type CommandThinkingEffort,
@@ -1218,8 +1214,8 @@ export function HomeComposer({
               type="button"
               className="hc-mic-btn"
               aria-label="Voice input"
-              title="Voice input"
-              disabled={sending}
+              title="Voice input (coming soon)"
+              disabled
             >
               <Icon name="ph:microphone" width={15} aria-hidden />
             </button>
