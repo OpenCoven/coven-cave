@@ -249,6 +249,7 @@ export const SUITES = {
     "src/lib/slash-commands.test.ts",
     "src/lib/slash-model.test.ts",
     "src/lib/slash-skill.test.ts",
+    "src/lib/slash-prompt.test.ts",
     "src/lib/cave-canvas.test.ts",
     "src/components/journal/journal-view.test.ts",
     "src/lib/journal.test.ts",
@@ -680,6 +681,7 @@ export const SUITES = {
     "src/lib/server/session-project-roots.test.ts",
     "src/lib/server/familiar-avatar.test.ts",
     "src/lib/server/skill-scan.test.ts",
+    "src/lib/server/prompt-scan.test.ts",
   ],
   mobile: [
     "src/lib/mobile-access-token.test.ts",
@@ -811,6 +813,7 @@ const ALIAS_LOADER = new Set([
   "src/lib/server/project-paths.test.ts",
   "src/lib/server/skill-file-paths.test.ts",
   "src/lib/server/skills-directory.test.ts",
+  "src/lib/server/prompt-scan.test.ts",
   "src/lib/server/agent-attachments.test.ts",
   "src/lib/server/session-project-roots.test.ts",
   "src/lib/server/familiar-avatar.test.ts",

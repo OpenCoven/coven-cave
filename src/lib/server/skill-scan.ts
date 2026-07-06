@@ -72,7 +72,7 @@ export function parseFrontmatter(text: string): Record<string, string> {
   return fm;
 }
 
-function parseListField(text: string, field: string): string[] {
+export function parseListField(text: string, field: string): string[] {
   const match = text.match(new RegExp(`\\n${field}:\\s*\\n((?:\\s*-[^\\n]*\\n?)*)`));
   if (!match) return [];
   return match[1].match(/- (.+)/g)?.map(m => m.slice(2).trim()) ?? [];

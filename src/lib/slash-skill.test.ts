@@ -48,7 +48,7 @@ assert.match(slashCmds, /name: "\/skills"/, "/skills is registered");
 
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 assert.match(chatView, /skillSlashOptions\(input, skills\)/, "chat-view computes the inline /skill options");
-assert.match(chatView, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| slashSuggestions\.length > 0;/, "chat-view menuOpen includes the skill picker");
+assert.match(chatView, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0;/, "chat-view menuOpen includes the skill picker");
 assert.match(chatView, /command === "\/skill" \|\| command === "\/skills"/, "chat-view dispatches /skill and /skills");
 assert.match(chatView, /sendRaw\(buildSkillPrompt\(skill\)\)/, "chat-view invokes a skill by sending the skill prompt");
 assert.match(chatView, /role="listbox" aria-label="Skills"/, "chat-view renders a Skills listbox");

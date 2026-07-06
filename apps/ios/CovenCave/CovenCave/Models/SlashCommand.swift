@@ -97,6 +97,14 @@ enum SlashCatalog {
                      description: "Show every available skill to pick from.",
                      section: .chat,
                      availability: .desktopOnly, action: .desktopOnly("Skills")),
+        SlashCommand(name: "/prompt", aliases: ["/snippets"], hint: "insert a prompt",
+                     description: "Drop a starter prompt into the composer for editing.",
+                     argPlaceholder: "name", section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Prompts")),
+        SlashCommand(name: "/prompts", hint: "browse prompts",
+                     description: "Show every prompt template to pick from.",
+                     section: .chat,
+                     availability: .desktopOnly, action: .desktopOnly("Prompts")),
 
         // MARK: Familiar
         SlashCommand(name: "/familiar", aliases: ["/agent"], hint: "switch",

@@ -63,6 +63,15 @@ import {
   buildSkillPrompt,
   type SkillOption,
 } from "@/lib/slash-skill";
+import {
+  promptSlashOptions,
+  resolvePromptArg,
+  formatPromptList,
+  promptInsertion,
+  type PromptOption,
+} from "@/lib/slash-prompt";
+import { BUILTIN_PROMPTS } from "@/lib/prompt-defaults";
+import { PromptSnippetsModal, promptIconName } from "@/components/prompt-snippets-modal";
 import { catalogForRuntime } from "@/lib/runtime-models";
 import { clearChatDebugState, publishChatDebugState } from "@/lib/chat-debug-store";
 import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
@@ -2702,6 +2711,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       alive = false;
     };
   }, []);
+  // Prompt templates for the `/prompt` / `/prompts` picker and the Prompt
+  // snippets modal. Seeded with the built-ins so the picker works instantly
+  // (and offline); the fetch layers in ~/.coven/prompts files and installed
+  // marketplace prompt packs.
+  const [prompts, setPrompts] = useState<PromptOption[]>(BUILTIN_PROMPTS);
+  const [promptSnippetsOpen, setPromptSnippetsOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/prompts", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => {
+        if (alive && j?.ok && Array.isArray(j.prompts)) setPrompts(j.prompts as PromptOption[]);
+      })
+      .catch(() => {
+        /* offline → built-in templates only */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
   // While typing "/model <partial>", the menu shows model options instead of
   // commands (an inline picker). null ⇒ not in /model arg position.
   const modelHarness = modelState?.harness ?? familiar.harness ?? "claude";
@@ -2726,10 +2755,16 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [input, skills, slashDismissed],
   );
   const skillMenuActive = (skillOptions?.length ?? 0) > 0;
-  // The slash-command, /model and /skill pickers are mutually exclusive inline
-  // listboxes sharing one listbox id, so the composer's combobox ARIA tracks
-  // whichever is open (was: slash-only, leaving the pickers unannounced).
-  const menuOpen = modelMenuActive || skillMenuActive || slashSuggestions.length > 0;
+  // Inline `/prompt` / `/prompts` picker — null ⇒ not in a prompt-picker position.
+  const promptOptions = useMemo(
+    () => (slashDismissed ? null : promptSlashOptions(input, prompts)),
+    [input, prompts, slashDismissed],
+  );
+  const promptMenuActive = (promptOptions?.length ?? 0) > 0;
+  // The slash-command, /model, /skill and /prompt pickers are mutually
+  // exclusive inline listboxes sharing one listbox id, so the composer's
+  // combobox ARIA tracks whichever is open.
+  const menuOpen = modelMenuActive || skillMenuActive || promptMenuActive || slashSuggestions.length > 0;
   // Stable per-mount listbox id — the home composer mounts its own slash menu,
   // so ids must be unique across simultaneously mounted composers.
   const slashListboxId = useId();
@@ -3279,6 +3314,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
   };
 
+  // Drop a prompt template into the composer for editing — never a send. When
+  // the body carries a {{placeholder}}, select the first one so typing
+  // replaces it; otherwise park the caret at the end.
+  const insertPrompt = (p: PromptOption) => {
+    const ins = promptInsertion(p);
+    setInput(ins.text);
+    setSlashIdx(0);
+    announce("Prompt inserted — edit and send.");
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      if (ins.selectStart !== undefined && ins.selectEnd !== undefined) {
+        el.setSelectionRange(ins.selectStart, ins.selectEnd);
+      } else {
+        el.setSelectionRange(ins.text.length, ins.text.length);
+      }
+    });
+  };
+
   const intentFromSlash = (raw: string): boolean => {
     const trimmed = raw.trim();
     if (!trimmed.startsWith("/")) return false;
@@ -3338,6 +3393,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       // Invoke by sending a directive to the active familiar's harness, which
       // owns Skill execution (mirrors the /run prompt-send pattern).
       setTimeout(() => sendRaw(buildSkillPrompt(skill)), 0);
+      return true;
+    }
+    if (command === "/prompt" || command === "/prompts") {
+      if (!args.trim()) {
+        // Bare /prompt or /prompts: list everything (the inline picker shows
+        // the same list while typing; this is the submitted fallback).
+        appendSystem(formatPromptList(prompts));
+        setInput("");
+        return true;
+      }
+      const prompt = resolvePromptArg(args, prompts);
+      if (!prompt) {
+        appendSystem(`Unknown prompt "${args.trim()}". Type /prompts to list the options.`);
+        setInput("");
+        return true;
+      }
+      insertPrompt(prompt);
       return true;
     }
     if (command === "/doctor" || command === "/daemon") {
@@ -4197,6 +4269,31 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
     }
+    if (promptMenuActive && promptOptions) {
+      const opts = promptOptions;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIdx((i) => Math.min(i + 1, opts.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIdx((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const p = opts[slashIdx];
+        if (p) setInput(`/prompt ${p.id}`);
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const p = opts[slashIdx];
+        if (p) insertPrompt(p);
+        return;
+      }
+    }
     if (slashSuggestions.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -4577,6 +4674,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   setInput(text);
                   inputRef.current?.focus();
                 }}
+                onOpenPromptSnippets={() => setPromptSnippetsOpen(true)}
                 projectId={projectIdDraft}
                 onProjectChange={setProjectIdDraft}
                 projects={projects}
@@ -4915,6 +5013,37 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 {keys.up}{keys.down} navigate · {keys.enter} run · Tab complete · esc cancel
               </div>
             </div>
+          ) : promptMenuActive && promptOptions ? (
+            <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
+              <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Prompts">
+                {promptOptions.map((p, i) => {
+                  const active = i === slashIdx;
+                  return (
+                    <li key={p.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        ref={active ? activeSlashOptionRef : null}
+                        onMouseEnter={() => setSlashIdx(i)}
+                        onClick={() => insertPrompt(p)}
+                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        }`}
+                      >
+                        <Icon name={promptIconName(p.icon)} width={13} className="shrink-0 text-[var(--text-muted)]" aria-hidden />
+                        <span className="text-[var(--text-primary)]">{p.name}</span>
+                        <span className="flex-1 truncate text-[11px] text-[var(--text-muted)]">
+                          {p.description || p.id}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)]">
+                {keys.up}{keys.down} navigate · {keys.enter} insert · Tab complete · esc cancel
+              </div>
+            </div>
           ) : slashSuggestions.length > 0 ? (
             <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Slash commands">
@@ -5129,6 +5258,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   >
                     <Icon name="ph:microphone" width={15} aria-hidden />
                   </button>
+                  <button
+                    type="button"
+                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
+                    title="Prompt snippets"
+                    aria-label="Prompt snippets"
+                    onClick={() => setPromptSnippetsOpen(true)}
+                  >
+                    <Icon name="ph:chat-centered-text" width={14} aria-hidden />
+                  </button>
                   <ComposerOptionsMenu
                     hostValue={composerHostValue}
                     onHostPick={setRuntimeHost}
@@ -5218,6 +5356,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           onClose={() => setVoiceCallOpen(false)}
         />
       )}
+      <PromptSnippetsModal
+        open={promptSnippetsOpen}
+        onClose={() => setPromptSnippetsOpen(false)}
+        prompts={prompts}
+        onPick={(p) => {
+          setPromptSnippetsOpen(false);
+          insertPrompt(p);
+        }}
+      />
       <Modal
         open={debugModalOpen}
         onClose={() => setDebugModalOpen(false)}
