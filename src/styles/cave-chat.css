@@ -5066,6 +5066,33 @@ details[open] > .cave-tool-summary::before {
   min-height: 0;
 }
 
+/* Reading a highlighted code file: the pane, not the chat transcript, owns the
+   height. Lift SyntaxBlock's chat clamp (max-height: min(60vh, 520px)) so the
+   block shrink-fits the body and scrolls internally — short files keep their
+   natural height, long files fill the pane with the sticky header reachable.
+   Mirrors the --edit editor fill above. */
+.workspace-rail__preview-body--code {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.workspace-rail__preview-body--code .cave-syntax-block {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+}
+.workspace-rail__preview-body--code .cave-code-wrap {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+/* With the clamp lifted there is nothing to expand — the footer would be a
+   no-op button pinned over the last visible line. */
+.workspace-rail__preview-body--code .cave-code-expand {
+  display: none;
+}
+
 .workspace-rail__preview-skeleton {
   display: flex;
   flex-direction: column;
