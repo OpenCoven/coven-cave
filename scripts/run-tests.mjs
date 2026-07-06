@@ -260,6 +260,7 @@ export const SUITES = {
     "src/lib/code-lang.test.ts",
     "src/lib/home-digest.test.ts",
     "src/lib/session-title.test.ts",
+    "src/lib/home-suggestions.test.ts",
     "src/lib/project-search.test.ts",
     "src/lib/tool-target-file.test.ts",
     "src/lib/tool-readable.test.ts",
