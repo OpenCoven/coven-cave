@@ -316,6 +316,23 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
     return () => { cancelled = true; };
   }, [nativeBrowserAvailable, platform]);
 
+  // ── Close native webviews on unmount ──────────────────────────────
+  // Hiding only parks a webview offscreen — its page (and process) stays
+  // alive, so navigating away from the Browser surface left page content in
+  // the OS accessibility tree. Surface routing unmounts BrowserPane on
+  // surface leave, so destroy every native webview for this pane here; the
+  // navigate effect recreates them on the next mount. bridge arrives async,
+  // hence the ref — the cleanup must see the final bridge, not the mount-time
+  // null.
+  const bridgeRef = useRef<TauriBridge | null>(null);
+  bridgeRef.current = bridge;
+  useEffect(() => {
+    return () => {
+      void bridgeRef.current?.invoke("browser_close_all", { label });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Page-load + title events ──────────────────────────────────────
   useEffect(() => {
     if (!bridge || !nativeBrowserAvailable) return;

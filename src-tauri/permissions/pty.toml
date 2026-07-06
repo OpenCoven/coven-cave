@@ -54,6 +54,11 @@ description = "Allows closing an embedded browser webview."
 commands.allow = ["browser_close"]
 
 [[permission]]
+identifier = "allow-browser-close-all"
+description = "Allows closing every embedded browser webview for a pane during surface teardown."
+commands.allow = ["browser_close_all"]
+
+[[permission]]
 identifier = "allow-browser-reload"
 description = "Allows reloading an embedded browser webview."
 commands.allow = ["browser_reload"]

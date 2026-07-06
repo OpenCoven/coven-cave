@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const pane = await readFile(new URL("./browser-pane.tsx", import.meta.url), "utf8");
 const globals = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const rustBrowser = await readFile(new URL("../../src-tauri/src/browser.rs", import.meta.url), "utf8");
 
 // ───────── Task 1: Keyboard hint footer + [ shortcut ─────────
 assert.match(
@@ -148,6 +149,32 @@ assert.match(
   /const covered = toolbarOpenRef\.current \|\| surfaceIsCovered\(surface, rect\);[\s\S]{0,320}x: covered \? WEBVIEW_OFFSCREEN : rect\.left,\s*\n\s*y: covered \? WEBVIEW_OFFSCREEN : rect\.top,/,
   "navigate loads covered webviews offscreen; the bounds loop re-seats them when the cover lifts",
 );
+
+// ───────── Native webview lifecycle: close on surface leave ─────────
+// Hiding only parks a webview offscreen — the page stays alive and its
+// content lingers in the OS accessibility tree after leaving the Browser
+// surface. Unmount must CLOSE the pane's webviews, not hide them.
+assert.match(
+  pane,
+  /useEffect\(\(\) => \{\s*\n\s*return \(\) => \{\s*\n\s*void bridgeRef\.current\?\.invoke\("browser_close_all", \{ label \}\);/,
+  "unmount cleanup closes the pane's native webviews (browser_close_all), not just hides them",
+);
+assert.match(
+  rustBrowser,
+  /pub fn browser_close_all\(app: AppHandle, label: Option<String>\)[\s\S]{0,600}webview\.close\(\)/,
+  "browser_close_all destroys matching cave-browser webviews",
+);
+
+// ───────── Native webview lifecycle: no 1×1 offscreen parking ─────────
+// Shrinking the parked webview to 1×1 lets WKWebView drop its backing layer;
+// re-seating it with set_bounds could then render black. hide_webview must
+// move it offscreen only, keeping its real size so the layer stays realized.
+const hideWebviewFn = rustBrowser.match(
+  /fn hide_webview\(webview: &tauri::Webview\) -> Result<\(\), String> \{[\s\S]*?\n\}/,
+)?.[0];
+assert.ok(hideWebviewFn, "hide_webview() exists in src-tauri/src/browser.rs");
+assert.match(hideWebviewFn, /set_position\(LogicalPosition::new\(OFFSCREEN_X, OFFSCREEN_Y\)\)/, "hide_webview parks the webview offscreen");
+assert.doesNotMatch(hideWebviewFn, /set_size/, "hide_webview must not resize the parked webview (1×1 parking caused black re-paints)");
 
 // ───────── Task 4: Quick-open backdrop ─────────
 const qo = await readFile(new URL("./browser-quick-open.tsx", import.meta.url), "utf8");

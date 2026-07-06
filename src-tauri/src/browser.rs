@@ -14,6 +14,7 @@
 //   browser_hide(label)
 //   browser_hide_all_except(label)
 //   browser_close(label)
+//   browser_close_all(pane_label)
 //
 // Events:
 //   browser:page-load { label, url, phase: "started" | "finished" }
@@ -221,12 +222,14 @@ fn ensure_browser(
     Ok(true)
 }
 
+// Park the webview offscreen at its CURRENT size. Do not shrink it to 1×1:
+// collapsing the layer lets WKWebView drop its backing surface, and a later
+// browser_set_bounds re-seat can land as an unpainted (black) layer. Keeping
+// the real size while offscreen keeps the layer realized so it repaints
+// immediately when shown again.
 fn hide_webview(webview: &tauri::Webview) -> Result<(), String> {
     webview
         .set_position(LogicalPosition::new(OFFSCREEN_X, OFFSCREEN_Y))
-        .map_err(|e| e.to_string())?;
-    webview
-        .set_size(LogicalSize::new(1.0, 1.0))
         .map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -316,6 +319,25 @@ pub fn browser_close(app: AppHandle, label: Option<String>) -> Result<(), String
     let label = safe_browser_label(label);
     if let Some(webview) = app.get_webview(&label) {
         webview.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Destroy every native browser webview belonging to a pane (labels look
+/// like `cave-browser-<pane>-tab-<id>`), or every cave-browser webview when
+/// no pane label is given. Hiding only parks a webview offscreen — its page
+/// stays alive (and in the OS accessibility tree), so surface teardown must
+/// close instead. The navigate path recreates webviews on the next mount.
+#[tauri::command]
+pub fn browser_close_all(app: AppHandle, label: Option<String>) -> Result<(), String> {
+    let prefix = match label {
+        Some(raw) => format!("{}-tab-", safe_browser_label(Some(raw))),
+        None => BROWSER_LABEL_PREFIX.to_string(),
+    };
+    for (existing_label, webview) in app.webviews() {
+        if existing_label.starts_with(&prefix) {
+            webview.close().map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }

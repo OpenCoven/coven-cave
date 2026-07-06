@@ -29,6 +29,7 @@ const requiredPermissionIds = [
   "allow-browser-hide",
   "allow-browser-hide-all-except",
   "allow-browser-close",
+  "allow-browser-close-all",
   "allow-browser-reload",
   "allow-shell-open",
 ];
@@ -45,6 +46,7 @@ const requiredCommands = [
   "browser_hide",
   "browser_hide_all_except",
   "browser_close",
+  "browser_close_all",
   "browser_reload",
   "shell_open",
 ];
@@ -160,6 +162,7 @@ test("packaged sidecar loopback origins can use browser commands and main-webvie
     "allow-browser-hide",
     "allow-browser-hide-all-except",
     "allow-browser-close",
+    "allow-browser-close-all",
     "allow-browser-reload",
     "allow-browser-report-title",
   ]) {
