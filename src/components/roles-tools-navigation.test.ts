@@ -85,17 +85,17 @@ assert.match(
   "hub accepts an initial section for workspace deep links",
 );
 
-// Section tablist is an accessible tablist (not just styled buttons).
-assert.match(marketplaceView, /role="tablist"\s+aria-label="Marketplace sections"/, "the section bar is a labelled tablist");
-assert.match(marketplaceView, /role="tab"\s*\n\s*id=\{`marketplace-tab-\$\{s\.id\}`\}/, "each tab carries role=tab + a stable id");
-assert.match(marketplaceView, /aria-selected=\{section === s\.id\}/, "the active tab is aria-selected");
-assert.match(marketplaceView, /aria-controls=\{`marketplace-panel-\$\{s\.id\}`\}/, "tabs point at their panel via aria-controls");
-assert.match(marketplaceView, /tabIndex=\{section === s\.id \? 0 : -1\}/, "the tablist uses a roving tab stop");
-assert.match(marketplaceView, /e\.key === "ArrowRight"[\s\S]{0,80}?\(i \+ 1\) % SECTIONS\.length/, "Left/Right arrows move between tabs");
-assert.match(marketplaceView, /const sectionSummaries = useMemo/, "the shell derives status summaries for every Marketplace section");
-assert.match(marketplaceView, /className="marketplace-section-overview"/, "the section tabs render as an overview rail, not loose pills");
-assert.match(marketplaceView, /className="marketplace-section-card__metric"/, "each section tab exposes a compact status metric");
-assert.match(marketplaceView, /className="marketplace-section-card__detail"/, "each section tab explains the status metric");
+// Section tablist — the header is a single slim row. The shared Tabs
+// primitive (underline variant) supplies role=tablist/tab, aria-selected,
+// the roving tabindex + arrow keys, and the marketplace-tab-* /
+// marketplace-panel-* aria wiring via idPrefix; the hub only feeds it items.
+assert.match(marketplaceView, /<Tabs\s*\n\s*items=\{sectionTabs\}/, "the section bar delegates to the shared Tabs primitive");
+assert.match(marketplaceView, /ariaLabel="Marketplace sections"/, "the section tablist keeps its accessible name");
+assert.match(marketplaceView, /idPrefix="marketplace"/, "idPrefix wires marketplace-tab-* ids + aria-controls to the panels");
+assert.match(marketplaceView, /const sectionTabs = useMemo/, "the header derives live per-section counts for the tab badges");
+assert.match(marketplaceView, /title: SECTION_HINT\[s\.id\]/, "the old hero subtitle survives as the tab tooltip");
+assert.doesNotMatch(marketplaceView, /marketplace-section-card/, "the stat-card hero tablist is retired — the header stays ultraminimal");
+assert.doesNotMatch(marketplaceView, /SECTION_COPY|StatPill/, "the hero title/subtitle block and stat pills are retired with it");
 for (const id of ["browse", "roles", "skills", "capabilities"]) {
   assert.match(
     marketplaceView,
@@ -103,10 +103,6 @@ for (const id of ["browse", "roles", "skills", "capabilities"]) {
     `the ${id} panel is a tabpanel labelled by its tab`,
   );
 }
-assert.match(css, /\.marketplace-section-overview \{[\s\S]*?grid-template-columns/, "Marketplace section overview uses a stable responsive grid");
-assert.match(css, /\.marketplace-section-card \{[\s\S]*?min-height:/, "Marketplace section cards reserve stable height");
-assert.match(css, /\.marketplace-section-card\.is-active \{/, "active Marketplace section card has a distinct state");
-assert.match(css, /@media \(max-width: 680px\)[\s\S]*?\.marketplace-section-overview \{/, "Marketplace section overview has a mobile treatment");
 
 // One search field, scoped per section; the self-contained Capabilities
 // surface owns its own search so the hub hides the shared one there.
@@ -126,7 +122,12 @@ assert.match(marketplaceView, /className="marketplace-category-grid"/, "each cat
 assert.match(css, /\.marketplace-category-stack \{[\s\S]*?flex-direction: column/, "Marketplace category stack has stable vertical rhythm");
 assert.match(css, /\.marketplace-category-group__head \{[\s\S]*?border-bottom/, "Marketplace category groups use quiet structural dividers");
 assert.match(css, /\.marketplace-category-grid \{[\s\S]*?grid-template-columns/, "Marketplace category groups use a stable responsive grid");
-assert.match(css, /\.marketplace-browse-summary__metrics \{[\s\S]*?flex-wrap: wrap/, "Browse summary metrics wrap instead of overflowing");
+// The kind filter + sort moved out of the header into the Browse toolbar so
+// the header stays one row; the toolbar also carries the result context line.
+assert.match(marketplaceView, /className="marketplace-browse-summary mb-4"/, "Browse keeps a toolbar row above the grid");
+assert.match(marketplaceView, /ariaLabel="Filter plugins by type"/, "the kind filter lives in the Browse toolbar");
+assert.match(marketplaceView, /label="Sort plugins"/, "the sort select lives in the Browse toolbar");
+assert.match(css, /\.marketplace-browse-summary \{[\s\S]*?justify-content: space-between/, "the Browse toolbar keeps context and controls apart");
 assert.match(css, /\.marketplace-card \{[\s\S]*?min-height:/, "Marketplace cards reserve stable height across categories");
 
 // Browse cards are decision cards: they expose setup effort, capability fit,

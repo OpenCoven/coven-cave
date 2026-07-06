@@ -1,8 +1,9 @@
 "use client";
 
 // Marketplace hub — the store and your familiars' setup merged into one
-// surface. A section tablist (Browse · Roles · Skills · Capabilities) sits in
-// the hero: Browse is the plugin store (collections, categories, cards);
+// surface. A single slim header row holds the section tabs (Browse · Roles ·
+// Skills · Capabilities, with live counts) and the scoped search — no hero.
+// Browse is the plugin store (collections, categories, cards);
 // Roles/Skills/Capabilities are the "what my familiars can do" views that used
 // to live on the separate Roles page. Deep links via WorkspaceMode still work —
 // the "roles" and "capabilities" modes open the matching section here.
@@ -11,7 +12,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
 import { SearchInput } from "@/components/ui/search-input";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Tabs } from "@/components/ui/tabs";
+import { SkeletonRows } from "@/components/ui/skeleton";
+import { Tabs, type TabItem } from "@/components/ui/tabs";
 import { StandardSelect } from "@/components/ui/select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { MarketplaceCard } from "@/components/marketplace/marketplace-card";
@@ -48,36 +50,19 @@ const SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: Ico
   { id: "capabilities", label: "Capabilities", icon: "ph:lightning-bold" },
 ];
 
-// Hero copy per section — one surface, four clearly-named rooms.
-const SECTION_COPY: Record<MarketplaceSection, { title: string; subtitle: string }> = {
-  browse: {
-    title: "Add tools to your familiars",
-    subtitle: "Browse MCP servers and skills, then add them to give your familiars new capabilities.",
-  },
-  roles: {
-    title: "Roles",
-    subtitle: "Personas your familiars wear — each bundles skills, tools, MCP servers, and workflows.",
-  },
-  skills: {
-    title: "Skills",
-    subtitle: "Reusable SKILL.md procedures your familiars can load while they work.",
-  },
-  capabilities: {
-    title: "Capabilities",
-    subtitle: "What each runtime supports — compare tools and features side by side.",
-  },
+// One-line hint per section — surfaces as the tab tooltip (the old hero
+// subtitle, demoted so the header stays a single row).
+const SECTION_HINT: Record<MarketplaceSection, string> = {
+  browse: "Browse MCP servers and skills, then add them to give your familiars new capabilities.",
+  roles: "Personas your familiars wear — each bundles skills, tools, MCP servers, and workflows.",
+  skills: "Reusable SKILL.md procedures your familiars can load while they work.",
+  capabilities: "What each runtime supports — compare tools and features side by side.",
 };
 
 const SEARCH_LABEL: Record<Exclude<MarketplaceSection, "capabilities">, string> = {
   browse: "Search the marketplace",
   roles: "Search roles",
   skills: "Search skills",
-};
-
-type SectionSummary = {
-  metric: string;
-  detail: string;
-  status: "loading" | "ready" | "error";
 };
 
 const KIND_TABS: ReadonlyArray<{ id: KindFilter; label: string }> = [
@@ -129,7 +114,6 @@ export function MarketplaceViewSurface({
   const [section, setSection] = useState<MarketplaceSection>(initialSection);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
-  const tablistRef = useRef<HTMLDivElement | null>(null);
 
   // Store state (Browse section).
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([]);
@@ -140,8 +124,21 @@ export function MarketplaceViewSurface({
   const [sort, setSort] = useState<SortKey>("recommended");
   const [collectionId, setCollectionId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // Ids with an install/uninstall in flight. A Set (not a scalar) so two
+  // concurrent installs each keep their own busy state — with a scalar, the
+  // second click overwrote the first and whichever settled first cleared the
+  // other's spinner. The ref mirror lets load() read the in-flight set without
+  // re-creating the loader.
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
+  const busyIdsRef = useRef<ReadonlySet<string>>(busyIds);
   const [configuringId, setConfiguringId] = useState<string | null>(null);
+  const markBusy = useCallback((id: string, busy: boolean) => {
+    const next = new Set(busyIdsRef.current);
+    if (busy) next.add(id);
+    else next.delete(id);
+    busyIdsRef.current = next;
+    setBusyIds(next);
+  }, []);
 
   // Setup state (Roles / Skills sections).
   const [roles, setRoles] = useState<RoleEntry[]>([]);
@@ -174,7 +171,19 @@ export function MarketplaceViewSurface({
       const json = (await res.json()) as { ok?: boolean; plugins?: MarketplacePlugin[]; error?: string };
       if (ctl.signal.aborted) return;
       if (!json.ok) throw new Error(json.error ?? `marketplace http ${res.status}`);
-      setPlugins(json.plugins ?? []);
+      // A reload can land while an install/uninstall is still writing (e.g.
+      // the configure dialog fires onChanged → load()). For those ids, keep
+      // the optimistic `installed` — the response was snapshotted before the
+      // write finished and would silently revert the button.
+      setPlugins((prev) => {
+        const next = json.plugins ?? [];
+        if (busyIdsRef.current.size === 0) return next;
+        const prevById = new Map(prev.map((p) => [p.id, p]));
+        return next.map((p) => {
+          const pending = busyIdsRef.current.has(p.id) ? prevById.get(p.id) : undefined;
+          return pending ? { ...p, installed: pending.installed } : p;
+        });
+      });
       setError(null);
     } catch (err) {
       if (ctl.signal.aborted) return;
@@ -282,69 +291,29 @@ export function MarketplaceViewSurface({
     for (const p of plugins) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
     return counts;
   }, [plugins]);
-  const kindCounts = useMemo(() => countByKind(plugins), [plugins]);
-  const installedCount = useMemo(() => plugins.filter((p) => p.installed).length, [plugins]);
-  const installedSkillCount = useMemo(() => skills.filter((skill) => skill.installed || skill.local).length, [skills]);
-
   const rolesSummary = useMemo(() => {
-    const mcpServerNames = new Set<string>();
-    let activeRoles = 0;
-    for (const role of roles) {
-      if (role.active) activeRoles += 1;
-      for (const server of role.mcpServers) mcpServerNames.add(server);
-    }
-    return { activeRoles, totalRoles: roles.length, mcpServers: mcpServerNames.size };
+    const activeRoles = roles.reduce((n, role) => n + (role.active ? 1 : 0), 0);
+    return { activeRoles, totalRoles: roles.length };
   }, [roles]);
 
-  const sectionSummaries = useMemo<Record<MarketplaceSection, SectionSummary>>(() => {
-    const browseReadyDetail =
-      installedCount > 0 ? `${installedCount} added` : `${Math.max(categories.length - 1, 0)} categories`;
-    const rolesReadyDetail =
-      rolesSummary.activeRoles > 0
-        ? `${rolesSummary.activeRoles} active`
-        : `${rolesSummary.mcpServers} MCP servers`;
-    const skillsReadyDetail =
-      installedSkillCount > 0 ? `${installedSkillCount} installed` : "Directory ready";
-
-    return {
-      browse: {
-        metric: error ? "Offline" : loaded ? `${plugins.length} tools` : "Loading",
-        detail: loaded ? browseReadyDetail : "Catalog sync",
-        status: error ? "error" : loaded ? "ready" : "loading",
-      },
-      roles: {
-        metric: rolesError ? "Offline" : rolesLoaded ? `${rolesSummary.totalRoles} roles` : "Loading",
-        detail: rolesLoaded ? rolesReadyDetail : "Role manifests",
-        status: rolesError ? "error" : rolesLoaded ? "ready" : "loading",
-      },
-      skills: {
-        metric: skillsError ? "Offline" : skillsLoaded ? `${skills.length} skills` : "Loading",
-        detail: skillsLoaded ? skillsReadyDetail : "Local + registry",
-        status: skillsError ? "error" : skillsLoaded ? "ready" : "loading",
-      },
-      capabilities: {
-        metric: activeHarness ? activeHarness : "Runtime map",
-        detail: "Compare agent support",
-        status: "ready",
-      },
-    };
-  }, [
-    activeHarness,
-    categories.length,
-    error,
-    installedCount,
-    installedSkillCount,
-    loaded,
-    plugins.length,
-    rolesError,
-    rolesLoaded,
-    rolesSummary.activeRoles,
-    rolesSummary.mcpServers,
-    rolesSummary.totalRoles,
-    skills.length,
-    skillsError,
-    skillsLoaded,
-  ]);
+  // The slim header's tab items — label plus a live count per section. Counts
+  // appear once their loader settles so the header never flashes a stale 0;
+  // the old hero subtitle survives as the tab tooltip.
+  const sectionTabs = useMemo<ReadonlyArray<TabItem<MarketplaceSection>>>(
+    () =>
+      SECTIONS.map((s) => ({
+        id: s.id,
+        label: s.label,
+        icon: s.icon,
+        count:
+          s.id === "browse" && loaded ? plugins.length
+          : s.id === "roles" && rolesLoaded ? roles.length
+          : s.id === "skills" && skillsLoaded ? skills.length
+          : undefined,
+        title: SECTION_HINT[s.id],
+      })),
+    [loaded, plugins.length, rolesLoaded, roles.length, skillsLoaded, skills.length],
+  );
 
   const activeCollection = useMemo(
     () => COLLECTIONS.find((c) => c.id === collectionId) ?? null,
@@ -383,7 +352,7 @@ export function MarketplaceViewSurface({
   }, []);
 
   const add = useCallback(async (id: string) => {
-    setBusyId(id);
+    markBusy(id, true);
     setInstalled(id, true);
     try {
       const res = await fetch("/api/marketplace/install", {
@@ -400,12 +369,12 @@ export function MarketplaceViewSurface({
       setError(msg);
       announce(msg, "assertive");
     } finally {
-      setBusyId(null);
+      markBusy(id, false);
     }
-  }, [setInstalled, announce]);
+  }, [markBusy, setInstalled, announce]);
 
   const remove = useCallback(async (id: string) => {
-    setBusyId(id);
+    markBusy(id, true);
     setInstalled(id, false);
     try {
       const res = await fetch("/api/marketplace/uninstall", {
@@ -422,9 +391,9 @@ export function MarketplaceViewSurface({
       setError(msg);
       announce(msg, "assertive");
     } finally {
-      setBusyId(null);
+      markBusy(id, false);
     }
-  }, [setInstalled, announce]);
+  }, [markBusy, setInstalled, announce]);
 
   const toggleRole = useCallback(async (role: RoleEntry) => {
     const key = `${role.familiar}:${role.id}`;
@@ -483,53 +452,43 @@ export function MarketplaceViewSurface({
     [skills],
   );
 
-  const copy = SECTION_COPY[section];
   const activeError =
     section === "browse" ? error
     : section === "roles" ? rolesError
     : section === "skills" ? skillsError
     : null;
 
+  // Browse toolbar context — names the active scope only when it isn't the
+  // default landing (the rail highlight and search box already show it, and
+  // the collection banner names an open collection).
+  const scopeLabel = activeCollection
+    ? null
+    : query.trim()
+      ? "Search results"
+      : category !== "All"
+        ? category
+        : null;
+
   return (
     // @container/marketplace — layout responds to the PANE width, not the
     // viewport, so the surface also adapts inside a narrow drag-to-split pane
     // on a wide screen (same pattern as chat's chatlist/composer containers).
     <section className="marketplace-view @container/marketplace flex min-h-0 flex-1 flex-col bg-[var(--bg-base)]">
-      {/* Hero header — kicker, per-section title/stats, search, section tabs. */}
-      <header className="border-b border-[var(--border-hairline)] px-4 py-4 @min-[560px]/marketplace:px-6 @min-[560px]/marketplace:py-5">
-        <div className="flex flex-col gap-4 @min-[840px]/marketplace:flex-row @min-[840px]/marketplace:items-start @min-[840px]/marketplace:justify-between">
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">
-              Marketplace
-            </p>
-            <h2 className="mt-0.5 text-[24px] font-semibold leading-tight text-[var(--text-primary)]">
-              {copy.title}
-            </h2>
-            <p className="mt-1 max-w-prose text-[13px] text-[var(--text-muted)]">
-              {copy.subtitle}
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {section === "browse" ? (
-                <>
-                  <StatPill icon="ph:plug-bold" label={`${kindCounts.mcp} MCP servers`} />
-                  <StatPill icon="ph:cloud-bold" label={`${kindCounts.api} APIs`} />
-                  <StatPill icon="ph:sparkle-bold" label={`${kindCounts.skill} skills`} />
-                  {installedCount > 0 ? (
-                    <StatPill icon="ph:check-circle" label={`${installedCount} added`} accent />
-                  ) : null}
-                </>
-              ) : section === "roles" ? (
-                <>
-                  <StatPill icon="ph:mask-happy" label={`${rolesSummary.totalRoles} roles`} />
-                  {rolesSummary.activeRoles > 0 ? (
-                    <StatPill icon="ph:check-circle" label={`${rolesSummary.activeRoles} active`} accent />
-                  ) : null}
-                  <StatPill icon="ph:plug-bold" label={`${rolesSummary.mcpServers} MCP servers`} />
-                </>
-              ) : section === "skills" ? (
-                <StatPill icon="ph:sparkle-bold" label={`${skills.length} skills`} />
-              ) : null}
-            </div>
+      {/* Slim header — one row: section tabs (live counts, subtitle as
+          tooltip) plus the scoped search. The shared Tabs primitive supplies
+          role=tablist/tab, roving tabindex, and the marketplace-tab / panel
+          aria wiring via idPrefix. */}
+      <header className="border-b border-[var(--border-hairline)] px-4 @min-[560px]/marketplace:px-6">
+        <div className="flex flex-wrap items-end justify-between gap-x-4">
+          <div className="-mx-3 min-w-0 overflow-x-auto">
+            <Tabs
+              items={sectionTabs}
+              value={section}
+              onChange={selectSection}
+              ariaLabel="Marketplace sections"
+              idPrefix="marketplace"
+              bordered={false}
+            />
           </div>
           {section !== "capabilities" ? (
             <SearchInput
@@ -538,90 +497,13 @@ export function MarketplaceViewSurface({
               onValueChange={setQuery}
               onClear={() => setQuery("")}
               placeholder={SEARCH_LABEL[section]}
-              containerClassName="@min-[840px]/marketplace:w-96"
+              containerClassName="my-1.5 w-full self-center @min-[680px]/marketplace:w-72"
               aria-label={SEARCH_LABEL[section]}
             />
           ) : null}
         </div>
-
-        <div className="mt-4 flex flex-col gap-3">
-          {/* Section tabs — the merged surface's primary navigation. */}
-          <div
-            ref={tablistRef}
-            role="tablist"
-            aria-label="Marketplace sections"
-            className="marketplace-section-overview"
-            onKeyDown={(e) => {
-              if (e.key !== "ArrowRight" && e.key !== "ArrowLeft" && e.key !== "Home" && e.key !== "End") return;
-              e.preventDefault();
-              const i = SECTIONS.findIndex((s) => s.id === section);
-              const ni =
-                e.key === "ArrowRight" ? (i + 1) % SECTIONS.length
-                : e.key === "ArrowLeft" ? (i - 1 + SECTIONS.length) % SECTIONS.length
-                : e.key === "Home" ? 0
-                : SECTIONS.length - 1;
-              const next = SECTIONS[ni];
-              if (next) {
-                selectSection(next.id);
-                tablistRef.current?.querySelector<HTMLButtonElement>(`#marketplace-tab-${next.id}`)?.focus();
-              }
-            }}
-          >
-            {SECTIONS.map((s) => {
-              const summary = sectionSummaries[s.id];
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  role="tab"
-                  id={`marketplace-tab-${s.id}`}
-                  aria-selected={section === s.id}
-                  aria-controls={`marketplace-panel-${s.id}`}
-                  aria-label={`${s.label}: ${summary.metric}. ${summary.detail}`}
-                  tabIndex={section === s.id ? 0 : -1}
-                  data-status={summary.status}
-                  onClick={() => selectSection(s.id)}
-                  className={`marketplace-section-card focus-ring ${section === s.id ? "is-active" : ""}`}
-                >
-                  <span className="marketplace-section-card__top">
-                    <Icon name={s.icon} width={15} aria-hidden />
-                    <span className="marketplace-section-card__label">{s.label}</span>
-                  </span>
-                  <span className="marketplace-section-card__metric">{summary.metric}</span>
-                  <span className="marketplace-section-card__detail">{summary.detail}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {section === "browse" ? (
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              <Tabs
-                items={KIND_TABS}
-                value={kind}
-                onChange={setKind}
-                variant="segment"
-                size="sm"
-                bordered={false}
-                ariaLabel="Filter plugins by type"
-              />
-              <label className="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
-                <span className="sr-only">Sort plugins</span>
-                <Icon name="ph:sort-ascending" width={14} aria-hidden />
-                <StandardSelect
-                  label="Sort plugins"
-                  value={sort}
-                  onChange={(next) => setSort(next as SortKey)}
-                  className="focus-ring cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[12px] text-[var(--text-primary)]"
-                  options={SORT_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
-                />
-              </label>
-            </div>
-          ) : null}
-        </div>
-
         {activeError ? (
-          <p className="mt-3 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
+          <p role="alert" className="mb-3 rounded-md border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[12px] text-[var(--danger-text)]">
             {activeError}
           </p>
         ) : null}
@@ -749,38 +631,52 @@ export function MarketplaceViewSurface({
                   <Icon name="ph:arrow-left" width={12} aria-hidden /> All plugins
                 </button>
               </div>
-            ) : (
-              <div className="marketplace-browse-summary mb-4">
-                <div className="min-w-0">
-                  <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">
-                    {query
-                      ? "Search results"
-                      : category === "All" && kind === "all"
-                        ? "All categories"
-                        : category !== "All"
-                          ? category
-                          : KIND_TABS.find((k) => k.id === kind)?.label ?? "Plugins"}
-                  </h3>
-                  <p className="mt-0.5 text-[12px] text-[var(--text-muted)]">
-                    {category === "All" && !query && kind === "all"
-                      ? "Grouped by category so every tool type uses the same scan pattern."
-                      : "Same card layout, filtered to the current result set."}
-                  </p>
-                </div>
-                {loaded ? (
-                  <div className="marketplace-browse-summary__metrics" aria-label="Visible marketplace results">
-                    <span>{filtered.length} total</span>
-                    <span>{groupedFiltered.length} groups</span>
-                    <span>{groupedKindCounts.mcp} MCP</span>
-                    <span>{groupedKindCounts.api} API</span>
-                    <span>{groupedKindCounts.skill} skills</span>
-                  </div>
-                ) : null}
+            ) : null}
+
+            {/* Browse toolbar — result context on the left, kind filter + sort
+                on the right (moved out of the header so it stays one row). */}
+            <div className="marketplace-browse-summary mb-4">
+              <p className="min-w-0 self-center truncate text-[12px] text-[var(--text-muted)]">
+                {!loaded ? (
+                  "Loading the catalog…"
+                ) : (
+                  <>
+                    {scopeLabel ? (
+                      <span className="font-medium text-[var(--text-secondary)]">{scopeLabel} · </span>
+                    ) : null}
+                    {filtered.length} {filtered.length === 1 ? "tool" : "tools"}
+                    {kind === "all" && filtered.length > 0
+                      ? ` · ${groupedKindCounts.mcp} MCP · ${groupedKindCounts.api} API · ${groupedKindCounts.skill} ${groupedKindCounts.skill === 1 ? "skill" : "skills"}`
+                      : null}
+                  </>
+                )}
+              </p>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                <Tabs
+                  items={KIND_TABS}
+                  value={kind}
+                  onChange={setKind}
+                  variant="segment"
+                  size="sm"
+                  bordered={false}
+                  ariaLabel="Filter plugins by type"
+                />
+                <label className="flex items-center gap-2 text-[12px] text-[var(--text-muted)]">
+                  <span className="sr-only">Sort plugins</span>
+                  <Icon name="ph:sort-ascending" width={14} aria-hidden />
+                  <StandardSelect
+                    label="Sort plugins"
+                    value={sort}
+                    onChange={(next) => setSort(next as SortKey)}
+                    className="focus-ring cursor-pointer rounded-md border border-[var(--border-hairline)] bg-[var(--bg-panel)] px-2 py-1 text-[12px] text-[var(--text-primary)]"
+                    options={SORT_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
+                  />
+                </label>
               </div>
-            )}
+            </div>
 
             {!loaded ? (
-              <p className="text-[12px] text-[var(--text-muted)]">Loading…</p>
+              <SkeletonRows count={6} />
             ) : filtered.length === 0 ? (
               <EmptyState
                 icon="ph:puzzle-piece-bold"
@@ -793,9 +689,9 @@ export function MarketplaceViewSurface({
                   <section key={group.category} className="marketplace-category-group" aria-labelledby={`marketplace-category-${group.category.replace(/\W+/g, "-").toLowerCase()}`}>
                     <div className="marketplace-category-group__head">
                       <div className="min-w-0">
-                        <h4 id={`marketplace-category-${group.category.replace(/\W+/g, "-").toLowerCase()}`}>
+                        <h2 id={`marketplace-category-${group.category.replace(/\W+/g, "-").toLowerCase()}`}>
                           {group.category}
-                        </h4>
+                        </h2>
                         <p>
                           {group.plugins.length} {group.plugins.length === 1 ? "tool" : "tools"} · {group.counts.mcp} MCP · {group.counts.api} API · {group.counts.skill} skills
                         </p>
@@ -806,7 +702,7 @@ export function MarketplaceViewSurface({
                         <MarketplaceCard
                           key={plugin.id}
                           plugin={plugin}
-                          busy={busyId === plugin.id}
+                          busy={busyIds.has(plugin.id)}
                           onOpen={setSelected}
                           onAdd={add}
                           onRemove={remove}
@@ -871,8 +767,12 @@ export function MarketplaceViewSurface({
 
       {selectedPlugin ? (
         <MarketplaceDetail
+          // Keyed so switching plugins remounts the drawer — otherwise the
+          // previous plugin's connection-test result lingers under the new
+          // plugin's header.
+          key={selectedPlugin.id}
           plugin={selectedPlugin}
-          busy={busyId === selectedPlugin.id}
+          busy={busyIds.has(selectedPlugin.id)}
           onClose={() => setSelected(null)}
           onAdd={() => void add(selectedPlugin.id)}
           onRemove={() => void remove(selectedPlugin.id)}
@@ -923,20 +823,5 @@ function SetupRailLink({
         <span className="shrink-0 text-[11px] tabular-nums text-[var(--text-muted)]">{detail}</span>
       ) : null}
     </button>
-  );
-}
-
-function StatPill({ icon, label, accent }: { icon: IconName; label: string; accent?: boolean }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] ${
-        accent
-          ? "border-[var(--accent-faint)] bg-[var(--accent-faint)] text-[var(--accent)]"
-          : "border-[var(--border-hairline)] bg-[var(--bg-panel)] text-[var(--text-secondary)]"
-      }`}
-    >
-      <Icon name={icon} width={12} aria-hidden />
-      {label}
-    </span>
   );
 }
