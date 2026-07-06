@@ -8,8 +8,14 @@ test("touch long-press drag moves a card between columns", async ({ page }) => {
   await page.route("**/api/escalations**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, count: 0 }) }));
   await page.route("**/api/board/*", async (r) => { patches.push(JSON.parse(r.request().postData() || "{}")); r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, card: mk("c1","Drag me","inbox") }) }); });
   await page.route("**/api/board", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, cards: [mk("c1", "Drag me", "backlog")] }) }));
-  // Dismiss the onboarding overlay (covers the shell on a fresh CI profile).
-  await page.addInitScript(() => window.localStorage.setItem("cave:onboarding:dismissed", "1"));
+  // Dismiss the onboarding overlay (covers the shell on a fresh CI profile), and
+  // keep the nav expanded (minimized-by-default would shift the board coordinates
+  // this touch-drag test measures) by pre-seeding the sidebar-minimize flag.
+  await page.addInitScript(() => {
+    window.localStorage.setItem("cave:onboarding:dismissed", "1");
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
+  });
   await page.goto("/"); await page.waitForSelector(".shell-frame", { timeout: 60000 });
   await page.locator(".sidebar-nav-scroll").getByRole("button", { name: /^Tasks\b/ }).click();
   await page.waitForSelector(".board-kanban-card", { timeout: 60000 });

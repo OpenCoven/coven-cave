@@ -8,6 +8,7 @@ import {
   Panel,
   Separator,
   useDefaultLayout,
+  type GroupImperativeHandle,
   type PanelImperativeHandle,
 } from "react-resizable-panels";
 import { Icon, CAVE_ICON_SIZE, type IconName } from "@/lib/icon";
@@ -32,9 +33,12 @@ import {
 //   ⌘\   toggle list
 //   ⌃`   toggle bottom terminal
 
+// v3: the nav now starts minimized to its icon rail by default (see the
+// default-minimize layout effect below) — bumping the key retires v2 saved
+// widths so the new default applies once, then the user's own resize persists.
 // v2: panels went percent → pixel (see shell-left-panels-fit.test.ts); v1
 // layouts hold percent widths chosen under the old monitor-scaled defaults.
-const SHELL_GROUP_ID = "cave.shell.widths.v2";
+const SHELL_GROUP_ID = "cave.shell.widths.v3";
 const BOTTOM_GROUP_ID = "cave.shell.bottom.v1";
 
 const shellStorage = {
@@ -87,9 +91,38 @@ function togglePanel(panel: PanelImperativeHandle | null) {
   else panel.collapse();
 }
 
+// The minimized-by-default nav is applied exactly ONCE per group per browser,
+// tracked by this flag (the panel library persists layouts under its own
+// `react-resizable-panels:*` keys, so we can't reuse those; a self-owned flag is
+// simpler and lets tests opt out by pre-seeding it). After the first minimize the
+// library's own persistence takes over — a user who later expands the nav keeps
+// it, because we no longer re-minimize. Returns true on the server / when storage
+// is unreadable, i.e. "already applied" → don't minimize.
+const SHELL_MIN_APPLIED_PREFIX = "cave:shell:min-applied:";
+function shellMinimizeApplied(id: string): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.localStorage.getItem(`${SHELL_MIN_APPLIED_PREFIX}${id}`) === "1";
+  } catch {
+    return true;
+  }
+}
+function markShellMinimizeApplied(id: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(`${SHELL_MIN_APPLIED_PREFIX}${id}`, "1");
+  } catch {
+    /* ignore — strict privacy mode or quota */
+  }
+}
+
 // The left nav collapses to an icons-only rail (instead of vanishing) so the
 // destination icons stay reachable. Sizes at/below the rail read as "collapsed".
 const NAV_RAIL_PX = 56;
+// The nav Panel's open width (its defaultSize) — the ⌘B / hover-peek expand
+// target, and the basis for the minimized-by-default layout injection (the rail
+// is NAV_RAIL_PX/NAV_OPEN_PX of the open width).
+const NAV_OPEN_PX = 240;
 const NAV_OPEN_THRESHOLD_PX = NAV_RAIL_PX + 16;
 
 export type ShellHandle = {
@@ -287,11 +320,14 @@ function ShellInner({
     storage: shellStorage,
   });
 
-  const navPanelIdx = panelIds.indexOf("nav");
+  const groupRef = useRef<GroupImperativeHandle | null>(null);
+
   const [navOpen, setNavOpen] = useState(() => {
-    if (!defaultLayout) return true;
-    const pct = defaultLayout[navPanelIdx];
-    return typeof pct !== "number" || pct > 0;
+    // Mobile keeps its drawer. On desktop, start closed so the rail content paints
+    // from the first frame on a fresh minimize; onResize settles it to the real
+    // width once the library (or the minimize effect) has applied the layout.
+    if (isMobile) return true;
+    return shellMinimizeApplied(groupId);
   });
 
   // Hover-to-peek: when the desktop nav is collapsed to its icon rail, hovering
@@ -356,6 +392,32 @@ function ShellInner({
     const t = window.setTimeout(() => setSettled(true), 250);
     return () => window.clearTimeout(t);
   }, [mounted]);
+
+  // Minimize the sidebar by default, on every surface. Once the group has settled
+  // (the library has applied its initial open layout), replace the WHOLE layout
+  // with one where the nav is at its rail width and the freed width goes to the
+  // detail pane, via the group-level setLayout. Once per fresh groupId; a group
+  // the user has resized (a saved layout) is respected.
+  //
+  // NOTE: on multi-pane surfaces (chat: nav · session-list · detail · code-rail)
+  // the panel solver squeezes the session list when the nav is at the rail — a
+  // known trade-off of minimizing globally. ⌘B / hover-peek expands the nav to
+  // restore the sidebar.
+  const minimizedGroupsRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (!settled || isMobile) return;
+    if (minimizedGroupsRef.current.has(groupId) || shellMinimizeApplied(groupId)) return;
+    const group = groupRef.current;
+    if (!group) return;
+    const cur = group.getLayout();
+    const nav = cur.nav;
+    if (typeof nav !== "number" || typeof cur.detail !== "number") return;
+    const railPct = nav * (NAV_RAIL_PX / NAV_OPEN_PX);
+    if (railPct >= nav) return; // already at/under the rail
+    minimizedGroupsRef.current.add(groupId);
+    markShellMinimizeApplied(groupId);
+    group.setLayout({ ...cur, nav: railPct, detail: cur.detail + (nav - railPct) });
+  }, [settled, isMobile, groupId]);
 
   useEffect(() => {
     onNavOpenChange?.(navOpen);
@@ -480,6 +542,7 @@ function ShellInner({
     <Group
       className="shell-root flex-1 min-h-0"
       orientation="horizontal"
+      groupRef={groupRef}
       defaultLayout={defaultLayout}
       onLayoutChanged={onLayoutChanged}
       data-mobile-drawer={isMobile && mobileDrawer ? mobileDrawer : undefined}
@@ -487,6 +550,10 @@ function ShellInner({
       <Panel
         id="nav"
         className={`shell-nav-panel${navOpen ? " shell-nav-panel--open" : ""}`}
+        // Open width (NAV_OPEN_PX) and the ⌘B / hover-peek expand target. The
+        // minimized-by-default rail is applied via the group's setLayout (see the
+        // minimize effect above), not a rail-sized defaultSize here — a rail-sized
+        // default made the solver squeeze the sibling list/code-rail panels.
         defaultSize="240px"
         minSize="200px"
         maxSize="420px"
