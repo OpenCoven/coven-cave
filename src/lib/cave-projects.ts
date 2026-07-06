@@ -4,7 +4,11 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 export type { CaveProject } from "./cave-projects-types.ts";
-export { normalizeProjectRoot, sortProjectsAlphabetically } from "./cave-projects-types.ts";
+export {
+  dedupeProjectsByRoot,
+  normalizeProjectRoot,
+  sortProjectsAlphabetically,
+} from "./cave-projects-types.ts";
 import type { CaveProject } from "./cave-projects-types.ts";
 
 type ProjectsFile = {

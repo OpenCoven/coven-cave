@@ -11,6 +11,7 @@ try {
   const {
     createProject,
     deleteProject,
+    dedupeProjectsByRoot,
     loadProjects,
     patchProject,
     projectById,
@@ -92,6 +93,37 @@ try {
     ]).map((project) => project.id),
     ["a1", "a2", "z"],
     "shared project sorting is alphabetical by name, then root",
+  );
+
+  const duplicateRootProjects = [
+    {
+      id: "old",
+      name: "Old alpha",
+      root: `C:\\work\\alpha${"/".repeat(4)}`,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "new",
+      name: "Alpha",
+      root: "C:/work/alpha",
+      createdAt: "2026-01-02T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    },
+    { id: "solo", name: "Solo", root: "/work/solo", createdAt: "", updatedAt: "" },
+  ];
+  assert.deepEqual(
+    dedupeProjectsByRoot(duplicateRootProjects).map((project) => project.id),
+    ["new", "solo"],
+    "project dedupe keeps one row per normalized root and prefers the newest record",
+  );
+  assert.deepEqual(
+    sortProjectsAlphabetically([
+      { id: "z", name: "Zed", root: "/work/zed", createdAt: "", updatedAt: "" },
+      ...duplicateRootProjects,
+    ]).map((project) => project.id),
+    ["new", "solo", "z"],
+    "shared project sorting deduplicates by normalized root before alphabetical order",
   );
 
   console.log("cave-projects.test.ts: ok");
