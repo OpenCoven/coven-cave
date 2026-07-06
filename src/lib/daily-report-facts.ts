@@ -62,8 +62,12 @@ function sameLocalDay(iso: string | null | undefined, day: Date): boolean {
 }
 
 function basename(root: string): string {
-  const trimmed = root.replace(/\/+$/, "");
-  const last = trimmed.split("/").pop();
+  // Trim trailing slashes without a regex — /\/+$/ backtracks polynomially on
+  // long slash runs (CodeQL js/polynomial-redos).
+  let end = root.length;
+  while (end > 0 && root.charCodeAt(end - 1) === 47 /* "/" */) end--;
+  const trimmed = root.slice(0, end);
+  const last = trimmed.slice(trimmed.lastIndexOf("/") + 1);
   return last || trimmed || "unknown";
 }
 
