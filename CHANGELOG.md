@@ -7,6 +7,17 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.140] - 2026-07-05
+
+Docs release on top of v0.0.139. Adds the approved design spec for the
+upcoming **contextual-only browser surface** — the plan to retire the in-app
+browser as a standalone navigation destination and make it a companion split
+pane on wide viewports / bottom-sheet overlay on mobile, while keeping every
+existing URL-open entry point working unchanged.
+
+### Docs
+- **Browser contextual-only surface design spec** (`docs/superpowers/specs/2026-07-04-browser-contextual-design.md`). Documents the navigation removal, the `openBrowserAdaptive` behaviour for wide vs narrow viewports, and the deep-link paths that stay functional via `?mode=browser` / `#browser`.
+
 ## [0.0.139] - 2026-07-05
 
 Security-hardening release on top of v0.0.138. A coordinated batch of fixes
