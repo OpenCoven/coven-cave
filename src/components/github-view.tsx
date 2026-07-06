@@ -7,7 +7,6 @@
 import "@/styles/board.css";
 import {
   createContext,
-  Fragment,
   useContext,
   useEffect,
   useMemo,
@@ -1114,13 +1113,29 @@ const REACTION_EMOJI: Record<string, string> = {
   eyes: "👀",
 };
 
+const REACTION_LABEL: Record<string, string> = {
+  "+1": "thumbs up",
+  "-1": "thumbs down",
+  laugh: "laugh",
+  hooray: "hooray",
+  confused: "confused",
+  heart: "heart",
+  rocket: "rocket",
+  eyes: "eyes",
+};
+
 /** Read-only reaction summary (emoji + count) under a comment. */
 function CommentReactions({ reactions }: { reactions?: GhReaction[] }) {
   if (!reactions || reactions.length === 0) return null;
   return (
     <div className="gh-reactions" aria-label="Reactions">
       {reactions.map((r) => (
-        <span key={r.content} className="gh-reaction" title={`${r.count} ${r.content}`}>
+        <span
+          key={r.content}
+          className="gh-reaction"
+          title={`${r.count} ${r.content}`}
+          aria-label={`${r.count} ${REACTION_LABEL[r.content] ?? r.content} ${r.count === 1 ? "reaction" : "reactions"}`}
+        >
           <span aria-hidden>{REACTION_EMOJI[r.content] ?? "•"}</span>
           {r.count}
         </span>

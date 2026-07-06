@@ -95,6 +95,14 @@ export async function GET(req: Request) {
       ghFetch(`/repos/${repo}/commits/${sha}/status`, token),
     ]);
 
+    if (!runsResp.res.ok && !statusResp.res.ok) {
+      const status = runsResp.res.status === 403 || statusResp.res.status === 403 ? 403 : 502;
+      return NextResponse.json(
+        { ok: false, error: `github error (${runsResp.res.status}, ${statusResp.res.status})` },
+        { status },
+      );
+    }
+
     const rawRuns = ((runsResp.data as { check_runs?: unknown[] } | null)?.check_runs ?? []) as Array<
       Record<string, unknown>
     >;
