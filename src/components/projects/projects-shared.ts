@@ -40,3 +40,16 @@ export function openSessionById(sessionId: string): void {
 
 /** A project a chat can be moved into (from the row's context menu). root is normalized. */
 export type MoveTarget = { id: string; name: string; root: string };
+
+/** Preset tile tints — the same oklch recipe projectTint() hashes into, at
+ *  fixed hues, so a hand-picked color sits naturally next to auto-tinted
+ *  tiles. Stored verbatim in CaveProject.color. */
+export const PROJECT_COLOR_SWATCHES: { name: string; value: string }[] = [
+  { name: "Clay", value: "oklch(0.74 0.12 25)" },
+  { name: "Amber", value: "oklch(0.74 0.12 70)" },
+  { name: "Fern", value: "oklch(0.74 0.12 145)" },
+  { name: "Teal", value: "oklch(0.74 0.12 200)" },
+  { name: "Sky", value: "oklch(0.74 0.12 250)" },
+  { name: "Violet", value: "oklch(0.74 0.12 300)" },
+  { name: "Rose", value: "oklch(0.74 0.12 340)" },
+];

@@ -210,6 +210,8 @@ export const SUITES = {
     "src/components/shell-left-panels-fit.test.ts",
     "src/components/workflows-view.test.ts",
     "src/components/projects-view.test.ts",
+    "src/components/projects/projects-hub.test.ts",
+    "src/lib/projects/selected-project.test.ts",
     "src/components/dnd-context-stable-ids.test.ts",
     "src/lib/projects/projects-ui-state.test.ts",
     "src/lib/projects/session-glyph.test.ts",
