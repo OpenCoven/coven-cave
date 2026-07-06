@@ -27,17 +27,24 @@ assert.match(
   "refresh button tooltip includes ⌘R",
 );
 
-// Footer is no longer gated on `activity` — it always renders.
+// Footer hint bar retired (§8 chrome diet): the keyboard bindings are
+// documented in the ⌘/ Shortcuts sheet; only the low-rate warning still
+// summons a footer.
 assert.doesNotMatch(
   source,
   /\{activity && \(\s*<footer/,
   "footer is no longer conditionally rendered on `activity`",
 );
-assert.match(
+assert.doesNotMatch(
   source,
   /↑↓ navigate · Enter opens on GitHub · ⌘R refresh/,
-  "footer carries the keyboard-nav hint",
+  "the permanent keyboard-hints footer is retired",
 );
+{
+  const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
+  assert.match(shortcuts, /GitHub: open the selected item/, "the Shortcuts sheet documents Enter-to-open");
+  assert.match(shortcuts, /GitHub: refresh activity/, "the Shortcuts sheet documents ⌘R refresh");
+}
 
 // ⌘R keydown handler wired.
 assert.match(
@@ -61,8 +68,9 @@ assert.match(
   "keydown handler skips when an input/textarea is focused",
 );
 
-// When a PAT is connected the button is icon-only (no text label); it keeps an
-// aria-label for accessibility and only shows "Add PAT" text when not connected.
+// PAT chrome (§8): while unconnected, a visible "Add PAT" setup CTA renders;
+// once connected, PAT management is an occasional verb and lives in the
+// header overflow menu.
 assert.doesNotMatch(
   source,
   /PAT connected</,
@@ -70,13 +78,13 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /aria-label=\{patStatus\?\.hasPat \? "GitHub PAT connected — manage" : "Connect GitHub PAT"\}/,
-  "connected PAT IconButton has aria-label",
+  /\{!patStatus\?\.hasPat \? \(\s*<Button[\s\S]{0,300}?Add PAT/,
+  "disconnected state keeps the visible Add PAT setup CTA",
 );
 assert.match(
   source,
-  /\{patStatus\?\.hasPat \? null : "Add PAT"\}/,
-  "disconnected PAT Button still shows the 'Add PAT' label",
+  /\{patStatus\?\.hasPat \? \(\s*<>\s*<PopoverSeparator \/>\s*<PopoverItem icon="ph:key" onSelect=\{\(\) => setShowPatModal\(true\)\}>/,
+  "connected state moves PAT management into the overflow menu",
 );
 
 assert.match(
@@ -91,8 +99,8 @@ assert.match(
 );
 assert.match(
   source,
-  /className=\{`gh-row\$\{selectedItem\?\.id === item\.id \? " is-selected" : ""\}`\}/,
-  "GitHub rows expose selected state",
+  /className=\{`gh-row reveal-scope\$\{selectedItem\?\.id === item\.id \? " is-selected" : ""\}`\}/,
+  "GitHub rows expose selected state (and act as the reveal scope for row actions)",
 );
 assert.match(
   source,
@@ -182,10 +190,12 @@ assert.match(
   /\(\["none", "org", "repo"\] as GroupBy\[\]\)\.map/,
   "grouping renders as a none/org/repo toggle",
 );
+// Grouping moved into the overflow menu (§8): PopoverItem's checked prop
+// renders menuitemradio semantics (aria-checked + trailing check glyph).
 assert.match(
   source,
-  /aria-pressed=\{isActive\}/,
-  "grouping toggle buttons expose pressed state",
+  /<PopoverItem key=\{g\} checked=\{groupBy === g\} onSelect=\{\(\) => setGroupBy\(g\)\}>/,
+  "grouping options are exclusive menu radios in the overflow",
 );
 assert.doesNotMatch(
   source,

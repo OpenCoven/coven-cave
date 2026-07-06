@@ -20,6 +20,8 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem, PopoverLabel, PopoverSeparator } from "@/components/ui/popover";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { StandardSelect } from "@/components/ui/select";
 import { arrayContentEqual } from "@/lib/array-content-equal";
@@ -2337,10 +2339,20 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
           )}
 
           {activity?.authed === false && (
-            <span className="gh-compact-auth gh-compact-auth--public">public API</span>
+            <span
+              className="gh-compact-auth gh-compact-auth--public"
+              title="Public API — add a PAT for private repos + review requests"
+            >
+              public API
+            </span>
           )}
           {activity?.authed === true && (
-            <span className="gh-compact-auth gh-compact-auth--authed">authenticated</span>
+            <span
+              className="gh-compact-auth gh-compact-auth--authed"
+              title="Authenticated — private repos included"
+            >
+              authenticated
+            </span>
           )}
 
           {activity?.rateLimit && (
@@ -2415,43 +2427,24 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
               })),
             ]}
           />
-          <span className="gh-select-sep" aria-hidden />
-          <div className="gh-compact-group" role="group" aria-label="Group rows">
-            {(["none", "org", "repo"] as GroupBy[]).map((g) => {
-              const labels: Record<GroupBy, string> = { none: "None", org: "Org", repo: "Repo" };
-              const isActive = groupBy === g;
-              return (
-                <button
-                  key={g}
-                  type="button"
-                  onClick={() => setGroupBy(g)}
-                  aria-pressed={isActive}
-                  title={g === "none" ? "No grouping" : `Group by ${g}`}
-                  className={[
-                    "gh-compact-group-button",
-                    isActive
-                      ? "is-active"
-                      : "",
-                  ].join(" ")}
-                >
-                  {labels[g]}
-                </button>
-              );
-            })}
-          </div>
+          {/* §8 chrome budget: the grouping radios and PAT management moved to
+              the overflow menu below — occasional configuration, not per-visit
+              chrome. "Add PAT" stays visible only while unconnected (setup CTA). */}
         </div>
 
         <div className="gh-compact-actions">
-          <Button
-            size="xs"
-            variant="secondary"
-            leadingIcon="ph:key"
-            onClick={() => setShowPatModal(true)}
-            title={patStatus?.hasPat ? "Manage GitHub PAT" : "Connect GitHub PAT"}
-            aria-label={patStatus?.hasPat ? "GitHub PAT connected — manage" : "Connect GitHub PAT"}
-          >
-            {patStatus?.hasPat ? null : "Add PAT"}
-          </Button>
+          {!patStatus?.hasPat ? (
+            <Button
+              size="xs"
+              variant="secondary"
+              leadingIcon="ph:key"
+              onClick={() => setShowPatModal(true)}
+              title="Connect GitHub PAT"
+              aria-label="Connect GitHub PAT"
+            >
+              Add PAT
+            </Button>
+          ) : null}
           <IconButton
             icon="ph:arrows-clockwise"
             size="sm"
@@ -2462,6 +2455,25 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
             title="Refresh (⌘R)"
             aria-label="Refresh GitHub activity"
           />
+          <OverflowMenu ariaLabel="More GitHub options">
+            <PopoverLabel>Group rows</PopoverLabel>
+            {(["none", "org", "repo"] as GroupBy[]).map((g) => {
+              const labels: Record<GroupBy, string> = { none: "No grouping", org: "Group by org", repo: "Group by repo" };
+              return (
+                <PopoverItem key={g} checked={groupBy === g} onSelect={() => setGroupBy(g)}>
+                  {labels[g]}
+                </PopoverItem>
+              );
+            })}
+            {patStatus?.hasPat ? (
+              <>
+                <PopoverSeparator />
+                <PopoverItem icon="ph:key" onSelect={() => setShowPatModal(true)}>
+                  Manage GitHub PAT
+                </PopoverItem>
+              </>
+            ) : null}
+          </OverflowMenu>
         </div>
       </header>
 
@@ -2590,7 +2602,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                       data-item-id={item.id}
                       data-url={item.url}
                       tabIndex={selectedItem?.id === item.id ? 0 : -1}
-                      className={`gh-row${selectedItem?.id === item.id ? " is-selected" : ""}`}
+                      className={`gh-row reveal-scope${selectedItem?.id === item.id ? " is-selected" : ""}`}
                       onClick={() => setSelectedItemId(item.id)}
                       aria-selected={selectedItem?.id === item.id}
                     >
@@ -2705,7 +2717,11 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                         <RelativeTime iso={item.updatedAt} className="board-table-cell-time" />
                       </td>
                       <td style={{ textAlign: "right" }}>
-                        <div className="gh-actions">
+                        {/* §8: per-row secondary actions reveal on row hover /
+                            focus-within (touch: always visible); the selected
+                            row and rows with an action error stay revealed
+                            (state never hides — see board.css). */}
+                        <div className="gh-actions reveal-on-hover">
                           <OpenChatAction
                             item={item}
                             linkedCards={linked}
@@ -2778,25 +2794,17 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
         )}
       </div>
 
-      {/* ── Footer ── */}
-      <footer className="github-surface-footer shrink-0 px-5 py-1.5 text-[10px] text-[var(--text-muted)] flex items-center justify-between gap-3">
-        <span>↑↓ navigate · Enter opens on GitHub · ⌘R refresh</span>
-        <span className="inline-flex items-center gap-3">
-          {activity?.rateLimit && activity.rateLimit.remaining < 10 && (
-            <span className="inline-flex items-center gap-1 text-[var(--color-warning)]">
-              <Icon name="ph:warning-fill" width={12} aria-hidden />
-              {activity.rateLimit.remaining} requests remaining
-            </span>
-          )}
-          {activity && (
-            <span>
-              {activity.authed
-                ? "Authenticated — private repos included"
-                : "Public API — add a PAT for private repos + review requests"}
-            </span>
-          )}
-        </span>
-      </footer>
+      {/* Keyboard hints moved to the ⌘/ Shortcuts sheet (§8 chrome diet); the
+          low-rate warning lives beside the header rate chip context, and the
+          auth state is already the header's gh-compact-auth chip. */}
+      {activity?.rateLimit && activity.rateLimit.remaining < 10 && (
+        <footer className="github-surface-footer shrink-0 px-5 py-1.5 text-[10px] flex items-center justify-end">
+          <span className="inline-flex items-center gap-1 text-[var(--color-warning)]">
+            <Icon name="ph:warning-fill" width={12} aria-hidden />
+            {activity.rateLimit.remaining} requests remaining
+          </span>
+        </footer>
+      )}
     </section>
     </GitHubProfileProvider>
   );
