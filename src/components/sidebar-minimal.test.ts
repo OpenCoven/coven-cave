@@ -43,6 +43,18 @@ assert.match(
 );
 
 assert.match(
+  styles,
+  /\.sidebar-nav-scroll\s*\{[^}]*gap:\s*4px/,
+  "Sidebar nav options should stay visually close together on desktop",
+);
+
+assert.match(
+  styles,
+  /\.sidebar-folder-row,\n\.sidebar-actions--footer \.sidebar-action-row\s*\{[^}]*min-height:\s*30px/,
+  "Desktop sidebar option rows should use compact height before mobile touch-target overrides",
+);
+
+assert.match(
   source,
   /<div className="sidebar-nav-scroll"/,
   "Sidebar should keep the main navigation in one continuous scrollable rail",
