@@ -20,6 +20,24 @@ import type { Familiar } from "@/lib/types";
 
 const LAST_FAMILIAR_KEY = "cave.quick-chat.last-familiar";
 
+// localStorage can throw (private browsing, storage full) — remembering the
+// last familiar is a nicety and must never take down the send itself.
+function readLastFamiliar(): string | null {
+  try {
+    return typeof window !== "undefined" ? window.localStorage.getItem(LAST_FAMILIAR_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastFamiliar(id: string): void {
+  try {
+    window.localStorage.setItem(LAST_FAMILIAR_KEY, id);
+  } catch {
+    // Best-effort only.
+  }
+}
+
 export type QuickChatSendState = "idle" | "sending" | "done";
 
 export type QuickChatRole = "user" | "assistant";
@@ -66,10 +84,16 @@ export type UseQuickChatOptions = {
    *  last-used/first fallback. The user's manual pick in the popover still
    *  wins once made. */
   preferredFamiliarId?: string | null;
+  /** Defer the roster fetch until true (latched — flipping back to false does
+   *  not unload). The in-app popover mounts closed at boot and shouldn't
+   *  duplicate the workspace's own roster fetch; it passes its `open` flag.
+   *  Defaults to true (the tray window loads immediately). */
+  enabled?: boolean;
 };
 
 export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const preferredFamiliarId = options?.preferredFamiliarId ?? null;
+  const enabled = options?.enabled ?? true;
   const [familiars, setFamiliars] = useState<Familiar[]>([]);
   const [selectedFamiliarId, setSelectedFamiliarId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -94,8 +118,9 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   const lastUserPromptRef = useRef<string>("");
   // Monotonic id source for message keys (stable across renders).
   const msgSeqRef = useRef(0);
-  // Once the user explicitly picks a familiar in the UI, stop following the
-  // preferred (workspace-active) familiar — their choice is stickier.
+  // Once the user explicitly picks a familiar in the UI (or targets one with a
+  // leading @mention), stop following the preferred (workspace-active)
+  // familiar — their choice is stickier.
   const userPickedRef = useRef(false);
   // Latest preferred id for the one-shot roster load below (no effect re-run).
   const preferredRef = useRef<string | null>(preferredFamiliarId);
@@ -104,6 +129,9 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   // without threading it through a state updater.
   const selectedIdRef = useRef<string | null>(selectedFamiliarId);
   selectedIdRef.current = selectedFamiliarId;
+  // Roster-load bookkeeping: fire once (latched on `enabled`), abort on unmount.
+  const rosterStartedRef = useRef(false);
+  const rosterAbortRef = useRef<AbortController | null>(null);
 
   const nextId = useCallback((prefix: string) => `${prefix}-${msgSeqRef.current++}`, []);
 
@@ -121,18 +149,21 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   }, []);
 
   useEffect(() => {
-    let alive = true;
+    if (!enabled || rosterStartedRef.current) return;
+    rosterStartedRef.current = true;
+    const controller = new AbortController();
+    rosterAbortRef.current = controller;
+    setLoading(true);
     void (async () => {
       try {
-        const res = await fetch("/api/familiars");
+        const res = await fetch("/api/familiars", { signal: controller.signal });
+        if (!res.ok) throw new Error(`Failed to load familiars (${res.status}).`);
         const json = await res.json();
-        if (!alive) return;
+        if (controller.signal.aborted) return;
         const next = (json?.familiars ?? []) as Familiar[];
-        const stored =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem(LAST_FAMILIAR_KEY)
-            : null;
+        const stored = readLastFamiliar();
         const preferred = preferredRef.current;
+        setError(null);
         setFamiliars(next);
         // Default priority: the workspace's active familiar, then the last
         // familiar used in quick chat, then the first in the roster.
@@ -143,15 +174,17 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
             null,
         );
       } catch (err) {
-        if (alive) setError((err as Error)?.message ?? "Failed to load familiars.");
+        if (!controller.signal.aborted) {
+          // Un-latch so closing and reopening retries a failed load (the
+          // roster route can flake) instead of wedging on the error forever.
+          rosterStartedRef.current = false;
+          setError((err as Error)?.message ?? "Failed to load familiars.");
+        }
       } finally {
-        if (alive) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     })();
-    return () => {
-      alive = false;
-    };
-  }, []);
+  }, [enabled]);
 
   // Follow the workspace's active familiar as it changes — until the user has
   // explicitly picked one in the popover (their choice then sticks).
@@ -161,10 +194,11 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
     setSelectedFamiliarId(preferredFamiliarId);
   }, [preferredFamiliarId, familiars]);
 
-  // Abort any in-flight stream when the consumer unmounts.
+  // Abort any in-flight stream + roster load when the consumer unmounts.
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      rosterAbortRef.current?.abort();
     };
   }, []);
 
@@ -197,6 +231,15 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
           reasoningEffort: thinkingEffort,
           responseSpeed,
           signal: controller.signal,
+          // Capture the backing session the moment the bridge announces it —
+          // if the user stops the stream mid-turn, the thread stays resumable
+          // and Open-in-full-chat still works. The aborted guard keeps a late
+          // frame from resurrecting a session newThread() just cleared.
+          onSession: (sid) => {
+            if (controller.signal.aborted) return;
+            sessionIdRef.current = sid;
+            setSessionId(sid);
+          },
           onText: (t) =>
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, text: t } : m)),
@@ -219,10 +262,6 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       }
 
       if (abortRef.current === controller) abortRef.current = null;
-      if (result.sessionId) {
-        sessionIdRef.current = result.sessionId;
-        setSessionId(result.sessionId);
-      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
@@ -236,6 +275,9 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
   );
 
   const send = useCallback(async () => {
+    // One turn in flight at a time — a second Send/Enter while streaming would
+    // race the abort bookkeeping and duplicate turns.
+    if (abortRef.current) return;
     const target = resolveQuickChatTarget(draft, familiars, selectedFamiliarId);
     setError(target.error);
     if (target.error || !target.familiarId) return;
@@ -250,12 +292,15 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
       if (threadFamiliarRef.current) setMessages([]);
     }
     threadFamiliarRef.current = target.familiarId;
+    // Targeting a familiar by @mention is as deliberate as picking it in the
+    // dropdown — stop following the workspace-active familiar afterwards.
+    if (target.mention) userPickedRef.current = true;
 
     const userText = draft.trim();
     lastUserPromptRef.current = draft;
     setDraft("");
     setSelectedFamiliarId(target.familiarId);
-    window.localStorage.setItem(LAST_FAMILIAR_KEY, target.familiarId);
+    writeLastFamiliar(target.familiarId);
     setMessages((prev) => [...prev, { id: nextId("u"), role: "user", text: userText }]);
 
     await deliver(target, resume);
@@ -263,7 +308,7 @@ export function useQuickChat(options?: UseQuickChatOptions): UseQuickChat {
 
   const regenerate = useCallback(() => {
     const prompt = lastUserPromptRef.current;
-    if (!prompt || sendState === "sending") return;
+    if (!prompt || sendState === "sending" || abortRef.current) return;
     const target = resolveQuickChatTarget(prompt, familiars, selectedFamiliarId);
     if (target.error || !target.familiarId) return;
     // Drop the trailing assistant turn(s) after the last user turn, then re-run.

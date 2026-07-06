@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  COMMAND_RESPONSE_SPEED_OPTIONS,
+  COMMAND_THINKING_OPTIONS,
+  type CommandResponseSpeed,
+  type CommandThinkingEffort,
+} from "@/lib/command-controls";
 import { Icon, type IconName } from "@/lib/icon";
 import type { Familiar } from "@/lib/types";
 import { StandardSelect, type StandardSelectOption } from "@/components/ui/select";
@@ -11,6 +17,13 @@ import { copyText } from "@/lib/clipboard";
 import type { QuickChatMessage } from "@/lib/use-quick-chat";
 
 export type QuickChatSelectOption<T extends string> = StandardSelectOption<T>;
+
+// One-tap starters for a cold thread — they fill the composer, not send.
+export const QUICK_CHAT_SUGGESTIONS = [
+  "Summarize what needs my attention",
+  "Draft a short status update",
+  "What changed recently?",
+];
 
 function initials(familiar: Familiar): string {
   return (familiar.display_name || familiar.id)
@@ -29,6 +42,40 @@ export function FamiliarMark({ familiar, size = "sm" }: { familiar: Familiar; si
     <span className={`grid ${sizeClass} place-items-center rounded-[var(--radius-control)] bg-[var(--bg-elevated)] font-semibold text-[var(--fg-primary)]`}>
       {initials(familiar)}
     </span>
+  );
+}
+
+// ── Header identity ──────────────────────────────────────────────────────────
+// The avatar + name + handle block both quick-chat surfaces open with.
+
+export function QuickChatIdentity({
+  familiar,
+  loading,
+  as: Heading = "h2",
+}: {
+  familiar: Familiar | null;
+  loading: boolean;
+  /** Heading level — the tray window is a full page (h1), the overlay a dialog (h2). */
+  as?: "h1" | "h2";
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      {familiar ? (
+        <FamiliarMark familiar={familiar} size="md" />
+      ) : (
+        <Icon name="ph:chat-circle-dots" width={20} aria-hidden />
+      )}
+      <div className="min-w-0">
+        <Heading className="truncate text-sm font-semibold">
+          {familiar ? familiar.display_name : "Quick chat"}
+        </Heading>
+        <p className="truncate text-xs text-[var(--fg-muted)]">
+          {/* While the roster loads, say so — "No familiar selected" reads
+              as an error/empty state when it's really just cold. */}
+          {loading ? "Loading familiars…" : familiar ? `@${familiar.id}` : "No familiar selected"}
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -72,6 +119,174 @@ export function QuickChatSelect<T extends string>({
   );
 }
 
+// ── Controls row ─────────────────────────────────────────────────────────────
+// Familiar picker + thinking-effort + response-speed selects — identical in the
+// in-app dropdown and the tray window.
+
+const CONTROL_SELECT_CLASS =
+  "min-w-0 rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-1.5 text-xs outline-none";
+
+export function QuickChatControlsRow({
+  loading,
+  familiars,
+  selectedFamiliarId,
+  onPickFamiliar,
+  thinkingEffort,
+  onThinkingEffortChange,
+  responseSpeed,
+  onResponseSpeedChange,
+  sending,
+}: {
+  loading: boolean;
+  familiars: Familiar[];
+  selectedFamiliarId: string | null;
+  onPickFamiliar: (id: string | null) => void;
+  thinkingEffort: CommandThinkingEffort;
+  onThinkingEffortChange: (value: CommandThinkingEffort) => void;
+  responseSpeed: CommandResponseSpeed;
+  onResponseSpeedChange: (value: CommandResponseSpeed) => void;
+  sending: boolean;
+}) {
+  return (
+    <div className="quick-chat-overlay__controls">
+      <QuickChatSelect
+        label="Familiar"
+        value={selectedFamiliarId ?? ""}
+        onChange={(next) => onPickFamiliar(next || null)}
+        disabled={loading || familiars.length === 0}
+        className="flex-1"
+        options={
+          loading && familiars.length === 0
+            ? [{ value: "", label: "Loading…", disabled: true }]
+            : familiars.map((familiar) => ({
+                value: familiar.id,
+                label: familiar.display_name,
+                leading: <FamiliarMark familiar={familiar} size="sm" />,
+              }))
+        }
+      />
+      <StandardSelect
+        label="Choose thinking effort"
+        value={thinkingEffort}
+        onChange={(next) => onThinkingEffortChange(next as CommandThinkingEffort)}
+        disabled={sending}
+        className={CONTROL_SELECT_CLASS}
+        options={COMMAND_THINKING_OPTIONS}
+      />
+      <StandardSelect
+        label="Choose response speed"
+        value={responseSpeed}
+        onChange={(next) => onResponseSpeedChange(next as CommandResponseSpeed)}
+        disabled={sending}
+        className={CONTROL_SELECT_CLASS}
+        options={COMMAND_RESPONSE_SPEED_OPTIONS}
+      />
+    </div>
+  );
+}
+
+// ── Composer ─────────────────────────────────────────────────────────────────
+// Error slot + textarea + actions row, shared by both surfaces. Enter sends;
+// Shift+Enter inserts a newline; ⌘/Ctrl+Enter always sends; IME composition is
+// left alone.
+
+export function QuickChatComposer({
+  error,
+  draft,
+  onDraftChange,
+  onSend,
+  onCancel,
+  sending,
+  disabled,
+  familiar,
+  inputId,
+  composerRef,
+  autoFocus,
+  leading,
+}: {
+  error: string | null;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSend: () => void;
+  onCancel: () => void;
+  sending: boolean;
+  /** Blocks sending while true (e.g. the roster is still loading). */
+  disabled?: boolean;
+  familiar: Familiar | null;
+  inputId: string;
+  composerRef?: React.RefObject<HTMLTextAreaElement | null>;
+  autoFocus?: boolean;
+  /** Left slot of the actions row — a hint in the tray, Open-in-full-chat in the overlay. */
+  leading?: React.ReactNode;
+}) {
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const cmdEnter = (event.metaKey || event.ctrlKey) && event.key === "Enter";
+      const plainEnter =
+        event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing;
+      if (cmdEnter || plainEnter) {
+        event.preventDefault();
+        if (!sending && draft.trim()) onSend();
+      }
+    },
+    [draft, onSend, sending],
+  );
+
+  return (
+    <footer className="quick-chat-overlay__composer">
+      {error ? (
+        <p className="quick-chat-overlay__error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <textarea
+        ref={composerRef}
+        id={inputId}
+        value={draft}
+        autoFocus={autoFocus}
+        aria-label="Message"
+        onChange={(event) => onDraftChange(event.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder={familiar ? `Message @${familiar.id}…` : "@sage summarize what needs attention"}
+        className="quick-chat-overlay__input"
+      />
+      <div className="quick-chat-overlay__actions">
+        {leading}
+        <div className="flex items-center gap-2">
+          {sending ? (
+            <Button variant="secondary" size="sm" onClick={onCancel}>
+              Stop
+            </Button>
+          ) : null}
+          <Button
+            variant="primary"
+            size="sm"
+            leadingIcon="ph:sparkle"
+            onClick={onSend}
+            disabled={sending || disabled || !draft.trim()}
+          >
+            Send
+          </Button>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/** Suggestion chips fill the composer, then move the caret into it so the user
+ *  can tweak-and-send. Returns the textarea ref to pass to QuickChatComposer. */
+export function useSuggestionPicker(setDraft: (value: string) => void) {
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const pickSuggestion = useCallback(
+    (value: string) => {
+      setDraft(value);
+      requestAnimationFrame(() => composerRef.current?.focus());
+    },
+    [setDraft],
+  );
+  return { composerRef, pickSuggestion };
+}
+
 // ── Conversation thread ──────────────────────────────────────────────────────
 // Shared between the in-app dropdown and the Tauri standalone window so the two
 // render identical turns. Owns its own scroll container + auto-scroll and marks
@@ -88,7 +303,14 @@ function QuickChatBubble({
   isLastAssistant: boolean;
   onRegenerate?: () => void;
 }) {
-  const [copied, setCopied] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Show the ✓ for a beat, then hand the button back to "copy".
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
 
   if (message.role === "user") {
     return (
@@ -142,13 +364,13 @@ function QuickChatBubble({
         {canAct ? (
           <div className="quick-chat-turn__actions">
             <IconButton
-              icon={copied === message.id ? "ph:check" : "ph:copy"}
+              icon={copied ? "ph:check" : "ph:copy"}
               size="xs"
-              aria-label={copied === message.id ? "Copied" : "Copy reply"}
+              aria-label={copied ? "Copied" : "Copy reply"}
               title="Copy reply"
               onClick={() => {
                 void copyText(message.text).then((ok) => {
-                  if (ok) setCopied(message.id);
+                  if (ok) setCopied(true);
                 });
               }}
             />
@@ -172,28 +394,42 @@ export function QuickChatThread({
   messages,
   familiar,
   emptyIcon = "ph:chat-circle-dots",
-  emptyTitle,
-  emptyHint,
-  suggestions,
+  emptyTitle = familiar ? `Ask ${familiar.display_name} anything` : "Ask a familiar anything",
+  emptyHint = "Replies stream right here · @name to switch familiar · Enter to send",
+  suggestions = QUICK_CHAT_SUGGESTIONS,
   onSuggestion,
   onRegenerate,
 }: {
   messages: QuickChatMessage[];
   familiar: Familiar | null;
   emptyIcon?: IconName;
-  emptyTitle: string;
-  emptyHint: string;
+  emptyTitle?: string;
+  emptyHint?: string;
   suggestions?: string[];
   onSuggestion?: (value: string) => void;
   onRegenerate?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Follow the stream only while the user is already at the bottom — pinning
+  // scrollTop on every token would fight scrolling up to reread earlier turns.
+  const stickRef = useRef(true);
   const lastText = messages.length > 0 ? messages[messages.length - 1].text : "";
+
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  }, []);
+
+  // A new turn (sending / a reply starting) re-engages follow-along.
+  useEffect(() => {
+    stickRef.current = true;
+  }, [messages.length]);
 
   // Keep the newest turn in view as it streams.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
   }, [messages.length, lastText]);
 
   const lastAssistantId = (() => {
@@ -204,7 +440,7 @@ export function QuickChatThread({
   })();
 
   return (
-    <div ref={scrollRef} className="quick-chat-thread" aria-live="polite">
+    <div ref={scrollRef} onScroll={onScroll} className="quick-chat-thread" aria-live="polite">
       {messages.length === 0 ? (
         <div className="quick-chat-empty">
           <span className="quick-chat-empty__glyph" aria-hidden>
@@ -212,7 +448,7 @@ export function QuickChatThread({
           </span>
           <p className="quick-chat-empty__title">{emptyTitle}</p>
           <p className="quick-chat-empty__hint">{emptyHint}</p>
-          {suggestions && suggestions.length > 0 ? (
+          {suggestions.length > 0 ? (
             <div className="quick-chat-empty__chips">
               {suggestions.map((suggestion) => (
                 <Button

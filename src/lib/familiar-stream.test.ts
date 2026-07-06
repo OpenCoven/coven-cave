@@ -108,4 +108,56 @@ describe("streamFamiliarText", () => {
     const { error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
     assert.match(error ?? "", /chat bridge 502/);
   });
+
+  it("fires onSession as soon as the session frame arrives, before the stream completes", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "session", sessionId: "sess-early" }),
+      frame({ kind: "assistant_chunk", text: "hi" }),
+      frame({ kind: "done", sessionId: "sess-early" }),
+    ])) as typeof fetch;
+
+    const seen: Array<{ id: string; textSoFar: string }> = [];
+    let textSoFar = "";
+    const { sessionId } = await streamFamiliarText({
+      familiarId: "nova",
+      prompt: "hi",
+      onText: (t) => { textSoFar = t; },
+      onSession: (id) => seen.push({ id, textSoFar }),
+    });
+
+    assert.equal(sessionId, "sess-early");
+    assert.ok(seen.length >= 1, "onSession fired");
+    assert.equal(seen[0].id, "sess-early");
+    assert.equal(seen[0].textSoFar, "", "the first onSession fired before any text streamed (a Stop mid-stream still knows its session)");
+  });
+
+  it("processes a final frame that arrives without its trailing blank line", async () => {
+    globalThis.fetch = (async () => sseResponse([
+      frame({ kind: "assistant_chunk", text: "tail" }),
+      `data: ${JSON.stringify({ kind: "done", sessionId: "sess-tail" })}\n`,
+    ])) as typeof fetch;
+
+    const { text, sessionId } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(text, "tail");
+    assert.equal(sessionId, "sess-tail", "the unterminated done frame is still processed");
+  });
+
+  it("decodes multi-byte characters split across stream chunks", async () => {
+    const bytes = new TextEncoder().encode(frame({ kind: "assistant_chunk", text: "héllo" }) + frame({ kind: "done" }));
+    // Split exactly between the two bytes of "é" (0xC3 0xA9).
+    const splitAt = bytes.indexOf(0xc3) + 1;
+    assert.ok(splitAt > 0, "test setup: the é byte pair is present");
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, splitAt));
+        controller.enqueue(bytes.slice(splitAt));
+        controller.close();
+      },
+    });
+    globalThis.fetch = (async () => ({ ok: true, body }) as unknown as Response) as typeof fetch;
+
+    const { text, error } = await streamFamiliarText({ familiarId: "nova", prompt: "hi" });
+    assert.equal(text, "héllo");
+    assert.equal(error, null);
+  });
 });
