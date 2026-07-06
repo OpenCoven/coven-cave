@@ -36,6 +36,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [draftVoiceProvider, setDraftVoiceProvider] = useState(familiar.voiceProvider ?? "");
   const [draftVoiceModel, setDraftVoiceModel] = useState(familiar.voiceModel ?? "");
   const [draftVoiceName, setDraftVoiceName] = useState(familiar.voiceName ?? "");
+  const [draftAutoSelfReport, setDraftAutoSelfReport] = useState(familiar.autoSelfReport ?? false);
   const [toast, setToast] = useState<string | null>(null);
   const [manifest, setManifest] = useState<HarnessCapabilityManifest | null>(null);
   const [manifestState, setManifestState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -48,8 +49,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     setDraftVoiceProvider(familiar.voiceProvider ?? "");
     setDraftVoiceModel(familiar.voiceModel ?? "");
     setDraftVoiceName(familiar.voiceName ?? "");
+    setDraftAutoSelfReport(familiar.autoSelfReport ?? false);
     setToast(null);
-  }, [familiar.id, familiar.harnessOverride, familiar.model, familiar.note, familiar.voiceProvider, familiar.voiceModel, familiar.voiceName]);
+  }, [familiar.id, familiar.harnessOverride, familiar.model, familiar.note, familiar.voiceProvider, familiar.voiceModel, familiar.voiceName, familiar.autoSelfReport]);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +137,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
         if ("voiceProvider" in patch) setDraftVoiceProvider(familiar.voiceProvider ?? "");
         if ("voiceModel" in patch) setDraftVoiceModel(familiar.voiceModel ?? "");
         if ("voiceName" in patch) setDraftVoiceName(familiar.voiceName ?? "");
+        if ("autoSelfReport" in patch) setDraftAutoSelfReport(familiar.autoSelfReport ?? false);
       } else {
         reportDaemonSyncSuccess();
       }
@@ -237,7 +240,47 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           {toast ? <p className="familiar-studio-brain__toast">{toast}</p> : null}
         </div>
 
-        <aside className="familiar-studio-brain__sidecar" aria-label="Voice and capabilities">
+        <aside className="familiar-studio-brain__sidecar" aria-label="Behavior, voice, and capabilities">
+          <section className="familiar-studio-brain__card">
+            <h3 className="familiar-studio-brain__card-title">Behavior</h3>
+            <div className="familiar-studio-brain__row">
+              <span
+                className="familiar-studio-brain__label"
+                id="familiar-studio-brain-auto-self-report-label"
+              >
+                Auto self-report
+              </span>
+              <div className="familiar-studio-brain__control">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={draftAutoSelfReport}
+                  aria-labelledby="familiar-studio-brain-auto-self-report-label"
+                  onClick={() => {
+                    const next = !draftAutoSelfReport;
+                    setDraftAutoSelfReport(next);
+                    // Off is the daemon default — store true, delete on false so
+                    // the config file doesn't accumulate redundant keys.
+                    void save({ autoSelfReport: next ? true : null });
+                  }}
+                  className={`focus-ring relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors duration-150 ${
+                    draftAutoSelfReport ? "bg-[var(--accent-presence)]" : "bg-[var(--bg-elevated)]"
+                  }`}
+                >
+                  <span
+                    className={`pointer-events-none mt-0.5 inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-150 ${
+                      draftAutoSelfReport ? "translate-x-4" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+            <p className="familiar-studio-brain__hint">
+              When a chat thread wraps up, {familiar.display_name} writes a short self-report to
+              its thread signals automatically.
+            </p>
+          </section>
+
           <section className="familiar-studio-brain__card">
             <h3 className="familiar-studio-brain__card-title">Voice</h3>
             <label className="familiar-studio-brain__row">

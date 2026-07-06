@@ -1606,7 +1606,8 @@ function AppearanceSection() {
                   Pin order
                 </div>
                 <div className="text-[11px] text-[var(--text-muted)]">
-                  Drag to set the order pinned familiars appear in the avatar strip.
+                  Drag to set the order pinned familiars appear in the avatar strip. The roster
+                  order everywhere else is set in Familiars → Lifecycle.
                 </div>
               </div>
               <FamiliarPinOrder />

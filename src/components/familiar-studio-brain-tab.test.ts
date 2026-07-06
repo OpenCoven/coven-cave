@@ -93,4 +93,39 @@ assert.match(
   "Brain workspace should collapse to one column on narrow surfaces",
 );
 
+// ── autoSelfReport toggle + ordering cross-links (cave-v1z) ──────────────────
+
+assert.match(
+  source,
+  /role="switch"[\s\S]{0,120}aria-checked=\{draftAutoSelfReport\}/,
+  "auto self-report must be a real switch with checked state exposed to AT",
+);
+assert.match(
+  source,
+  /save\(\{ autoSelfReport: next \? true : null \}\)/,
+  "off must delete the config key (daemon default is off), not store false",
+);
+assert.match(
+  source,
+  /if \("autoSelfReport" in patch\) setDraftAutoSelfReport\(familiar\.autoSelfReport \?\? false\)/,
+  "a failed save must revert the switch to the last-known value",
+);
+
+// Reciprocal ordering hints: each ordering surface names the other.
+const shell = readFileSync(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+assert.match(
+  shell,
+  /order pinned familiars appear in the avatar strip[\s\S]{0,200}Familiars → Lifecycle/,
+  "the Appearance pin-order hint should point at the Lifecycle roster order",
+);
+const lifecycle = readFileSync(
+  new URL("./familiar-studio-lifecycle-tab.tsx", import.meta.url),
+  "utf8",
+);
+assert.match(
+  lifecycle,
+  /listed across the app[\s\S]{0,200}Settings → Appearance → Pin order/,
+  "the Lifecycle roster hint should point at the Appearance pin order",
+);
+
 console.log("familiar-studio-brain-tab.test.ts: ok");

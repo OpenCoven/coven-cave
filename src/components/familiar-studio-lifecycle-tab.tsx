@@ -66,6 +66,10 @@ export function FamiliarStudioLifecycleTab({ familiar, allResolved }: Props) {
     <div className="familiar-studio-lifecycle">
       <section>
         <h3 className="familiar-studio-lifecycle__heading">Active</h3>
+        <p className="familiar-studio-lifecycle__hint">
+          Reorder to set how familiars are listed across the app. The avatar strip&apos;s pinned
+          subset keeps its own order in Settings → Appearance → Pin order.
+        </p>
         {active.map((f, i) => (
           <FamiliarRow
             key={f.id}
