@@ -209,6 +209,14 @@ assert.match(
   /<table className="board-table board-table--grid projects-table"/,
   "Projects should render through the board table grid shell used by Tasks",
 );
+// The board-table/projects-table styling lives in board.css; ProjectsView must
+// import it directly so the surface is styled straight from Chat → Projects,
+// before Board/GitHub (the other board.css importers) have ever mounted.
+assert.match(
+  projectsViewSource,
+  /import "@\/styles\/board\.css"/,
+  "ProjectsView imports its own board.css so the table is always styled",
+);
 assert.match(
   projectsViewSource,
   /<thead>[\s\S]{0,900}?Project[\s\S]{0,900}?Status[\s\S]{0,900}?Sessions[\s\S]{0,900}?Updated[\s\S]{0,900}?Actions/,
@@ -280,6 +288,46 @@ assert.match(
 assert.match(projectsView, /visibleProjects\.map\(\(project\)/, "the filtered list drives the render");
 assert.match(projectsView, /aria-label="Filter projects"/, "there is a labeled filter input");
 assert.match(projectsView, /No projects match/, "a no-match message shows when the filter excludes everything");
+
+// An opt-in Active filter narrows to projects with a live signal WITHOUT
+// reordering — the alphabetical stability is preserved (only the visible set
+// shrinks). Active-ness derives from the shared deriveProjectStatus helper.
+assert.match(
+  projectsView,
+  /const \[statusFilter, setStatusFilter\] = useState<"all" \| "active">\("all"\)/,
+  "there is an opt-in active/all view filter, defaulting to all",
+);
+assert.match(
+  projectsView,
+  /const activeRoots = useMemo[\s\S]{0,240}?deriveProjectStatus\(list\) !== null/,
+  "active projects are derived from deriveProjectStatus over each project's chats",
+);
+assert.match(
+  projectsView,
+  /statusFilter === "active"[\s\S]{0,160}?activeRoots\.has\(normalizeProjectRoot\(p\.root\)\)/,
+  "the Active filter narrows visibleProjects to active roots",
+);
+assert.match(
+  projectsViewToolbar,
+  /aria-label="Filter by activity"/,
+  "the header exposes a labeled activity filter control",
+);
+assert.match(
+  projectsViewToolbar,
+  /aria-pressed=\{statusFilter === opt\.value\}/,
+  "the activity filter reflects the active option",
+);
+// The header summary surfaces how many projects are currently active.
+assert.match(projectsViewToolbar, /\{activeCount\} active/, "the header summarizes the active-project count");
+
+// The Sessions cell leads with a glanceable count (no repeated "sessions"
+// noun — the column header carries it) while staying labeled for assistive tech.
+assert.match(projectsView, /className="board-table-cell-sessions"/, "the sessions cell uses the glanceable stat treatment");
+assert.match(
+  projectsView,
+  /aria-label=\{`\$\{chatCount\} \$\{chatCount === 1 \? "session" : "sessions"\}`\}/,
+  "the sessions count keeps a full accessible label",
+);
 
 // Each project row carries a glanceable status dot: accent when a session is
 // running, danger when the most-recent session failed.

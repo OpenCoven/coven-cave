@@ -236,6 +236,21 @@
 .projects-table-wrap { flex:1; min-height:0; }
 .projects-table-row--compact td { padding-top:6px; padding-bottom:6px; }
 .projects-table-row--comfortable td { padding-top:10px; padding-bottom:10px; }
+/* The projects list is intentionally alphabetical + stable (not sortable), so
+   the headers must NOT inherit board-table's clickable/brighten-on-hover look —
+   that would imply a sort affordance that doesn't exist. */
+.projects-table thead th { cursor:default; }
+.projects-table thead th:hover { color:var(--text-muted); }
+/* Idle projects recede; active ones keep their dot + primary-weight label. */
+.board-table-cell-status--idle { color:var(--text-muted); }
+/* Sessions cell: count leads, running/task chips trail. Single line always —
+   the fixed column is narrow, so nowrap keeps the metric on one row (overflow
+   is clipped rather than stacked). */
+.board-table-cell-sessions { display:inline-flex; align-items:center; gap:6px; min-width:0; max-width:100%; flex-wrap:nowrap; white-space:nowrap; overflow:hidden; }
+.projects-session-count { display:inline-flex; align-items:center; gap:5px; flex:none; white-space:nowrap; color:var(--text-secondary); font-size:12px; font-variant-numeric:tabular-nums; font-weight:500; }
+.projects-session-count > svg { color:var(--text-muted); }
+.projects-session-chip { display:inline-flex; align-items:center; gap:3px; flex:none; padding:1px 6px; border-radius:999px; white-space:nowrap; background:color-mix(in oklch,var(--foreground) 6%,transparent); color:var(--text-muted); font-size:10px; font-variant-numeric:tabular-nums; }
+.projects-session-chip--running { color:var(--accent-presence); background:color-mix(in oklch,var(--accent-presence) 12%,transparent); font-weight:600; }
 .projects-table-detail-row { cursor:default; }
 .projects-table-detail-row:hover { background:transparent; }
 .projects-table-detail-row td {

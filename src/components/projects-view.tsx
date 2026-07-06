@@ -2,10 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
+// The Projects table's styling (every `board-table`/`projects-table` class)
+// lives in board.css. Import it directly so the surface is always styled — it's
+// reachable straight from the Chat → Projects tab, before Board/GitHub (the
+// other board.css importers) have ever mounted.
+import "@/styles/board.css";
 import { Icon } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { useMinuteTick } from "@/lib/use-minute-tick";
 import { normalizeProjectRoot, sortProjectsAlphabetically, type CaveProject } from "@/lib/cave-projects-types";
+import { deriveProjectStatus } from "@/lib/project-status";
 import { addChatProject } from "@/lib/chat-add-project";
 import type { SessionRow } from "@/lib/types";
 import { stripLeadingTrailingEmoji } from "@/lib/cave-chat-titles";
@@ -59,7 +65,7 @@ type ProjectsViewProps = {
 
 export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, activeFamiliarId = null }: ProjectsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
-  useMinuteTick(); // keep the per-project "last active" relative times current
+  const minuteTick = useMinuteTick(); // keep "last active" relative times + the active filter current
   const {
     projects,
     loading,
@@ -73,6 +79,10 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
   } = useProjects({ familiarId: activeFamiliarId });
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState("");
+  // Opt-in "Active" view filter (ephemeral — resets each visit so a project is
+  // never surprisingly hidden). It only narrows the list; it never reorders it,
+  // so the alphabetical order stays stable.
+  const [statusFilter, setStatusFilter] = useState<"all" | "active">("all");
   const searchRef = useRef<HTMLInputElement>(null);
   const rootInputRef = useRef<HTMLInputElement>(null);
   const [nameDraft, setNameDraft] = useState("");
@@ -185,15 +195,36 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     return sortProjectsAlphabetically(projects);
   }, [projects]);
 
+  // Roots with a live signal (running / recently-failed / active ≤24h) — powers
+  // the header's active count and the opt-in Active filter. Recomputed each
+  // minute (minuteTick) so "recent" ages out. Never reorders the list.
+  const activeRoots = useMemo(() => {
+    void minuteTick;
+    const set = new Set<string>();
+    for (const [root, list] of chatsByRoot) {
+      if (deriveProjectStatus(list) !== null) set.add(root);
+    }
+    return set;
+  }, [chatsByRoot, minuteTick]);
+  const activeCount = useMemo(
+    () => sortedProjects.reduce((n, p) => n + (activeRoots.has(normalizeProjectRoot(p.root)) ? 1 : 0), 0),
+    [sortedProjects, activeRoots],
+  );
+
   // Filter by name or path so the alphabetical list stays scannable when there
-  // are many projects.
+  // are many projects, then (opt-in) narrow to active projects only.
   const visibleProjects = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return sortedProjects;
-    return sortedProjects.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q),
-    );
-  }, [sortedProjects, query]);
+    let list = q
+      ? sortedProjects.filter(
+          (p) => p.name.toLowerCase().includes(q) || p.root.toLowerCase().includes(q),
+        )
+      : sortedProjects;
+    if (statusFilter === "active") {
+      list = list.filter((p) => activeRoots.has(normalizeProjectRoot(p.root)));
+    }
+    return list;
+  }, [sortedProjects, query, statusFilter, activeRoots]);
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -355,11 +386,51 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
     <div className="flex h-full min-w-0 flex-col bg-[var(--bg-base)]">
       <header className="shrink-0 border-b border-[var(--border-hairline)] px-4 py-2.5 sm:px-6">
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[12px] text-[var(--text-muted)]">
-            {query.trim() && visibleProjects.length !== projects.length
-              ? `${visibleProjects.length} of ${projects.length} projects`
-              : `${projects.length} ${projects.length === 1 ? "project" : "projects"}`}
-          </span>
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="shrink-0 text-[12px] text-[var(--text-muted)]">
+              {query.trim() && visibleProjects.length !== projects.length ? (
+                `${visibleProjects.length} of ${projects.length} projects`
+              ) : statusFilter === "active" ? (
+                `${activeCount} active project${activeCount === 1 ? "" : "s"}`
+              ) : (
+                <>
+                  {projects.length} {projects.length === 1 ? "project" : "projects"}
+                  {activeCount > 0 ? (
+                    <span className="text-[var(--accent-presence)]"> · {activeCount} active</span>
+                  ) : null}
+                </>
+              )}
+            </span>
+            {/* Opt-in Active filter — only useful (and shown) when there's a mix
+                of active and idle projects. Narrows without reordering. */}
+            {statusFilter === "active" || (projects.length > 1 && activeCount > 0 && activeCount < projects.length) ? (
+              <div
+                role="group"
+                aria-label="Filter by activity"
+                className="flex shrink-0 items-center rounded-[var(--radius-control)] border border-[var(--border-hairline)] p-0.5"
+              >
+                {([
+                  { value: "all", label: "All" },
+                  { value: "active", label: "Active" },
+                ] as const).map((opt) => (
+                  <Button
+                    key={opt.value}
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => setStatusFilter(opt.value)}
+                    aria-pressed={statusFilter === opt.value}
+                    className={`h-7 rounded-[var(--radius-control)] px-2 text-[11px] font-medium ${
+                      statusFilter === opt.value
+                        ? "bg-[var(--bg-hover)] text-[var(--text-primary)]"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    }`}
+                  >
+                    {opt.value === "active" ? `Active ${activeCount}` : opt.label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <div className="flex items-center gap-2">
             <div
               role="group"
@@ -629,7 +700,9 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
             ) : null}
             {visibleProjects.length === 0 ? (
               <p className="px-2 py-6 text-center text-[12px] text-[var(--text-muted)]">
-                No projects match “{query.trim()}”.
+                {query.trim()
+                  ? `No projects match “${query.trim()}”.`
+                  : "No active projects right now."}
               </p>
             ) : (
               <DndContext id="projects-grid" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -637,8 +710,8 @@ export function ProjectsView({ sessions = [], onNewChat, onSessionsChanged, acti
                   <table className="board-table board-table--grid projects-table">
                     <colgroup>
                       <col />
-                      <col style={{ width: "130px" }} />
-                      <col style={{ width: "110px" }} />
+                      <col style={{ width: "120px" }} />
+                      <col style={{ width: "138px" }} />
                       <col style={{ width: "112px" }} />
                       <col style={{ width: "180px" }} />
                     </colgroup>

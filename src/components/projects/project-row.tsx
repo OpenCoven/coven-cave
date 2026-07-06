@@ -373,7 +373,7 @@ export function ProjectRow({
         </td>
 
         <td>
-          <span className="board-table-cell-status">
+          <span className={`board-table-cell-status${projectStatus ? "" : " board-table-cell-status--idle"}`}>
             {projectStatus ? (
               <span className={`board-table-status-dot ${chatDotClass(projectStatus)}`} aria-hidden />
             ) : null}
@@ -382,10 +382,24 @@ export function ProjectRow({
         </td>
 
         <td>
-          <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-[var(--text-muted)]">
+          {/* Glanceable sessions metric: the count leads (the column header
+              already says "Sessions", so the noun is dropped), with running /
+              task chips trailing. Full text stays available to assistive tech. */}
+          <span
+            className="board-table-cell-sessions"
+            aria-label={`${chatCount} ${chatCount === 1 ? "session" : "sessions"}`}
+          >
+          {chatCount > 0 ? (
+            <span className="projects-session-count">
+              <Icon name="ph:chats-circle" width={12} aria-hidden />
+              {chatCount}
+            </span>
+          ) : (
+            <span className="board-table-muted" aria-hidden>—</span>
+          )}
           {stats.running > 0 ? (
             <span
-              className="inline-flex items-center gap-1 font-medium text-[var(--accent-presence)]"
+              className="projects-session-chip projects-session-chip--running"
               title={`${stats.running} running`}
             >
               <Icon name="ph:circle-notch-bold" width={9} className="animate-spin" aria-hidden />
@@ -394,16 +408,13 @@ export function ProjectRow({
           ) : null}
           {stats.tasks > 0 ? (
             <span
-              className="inline-flex items-center gap-1"
+              className="projects-session-chip"
               title={`${stats.tasks} ${stats.tasks === 1 ? "task" : "tasks"}`}
             >
               <Icon name="ph:check-square" width={10} aria-hidden />
               {stats.tasks}
             </span>
           ) : null}
-          <span className="rounded-[var(--radius-control)] border border-[var(--border-hairline)] bg-[var(--bg-base)] px-2 py-0.5">
-            {chatCount} {chatCount === 1 ? "session" : "sessions"}
-          </span>
           </span>
         </td>
 
