@@ -41,7 +41,10 @@
   border-bottom: 1px solid var(--border-hairline);
 }
 .chat-artifact__dots { display: inline-flex; gap: 5px; }
-.chat-artifact__dots i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.chat-artifact__dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.chat-artifact__dot--danger { background: var(--color-danger); }
+.chat-artifact__dot--warning { background: var(--color-warning); }
+.chat-artifact__dot--success { background: var(--color-success); }
 .chat-artifact__title { font-size: var(--text-xs); color: var(--text-secondary); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-artifact__spacer { flex: 1; }
 .chat-artifact__actions { display: inline-flex; gap: 6px; align-items: center; }

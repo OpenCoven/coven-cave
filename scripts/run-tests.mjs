@@ -175,6 +175,7 @@ export const SUITES = {
     "src/lib/markdown-table-cells.test.ts",
     "src/components/mermaid-viewer.test.ts",
     "src/components/message-bubble-code-header.test.ts",
+    "src/components/themed-chrome-tokens.test.ts",
     "src/components/message-bubble-code-collapse.test.ts",
     "src/components/message-bubble-rewire.test.ts",
     "src/lib/code-block-collapse.test.ts",

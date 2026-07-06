@@ -61,14 +61,21 @@ async function loadTauri(): Promise<TauriBridge | null> {
   return { invoke, listen };
 }
 
-// Search match colors (highlights + active match + overview ruler), echoing the
-// terminal theme. Module-level so it isn't rebuilt on every render.
-const SEARCH_DECORATIONS = {
-  matchBackground: "#5b4b8a",
-  activeMatchBackground: "#9a8ecd",
-  matchOverviewRuler: "#5b4b8a",
-  activeMatchColorOverviewRuler: "#cdbff5",
-} as const;
+function themeColorToken(name: string): string {
+  if (typeof window === "undefined") return `var(${name})`;
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || `var(${name})`;
+}
+
+function searchDecorations() {
+  const warning = themeColorToken("--color-warning");
+  const accent = themeColorToken("--accent-presence");
+  return {
+    matchBackground: warning,
+    activeMatchBackground: accent,
+    matchOverviewRuler: warning,
+    activeMatchColorOverviewRuler: accent,
+  } as const;
+}
 
 type XtermBundle = {
   term: import("@xterm/xterm").Terminal;
@@ -215,7 +222,7 @@ export function BottomTerminal({
       setFindInfo({ index: 0, count: 0 });
       return;
     }
-    const opts = { decorations: SEARCH_DECORATIONS };
+    const opts = { decorations: searchDecorations() };
     if (direction === 1) searchRef.current?.findNext(q, opts);
     else searchRef.current?.findPrevious(q, opts);
   }, []);
