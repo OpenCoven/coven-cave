@@ -147,6 +147,7 @@ export const SUITES = {
     "src/components/settings-appearance.test.ts",
     "src/components/settings-search.test.ts",
     "src/components/settings-daemon-multihost.test.ts",
+    "src/components/settings-familiars-section.test.ts",
     "src/components/familiar-studio-projects-tab.test.ts",
     "src/components/theme-color-editor.test.ts",
     "src/lib/theme-token-hex.test.ts",
