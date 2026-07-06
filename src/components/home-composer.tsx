@@ -43,6 +43,7 @@ import { useKeySymbols } from "@/lib/platform-keys";
 import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
+import { HomeSuggestions } from "@/components/home/home-suggestions";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
@@ -602,6 +603,14 @@ export function HomeComposer({
       return null;
     });
   }, [autoGrow]);
+
+  // A suggestion pill inserts its prompt (never auto-sends) and returns focus
+  // so the user can edit before sending.
+  const insertPrompt = useCallback((prompt: string) => {
+    setText(prompt);
+    setEnhanceOriginal(null);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
 
   // Destination pills behave as a single-select radiogroup: arrow/Home/End
   // move the selection and the roving focus, matching the ARIA radio pattern.
@@ -1271,6 +1280,11 @@ export function HomeComposer({
         </div>
         </div>
       </div>
+
+      <HomeSuggestions
+        projectName={selectedProject?.name ?? null}
+        onPick={insertPrompt}
+      />
 
       {/* Daily summary — an ambient auto-scrolling digest of today's activity
           and the freshest headlines; pauses on hover so a card can be read. */}

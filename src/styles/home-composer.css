@@ -951,3 +951,47 @@
     display: none;
   }
 }
+
+/* ── Suggested prompts ───────────────────────────────────────────────────── */
+.home-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 860px;
+}
+
+.home-suggestion-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 12px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.home-suggestion-pill:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
+.home-suggestion-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 42ch;
+}
+
+@media (max-width: 520px) {
+  .home-suggestion-label {
+    max-width: 26ch;
+  }
+}
