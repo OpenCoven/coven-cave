@@ -88,14 +88,8 @@ jobs:
             arch_suffix: aarch64
           - platform: ubuntu-22.04
             family: linux
-            label: Linux (AppImage, ubuntu-22.04)
+            label: Linux (AppImage)
             args: '-vv --bundles appimage --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
-            dist_suffix: ubuntu-22.04
-          - platform: ubuntu-24.04
-            family: linux
-            label: Linux (AppImage, ubuntu-24.04)
-            args: '-vv --bundles appimage --config ''{"bundle":{"createUpdaterArtifacts":false}}'''
-            dist_suffix: ubuntu-24.04
           - platform: windows-latest
             family: windows
             label: Windows (MSI)
@@ -253,37 +247,6 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
-      # Disambiguate Linux AppImages by build environment before signing so the
-      # final uploaded asset and its updater signature share the same basename.
-      - name: Suffix Linux AppImage with dist tag
-        if: >-
-          matrix.family == 'linux' &&
-          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mapfile -t appimages < <(find src-tauri/target/release/bundle -name '*.AppImage' -type f | sort)
-          if [ "${#appimages[@]}" -eq 0 ]; then
-            echo "::error::No AppImage found to rename"
-            exit 1
-          fi
-          src="${appimages[0]}"
-          dir="$(dirname "$src")"
-          base="$(basename "$src")"
-          stem="${base%.AppImage}"
-          dst="$dir/${stem}_${{ matrix.dist_suffix }}.AppImage"
-          if [ "$src" != "$dst" ]; then
-            echo "Renaming $base to ${stem}_${{ matrix.dist_suffix }}.AppImage"
-            mv "$src" "$dst"
-          fi
-          # tauri-action uploaded the unsuffixed AppImage. Re-upload under the
-          # final dist-specific name before signing so the release asset and
-          # updater signature share the same basename.
-          gh release upload "$RELEASE_TAG" "$dst" --clobber
-          gh release delete-asset "$RELEASE_TAG" "$base" --yes || true
-
       - name: Sign Linux/Windows updater artifact
         if: >-
           (
@@ -311,6 +274,74 @@ jobs:
             pnpm exec tauri signer sign "$artifact"
             gh release upload "$RELEASE_TAG" "${artifact}.sig" --clobber
           done
+
+      # Strip bundled GLib from the AppImage so the host system's GLib is used
+      # at runtime. The host's libayatana-appindicator3 (loaded via dlopen by
+      # Tauri's tray icon) is compiled against the host GLib, so the symbols
+      # must match. By removing GLib from the bundle, the dynamic linker falls
+      # through to the system GLib, which always matches the dlopen'd libraries.
+      - name: Strip bundled GLib from AppImage
+        if: >-
+          matrix.family == 'linux' &&
+          (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          cd src-tauri/target/release/bundle
+          APPIMAGE="$(find . -name '*.AppImage' -type f | head -1)"
+          [ -n "$APPIMAGE" ] || { echo "::error::No AppImage found"; exit 1; }
+
+          # Install squashfs-tools for AppImage extraction/repacking
+          sudo apt-get install -y squashfs-tools
+
+          # ── 1. Extract ──
+          # --appimage-extraction is supported even without FUSE by
+          # Type 2 AppImages (the current format).
+          chmod +x "$APPIMAGE"
+          "$APPIMAGE" --appimage-extract >/dev/null 2>&1
+          echo "Extracted $APPIMAGE"
+
+          # ── 2. Remove bundled GLib ──
+          # The main binary was compiled against GLib 2.72 and works with any
+          # host GLib >= 2.72.  By deleting GLib from the bundle, dlopen'd
+          # host libraries (libayatana-appindicator3, GVFS) resolve against
+          # the host GLib and see matching symbols.
+          find squashfs-root/usr/lib \
+            \( -name 'libglib-2.0*' \
+               -o -name 'libgio-2.0*' \
+               -o -name 'libgobject-2.0*' \
+               -o -name 'libgmodule-2.0*' \
+               -o -name 'libgthread-2.0*' \) \
+            -delete -print | sed 's/^/🧹 Removed GLib: /'
+
+          # ── 3. Re-pack into AppImage ──
+          # Download appimagetool (portable, no FUSE needed with
+          # APPIMAGE_EXTRACT_AND_RUN).
+          curl -fsSL \
+            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -o /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+
+          APPIMAGE_EXTRACT_AND_RUN=1 \
+            /tmp/appimagetool squashfs-root "$APPIMAGE"
+          echo "✅ $APPIMAGE repacked without bundled GLib"
+          rm -rf squashfs-root /tmp/appimagetool
+
+          # ── 4. Re-upload and re-sign the updater artifact ──
+          # tauri-action and the sign step above signed the original AppImage.
+          # After repacking, the release asset and signature must both be
+          # replaced with the stripped AppImage outputs.
+          gh release upload "$RELEASE_TAG" "$APPIMAGE" --clobber
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "Re-signing ${APPIMAGE} after GLib strip"
+            pnpm exec tauri signer sign "$APPIMAGE"
+            gh release upload "$RELEASE_TAG" "${APPIMAGE}.sig" --clobber
+          fi
 
       - name: Build macOS DMG with custom release script
         if: >-

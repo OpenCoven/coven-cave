@@ -16,9 +16,8 @@ import { join } from "node:path";
 
 const gh = (args) => execFileSync("gh", args, { encoding: "utf8" });
 
-export function selectSignedArtifact(assets, predicate, hasSignature, prefer = () => false) {
-  const signed = assets.filter((n) => !n.endsWith(".sig") && predicate(n) && hasSignature(n));
-  return signed.find(prefer) ?? signed[0] ?? null;
+export function selectSignedArtifact(assets, predicate, hasSignature) {
+  return assets.find((n) => !n.endsWith(".sig") && predicate(n) && hasSignature(n)) ?? null;
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -50,8 +49,8 @@ export async function main(argv = process.argv.slice(2)) {
     `https://github.com/${repo}/releases/download/${tag}/${encodeURIComponent(name)}`;
 
   const platforms = {};
-  const add = (key, predicate, prefer) => {
-    const artifact = selectSignedArtifact(assets, predicate, (name) => Boolean(sigFor(name)), prefer);
+  const add = (key, predicate) => {
+    const artifact = selectSignedArtifact(assets, predicate, (name) => Boolean(sigFor(name)));
     if (!artifact) {
       console.error(`skip ${key}: no signed artifact found`);
       return;
@@ -62,7 +61,7 @@ export async function main(argv = process.argv.slice(2)) {
 
   add("darwin-aarch64", (n) => n.endsWith("-aarch64.app.tar.gz"));
   add("darwin-x86_64", (n) => n.endsWith("-x86_64.app.tar.gz"));
-  add("linux-x86_64", (n) => n.endsWith(".AppImage"), (n) => n.includes("ubuntu-24.04"));
+  add("linux-x86_64", (n) => n.endsWith(".AppImage"));
   add(
     "windows-x86_64",
     (n) => n.endsWith(".msi.zip") || n.endsWith(".nsis.zip") || n.endsWith(".msi") || n.endsWith("-setup.exe"),

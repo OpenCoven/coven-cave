@@ -6,6 +6,12 @@ improvements.
 
 ## Community Contributors
 
+### CodeDoes ([@CodeDoes](https://github.com/CodeDoes))
+
+CodeDoes contributed the single-build Linux AppImage GLib-strip release flow,
+which removes bundled GLib so the AppImage uses the host GLib at runtime.
+(proposed in [#2433](https://github.com/OpenCoven/coven-cave/pull/2433))
+
 ### oxfern ([@oxfern](https://github.com/oxfern))
 
 oxfern contributed the themed chrome token fix that removes hardcoded
