@@ -35,13 +35,13 @@ test("shared Tabs component renders ARIA roles and the rounded 2px underline", (
   assert.match(src, /after:rounded-full/, "rounded underline present");
 });
 
-test("chat-view empty state hint is tagged for touch-device hiding", () => {
-  const src = read("./chat-view.tsx");
+test("chat empty state hint is tagged for touch-device hiding", () => {
+  const src = read("./chat-empty-state.tsx");
   assert.match(src, /cave-chat-empty-hint/, "hint class applied to {modKey}↵ paragraph");
 });
 
-test("chat-view new-chat start screen uses a polished launch layout", () => {
-  const src = read("./chat-view.tsx");
+test("chat new-chat start screen uses a polished launch layout", () => {
+  const src = read("./chat-empty-state.tsx");
   assert.match(src, /className="cave-chat-empty-shell"/, "empty state has a constrained launch shell");
   assert.match(src, /className="cave-chat-empty-familiar"/, "agent identity is grouped in a dedicated row");
   assert.match(src, /className="cave-chat-empty-project"/, "project picker uses the launch-screen project treatment");

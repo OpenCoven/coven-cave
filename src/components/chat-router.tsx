@@ -439,6 +439,7 @@ export const ChatRouter = forwardRef<ChatRouterHandle, Props>(function ChatRoute
             openFindQuery={pendingFind?.query}
             openFindNonce={pendingFind?.nonce}
             daemonRunning={daemonRunning}
+            sessions={sessions}
             onSessionsChanged={onSessionsChanged}
             onBack={() => setView({ kind: "list" })}
             onSessionStarted={(sid) => {

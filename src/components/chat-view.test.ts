@@ -100,16 +100,30 @@ assert.match(
   "ChatView should pass the Workspace URL opener into chat message bubbles",
 );
 
-assert.match(
-  source,
-  /useFamiliarImages/,
-  "ChatView turn avatars should subscribe to uploaded familiar images",
+// FamiliarIcon (the override-aware avatar wrapper) was extracted to
+// familiar-icon.tsx so the chat empty state can share it; the turn avatars
+// still render through it, so the image-pipeline pins follow the wrapper.
+const familiarIconSource = readFileSync(
+  new URL("./familiar-icon.tsx", import.meta.url),
+  "utf8",
 );
 
 assert.match(
   source,
+  /<FamiliarIcon familiar=\{familiar\} size="sm" \/>/,
+  "ChatView turn avatars should render through the shared FamiliarIcon wrapper",
+);
+
+assert.match(
+  familiarIconSource,
+  /useFamiliarImages/,
+  "FamiliarIcon should subscribe to uploaded familiar images",
+);
+
+assert.match(
+  familiarIconSource,
   /<FamiliarAvatar familiar=\{resolved\} size=\{size\} \/>/,
-  "ChatView turn avatars should render uploaded images through FamiliarAvatar before glyph fallback",
+  "FamiliarIcon should render uploaded images through FamiliarAvatar before glyph fallback",
 );
 
 assert.match(

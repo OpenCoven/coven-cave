@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+// The empty state (the familiar's starting page) was extracted when it became
+// task-aware; its launch-screen pins now read the dedicated file.
+const emptyStateSource = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 // fileToAttachment moved to the shared lib (reused by the home composer).
@@ -537,12 +540,12 @@ assert.match(
 );
 
 assert.doesNotMatch(
-  source,
+  emptyStateSource,
   /\{modKey\}↵ to send/,
   "Empty-state hint must not advertise a modifier — plain Enter sends (onComposerKey)",
 );
 assert.match(
-  source,
+  emptyStateSource,
   /Ready for the next thread\./,
   "Empty-state hint uses the redesigned launch-screen ready copy",
 );
