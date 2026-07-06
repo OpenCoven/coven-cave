@@ -91,4 +91,71 @@ assert.match(
   "both error responses and network throws count toward the give-up budget",
 );
 
+// Finishing setup must record the dismissal exactly like "Skip for now" —
+// otherwise the workspace auto-open relaunches the whole wizard for a
+// finished user whenever the daemon happens to be down (complete flips false).
+assert.match(
+  source,
+  /const finishOnboarding = useCallback\(\(\) => \{[\s\S]*?localStorage\.setItem\("cave:onboarding:dismissed", "1"\);[\s\S]*?onDismiss\(\);[\s\S]*?\}, \[onDismiss\]\)/,
+  "finishing onboarding writes the dismissed flag before closing",
+);
+assert.equal(
+  source.match(/(?:onClick=\{finishOnboarding\}|onOpenCave=\{finishOnboarding\})/g)?.length,
+  2,
+  "both Open Cave CTAs (footer + meet-familiars step) finish via finishOnboarding",
+);
+
+// The shared setup-action error banner must be a live alert with a dismiss —
+// every setup action (scaffold, daemon start, familiar create, connection
+// save) reports through it, and a silent <div> means SR users never hear
+// why their click did nothing.
+assert.match(
+  source,
+  /\{setupError \? \([\s\S]{0,700}?role="alert"/,
+  "the setupError banner announces as an alert",
+);
+assert.match(
+  source,
+  /onClick=\{\(\) => setSetupError\(null\)\}/,
+  "the setupError banner is dismissible so a stale error doesn't outlive a retry",
+);
+
+// The empty-list harness retry loop has a failure budget + retry affordance;
+// without it a broken /api/harnesses left the runtime grid empty and polling
+// silently forever.
+assert.match(
+  source,
+  /const HARNESS_RETRY_BUDGET = 15/,
+  "harness retry loop declares a give-up budget",
+);
+assert.match(
+  source,
+  /if \(harnessFailures >= HARNESS_RETRY_BUDGET\) return;/,
+  "the harness retry interval stops once the budget is spent",
+);
+assert.match(
+  source,
+  /harnessesStuck \? \([\s\S]{0,400}?role="alert"/,
+  "a spent harness budget surfaces as a retryable alert in the runtime step",
+);
+
+// Step progress is announced to screen readers (steps tick via a 2s poll,
+// which is visually obvious and otherwise silent), and the spotlighted step
+// carries aria-current for AT step navigation.
+assert.match(
+  source,
+  /const \{ announce \} = useAnnouncer\(\)/,
+  "the wizard wires the shared polite live region",
+);
+assert.match(
+  source,
+  /announce\([\s\S]{0,200}?— done\. Next: step /,
+  "completing a step announces the completion and what comes next",
+);
+assert.match(
+  source,
+  /aria-current=\{isActive \? "step" : undefined\}/,
+  "the active step is exposed via aria-current",
+);
+
 console.log("onboarding-polish.test.ts: ok");

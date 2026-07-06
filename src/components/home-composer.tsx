@@ -545,9 +545,15 @@ export function HomeComposer({
     writeComposerHistory(HOME_HISTORY_KEY, history);
   }, [history]);
 
-  // Focus on mount
+  // Focus on mount — unless a modal dialog (e.g. the onboarding wizard) is
+  // open. The 80ms delay means this fires AFTER a dialog's focus trap has
+  // placed focus, so an unconditional focus() would steal it out of the
+  // modal and strand keyboard users in a composer they can't even see.
   useEffect(() => {
-    setTimeout(() => textareaRef.current?.focus(), 80);
+    setTimeout(() => {
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      textareaRef.current?.focus();
+    }, 80);
   }, []);
 
   // Maps a familiar id to its display name for the daily-summary carousel.

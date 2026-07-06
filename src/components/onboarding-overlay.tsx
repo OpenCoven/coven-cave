@@ -11,6 +11,7 @@ import {
 } from "@/lib/onboarding-install-queue";
 import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
@@ -140,6 +141,10 @@ const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
 /** Persists the user's choice to skip the (required) Coven Code install so a
  *  failing install can't permanently strand onboarding. */
 const COVEN_CODE_SKIP_KEY = "cave:onboarding:skip-coven-code";
+// ~30s of 2s ticks: long enough to ride out a slow sidecar start, short
+// enough that a genuinely broken /api/harnesses surfaces as a retryable
+// error instead of an empty runtime grid polling silently forever.
+const HARNESS_RETRY_BUDGET = 15;
 
 type SshCheckState =
   | { state: "idle" }
@@ -354,6 +359,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   const [familiarGlyph, setFamiliarGlyph] = useState("ph:sparkle-fill");
   const [openclawAgents, setOpenclawAgents] = useState<OpenClawAgent[]>([]);
   const [harnesses, setHarnesses] = useState<HarnessReport[]>([]);
+  // Consecutive /api/harnesses failures — the empty-list retry loop gives up
+  // once this hits HARNESS_RETRY_BUDGET and StepRuntimes offers a Retry.
+  const [harnessFailures, setHarnessFailures] = useState(0);
   const [selectedHarnessId, setSelectedHarnessId] = useState<string | null>(
     null,
   );
@@ -410,6 +418,22 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
 
   useFocusTrap(open, dialogRef, { onEscape: onDismiss });
 
+  // Finishing setup ("Open Cave") records the dismissal just like "Skip for
+  // now" does. Without this, the workspace auto-open effect re-launches the
+  // ENTIRE wizard on the next visit as soon as status.complete flips false
+  // again — which happens every time the daemon isn't running. A user who
+  // completed setup once should get the lightweight daemon banner after
+  // that, not the first-run flow. (Escape stays session-only on purpose: an
+  // accidental Esc mid-setup shouldn't permanently hide the guide.)
+  const finishOnboarding = useCallback(() => {
+    try {
+      localStorage.setItem("cave:onboarding:dismissed", "1");
+    } catch {
+      /* private mode */
+    }
+    onDismiss();
+  }, [onDismiss]);
+
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/onboarding/status", { cache: "no-store" });
@@ -421,7 +445,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
       setStatus(json);
       setStatusFailures(0);
     } catch {
-      // Track consecutive failures so the UI can move past "checking..." once
+      // Track consecutive failures so the UI can move past "checking…" once
       // we're sure the poll isn't just slow. One blip stays silent.
       setStatusFailures((n) => n + 1);
     }
@@ -478,9 +502,13 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         ok?: boolean;
         harnesses?: HarnessReport[];
       };
-      if (!res.ok || json.ok === false) return;
+      if (!res.ok || json.ok === false) {
+        setHarnessFailures((n) => n + 1);
+        return;
+      }
       const next = json.harnesses ?? [];
       setHarnesses(next);
+      setHarnessFailures(0);
       setSelectedHarnessId((current) => {
         if (
           current &&
@@ -493,7 +521,9 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         return null;
       });
     } catch {
-      /* harness availability is advisory; step cards carry setup hints */
+      // Advisory, but count the failure — the empty-list retry loop below
+      // gives up on a persistent error instead of spinning silently forever.
+      setHarnessFailures((n) => n + 1);
     }
   }, []);
 
@@ -529,11 +559,16 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
   // Refresh. Retry on the status cadence while the list is empty — a
   // successful response always carries the bundled adapters, so the loop
   // stops after the first real load and never spins on a healthy state.
+  // A failure budget stops it on a persistently broken endpoint too:
+  // without one the loop spun every 2s forever while the runtime step showed
+  // an empty grid with no explanation. Once spent, StepRuntimes shows a
+  // retryable error (its Retry resets the budget, which restarts this loop).
   useEffect(() => {
     if (!open || harnesses.length > 0) return;
+    if (harnessFailures >= HARNESS_RETRY_BUDGET) return;
     const retry = setInterval(() => void loadHarnesses(), 2000);
     return () => clearInterval(retry);
-  }, [open, harnesses.length, loadHarnesses]);
+  }, [open, harnesses.length, harnessFailures, loadHarnesses]);
 
   // Refresh the familiar list when the familiars step flips healthy so the
   // final step can list them for editing.
@@ -1192,7 +1227,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         // skippable) before this step counts as done.
         ok: !!s?.covenCli.ok && covenCodeSatisfied,
         detail: !s?.covenCli.ok
-          ? (s?.covenCli.detail ?? s?.covenCli.hint ?? "checking...")
+          ? (s?.covenCli.detail ?? s?.covenCli.hint ?? "checking…")
           : covenCodeSatisfied
             ? (s?.covenCli.detail ?? "Installed")
             : "coven CLI ready — Coven Code still needs installing.",
@@ -1202,35 +1237,35 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         key: "covenHome",
         title: "Create your Coven home",
         ok: !!s?.covenHome.ok,
-        detail: s?.covenHome.detail ?? s?.covenHome.hint ?? "checking...",
+        detail: s?.covenHome.detail ?? s?.covenHome.hint ?? "checking…",
         icon: "ph:folder",
       },
       {
         key: "adapters",
         title: "Install a runtime",
         ok: !!s?.adapters.ok,
-        detail: s?.adapters.detail ?? s?.adapters.hint ?? "checking...",
+        detail: s?.adapters.detail ?? s?.adapters.hint ?? "checking…",
         icon: "ph:terminal-window",
       },
       {
         key: "daemon",
         title: "Start the daemon",
         ok: !!s?.daemon.ok,
-        detail: s?.daemon.detail ?? s?.daemon.hint ?? "checking...",
+        detail: s?.daemon.detail ?? s?.daemon.hint ?? "checking…",
         icon: "ph:plug",
       },
       {
         key: "binding",
         title: "Create your familiar",
         ok: !!s?.binding.ok,
-        detail: s?.binding.detail ?? s?.binding.hint ?? "checking...",
+        detail: s?.binding.detail ?? s?.binding.hint ?? "checking…",
         icon: "ph:sparkle",
       },
       {
         key: "familiars",
         title: "Meet your familiars",
         ok: !!s?.familiars.ok,
-        detail: s?.familiars.detail ?? s?.familiars.hint ?? "checking...",
+        detail: s?.familiars.detail ?? s?.familiars.hint ?? "checking…",
         icon: "ph:user",
       },
       {
@@ -1253,6 +1288,36 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
     const firstIncomplete = steps.find((s) => !s.optional && !s.ok);
     return firstIncomplete?.key ?? null;
   }, [steps]);
+
+  // Steps tick themselves via the 2s status poll — visually obvious, silent
+  // to screen readers. Announce spotlight moves (forward on completion,
+  // backward on regression like the daemon dying mid-setup) through the
+  // shared polite live region. The ref-seeded first observation keeps the
+  // wizard from narrating its own opening.
+  const { announce } = useAnnouncer();
+  const prevActiveStepRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!open || !status) {
+      prevActiveStepRef.current = undefined;
+      return;
+    }
+    const prev = prevActiveStepRef.current;
+    prevActiveStepRef.current = activeStepKey;
+    if (prev === undefined || prev === activeStepKey) return;
+    if (activeStepKey === null) {
+      announce("Setup complete — every required step is done.");
+      return;
+    }
+    const stepIndex = steps.findIndex((s) => s.key === activeStepKey);
+    const step = steps[stepIndex];
+    if (!step) return;
+    const prevStep = steps.find((s) => s.key === prev);
+    announce(
+      prevStep?.ok
+        ? `${prevStep.title} — done. Next: step ${stepIndex + 1}, ${step.title}.`
+        : `Now on step ${stepIndex + 1}: ${step.title}.`,
+    );
+  }, [open, status, activeStepKey, steps, announce]);
 
   // Safe machine-state context for Setup Salem — platform + detected runtime
   // health only; never secrets, tokens, or logs (design §"Privacy").
@@ -1377,8 +1442,23 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
         ) : null}
 
         {setupError ? (
-          <section className="mt-5 rounded-lg border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] p-4 text-[13px] text-[var(--color-danger)]">
-            {setupError}
+          // Every setup action (scaffold, daemon start, familiar create,
+          // connection save) reports through this banner — it must be a live
+          // alert or screen-reader users never hear why their click did
+          // nothing, and it must be dismissible so a stale error doesn't
+          // outlive the retry.
+          <section
+            role="alert"
+            className="mt-5 flex items-start justify-between gap-3 rounded-lg border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-danger)_10%,transparent)] p-4 text-[13px] text-[var(--color-danger)]"
+          >
+            <div>{setupError}</div>
+            <button
+              type="button"
+              onClick={() => setSetupError(null)}
+              className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-danger)] hover:bg-[color-mix(in_oklch,var(--color-danger)_15%,transparent)]"
+            >
+              Dismiss
+            </button>
           </section>
         ) : null}
 
@@ -1402,7 +1482,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
               const expanded = openStepKey === step.key;
               const isActive = activeStepKey === step.key;
               return (
-                <li key={step.key}>
+                <li key={step.key} aria-current={isActive ? "step" : undefined}>
                   <section
                     aria-label={step.title}
                     className={`rounded-lg border ${
@@ -1488,7 +1568,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             >
                               <Icon name="ph:folder-open-bold" />
                               {picking === "scaffold"
-                                ? "Creating..."
+                                ? "Creating…"
                                 : "Create Coven home"}
                             </button>
                           </div>
@@ -1499,9 +1579,18 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             installJobs={installJobs}
                             installResults={installResults}
                             nodeHint={nodeHint}
+                            harnessesStuck={
+                              harnesses.length === 0 &&
+                              harnessFailures >= HARNESS_RETRY_BUDGET
+                            }
                             onInstall={(target) => void runInstall(target)}
                             onCopy={copyText}
-                            onRefresh={() => void loadHarnesses()}
+                            onRefresh={() => {
+                              // Also resets the failure budget so the
+                              // empty-list retry loop starts over.
+                              setHarnessFailures(0);
+                              void loadHarnesses();
+                            }}
                             codexPortPreflight={codexPortPreflight}
                             codexPortPreflightBusy={codexPortPreflightBusy}
                             onCodexPortPreflight={() =>
@@ -1628,7 +1717,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                 className="focus-ring mt-2 inline-flex items-center gap-2 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)] disabled:opacity-60"
                               >
                                 <Icon name="ph:floppy-disk-bold" width={12} />
-                                {savingOnboardingConnection ? "Saving..." : "Save connection"}
+                                {savingOnboardingConnection ? "Saving…" : "Save connection"}
                               </button>
                             </div>
                             <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
@@ -1652,7 +1741,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                 }
                               >
                                 <Icon name="ph:rocket-launch-bold" />
-                                {startingDaemon ? "Starting..." : "Start local daemon"}
+                                {startingDaemon ? "Starting…" : "Start local daemon"}
                               </button>
                               {!status?.steps.covenCli.ok ? (
                                 <span className="text-[11px] text-[var(--text-muted)]">
@@ -1668,7 +1757,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             statusOk={step.ok}
                             complete={effectiveComplete}
                             onEdit={editFamiliar}
-                            onOpenCave={onDismiss}
+                            onOpenCave={finishOnboarding}
                           />
                         ) : step.key === "git" ? (
                           <div className="flex flex-col gap-2">
@@ -1719,7 +1808,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
           </button>
           {effectiveComplete ? (
             <button
-              onClick={onDismiss}
+              onClick={finishOnboarding}
               className="focus-ring inline-flex items-center gap-2 rounded-md bg-[color-mix(in_oklch,var(--color-success)_92%,#000)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-sm shadow-[color-mix(in_oklch,var(--color-success)_30%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-success)_82%,#000)]"
             >
               <Icon name="ph:rocket-launch-bold" />
@@ -2048,6 +2137,7 @@ function StepRuntimes({
   installJobs,
   installResults,
   nodeHint,
+  harnessesStuck,
   onInstall,
   onCopy,
   onRefresh,
@@ -2060,6 +2150,7 @@ function StepRuntimes({
   installJobs: Partial<Record<InstallTarget, InstallJobView>>;
   installResults: Partial<Record<InstallTarget, InstallResult>>;
   nodeHint: string | null;
+  harnessesStuck: boolean;
   onInstall: (target: InstallTarget) => void;
   onCopy: (text: string) => Promise<boolean>;
   onRefresh: () => void;
@@ -2070,6 +2161,24 @@ function StepRuntimes({
   const npmJobRunning = anyNpmInstallRunning(installJobs);
   return (
     <div className="flex flex-col gap-3">
+      {harnessesStuck ? (
+        <div
+          role="alert"
+          className="flex items-start justify-between gap-3 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] bg-[color-mix(in_oklch,var(--color-warning)_10%,transparent)] px-3 py-2.5 text-[12px] text-[var(--color-warning)]"
+        >
+          <span className="leading-5">
+            Couldn&rsquo;t load the runtime list — the local server didn&rsquo;t
+            answer after repeated tries.
+          </span>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="focus-ring shrink-0 rounded-md border border-[color-mix(in_oklch,var(--color-warning)_40%,transparent)] px-2 py-1 font-mono text-[11px] text-[var(--color-warning)] hover:bg-[color-mix(in_oklch,var(--color-warning)_15%,transparent)]"
+          >
+            Retry
+          </button>
+        </div>
+      ) : null}
       <div className="flex items-start justify-between gap-3">
         <p className="text-[12px] leading-5 text-[var(--text-secondary)]">
           A runtime is the agent CLI your familiar speaks through.
@@ -2490,7 +2599,7 @@ function StepFamiliar(props: {
                 name="ph:arrows-clockwise-bold"
                 className={agentsLoading ? "animate-spin" : undefined}
               />
-              {agentsLoading ? "Scanning..." : "Refresh"}
+              {agentsLoading ? "Scanning…" : "Refresh"}
             </button>
           </div>
           {agentsError ? (
@@ -2637,7 +2746,7 @@ function StepFamiliar(props: {
               <input
                 value={familiarRole}
                 onChange={(e) => props.setFamiliarRole(e.target.value)}
-                placeholder="Research, Code, Ops..."
+                placeholder="Research, Code, Ops…"
                 className="focus-ring mt-1 w-full rounded-md border border-[var(--border-hairline)] bg-[var(--bg-base)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:border-[var(--border-strong)]"
               />
             </label>
@@ -2813,7 +2922,7 @@ function StepFamiliar(props: {
                 className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
               >
                 <Icon name="ph:terminal-window" />
-                {picking === "local" ? "Creating..." : "Create new Coven familiar"}
+                {picking === "local" ? "Creating…" : "Create new Coven familiar"}
               </button>
             ) : null}
             {!selectedHarnessId && selectedAgentId ? (
@@ -2847,7 +2956,7 @@ function StepFamiliar(props: {
               >
                 <Icon name="ph:git-fork" />
                 {picking === "familiar"
-                  ? "Connecting..."
+                  ? "Connecting…"
                   : selectedOpenClawAgent
                     ? `Connect ${selectedOpenClawAgent.displayName}`
                     : "Connect OpenClaw agent"}
@@ -2973,11 +3082,11 @@ function MaintenancePanel({
           {"idle" in prune ? (
             "Prune stale sessions: completed, failed, or killed sessions older than 24 hours."
           ) : "counting" in prune ? (
-            "Counting stale sessions..."
+            "Counting stale sessions…"
           ) : "count" in prune ? (
             `Found ${prune.count} stale session${prune.count === 1 ? "" : "s"}. Confirm to delete.`
           ) : "pruning" in prune ? (
-            "Pruning..."
+            "Pruning…"
           ) : "pruned" in prune ? (
             `Done. ${prune.pruned} session${prune.pruned === 1 ? "" : "s"} removed.`
           ) : "error" in prune ? (

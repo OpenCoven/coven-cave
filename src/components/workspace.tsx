@@ -396,7 +396,17 @@ export function Workspace() {
     }
   }, []);
 
+  // Reconcile only when mobile mode is (or just was) enabled. With the pref
+  // off there is nothing to stop — an unconditional boot-time POST meant
+  // every plain-web session hit /api/mobile-handoff, got the expected 503
+  // (the route needs the packaged app's signed token), and logged a console
+  // error + a misleading "Mobile mode unavailable" state for a feature the
+  // user never touched. Turning the toggle OFF still posts app-stop because
+  // the state change re-runs this effect while wasEnabledRef is set.
+  const mobileModeWasEnabledRef = useRef(false);
   useEffect(() => {
+    if (!mobileModeEnabled && !mobileModeWasEnabledRef.current) return;
+    mobileModeWasEnabledRef.current = mobileModeEnabled;
     void reconcileMobileMode(mobileModeEnabled);
   }, [mobileModeEnabled, reconcileMobileMode]);
   // Recurring reconcile only while mobile mode is on; usePausablePoll pauses it
@@ -817,8 +827,15 @@ export function Workspace() {
     void loadFamiliars();
   }, [loadFamiliars]);
 
-  // First-run: auto-open onboarding if anything is missing and the user
-  // hasn't explicitly skipped it.
+  // First-run: auto-open onboarding if setup is missing and the user hasn't
+  // explicitly skipped or finished it. Keyed on the STRUCTURAL steps (CLI,
+  // Coven home, runtime adapters) — not on bare `complete` — because a
+  // stopped daemon flips `complete` false (daemon/familiars/binding all
+  // report not-ok while it's down), and that would relaunch the full wizard
+  // for an already-set-up machine on every visit. Daemon-down on a set-up
+  // machine belongs to the offline banner below, not the first-run flow.
+  // When the daemon IS reachable, any remaining incompleteness (no familiar
+  // yet, no binding) is genuine setup work, so the wizard still opens.
   useEffect(() => {
     let cancelled = false;
     const skipped =
@@ -828,10 +845,18 @@ export function Workspace() {
       try {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
         if (!res.ok || cancelled) return;
-        const json = (await res.json()) as { complete?: boolean };
-        if (!json.complete) setOnboardingOpen(true);
+        const json = (await res.json()) as {
+          complete?: boolean;
+          steps?: Record<string, { ok?: boolean }>;
+        };
+        if (json.complete) return;
+        const step = (key: string) => json.steps?.[key]?.ok === true;
+        const structuralMissing =
+          !step("covenCli") || !step("covenHome") || !step("adapters");
+        const daemonUpButUnfinished = step("daemon");
+        if (structuralMissing || daemonUpButUnfinished) setOnboardingOpen(true);
       } catch {
-        /* ignore — DaemonBar surfaces transport issues */
+        /* ignore — the daemon-offline banner surfaces transport issues */
       }
     })();
     return () => {
