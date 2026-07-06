@@ -6,6 +6,13 @@ improvements.
 
 ## Community Contributors
 
+### oxfern ([@oxfern](https://github.com/oxfern))
+
+oxfern contributed the themed chrome token fix that removes hardcoded
+traffic-light and terminal search colors in favor of semantic theme tokens,
+with screenshot evidence and regression coverage.
+(proposed in [#2423](https://github.com/OpenCoven/coven-cave/pull/2423))
+
 ### Chris Thomas ([@Aimplemented](https://github.com/Aimplemented))
 
 Chris contributed several fixes and improvements that shipped in CovenCave.
