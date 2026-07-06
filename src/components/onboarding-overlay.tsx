@@ -17,6 +17,7 @@ import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry"
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { openExternalUrl } from "@/lib/open-external";
+import { COVEN_CODE_SKIP_KEY } from "@/lib/onboarding-gate";
 
 // Guided onboarding: one numbered path from "nothing installed" to "chatting
 // with a familiar". Every step carries its own instructions, a one-click
@@ -138,9 +139,9 @@ const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
   (target) => INSTALL_TARGET_KIND[target] === "npm",
 );
 
-/** Persists the user's choice to skip the (required) Coven Code install so a
- *  failing install can't permanently strand onboarding. */
-const COVEN_CODE_SKIP_KEY = "cave:onboarding:skip-coven-code";
+// The "skip Coven Code" choice persists under COVEN_CODE_SKIP_KEY (shared
+// with the workspace auto-open gate via @/lib/onboarding-gate — cave-219) so
+// a failing install can't permanently strand onboarding.
 // ~30s of 2s ticks: long enough to ride out a slow sidecar start, short
 // enough that a genuinely broken /api/harnesses surfaces as a retryable
 // error instead of an empty runtime grid polling silently forever.

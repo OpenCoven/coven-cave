@@ -12,6 +12,11 @@ import { CommandPalette, type PaletteIntent } from "@/components/command-palette
 import { JournalView } from "@/components/journal/journal-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
+import {
+  COVEN_CODE_SKIP_KEY,
+  shouldAutoOpenOnboarding,
+  type OnboardingStatusPayload,
+} from "@/lib/onboarding-gate";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
@@ -828,14 +833,12 @@ export function Workspace() {
   }, [loadFamiliars]);
 
   // First-run: auto-open onboarding if setup is missing and the user hasn't
-  // explicitly skipped or finished it. Keyed on the STRUCTURAL steps (CLI,
-  // Coven home, runtime adapters) — not on bare `complete` — because a
-  // stopped daemon flips `complete` false (daemon/familiars/binding all
-  // report not-ok while it's down), and that would relaunch the full wizard
-  // for an already-set-up machine on every visit. Daemon-down on a set-up
-  // machine belongs to the offline banner below, not the first-run flow.
-  // When the daemon IS reachable, any remaining incompleteness (no familiar
-  // yet, no binding) is genuine setup work, so the wizard still opens.
+  // explicitly skipped or finished it. The decision lives in the shared
+  // shouldAutoOpenOnboarding gate so it can't diverge from the wizard's
+  // finish-state again (cave-219): server `complete` ignores Coven Code
+  // (client-side tools[] check + skip choice), so bare `complete` must not
+  // short-circuit the gate. See onboarding-gate.ts for the structural-steps
+  // vs daemon-down rationale.
   useEffect(() => {
     let cancelled = false;
     const skipped =
@@ -845,16 +848,9 @@ export function Workspace() {
       try {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
         if (!res.ok || cancelled) return;
-        const json = (await res.json()) as {
-          complete?: boolean;
-          steps?: Record<string, { ok?: boolean }>;
-        };
-        if (json.complete) return;
-        const step = (key: string) => json.steps?.[key]?.ok === true;
-        const structuralMissing =
-          !step("covenCli") || !step("covenHome") || !step("adapters");
-        const daemonUpButUnfinished = step("daemon");
-        if (structuralMissing || daemonUpButUnfinished) setOnboardingOpen(true);
+        const json = (await res.json()) as OnboardingStatusPayload;
+        const covenCodeSkipped = window.localStorage.getItem(COVEN_CODE_SKIP_KEY) === "1";
+        if (shouldAutoOpenOnboarding(json, covenCodeSkipped)) setOnboardingOpen(true);
       } catch {
         /* ignore — the daemon-offline banner surfaces transport issues */
       }
