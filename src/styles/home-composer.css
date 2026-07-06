@@ -810,7 +810,7 @@
 /* ── Two-column footer (Continue · News) ─────────────────────────────────── */
 .home-columns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 20px;
   width: 100%;
   max-width: 860px;

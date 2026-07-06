@@ -29,7 +29,7 @@ assert.match(news, /openExternalUrl/, "headlines open externally");
 // The marquee is fully retired.
 assert.doesNotMatch(css, /home-digest/, "digest CSS removed");
 assert.doesNotMatch(css, /marquee/, "marquee animation removed");
-assert.match(css, /\.home-columns\s*\{[\s\S]*?grid-template-columns: 1fr 1fr/, "two-column grid");
+assert.match(css, /\.home-columns\s*\{[\s\S]*?grid-template-columns: repeat\(auto-fit, minmax\(0, 1fr\)\)/, "two-column grid");
 assert.match(css, /@media \(max-width: 720px\)\s*\{[\s\S]*?\.home-columns\s*\{[\s\S]*?grid-template-columns: 1fr/,
   "columns stack on narrow viewports");
 

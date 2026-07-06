@@ -1,15 +1,17 @@
 /**
- * Pure builder for the home-page "Daily summary" carousel.
+ * Pure builder for home-page digest cards (summary, session, and RSS).
  *
  * Combines three signals into one ordered card list:
  *   1. a single summary card — today's at-a-glance counts (sessions, reminders,
- *      responses waiting, familiar updates), mirroring the daily-summary digest;
- *   2. session cards — the chats touched today, newest first (click to resume);
- *   3. RSS cards — the freshest merged AI-related headlines (click opens
- *      externally); non-AI feed items are filtered out (see `isAiRelated`).
+ *      responses waiting, familiar updates);
+ *   2. session cards — the chats touched today, newest first;
+ *   3. RSS cards — freshest merged AI-related headlines; non-AI feed items
+ *      are filtered out (see `isAiRelated`).
  *
- * Everything here is pure and clock-injected (`nowMs`) so it unit-tests without
- * a network, DOM, or wall clock (see home-digest.test.ts).
+ * Consumed by the home News column (home-news-column.tsx) for the RSS path;
+ * summary and session paths remain for potential reuse and are covered by
+ * home-digest.test.ts. Pure and clock-injected (`nowMs`) for unit-testing
+ * without network, DOM, or wall clock.
  */
 
 import type { InboxItem } from "@/lib/cave-inbox";
