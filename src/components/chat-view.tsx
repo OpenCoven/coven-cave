@@ -58,9 +58,10 @@ import { DebugPane } from "@/components/debug-pane";
 import { modelSlashOptions, resolveModelArg, formatModelList } from "@/lib/slash-model";
 import {
   skillSlashOptions,
-  resolveSkillArg,
+  resolveSkillInvocation,
   formatSkillList,
   buildSkillPrompt,
+  skillCommandMatches,
   type SkillOption,
 } from "@/lib/slash-skill";
 import {
@@ -2770,10 +2771,20 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     [input, prompts, slashDismissed],
   );
   const promptMenuActive = (promptOptions?.length ?? 0) > 0;
+  // Skills surfaced directly in the command menu — typing `/revi` finds the
+  // code-review skill without the /skill prefix. Same first-token-only rule as
+  // slashMatches so arg positions never double-render.
+  const skillCommandRows: SkillOption[] = useMemo(() => {
+    if (slashDismissed) return [];
+    const t = input.trimStart();
+    const firstWord = t.split(/\s/)[0] ?? "";
+    if (!firstWord.startsWith("/") || t.includes(" ")) return [];
+    return skillCommandMatches(firstWord, skills);
+  }, [input, skills, slashDismissed]);
   // The slash-command, /model, /skill and /prompt pickers are mutually
   // exclusive inline listboxes sharing one listbox id, so the composer's
   // combobox ARIA tracks whichever is open.
-  const menuOpen = modelMenuActive || skillMenuActive || promptMenuActive || slashSuggestions.length > 0;
+  const menuOpen = modelMenuActive || skillMenuActive || promptMenuActive || slashSuggestions.length > 0 || skillCommandRows.length > 0;
   // Stable per-mount listbox id — the home composer mounts its own slash menu,
   // so ids must be unique across simultaneously mounted composers.
   const slashListboxId = useId();
@@ -2947,9 +2958,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   }, [input]);
 
   useEffect(() => {
-    if (slashSuggestions.length === 0) return;
+    if (slashSuggestions.length === 0 && skillCommandRows.length === 0) return;
     activeSlashOptionRef.current?.scrollIntoView({ block: "nearest" });
-  }, [slashIdx, slashSuggestions.length]);
+  }, [slashIdx, slashSuggestions.length, skillCommandRows.length]);
 
   useEffect(() => {
     if (mentionMatches.length === 0) return;
@@ -3345,6 +3356,24 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     });
   };
 
+  // Invoke a picked skill (from the /skill picker or the command menu's Skills
+  // group). A skill with an argument-hint autofills `/skill <id> ` so the user
+  // can type arguments; picking again on the filled text (or a hint-less
+  // skill) sends the invocation directive. Mirrors the command menu's
+  // autocomplete-then-run Enter pattern.
+  const invokeSkillOption = (s: SkillOption) => {
+    const filled = `/skill ${s.id}`;
+    if (s.argumentHint && input.trim().toLowerCase() !== filled.toLowerCase()) {
+      setInput(`${filled} `);
+      inputRef.current?.focus();
+      return;
+    }
+    setInput("");
+    setSlashIdx(0);
+    setTimeout(() => sendRaw(buildSkillPrompt(s)), 0);
+    inputRef.current?.focus();
+  };
+
   const intentFromSlash = (raw: string): boolean => {
     const trimmed = raw.trim();
     if (!trimmed.startsWith("/")) return false;
@@ -3394,16 +3423,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         setInput("");
         return true;
       }
-      const skill = resolveSkillArg(args, skills);
-      if (!skill) {
+      const invocation = resolveSkillInvocation(args, skills);
+      if (!invocation) {
         appendSystem(`Unknown skill "${args.trim()}". Type /skills to list the options.`);
         setInput("");
+        return true;
+      }
+      const { skill, args: skillArgs } = invocation;
+      // A hinted skill submitted without arguments (and not already the exact
+      // `/skill <id>` form — that means "run it anyway") autofills for editing.
+      if (skill.argumentHint && !skillArgs && trimmed.toLowerCase() !== `/skill ${skill.id}`.toLowerCase()) {
+        setInput(`/skill ${skill.id} `);
         return true;
       }
       setInput("");
       // Invoke by sending a directive to the active familiar's harness, which
       // owns Skill execution (mirrors the /run prompt-send pattern).
-      setTimeout(() => sendRaw(buildSkillPrompt(skill)), 0);
+      setTimeout(() => sendRaw(buildSkillPrompt(skill, skillArgs)), 0);
       return true;
     }
     if (command === "/prompt" || command === "/prompts") {
@@ -4292,11 +4328,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         const s = opts[slashIdx];
-        if (s) {
-          setInput("");
-          setSlashIdx(0);
-          setTimeout(() => sendRaw(buildSkillPrompt(s)), 0);
-        }
+        if (s) invokeSkillOption(s);
         return;
       }
     }
@@ -4325,10 +4357,14 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         return;
       }
     }
-    if (slashSuggestions.length > 0) {
+    if (slashSuggestions.length > 0 || skillCommandRows.length > 0) {
+      // One roving index across commands, then the Skills group beneath them.
+      const total = slashSuggestions.length + skillCommandRows.length;
+      const skillAt = (i: number): SkillOption | undefined =>
+        skillCommandRows[i - slashSuggestions.length];
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSlashIdx((i) => Math.min(i + 1, slashSuggestions.length - 1));
+        setSlashIdx((i) => Math.min(i + 1, total - 1));
         return;
       }
       if (e.key === "ArrowUp") {
@@ -4339,12 +4375,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       if (e.key === "Tab") {
         e.preventDefault();
         const cmd = slashSuggestions[slashIdx];
+        const s = skillAt(slashIdx);
         if (cmd) setInput(cmd.name + (cmd.argPlaceholder ? " " : ""));
+        else if (s) setInput(`/skill ${s.id} `);
         return;
       }
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         const cmd = slashSuggestions[slashIdx];
+        const s = skillAt(slashIdx);
         // If the highlighted command takes an argument and the input isn't
         // the exact command yet, autocomplete first (like Tab) so the user
         // can fill in args; otherwise run the highlighted suggestion — not
@@ -4353,6 +4392,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           setInput(cmd.name + " ");
         } else if (cmd) {
           intentFromSlash(cmd.name);
+        } else if (s) {
+          invokeSkillOption(s);
         }
         return;
       }
@@ -5017,13 +5058,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         tabIndex={-1}
                         ref={active ? activeSlashOptionRef : null}
                         onMouseEnter={() => setSlashIdx(i)}
-                        onClick={() => {
-                          setInput("");
-                          setSlashIdx(0);
-                          const skill = s;
-                          setTimeout(() => sendRaw(buildSkillPrompt(skill)), 0);
-                          inputRef.current?.focus();
-                        }}
+                        onClick={() => invokeSkillOption(s)}
                         className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
                           active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
                         }`}
@@ -5033,6 +5068,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         <span className="flex-1 truncate text-[11px] text-[var(--text-muted)]">
                           {s.description || s.id}
                         </span>
+                        {s.argumentHint ? (
+                          <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                            {s.argumentHint}
+                          </span>
+                        ) : null}
                       </button>
                     </li>
                   );
@@ -5075,7 +5115,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 {keys.up}{keys.down} navigate · {keys.enter} insert · Tab complete · esc cancel
               </div>
             </div>
-          ) : slashSuggestions.length > 0 ? (
+          ) : slashSuggestions.length > 0 || skillCommandRows.length > 0 ? (
             <div className="cave-composer-popover absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-xl border border-[var(--border-hairline)] bg-[var(--bg-base)] shadow-xl">
               <ul className="max-h-64 overflow-y-auto py-1" id={slashListboxId} role="listbox" aria-label="Slash commands">
                 {slashSuggestions.map((cmd, i) => {
@@ -5107,6 +5147,40 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                         {cmd.argPlaceholder ? (
                           <span className="font-mono text-[10px] text-[var(--text-muted)]">
                             {cmd.argPlaceholder}
+                          </span>
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                })}
+                {skillCommandRows.length > 0 ? (
+                  <li role="presentation" className="mt-1 border-t border-[var(--border-hairline)] px-3 pb-1 pt-2 text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                    Skills
+                  </li>
+                ) : null}
+                {skillCommandRows.map((s, i) => {
+                  const idx = slashSuggestions.length + i;
+                  const active = idx === slashIdx;
+                  return (
+                    <li key={`skill-${s.id}`} role="option" id={`${slashListboxId}-opt-${idx}`} aria-selected={active}>
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        ref={active ? activeSlashOptionRef : null}
+                        onMouseEnter={() => setSlashIdx(idx)}
+                        onClick={() => invokeSkillOption(s)}
+                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                          active ? "bg-[var(--bg-raised)]/60" : "hover:bg-[var(--bg-raised)]/50"
+                        }`}
+                      >
+                        <Icon name="ph:sparkle" width={13} className="shrink-0 text-[var(--accent-presence)]" aria-hidden />
+                        <span className="text-[var(--text-primary)]">{s.name}</span>
+                        <span className="flex-1 truncate text-xs text-[var(--text-muted)]">
+                          {s.description || s.id}
+                        </span>
+                        {s.argumentHint ? (
+                          <span className="font-mono text-[10px] text-[var(--text-muted)]">
+                            {s.argumentHint}
                           </span>
                         ) : null}
                       </button>

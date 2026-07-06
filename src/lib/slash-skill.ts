@@ -16,6 +16,9 @@ export type SkillOption = {
   tags?: string[];
   /** Absolute path to the skill directory (shown muted in the preview). */
   path?: string;
+  /** SKILL.md `argument-hint` (e.g. `[pr-number]`). A hinted skill autofills
+   *  `/skill <id> ` for argument editing instead of sending immediately. */
+  argumentHint?: string;
 };
 
 // `/skills` is the no-arg "show everything" picker; it also accepts a trailing
@@ -58,10 +61,52 @@ export function resolveSkillArg(arg: string, skills: SkillOption[]): SkillOption
   return partial ?? null;
 }
 
+/** Resolve a typed `/skill` argument that may carry trailing arguments after
+ *  the skill name. The whole string is tried first (multi-word names keep
+ *  working), then the first token as the name with the remainder as the
+ *  skill's arguments. Returns null when nothing resolves. */
+export function resolveSkillInvocation(
+  arg: string,
+  skills: SkillOption[],
+): { skill: SkillOption; args: string } | null {
+  const whole = resolveSkillArg(arg, skills);
+  if (whole) return { skill: whole, args: "" };
+  const t = arg.trim();
+  const sp = t.indexOf(" ");
+  if (sp <= 0) return null;
+  const skill = resolveSkillArg(t.slice(0, sp), skills);
+  return skill ? { skill, args: t.slice(sp + 1).trim() } : null;
+}
+
 /** The message sent to the active familiar to invoke a skill. The harness owns
- *  Skill execution, so this is a plain directive naming the skill. */
-export function buildSkillPrompt(skill: SkillOption): string {
-  return `Use the "${skill.name}" skill.`;
+ *  Skill execution, so this is a plain directive naming the skill; typed
+ *  arguments (from `/skill <name> <args>`) ride along after it. */
+export function buildSkillPrompt(skill: SkillOption, args?: string): string {
+  const a = args?.trim();
+  if (!a) return `Use the "${skill.name}" skill.`;
+  return `Use the "${skill.name}" skill with: ${a}`;
+}
+
+/** Skills surfaced directly in the top-level slash menu — typing `/revi`
+ *  matches the code-review skill without the /skill prefix. Gated to 3+ typed
+ *  characters so `/` and two-letter prefixes keep the command menu clean, and
+ *  capped so skills complement rather than crowd the commands. The scan can
+ *  return the same skill from several roots (user + agents copies) — one row
+ *  per id, first scope wins, so dupes don't eat the five slots. */
+export function skillCommandMatches(prefix: string, skills: SkillOption[]): SkillOption[] {
+  if (!prefix.startsWith("/")) return [];
+  const q = prefix.slice(1).toLowerCase();
+  if (q.length < 3) return [];
+  const seen = new Set<string>();
+  const out: SkillOption[] = [];
+  for (const s of skills) {
+    if (!(s.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))) continue;
+    if (seen.has(s.id)) continue;
+    seen.add(s.id);
+    out.push(s);
+    if (out.length === 5) break;
+  }
+  return out;
 }
 
 /** One-line-per-skill list for the bare `/skill` / `/skills` system message. */

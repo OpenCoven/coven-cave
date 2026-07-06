@@ -4,7 +4,9 @@ import { readFile } from "node:fs/promises";
 import {
   skillSlashOptions,
   resolveSkillArg,
+  resolveSkillInvocation,
   buildSkillPrompt,
+  skillCommandMatches,
   formatSkillList,
 } from "./slash-skill.ts";
 
@@ -36,10 +38,42 @@ assert.equal(resolveSkillArg("zzz", SKILLS), null, "unknown → null");
 
 // ── buildSkillPrompt / formatSkillList ───────────────────────────────────────
 assert.equal(buildSkillPrompt(SKILLS[0]), 'Use the "deep-research" skill.', "invocation prompt names the skill");
+assert.equal(buildSkillPrompt(SKILLS[0], "  "), 'Use the "deep-research" skill.', "blank args → plain directive");
+assert.equal(
+  buildSkillPrompt(SKILLS[1], "src/foo.ts"),
+  'Use the "code-review" skill with: src/foo.ts',
+  "typed arguments ride along after the directive",
+);
 const list = formatSkillList(SKILLS);
 assert.match(list, /Available skills/, "list has a header");
 assert.match(list, /deep-research/, "list includes each skill");
 assert.match(formatSkillList([]), /No skills found/, "empty list is explained");
+
+// ── resolveSkillInvocation: whole name first, then first-token + args ────────
+assert.deepEqual(
+  resolveSkillInvocation("code-review", SKILLS),
+  { skill: SKILLS[1], args: "" },
+  "bare name resolves with empty args",
+);
+assert.deepEqual(
+  resolveSkillInvocation("code-review src/foo.ts please", SKILLS),
+  { skill: SKILLS[1], args: "src/foo.ts please" },
+  "first token resolves, remainder becomes the skill's arguments",
+);
+assert.equal(resolveSkillInvocation("nope at-all", SKILLS), null, "unknown head → null");
+assert.equal(resolveSkillInvocation("zzz", SKILLS), null, "unknown single token → null");
+
+// ── skillCommandMatches: top-level menu discovery ────────────────────────────
+assert.deepEqual(skillCommandMatches("/revi", SKILLS).map((s) => s.id), ["code-review"], "3+ chars matches by substring");
+assert.deepEqual(skillCommandMatches("/re", SKILLS), [], "under 3 typed chars stays out of the menu");
+assert.deepEqual(skillCommandMatches("revi", SKILLS), [], "non-slash text never matches");
+const MANY = Array.from({ length: 9 }, (_, i) => ({ id: `review-${i}`, name: `review-${i}` }));
+assert.equal(skillCommandMatches("/review", MANY).length, 5, "capped at 5 rows");
+const DUPED = [
+  { id: "code-review", name: "code-review", familiar: "user" },
+  { id: "code-review", name: "code-review", familiar: "agents-user" },
+];
+assert.equal(skillCommandMatches("/review", DUPED).length, 1, "same skill from two scan roots renders once");
 
 // ── Catalog + composer wiring (source-text) ──────────────────────────────────
 const slashCmds = await readFile(new URL("./slash-commands.ts", import.meta.url), "utf8");
@@ -48,11 +82,19 @@ assert.match(slashCmds, /name: "\/skills"/, "/skills is registered");
 
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 assert.match(chatView, /skillSlashOptions\(input, skills\)/, "chat-view computes the inline /skill options");
-assert.match(chatView, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0;/, "chat-view menuOpen includes the skill picker");
+assert.match(chatView, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0;/, "chat-view menuOpen includes the skill picker and the Skills group");
 assert.match(chatView, /command === "\/skill" \|\| command === "\/skills"/, "chat-view dispatches /skill and /skills");
-assert.match(chatView, /sendRaw\(buildSkillPrompt\(skill\)\)/, "chat-view invokes a skill by sending the skill prompt");
+assert.match(chatView, /sendRaw\(buildSkillPrompt\(skill, skillArgs\)\)/, "typed /skill arguments are forwarded into the invocation");
+assert.match(chatView, /sendRaw\(buildSkillPrompt\(s\)\)/, "picking a skill sends the invocation directive");
+assert.match(chatView, /const invokeSkillOption = \(s: SkillOption\)/, "chat-view shares one skill-invoke helper across picker, menu and clicks");
+assert.match(chatView, /s\.argumentHint && input\.trim\(\)\.toLowerCase\(\) !== filled\.toLowerCase\(\)/, "a hinted skill autofills /skill <id> for argument editing instead of sending");
+assert.match(chatView, /skillCommandMatches\(firstWord, skills\)/, "chat-view surfaces skills in the top-level command menu");
 assert.match(chatView, /role="listbox" aria-label="Skills"/, "chat-view renders a Skills listbox");
 assert.match(chatView, /fetch\("\/api\/skills\/local"/, "chat-view sources skills from the local skill scan");
+
+// argument-hint flows from SKILL.md frontmatter to the picker metadata.
+const scan = await readFile(new URL("./server/skill-scan.ts", import.meta.url), "utf8");
+assert.match(scan, /argumentHint: fm\["argument-hint"\]/, "skill-scan maps the argument-hint frontmatter key");
 
 // ── Skill detail preview in the picker ───────────────────────────────────────
 const preview = await readFile(new URL("../components/skill-detail-preview.tsx", import.meta.url), "utf8");
@@ -61,6 +103,7 @@ assert.match(preview, /skill\.description/, "preview shows the full description"
 assert.match(preview, /skill\.tags\?\.length/, "preview shows tags when present");
 assert.match(preview, /skill\.path/, "preview shows the skill path");
 assert.match(preview, /skill\.familiar/, "preview shows the skill scope");
+assert.match(preview, /skill\.argumentHint/, "preview shows the argument hint when present");
 
 const homeComposer = await readFile(new URL("../components/home-composer.tsx", import.meta.url), "utf8");
 for (const [label, src] of [["chat-view", chatView], ["home-composer", homeComposer]]) {

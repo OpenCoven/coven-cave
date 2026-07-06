@@ -28,6 +28,12 @@ export type LocalSkillEntry = {
    * permissions when the skill is attached to a workflow.
    */
   permissions?: string[];
+  /**
+   * Frontmatter `argument-hint` (Claude Code convention, e.g. `[pr-number]`).
+   * Drives the composer's autofill: a hinted skill inserts `/skill <id> ` for
+   * argument editing instead of sending immediately.
+   */
+  argumentHint?: string;
   path: string;
   familiar: LocalSkillScope;
 };
@@ -106,6 +112,7 @@ export async function scanSkillsDir(dir: string, familiar: LocalSkillScope, out:
         kind: fm.kind,
         tags: tags.length ? tags : (fm.tags ? [fm.tags] : []),
         permissions: permissions.length ? permissions : undefined,
+        argumentHint: fm["argument-hint"],
         owner: fm.owner,
         repo: fm.repo,
         packageName: fm.package,

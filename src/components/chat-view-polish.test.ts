@@ -568,7 +568,7 @@ assert.doesNotMatch(
 
 // — CHAT-D2-01: slash menu keyboard contract ("↵ run · Tab complete · esc cancel") —
 const composerKey = source.match(/const onComposerKey = [\s\S]*?\n  \};/)?.[0] ?? "";
-const slashBranch = composerKey.match(/if \(slashSuggestions\.length > 0\) \{[\s\S]*?\n    \}/)?.[0] ?? "";
+const slashBranch = composerKey.match(/if \(slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0\) \{[\s\S]*?\n    \}/)?.[0] ?? "";
 
 assert.match(
   slashBranch,
@@ -952,7 +952,7 @@ assert.match(
 );
 assert.ok(
   mentionComposerKey.indexOf("if (mentionOpen) {") <
-    mentionComposerKey.indexOf("if (slashSuggestions.length > 0) {"),
+    mentionComposerKey.indexOf("if (slashSuggestions.length > 0 || skillCommandRows.length > 0) {"),
   "The mention branch must run before the slash branch in onComposerKey",
 );
 assert.ok(

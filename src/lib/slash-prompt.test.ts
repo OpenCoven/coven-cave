@@ -65,7 +65,7 @@ assert.match(slashCmds, /name: "\/prompts"/, "/prompts is registered");
 
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 assert.match(chatView, /promptSlashOptions\(input, prompts\)/, "chat-view computes the inline /prompt options");
-assert.match(chatView, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0;/, "chat-view menuOpen includes the prompt picker");
+assert.match(chatView, /const menuOpen = modelMenuActive \|\| skillMenuActive \|\| promptMenuActive \|\| slashSuggestions\.length > 0 \|\| skillCommandRows\.length > 0;/, "chat-view menuOpen includes the prompt picker");
 assert.match(chatView, /command === "\/prompt" \|\| command === "\/prompts"/, "chat-view dispatches /prompt and /prompts");
 assert.match(chatView, /role="listbox" aria-label="Prompts"/, "chat-view renders a Prompts listbox");
 assert.match(chatView, /fetch\("\/api\/prompts"/, "chat-view sources templates from /api/prompts");
