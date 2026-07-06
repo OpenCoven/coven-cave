@@ -254,4 +254,15 @@ assert.doesNotMatch(decodeURIComponent(unenriched.media.imageUrl), /prs merged/)
 const prOnly = buildDailySummaryContent({ now, items: [], sessions: [], extras });
 assert.ok(prOnly, "a PR-only day should still produce a report");
 
+
+// Zero/zero diffs are daemon boilerplate — the Recent line must not read "(+0 -0)".
+{
+  const zeroDiff = buildDailySummaryContent({
+    now,
+    items: [],
+    sessions: [{ ...sessionAt("z1", "Quiet session", 1), diff: { additions: 0, deletions: 0 } }],
+  });
+  assert.doesNotMatch(zeroDiff.body, /\(\+0 -0\)/, "zero/zero diffs are noise, not signal");
+}
+
 console.log("daily-summary-notifications.test.ts: ok");

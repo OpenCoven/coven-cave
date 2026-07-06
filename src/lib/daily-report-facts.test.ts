@@ -138,4 +138,12 @@ assert.equal(
 );
 assert.equal(reportSessionTitle({ title: "**Fix** the `parser`" }), "Fix the parser");
 
+
+// Angle-tag prompt-preamble leaks ("<covenroster> You are in a group chat…")
+// are not names — seen live 2026-07-06.
+assert.equal(
+  reportSessionTitle({ title: '<covenroster> You are in a group chat ("coven") with these…' }),
+  "Untitled session",
+);
+
 console.log("daily-report-facts.test.ts: ok");

@@ -63,6 +63,9 @@ const REPORT_TITLE_MAX = 64;
 const MD_HEADING_RE = /^#{1,6}\s+/;
 const MD_EMPHASIS_RE = /(\*\*|__|[*_`])/g;
 const PRIOR_CONVERSATION_LEAK_RE = /^prior conversation\b/i;
+// Titles opening with an XML-ish tag ("<covenroster> You are in a group
+// chat…") are prompt-preamble leaks, not names. Seen live on 2026-07-06.
+const ANGLE_TAG_LEAK_RE = /^<[a-z][\w-]*>/i;
 
 /** Session title as it should appear in the daily report: sanitized of
  *  harness-preamble leaks (via sanitizeSessionTitle), stripped of markdown
@@ -70,7 +73,7 @@ const PRIOR_CONVERSATION_LEAK_RE = /^prior conversation\b/i;
  *  session" when nothing survives. */
 export function reportSessionTitle(session: Pick<SessionRow, "title">): string {
   const sanitized = sanitizeSessionTitle(session.title);
-  if (!sanitized) return "Untitled session";
+  if (!sanitized || ANGLE_TAG_LEAK_RE.test(sanitized)) return "Untitled session";
   const stripped = sanitized
     .replace(MD_HEADING_RE, "")
     .replace(MD_EMPHASIS_RE, "")

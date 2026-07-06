@@ -54,7 +54,9 @@ function dayLabel(date: Date): string {
 }
 
 function sessionSummaryLine(session: SessionRow): string {
-  const diff = session.diff ? ` (+${session.diff.additions} -${session.diff.deletions})` : "";
+  // A zero/zero diff is daemon boilerplate, not signal — suppress the suffix.
+  const hasDiff = Boolean(session.diff && (session.diff.additions || session.diff.deletions));
+  const diff = hasDiff ? ` (+${session.diff!.additions} -${session.diff!.deletions})` : "";
   return `${reportSessionTitle(session)}${diff}`;
 }
 

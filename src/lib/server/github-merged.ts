@@ -76,13 +76,23 @@ export async function fetchMergedPrsForDay(now: Date): Promise<MergedPr[] | null
   const q = encodeURIComponent(`is:pr is:merged author:${login} merged:>=${fromSlug}`);
 
   try {
-    const data = (await ghJson(`/search/issues?q=${q}&per_page=50&sort=updated&order=desc`, token)) as {
-      items?: SearchItem[];
-    } | null;
+    // Up to two 100-item pages: a heavy multi-agent day really does exceed a
+    // single page (101 merges observed live on 2026-07-06), and a truncated
+    // list would report a dishonest "N PRs merged" count.
+    const results: SearchItem[] = [];
+    for (let page = 1; page <= 2; page++) {
+      const data = (await ghJson(
+        `/search/issues?q=${q}&per_page=100&page=${page}&sort=updated&order=desc`,
+        token,
+      )) as { items?: SearchItem[] } | null;
+      const batch = data?.items ?? [];
+      results.push(...batch);
+      if (batch.length < 100) break;
+    }
     const dayStart = startOfLocalDay(now).getTime();
     const dayEnd = dayStart + 24 * 60 * 60 * 1000;
     const items: MergedPr[] = [];
-    for (const item of data?.items ?? []) {
+    for (const item of results) {
       const mergedAt = item.pull_request?.merged_at;
       if (!mergedAt || typeof item.number !== "number" || !item.html_url) continue;
       const mergedMs = new Date(mergedAt).getTime();
