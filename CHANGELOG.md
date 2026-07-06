@@ -7,6 +7,31 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.142] - 2026-07-06
+
+> 📊 **Analytics you can actually steer by** — familiar analytics and growth pages get pulse trends, drill-through KPIs, and a triage roster, while the marketplace gets an ultraminimal header and a full functionality pass. On iPad, **The Diary** arrives: an experimental Apple Pencil handwriting surface.
+
+Feature release on top of v0.0.141. Ships a revamped analytics/growth surface, a marketplace overhaul, the new experimental iOS Diary, Projects-table polish, and a batch of connection/desktop/onboarding/GitHub fixes.
+
+### Features
+- **Familiar analytics + growth revamp** (#2469). Pulse trend lines, drill-through KPIs, and a triage roster across the familiar analytics and growth pages, with dashboard cockpit analytics accuracy fixed so the numbers match reality.
+- **Marketplace ultraminimal header + UX pass** (#2463). A comprehensive functionality and UX pass on the marketplace with a stripped-down header.
+- **The Diary — experimental Apple Pencil handwriting page (iPad)** (#2457, #2458, #2471). A new experimental handwriting surface for iPad: longer replies, no option menus, sentence-length pen-lift detection, and presented from RootView so connection flaps can't dismiss it mid-session.
+- **Projects table polish** (#2459). UI/UX cleanup on the Projects table, including de-duped project listings.
+
+### Fixes
+- **Seamless, stable iOS ↔ desktop connection** (#2465, cave-30b). Hardens the mobile/desktop connection path so it stays stable instead of flapping.
+- **Titlebar drag** (#2464). Grants `start_dragging` to the loopback webview so the desktop titlebar actually drags.
+- **Onboarding focus trap** (#2466). Keeps the wizard's focus trap airtight and stops it relaunching on already-set-up machines.
+- **mobile:tailscale port squatting** (#2468, cave-gbo). Stops `mobile:tailscale` dead-ending when the port is squatted by an untracked server.
+- **GitHub review-conversation regressions** (#2467). Addresses regressions surfaced in PR #2450 review conversations.
+
+### Polish
+- **GitHub surface** (#2456). Profile cache, live checks refresh, and thread-comment reactions.
+
+### Tests
+- **Inline file editing + Diary UI tests** (#2470). Adds coverage for inline file editing and the new Diary UI.
+
 ## [0.0.141] - 2026-07-06
 
 > ⚡ **Quick chat is now a real conversation** — the menubar / ⌘J dropdown holds a full multi-turn thread: streaming replies, context that carries across turns, copy & regenerate, all without leaving what you were doing.

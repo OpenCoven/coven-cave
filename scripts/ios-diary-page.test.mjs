@@ -102,16 +102,22 @@ assert.match(
   "Reduce Motion collapses the reveal/soak animations",
 );
 
-// ── iPad-only entry point ────────────────────────────────────────────────────
+// ── iPad-only entry point, presented above the connection switch ────────────
+const root = await read("apps/ios/CovenCave/CovenCave/Views/RootView.swift");
 assert.match(
   home,
-  /if sizeClass == \.regular \{[\s\S]*?showDiary = true/,
+  /if sizeClass == \.regular \{[\s\S]*?app\.diaryPresented = true/,
   "the Diary entry point only shows in regular width (iPad) — the page is sized for Pencil writing",
 );
 assert.match(
+  root,
+  /fullScreenCover\(isPresented: \$app\.diaryPresented\) \{\s*\n\s*DiaryView\(\)/,
+  "the Diary presents from RootView, above the connectionState switch — a transient flap must not dismiss it mid-reply",
+);
+assert.doesNotMatch(
   home,
-  /fullScreenCover\(isPresented: \$showDiary\) \{\s*\n\s*DiaryView\(\)/,
-  "the Diary opens full screen",
+  /fullScreenCover[\s\S]*?DiaryView/,
+  "the Diary cover must NOT live inside the tab tree (a connection flap destroys it)",
 );
 
 console.log("ios-diary-page.test.mjs: ok");

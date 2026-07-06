@@ -5,6 +5,7 @@ struct RootView: View {
     @Environment(\.chrome) private var chrome
 
     var body: some View {
+        @Bindable var app = app
         Group {
             switch app.connectionState {
             case .unconfigured:
@@ -22,6 +23,13 @@ struct RootView: View {
         // Frosted, accent-infused tab + navigation bars that track the desktop
         // palette and degrade to solid themed surfaces under Reduce Transparency.
         .glassBars()
+        // The Diary presents HERE, not inside MainTabView: the switch above
+        // swaps the tab tree out on a transient connection flap, and a cover
+        // presented from within it would dismiss mid-reply, aborting the
+        // diary's stream.
+        .fullScreenCover(isPresented: $app.diaryPresented) {
+            DiaryView()
+        }
     }
 }
 
