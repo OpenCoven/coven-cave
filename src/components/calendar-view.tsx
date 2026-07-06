@@ -1126,7 +1126,7 @@ function MonthView({
                     aria-label={`Open ${fmtDateHeading(day)}`}
                     className={`focus-ring mb-1 flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-medium ${
                       isToday
-                        ? "bg-[var(--accent-presence)] text-white"
+                        ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                         : isCurrentMonth
                         ? "text-[var(--text-primary)]"
                         : "text-[var(--text-muted)]"
@@ -1270,7 +1270,7 @@ function MiniMonthPopover({
               aria-current={isToday ? "date" : undefined}
               className={`focus-ring h-7 w-full rounded text-[11px] transition-colors ${
                 isAnchor
-                  ? "bg-[var(--accent-presence)] text-white"
+                  ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                   : isToday
                     ? "ring-1 ring-inset ring-[var(--accent-presence)] text-[var(--accent-presence)]"
                     : isCurrentMonth
@@ -1404,7 +1404,7 @@ function ItemDetailPanel({
           {openLabel && onOpen ? (
             <button
               onClick={() => { onOpen(item); onClose(); }}
-              className="focus-ring inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
+              className="focus-ring inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)]"
             >
               <Icon name="ph:arrow-square-out" width={12} />
               {openLabel}
@@ -1680,7 +1680,7 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
               aria-pressed={viewMode === id}
               className={`focus-ring-inset inline-flex h-7 items-center px-2.5 text-[11px] transition-colors sm:px-3 ${
                 viewMode === id
-                  ? "bg-[var(--accent-presence)] text-white"
+                  ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                   : "text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
               }`}
             >
@@ -1765,13 +1765,9 @@ export function CalendarView({ items, familiars, activeFamiliarId, scopeFamiliar
           />
         )}
       </div>
-      {/* Keyboard hint — hidden on coarse-pointer / narrow viewports
-          where the single-key shortcuts can't be triggered. */}
-      <footer
-        className="hidden shrink-0 border-t border-[var(--border-hairline)] px-3 py-1.5 text-[10px] text-[var(--text-muted)] sm:px-6 md:block"
-      >
-        ← → navigate · T today · D Day · W Week · M Month · A Agenda{onAddEntry ? " · N new" : ""}{onReschedule ? " · Alt+↑↓ reschedule" : ""}
-      </footer>
+      {/* Keyboard hints moved to the canonical ⌘/ Shortcuts sheet (§8 chrome
+          diet — a permanently visible footer bar was chrome documenting
+          chrome). The single-key bindings themselves are unchanged. */}
       {selectedItem && (
         <ItemDetailPanel
           item={selectedItem}
