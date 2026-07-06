@@ -9,6 +9,8 @@ breaking config changes; patch releases stay additive.
 
 ## [0.0.141] - 2026-07-06
 
+> ⚡ **Quick chat is now a real conversation** — the menubar / ⌘J dropdown holds a full multi-turn thread: streaming replies, context that carries across turns, copy & regenerate, all without leaving what you were doing.
+
 Feature release on top of v0.0.140. Remakes the quick-chat menubar dropdown
 into a genuine multi-turn conversational surface.
 
