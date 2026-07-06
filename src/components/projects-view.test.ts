@@ -88,8 +88,13 @@ assert.match(projectsView, /selectedId=\{selectedProjectId\}/, "the list highlig
 assert.match(projectsView, /onSelect=\{selectProject\}/, "clicking a row selects it");
 assert.match(
   projectListSource,
-  /e\.key === "Enter" \|\| e\.key === " " \|\| e\.key === "ArrowRight"/,
-  "rows select on Enter/Space and reveal detail on ArrowRight",
+  /e\.key === "Enter" \|\| e\.key === " "/,
+  "rows select on Enter/Space",
+);
+assert.match(
+  projectListSource,
+  /e\.key === "ArrowRight"[\s\S]{0,120}?onSelect\(\);\s*onEnterDetail\?\.\(\)/,
+  "ArrowRight selects and hands focus into the detail pane",
 );
 
 // ── Detail pane wiring ───────────────────────────────────────────────────────
@@ -143,7 +148,7 @@ assert.match(projectsView, /results\.some\(Boolean\)\) onSessionsChanged/, "bulk
 assert.match(projectsView, /useUndoDelete<SessionRow\[\]>\(\)/, "bulk delete routes through useUndoDelete");
 assert.match(projectsView, /scheduleSessionDelete\(\s*removed,/, "the batch is scheduled through the undo window");
 assert.match(projectsView, /const hidden = new Set\(\(deletePending\?\.item \?\? \[\]\)\.map\(\(s\) => s\.id\)\)/, "pending-deleted chats are hidden until commit");
-assert.match(projectsView, /onUndo=\{undoSessionDelete\}[\s\S]{0,40}onDismiss=\{commitSessionDelete\}/, "an undo toast restores the batch");
+assert.match(projectsView, /undoSessionDelete\(\);[\s\S]{0,80}?onDismiss=\{commitSessionDelete\}/, "an undo toast restores the batch (and announces the undo)");
 assert.match(projectsView, /\{allVisibleSelected \? "Clear" : "Select all"\}/, "the select toolbar offers select-all / clear");
 assert.match(projectsView, /\{selectedIds\.size\} selected/, "the toolbar shows how many chats are selected");
 assert.match(projectsView, /onDeleteSessions=\{handleDeleteSessions\}/, "the bulk-delete handler is wired into the detail pane");

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Icon } from "@/lib/icon";
 import { ProjectAvatar } from "@/components/project-avatar";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -83,6 +84,9 @@ export function ProjectDetail({
   onBack,
 }: ProjectDetailProps) {
   const rootKey = normalizeProjectRoot(project.root);
+  // Identity edits (rename/root/color/image/copy/delete) resolve visually —
+  // announce their outcomes so they aren't silent to assistive tech.
+  const { announce } = useAnnouncer();
   const stats = projectStats(chats);
   const projectStatus = deriveProjectStatus(chats);
   const statusText =
@@ -149,6 +153,7 @@ export function ProjectDetail({
       await navigator.clipboard.writeText(project.root);
       setCopiedRoot(true);
       window.setTimeout(() => setCopiedRoot(false), 1600);
+      announce("Path copied.");
     } catch {
       // Clipboard blocked (insecure context / permissions) — no-op.
     }
@@ -163,8 +168,10 @@ export function ProjectDetail({
     }
     if (next !== project.name) {
       setBusy("name");
-      await onRename(project.id, next);
+      const ok = await onRename(project.id, next);
       setBusy(null);
+      if (ok) announce(`Renamed to ${next}.`);
+      else announce("Couldn't rename the project.", "assertive");
     }
     setEditingName(false);
   };
@@ -182,6 +189,8 @@ export function ProjectDetail({
       // The avatar is keyed by root — re-key it so it follows the project.
       if (ok) void moveProjectImage(project.root, next);
       setBusy(null);
+      if (ok) announce("Project folder updated.");
+      else announce("Couldn't update the project folder.", "assertive");
     }
     setEditingRoot(false);
   };
@@ -191,12 +200,20 @@ export function ProjectDetail({
     const ok = await onDelete(project.id);
     if (ok) void clearProjectImage(project.root);
     setBusy(null);
+    if (ok) announce(`Deleted project ${project.name}.`);
+    else announce("Couldn't delete the project.", "assertive");
   };
 
   const setColor = async (color: string | null) => {
     setBusy("color");
-    await onUpdateColor(project.id, color);
+    const ok = await onUpdateColor(project.id, color);
     setBusy(null);
+    if (!ok) {
+      announce("Couldn't update the color.", "assertive");
+      return;
+    }
+    const swatchName = color ? PROJECT_COLOR_SWATCHES.find((s) => s.value === color)?.name : null;
+    announce(swatchName ? `Color set to ${swatchName}.` : "Color set to auto.");
   };
 
   // ── Sessions: cap, disambiguated titles, bulk select ───────────────────────
@@ -281,6 +298,9 @@ export function ProjectDetail({
                 setImageStatus(
                   res.ok ? (prepared.downsized ? "Image was downsized for Cave." : null) : res.reason,
                 );
+                // The downsize/failure messages speak via the role="status"
+                // line; plain success has no message, so announce it here.
+                if (res.ok && !prepared.downsized) announce("Project image updated.");
               })
               .catch((err) => {
                 setImageStatus(err instanceof Error ? err.message : "Could not read image.");
@@ -366,7 +386,13 @@ export function ProjectDetail({
               {hasImage ? "Change image…" : "Set image…"}
             </PopoverItem>
             {hasImage ? (
-              <PopoverItem icon="ph:minus-circle" onSelect={() => void clearProjectImage(project.root)}>
+              <PopoverItem
+                icon="ph:minus-circle"
+                onSelect={() => {
+                  void clearProjectImage(project.root);
+                  announce("Project image removed.");
+                }}
+              >
                 Remove image
               </PopoverItem>
             ) : null}

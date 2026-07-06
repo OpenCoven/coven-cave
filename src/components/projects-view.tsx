@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 // The Projects hub's styling (every `projects-hub`/`projects-list-row`/
 // `projects-detail-*` class) lives in projects.css. Import it directly so the
@@ -32,6 +32,7 @@ import { nextTypeAheadIndex } from "@/lib/projects/type-ahead";
 import { smoothScrollBehavior } from "@/lib/use-prefers-reduced-motion";
 import { CHAT_FOCUS_PROJECT_EVENT } from "@/lib/chat-tab-events";
 import { UndoToast } from "@/components/ui/undo-toast";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
@@ -62,6 +63,9 @@ type ProjectsViewProps = {
 export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessionsChanged, activeFamiliarId = null }: ProjectsViewProps) {
   useDateTimePrefs(); // subscribe: re-render when the date/time density pref changes
   const minuteTick = useMinuteTick(); // keep "last active" relative times + the active filter current
+  // Mutations that only show visually (create, undo) get announced here; move
+  // and bulk-delete already speak through the UndoToast's role="status".
+  const { announce } = useAnnouncer();
   const {
     projects,
     loading,
@@ -114,7 +118,15 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
 
   // Roving keyboard navigation (WAI-ARIA) over the project rows in the list
   // pane: ↑/↓ + Home/End move focus, Enter/Space select (per-row handlers).
+  // ArrowRight on a row hands focus INTO the detail pane; ArrowLeft anywhere in
+  // the detail (outside a text field) hands it back to the selected row.
   const listRef = useRef<HTMLDivElement>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+  const focusDetailPane = () => {
+    // After selection the detail may still be re-rendering (and, under the
+    // narrow collapse, display:none until data-pane flips) — focus next frame.
+    window.requestAnimationFrame(() => detailRef.current?.focus());
+  };
   const { setActiveIndex } = useRovingTabIndex({ containerRef: listRef, itemSelector: "[data-proj-nav]", orientation: "vertical" });
   // Type-ahead: typing letters jumps focus to the next project whose label
   // starts with what you typed (Finder-style), staying in sync with the roving
@@ -312,6 +324,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     if (moveToast.prevRoot) setProjectOverride(moveToast.sessionId, moveToast.prevRoot);
     else clearProjectOverride(moveToast.sessionId);
     setMoveToast(null);
+    announce("Move undone.");
   };
 
   function openCreateProjectForm() {
@@ -346,6 +359,7 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
     // Land on the new project's detail pane — its New chat button is the
     // follow-up action (replaces the old "Created X" banner).
     selectProject(project.id);
+    announce(`Created project ${name}.`);
   };
 
   // A folder was chosen (native dialog or in-app browser) → fill the path, and
@@ -418,6 +432,21 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
 
   const openBoard = () => {
     window.dispatchEvent(new CustomEvent("cave:navigate-mode", { detail: { mode: "board" } }));
+  };
+
+  // ArrowLeft in the detail pane returns focus to the selected list row (and,
+  // under the narrow collapse, brings the list pane back). Guarded so it never
+  // steals the caret from a text field; menus render in portals, so their own
+  // arrow navigation never bubbles here.
+  const onDetailKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "ArrowLeft" || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    e.preventDefault();
+    setPane("list");
+    if (!selectedProject) return;
+    const rootKey = normalizeProjectRoot(selectedProject.root);
+    window.requestAnimationFrame(() => document.getElementById(`pcard-el:${rootKey}`)?.focus());
   };
 
   return (
@@ -698,11 +727,19 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
                   chatsByRoot={chatsByRoot}
                   selectedId={selectedProjectId}
                   onSelect={selectProject}
+                  onEnterDetail={focusDetailPane}
                   onNewChat={onNewChat}
                 />
               )}
             </div>
-            <div className="projects-hub__detail">
+            <div
+              ref={detailRef}
+              tabIndex={-1}
+              role="region"
+              aria-label={selectedProject ? `${selectedProject.name} details` : "Project details"}
+              onKeyDown={onDetailKeyDown}
+              className="projects-hub__detail"
+            >
               {selectedProject ? (
                 <ProjectDetail
                   key={selectedProject.id}
@@ -747,7 +784,10 @@ export function ProjectsView({ sessions = [], familiars = [], onNewChat, onSessi
           key={deletePending.id}
           message={`Deleted ${deletePending.label}`}
           undoAriaLabel="Undo delete"
-          onUndo={undoSessionDelete}
+          onUndo={() => {
+            undoSessionDelete();
+            announce("Delete undone.");
+          }}
           onDismiss={commitSessionDelete}
         />
       ) : null}

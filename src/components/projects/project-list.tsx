@@ -23,10 +23,12 @@ type ProjectListProps = {
   chatsByRoot: Map<string, SessionRow[]>;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** ArrowRight on a row: after selecting, hand focus into the detail pane. */
+  onEnterDetail?: () => void;
   onNewChat?: (projectRoot: string) => void;
 };
 
-export function ProjectList({ projects, chatsByRoot, selectedId, onSelect, onNewChat }: ProjectListProps) {
+export function ProjectList({ projects, chatsByRoot, selectedId, onSelect, onEnterDetail, onNewChat }: ProjectListProps) {
   return (
     <ul role="listbox" aria-label="Projects" className="m-0 flex list-none flex-col gap-px p-0">
       {projects.map((project) => (
@@ -36,6 +38,7 @@ export function ProjectList({ projects, chatsByRoot, selectedId, onSelect, onNew
           chats={chatsByRoot.get(normalizeProjectRoot(project.root)) ?? []}
           selected={project.id === selectedId}
           onSelect={() => onSelect(project.id)}
+          onEnterDetail={onEnterDetail}
           onNewChat={onNewChat}
         />
       ))}
@@ -48,12 +51,14 @@ function ProjectListRow({
   chats,
   selected,
   onSelect,
+  onEnterDetail,
   onNewChat,
 }: {
   project: CaveProject;
   chats: SessionRow[];
   selected: boolean;
   onSelect: () => void;
+  onEnterDetail?: () => void;
   onNewChat?: (projectRoot: string) => void;
 }) {
   const [menu, setMenu] = useState<ContextMenuState>(null);
@@ -93,11 +98,16 @@ function ProjectListRow({
         className="focus-ring projects-list-row"
         onClick={onSelect}
         onKeyDown={(e) => {
-          // ARIA option pattern: Enter and Space both select; → also reveals
-          // the detail pane (matters under the narrow single-pane collapse).
-          if (e.key === "Enter" || e.key === " " || e.key === "ArrowRight") {
+          // ARIA option pattern: Enter and Space both select; → additionally
+          // hands focus into the detail pane (which also reveals it under the
+          // narrow single-pane collapse). ← in the detail hands focus back.
+          if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             onSelect();
+          } else if (e.key === "ArrowRight") {
+            e.preventDefault();
+            onSelect();
+            onEnterDetail?.();
           }
         }}
         onContextMenu={openContextMenuAt(setMenu)}
