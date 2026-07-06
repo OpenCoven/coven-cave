@@ -27,6 +27,11 @@ assert.match(
 );
 assert.match(surface, /scope === "projects" \? \(/, "projects browse still renders ProjectsView as a sub-state of Chat");
 assert.match(surface, /<ProjectsView[\s\S]*?sessions=\{sessions\}/, "projects panel renders ProjectsView with sessions");
+assert.match(
+  surface,
+  /<ProjectsView[\s\S]*?familiars=\{familiars\}/,
+  "projects panel threads the familiar roster (Grants section chips)",
+);
 assert.match(surface, /onNewChat=\{startProjectChat\}/, "projects panel wires onNewChat to startProjectChat");
 assert.match(surface, /addEventListener\(CHAT_OPEN_PROJECTS_EVENT/, "listens for the reroute event");
 assert.match(surface, /onOpenProjectsTab=\{\(\) => setScope\("projects"\)\}/, "chat project rail can jump directly to the Projects tab");

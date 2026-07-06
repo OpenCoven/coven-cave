@@ -18,13 +18,15 @@ import { FAMILIAR_IMAGE_ACCEPT, prepareFamiliarImage } from "@/lib/familiar-imag
 import { relativeTime } from "@/lib/relative-time";
 import type { CaveProject } from "@/lib/cave-projects-types";
 import { normalizeProjectRoot } from "@/lib/cave-projects-types";
-import type { SessionRow } from "@/lib/types";
+import type { Familiar, SessionRow } from "@/lib/types";
+import type { Card } from "@/lib/cave-board-types";
 import { disambiguateSessionTitles } from "@/lib/cave-chat-titles";
 import { deriveProjectStatus } from "@/lib/project-status";
 import { projectStats } from "@/lib/projects/project-stats";
 import { projectTint } from "@/lib/comux-projects";
 
 import { ProjectChatRow } from "./session-row";
+import { GitSection, TasksSection, GrantsSection } from "./detail-sections";
 import {
   CHAT_CAP,
   PROJECT_COLOR_SWATCHES,
@@ -42,6 +44,11 @@ type ProjectDetailProps = {
   project: CaveProject;
   chats: SessionRow[];
   allProjects: CaveProject[];
+  /** Board cards (all of them, fetched once by the shell) — filtered to this
+   *  project client-side by the Tasks section. */
+  boardCards: Card[];
+  /** Familiar roster for the Grants section's chips. */
+  familiars: Familiar[];
   onRename: (id: string, name: string) => Promise<boolean>;
   onUpdateRoot: (id: string, root: string) => Promise<boolean>;
   /** Set an explicit tile tint, or null to restore the auto root-hash tint. */
@@ -61,6 +68,8 @@ export function ProjectDetail({
   project,
   chats,
   allProjects,
+  boardCards,
+  familiars,
   onRename,
   onUpdateRoot,
   onUpdateColor,
@@ -87,8 +96,9 @@ export function ProjectDetail({
   const lastActiveIso =
     chats.reduce((acc, s) => (!acc || s.updated_at > acc ? s.updated_at : acc), "") || project.updatedAt;
   const lastActiveLabel = relativeTime(lastActiveIso);
-  // Until /api/changes serves the branch (PR2), show it from the most recent
-  // session's git context — populated by /api/sessions/list.
+  // Fallback branch from the most recent session's git context (populated by
+  // /api/sessions/list) — the Git section shows it until its authoritative
+  // /api/changes response lands.
   const branch = useMemo(() => {
     let latest: SessionRow | null = null;
     for (const s of chats) {
@@ -444,12 +454,6 @@ export function ProjectDetail({
             {stats.tasks}
           </span>
         ) : null}
-        {branch ? (
-          <span className="inline-flex max-w-[14rem] items-center gap-1 truncate font-mono" title={`Branch: ${branch}`}>
-            <Icon name="ph:git-branch-bold" width={10} aria-hidden />
-            <span className="truncate">{branch}</span>
-          </span>
-        ) : null}
         {lastActiveLabel ? <span title={`Last active ${lastActiveLabel}`}>{lastActiveLabel}</span> : null}
       </div>
 
@@ -630,6 +634,11 @@ export function ProjectDetail({
           </div>
         )}
       </section>
+
+      {/* ── Git · Tasks · Grants (PR2 sections) ──────────────────────────────── */}
+      <GitSection projectRoot={project.root} sessionBranch={branch} />
+      <TasksSection project={project} cards={boardCards} onOpenBoard={onOpenBoard} />
+      <GrantsSection project={project} familiars={familiars} />
     </div>
   );
 }
