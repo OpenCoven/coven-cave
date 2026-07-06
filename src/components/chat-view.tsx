@@ -2378,6 +2378,15 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeSlashOptionRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  /** Keys for POST /api/chat/stop — a deliberate Stop must be an explicit
+   *  server call; a bare fetch abort now reads as a transport drop and the
+   *  turn finishes server-side. runId targets a run this instance started
+   *  (works before the server assigns a session id); sessionId covers
+   *  adopted streams (remount mid-generation) where the runId is unknown. */
+  const stopKeysRef = useRef<{ runId: string | null; sessionId: string | null }>({
+    runId: null,
+    sessionId: null,
+  });
   const initialPromptSentRef = useRef(false);
   /** True while THIS instance's sendRaw reader loop is running. The owner
    *  applies stream events itself (handleEvent), so it never needs the
@@ -2953,6 +2962,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     // branch below re-arms busy/abortRef if THIS thread is the one streaming.
     setBusy(false);
     abortRef.current = null;
+    stopKeysRef.current = { runId: null, sessionId: null };
     setLinkedContext(null);
     // An armed "Start a task" belongs to the thread it was armed on.
     taskArmedRef.current = false;
@@ -2971,6 +2981,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       setActiveLeafId(live.activeLeafId);
       setFlowTranscriptFallback(null);
       abortRef.current = live.controller;
+      stopKeysRef.current = { runId: null, sessionId };
       setHistoryState("loaded");
       setBusy(true);
       // Adopting a stream this instance did not start (remount mid-
@@ -3429,7 +3440,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     };
     const controller = new AbortController();
     const liveGeneration = { sessionId: initialLiveSessionId, controller };
+    const runId = crypto.randomUUID();
     abortRef.current = controller;
+    stopKeysRef.current = { runId, sessionId: initialLiveSessionId ?? null };
     streamOwnerRef.current = true;
     refetchOnSettleRef.current = null;
     const nextTurns = [...turnsRef.current, userTurn, assistantTurn];
@@ -3454,6 +3467,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         body: JSON.stringify({
           familiarId: familiar.id,
           prompt: submitPrompt,
+          runId,
           ...(outgoingAttachments.length ? { attachments: stripPreviewOnlyAttachmentFieldsKeepingImages(outgoingAttachments) } : {}),
           ...(origin ? { origin } : {}),
           sessionId: liveGeneration.sessionId,
@@ -3592,11 +3606,28 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       streamOwnerRef.current = false;
       clearLiveChatGeneration(liveGeneration.sessionId);
       abortRef.current = null;
+      stopKeysRef.current = { runId: null, sessionId: null };
       setBusy(false);
     }
   };
 
   const cancelSend = () => {
+    const { runId, sessionId } = stopKeysRef.current;
+    if (runId || sessionId) {
+      // Deliberate Stop is an explicit server call (kills the harness and
+      // persists the honest cancelled record); the abort below only tears
+      // down this client's stream.
+      void fetch("/api/chat/stop", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          ...(runId ? { runId } : {}),
+          ...(sessionId ? { sessionId } : {}),
+        }),
+      }).catch(() => {
+        /* best-effort — the server's detach cap still bounds the run */
+      });
+    }
     abortRef.current?.abort();
   };
 

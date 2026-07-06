@@ -31,6 +31,7 @@ const contracts: RouteContract[] = [
   { route: "/chat/model-state", methods: ["GET", "PATCH"], kind: "json", readsJson: true, invalidJson: "guarded" },
   { route: "/chat/search", methods: ["GET"], kind: "json" },
   { route: "/chat/send", methods: ["POST"], kind: "stream", readsJson: true },
+  { route: "/chat/stop", methods: ["POST"], kind: "json", readsJson: true, invalidJson: "fallback-empty" },
   { route: "/chat/usage", methods: ["GET"], kind: "json" },
   { route: "/codex-automations/[id]", methods: ["GET", "PATCH", "DELETE"], kind: "json", readsJson: true, invalidJson: "guarded", localOriginGuard: true },
   { route: "/codex-automations/[id]/run", methods: ["POST"], kind: "json", localOriginGuard: true },
@@ -289,23 +290,51 @@ for (const contract of contracts) {
   );
 }
 
-// CHAT-D5-02: cancelling a streaming response (Esc/Stop) must persist an
-// honest cancelled record — the partial text streamed so far, or a minimal
-// "(cancelled)" marker — never the fabricated empty-response error
-// diagnostic. Both adapter paths (coven stream-json and the OpenClaw bridge)
-// carry the guard, so a reload shows the cancel, not a harness error.
+// CHAT-D5-02 (amended by cave-id5): cancelling a streaming response is an
+// explicit POST /api/chat/stop — it SIGTERMs the harness and persists an
+// honest cancelled record (the partial text streamed so far, or a minimal
+// "(cancelled)" marker), never the fabricated empty-response error
+// diagnostic. A bare `req.signal` abort is a TRANSPORT DROP, not a cancel:
+// the harness keeps running (bounded by the detach cap) and the finished
+// turn persists for resync. Both adapter paths (coven stream-json and the
+// OpenClaw bridge) carry the guard.
 {
   const sendSource = readFileSync(
     path.join(apiRoot, "chat", "send", "route.ts"),
     "utf8",
   );
-  const abortReads = [
-    ...sendSource.matchAll(/const cancelledByUser = (?:args\.)?req\.signal\.aborted;/g),
+  const stopReads = [
+    ...sendSource.matchAll(/const cancelledByUser = runHandle\.stopRequested;/g),
   ];
   assert.equal(
-    abortReads.length,
+    stopReads.length,
     2,
-    "/chat/send: both adapter paths must detect a user abort before synthesizing diagnostics",
+    "/chat/send: both adapter paths must detect a deliberate stop (not a bare abort) before synthesizing diagnostics",
+  );
+  assert.doesNotMatch(
+    sendSource,
+    /const cancelledByUser = (?:args\.)?req\.signal\.aborted;/,
+    "/chat/send: a bare transport abort must never be read as a user cancel",
+  );
+  const runRegistrations = [...sendSource.matchAll(/= registerChatRun\(/g)];
+  assert.equal(
+    runRegistrations.length,
+    2,
+    "/chat/send: both adapter paths must register with the stop registry",
+  );
+  assert.match(
+    sendSource,
+    /setTimeout\(kill(?:Child|CurrentChild), CHAT_DETACH_MAX_MS\)/,
+    "/chat/send: a transport drop must arm the detach cap instead of killing immediately",
+  );
+  const stopSource = readFileSync(
+    path.join(apiRoot, "chat", "stop", "route.ts"),
+    "utf8",
+  );
+  assert.match(
+    stopSource,
+    /requestChatStop/,
+    "/chat/stop must resolve stops through the shared run registry",
   );
   const guardedDiagnostics = [
     ...sendSource.matchAll(

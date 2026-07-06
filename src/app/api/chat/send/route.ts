@@ -40,6 +40,11 @@ import {
   readKnowledgeVaultForPrompt,
 } from "@/lib/server/knowledge-vault";
 import { parseAgentAttachments } from "@/lib/server/agent-attachments";
+import {
+  registerChatRun,
+  unregisterChatRun,
+  type ChatRunHandle,
+} from "@/lib/server/chat-stop-registry";
 import { buildNextPathsDirective } from "@/lib/next-paths";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { loadProjects } from "@/lib/cave-projects";
@@ -108,9 +113,22 @@ import { deriveTravelClientStatus } from "@/lib/travel-client-state";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+// A transport drop no longer kills the harness (deliberate Stop goes through
+// /api/chat/stop), but a detached run must not outlive its usefulness forever
+// — SIGTERM the child if it is still running this long after the client
+// vanished. Long enough for any real reply to finish, short enough to bound
+// runaway children nobody is listening to.
+const CHAT_DETACH_MAX_MS = Math.max(
+  60_000,
+  Number(process.env.COVEN_CAVE_CHAT_DETACH_MAX_MS ?? 10 * 60_000) || 10 * 60_000,
+);
+
 type SendBody = {
   familiarId: string;
   prompt?: string;
+  /** Per-send client token for /api/chat/stop — lets Stop target this run
+   *  before the server has assigned/echoed a conversation id. */
+  runId?: string;
   sessionId?: string;
   projectRoot?: string;
   modelOverride?: string;
@@ -745,12 +763,22 @@ function openClawChatResponse(args: {
 
       let stdout = "";
       let stderr = "";
-      const onAbort = () => {
+      const killChild = () => {
         try {
           child.kill("SIGTERM");
         } catch {
           /* ignore */
         }
+      };
+      // Deliberate Stop arrives via /api/chat/stop (which kills through this
+      // registration); a bare transport abort means the client vanished — let
+      // the turn finish server-side so resync recovers the full reply, bounded
+      // by the detach cap in case nothing ever comes back for it.
+      const runHandle = registerChatRun([args.body.runId, conversationId], killChild);
+      let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
+      const onAbort = () => {
+        if (runHandle.stopRequested || detachKillTimer != null) return;
+        detachKillTimer = setTimeout(killChild, CHAT_DETACH_MAX_MS);
       };
       args.req.signal.addEventListener("abort", onAbort, { once: true });
 
@@ -774,10 +802,14 @@ function openClawChatResponse(args: {
           responseMetadata,
         });
         args.req.signal.removeEventListener("abort", onAbort);
+        if (detachKillTimer != null) clearTimeout(detachKillTimer);
+        unregisterChatRun(runHandle);
         close();
       });
       child.on("close", async (code) => {
         args.req.signal.removeEventListener("abort", onAbort);
+        if (detachKillTimer != null) clearTimeout(detachKillTimer);
+        unregisterChatRun(runHandle);
         const durationMs = Date.now() - startedAt;
         // Identity stays cave-owned: the gateway's internal session id is
         // surfaced as diagnostics only, never adopted as the conversation
@@ -795,11 +827,13 @@ function openClawChatResponse(args: {
           durationMs,
         );
 
-        // User cancel (CHAT-D5-02): a stopped response SIGTERMs the bridge,
-        // so stdout is usually empty or truncated JSON. Persist an honest
-        // cancelled marker — never raw truncated output or the fabricated
-        // "returned no text" error diagnostic.
-        const cancelledByUser = args.req.signal.aborted;
+        // User cancel (CHAT-D5-02): a deliberate Stop (/api/chat/stop)
+        // SIGTERMs the bridge, so stdout is usually empty or truncated JSON.
+        // Persist an honest cancelled marker — never raw truncated output or
+        // the fabricated "returned no text" error diagnostic. A bare transport
+        // abort is NOT a cancel: the turn ran to completion above and persists
+        // as a normal reply the client recovers on resync.
+        const cancelledByUser = runHandle.stopRequested;
 
         if (stdout.trim()) {
           try {
@@ -1470,6 +1504,24 @@ export async function POST(req: Request) {
         }
       };
 
+      // One registration covers both attempts (resume retry replaces the
+      // child): /api/chat/stop kills whichever child is current and flags the
+      // run as user-cancelled. A bare transport abort no longer kills — the
+      // turn finishes and persists, bounded by the detach cap.
+      let currentChild: ReturnType<typeof spawn> | null = null;
+      const killCurrentChild = () => {
+        try {
+          currentChild?.kill("SIGTERM");
+        } catch {
+          /* ignore */
+        }
+      };
+      const runHandle: ChatRunHandle = registerChatRun(
+        [body.runId, body.sessionId],
+        killCurrentChild,
+      );
+      let detachKillTimer: ReturnType<typeof setTimeout> | null = null;
+
       const runAttempt = (spawnArgs: string[]): Promise<void> =>
         new Promise((resolve) => {
           const attemptStartedAt = Date.now();
@@ -1503,12 +1555,12 @@ export async function POST(req: Request) {
                 });
               })();
 
+          currentChild = child;
           const onAbort = () => {
-            try {
-              child.kill("SIGTERM");
-            } catch {
-              /* ignore */
-            }
+            // Transport drop, not Stop — arm the detach cap and let the turn
+            // finish. Deliberate stops kill through the registry instead.
+            if (runHandle.stopRequested || detachKillTimer != null) return;
+            detachKillTimer = setTimeout(killCurrentChild, CHAT_DETACH_MAX_MS);
           };
           req.signal.addEventListener("abort", onAbort, { once: true });
 
@@ -1609,15 +1661,17 @@ export async function POST(req: Request) {
       }
 
       // User cancel (CHAT-D5-02): when the client stops the response
-      // (Esc/Stop), req.signal aborts and the harness child gets SIGTERM —
+      // (Esc/Stop → POST /api/chat/stop), the harness child gets SIGTERM —
       // usually before any "result" event. Without this guard the
       // empty-response diagnostic below fabricates an auth-hint error and
       // saves it, so reloading the chat rewrote the user's cancel into a
       // harness error. Persist the honest record instead: the partial text
       // streamed so far (or a minimal "(cancelled)" marker), never an error,
       // and skip the diagnostic SSE chunk — the client already rendered its
-      // own cancelled state and is gone.
-      const cancelledByUser = req.signal.aborted;
+      // own cancelled state and is gone. A bare transport abort (signal loss,
+      // closed tab) is NOT a cancel: the turn ran to completion and persists
+      // as a normal reply the client recovers on resync.
+      const cancelledByUser = runHandle.stopRequested;
       if (cancelledByUser) {
         if (!assistantText.trim()) assistantText = "(cancelled)";
         result.is_error = false;
@@ -1754,6 +1808,8 @@ export async function POST(req: Request) {
       // exited (including any resume retry), so nothing can still be reading
       // the saved images. Failures just leave files in tmpdir.
       cleanupImageTempFiles(imageFilePaths);
+      if (detachKillTimer != null) clearTimeout(detachKillTimer);
+      unregisterChatRun(runHandle);
       await sleep(20);
       close();
     },
