@@ -366,6 +366,7 @@ export const SUITES = {
     "src/components/familiar-studio-lifecycle-tab.test.ts",
     "src/components/github-task-field.test.ts",
     "src/components/github-view-polish.test.ts",
+    "src/components/github-advanced.test.ts",
     "src/lib/issue-worktree.test.ts",
     "src/components/glyph-picker-roving.test.ts",
     "src/components/home-composer-mobile-gaps.test.ts",

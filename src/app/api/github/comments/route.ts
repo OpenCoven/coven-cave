@@ -29,11 +29,25 @@ const REPO_RE = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?\/[A-Za-z0-9](?:[A-Z
 
 type Person = { login: string; avatarUrl: string | null; url: string | null };
 
+type Reaction = { content: string; count: number };
+
 type Comment = {
   id: string;
   author: Person | null;
   body: string;
   createdAt: string | null;
+  url: string | null;
+  authorAssociation: string | null;
+  reactions?: Reaction[];
+};
+
+/** PR review summary (APPROVED / CHANGES_REQUESTED / COMMENTED / DISMISSED). */
+type Review = {
+  id: string;
+  author: Person | null;
+  state: string;
+  body: string;
+  submittedAt: string | null;
   url: string | null;
   authorAssociation: string | null;
 };
@@ -62,6 +76,21 @@ function person(raw: unknown): Person | null {
   };
 }
 
+// The `reactions` rollup that GitHub attaches to every comment payload. Emoji
+// glyphs are resolved client-side; here we only pass through non-zero counts.
+const REACTION_KEYS = ["+1", "-1", "laugh", "hooray", "confused", "heart", "rocket", "eyes"] as const;
+
+function reactions(raw: unknown): Reaction[] {
+  if (!raw || typeof raw !== "object") return [];
+  const r = raw as Record<string, unknown>;
+  const out: Reaction[] = [];
+  for (const key of REACTION_KEYS) {
+    const count = r[key];
+    if (typeof count === "number" && count > 0) out.push({ content: key, count });
+  }
+  return out;
+}
+
 async function ghFetch(path: string, token: string | null) {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
@@ -71,6 +100,28 @@ async function ghFetch(path: string, token: string | null) {
   const res = await fetch(`${GH}${path}`, { headers, cache: "no-store" });
   const data = await res.json().catch(() => null);
   return { res, data };
+}
+
+/**
+ * PR review summaries via REST (works unauthenticated). A "COMMENTED" review
+ * with no body is just the container for inline thread comments already shown
+ * in `reviewThreads`, so it's dropped; APPROVED / CHANGES_REQUESTED / DISMISSED
+ * always carry signal and are kept even when the body is empty.
+ */
+async function fetchReviews(repo: string, number: number, token: string | null): Promise<Review[]> {
+  const { res, data } = await ghFetch(`/repos/${repo}/pulls/${number}/reviews?per_page=100`, token);
+  if (!res.ok || !Array.isArray(data)) return [];
+  return (data as Array<Record<string, unknown>>)
+    .map((r): Review => ({
+      id: String(r.id ?? ""),
+      author: person(r.user),
+      state: String(r.state ?? "COMMENTED"),
+      body: typeof r.body === "string" ? r.body : "",
+      submittedAt: typeof r.submitted_at === "string" ? r.submitted_at : null,
+      url: typeof r.html_url === "string" ? r.html_url : null,
+      authorAssociation: typeof r.author_association === "string" ? r.author_association : null,
+    }))
+    .filter((r) => r.state !== "PENDING" && (r.state !== "COMMENTED" || r.body.trim().length > 0));
 }
 
 /** Fetch PR inline review threads + resolve state via GraphQL (token required). */
@@ -175,13 +226,20 @@ export async function GET(req: Request) {
         createdAt: typeof co.created_at === "string" ? co.created_at : null,
         url: typeof co.html_url === "string" ? co.html_url : null,
         authorAssociation: typeof co.author_association === "string" ? co.author_association : null,
+        reactions: reactions(co.reactions),
       };
     });
 
     // Inline review threads — GraphQL, PR-only, needs a token.
+    // Review summaries — REST, PR-only, work unauthenticated. Both are
+    // best-effort so a failure just omits that slice of the conversation.
     let reviewThreads: ReviewThread[] = [];
-    if (isPull && token) {
-      reviewThreads = await fetchReviewThreads(owner, name, number, token).catch(() => []);
+    let reviews: Review[] = [];
+    if (isPull) {
+      [reviewThreads, reviews] = await Promise.all([
+        token ? fetchReviewThreads(owner, name, number, token).catch(() => []) : Promise.resolve([]),
+        fetchReviews(repo, number, token).catch(() => []),
+      ]);
     }
 
     return NextResponse.json({
@@ -190,6 +248,7 @@ export async function GET(req: Request) {
       canResolve: Boolean(token),
       issueComments,
       reviewThreads,
+      reviews,
     });
   } catch (e) {
     return NextResponse.json(

@@ -1,7 +1,15 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Icon } from "@/lib/icon";
+import {
+  createContext,
+  Fragment,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Icon, type IconName } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -731,10 +739,221 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
-/** GitHub person avatar + login. Falls back to a monogram when no avatar. */
-function PersonChip({ person, prefix }: { person: GitHubPerson; prefix?: string }) {
+// ── User profile viewer (click a person → GitHub profile card) ───────────────
+
+type UserProfile = {
+  ok: true;
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+  htmlUrl: string | null;
+  bio: string | null;
+  company: string | null;
+  location: string | null;
+  blog: string | null;
+  twitter: string | null;
+  type: string;
+  followers: number;
+  following: number;
+  publicRepos: number;
+  createdAt: string | null;
+};
+
+type ProfileViewer = { open: (login: string, anchor: HTMLElement) => void };
+const ProfileViewerContext = createContext<ProfileViewer | null>(null);
+/** Real GitHub logins only — bot logins ("x[bot]") have no profile to open. */
+const LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
+
+type ProfileState =
+  | { status: "loading" }
+  | { status: "ready"; profile: UserProfile }
+  | { status: "error" };
+
+/** Compact number for follower/repo counts (1200 → "1.2k"). */
+function compactCount(n: number): string {
+  if (n < 1000) return String(n);
+  const k = n / 1000;
+  return `${k >= 100 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, "")}k`;
+}
+
+/**
+ * Floating GitHub profile card. Anchored under the clicked chip, clamped to the
+ * viewport, focus-trapped, and dismissed on Escape / outside click. Fetches the
+ * public profile on open; a since-closed selection's response is dropped.
+ */
+function UserProfileCard({
+  login,
+  anchor,
+  onClose,
+}: {
+  login: string;
+  anchor: DOMRect;
+  onClose: () => void;
+}) {
+  const [state, setState] = useState<ProfileState>({ status: "loading" });
+  const cardRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(true, cardRef, { onEscape: onClose, focusFirst: false });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ status: "loading" });
+    fetch(`/api/github/user?login=${encodeURIComponent(login)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.ok) setState({ status: "ready", profile: data as UserProfile });
+        else setState({ status: "error" });
+      })
+      .catch(() => { if (!cancelled) setState({ status: "error" }); });
+    return () => { cancelled = true; };
+  }, [login]);
+
+  // Outside-click dismissal (deferred one tick so the opening click doesn't
+  // immediately close it).
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) onClose();
+    }
+    const id = window.setTimeout(() => document.addEventListener("mousedown", onDoc), 30);
+    return () => { window.clearTimeout(id); document.removeEventListener("mousedown", onDoc); };
+  }, [onClose]);
+
+  // Clamp to the viewport: prefer opening just below the chip, flip up if it
+  // would overflow the bottom, and keep a gutter from the right edge.
+  const CARD_W = 288;
+  const left = Math.max(8, Math.min(anchor.left, window.innerWidth - CARD_W - 8));
+  const below = anchor.bottom + 6;
+  const flipUp = below + 210 > window.innerHeight;
+  const style: React.CSSProperties = flipUp
+    ? { left, bottom: window.innerHeight - anchor.top + 6, width: CARD_W }
+    : { left, top: below, width: CARD_W };
+
+  const p = state.status === "ready" ? state.profile : null;
+
   return (
-    <span className="gh-person">
+    <div
+      ref={cardRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`GitHub profile for ${login}`}
+      tabIndex={-1}
+      className="gh-profile-card"
+      style={style}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {state.status === "loading" ? (
+        <div className="gh-profile-loading">Loading @{login}…</div>
+      ) : state.status === "error" || !p ? (
+        <div className="gh-profile-error">
+          <p>Couldn’t load @{login}’s profile.</p>
+          <button
+            type="button"
+            className="gh-profile-open"
+            onClick={() => openExternalUrl(`https://github.com/${login}`)}
+          >
+            <Icon name="ph:arrow-square-out" width={12} /> Open on GitHub
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="gh-profile-head">
+            {p.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.avatarUrl} alt="" className="gh-profile-avatar" width={48} height={48} />
+            ) : (
+              <span className="gh-profile-avatar gh-profile-avatar--fallback" aria-hidden>
+                {p.login.slice(0, 1).toUpperCase()}
+              </span>
+            )}
+            <div className="gh-profile-id">
+              {p.name && <strong className="gh-profile-name">{p.name}</strong>}
+              <span className="gh-profile-login">
+                @{p.login}
+                {p.type === "Organization" && <span className="gh-profile-type">org</span>}
+              </span>
+            </div>
+          </div>
+
+          {p.bio && <p className="gh-profile-bio">{p.bio}</p>}
+
+          <div className="gh-profile-stats">
+            <span><strong>{compactCount(p.followers)}</strong> followers</span>
+            <span><strong>{compactCount(p.following)}</strong> following</span>
+            <span><strong>{compactCount(p.publicRepos)}</strong> repos</span>
+          </div>
+
+          <div className="gh-profile-meta">
+            {p.company && (
+              <span title="Company"><Icon name="ph:users-three" width={12} />{p.company}</span>
+            )}
+            {p.location && (
+              <span title="Location"><Icon name="ph:globe" width={12} />{p.location}</span>
+            )}
+            {p.blog && (
+              <button
+                type="button"
+                className="gh-profile-link"
+                title={p.blog}
+                onClick={() => openExternalUrl(p.blog!)}
+              >
+                <Icon name="ph:link" width={12} />
+                {p.blog.replace(/^https?:\/\//, "").replace(/\/$/, "")}
+              </button>
+            )}
+            {p.twitter && (
+              <button
+                type="button"
+                className="gh-profile-link"
+                title={`@${p.twitter} on X`}
+                onClick={() => openExternalUrl(`https://twitter.com/${p.twitter}`)}
+              >
+                <Icon name="ph:x-logo-bold" width={12} />@{p.twitter}
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="gh-profile-open"
+            onClick={() => openExternalUrl(p.htmlUrl ?? `https://github.com/${p.login}`)}
+          >
+            <Icon name="ph:github-logo" width={13} /> View full profile
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Owns the single open profile card; children open it via {@link useProfileViewer}. */
+function GitHubProfileProvider({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState<{ login: string; anchor: DOMRect } | null>(null);
+  const viewer = useMemo<ProfileViewer>(
+    () => ({
+      open: (login, el) => setOpen({ login, anchor: el.getBoundingClientRect() }),
+    }),
+    [],
+  );
+  return (
+    <ProfileViewerContext.Provider value={viewer}>
+      {children}
+      {open && (
+        <UserProfileCard login={open.login} anchor={open.anchor} onClose={() => setOpen(null)} />
+      )}
+    </ProfileViewerContext.Provider>
+  );
+}
+
+/**
+ * GitHub person avatar + login. Falls back to a monogram when no avatar. When a
+ * profile viewer is in context and the login is a real user (not a bot), the
+ * chip becomes a button that opens the GitHub profile card.
+ */
+function PersonChip({ person, prefix }: { person: GitHubPerson; prefix?: string }) {
+  const viewer = useContext(ProfileViewerContext);
+  const clickable = viewer != null && LOGIN_RE.test(person.login);
+  const inner = (
+    <>
       {person.avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={person.avatarUrl} alt="" className="gh-person-avatar" width={16} height={16} />
@@ -744,17 +963,49 @@ function PersonChip({ person, prefix }: { person: GitHubPerson; prefix?: string 
         </span>
       )}
       <span className="gh-person-login">{prefix}{person.login}</span>
-    </span>
+    </>
+  );
+
+  if (!clickable) {
+    return <span className="gh-person">{inner}</span>;
+  }
+  return (
+    <button
+      type="button"
+      className="gh-person gh-person--button"
+      title={`View @${person.login}’s GitHub profile`}
+      aria-label={`View @${person.login}’s GitHub profile`}
+      onClick={(e) => {
+        e.stopPropagation();
+        viewer!.open(person.login, e.currentTarget);
+      }}
+    >
+      {inner}
+    </button>
   );
 }
 
 // ── Comments + review threads (read · resolve · tag a familiar) ───────────────
+
+type GhReaction = { content: string; count: number };
 
 type GhComment = {
   id: string;
   author: GitHubPerson | null;
   body: string;
   createdAt: string | null;
+  url: string | null;
+  authorAssociation: string | null;
+  reactions?: GhReaction[];
+};
+
+/** PR review summary — APPROVED / CHANGES_REQUESTED / COMMENTED / DISMISSED. */
+type GhReview = {
+  id: string;
+  author: GitHubPerson | null;
+  state: string;
+  body: string;
+  submittedAt: string | null;
   url: string | null;
   authorAssociation: string | null;
 };
@@ -775,6 +1026,7 @@ type CommentsResult = {
   canResolve: boolean;
   issueComments: GhComment[];
   reviewThreads: GhReviewThread[];
+  reviews: GhReview[];
 };
 
 type CommentsState =
@@ -822,6 +1074,79 @@ function CommentBody({ comment, repo }: { comment: GhComment; repo: string }) {
     <MarkdownBlock text={gfmAutolink(comment.body, { repo })} className="gh-comment-body" />
   ) : (
     <p className="gh-glass-muted gh-comment-body">No content.</p>
+  );
+}
+
+// GitHub reaction slugs → emoji glyph, for the reaction summary chips.
+const REACTION_EMOJI: Record<string, string> = {
+  "+1": "👍",
+  "-1": "👎",
+  laugh: "😄",
+  hooray: "🎉",
+  confused: "😕",
+  heart: "❤️",
+  rocket: "🚀",
+  eyes: "👀",
+};
+
+/** Read-only reaction summary (emoji + count) under a comment. */
+function CommentReactions({ reactions }: { reactions?: GhReaction[] }) {
+  if (!reactions || reactions.length === 0) return null;
+  return (
+    <div className="gh-reactions" aria-label="Reactions">
+      {reactions.map((r) => (
+        <span key={r.content} className="gh-reaction" title={`${r.count} ${r.content}`}>
+          <span aria-hidden>{REACTION_EMOJI[r.content] ?? "•"}</span>
+          {r.count}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// PR review state → presentation. Only states GitHub actually submits appear.
+const REVIEW_STATE: Record<
+  string,
+  { icon: IconName; color: string; label: string; cls: string }
+> = {
+  APPROVED: { icon: "ph:check-circle-fill", color: "var(--color-success)", label: "approved these changes", cls: "is-approved" },
+  CHANGES_REQUESTED: { icon: "ph:x-circle-fill", color: "var(--color-danger)", label: "requested changes", cls: "is-changes" },
+  COMMENTED: { icon: "ph:chat-circle-dots", color: "var(--text-muted)", label: "reviewed", cls: "is-commented" },
+  DISMISSED: { icon: "ph:minus-circle", color: "var(--text-muted)", label: "dismissed a review", cls: "is-dismissed" },
+};
+
+/** A single PR review summary entry in the conversation timeline. */
+function ReviewEntry({ review, repo }: { review: GhReview; repo: string }) {
+  const cfg = REVIEW_STATE[review.state] ?? REVIEW_STATE.COMMENTED;
+  return (
+    <div className={`gh-review-entry ${cfg.cls}`}>
+      <div className="gh-comment-head">
+        <span className="gh-review-verdict" style={{ color: cfg.color }}>
+          <Icon name={cfg.icon} width={13} />
+        </span>
+        {review.author ? <PersonChip person={review.author} /> : <span className="gh-person-login">ghost</span>}
+        <span className="gh-review-verb">{cfg.label}</span>
+        {review.submittedAt && <RelativeTime iso={review.submittedAt} className="gh-comment-time" />}
+        {review.url && (
+          <a
+            href={review.url}
+            className="gh-comment-link"
+            title="Open this review on GitHub"
+            aria-label="Open this review on GitHub"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (review.url) openExternalUrl(review.url);
+            }}
+          >
+            <Icon name="ph:arrow-square-out" width={11} />
+          </a>
+        )}
+      </div>
+      {review.body.trim() && (
+        <MarkdownBlock text={gfmAutolink(review.body, { repo })} className="gh-comment-body" />
+      )}
+    </div>
   );
 }
 
@@ -892,6 +1217,19 @@ function GitHubComments({
   const unresolvedThreads = threads.filter((t) => !t.isResolved);
   const resolvedThreads = threads.filter((t) => t.isResolved);
   const visibleThreads = showResolved ? threads : unresolvedThreads;
+
+  // Merge issue comments and PR review summaries into one chronological
+  // timeline so "X approved these changes" reads in-order with the discussion.
+  const reviews = data?.reviews ?? [];
+  const timeline: Array<
+    | { kind: "comment"; at: string; comment: GhComment }
+    | { kind: "review"; at: string; review: GhReview }
+  > = [
+    ...(data?.issueComments ?? []).map(
+      (c) => ({ kind: "comment" as const, at: c.createdAt ?? "", comment: c }),
+    ),
+    ...reviews.map((r) => ({ kind: "review" as const, at: r.submittedAt ?? "", review: r })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
 
   async function toggleResolve(thread: GhReviewThread) {
     if (!canResolve || state.status !== "ready") return;
@@ -1053,15 +1391,21 @@ function GitHubComments({
             </div>
           )}
 
-          {/* Conversation timeline. */}
-          {data && data.issueComments.length > 0 ? (
+          {/* Conversation timeline — issue comments and PR review summaries,
+              interleaved in chronological order. */}
+          {timeline.length > 0 ? (
             <div className="gh-comment-list">
-              {data.issueComments.map((c) => (
-                <div key={c.id} className="gh-comment">
-                  <CommentHeader comment={c} />
-                  <CommentBody comment={c} repo={repo} />
-                </div>
-              ))}
+              {timeline.map((entry) =>
+                entry.kind === "review" ? (
+                  <ReviewEntry key={`rv-${entry.review.id}`} review={entry.review} repo={repo} />
+                ) : (
+                  <div key={`c-${entry.comment.id}`} className="gh-comment">
+                    <CommentHeader comment={entry.comment} />
+                    <CommentBody comment={entry.comment} repo={repo} />
+                    <CommentReactions reactions={entry.comment.reactions} />
+                  </div>
+                ),
+              )}
             </div>
           ) : (
             isPull && threads.length > 0 ? null : <p className="gh-glass-muted">No comments yet.</p>
@@ -1135,6 +1479,231 @@ function GitHubComments({
             <p className="gh-glass-muted gh-composer-hint">
               Add a PAT to reply and resolve review threads.
             </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── CI action details (per-PR check runs) ────────────────────────────────────
+
+type CheckRunDetail = {
+  id: string;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  detailsUrl: string | null;
+  appName: string | null;
+  appAvatarUrl: string | null;
+};
+
+type StatusDetail = {
+  context: string;
+  state: string;
+  description: string | null;
+  targetUrl: string | null;
+};
+
+type ChecksResult = {
+  ok: true;
+  authed: boolean;
+  sha: string;
+  rollup: "passing" | "failing" | "pending" | null;
+  runs: CheckRunDetail[];
+  statuses: StatusDetail[];
+};
+
+type ChecksState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; data: ChecksResult }
+  | { status: "error" };
+
+const CHECK_FAIL = new Set(["failure", "timed_out", "action_required", "startup_failure"]);
+const CHECK_SKIP = new Set(["neutral", "skipped"]);
+const CHECK_STALE = new Set(["cancelled", "stale"]);
+
+/** Map a check-run's status/conclusion to an icon, tint, and short verb. */
+function checkPresentation(status: string, conclusion: string | null): {
+  icon: IconName;
+  color: string;
+  bucket: "passed" | "failed" | "skipped" | "cancelled" | "running";
+} {
+  if (status !== "completed") {
+    return { icon: "ph:circle-dashed", color: "var(--color-warning)", bucket: "running" };
+  }
+  const c = conclusion ?? "";
+  if (c === "success") return { icon: "ph:check-circle-fill", color: "var(--color-success)", bucket: "passed" };
+  if (CHECK_FAIL.has(c)) return { icon: "ph:x-circle-fill", color: "var(--color-danger)", bucket: "failed" };
+  if (CHECK_SKIP.has(c)) return { icon: "ph:minus-circle", color: "var(--text-muted)", bucket: "skipped" };
+  if (CHECK_STALE.has(c)) return { icon: "ph:minus-circle", color: "var(--text-muted)", bucket: "cancelled" };
+  return { icon: "ph:circle", color: "var(--text-muted)", bucket: "skipped" };
+}
+
+/** Human duration between two ISO timestamps ("1m 20s", "12s"); null if unknown. */
+function checkDuration(startedAt: string | null, completedAt: string | null): string | null {
+  if (!startedAt || !completedAt) return null;
+  const ms = Date.parse(completedAt) - Date.parse(startedAt);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const secs = Math.round(ms / 1000);
+  if (secs < 60) return `${secs}s`;
+  const mins = Math.floor(secs / 60);
+  const rem = secs % 60;
+  return rem ? `${mins}m ${rem}s` : `${mins}m`;
+}
+
+function useGitHubChecks(item: GitHubItem | null, enabled: boolean): ChecksState {
+  const [state, setState] = useState<ChecksState>({ status: "idle" });
+  const repo = item?.repo ?? null;
+  const number = item?.number ?? null;
+
+  useEffect(() => {
+    if (!enabled || !repo || number == null) {
+      setState({ status: "idle" });
+      return;
+    }
+    let cancelled = false;
+    setState({ status: "loading" });
+    fetch(`/api/github/checks?repo=${encodeURIComponent(repo)}&number=${encodeURIComponent(String(number))}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.ok) setState({ status: "ready", data: data as ChecksResult });
+        else setState({ status: "error" });
+      })
+      .catch(() => { if (!cancelled) setState({ status: "error" }); });
+    return () => { cancelled = true; };
+  }, [enabled, repo, number]);
+
+  return state;
+}
+
+/** Combined-status state → icon + tint (legacy commit statuses / contexts). */
+function statusPresentation(state: string): { icon: IconName; color: string } {
+  if (state === "success") return { icon: "ph:check-circle-fill", color: "var(--color-success)" };
+  if (state === "failure" || state === "error") return { icon: "ph:x-circle-fill", color: "var(--color-danger)" };
+  return { icon: "ph:circle-dashed", color: "var(--color-warning)" };
+}
+
+/**
+ * Expandable CI breakdown for the selected PR: a rollup summary line
+ * (passed/failed/running counts) over the individual GitHub Actions check-runs
+ * and legacy statuses, each with its timing and a link out to the run logs.
+ * PR-only; issues have no checks. Read-only, so no announcer.
+ */
+function GitHubChecks({ item }: { item: GitHubItem }) {
+  const isPull = item.kind === "pr" || item.kind === "review_request";
+  const state = useGitHubChecks(item, isPull);
+  const data = state.status === "ready" ? state.data : null;
+  const runs = data?.runs ?? [];
+  const statuses = data?.statuses ?? [];
+  const total = runs.length + statuses.length;
+
+  // Default the list open when something's wrong; collapse a clean run.
+  const [open, setOpen] = useState(false);
+  const rollup = data?.rollup ?? null;
+  useEffect(() => { setOpen(rollup === "failing"); }, [rollup, item.repo, item.number]);
+
+  if (!isPull) return null;
+  if (state.status === "idle") return null;
+
+  const buckets = runs.reduce(
+    (acc, r) => {
+      acc[checkPresentation(r.status, r.conclusion).bucket] += 1;
+      return acc;
+    },
+    { passed: 0, failed: 0, skipped: 0, cancelled: 0, running: 0 } as Record<string, number>,
+  );
+  const summary = [
+    buckets.passed ? `${buckets.passed} passed` : "",
+    buckets.failed ? `${buckets.failed} failed` : "",
+    buckets.running ? `${buckets.running} running` : "",
+    buckets.skipped ? `${buckets.skipped} skipped` : "",
+    buckets.cancelled ? `${buckets.cancelled} cancelled` : "",
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <div className="gh-glass-section gh-checks">
+      <div className="gh-glass-section-title gh-checks-title">
+        <span>Checks</span>
+        {rollup && (
+          <span className={`gh-checks-rollup gh-checks-rollup--${rollup}`}>
+            <span className="gh-checks-rollup-dot" aria-hidden />
+            {rollup === "passing" ? "All checks passed" : rollup === "failing" ? "Some checks failed" : "Checks running"}
+          </span>
+        )}
+      </div>
+
+      {state.status === "loading" ? (
+        <p className="gh-glass-muted">Loading checks…</p>
+      ) : state.status === "error" ? (
+        <p className="gh-glass-muted">Couldn’t load checks — open on GitHub for the run details.</p>
+      ) : total === 0 ? (
+        <p className="gh-glass-muted">No CI checks reported on the latest commit.</p>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="gh-checks-toggle"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+          >
+            <Icon name={open ? "ph:caret-down" : "ph:caret-right"} width={11} />
+            {summary || `${total} check${total === 1 ? "" : "s"}`}
+          </button>
+          {open && (
+            <ul className="gh-checks-list">
+              {runs.map((r) => {
+                const pres = checkPresentation(r.status, r.conclusion);
+                const dur = checkDuration(r.startedAt, r.completedAt);
+                return (
+                  <li key={r.id} className="gh-check-row">
+                    <span className="gh-check-icon" style={{ color: pres.color }} title={pres.bucket}>
+                      <Icon name={pres.icon} width={13} />
+                    </span>
+                    <span className="gh-check-name" title={r.name}>{r.name}</span>
+                    {r.appName && <span className="gh-check-app">{r.appName}</span>}
+                    {dur && <span className="gh-check-dur">{dur}</span>}
+                    {r.detailsUrl && (
+                      <button
+                        type="button"
+                        className="gh-check-logs"
+                        title="Open the run logs on GitHub"
+                        aria-label={`Open logs for ${r.name}`}
+                        onClick={() => openExternalUrl(r.detailsUrl!)}
+                      >
+                        <Icon name="ph:arrow-square-out" width={11} />
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+              {statuses.map((s) => {
+                const pres = statusPresentation(s.state);
+                return (
+                  <li key={s.context} className="gh-check-row">
+                    <span className="gh-check-icon" style={{ color: pres.color }} title={s.state}>
+                      <Icon name={pres.icon} width={13} />
+                    </span>
+                    <span className="gh-check-name" title={s.description ?? s.context}>{s.context}</span>
+                    {s.targetUrl && (
+                      <button
+                        type="button"
+                        className="gh-check-logs"
+                        title="Open the status details on GitHub"
+                        aria-label={`Open details for ${s.context}`}
+                        onClick={() => openExternalUrl(s.targetUrl!)}
+                      >
+                        <Icon name="ph:arrow-square-out" width={11} />
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </>
       )}
@@ -1280,6 +1849,8 @@ function GitHubItemGlassPanel({
             <p className="gh-glass-muted">No description provided.</p>
           )}
         </div>
+
+        <GitHubChecks item={item} />
 
         <GitHubComments item={item} detail={detail} familiars={familiars} />
 
@@ -1680,6 +2251,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
   }, [sorted.length]);
 
   return (
+    <GitHubProfileProvider>
     <section className="github-surface flex h-full flex-col text-[var(--text-primary)]">
 
       {showPatModal && (
@@ -2163,5 +2735,6 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
         </span>
       </footer>
     </section>
+    </GitHubProfileProvider>
   );
 }

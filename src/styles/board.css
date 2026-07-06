@@ -1372,6 +1372,235 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
   color:var(--text-primary);
 }
 
+/* ── Person chip → clickable profile ─────────────────────────────────────── */
+.gh-person--button {
+  appearance:none;
+  border:none;
+  background:none;
+  padding:1px 3px;
+  margin:0 -3px;
+  border-radius:7px;
+  cursor:pointer;
+  font:inherit;
+}
+.gh-person--button:hover { background:var(--bg-raised); }
+.gh-person--button:hover .gh-person-login { color:var(--text-primary); }
+
+/* ── Floating GitHub profile card ────────────────────────────────────────── */
+.gh-profile-card {
+  position:fixed;
+  z-index:60;
+  padding:14px;
+  border:1px solid var(--border-hairline);
+  border-radius:14px;
+  background:var(--bg-elevated);
+  box-shadow:0 16px 44px rgba(0,0,0,0.34);
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+}
+.gh-profile-loading,
+.gh-profile-error { color:var(--text-muted); font-size:12px; }
+.gh-profile-error { display:flex; flex-direction:column; gap:8px; }
+.gh-profile-head { display:flex; align-items:center; gap:10px; }
+.gh-profile-avatar {
+  width:48px;
+  height:48px;
+  border-radius:50%;
+  object-fit:cover;
+  background:var(--bg-raised);
+  flex-shrink:0;
+}
+.gh-profile-avatar--fallback {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  font-size:20px;
+  font-weight:700;
+  color:var(--text-secondary);
+  border:1px solid var(--border-hairline);
+}
+.gh-profile-id { display:flex; flex-direction:column; gap:1px; min-width:0; }
+.gh-profile-name { font-size:14px; font-weight:650; color:var(--text-primary); }
+.gh-profile-login {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  font-size:12px;
+  color:var(--text-muted);
+}
+.gh-profile-type {
+  padding:0 5px;
+  border-radius:999px;
+  border:1px solid var(--border-hairline);
+  font-size:9px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:0.04em;
+}
+.gh-profile-bio {
+  font-size:12px;
+  line-height:1.5;
+  color:var(--text-secondary);
+  word-break:break-word;
+}
+.gh-profile-stats {
+  display:flex;
+  gap:12px;
+  font-size:11.5px;
+  color:var(--text-muted);
+  padding:2px 0;
+  border-top:1px solid var(--border-hairline);
+  border-bottom:1px solid var(--border-hairline);
+}
+.gh-profile-stats strong { color:var(--text-primary); font-weight:650; }
+.gh-profile-meta {
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  font-size:11.5px;
+  color:var(--text-secondary);
+}
+.gh-profile-meta > span,
+.gh-profile-link {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  min-width:0;
+}
+.gh-profile-meta > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gh-profile-link {
+  align-self:flex-start;
+  background:none;
+  border:none;
+  padding:0;
+  color:var(--accent-presence);
+  font:inherit;
+  cursor:pointer;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.gh-profile-link:hover { text-decoration:underline; }
+.gh-profile-open {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  padding:6px 10px;
+  border-radius:9px;
+  border:1px solid var(--border-hairline);
+  background:var(--bg-raised);
+  color:var(--text-secondary);
+  font-size:12px;
+  font-weight:550;
+  cursor:pointer;
+}
+.gh-profile-open:hover { background:var(--bg-hover); color:var(--text-primary); }
+
+/* ── Comment reactions ───────────────────────────────────────────────────── */
+.gh-reactions { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+.gh-reaction {
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:1px 7px;
+  border-radius:999px;
+  border:1px solid var(--border-hairline);
+  background:var(--bg-base);
+  font-size:11px;
+  color:var(--text-secondary);
+  line-height:1.5;
+}
+
+/* ── PR review summaries in the timeline ─────────────────────────────────── */
+.gh-review-entry {
+  border:1px solid var(--border-hairline);
+  border-left:2px solid var(--text-muted);
+  border-radius:10px;
+  background:var(--bg-base);
+  padding:8px 10px;
+}
+.gh-review-entry.is-approved { border-left-color:var(--color-success); }
+.gh-review-entry.is-changes { border-left-color:var(--color-danger); }
+.gh-review-verdict { display:inline-flex; flex-shrink:0; }
+.gh-review-verb { font-size:11.5px; color:var(--text-muted); }
+
+/* ── CI action details (per-PR checks) ───────────────────────────────────── */
+.gh-checks-title { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.gh-checks-rollup {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  font-size:10.5px;
+  font-weight:600;
+}
+.gh-checks-rollup-dot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+.gh-checks-rollup--passing { color:var(--color-success); }
+.gh-checks-rollup--failing { color:var(--color-danger); }
+.gh-checks-rollup--pending { color:var(--color-warning); }
+.gh-checks-toggle {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  align-self:flex-start;
+  background:none;
+  border:none;
+  padding:2px 0;
+  color:var(--text-secondary);
+  font-size:11.5px;
+  font-weight:550;
+  cursor:pointer;
+}
+.gh-checks-toggle:hover { color:var(--text-primary); }
+.gh-checks-list {
+  list-style:none;
+  margin:8px 0 0;
+  padding:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.gh-check-row {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:5px 6px;
+  border-radius:8px;
+}
+.gh-check-row:hover { background:var(--bg-raised); }
+.gh-check-icon { display:inline-flex; flex-shrink:0; }
+.gh-check-name {
+  flex:1;
+  min-width:0;
+  font-size:12px;
+  color:var(--text-secondary);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.gh-check-app {
+  flex-shrink:0;
+  font-size:10px;
+  color:var(--text-muted);
+  padding:0 6px;
+  border-radius:999px;
+  background:var(--bg-base);
+  border:1px solid var(--border-hairline);
+}
+.gh-check-dur { flex-shrink:0; font-size:10.5px; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+.gh-check-logs {
+  flex-shrink:0;
+  display:inline-flex;
+  background:none;
+  border:none;
+  padding:2px;
+  color:var(--text-muted);
+  cursor:pointer;
+}
+.gh-check-logs:hover { color:var(--text-secondary); }
+
 @media (max-width: 1040px) {
   .gh-workspace { grid-template-columns:1fr; }
   .gh-glass-panel {
