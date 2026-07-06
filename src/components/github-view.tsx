@@ -7,13 +7,25 @@
 import "@/styles/board.css";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  Group,
+  Panel,
+  Separator,
+  useDefaultLayout,
+  type PanelImperativeHandle,
+} from "react-resizable-panels";
+import { SeparatorHandle } from "@/components/ui/separator-handle";
+import { useIsMobile } from "@/lib/use-viewport";
 import { Icon, type IconName } from "@/lib/icon";
 import { useDateTimePrefs } from "@/lib/datetime-format";
 import { RelativeTime } from "@/components/ui/relative-time";
@@ -1774,6 +1786,235 @@ function GitHubChecks({ item }: { item: GitHubItem }) {
   );
 }
 
+// ── Workspace split (list ⇄ detail) ──────────────────────────────────────────
+
+const GH_WORKSPACE_GROUP_ID = "cave.github.workspace.v1";
+const GH_DETAIL_COLLAPSED_KEY = "cave:github:details-collapsed:v1";
+// Icons-only rail the detail panel collapses to — keeps the expand control
+// visible instead of vanishing the panel entirely (shell nav-rail pattern).
+const GH_DETAIL_RAIL_PX = 40;
+// Below this measured workspace width the side-by-side split would crush the
+// table, so the detail stacks above the list instead. Measured on the pane,
+// not the viewport — a drag-to-split pane can be narrow in a wide window.
+const GH_SPLIT_MIN_PX = 760;
+
+// Width persistence for the resizable split. Guards mirror shell.tsx's
+// shellStorage: drop corrupt layouts, and drop rail-width saves — collapse
+// state lives in its own pref, so a stale collapsed layout must never restore
+// as a crushed "expanded" panel.
+const ghWorkspaceStorage = {
+  getItem(key: string): string | null {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as unknown;
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const values = Object.values(parsed as Record<string, unknown>).filter(
+              (v): v is number => typeof v === "number" && Number.isFinite(v),
+            );
+            if (values.length >= 2) {
+              const sum = values.reduce((a, b) => a + b, 0);
+              const anyCollapsed = values.some((v) => v >= 0 && v <= 6);
+              if (anyCollapsed || sum < 98 || sum > 102) {
+                window.localStorage.removeItem(key);
+                return null;
+              }
+            }
+          }
+        } catch { /* not a layout object, pass through */ }
+      }
+      return raw;
+    } catch {
+      return null;
+    }
+  },
+  setItem(key: string, value: string): void {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(key, value);
+    } catch { /* ignore — strict privacy mode or storage quota */ }
+  },
+};
+
+function readDetailCollapsedPref(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(GH_DETAIL_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function GhWorkspace({ detail, children }: { detail: ReactNode; children: ReactNode }) {
+  const isMobile = useIsMobile();
+  // Until the first measurement lands, fall back to the viewport heuristic so
+  // SSR and first paint agree with the CSS (chat-surface pattern).
+  const [width, setWidth] = useState<number | null>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const measureRef = useCallback((el: HTMLDivElement | null) => {
+    roRef.current?.disconnect();
+    roRef.current = null;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const next = entries[0]?.contentRect.width ?? el.clientWidth;
+      setWidth((prev) => (prev === next ? prev : next));
+    });
+    ro.observe(el);
+    roRef.current = ro;
+  }, []);
+  useEffect(() => () => roRef.current?.disconnect(), []);
+  const split = width === null ? !isMobile : width >= GH_SPLIT_MIN_PX;
+
+  const [collapsed, setCollapsed] = useState(readDetailCollapsedPref);
+  const collapsedRef = useRef(collapsed);
+  const detailPanelRef = useRef<PanelImperativeHandle | null>(null);
+  // Last width the user actually saw expanded. expand() restores the panel's
+  // "most recent size", but a panel that MOUNTS collapsed (persisted pref) has
+  // no such size and would pop open at minSize — onResize seeds this ref from
+  // the restored layout before the mount-time collapse lands.
+  const lastExpandedPxRef = useRef<number | null>(null);
+  const persistCollapsed = useCallback((next: boolean) => {
+    collapsedRef.current = next;
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(GH_DETAIL_COLLAPSED_KEY, next ? "1" : "0");
+    } catch { /* ignore */ }
+  }, []);
+  const toggleCollapsed = useCallback(() => {
+    const next = !collapsedRef.current;
+    // Flip the ref BEFORE the imperative call — collapse()/expand() fire
+    // onLayoutChanged synchronously, and the save gate must already see the
+    // new state or collapsing overwrites the saved width with the rail's.
+    collapsedRef.current = next;
+    const panel = detailPanelRef.current;
+    if (next) {
+      panel?.collapse();
+    } else {
+      panel?.expand();
+      const px = lastExpandedPxRef.current;
+      if (panel && px != null && px >= 100) panel.resize(`${Math.round(px)}px`);
+    }
+    persistCollapsed(next);
+  }, [persistCollapsed]);
+
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: GH_WORKSPACE_GROUP_ID,
+    panelIds: ["gh-list", "gh-detail"],
+    storage: ghWorkspaceStorage,
+  });
+
+  // The detail Panel remounts whenever the layout flips stacked → split;
+  // re-apply the persisted collapse before paint so it never flashes open.
+  // Capture the restored width first — collapsing this early means the panel
+  // never reports an expanded onResize, so this is the only seed for the
+  // width toggle-expand should return to.
+  useLayoutEffect(() => {
+    if (!split) return;
+    const panel = detailPanelRef.current;
+    if (panel && collapsedRef.current && !panel.isCollapsed()) {
+      const px = panel.getSize().inPixels;
+      if (px > GH_DETAIL_RAIL_PX + 8) lastExpandedPxRef.current = px;
+      panel.collapse();
+    }
+  }, [split]);
+
+  if (!split) {
+    return (
+      <div ref={measureRef} className="gh-workspace gh-workspace--stacked">
+        {children}
+        {collapsed ? (
+          <button
+            type="button"
+            className="gh-detail-toggle-bar"
+            aria-expanded={false}
+            onClick={toggleCollapsed}
+          >
+            <Icon name="ph:caret-down-bold" width={11} aria-hidden />
+            Show details
+          </button>
+        ) : (
+          <div className="gh-detail-holder reveal-scope">
+            {detail}
+            <IconButton
+              icon="ph:sidebar-simple"
+              aria-label="Collapse details panel"
+              aria-expanded
+              size="sm"
+              className="gh-detail-collapse reveal-on-hover"
+              onClick={toggleCollapsed}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={measureRef} className="gh-workspace gh-workspace--split">
+      <Group
+        orientation="horizontal"
+        className="gh-workspace-group"
+        defaultLayout={defaultLayout}
+        onLayoutChanged={(...args) => {
+          // Never persist the collapsed rail as the saved width.
+          if (!collapsedRef.current) onLayoutChanged(...args);
+        }}
+      >
+        <Panel id="gh-list" className="gh-list-pane" minSize="320px">
+          {children}
+        </Panel>
+        <Separator className="shell-separator gh-workspace-separator">
+          <SeparatorHandle orientation="col" />
+        </Separator>
+        <Panel
+          id="gh-detail"
+          className="gh-detail-pane"
+          defaultSize="380px"
+          minSize="300px"
+          maxSize="560px"
+          collapsible
+          collapsedSize={GH_DETAIL_RAIL_PX}
+          panelRef={detailPanelRef}
+          onResize={(size) => {
+            // Dragging past minSize collapses without the toggle button —
+            // keep the pref in sync with what the user can see.
+            const px = size.inPixels ?? 0;
+            const next = px <= GH_DETAIL_RAIL_PX + 8;
+            if (!next) lastExpandedPxRef.current = px;
+            if (next !== collapsedRef.current) persistCollapsed(next);
+          }}
+        >
+          {collapsed ? (
+            <div className="gh-detail-rail">
+              <IconButton
+                icon="ph:sidebar-simple"
+                aria-label="Expand details panel"
+                aria-expanded={false}
+                size="sm"
+                onClick={toggleCollapsed}
+              />
+            </div>
+          ) : (
+            <div className="gh-detail-holder reveal-scope">
+              {detail}
+              <IconButton
+                icon="ph:sidebar-simple"
+                aria-label="Collapse details panel"
+                aria-expanded
+                size="sm"
+                className="gh-detail-collapse reveal-on-hover"
+                onClick={toggleCollapsed}
+              />
+            </div>
+          )}
+        </Panel>
+      </Group>
+    </div>
+  );
+}
+
 // ── Selected item detail ─────────────────────────────────────────────────────
 
 function GitHubItemGlassPanel({
@@ -2519,7 +2760,21 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
           </div>
 
         ) : (
-          <div className="gh-workspace">
+          <GhWorkspace
+            detail={
+              <GitHubItemGlassPanel
+                item={selectedItem}
+                linkedCards={selectedLinkedCards}
+                familiars={familiars}
+                resolvedById={resolvedById}
+                cards={cards}
+                counts={counts}
+                onJumpToSession={onJumpToSession}
+                onFocusCard={onFocusCard}
+                onAfterLink={reloadCards}
+              />
+            }
+          >
             <div className="board-table-wrap gh-list-panel">
               <table className="board-table gh-table" role="grid" aria-label="GitHub activity — use arrow keys to navigate rows">
                 <thead>
@@ -2763,18 +3018,7 @@ export function GitHubView({ onJumpToSession, onFocusCard }: Props = {}) {
                 </tbody>
               </table>
             </div>
-            <GitHubItemGlassPanel
-              item={selectedItem}
-              linkedCards={selectedLinkedCards}
-              familiars={familiars}
-              resolvedById={resolvedById}
-              cards={cards}
-              counts={counts}
-              onJumpToSession={onJumpToSession}
-              onFocusCard={onFocusCard}
-              onAfterLink={reloadCards}
-            />
-          </div>
+          </GhWorkspace>
         )}
       </div>
 
