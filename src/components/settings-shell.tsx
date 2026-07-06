@@ -19,7 +19,7 @@ import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode, type ModePref } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
-import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
+import { FamiliarStudioProvider, useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
 import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -125,6 +125,9 @@ export function SettingsShell() {
   // ── Search across settings ────────────────────────────────────────────────
   const [query, setQuery] = useState("");
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  // One-shot studio-tab target for search results that point inside the
+  // Familiars panel (see SettingsIndexEntry.familiarTab).
+  const [familiarsTabTarget, setFamiliarsTabTarget] = useState<FamiliarStudioTab | null>(null);
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -135,6 +138,14 @@ export function SettingsShell() {
   function goToSetting(entry: SettingsIndexEntry) {
     openSection(entry.section);
     setQuery("");
+    if (entry.familiarTab) {
+      // The Familiars panel isn't a SettingsGroup — the entry targets one of
+      // its studio tabs instead, activated below the provider by
+      // FamiliarsSection once the roster has loaded.
+      setFamiliarsTabTarget(entry.familiarTab);
+      setScrollTarget(null);
+      return;
+    }
     setScrollTarget(entry.group ? settingsGroupId(entry.group) : null);
   }
 
@@ -326,7 +337,12 @@ export function SettingsShell() {
         >
           {section === "general" && <GeneralSection />}
           {section === "daemon"   && <DaemonSection />}
-          {section === "familiars" && <FamiliarsSection />}
+          {section === "familiars" && (
+            <FamiliarsSection
+              tabTarget={familiarsTabTarget}
+              onTabTargetConsumed={() => setFamiliarsTabTarget(null)}
+            />
+          )}
           {section === "mobile"   && <MobileSection />}
           {section === "appearance" && <AppearanceSection />}
           {section === "about"    && <AboutSection />}
@@ -691,12 +707,40 @@ function DaemonSection() {
 
 // ─── Section: Familiars ───────────────────────────────────────────────────────
 
-function FamiliarsSection() {
+function FamiliarsSection({
+  tabTarget,
+  onTabTargetConsumed,
+}: {
+  /** Studio tab a search result asked to open; consumed once activated. */
+  tabTarget?: FamiliarStudioTab | null;
+  onTabTargetConsumed?: () => void;
+}) {
   // Settings is a standalone route with no workspace context, so this panel
   // sources its own familiar roster and resolves cave overrides locally.
   const [rawFamiliars, setRawFamiliars] = useState<Familiar[]>([]);
   const [loaded, setLoaded] = useState(false);
   const familiars = useResolvedFamiliars(rawFamiliars);
+  // This renders below FamiliarStudioProvider (the shell mounts it), so the
+  // studio tab state is reachable here even though the shell body can't.
+  const { setActiveTab } = useFamiliarStudio();
+
+  // A search result can target a specific studio tab (e.g. "voice" → Brain).
+  // Activate it once the roster has settled so the tab strip exists, move
+  // focus to the tab button (the panel has no SettingsGroup to flash), and
+  // hand the one-shot target back to the shell.
+  useEffect(() => {
+    if (!tabTarget || !loaded) return;
+    setActiveTab(tabTarget);
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(`familiar-studio-inline-tab-${tabTarget}`);
+      if (el) {
+        el.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+        el.focus({ preventScroll: true });
+      }
+      onTabTargetConsumed?.();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [tabTarget, loaded, setActiveTab, onTabTargetConsumed]);
 
   useEffect(() => {
     let cancelled = false;
