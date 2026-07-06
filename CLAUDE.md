@@ -1,5 +1,9 @@
 # Coven Cave — Claude Code project notes
 
+> **Primary agent guide: [`AGENTS.md`](AGENTS.md).** Start there for the branch/PR
+> workflow, worktree conventions, Beads protocol, and contributor attribution.
+> This file adds Claude-specific depth on branch protection and CI gotchas.
+
 ## Branch protection on `main` — all changes go through a PR
 
 **Rule:** `main` is a protected branch. There are **no direct pushes** — not for collaborators, not for admins, not for Claude sessions (which push as the `BunsDev` admin). Every change lands via a pull request whose required checks are green. `git push origin main` (or `HEAD:main`) will be **rejected** with `GH006: Protected branch update failed`.

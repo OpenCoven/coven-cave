@@ -99,3 +99,18 @@ bd prime                # Refresh Beads context
 - Record branch/worktree, session, familiar owner, and verification evidence in the bead before handoff.
 - Close with `bd close <id>` only after merge or explicit completion criteria are satisfied.
 - Never put secrets in bead text, and never treat `.beads/issues.jsonl` as the sync source of truth.
+
+## Crediting Contributors
+
+When you re-land or build on someone else's work — a fork PR, an issue author's proposal, a co-author — **credit the human contributor with a working GitHub-linked trailer** so they show up in the contributors graph and on their profile:
+
+```
+Co-authored-by: Full Name <ID+username@users.noreply.github.com>
+```
+
+- Use the **numeric-id no-reply form**. Get the id with `gh api users/<login> --jq .id`.
+- **Never** use a machine or `.local` email (e.g. `name@Someones-Mac.local`) in a co-author trailer — it links to no account and gives **zero** credit.
+- When a squash-merge folds a contributor's PR into an internal branch, **preserve their `Co-authored-by:` line in the squash commit message** (pass an explicit commit message to the merge). A trailer that only lands as free text in the PR body does not count.
+- For substantial external contributions, also add the person to [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
+
+This is about crediting **people**. Don't add trailers or footers that credit an AI model, assistant, vendor, or coding harness.
