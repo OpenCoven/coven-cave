@@ -7,6 +7,14 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.141] - 2026-07-06
+
+Feature release on top of v0.0.140. Remakes the quick-chat menubar dropdown
+into a genuine multi-turn conversational surface.
+
+### Features
+- **Multi-turn quick chat** (#2451). The menubar / ⌘J quick-chat dropdown is now a real conversation instead of a one-shot ask: threaded user + familiar turns that resume the same session so follow-ups keep their context, streaming with a caret and a "thinking" pulse then full markdown once the reply lands, per-reply copy and regenerate, Stop mid-stream, an avatar familiar picker, empty-state starter chips, and Enter-to-send (Shift+Enter for a newline, ⌘/Ctrl+Enter still sends). The draft clears the instant a turn is sent, switching familiar starts a fresh thread, and the dropdown now traps focus (Tab cycles, Escape closes, focus returns to the trigger). The Tauri tray quick-chat window shares the same upgrade.
+
 ### Docs
 - **Add `CONTRIBUTORS.md`** to credit community contributions. Records the fixes and improvements from Chris Thomas ([@Aimplemented](https://github.com/Aimplemented)) whose original PRs were re-landed through internal branches during merge — group-chat parallel first-pass replies (#2206), tokenless native iOS Serve route (#2404), installer links via the system handler (#2381, #2414), and the current-session-id flag (#1989).
 
