@@ -11,8 +11,8 @@ const match = source.match(/SIDECAR_AUTH_BRIDGE = `([\s\S]*?)`;/);
 assert.ok(match, "should find the SIDECAR_AUTH_BRIDGE script literal");
 const SCRIPT = match[1];
 
-assert.match(source, /import Script from "next\/script"/, "sidecar auth bridge uses Next Script, not a raw script tag");
-assert.match(source, /strategy="beforeInteractive"/, "sidecar auth bridge should run before hydration");
+assert.doesNotMatch(source, /import Script from "next\/script"/, "sidecar auth bridge must render a plain server script, not next/script");
+assert.match(source, /<script\b/, "sidecar auth bridge renders an inline server document script");
 
 const TOKEN_HEADER = "x-coven-cave-token";
 

@@ -27,18 +27,14 @@
  * adding new fonts, changing fallback chains, or editing pair choices.
  */
 
-import Script from "next/script";
-
 /**
  * External boot script that runs synchronously before hydration.
  * Must be placed in <head>.
+ *
+ * Rendered as a plain <script src> from the server-component RootLayout: it
+ * lands in the initial SSR <head> before first paint, without a client-rendered
+ * script wrapper.
  */
 export function ThemeScript() {
-  return (
-    <Script
-      id="theme-init"
-      src="/scripts/theme-init.js"
-      strategy="beforeInteractive"
-    />
-  );
+  return <script id="theme-init" src="/scripts/theme-init.js" />;
 }

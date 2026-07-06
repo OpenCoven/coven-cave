@@ -5,9 +5,16 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("./theme-script.tsx", import.meta.url), "utf8");
 const bootScript = readFileSync(new URL("../../public/scripts/theme-init.js", import.meta.url), "utf8");
 
-assert.match(source, /import Script from "next\/script"/, "ThemeScript uses Next Script, not a raw script tag");
-assert.match(source, /strategy="beforeInteractive"/, "ThemeScript should run before hydration");
-assert.match(source, /src="\/scripts\/theme-init.js"/, "ThemeScript should load external theme init script");
+assert.doesNotMatch(
+  source,
+  /import Script from "next\/script"/,
+  "ThemeScript must render a plain server script, not next/script",
+);
+assert.match(
+  source,
+  /<script id="theme-init" src="\/scripts\/theme-init.js" \/>/,
+  "ThemeScript renders a server document script that loads the external theme init file",
+);
 
 // 1. Script defaults theme to "coven" and mode to "dark".
 assert.match(bootScript, /\|\|\s*"coven"/, "theme defaults to coven");
