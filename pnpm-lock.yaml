@@ -11,6 +11,9 @@ importers:
 
   .:
     dependencies:
+      '@codemirror/language':
+        specifier: 6.12.3
+        version: 6.12.3
       '@create-markdown/core':
         specifier: 2.0.3
         version: 2.0.3
@@ -38,6 +41,9 @@ importers:
       '@iconify/react':
         specifier: 6.0.2
         version: 6.0.2(react@19.2.7)
+      '@lezer/highlight':
+        specifier: 1.2.3
+        version: 1.2.3
       '@tailwindcss/browser':
         specifier: 4.3.1
         version: 4.3.1

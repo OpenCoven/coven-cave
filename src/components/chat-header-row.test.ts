@@ -335,4 +335,37 @@ assert.match(
   "cave-diff-meta CSS rule is defined for hunk-header chrome",
 );
 
+// ── Language-aware diffs: content highlighted in the file's grammar ─────────
+// A diff whose +++/--- header names a highlightable file renders its content
+// through that language's grammar (not the flat whole-line `diff` grammar);
+// the +/- markers are re-attached as a dim .cave-diff-marker span so the DOM
+// text — what the Copy button reads — stays byte-identical to the raw diff.
+assert.match(
+  bubbleSource,
+  /const diffLang = isDiff \? diffContentLang\(code\) : "text"/,
+  "renderCodeBlock resolves the diff's content grammar from its file headers",
+);
+assert.match(
+  bubbleSource,
+  /function classifyDiffLines\(/,
+  "diff lines are classified (add/del/ctx/meta/hunk) for language-aware rendering",
+);
+assert.match(
+  bubbleSource,
+  /<span class="cave-diff-marker">\$\{dl\.marker\}<\/span>/,
+  "stripped +/- markers are re-attached as a cave-diff-marker span",
+);
+assert.match(
+  styles,
+  /\.cave-diff-marker\s*\{/,
+  "cave-diff-marker CSS rule is defined",
+);
+// Shiki failure fallback renders the ORIGINAL diff text — the language-aware
+// line map must be dropped there or markers would be attached twice.
+assert.match(
+  bubbleSource,
+  /highlighted = `<pre><code>\$\{escHtml\(code\)\}<\/code><\/pre>`;\s*\n\s*diffLines = null/,
+  "highlight-failure fallback clears diffLines so markers are not doubled",
+);
+
 console.log("chat-header-row.test.ts: ok");

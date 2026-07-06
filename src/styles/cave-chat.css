@@ -802,6 +802,17 @@
 .cave-diff-meta span {
   color: var(--text-muted) !important;
 }
+/* Language-highlighted diffs re-attach the leading +/- as its own span so the
+   code keeps its token colors; tint the marker to match its line's strip. */
+.cave-diff-marker {
+  color: var(--text-muted);
+}
+.cave-diff-add .cave-diff-marker {
+  color: oklch(0.6 0.15 170 / 90%);
+}
+.cave-diff-del .cave-diff-marker {
+  color: oklch(0.55 0.2 15 / 90%);
+}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    COPY BUTTON

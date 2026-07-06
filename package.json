@@ -53,6 +53,7 @@
     "test:supply-chain": "node scripts/dependency-policy.test.mjs"
   },
   "dependencies": {
+    "@codemirror/language": "6.12.3",
     "@create-markdown/core": "2.0.3",
     "@create-markdown/preview": "2.0.3",
     "@create-markdown/preview-mermaid": "2.0.3",
@@ -62,6 +63,7 @@
     "@dnd-kit/utilities": "3.2.2",
     "@iconify-json/ph": "1.2.2",
     "@iconify/react": "6.0.2",
+    "@lezer/highlight": "1.2.3",
     "@tailwindcss/browser": "4.3.1",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-notification": "2.3.3",

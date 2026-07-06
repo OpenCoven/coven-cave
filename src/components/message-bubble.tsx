@@ -34,7 +34,7 @@ import { getFeedback, setFeedback, recordFeedbackAnalytics, type Feedback, type 
 import { copyText } from "@/lib/clipboard";
 import { sanitizeHtml } from "@/lib/html-sanitize";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { SHIKI_LANGS, resolveShikiLang } from "@/lib/code-lang";
+import { SHIKI_LANGS, resolveShikiLang, diffContentLang } from "@/lib/code-lang";
 import { parseFileRef } from "@/lib/file-ref";
 import { toggleCodeBlockCollapse } from "@/lib/code-block-collapse";
 import { wireMermaidDiagrams } from "./mermaid-viewer";
@@ -116,31 +116,69 @@ function plainTextFromHtmlLine(line: string): string {
   return doc.body.textContent ?? "";
 }
 
+// ── Language-aware diff rendering ────────────────────────────────────────────
+// A structured diff names its file in the `+++ b/<path>` header; when that
+// file has a real grammar we highlight the diff's CONTENT in that language
+// and re-attach the +/- markers as muted chrome, so an edit card or Review
+// modal reads like code with add/remove strips instead of a flat wall of
+// uniformly "inserted"-colored lines. Diffs whose target has no resolvable
+// grammar keep the bundled `diff` grammar (whole-line coloring) below.
+
+type DiffLineKind = "add" | "del" | "ctx" | "meta" | "hunk";
+type DiffLine = { kind: DiffLineKind; raw: string; marker: string | null; content: string };
+
+const DIFF_META_RE =
+  /^(\+\+\+ |--- |diff --git |index |new file|deleted file|rename |similarity |old mode|new mode|Binary files|\\ No newline)/;
+
+function classifyDiffLines(code: string): DiffLine[] {
+  return code.split("\n").map((raw): DiffLine => {
+    // Meta and @@ hunk rows are blanked out of the document the language
+    // grammar sees (content: "") so they can't derail the parse; the raw text
+    // is re-substituted as muted chrome when the lines are wrapped.
+    if (/^@@/.test(raw)) return { kind: "hunk", raw, marker: null, content: "" };
+    if (DIFF_META_RE.test(raw)) return { kind: "meta", raw, marker: null, content: "" };
+    if (raw.startsWith("+")) return { kind: "add", raw, marker: "+", content: raw.slice(1) };
+    if (raw.startsWith("-")) return { kind: "del", raw, marker: "-", content: raw.slice(1) };
+    if (raw.startsWith(" ")) return { kind: "ctx", raw, marker: " ", content: raw.slice(1) };
+    // e.g. the "… (N more lines truncated)" cap marker — pass through as-is.
+    return { kind: "ctx", raw, marker: null, content: raw };
+  });
+}
+
 async function renderCodeBlock(
   code: string,
   info: string,
 ): Promise<string> {
   const { lang, filename } = parseFenceInfo(info);
+  const isDiff = lang === "diff";
+  const diffLang = isDiff ? diffContentLang(code) : "text";
+  let diffLines = isDiff && diffLang !== "text" ? classifyDiffLines(code) : null;
 
   let highlighted: string;
   try {
     const hl = await getHighlighter();
-    highlighted = hl.codeToHtml(code, {
+    // Language-aware diffs feed the grammar the diff's content with markers
+    // stripped and meta rows blanked — one line per original line, so the
+    // highlighted output stays index-aligned with the classification.
+    const doc = diffLines ? diffLines.map((l) => l.content).join("\n") : code;
+    highlighted = hl.codeToHtml(doc, {
       // resolveShikiLang maps both fence names (`typescript`) AND bare file
       // extensions (`ts`, `tsx`, `rs`) to a loadable grammar — without it the
       // Projects file preview, which passes raw extensions, fell back to the
       // unhighlighted "text" grammar for every file.
-      lang: resolveShikiLang(lang),
+      lang: diffLines ? diffLang : resolveShikiLang(lang),
       theme: "mood-c-dark",
     });
   } catch (err) {
     console.error("[renderCodeBlock] Shiki highlight failed", err);
+    // Fallback renders the ORIGINAL code (markers intact) — drop the
+    // language-aware line map so markers aren't re-attached twice.
     highlighted = `<pre><code>${escHtml(code)}</code></pre>`;
+    diffLines = null;
   }
 
   const lines = code.split("\n");
   const showLineNums = lines.length > 5;
-  const isDiff = lang === "diff";
 
   // Build line-numbered version by splitting Shiki's output into lines.
   // Shiki wraps each token in <span>; the outer <pre><code> contains one
@@ -155,12 +193,28 @@ async function renderCodeBlock(
         // Remove trailing empty line Shiki adds
         if (rawLines[rawLines.length - 1] === "") rawLines.pop();
         const wrappedLines = rawLines.map((line: string, i: number) => {
-          // CHAT-D8-03: `+++ b/file` / `--- a/file` headers are metadata, not
-          // additions/deletions — exclude them from the +/- gutter strips and
-          // mute `@@` hunk headers instead of leaving them content-colored.
-          const plainLine = plainTextFromHtmlLine(line);
-          const gutterClass = isDiff
-            ? /^@@/.test(plainLine)
+          let content = line;
+          let gutterClass = "";
+          const dl = diffLines?.[i];
+          if (dl) {
+            // Language-aware diff: meta/@@ rows were blanked for the grammar —
+            // restore the raw text as muted chrome. +/- markers come back as a
+            // dim leading span, so the DOM text (what Copy reads) stays
+            // byte-identical to the raw diff.
+            if (dl.kind === "meta" || dl.kind === "hunk") {
+              content = `<span>${escHtml(dl.raw)}</span>`;
+              gutterClass = " cave-diff-meta";
+            } else {
+              const marker = dl.marker ? `<span class="cave-diff-marker">${dl.marker}</span>` : "";
+              content = `${marker}${line}`;
+              gutterClass = dl.kind === "add" ? " cave-diff-add" : dl.kind === "del" ? " cave-diff-del" : "";
+            }
+          } else if (isDiff) {
+            // CHAT-D8-03: `+++ b/file` / `--- a/file` headers are metadata, not
+            // additions/deletions — exclude them from the +/- gutter strips and
+            // mute `@@` hunk headers instead of leaving them content-colored.
+            const plainLine = plainTextFromHtmlLine(line);
+            gutterClass = /^@@/.test(plainLine)
               ? " cave-diff-meta"
               : /^(\+\+\+ |--- )/.test(plainLine)
               ? ""
@@ -168,14 +222,14 @@ async function renderCodeBlock(
               ? " cave-diff-add"
               : /^-/.test(plainLine)
               ? " cave-diff-del"
-              : ""
-            : "";
+              : "";
+          }
           const lineNum = showLineNums
             ? `<span class="cave-ln" aria-hidden="true">${i + 1}</span>`
             : "";
           // data-line lets surfaces (e.g. the Projects search) scroll a code
           // block to a specific 1-based line. Harmless to chat code blocks.
-          return `<span class="cave-line${gutterClass}" data-line="${i + 1}">${lineNum}${line}</span>`;
+          return `<span class="cave-line${gutterClass}" data-line="${i + 1}">${lineNum}${content}</span>`;
         });
         return `${co}${wrappedLines.join("")}${cc}`;
       });

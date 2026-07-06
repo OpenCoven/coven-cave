@@ -5,6 +5,7 @@ import {
   resolveShikiLang,
   isHighlightableLang,
   resolveLangLabel,
+  diffContentLang,
 } from "./code-lang.ts";
 
 // ---------------------------------------------------------------------------
@@ -108,5 +109,46 @@ assert.equal(resolveLangLabel("fs"), "F#", "fs → F# label");
 assert.equal(resolveLangLabel("lock"), "LOCK", "unknown short ext shows uppercased badge");
 assert.equal(resolveLangLabel("env"), "ENV", "env shows uppercased badge");
 assert.equal(resolveLangLabel(""), "Text", "empty input shows Text");
+
+// ---------------------------------------------------------------------------
+// diffContentLang — grammar for the code INSIDE a unified diff, from headers.
+// ---------------------------------------------------------------------------
+
+assert.equal(
+  diffContentLang("--- a/src/lib/foo.ts\n+++ b/src/lib/foo.ts\n-old\n+new"),
+  "typescript",
+  "ts target → typescript grammar",
+);
+assert.equal(
+  diffContentLang("+++ b//Users/buns/repo/src/lib/stream-events.ts\n+import x"),
+  "typescript",
+  "write-style diff with absolute (double-slash) path resolves",
+);
+assert.equal(
+  diffContentLang("--- /dev/null\n+++ b/pkg/main.rs\n+fn main() {}"),
+  "rust",
+  "/dev/null old side is skipped; new side wins",
+);
+assert.equal(
+  diffContentLang("--- a/Dockerfile\n+++ b/Dockerfile\n+FROM node"),
+  "dockerfile",
+  "extensionless well-known basename resolves via its bare name",
+);
+assert.equal(
+  diffContentLang("--- a/foo.xyzzy\n+++ b/foo.xyzzy\n+data"),
+  "text",
+  "unknown extension falls back to text (flat diff grammar)",
+);
+assert.equal(diffContentLang("+just\n-lines"), "text", "no headers → text");
+assert.equal(
+  diffContentLang("--- a/change.diff\n+++ b/change.diff\n+--- x"),
+  "text",
+  "a .diff target keeps flat mode (no diff-in-diff recursion)",
+);
+assert.equal(
+  diffContentLang("+++ b/src/app.py\t2026-07-06 12:00:00\n+x = 1"),
+  "python",
+  "trailing tab+timestamp after the path is tolerated",
+);
 
 console.log("code-lang.test.ts ✓");

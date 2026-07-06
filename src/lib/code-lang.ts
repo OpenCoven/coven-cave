@@ -143,6 +143,31 @@ export function isHighlightableLang(input: string | null | undefined): boolean {
   return resolveShikiLang(input) !== "text";
 }
 
+/**
+ * Best-effort grammar for the code INSIDE a unified diff, read from its
+ * `+++ b/<path>` / `--- a/<path>` file headers. The bundled `diff` grammar
+ * colors whole lines by +/- status only — flat, token-less output. When a
+ * header names a file whose extension (or bare name, e.g. Dockerfile)
+ * resolves to a real grammar, callers can highlight the diff's content in
+ * that language and keep the +/- chrome as line strips instead.
+ * Returns "text" when no header names a highlightable file.
+ */
+export function diffContentLang(diffText: string): ShikiLang {
+  for (const line of diffText.split("\n", 10)) {
+    const m = /^(?:\+\+\+|---) (?:[ab]\/)?(.+)$/.exec(line);
+    if (!m) continue;
+    // `git diff` may append a tab + timestamp after the path.
+    const path = m[1].split("\t")[0].trim();
+    if (!path || path === "/dev/null") continue;
+    const base = path.split("/").pop() ?? "";
+    const token = base.includes(".") ? base.split(".").pop() ?? "" : base;
+    const lang = resolveShikiLang(token);
+    // A `.diff` target would re-enter diff rendering — keep flat mode there.
+    if (lang !== "text" && lang !== "diff") return lang;
+  }
+  return "text";
+}
+
 // Human-facing display names for the resolved grammar — surfaced as the
 // language badge in the Projects preview header. Keyed by canonical id.
 const LANG_LABELS: Partial<Record<ShikiLang, string>> = {
