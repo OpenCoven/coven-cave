@@ -20,6 +20,7 @@ import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-pa
 import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode, type ModePref } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
 import { FamiliarStudioProvider, useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
+import { CreateFamiliarDialog } from "@/components/create-familiar-dialog";
 import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
@@ -719,10 +720,16 @@ function FamiliarsSection({
   // sources its own familiar roster and resolves cave overrides locally.
   const [rawFamiliars, setRawFamiliars] = useState<Familiar[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // The roster endpoint 503s when the daemon is down — that means "unknown",
+  // not "no familiars"; the two must never share an empty state.
+  const [daemonDown, setDaemonDown] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const familiars = useResolvedFamiliars(rawFamiliars);
   // This renders below FamiliarStudioProvider (the shell mounts it), so the
   // studio tab state is reachable here even though the shell body can't.
-  const { setActiveTab } = useFamiliarStudio();
+  const { setActiveTab, openFamiliarStudio } = useFamiliarStudio();
 
   // A search result can target a specific studio tab (e.g. "voice" → Brain).
   // Activate it once the roster has settled so the tab strip exists, move
@@ -742,27 +749,46 @@ function FamiliarsSection({
     return () => cancelAnimationFrame(raf);
   }, [tabTarget, loaded, setActiveTab, onTabTargetConsumed]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const loadFamiliars = async () => {
-      try {
-        const res = await fetch("/api/familiars", { cache: "no-store" });
-        const json = await res.json();
-        if (cancelled) return;
-        if (json.ok) {
-          setRawFamiliars((json.familiars ?? []) as Familiar[]);
-        }
-      } catch {
-        /* transient — keep last good list */
-      } finally {
-        if (!cancelled) setLoaded(true);
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const res = await fetch("/api/familiars", { cache: "no-store", signal });
+      const json = await res.json().catch(() => null);
+      if (signal?.aborted) return;
+      if (json?.ok) {
+        setRawFamiliars((json.familiars ?? []) as Familiar[]);
+        setDaemonDown(false);
+      } else if (res.status === 503) {
+        setDaemonDown(true);
       }
-    };
-    void loadFamiliars();
-    return () => {
-      cancelled = true;
-    };
+    } catch {
+      /* transient (or aborted) — keep last good list */
+    } finally {
+      if (!signal?.aborted) setLoaded(true);
+    }
   }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    void load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
+
+  const startDaemon = useCallback(async () => {
+    setStarting(true);
+    setStartError(null);
+    try {
+      const res = await fetch("/api/daemon/start", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || json?.stderr || "daemon did not start");
+      }
+      await load();
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : "daemon did not start");
+    } finally {
+      setStarting(false);
+    }
+  }, [load]);
 
   // Hold the panel until the first fetch settles so the "No familiars
   // configured" empty state never flashes before the roster loads.
@@ -774,11 +800,91 @@ function FamiliarsSection({
     );
   }
 
-  return (
-    <FamiliarStudioInlinePanel
-      familiars={rawFamiliars}
-      resolved={familiars}
+  const createDialog = (
+    <CreateFamiliarDialog
+      open={createOpen}
+      onClose={() => setCreateOpen(false)}
+      existingIds={rawFamiliars.map((f) => f.id)}
+      defaultHarness={rawFamiliars.find((f) => f.defaultHarness)?.defaultHarness}
+      onCreated={(id) => {
+        // Select the freshly created familiar (not the first in the roster);
+        // the shared studio context drives the inline panel's detail pane.
+        openFamiliarStudio(id);
+        void load();
+      }}
     />
+  );
+
+  if (daemonDown) {
+    return (
+      <div className="settings-familiars-panel">
+        <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
+          <p className="text-[13px] text-[var(--text-secondary)]">
+            <Icon name="ph:warning-circle" width={13} aria-hidden className="mr-1.5 inline-block align-[-2px]" />
+            The daemon is offline, so the familiar roster can&apos;t be read. Start it to manage
+            familiars.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void startDaemon()}
+              disabled={starting}
+              className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
+              title="coven daemon start"
+            >
+              <Icon name="ph:rocket-launch-bold" width={12} />
+              {starting ? "Starting..." : "Start daemon"}
+            </button>
+            {startError ? (
+              <span role="alert" className="text-[11px] text-[var(--color-danger)]">
+                {startError}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (familiars.length === 0) {
+    return (
+      <div className="settings-familiars-panel">
+        <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
+          <p className="text-[13px] text-[var(--text-secondary)]">
+            No familiars configured yet. Create one to get started.
+          </p>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90"
+          >
+            <Icon name="ph:plus-bold" width={12} />
+            Create familiar
+          </button>
+        </div>
+        {createDialog}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="mb-3 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="settings-touch-action focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        >
+          <Icon name="ph:plus-bold" width={12} />
+          New familiar
+        </button>
+      </div>
+      <FamiliarStudioInlinePanel
+        familiars={rawFamiliars}
+        resolved={familiars}
+      />
+      {createDialog}
+    </>
   );
 }
 
