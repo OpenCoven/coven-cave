@@ -786,7 +786,7 @@ export const BrowserPane = forwardRef<BrowserPaneHandle, { label?: string; activ
               {/* Favicon / indicator */}
               <span className="relative flex shrink-0 items-center justify-center">
                 {isLocalhost
-                  ? <span className="h-2 w-2 rounded-full bg-green-400" />
+                  ? <span className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
                   : <TabFavicon url={tab.url} title={tabTitles[tab.id] ?? tab.title ?? title} size={20} />
                 }
               </span>
