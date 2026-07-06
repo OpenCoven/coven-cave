@@ -312,6 +312,22 @@
   line-height: 1;
 }
 
+.settings-tool-action--primary {
+  border: 1px solid color-mix(in oklch, var(--accent-presence) 72%, white 18%);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 24%, transparent) inset,
+    0 8px 18px color-mix(in oklch, var(--accent-presence) 18%, transparent);
+  transition: background 0.14s, border-color 0.14s, box-shadow 0.14s, transform 0.14s;
+}
+
+.settings-tool-action--primary:hover {
+  background: color-mix(in oklch, var(--accent-presence) 88%, white 12%);
+  border-color: color-mix(in oklch, var(--accent-presence) 82%, white 18%);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 32%, transparent) inset,
+    0 10px 22px color-mix(in oklch, var(--accent-presence) 24%, transparent);
+}
+
 .settings-mobile-switch {
   min-width: 64px;
   min-height: var(--touch-target);

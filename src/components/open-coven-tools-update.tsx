@@ -383,7 +383,7 @@ export function OpenCovenToolsUpdate() {
   const toolActionBtn =
     "settings-tool-action gap-1.5 rounded-[var(--radius-control)] text-[11px]";
   const accentBtn =
-    `${toolActionBtn} bg-[var(--accent-presence)] px-3 font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50`;
+    `${toolActionBtn} settings-tool-action--primary bg-[var(--accent-presence)] px-3 font-semibold text-white disabled:opacity-50`;
   const ghostBtn =
     `${toolActionBtn} border border-[var(--border-hairline)] px-2.5 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]`;
   const footerStatusText =

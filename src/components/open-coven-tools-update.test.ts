@@ -64,6 +64,16 @@ assert.match(
   /\.settings-tool-action\s*\{[\s\S]*?height:\s*28px[\s\S]*?min-height:\s*28px/,
   "Settings tool actions should match the compact desktop header button height",
 );
+assert.match(
+  src,
+  /settings-tool-action--primary/,
+  "Update tools action should opt into the more visible primary styling",
+);
+assert.match(
+  dashboardCss,
+  /\.settings-tool-action--primary\s*\{[\s\S]*?border:[\s\S]*?box-shadow:/,
+  "Primary Settings tool action should have a visible border and elevation",
+);
 assert.match(status, /minimumVersion: "0\.0\.49"/, "coven CLI compatibility floor is explicit in the status source");
 assert.match(status, /minimumVersion: "0\.0\.22"/, "coven-code compatibility floor is explicit in the status source");
 assert.match(status, /installCommand: "npm i -g @opencoven\/cli@latest"/, "coven CLI exposes the exact update command");
