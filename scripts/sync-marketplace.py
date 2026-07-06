@@ -63,6 +63,22 @@ def skill_markdown(plugin: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def prompt_markdown(prompt: dict[str, Any]) -> str:
+    """One prompt-template .md — the same shape src/lib/server/prompt-scan.ts
+    reads (frontmatter name/description/icon/tags + body dropped into the
+    composer). Installed packs are resolved by /api/prompts at scan time."""
+    lines = ["---", f"name: {prompt['name']}"]
+    if prompt.get("description"):
+        lines.append(f"description: {prompt['description']}")
+    if prompt.get("icon"):
+        lines.append(f"icon: {prompt['icon']}")
+    if prompt.get("tags"):
+        lines.append("tags:")
+        lines.extend(f"  - {tag}" for tag in prompt["tags"])
+    lines.extend(["---", "", prompt["body"].rstrip(), ""])
+    return "\n".join(lines)
+
+
 def coven_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "name": plugin["name"],
@@ -94,6 +110,8 @@ def coven_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
         manifest["mcpServers"] = plugin["mcpServers"]
     if plugin.get("userConfig"):
         manifest["userConfig"] = plugin["userConfig"]
+    if plugin.get("prompts"):
+        manifest["prompts"] = [prompt["id"] for prompt in plugin["prompts"]]
     return manifest
 
 
@@ -107,7 +125,7 @@ def codex_manifest(plugin: dict[str, Any]) -> dict[str, Any]:
         "interface": {
             "displayName": plugin["displayName"],
             "shortDescription": plugin["description"],
-            "longDescription": plugin["skill"]["description"],
+            "longDescription": plugin.get("skill", {}).get("description", plugin["description"]),
             "developerName": "OpenCoven",
             "category": plugin["category"],
             "capabilities": plugin.get("keywords", []),
@@ -125,8 +143,11 @@ def package_files(catalog: dict[str, Any]) -> dict[Path, str]:
         # files that should remain the source of truth. Their manifests and
         # exports are still generated from catalog.json, but sync must not
         # replace the authored skill body with the compact fallback template.
-        if plugin.get("skill", {}).get("managed") != "manual":
+        # Prompt packs may carry no skill at all — skip the SKILL.md then.
+        if plugin.get("skill") and plugin["skill"].get("managed") != "manual":
             files[package_dir / "skills" / plugin["name"] / "SKILL.md"] = skill_markdown(plugin)
+        for prompt in plugin.get("prompts", []):
+            files[package_dir / "prompts" / f"{prompt['id']}.md"] = prompt_markdown(prompt)
         files[package_dir / ".codex-plugin" / "plugin.json"] = dump_json(codex_manifest(plugin))
     return files
 

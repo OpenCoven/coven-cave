@@ -170,6 +170,16 @@ assert.equal(remoteMerged[0].remoteUrl, "https://mcp.linear.app/mcp");
 const ghRow = merged.find((p) => p.id === "github");
 assert.equal(ghRow.remoteUrl, undefined); // command-only mcpServer (no url) -> undefined
 
+// --- prompt packs: manifest prompts thread through to the card model ---
+const packMerged = mergeCatalog(
+  [{ name: "prompt-pack-essentials", displayName: "Prompt Pack: Essentials", category: "Productivity", trust: "official-local", policy: { installation: "AVAILABLE", authentication: "NONE" } }],
+  { "prompt-pack-essentials": { prompts: ["debug-this", "write-tests"] } },
+  {},
+);
+assert.equal(packMerged[0].kind, "prompt");
+assert.deepEqual(packMerged[0].prompts, ["debug-this", "write-tests"]);
+assert.equal(ghRow.prompts, undefined); // non-pack cards carry no prompts field
+
 // --- deriveKind ---
 assert.equal(deriveKind({ mcpServers: { x: { command: "npx" } } }), "mcp");
 assert.equal(deriveKind({ mcpServers: { x: { url: "https://e.x/mcp" } } }), "mcp");
@@ -177,6 +187,10 @@ assert.equal(deriveKind({ capabilities: ["network", "api"] }), "api");
 assert.equal(deriveKind({ keywords: ["api", "search"] }), "api");
 assert.equal(deriveKind({ mcpServers: {} }), "skill");
 assert.equal(deriveKind({}), "skill");
+assert.equal(deriveKind({ prompts: ["debug-this"] }), "prompt");
+assert.equal(deriveKind({ prompts: [] }), "skill"); // empty pack -> not a prompt kind
+// An MCP server wins over shipped prompts — the server defines the runtime shape.
+assert.equal(deriveKind({ prompts: ["a"], mcpServers: { x: { command: "npx" } } }), "mcp");
 assert.equal(merged.find((p) => p.id === "legacy").kind, "skill"); // no manifest -> skill
 
 // --- filterPlugins: kind + ids ---
@@ -187,14 +201,14 @@ assert.deepEqual(filterPlugins(merged, { ids: ["github", "legacy"] }).map((p) =>
 assert.deepEqual(filterPlugins(merged, { ids: ["github"], kind: "skill" }).map((p) => p.id), []);
 
 // --- countByKind ---
-assert.deepEqual(countByKind(merged), { api: 1, mcp: 2, skill: 1 });
+assert.deepEqual(countByKind(merged), { api: 1, mcp: 2, skill: 1, prompt: 0 });
 
 // --- groupPluginsByCategory ---
 const groups = groupPluginsByCategory(merged);
 assert.deepEqual(groups.map((g) => g.category), ["Developer Tools", "Other", "Web"]);
 assert.deepEqual(groups[0].plugins.map((p) => p.id), ["fetch", "github"]);
-assert.deepEqual(groups[0].counts, { api: 0, mcp: 2, skill: 0 });
-assert.deepEqual(groups.find((g) => g.category === "Web")?.counts, { api: 1, mcp: 0, skill: 0 });
+assert.deepEqual(groups[0].counts, { api: 0, mcp: 2, skill: 0, prompt: 0 });
+assert.deepEqual(groups.find((g) => g.category === "Web")?.counts, { api: 1, mcp: 0, skill: 0, prompt: 0 });
 
 // --- sortPlugins (returns a new array, never mutates) ---
 const before = merged.map((p) => p.id);
@@ -269,6 +283,18 @@ for (const [label, source] of [
   ["marketplace catalog-config", marketplaceCatalogConfig],
 ]) {
   assert.match(source, /sanitizeMarketplacePlugins/, `${label} should resolve ids through the familiar-safe marketplace catalog`);
+}
+
+// --- production prompt pack: card derives kind "prompt", template files exist ---
+const packCard = sanitizedProductionCards.find((p) => p.id === "prompt-pack-essentials");
+assert.ok(packCard, "prompt-pack-essentials should be a marketplace card");
+assert.equal(packCard.kind, "prompt");
+assert.ok((packCard.prompts?.length ?? 0) >= 5, "pack card lists its template ids");
+for (const pid of packCard.prompts ?? []) {
+  // Each declared template must exist where /api/prompts scans installed packs.
+  const md = readFileSync(new URL(`../../marketplace/plugins/prompt-pack-essentials/prompts/${pid}.md`, import.meta.url), "utf8");
+  assert.match(md, /^---\nname: /, `${pid}.md carries scanner-readable frontmatter`);
+  assert.ok(md.split("---")[2]?.trim().length > 0, `${pid}.md has a body to insert`);
 }
 
 console.log("marketplace-catalog.test.ts: ok");

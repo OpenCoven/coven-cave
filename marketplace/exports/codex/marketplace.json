@@ -1407,6 +1407,18 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Knowledge & Docs"
+    },
+    {
+      "name": "prompt-pack-essentials",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/prompt-pack-essentials"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
     }
   ]
 }

@@ -27,12 +27,14 @@ type Props = {
 function kindIcon(kind: MarketplacePlugin["kind"]) {
   if (kind === "mcp") return "ph:plug-bold";
   if (kind === "api") return "ph:cloud-bold";
+  if (kind === "prompt") return "ph:chat-centered-text";
   return "ph:sparkle-bold";
 }
 
 function kindLabel(kind: MarketplacePlugin["kind"]) {
   if (kind === "mcp") return "MCP server";
   if (kind === "api") return "API";
+  if (kind === "prompt") return "Prompt pack";
   return "Skill";
 }
 
@@ -183,6 +185,19 @@ export function MarketplaceDetail({ plugin, busy, onClose, onAdd, onRemove }: Pr
                 <span key={c} className="rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">{c}</span>
               ))}
             </div>
+          </Section>
+        ) : null}
+
+        {plugin.prompts?.length ? (
+          <Section title="Prompt templates">
+            <div className="flex flex-wrap gap-1.5">
+              {plugin.prompts.map((p) => (
+                <span key={p} className="rounded-md border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]">{p}</span>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[12px] text-[var(--text-muted)]">
+              Added templates appear in chat under /prompts and the Prompt snippets picker.
+            </p>
           </Section>
         ) : null}
 

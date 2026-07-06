@@ -70,6 +70,7 @@ const KIND_TABS: ReadonlyArray<{ id: KindFilter; label: string }> = [
   { id: "api", label: "APIs" },
   { id: "mcp", label: "MCP servers" },
   { id: "skill", label: "Skills" },
+  { id: "prompt", label: "Prompts" },
 ];
 
 const SORT_OPTIONS: ReadonlyArray<{ id: SortKey; label: string }> = [

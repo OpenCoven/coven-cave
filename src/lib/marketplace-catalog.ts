@@ -38,6 +38,10 @@ export type PluginManifest = {
   capabilities?: string[];
   userConfig?: Record<string, PluginUserConfigField>;
   mcpServers?: Record<string, { url?: string; type?: string; command?: string }>;
+  /** Prompt-template ids shipped by this plugin (a prompt pack). The files
+   *  live at marketplace/plugins/<id>/prompts/<pid>.md and are resolved by
+   *  /api/prompts at scan time once the pack is installed. */
+  prompts?: string[];
 };
 
 export type RequiredConfigField = {
@@ -83,7 +87,7 @@ export function remoteUrlFromManifest(manifest: PluginManifest): string | undefi
 
 export type InstalledMap = Record<string, { version: string; source: string; installedAt: string }>;
 
-export type PluginKind = "api" | "mcp" | "skill";
+export type PluginKind = "api" | "mcp" | "skill" | "prompt";
 
 export type MarketplacePlugin = {
   id: string;
@@ -106,17 +110,21 @@ export type MarketplacePlugin = {
   requiredConfig: RequiredConfigField[];
   configured: boolean;
   remoteUrl?: string;
+  /** Prompt-template ids for kind "prompt" packs (listed in the detail pane). */
+  prompts?: string[];
 };
 
 /**
  * "mcp" when the manifest declares any MCP server (stdio command or remote
- * url); "api" when it represents an HTTP/API-backed integration without an
- * MCP server; otherwise "skill" — a first-party procedure that runs inside
- * Coven Cave without an external server.
+ * url); "prompt" when it ships prompt templates (a prompt pack); "api" when
+ * it represents an HTTP/API-backed integration without an MCP server;
+ * otherwise "skill" — a first-party procedure that runs inside Coven Cave
+ * without an external server.
  */
 export function deriveKind(manifest: PluginManifest): PluginKind {
   const servers = manifest.mcpServers ?? {};
   if (Object.keys(servers).length > 0) return "mcp";
+  if ((manifest.prompts?.length ?? 0) > 0) return "prompt";
   const tags = [...(manifest.capabilities ?? []), ...(manifest.keywords ?? [])]
     .map((value) => value.toLowerCase());
   return tags.includes("api") ? "api" : "skill";
@@ -194,6 +202,7 @@ export function mergeCatalog(
         requiredConfig,
         configured: false,
         remoteUrl: remoteUrlFromManifest(manifest),
+        ...(manifest.prompts?.length ? { prompts: manifest.prompts } : {}),
       };
     })
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
@@ -266,22 +275,24 @@ export function sortPlugins(plugins: MarketplacePlugin[], sort: SortKey): Market
   );
 }
 
-export function countByKind(plugins: MarketplacePlugin[]): { api: number; mcp: number; skill: number } {
+export function countByKind(plugins: MarketplacePlugin[]): { api: number; mcp: number; skill: number; prompt: number } {
   let api = 0;
   let mcp = 0;
   let skill = 0;
+  let prompt = 0;
   for (const p of plugins) {
     if (p.kind === "api") api += 1;
     else if (p.kind === "mcp") mcp += 1;
+    else if (p.kind === "prompt") prompt += 1;
     else skill += 1;
   }
-  return { api, mcp, skill };
+  return { api, mcp, skill, prompt };
 }
 
 export type MarketplaceCategoryGroup = {
   category: string;
   plugins: MarketplacePlugin[];
-  counts: { api: number; mcp: number; skill: number };
+  counts: { api: number; mcp: number; skill: number; prompt: number };
 };
 
 export function groupPluginsByCategory(plugins: MarketplacePlugin[]): MarketplaceCategoryGroup[] {

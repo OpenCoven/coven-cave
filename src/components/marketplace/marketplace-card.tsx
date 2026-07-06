@@ -28,12 +28,14 @@ type Props = {
 function kindIcon(kind: MarketplacePlugin["kind"]) {
   if (kind === "mcp") return "ph:plug-bold";
   if (kind === "api") return "ph:cloud-bold";
+  if (kind === "prompt") return "ph:chat-centered-text";
   return "ph:sparkle-bold";
 }
 
 function kindLabel(kind: MarketplacePlugin["kind"]) {
   if (kind === "mcp") return "MCP";
   if (kind === "api") return "API";
+  if (kind === "prompt") return "Prompts";
   return "Skill";
 }
 

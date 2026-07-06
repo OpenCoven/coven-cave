@@ -1,0 +1,44 @@
+{
+  "name": "prompt-pack-essentials",
+  "version": "0.1.0",
+  "description": "Starter prompt templates for everyday development chat \u2014 debugging, tests, refactors, PR prose. Installed templates appear under /prompts and the Prompt snippets picker.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "prompts",
+    "templates",
+    "snippets",
+    "composer"
+  ],
+  "capabilities": [
+    "prompts"
+  ],
+  "marketplaceId": "opencoven/prompt-pack-essentials",
+  "x-coven": {
+    "displayName": "Prompt Pack: Essentials",
+    "category": "Productivity",
+    "trust": "official-local",
+    "sourceRefs": [
+      "https://github.com/OpenCoven/coven-cave"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  },
+  "prompts": [
+    "debug-this",
+    "write-tests",
+    "refactor-safely",
+    "pr-description",
+    "release-notes"
+  ]
+}

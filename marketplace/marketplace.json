@@ -1760,6 +1760,21 @@
       },
       "trust": "reference-local",
       "roleAffinity": []
+    },
+    {
+      "name": "prompt-pack-essentials",
+      "displayName": "Prompt Pack: Essentials",
+      "category": "Productivity",
+      "source": {
+        "source": "local",
+        "path": "./plugins/prompt-pack-essentials"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "official-local",
+      "roleAffinity": []
     }
   ]
 }

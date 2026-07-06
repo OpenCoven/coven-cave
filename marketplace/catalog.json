@@ -5291,6 +5291,63 @@
           "Every doc ships with a Definition of Done checklist near the top plus an owner, last-updated date, and review schedule."
         ]
       }
+    },
+    {
+      "name": "prompt-pack-essentials",
+      "displayName": "Prompt Pack: Essentials",
+      "version": "0.1.0",
+      "description": "Starter prompt templates for everyday development chat — debugging, tests, refactors, PR prose. Installed templates appear under /prompts and the Prompt snippets picker.",
+      "category": "Productivity",
+      "keywords": [
+        "prompts",
+        "templates",
+        "snippets",
+        "composer"
+      ],
+      "capabilities": [
+        "prompts"
+      ],
+      "sourceRefs": [
+        "https://github.com/OpenCoven/coven-cave"
+      ],
+      "trust": "official-local",
+      "prompts": [
+        {
+          "id": "debug-this",
+          "name": "Debug this",
+          "description": "Reproduce, isolate, and fix a bug with evidence before the patch.",
+          "icon": "ph:list-checks-bold",
+          "body": "Debug {{the problem}}. Reproduce it first, isolate the root cause with evidence, then propose the smallest fix. Show the failing case passing before you call it done."
+        },
+        {
+          "id": "write-tests",
+          "name": "Write tests",
+          "description": "Add focused tests around a file or behavior, edge cases included.",
+          "icon": "ph:list-checks-bold",
+          "body": "Write tests for {{file or behavior}}. Cover the happy path, the edge cases most likely to regress, and one failure mode. Match the project's existing test style and wiring."
+        },
+        {
+          "id": "refactor-safely",
+          "name": "Refactor safely",
+          "description": "Restructure code without changing behavior, verified as you go.",
+          "icon": "ph:note-pencil",
+          "body": "Refactor {{target}} without changing behavior. List the risks first, move in small verifiable steps, and run the relevant tests after each step."
+        },
+        {
+          "id": "pr-description",
+          "name": "PR description",
+          "description": "Draft a reviewer-ready pull request description from the current branch.",
+          "icon": "ph:note-pencil",
+          "body": "Draft a pull request description for the current branch: what changed and why, anything reviewers should look at closely, how it was verified, and any follow-ups deliberately left out."
+        },
+        {
+          "id": "release-notes",
+          "name": "Release notes",
+          "description": "Turn recent merges into user-facing release notes.",
+          "icon": "ph:book-open",
+          "body": "Draft release notes from the merges since {{last release}}. Group by user-facing area, lead each item with the benefit, and keep internal-only changes in a short footnote section."
+        }
+      ]
     }
   ]
 }
