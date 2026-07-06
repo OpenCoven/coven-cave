@@ -7978,7 +7978,7 @@ a.mobile-handoff__link:hover {
 .workflow-dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 180;
+  z-index: 260;
   display: flex;
   justify-content: flex-end;
   background: color-mix(in oklch, black 18%, transparent);
@@ -7986,8 +7986,9 @@ a.mobile-handoff__link:hover {
 
 .workflow-dialog {
   width: min(760px, calc(100vw - 72px));
+  height: 100dvh;
   max-height: 100dvh;
-  overflow-y: auto;
+  overflow: hidden;
   border-left: 1px solid color-mix(in oklch, var(--border-hairline) 92%, transparent);
   background:
     linear-gradient(180deg, color-mix(in oklch, var(--bg-raised) 62%, transparent), transparent 220px),
@@ -7998,15 +7999,14 @@ a.mobile-handoff__link:hover {
 .automation-create-dialog {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  height: 100%;
+  max-height: 100%;
   padding: 18px 20px 0;
   color: var(--text-primary);
 }
 
 .automation-create-dialog__hero {
-  position: sticky;
-  top: 0;
-  z-index: 3;
+  flex: 0 0 auto;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -8017,6 +8017,16 @@ a.mobile-handoff__link:hover {
   background: color-mix(in oklch, var(--bg-panel) 94%, transparent);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+
+.automation-create-dialog__body {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 14px;
+  overflow-y: auto;
+  padding-bottom: 14px;
+  scrollbar-gutter: stable;
 }
 
 .workflow-eyebrow {
@@ -8165,9 +8175,7 @@ a.mobile-handoff__link:hover {
 }
 
 .automation-create-dialog__footer {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
+  flex: 0 0 auto;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
