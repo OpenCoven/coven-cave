@@ -36,6 +36,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
   const [draftVoiceProvider, setDraftVoiceProvider] = useState(familiar.voiceProvider ?? "");
   const [draftVoiceModel, setDraftVoiceModel] = useState(familiar.voiceModel ?? "");
   const [draftVoiceName, setDraftVoiceName] = useState(familiar.voiceName ?? "");
+  const [draftAutoSelfReport, setDraftAutoSelfReport] = useState(Boolean(familiar.autoSelfReport));
   const [toast, setToast] = useState<string | null>(null);
   const [manifest, setManifest] = useState<HarnessCapabilityManifest | null>(null);
   const [manifestState, setManifestState] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -48,8 +49,9 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
     setDraftVoiceProvider(familiar.voiceProvider ?? "");
     setDraftVoiceModel(familiar.voiceModel ?? "");
     setDraftVoiceName(familiar.voiceName ?? "");
+    setDraftAutoSelfReport(Boolean(familiar.autoSelfReport));
     setToast(null);
-  }, [familiar.id, familiar.harnessOverride, familiar.model, familiar.note, familiar.voiceProvider, familiar.voiceModel, familiar.voiceName]);
+  }, [familiar.id, familiar.harnessOverride, familiar.model, familiar.note, familiar.voiceProvider, familiar.voiceModel, familiar.voiceName, familiar.autoSelfReport]);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +137,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
         if ("voiceProvider" in patch) setDraftVoiceProvider(familiar.voiceProvider ?? "");
         if ("voiceModel" in patch) setDraftVoiceModel(familiar.voiceModel ?? "");
         if ("voiceName" in patch) setDraftVoiceName(familiar.voiceName ?? "");
+        if ("autoSelfReport" in patch) setDraftAutoSelfReport(Boolean(familiar.autoSelfReport));
       } else {
         reportDaemonSyncSuccess();
       }
@@ -237,7 +240,7 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
           {toast ? <p className="familiar-studio-brain__toast">{toast}</p> : null}
         </div>
 
-        <aside className="familiar-studio-brain__sidecar" aria-label="Voice and capabilities">
+        <aside className="familiar-studio-brain__sidecar" aria-label="Voice, reflection, and capabilities">
           <section className="familiar-studio-brain__card">
             <h3 className="familiar-studio-brain__card-title">Voice</h3>
             <label className="familiar-studio-brain__row">
@@ -303,6 +306,37 @@ export function FamiliarStudioBrainTab({ familiar }: Props) {
                 </label>
               </>
             )}
+          </section>
+
+          <section className="familiar-studio-brain__card">
+            <h3 className="familiar-studio-brain__card-title">Reflection</h3>
+            <div className="familiar-studio-brain__row">
+              <span className="familiar-studio-brain__label">Auto self-report</span>
+              <div className="familiar-studio-brain__control">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={draftAutoSelfReport}
+                  onClick={() => {
+                    const next = !draftAutoSelfReport;
+                    setDraftAutoSelfReport(next);
+                    // `null` deletes the key from cave-config (the resolved
+                    // default is false), keeping the file free of no-op entries.
+                    void save({ autoSelfReport: next ? true : null });
+                  }}
+                  className={`familiar-studio-brain__switch rounded-full border px-3 py-1.5 text-[12px] transition-colors ${
+                    draftAutoSelfReport
+                      ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+                      : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
+                  }`}
+                >
+                  {draftAutoSelfReport ? "On" : "Off"}
+                </button>
+              </div>
+            </div>
+            <p className="familiar-studio-brain__hint">
+              Writes a self-report to memory when a chat closes or is archived.
+            </p>
           </section>
 
           {harnessId ? (

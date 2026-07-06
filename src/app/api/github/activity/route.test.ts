@@ -33,5 +33,5 @@ assert.doesNotMatch(
 assert.match(
   githubView,
   /Authenticated — private repos included/,
-  "authenticated GitHub footer should make private repo visibility explicit",
+  "authenticated GitHub auth chip should make private repo visibility explicit",
 );

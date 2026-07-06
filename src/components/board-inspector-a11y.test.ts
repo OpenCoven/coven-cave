@@ -79,4 +79,17 @@ assert.match(
   "dropping files prevents browser navigation and routes through the same addFiles path only when enabled",
 );
 
+// ── Every stored card detail is reachable from the drawer (cave-9ex) ─────────
+// Progressive disclosure must not become capability loss: lifecycle reason,
+// retry counters, state-since stamp, and a raw-JSON debug view all live behind
+// accessible drop-downs.
+assert.match(src, /aria-expanded=\{lifecycleOpen\}/, "the Lifecycle disclosure exposes its expanded state");
+assert.match(src, /aria-expanded=\{open\}[\s\S]*?Hide debug details/, "the Debug disclosure exposes its expanded state");
+assert.match(src, /card\.lifecycleReason/, "the lifecycle drop-down surfaces the transition/failure reason");
+assert.match(src, /retry \{card\.retryCount\}\/\{card\.maxRetries\}/, "retry progress is visible once a card has retried");
+assert.match(src, /board-drawer-stamp-label">State since</, "the lifecycle drop-down stamps when the current state began");
+assert.match(src, /JSON\.stringify\(card, null, 2\)/, "the full card JSON is available (and copyable) behind the Debug drop-down");
+assert.match(src, /\["cwd", card\.cwd \?\? "—"\]/, "debug rows include the working directory");
+assert.match(src, /\["session", card\.sessionId \?\? "—"\]/, "debug rows include the linked session id");
+
 console.log("board-inspector-a11y.test.ts: ok");

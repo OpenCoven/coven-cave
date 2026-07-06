@@ -3,6 +3,8 @@
 // "what's in here" highlight strip). Kept in its own module so the shell nav and
 // the SettingsOverview header share one source of truth.
 //
+import type { FamiliarStudioTab } from "@/lib/familiar-studio-context";
+
 export type Section =
   | "general"
   | "daemon"
@@ -13,7 +15,14 @@ export type Section =
 
 export type SectionMeta = { id: Section; label: string; icon: string; description: string; accent: string };
 
-export type SettingsIndexEntry = { section: Section; group?: string; keywords: string };
+// `familiarTab` marks an entry that lives inside the Familiars studio panel —
+// picking it activates that studio tab instead of scrolling to a SettingsGroup.
+export type SettingsIndexEntry = {
+  section: Section;
+  group?: string;
+  keywords: string;
+  familiarTab?: FamiliarStudioTab;
+};
 
 export const SECTIONS: SectionMeta[] = [
   { id: "general", label: "General", icon: "ph:sliders-horizontal", description: "Workspace, startup, and app-wide defaults.", accent: "#9a8ecd" },
@@ -35,11 +44,19 @@ export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
 
 export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
+  { section: "general", group: "Home", keywords: "news headlines rss carousel media home digest daily summary" },
   { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
   { section: "daemon", group: "Status", keywords: "daemon status running start stop restart hub server executor private network tailscale" },
   { section: "daemon", group: "Connection", keywords: "daemon hub server executor private network tailscale remote multihost multi host" },
   { section: "daemon", group: "Info", keywords: "daemon info version socket pid api" },
-  { section: "familiars", keywords: "familiars agents personas avatar name look permissions projects access grants allow deny tool policy guard security audit requests vault memory" },
+  { section: "familiars", keywords: "familiars agents personas roster" },
+  { section: "familiars", group: "Identity", familiarTab: "identity", keywords: "identity name role pronouns description rename" },
+  { section: "familiars", group: "Look", familiarTab: "look", keywords: "look avatar image photo upload icon glyph color accent swatch palette" },
+  { section: "familiars", group: "Brain", familiarTab: "brain", keywords: "brain runtime harness model voice system prompt note capabilities" },
+  { section: "familiars", group: "Lifecycle", familiarTab: "lifecycle", keywords: "lifecycle archive unarchive reorder roster order reset overrides" },
+  { section: "familiars", group: "Memory", familiarTab: "memory", keywords: "memory memories daily notes recall" },
+  { section: "familiars", group: "Projects", familiarTab: "projects", keywords: "projects access grants allow deny tool policy guard security audit requests permissions" },
+  { section: "familiars", group: "Vault", familiarTab: "vault", keywords: "vault secrets env environment keys tokens credentials 1password" },
   { section: "mobile", group: "Steps", keywords: "phone mobile connect qr pair tailscale" },
   { section: "mobile", group: "Why there’s no password", keywords: "password security auth login" },
   { section: "mobile", group: "Get the app", keywords: "app download ios testflight install" },

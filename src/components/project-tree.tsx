@@ -528,7 +528,7 @@ function TreeRow({
         } : undefined}
         className={`focus-ring-inset group flex w-full items-center gap-0 rounded-[var(--radius-control)] py-[3px] text-left transition-colors ${
           isSelected
-            ? "bg-[var(--accent-presence)] text-white"
+            ? "bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
             : "text-[var(--text-primary)] hover:bg-[var(--bg-raised)]"
         } ${dropTarget ? "outline-dashed outline-1 outline-[var(--accent-presence)] bg-[var(--accent-presence)]/10" : ""} ${dragging ? "opacity-40" : ""} ${isHidden ? "opacity-40" : ""}`}
         style={{ paddingLeft: indentPx, paddingRight: 8, marginLeft: 4, marginRight: 4, width: "calc(100% - 8px)" }}
@@ -563,7 +563,7 @@ function TreeRow({
         {/* Icon */}
         <span
           className={`flex h-[18px] w-[16px] shrink-0 items-center justify-center ${
-            isSelected ? "text-white/80" : "text-[var(--text-muted)]"
+            isSelected ? "text-[var(--accent-presence-foreground)] opacity-80" : "text-[var(--text-muted)]"
           }`}
           aria-hidden="true"
         >
@@ -579,7 +579,7 @@ function TreeRow({
         </span>
 
         {/* Name */}
-        <span className={`min-w-0 flex-1 truncate pl-1 ${isSelected ? "text-white" : ""}`}>
+        <span className={`min-w-0 flex-1 truncate pl-1 ${isSelected ? "text-[var(--accent-presence-foreground)]" : ""}`}>
           {entry.name}
         </span>
 

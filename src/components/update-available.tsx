@@ -270,7 +270,7 @@ export function UpdateSettingsRow() {
   };
 
   const accentBtn =
-    "rounded-[var(--radius-control)] bg-[var(--accent-presence)] px-3 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90";
+    "rounded-[var(--radius-control)] bg-[var(--accent-presence)] px-3 py-1 text-[11px] font-semibold text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90";
   const secondaryBtn =
     "rounded-[var(--radius-control)] border border-[var(--border-hairline)] px-2.5 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]";
 

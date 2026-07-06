@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
+// The empty state (the familiar's starting page) was extracted when it became
+// task-aware; its launch-screen pins now read the dedicated file.
+const emptyStateSource = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 const globalsSrc = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 // fileToAttachment moved to the shared lib (reused by the home composer).
@@ -537,12 +540,12 @@ assert.match(
 );
 
 assert.doesNotMatch(
-  source,
+  emptyStateSource,
   /\{modKey\}↵ to send/,
   "Empty-state hint must not advertise a modifier — plain Enter sends (onComposerKey)",
 );
 assert.match(
-  source,
+  emptyStateSource,
   /Ready for the next thread\./,
   "Empty-state hint uses the redesigned launch-screen ready copy",
 );
@@ -1060,6 +1063,29 @@ assert.match(source, /cave-edit-card/, "mutation tools render as an inline Codex
 assert.match(source, /diffStat/, "edit card derives a +/- stat");
 assert.match(source, /Review/, "edit card has a Review action");
 assert.match(globalsSrc, /\.cave-edit-card/, "edit card styling exists");
+
+// Review adapts to where the edit can actually be reviewed: a file under the
+// session's project root jumps to the code rail's Changes diff; anything else
+// (familiar-workspace docs, repo-less sessions, relative paths) opens an
+// in-chat modal with this edit's diff instead of dispatching an event nothing
+// can service. The actions row renders on every edit card — not only when an
+// absolute target path exists — so Review is always available.
+assert.match(
+  source,
+  /if \(relPath && targetFile\) \{[\s\S]{0,200}cave:open-file-diff[\s\S]{0,200}setReviewOpen\(true\)/,
+  "Review falls back to the in-chat diff modal when the Changes panel can't show the file",
+);
+assert.match(
+  source,
+  /<Modal[\s\S]{0,200}open=\{reviewOpen\}[\s\S]{0,600}<SyntaxBlock text=\{diff\} lang="diff" \/>/,
+  "the review modal renders this edit's structured diff",
+);
+assert.match(
+  source,
+  /<EditCardActions targetFile=\{targetFile\} diff=\{inputDiff \?\? ""\} displayPath=\{displayPath\} \/>/,
+  "edit-card actions render unconditionally (Review works without an absolute target path)",
+);
+assert.match(globalsSrc, /\.cave-review-modal/, "review modal styling exists");
 assert.match(
   source,
   /if \(isEditTool\) \{[\s\S]*<details className="cave-tool-block cave-edit-card"[\s\S]*Edited \{base\}[\s\S]*<DurationText durationMs=\{tool\.durationMs\} \/>[\s\S]*Code changes[\s\S]*<SyntaxBlock text=\{inputDiff\} lang="diff" \/>[\s\S]*<\/details>/,

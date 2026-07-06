@@ -173,7 +173,7 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
             />
           </label>
         </div>
-        {toast ? <p className="familiar-studio-look__toast">{toast}</p> : null}
+        {toast ? <p className="familiar-studio-look__toast" role="status">{toast}</p> : null}
       </section>
 
       <section className="familiar-studio-look__section">
@@ -190,6 +190,7 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
         >
           <button
             type="button"
+            aria-pressed={colorScope === "familiar"}
             onClick={() => setColorScope("familiar")}
             className={`familiar-studio-look__scope-btn${colorScope === "familiar" ? " familiar-studio-look__scope-btn--active" : ""}`}
           >
@@ -197,6 +198,7 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
           </button>
           <button
             type="button"
+            aria-pressed={colorScope === "harness"}
             onClick={() => setColorScope("harness")}
             className={`familiar-studio-look__scope-btn${colorScope === "harness" ? " familiar-studio-look__scope-btn--active" : ""}`}
           >
@@ -210,6 +212,7 @@ export function FamiliarStudioLookTab({ familiar, allFamiliars }: Props) {
               key={preset.label}
               type="button"
               aria-label={`Use ${preset.label}`}
+              aria-pressed={currentColor === preset.color}
               title={preset.label}
               onClick={() => pickColor(preset.color)}
               className={`familiar-studio-look__swatch${currentColor === preset.color ? " familiar-studio-look__swatch--active" : ""}`}

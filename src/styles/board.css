@@ -639,28 +639,8 @@
   align-items:center;
   gap:6px;
 }
-.gh-compact-group {
-  display:flex;
-  align-items:center;
-  gap:2px;
-}
-.gh-compact-group-button {
-  display:inline-flex;
-  align-items:center;
-  height:var(--gh-control-h);
-  border-radius:6px;
-  padding:0 8px;
-  color:var(--text-muted);
-  font-size:11px;
-  line-height:1;
-  transition:background-color .12s,color .12s;
-}
-.gh-compact-group-button:hover { color:var(--text-secondary); background:var(--bg-hover); }
-.gh-compact-group-button.is-active {
-  color:var(--text-primary);
-  background:var(--bg-raised);
-  font-weight:600;
-}
+/* .gh-compact-group / .gh-select-sep retired — grouping moved into the
+   header overflow menu (§8). */
 .gh-compact-actions {
   display:flex;
   align-items:center;
@@ -690,17 +670,84 @@
 .gh-workspace {
   position:relative;
   z-index:1;
-  display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(340px,420px);
-  gap:14px;
   height:100%;
   min-height:0;
   overflow:hidden;
   padding:14px;
 }
+
+/* Wide panes: resizable list ⇄ detail split (react-resizable-panels). The old
+   1040px viewport media query became a measured-width mode class — a
+   drag-to-split pane can be narrow while the window is wide. */
+.gh-workspace--split .gh-workspace-group { height:100%; }
+.gh-list-pane { min-width:0; height:100%; }
+.gh-detail-pane { min-width:0; height:100%; }
+.gh-workspace-separator { margin:0 6px; }
+.gh-detail-holder {
+  position:relative;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+}
+.gh-workspace--split .gh-detail-holder { height:100%; }
+.gh-workspace--split .gh-glass-panel {
+  flex:1 1 auto;
+  min-height:0;
+}
+/* Collapse control floats over the panel corner; earns visibility (§8). */
+.gh-detail-collapse {
+  position:absolute;
+  top:20px;
+  right:20px;
+  z-index:2;
+}
+/* Collapsed detail = a slim rail that keeps the expand affordance on-screen. */
+.gh-detail-rail {
+  height:100%;
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding-top:10px;
+  border:1px solid color-mix(in oklab,var(--border-hairline) 70%,transparent);
+  border-radius:8px;
+  background:color-mix(in oklab,var(--bg-raised) 46%,transparent);
+}
+
+/* Narrow panes: detail stacks above the list (same DOM, mode class). */
+.gh-workspace--stacked {
+  display:grid;
+  grid-template-columns:1fr;
+  grid-template-rows:auto minmax(0,1fr);
+  gap:14px;
+}
+.gh-workspace--stacked .gh-detail-holder { order:-1; }
+.gh-workspace--stacked .gh-glass-panel:not(.gh-glass-panel--empty) {
+  height:min(460px,52dvh);
+}
+.gh-workspace--stacked .gh-detail-toggle-bar { order:-1; }
+/* Dashed border = invitation: the collapsed details are one tap away. */
+.gh-detail-toggle-bar {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  padding:7px 10px;
+  border:1px dashed color-mix(in oklab,var(--border-hairline) 76%,transparent);
+  border-radius:8px;
+  background:transparent;
+  color:var(--text-muted);
+  font-size:11.5px;
+  cursor:pointer;
+}
+.gh-detail-toggle-bar:hover {
+  color:var(--text-secondary);
+  border-color:var(--border-strong);
+}
+
 .gh-list-panel {
   min-width:0;
   height:100%;
+  overflow-x:auto;
   border:1px solid color-mix(in oklab,var(--border-hairline) 76%,transparent);
   border-radius:8px;
   background:color-mix(in oklab,var(--bg-raised) 62%,transparent);
@@ -743,7 +790,6 @@
 .gh-select:hover:not(:disabled) { border-color:var(--border-strong); color:var(--text-primary); background-color:var(--bg-hover); }
 .gh-select:focus-visible { outline:none; border-color:var(--accent-presence); }
 .gh-select:disabled { opacity:.45; cursor:not-allowed; }
-.gh-select-sep { width:1px; height:calc(var(--gh-control-h) - 8px); background:var(--border-hairline); }
 
 /* Free-text search box for the GitHub activity list. */
 .gh-search { display:inline-flex; align-items:center; gap:5px; height:var(--gh-control-h); max-width:200px; padding:0 6px; border:1px solid var(--border-hairline); border-radius:var(--radius-control); background-color:var(--bg-base); transition:border-color .12s; }
@@ -764,6 +810,11 @@
 .gh-group-count { display:inline-flex; align-items:center; min-width:16px; height:15px; padding:0 5px; border-radius:9999px; background:var(--bg-base); color:var(--text-muted); font-size:9.5px; font-weight:600; }
 
 .gh-actions { display:inline-flex; align-items:center; gap:4px; justify-content:flex-end; }
+/* Reveal exceptions (§8 — state never hides): the selected row keeps its
+   actions visible, and a row whose action errored must keep the error badge
+   on screen. */
+.gh-row.is-selected .gh-actions.reveal-on-hover,
+.gh-actions.reveal-on-hover:has(.gh-action-error) { opacity:1; }
 .gh-action-wrap { position:relative; display:inline-flex; }
 .gh-action-error { display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px; margin-left:4px; border-radius:50%; background:var(--color-danger); color:#fff; font-size:10px; font-weight:700; }
 .gh-action-popover { position:absolute; top:calc(100% + 4px); right:0; z-index:60; min-width:220px; padding:8px; border:1px solid var(--border-hairline); border-radius:10px; background:var(--bg-elevated); box-shadow:0 12px 30px rgba(0,0,0,.18); }
@@ -777,9 +828,7 @@
 .gh-action-popover-item-familiar { color:var(--text-muted); font-size:10.5px; }
 
 .gh-glass-panel {
-  position:sticky;
-  top:14px;
-  align-self:start;
+  position:relative;
   min-width:0;
   display:flex;
   flex-direction:column;
@@ -959,12 +1008,6 @@
   -ms-overflow-style:none;
 }
 .gh-glass-panel-scroll::-webkit-scrollbar { width:0; height:0; }
-
-@media (min-width: 1041px) {
-  .gh-glass-panel:not(.gh-glass-panel--empty) {
-    height:100%;
-  }
-}
 
 .gh-issue-subline {
   display:flex;
@@ -1623,19 +1666,6 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 }
 .gh-check-logs:hover { color:var(--text-secondary); }
 
-@media (max-width: 1040px) {
-  .gh-workspace { grid-template-columns:1fr; }
-  .gh-glass-panel {
-    position:relative;
-    top:auto;
-    order:-1;
-    align-self:stretch;
-  }
-  .gh-glass-panel:not(.gh-glass-panel--empty) {
-    height:min(460px,52dvh);
-  }
-}
-
 @media (max-width: 760px) {
   .gh-compact-header {
     align-items:flex-start;
@@ -1656,7 +1686,6 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
   .gh-workspace { padding:10px; gap:10px; }
   .gh-glass-panel { padding:12px; }
   .gh-glass-hero h3 { font-size:17px; }
-  .gh-list-panel { overflow-x:auto; }
 }
 
 /* ────────────────────────────────────────────────────────────────────

@@ -67,13 +67,16 @@ assert.match(
   /sessionId && \(\s*<SessionOverflowMenu[\s\S]*projectId=\{projectIdDraft\}[\s\S]*onProjectChange=\{setProjectIdDraft\}/,
   "The active-chat project selector shares the same draft used by send",
 );
+// The empty state (the familiar's starting page) lives in chat-empty-state.tsx
+// since the task-aware extraction; its picker pins follow it there.
+const chatEmptyState = readFileSync(new URL("./chat-empty-state.tsx", import.meta.url), "utf8");
 assert.match(
-  chatView,
+  chatEmptyState,
   /<ProjectPicker[\s\S]*?value=\{projectId \?\? null\}[\s\S]*?onChange=\{onProjectChange\}[\s\S]*?allowNoProject/,
   "Empty state renders the shared picker with an explicit No-project choice (a no-project chat is no longer a picker-less dead end)",
 );
 assert.match(
-  chatView,
+  chatEmptyState,
   /ariaLabel="Project for this chat"/,
   "Empty state exposes a labeled project selector",
 );

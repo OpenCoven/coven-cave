@@ -1335,6 +1335,78 @@
         "authentication": "ON_INSTALL"
       },
       "category": "Design & UI"
+    },
+    {
+      "name": "brand-voice-generator",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/brand-voice-generator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Design"
+    },
+    {
+      "name": "mcp-client",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/mcp-client"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Core MCP"
+    },
+    {
+      "name": "pptx-generator",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/pptx-generator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Media & Creative"
+    },
+    {
+      "name": "remotion",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/remotion"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Media & Creative"
+    },
+    {
+      "name": "skill-creator",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/skill-creator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Agents & Harnesses"
+    },
+    {
+      "name": "sop-creator",
+      "source": {
+        "source": "local",
+        "path": "../../plugins/sop-creator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Knowledge & Docs"
     }
   ]
 }

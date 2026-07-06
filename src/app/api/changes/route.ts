@@ -239,7 +239,16 @@ async function listChanges(repoRoot: string): Promise<NextResponse> {
     /* no HEAD yet — list without counts */
   }
 
-  return NextResponse.json({ ok: true, repo: true, repoRoot, files });
+  // Current branch rides along so callers (the Projects hub's Git section)
+  // don't need a second git endpoint. Unborn repos have no HEAD — omit.
+  let branch: string | null = null;
+  try {
+    branch = await currentBranch(repoRoot);
+  } catch {
+    /* no HEAD yet */
+  }
+
+  return NextResponse.json({ ok: true, repo: true, repoRoot, branch, files });
 }
 
 async function diffFile(repoRoot: string, relPath: string, absPath: string): Promise<NextResponse> {

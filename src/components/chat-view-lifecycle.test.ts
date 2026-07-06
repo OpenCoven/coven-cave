@@ -140,13 +140,13 @@ assert.match(
 
 assert.match(
   source,
-  /const liveChatGenerations = new Map<string, LiveChatGenerationSnapshot>\(\)/,
+  /const liveChatRegistry = createLiveGenerationRegistry<Turn>\(cloneLiveTurn\)/,
   "In-flight chat generations should be persisted outside the ChatView component so navigation away does not lose them",
 );
 
 assert.match(
   source,
-  /function subscribeLiveChatGeneration\(sessionId: string, listener: LiveChatGenerationListener\)/,
+  /function subscribeLiveChatGeneration\(\s*sessionId: string,\s*listener: \(snapshot: LiveChatGenerationSnapshot \| null\) => void,\s*\)/,
   "ChatView should subscribe to live generation snapshots when returning to a session",
 );
 
@@ -499,12 +499,21 @@ assert.match(
 );
 
 // ── Mid-stream thread switch must not cross wires (2026-07-03 audit P0) ───────
-// A background stream updates its OWN registry snapshot, never the displayed
-// transcript — otherwise switching threads renders/persists the wrong session.
+// A live stream accumulates in its session's registry snapshot — module scope,
+// so it survives thread switches AND full surface unmounts (cave-0er). Only a
+// view currently showing that session mirrors the update into setTurns.
 assert.match(
   source,
-  /if \(targetSessionId && targetSessionId !== currentSessionRef\.current\) \{[\s\S]*?const snap = readLiveChatGeneration\(targetSessionId\);[\s\S]*?recordLiveChatGeneration\(\{[\s\S]*?turns: updater\(snap\.turns\)/,
-  "updateLiveTurns routes background-stream updates to the streaming session's snapshot, not setTurns",
+  /if \(targetSessionId\) \{[\s\S]*?const stored = liveChatRegistry\.advance\(targetSessionId, updater, nextActiveLeafId\);[\s\S]*?if \(targetSessionId === currentSessionRef\.current\) \{[\s\S]*?setTurns\(stored\.turns\);/,
+  "updateLiveTurns accumulates in the module-scope registry first so unmounted views can't drop chunks, mirroring into setTurns only for the on-screen session",
+);
+// A view that adopted (not started) a stream reconciles from disk on settle —
+// it never sees the stream's "done" event, and the server only persists the
+// exchange when the harness exits (cave-0er).
+assert.match(
+  source,
+  /if \(!live && refetchOnSettleRef\.current === sessionId && !streamOwnerRef\.current\) \{[\s\S]*?setHistoryRetryKey\(\(k\) => k \+ 1\);/,
+  "a non-owner view refetches the conversation from disk when an adopted/orphaned stream settles",
 );
 // Switching threads releases the previous thread's streaming lock so its busy
 // state / Esc-cancel don't bleed onto the newly displayed thread.

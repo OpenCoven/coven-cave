@@ -400,7 +400,7 @@ export function BoardTable({ cards, familiars, projects, groupBy, selectedCardId
                                     background: rowChecked ? "var(--accent-presence)" : "transparent",
                                   }}
                                 >
-                                  {rowChecked && <Icon name="ph:check-bold" width={11} className="text-white" />}
+                                  {rowChecked && <Icon name="ph:check-bold" width={11} className="text-[var(--accent-presence-foreground)]" />}
                                 </span>
                               )}
                               <span className="board-table-title" title={card.title}>{card.title}</span>

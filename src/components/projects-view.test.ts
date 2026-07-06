@@ -2,12 +2,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-// The Projects surface is split into a small component tree (container +
-// project-row + session-row + shared helpers). These source-text assertions run
-// against the COMBINED source, so each keeps verifying behavior regardless of
-// which file a given piece now lives in.
+// The Projects surface is a master-detail hub split into a small component
+// tree (shell + project-list + project-detail + session-row + shared helpers).
+// These source-text assertions run against the COMBINED source, so each keeps
+// verifying behavior regardless of which file a given piece now lives in.
 const projectsViewSource = readFileSync(new URL("./projects-view.tsx", import.meta.url), "utf8");
-const projectRowSource = readFileSync(new URL("./projects/project-row.tsx", import.meta.url), "utf8");
+const projectListSource = readFileSync(new URL("./projects/project-list.tsx", import.meta.url), "utf8");
+const projectDetailSource = readFileSync(new URL("./projects/project-detail.tsx", import.meta.url), "utf8");
 const sessionRowSource = readFileSync(new URL("./projects/session-row.tsx", import.meta.url), "utf8");
 const projectsViewToolbar = projectsViewSource.slice(
   projectsViewSource.indexOf("<header"),
@@ -15,10 +16,12 @@ const projectsViewToolbar = projectsViewSource.slice(
 );
 const projectsView = [
   projectsViewSource,
-  projectRowSource,
+  projectListSource,
+  projectDetailSource,
   sessionRowSource,
   readFileSync(new URL("./projects/projects-shared.ts", import.meta.url), "utf8"),
 ].join("\n\n");
+const projectsCss = readFileSync(new URL("../styles/projects.css", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const chatProjectSidebar = readFileSync(new URL("./chat-project-sidebar.tsx", import.meta.url), "utf8");
@@ -37,21 +40,72 @@ assert.match(
 assert.match(projectsView, /const rootInputRef = useRef<HTMLInputElement>\(null\)/, "new-project flow keeps a root input ref for quick focus");
 assert.match(projectsView, /function openCreateProjectForm/, "ProjectsView should centralize opening the quick-create form");
 assert.match(projectsView, /rootInputRef\.current\?\.focus\(\)/, "quick-create can focus the path field directly");
-assert.match(projectsView, /const \[createdProject, setCreatedProject\] = useState/, "ProjectsView should remember the just-created project");
-assert.match(projectsView, /setCreatedProject\(project\)/, "successful creation should mark the new project for follow-up actions");
-assert.match(projectsView, /onNewChat\?\.?\(createdProject\.root\)/, "created-project success state should offer immediate chat launch");
-assert.match(projectsView, /Start chat in \{createdProject\.name\}/, "created-project success state should label the immediate chat action");
+
+// ── Master-detail: persisted selection replaces per-card expansion ────────────
+assert.match(
+  projectsView,
+  /import \{\s*PROJECTS_SELECTED_KEY,\s*parseStoredProjectId,\s*resolveSelectedProjectId,?\s*\} from "@\/lib\/projects\/selected-project"/,
+  "selection persistence goes through the pure selected-project helpers",
+);
+assert.match(
+  projectsView,
+  /parseStoredProjectId\(window\.localStorage\.getItem\(PROJECTS_SELECTED_KEY\)\)/,
+  "the stored selection hydrates in an effect (SSR-safe)",
+);
+assert.match(
+  projectsView,
+  /window\.localStorage\.setItem\(PROJECTS_SELECTED_KEY, id\)/,
+  "selecting a project persists the id",
+);
+assert.match(
+  projectsView,
+  /resolveSelectedProjectId\(\s*storedSelection,/,
+  "the render-time selection resolves stale/deleted ids to the activity default",
+);
+assert.doesNotMatch(projectsView, /useProjectsUiState|isExpanded\(project\.id\)|PROJECTS_EXPANDED_KEY/, "per-card expansion state is gone — selection replaced it");
+assert.doesNotMatch(projectsView, /ProjectsDensity|setDensity/, "the density toggle is gone — list and detail each have one style");
+
+// ── Master-detail: dnd is gone; the manual order is still read ────────────────
+assert.doesNotMatch(projectsView, /@dnd-kit/, "the Projects hub no longer ships drag-and-drop");
+assert.match(projectsView, /applyManualOrder\(list, order\)/, "the chat rail's manual session order still shapes the detail list");
+assert.doesNotMatch(projectsView, /writeSessionOrder/, "this surface no longer writes the shared session order (the chat rail owns dnd)");
+assert.match(projectsView, /Move to project…/, "the session context menu still moves chats across projects");
+
+// ── Hub layout + narrow collapse ─────────────────────────────────────────────
+assert.match(projectsViewSource, /import "@\/styles\/projects\.css"/, "ProjectsView imports its own stylesheet so the hub is always styled");
+assert.doesNotMatch(projectsViewSource, /styles\/board\.css/, "Projects no longer leans on board.css");
+assert.match(projectsViewSource, /<div className="projects-hub" data-pane=\{pane\}>/, "the hub renders list + detail panes, with data-pane driving the narrow collapse");
+assert.match(projectsCss, /container:\s*projects \/ inline-size/, "the hub is a size container so the collapse follows the pane, not the viewport");
+assert.match(projectsCss, /@container projects \(max-width: 640px\)/, "narrow hubs collapse to a single pane");
+assert.match(projectsCss, /\.projects-hub\[data-pane="detail"\] \.projects-hub__list \{ display: none; \}/, "in detail pane mode the list hides");
+assert.match(projectDetailSource, /aria-label="Back to project list"/, "the narrow detail pane has a labeled back affordance");
+assert.match(projectsView, /onBack=\{\(\) => setPane\("list"\)\}/, "back returns to the list pane");
+
+// ── List pane rows ───────────────────────────────────────────────────────────
+assert.match(projectListSource, /role="listbox" aria-label="Projects"/, "the list pane is a labeled listbox");
+assert.match(projectListSource, /role="option"[\s\S]{0,80}?aria-selected=\{selected\}/, "each project row is an option reporting selection");
+assert.match(projectsView, /selectedId=\{selectedProjectId\}/, "the list highlights the hub's selection");
+assert.match(projectsView, /onSelect=\{selectProject\}/, "clicking a row selects it");
+assert.match(
+  projectListSource,
+  /e\.key === "Enter" \|\| e\.key === " " \|\| e\.key === "ArrowRight"/,
+  "rows select on Enter/Space and reveal detail on ArrowRight",
+);
+
+// ── Detail pane wiring ───────────────────────────────────────────────────────
 assert.match(projectsView, /onRename=\{renameProject\}/, "ProjectsView should wire inline rename");
 assert.match(projectsView, /onUpdateRoot=\{updateRoot\}/, "ProjectsView should wire root updates");
 assert.match(projectsView, /onDelete=\{deleteProject\}/, "ProjectsView should wire deletion");
-assert.match(projectsView, /onNewChat\?\.?\(project\.root\)/, "Project rows should start chats with the selected project root");
-assert.match(projectsView, /chats=\{chatsByRoot\.get\(normalizeProjectRoot\(project\.root\)\)/, "Project rows receive their chats grouped by normalized project root");
-// Nested chats are draggable: reorder within a project, move across projects.
-assert.match(projectsView, /<DndContext[\s\S]{0,120}onDragEnd=\{handleDragEnd\}/, "Projects view wraps the cards in a DndContext");
-assert.match(projectsView, /function ProjectChatRow/, "chats render as sortable rows");
-// The chat row is a div that toggles role button↔checkbox with select mode; keep
-// it keyboard-accessible — both Enter and Space activate (ARIA pattern) and it
-// shows a visible focus ring. In select mode activate toggles selection.
+assert.match(projectsView, /onNewChat\?\.?\(project\.root\)/, "the detail pane starts chats with the selected project root");
+assert.match(projectsView, /chats=\{chatsByRoot\.get\(normalizeProjectRoot\(selectedProject\.root\)\)/, "the detail pane receives its chats grouped by normalized project root");
+assert.match(projectsView, /<ProjectDetail\s+key=\{selectedProject\.id\}/, "the detail pane is keyed by project so edit drafts never leak across selections");
+// New-chat is the follow-up action after create — the detail pane replaces the
+// old "Created X" banner.
+assert.match(projectsView, /selectProject\(project\.id\)/, "creating a project selects it (detail pane is the follow-up surface)");
+assert.doesNotMatch(projectsView, /createdProject/, "the created-project banner is gone");
+
+// ── Sessions in the detail pane ──────────────────────────────────────────────
+assert.match(projectsView, /function ProjectChatRow/, "chats render as rows in the detail pane");
 assert.match(
   projectsView,
   /role=\{selectMode \? "checkbox" : "button"\}/,
@@ -73,68 +127,34 @@ assert.match(
   "the chat row has a visible keyboard focus ring",
 );
 
-// Bulk multiselect: a Select toggle puts the card into select mode, each chat
-// row becomes a checkbox, and a toolbar deletes all selected chats at once.
-assert.match(
-  projectsView,
-  /const \[selectMode, setSelectMode\] = useState\(false\)/,
-  "each project card tracks its own select mode",
-);
-assert.match(
-  projectsView,
-  /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/,
-  "selected chat ids are held in a Set",
-);
-assert.match(
-  projectsView,
-  /onDeleteSessions: \(sessionIds: string\[\]\) => Promise<void>/,
-  "project rows receive a bulk-delete callback",
-);
-assert.match(
-  projectsView,
-  /const handleDeleteSessions = async \(sessionIds: string\[\]\)/,
-  "ProjectsView implements a bulk-delete handler",
-);
+// Bulk multiselect: a Select toggle puts the section into select mode, each
+// chat row becomes a checkbox, and a toolbar deletes all selected chats.
+assert.match(projectsView, /const \[selectMode, setSelectMode\] = useState\(false\)/, "the detail pane tracks select mode");
+assert.match(projectsView, /const \[selectedIds, setSelectedIds\] = useState<Set<string>>/, "selected chat ids are held in a Set");
+assert.match(projectsView, /onDeleteSessions: \(sessionIds: string\[\]\) => Promise<void>/, "the detail pane receives a bulk-delete callback");
+assert.match(projectsView, /const handleDeleteSessions = async \(sessionIds: string\[\]\)/, "ProjectsView implements a bulk-delete handler");
 assert.match(
   projectsView,
   /Promise\.all\(removed\.map\(\(s\) => deleteOneSession\(s\.id\)\)\)/,
   "bulk delete runs the per-chat deletes in parallel",
 );
-assert.match(
-  projectsView,
-  /results\.some\(Boolean\)\) onSessionsChanged/,
-  "bulk delete refetches once if any chat was deleted",
-);
+assert.match(projectsView, /results\.some\(Boolean\)\) onSessionsChanged/, "bulk delete refetches once if any chat was deleted");
 // Bulk delete is deferred + undoable (shared useUndoDelete + UndoToast).
 assert.match(projectsView, /useUndoDelete<SessionRow\[\]>\(\)/, "bulk delete routes through useUndoDelete");
 assert.match(projectsView, /scheduleSessionDelete\(\s*removed,/, "the batch is scheduled through the undo window");
 assert.match(projectsView, /const hidden = new Set\(\(deletePending\?\.item \?\? \[\]\)\.map\(\(s\) => s\.id\)\)/, "pending-deleted chats are hidden until commit");
 assert.match(projectsView, /onUndo=\{undoSessionDelete\}[\s\S]{0,40}onDismiss=\{commitSessionDelete\}/, "an undo toast restores the batch");
+assert.match(projectsView, /\{allVisibleSelected \? "Clear" : "Select all"\}/, "the select toolbar offers select-all / clear");
+assert.match(projectsView, /\{selectedIds\.size\} selected/, "the toolbar shows how many chats are selected");
+assert.match(projectsView, /onDeleteSessions=\{handleDeleteSessions\}/, "the bulk-delete handler is wired into the detail pane");
+// Selection resets whenever the chat set or selected project changes.
 assert.match(
   projectsView,
-  /\{allVisibleSelected \? "Clear" : "Select all"\}/,
-  "the select toolbar offers select-all / clear",
+  /const chatIdKey = `\$\{project\.id\}:\$\{chats\.map\(\(c\) => c\.id\)\.join\(","\)\}`/,
+  "selection is keyed to the current project + chat ids",
 );
-assert.match(
-  projectsView,
-  /\{selectedIds\.size\} selected/,
-  "the toolbar shows how many chats are selected",
-);
-assert.match(
-  projectsView,
-  /onDeleteSessions=\{handleDeleteSessions\}/,
-  "the bulk-delete handler is wired into project rows",
-);
-// Selection resets whenever the card's chat set changes, so deleted ids never linger.
-assert.match(
-  projectsView,
-  /const chatIdKey = chats\.map\(\(c\) => c\.id\)\.join\(","\)/,
-  "selection is keyed to the current chat ids",
-);
-assert.match(projectsView, /useDroppable\(\{\s*id: `pcard:/, "project cards are drop targets");
 assert.match(projectsView, /applyProjectOverrides\(visible, projectOverrides\)/, "chats are grouped with Cave-local project overrides applied (after hiding pending-deleted)");
 assert.match(projectsView, /setProjectOverride\(sessionId, targetRoot\)/, "cross-project move applies a Cave-local project override");
-assert.match(projectsView, /mergeVisibleOrder[\s\S]{0,120}writeSessionOrder/, "same-project drop reorders via the shared manual order");
 assert.match(projectsView, /cave:agents-open-session/, "clicking a chat opens it via the agents-open-session event");
 // Long chat lists are capped with a Show all / Show less toggle.
 assert.match(projectsView, /const CHAT_CAP =/, "nested chat lists are capped");
@@ -173,16 +193,12 @@ for (const icon of [
   assert.match(iconSource, new RegExp(`"${icon}"`), `${icon} should be in the icon allowlist`);
 }
 
-// Row actions must stay keyboard-reachable (focus-within), never display:none.
-assert.match(projectsView, /group-hover:opacity-100/, "row actions reveal on hover");
-assert.match(projectsView, /group-focus-within:opacity-100/, "row actions also reveal on keyboard focus");
 assert.match(projectsView, /aria-label=\{`New session in /, "new-session action is labeled per project");
-assert.doesNotMatch(projectsView, /Open terminal|cave:terminal-open|mode: "terminal"/, "project rows stay focused on chat actions");
+assert.doesNotMatch(projectsView, /Open terminal|cave:terminal-open|mode: "terminal"/, "project actions stay focused on chat actions");
 assert.match(projectsView, /aria-label=\{`Rename \$\{project\.name\}`\}/, "rename action labeled per project");
 assert.match(projectsView, /aria-label=\{`Delete \$\{project\.name\}`\}/, "delete action labeled per project");
-assert.match(projectsView, /motion-reduce:transition-none/, "reveal respects reduced motion");
 
-// The "New project" inline form closes on Escape (parity with its Cancel button + the row inline-edits).
+// The "New project" inline form closes on Escape (parity with its Cancel button + inline edits).
 assert.match(
   projectsView,
   /onSubmit=\{handleCreate\}[\s\S]{0,200}?onKeyDown[\s\S]{0,120}?"Escape"[\s\S]{0,80}?setShowForm\(false\)/,
@@ -201,91 +217,38 @@ assert.doesNotMatch(
   /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
   "ProjectsView container should use tokenized radii instead of hard-coded rounded classes",
 );
-
-// Project rows use the same spreadsheet-grade table shell as the Tasks table,
-// instead of a custom card/list wrapper.
-assert.match(
-  projectsViewSource,
-  /<table className="board-table board-table--grid projects-table"/,
-  "Projects should render through the board table grid shell used by Tasks",
-);
-// The board-table/projects-table styling lives in board.css; ProjectsView must
-// import it directly so the surface is styled straight from Chat → Projects,
-// before Board/GitHub (the other board.css importers) have ever mounted.
-assert.match(
-  projectsViewSource,
-  /import "@\/styles\/board\.css"/,
-  "ProjectsView imports its own board.css so the table is always styled",
-);
-assert.match(
-  projectsViewSource,
-  /<thead>[\s\S]{0,900}?Project[\s\S]{0,900}?Status[\s\S]{0,900}?Sessions[\s\S]{0,900}?Updated[\s\S]{0,900}?Actions/,
-  "Projects table exposes stable task-table-style columns",
-);
-assert.match(
-  projectsViewSource,
-  /<tbody>[\s\S]{0,220}?visibleProjects\.map\(\(project\)/,
-  "Project rows render inside the table body",
-);
-assert.match(projectRowSource, /<tr[\s\S]*?className=\{\[[\s\S]*?projects-table-row/, "each project renders as a table row");
-assert.match(projectRowSource, /<td colSpan=\{5\}/, "expanded project details span the full Projects table width");
+assert.match(projectDetailSource, /import \{ Button \}/, "detail pane actions use the shared Button primitive");
+assert.doesNotMatch(projectDetailSource, /<button\b/, "detail pane should not hand-roll button controls");
 assert.doesNotMatch(
-  projectsView,
-  /group rounded-lg border bg-\[var\(--bg-raised\)\]/,
-  "Project rows should not be bordered rounded card boxes",
+  projectDetailSource,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "detail pane controls should use tokenized radii instead of hard-coded rounded classes",
 );
-assert.match(
-  projectsView,
-  /density === "compact" \? "projects-table-row--compact" : "projects-table-row--comfortable"/,
-  "project row vertical padding follows the density preference",
+assert.doesNotMatch(projectListSource, /<button\b/, "list rows should not hand-roll button controls");
+assert.match(sessionRowSource, /import \{ Button \}/, "session row actions use the shared Button primitive");
+assert.doesNotMatch(sessionRowSource, /<button\b/, "session row should not hand-roll button controls");
+assert.doesNotMatch(
+  sessionRowSource,
+  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
+  "session row controls should use tokenized radii instead of hard-coded rounded classes",
 );
-
-// Expand/collapse + density are persisted UI state (the surface remembers how
-// you left it) via the shared hook; expansion is keyed per project id.
-assert.match(
-  projectsView,
-  /import \{ useProjectsUiState \} from "@\/lib\/projects\/use-projects-ui-state"/,
-  "uses the persisted Projects UI-state hook",
-);
-assert.match(
-  projectsView,
-  /const \{ density, setDensity, isExpanded, setExpanded \} = useProjectsUiState\(\)/,
-  "ProjectsView reads density + expand state from the hook",
-);
-assert.match(
-  projectsView,
-  /expanded=\{isExpanded\(project\.id\)\}/,
-  "each project card's expanded state comes from persisted UI state",
-);
-assert.match(
-  projectsView,
-  /onSetExpanded=\{\(next\) => setExpanded\(project\.id, next\)\}/,
-  "toggling a card persists its expanded state by project id",
-);
-assert.match(projectsView, /aria-expanded=\{expanded\}/, "the disclosure control reports expanded state");
-assert.match(projectsView, /\{expanded \? \(/, "path + sessions render only when the row is expanded");
-assert.doesNotMatch(projectsView, /defaultExpanded/, "expansion is controlled by persisted state, not a defaultExpanded flag");
-
-// A density toggle lets the user choose comfortable vs compact list spacing.
-assert.match(projectsView, /aria-label="List density"/, "there is a labeled density toggle");
-assert.match(projectsView, /aria-pressed=\{density === opt\.value\}/, "the density toggle reflects the active option");
 
 // Projects are ordered alphabetically by project name/root, not API order or
-// most-recent session activity. Sessions inside each project still keep their
-// own recency/manual ordering.
+// most-recent session activity. Sessions inside the detail pane still keep
+// their own recency/manual ordering.
 assert.match(projectsView, /const sortedProjects = useMemo/, "projects are sorted before rendering");
 assert.match(projectsView, /sortProjectsAlphabetically\(projects\)/, "Projects tab uses the shared alphabetical project order");
 assert.doesNotMatch(projectsView, /b\.score - a\.score/, "Projects tab must not sort project rows by session recency");
 
 // A filter box narrows the (sorted) list by name or path; the filtered list
-// drives the render and an empty result shows a no-match message.
+// drives the list pane and an empty result shows a no-match message.
 assert.match(projectsView, /const visibleProjects = useMemo/, "projects are filtered after sorting");
 assert.match(
   projectsView,
   /p\.name\.toLowerCase\(\)\.includes\(q\) \|\| p\.root\.toLowerCase\(\)\.includes\(q\)/,
   "the filter matches on project name or path",
 );
-assert.match(projectsView, /visibleProjects\.map\(\(project\)/, "the filtered list drives the render");
+assert.match(projectsView, /projects=\{visibleProjects\}/, "the filtered list drives the list pane");
 assert.match(projectsView, /aria-label="Filter projects"/, "there is a labeled filter input");
 assert.match(projectsView, /No projects match/, "a no-match message shows when the filter excludes everything");
 
@@ -307,47 +270,34 @@ assert.match(
   /statusFilter === "active"[\s\S]{0,160}?activeRoots\.has\(normalizeProjectRoot\(p\.root\)\)/,
   "the Active filter narrows visibleProjects to active roots",
 );
-assert.match(
-  projectsViewToolbar,
-  /aria-label="Filter by activity"/,
-  "the header exposes a labeled activity filter control",
-);
-assert.match(
-  projectsViewToolbar,
-  /aria-pressed=\{statusFilter === opt\.value\}/,
-  "the activity filter reflects the active option",
-);
+assert.match(projectsViewToolbar, /aria-label="Filter by activity"/, "the header exposes a labeled activity filter control");
+assert.match(projectsViewToolbar, /aria-pressed=\{statusFilter === opt\.value\}/, "the activity filter reflects the active option");
 // The header summary surfaces how many projects are currently active.
 assert.match(projectsViewToolbar, /\{activeCount\} active/, "the header summarizes the active-project count");
 
-// The Sessions cell leads with a glanceable count (no repeated "sessions"
-// noun — the column header carries it) while staying labeled for assistive tech.
-assert.match(projectsView, /className="board-table-cell-sessions"/, "the sessions cell uses the glanceable stat treatment");
+// The detail head carries a glanceable, accessible sessions count.
+assert.match(projectsView, /className="projects-session-count"/, "the sessions stat uses the glanceable treatment");
 assert.match(
   projectsView,
-  /aria-label=\{`\$\{chatCount\} \$\{chatCount === 1 \? "session" : "sessions"\}`\}/,
+  /aria-label=\{`\$\{chats\.length\} \$\{chats\.length === 1 \? "session" : "sessions"\}`\}/,
   "the sessions count keeps a full accessible label",
 );
 
-// Each project row carries a glanceable status dot: accent when a session is
-// running, danger when the most-recent session failed.
-assert.match(
-  projectsView,
-  /const projectStatus = deriveProjectStatus\(chats\)/,
-  "row status comes from the shared deriveProjectStatus helper",
-);
+// Project rows and the detail head carry a glanceable status dot: accent when
+// a session is running, danger when the most-recent session failed.
+assert.match(projectsView, /const projectStatus = deriveProjectStatus\(chats\)/, "detail status comes from the shared deriveProjectStatus helper");
 assert.match(projectsView, /import \{ deriveProjectStatus \} from "@\/lib\/project-status"/, "imports the status helper");
-assert.match(projectsView, /projectStatus \? \(/, "the status dot renders only when running or failed");
+assert.match(projectListSource, /const status = deriveProjectStatus\(chats\)/, "list rows derive the same status — zero extra fetches");
 
 // Paths are home-collapsed + truncated so the identical absolute prefix stops
 // dominating; the full path stays in the title and the editor.
 assert.match(projectsView, /\{shortRoot\(project\.root\)\}/, "the displayed path is shortened");
 assert.match(projectsView, /title=\{project\.root\}/, "the full path remains available via the title");
-assert.match(projectsView, /relativeTime\(/, "each row shows a relative last-active label (shared relative-time helper)");
+assert.match(projectsView, /relativeTime\(/, "the detail head shows a relative last-active label (shared relative-time helper)");
 
-// Phase 2 — rich rows: each session row leads with a derived status glyph
-// (running spinner / failed / task / chat dot), drops the "Task: " text prefix
-// in favor of that glyph, and carries trailing metadata (model · time · diff).
+// Rich session rows: each leads with a derived status glyph (running spinner /
+// failed / task / chat dot), drops the "Task: " text prefix in favor of that
+// glyph, and carries trailing metadata (model · branch · diff · time).
 assert.match(
   projectsView,
   /import \{ sessionGlyph, glyphToneClass, stripTaskPrefix \} from "@\/lib\/projects\/session-glyph"/,
@@ -360,25 +310,11 @@ assert.match(projectsView, /import \{ RelativeTime \} from "@\/components\/ui\/r
 assert.match(projectsView, /<RelativeTime iso=\{session\.updated_at\}/, "every session row shows a consistent relative timestamp");
 assert.match(projectsView, /import \{ modelIcon, modelLabel \} from "@\/lib\/model-label"/, "rows render a model chip via the shared model-label helper");
 assert.match(projectsView, /modelLabel\(session\.model\)/, "the model chip shows the shortened model label");
-assert.match(sessionRowSource, /import \{ Button \}/, "session row actions use the shared Button primitive");
-assert.doesNotMatch(sessionRowSource, /<button\b/, "session row should not hand-roll button controls");
-assert.doesNotMatch(
-  sessionRowSource,
-  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
-  "session row controls should use tokenized radii instead of hard-coded rounded classes",
-);
-assert.match(projectRowSource, /import \{ Button \}/, "project row actions use the shared Button primitive");
-assert.doesNotMatch(projectRowSource, /<button\b/, "project row should not hand-roll button controls");
-assert.doesNotMatch(
-  projectRowSource,
-  /rounded-md|rounded-lg|rounded(?=\s|")|rounded-\[4px\]/,
-  "project row controls should use tokenized radii instead of hard-coded rounded classes",
-);
 
-// Project headers carry a glanceable stat line (running · tasks · sessions)
+// The detail head carries a glanceable stat line (running · tasks · sessions)
 // derived from the pure projectStats helper.
-assert.match(projectsView, /import \{ projectStats \} from "@\/lib\/projects\/project-stats"/, "headers use the pure stats helper");
-assert.match(projectsView, /const stats = projectStats\(chats\)/, "the header derives running/task counts");
+assert.match(projectsView, /import \{ projectStats \} from "@\/lib\/projects\/project-stats"/, "the detail head uses the pure stats helper");
+assert.match(projectsView, /const stats = projectStats\(chats\)/, "the detail head derives running/task counts");
 assert.match(projectsView, /stats\.running > 0 \?/, "the stat line shows a running count when any session is running");
 assert.match(projectsView, /stats\.tasks > 0 \?/, "the stat line shows a task count when the project has tasks");
 
@@ -386,63 +322,38 @@ assert.match(projectsView, /stats\.tasks > 0 \?/, "the stat line shows a task co
 // monogram), tinted by the project's color when set.
 assert.match(projectsView, /<ProjectAvatar name=\{project\.name\} root=\{project\.root\} color=\{project\.color\}/, "the identity tile is the shared ProjectAvatar, fed the project color");
 
-// A project card expands + scrolls into view when the command palette's
-// "Open project" navigation fires CHAT_FOCUS_PROJECT_EVENT for its root.
+// The command palette's "Open project" navigation selects that project in the
+// hub (CHAT_FOCUS_PROJECT_EVENT) and scrolls its list row into view — the
+// listener lives in the shell now, not per-row.
+assert.match(projectsViewSource, /addEventListener\(CHAT_FOCUS_PROJECT_EVENT/, "the shell listens for the focus-project event");
 assert.match(
-  projectsView,
-  /addEventListener\(CHAT_FOCUS_PROJECT_EVENT/,
-  "project cards listen for the focus-project event",
+  projectsViewSource,
+  /const match = projects\.find\(\(p\) => normalizeProjectRoot\(p\.root\) === rootKey\)[\s\S]{0,120}?selectProject\(match\.id\)/,
+  "a matching focus event selects the project",
 );
+assert.match(projectListSource, /id=\{`pcard-el:\$\{normalizeProjectRoot\(project\.root\)\}`\}/, "list rows carry a stable id so they can be scrolled into view");
 assert.match(
-  projectsView,
-  /normalizeProjectRoot\(detail\.root\) !== cardKey[\s\S]{0,120}?setExpanded\(true\)/,
-  "a matching focus event expands the card",
-);
-assert.match(
-  projectsView,
-  /id=\{`pcard-el:\$\{cardKey\}`\}/,
-  "the card carries a stable id so it can be scrolled into view",
+  projectsViewSource,
+  /scrollIntoView\(\{ block: "nearest", behavior: smoothScrollBehavior\(\) \}\)/,
+  "the focus scroll honors reduced motion via smoothScrollBehavior",
 );
 
-// Phase 3 — keyboard navigation: a roving tabindex (WAI-ARIA) over the
-// flattened list of project headers + their visible session rows. ↑/↓ + Home/End
-// move focus (shared hook); →/← expand/collapse a focused header.
-assert.match(
-  projectsView,
-  /import \{ useRovingTabIndex \} from "@\/lib\/use-roving-tabindex"/,
-  "reuses the shared roving-tabindex hook",
-);
+// Keyboard navigation: a roving tabindex (WAI-ARIA) over the project rows in
+// the list pane. ↑/↓ + Home/End move focus (shared hook); Enter/Space select.
+assert.match(projectsView, /import \{ useRovingTabIndex \} from "@\/lib\/use-roving-tabindex"/, "reuses the shared roving-tabindex hook");
 assert.match(
   projectsView,
   /useRovingTabIndex\(\{ containerRef: listRef, itemSelector: "\[data-proj-nav\]", orientation: "vertical" \}\)/,
-  "rove vertically over [data-proj-nav] items in the list container",
+  "rove vertically over [data-proj-nav] items in the list pane",
 );
-assert.match(projectsView, /<main ref=\{listRef\}/, "the scroll container hosts the roving keydown handler");
-// Both the project header disclosure and each session row are nav stops.
-assert.ok(
-  (projectsView.match(/data-proj-nav/g) ?? []).length >= 2,
-  "header disclosure + session rows are both tagged as rove stops",
-);
-assert.match(
-  projectsView,
-  /e\.key === "ArrowRight" && !expanded[\s\S]{0,80}?setExpanded\(true\)/,
-  "ArrowRight expands a focused, collapsed project header",
-);
-assert.match(
-  projectsView,
-  /e\.key === "ArrowLeft" && expanded[\s\S]{0,80}?setExpanded\(false\)/,
-  "ArrowLeft collapses a focused, expanded project header",
-);
-// Touch: row actions (drag + delete) stay visible on coarse pointers, where
-// there is no hover to reveal them.
-assert.match(
-  projectsView,
-  /\[@media\(pointer:coarse\)\]:opacity-100/,
-  "row actions stay visible on touch/coarse-pointer devices",
-);
+assert.match(projectsViewSource, /<div ref=\{listRef\} className="projects-hub__list">/, "the list pane hosts the roving keydown handler");
+assert.match(projectListSource, /data-proj-nav/, "project rows are rove stops");
 
-// Phase 3b — right-click context menus on project headers and session rows,
-// built on the shared ContextMenu/Popover primitives.
+// Touch: row actions stay visible on coarse pointers, where there is no hover.
+assert.match(projectsView, /\[@media\(pointer:coarse\)\]:opacity-100/, "row actions stay visible on touch/coarse-pointer devices");
+
+// Right-click context menus on project rows and session rows, built on the
+// shared ContextMenu/Popover primitives.
 assert.match(
   projectsView,
   /import \{ ContextMenu, openContextMenuAt, type ContextMenuState \} from "@\/components\/ui\/context-menu"/,
@@ -453,16 +364,14 @@ assert.match(
   /import \{ PopoverItem, PopoverSeparator \} from "@\/components\/ui\/popover"/,
   "menu items use the shared Popover item/separator",
 );
-// Two onContextMenu triggers: the project header and each session row (the row
-// wraps the helper to reset the menu's drill-in view first).
 assert.ok(
   (projectsView.match(/openContextMenuAt\(setMenu\)/g) ?? []).length >= 2,
-  "both the project header and session rows open a context menu at the cursor",
+  "both the project list row and session rows open a context menu at the cursor",
 );
-assert.match(projectsView, /Actions for \$\{project\.name\}/, "the project header has a context menu");
+assert.match(projectsView, /Actions for \$\{project\.name\}/, "the project row has a context menu");
 assert.doesNotMatch(projectsView, /openTerminalHere/, "the project menu stays focused on project actions");
-assert.match(projectsView, /Delete project…/, "project menu offers delete (routes through the inline confirm)");
-assert.match(projectsView, /setExpanded\(true\); setConfirmDelete\(true\)/, "menu delete expands the card and shows the two-step confirm");
+assert.match(projectsView, /Delete project…/, "the detail overflow offers delete (routes through the inline confirm)");
+assert.match(projectsView, /onSelect=\{\(\) => setConfirmDelete\(true\)\}/, "menu delete shows the two-step confirm");
 assert.match(projectsView, /Actions for \$\{title\}/, "each session row has a context menu");
 assert.match(projectsView, /Delete chat…/, "session menu offers delete (routes through the inline confirm)");
 assert.match(
@@ -470,18 +379,8 @@ assert.match(
   /aria-label=\{`Delete thread \$\{title\}`\}[\s\S]{0,520}?leadingIcon="ph:x-bold"/,
   "each thread row exposes a close-button delete affordance inline",
 );
-// The header actions stay visible while a delete confirm is pending, so a
-// menu-triggered delete's Cancel/Delete buttons aren't hidden behind hover.
-assert.match(projectsView, /confirmDelete\s*\?\s*"opacity-100"/, "the action cluster stays visible while confirming a delete");
 
-// Phase 4 — motion + cross-project-move undo.
-// Expand animates in (enter-only; collapse stays instant so collapsed rows stay
-// out of the DOM / rove set), respecting prefers-reduced-motion (CSS).
-assert.match(projectsView, /className="projects-expand-enter projects-table-detail"/, "the session list animates in on expand");
-// Drag feedback: the dragged row lifts; the drop-target card shows an accent ring.
-assert.match(projectsView, /data-\[dragging=true\]:shadow-/, "the dragged row lifts (shadow) while dragging");
-assert.match(projectsView, /isOver[\s\S]{0,140}?ring-1 ring-inset ring-\[var\(--accent-presence\)\]/, "the drop-target project card shows an accent ring");
-// Cross-project move is undoable via a transient toast.
+// Cross-project-move undo (the context-menu path is now the only mover).
 assert.match(projectsView, /import \{ applyProjectOverrides, setProjectOverride, clearProjectOverride \}/, "imports clearProjectOverride for undo");
 assert.match(projectsView, /import \{ UndoToast \} from "@\/components\/ui\/undo-toast"/, "uses the shared UndoToast primitive");
 assert.match(projectsView, /const prevRoot = projectOverrides\[sessionId\] \?\? null/, "the move captures the prior override for a precise undo");
@@ -498,8 +397,8 @@ assert.match(
 );
 
 // Render-virtualization: off-screen session rows skip layout/paint via
-// content-visibility (the repo's established strategy — see chat turns + library
-// doc rows), keeping them in the DOM so keyboard roving / dnd / find still work.
+// content-visibility (the repo's established strategy), staying in the DOM so
+// keyboard nav / find still work.
 assert.match(projectsView, /focus-ring projects-session-row/, "each session row carries the render-virtualization class");
 assert.match(
   globalsCss,
@@ -507,16 +406,11 @@ assert.match(
   "session rows set content-visibility:auto with a cached intrinsic-size",
 );
 
-// Type-ahead jump: typing letters moves focus to the next project/session whose
-// label matches, staying in sync with the roving tab stop (pure matcher).
+// Type-ahead jump: typing letters moves focus to the next project whose label
+// matches, staying in sync with the roving tab stop (pure matcher).
 assert.match(projectsView, /import \{ nextTypeAheadIndex \} from "@\/lib\/projects\/type-ahead"/, "uses the pure type-ahead matcher");
 assert.match(projectsView, /const \{ setActiveIndex \} = useRovingTabIndex/, "captures the roving setActiveIndex to keep nav in sync");
-// Each rove stop carries a clean label to match against (not the aria-label,
-// which is prefixed with Expand/Collapse).
-assert.match(projectsView, /data-proj-label=\{project\.name\}/, "project headers expose their name for type-ahead");
-assert.match(projectsView, /data-proj-label=\{title\}/, "session rows expose their title for type-ahead");
-// The handler ignores modifiers/fields, accumulates a buffer that resets on a
-// pause, and focuses the match.
+assert.match(projectsView, /data-proj-label=\{project\.name\}/, "project rows expose their name for type-ahead");
 assert.match(projectsView, /e\.key\.length !== 1 \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/, "type-ahead only handles plain printable keys");
 assert.match(projectsView, /state\.buffer \+= e\.key/, "keystrokes accumulate into a type-ahead buffer");
 assert.match(projectsView, /typeAheadRef\.current\.buffer = ""/, "the buffer resets after a pause");
@@ -524,19 +418,17 @@ assert.match(projectsView, /const next = nextTypeAheadIndex\(labels, current, st
 assert.match(projectsView, /items\[next\]\.focus\(\);\s*setActiveIndex\(next\)/, "a match focuses the item and updates the roving tab stop");
 
 // "Move to project" submenu: the session context menu drills into a list of the
-// other projects; selecting one moves the chat there (same move+undo path as
-// drag), shared via the extracted moveSessionToProject.
+// other projects; selecting one moves the chat there (same move+undo path),
+// shared via the extracted moveSessionToProject.
 assert.match(projectsView, /const moveSessionToProject = \(sessionId: string, targetRoot: string\)/, "the cross-project move is a shared helper");
-assert.match(projectsView, /\/\/ Different project → move[\s\S]{0,80}?moveSessionToProject\(activeId, targetRoot\)/, "drag-and-drop reuses the shared move helper");
-assert.match(projectsView, /onMoveSession=\{moveSessionToProject\}/, "the move helper is wired into project rows");
+assert.match(projectsView, /onMoveSession=\{moveSessionToProject\}/, "the move helper is wired into the detail pane");
 assert.match(
   projectsView,
-  /allProjects[\s\S]{0,160}?normalizeProjectRoot\(p\.root\) !== cardKey/,
-  "each row offers the OTHER projects as move targets",
+  /allProjects[\s\S]{0,160}?normalizeProjectRoot\(p\.root\) !== rootKey/,
+  "the detail pane offers the OTHER projects as move targets",
 );
 assert.match(projectsView, /const \[menuView, setMenuView\] = useState<"root" \| "move">/, "the session menu tracks a root/move drill-in view");
 assert.match(projectsView, /onSelect=\{\(\) => setMenuView\("move"\)\}/, '"Move to project…" drills into the project picker');
-assert.match(projectsView, /Move to project…/, "the session menu offers Move to project");
 assert.match(
   projectsView,
   /moveTargets\.map\(\(target\)[\s\S]{0,260}?onMoveSession\(session\.id, target\.root\)/,

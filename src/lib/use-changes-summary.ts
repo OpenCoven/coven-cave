@@ -23,12 +23,15 @@ type ChangesSummary = {
   loaded: boolean;
   /** The root is not a git repo (no diffs to show). */
   notARepo: boolean;
+  /** Current branch (null before load, when not a repo, or on an unborn HEAD). */
+  branch: string | null;
 };
 
 type ChangesResponse = {
   ok?: boolean;
   repo?: boolean;
   files?: unknown[];
+  branch?: string | null;
 };
 
 export function useChangesSummary(
@@ -38,6 +41,7 @@ export function useChangesSummary(
   const [count, setCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [notARepo, setNotARepo] = useState(false);
+  const [branch, setBranch] = useState<string | null>(null);
   const inFlight = useRef(false);
 
   useEffect(() => {
@@ -58,6 +62,7 @@ export function useChangesSummary(
         if (res.ok && json.ok) {
           setNotARepo(json.repo === false);
           setCount(Array.isArray(json.files) ? json.files.length : 0);
+          setBranch(typeof json.branch === "string" ? json.branch : null);
         }
       } catch {
         /* transient — keep the last known summary */
@@ -80,5 +85,5 @@ export function useChangesSummary(
     };
   }, [projectRoot, active]);
 
-  return { count, loaded, notARepo };
+  return { count, loaded, notARepo, branch };
 }

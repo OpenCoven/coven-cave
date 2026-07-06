@@ -17,6 +17,7 @@ import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry"
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
 import { defaultModelForRuntime } from "@/lib/runtime-models";
 import { openExternalUrl } from "@/lib/open-external";
+import { COVEN_CODE_SKIP_KEY } from "@/lib/onboarding-gate";
 
 // Guided onboarding: one numbered path from "nothing installed" to "chatting
 // with a familiar". Every step carries its own instructions, a one-click
@@ -138,9 +139,9 @@ const NPM_INSTALL_TARGETS = ALL_INSTALL_TARGETS.filter(
   (target) => INSTALL_TARGET_KIND[target] === "npm",
 );
 
-/** Persists the user's choice to skip the (required) Coven Code install so a
- *  failing install can't permanently strand onboarding. */
-const COVEN_CODE_SKIP_KEY = "cave:onboarding:skip-coven-code";
+// The "skip Coven Code" choice persists under COVEN_CODE_SKIP_KEY (shared
+// with the workspace auto-open gate via @/lib/onboarding-gate — cave-219) so
+// a failing install can't permanently strand onboarding.
 // ~30s of 2s ticks: long enough to ride out a slow sidecar start, short
 // enough that a genuinely broken /api/harnesses surfaces as a retryable
 // error instead of an empty runtime grid polling silently forever.
@@ -1564,7 +1565,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                             <button
                               onClick={scaffoldOnly}
                               disabled={picking !== null}
-                              className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                              className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
                             >
                               <Icon name="ph:folder-open-bold" />
                               {picking === "scaffold"
@@ -1671,7 +1672,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                   onClick={() => setOnboardingMultiHostMode("local")}
                                   className={`focus-ring rounded-md border px-2 py-1 text-[11px] ${
                                     onboardingMultiHostMode === "local"
-                                      ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-white"
+                                      ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                                       : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
                                   }`}
                                 >
@@ -1682,7 +1683,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                   onClick={() => setOnboardingMultiHostMode("hub")}
                                   className={`focus-ring rounded-md border px-2 py-1 text-[11px] ${
                                     onboardingMultiHostMode === "hub"
-                                      ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-white"
+                                      ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
                                       : "border-[var(--border-hairline)] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)]"
                                   }`}
                                 >
@@ -1733,7 +1734,7 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                                 disabled={
                                   startingDaemon || !status?.steps.covenCli.ok
                                 }
-                                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
                                 title={
                                   !status?.steps.covenCli.ok
                                     ? "Install coven CLI first (step 1)"
@@ -2013,7 +2014,7 @@ function StepCovenCli({
           }}
           disabled={busy || covenCodeJobRunning}
           aria-busy={busy || covenCodeJobRunning}
-          className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+          className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
         >
           {busy || covenCodeJobRunning ? (
             <Icon name="ph:circle-notch-bold" className="animate-spin" />
@@ -2290,7 +2291,7 @@ function StepRuntimes({
                         onClick={() => onInstall(oneClick.target)}
                         disabled={busy || (NPM_INSTALL_TARGETS.includes(oneClick.target) && npmJobRunning)}
                         aria-busy={busy}
-                        className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                        className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
                       >
                         {busy ? (
                           <Icon name="ph:circle-notch-bold" className="animate-spin" />
@@ -2919,7 +2920,7 @@ function StepFamiliar(props: {
                   !confirmCreateNewFamiliar ||
                   (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
                 }
-                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
               >
                 <Icon name="ph:terminal-window" />
                 {picking === "local" ? "Creating…" : "Create new Coven familiar"}
@@ -2952,7 +2953,7 @@ function StepFamiliar(props: {
                   familiarName.trim().length === 0 ||
                   (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
                 }
-                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-white hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
               >
                 <Icon name="ph:git-fork" />
                 {picking === "familiar"

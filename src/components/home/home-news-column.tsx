@@ -12,10 +12,12 @@ import { Icon } from "@/lib/icon";
 import type { FeedItem } from "@/lib/rss";
 import { openExternalUrl } from "@/lib/open-external";
 import { buildDigestCards, type DigestRssCard } from "@/lib/home-digest";
+import { useHomeNewsEnabled } from "@/lib/home-news-pref";
 
 const MAX_ROWS = 4;
 
 export function HomeNewsColumn() {
+  const newsEnabled = useHomeNewsEnabled();
   const [rss, setRss] = useState<FeedItem[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [ready, setReady] = useState(false);
@@ -48,7 +50,7 @@ export function HomeNewsColumn() {
     [rss, nowMs],
   );
 
-  if (!ready || cards.length === 0) return null;
+  if (!newsEnabled || !ready || cards.length === 0) return null;
 
   return (
     <section className="home-col" aria-label="News">

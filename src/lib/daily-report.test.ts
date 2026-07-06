@@ -160,6 +160,16 @@ function item(overrides) {
   assert.equal(parseStatsFromBody("just some prose, nothing countable"), null);
   assert.equal(parseStatsFromBody(undefined), null);
 
+  // day-in-review lines (Phase B) are optional: parsed when present, absent —
+  // not zero — when the body predates them or the source wasn't consulted.
+  const enriched = parseStatsFromBody(
+    "0 reminders fired\n0 responses waiting\n0 familiar updates\n3 sessions updated\n12 PRs merged\n1 card completed",
+  );
+  assert.equal(enriched.prsMerged, 12);
+  assert.equal(enriched.cardsCompleted, 1);
+  const legacy = parseStatsFromBody("1 reminder fired\n1 session updated");
+  assert.equal("prsMerged" in legacy, false, "old bodies must not grow fabricated zero counts");
+
   // recentReports recovers stats from the body when media.stats is absent
   const reports = recentReports([
     item({

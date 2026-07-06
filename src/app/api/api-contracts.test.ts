@@ -252,6 +252,41 @@ for (const contract of contracts) {
     /media:\s*draft\.media/,
     "/inbox/daily-summary should persist the generated media card",
   );
+  assert.match(
+    dailySummarySource,
+    /broadcastUpdated\(/,
+    "/inbox/daily-summary refreshes must broadcast an updated event (created would re-toast)",
+  );
+  assert.match(
+    dailySummarySource,
+    /dateMismatch/,
+    "/inbox/daily-summary must reject payloads computed for a different day (midnight-rollover race)",
+  );
+  assert.match(
+    dailySummarySource,
+    /fetchMergedPrsForDay\(now\)\.catch\(/,
+    "/inbox/daily-summary should gather merged PRs server-side, degrading to absent on failure",
+  );
+  assert.match(
+    dailySummarySource,
+    /loadBoard\(\)\.catch\(/,
+    "/inbox/daily-summary should gather completed cards server-side, degrading to absent on failure",
+  );
+  assert.match(
+    dailySummarySource,
+    /narrative:\s*narrativeInput \?\? existing\.media\?\.narrative/,
+    "/inbox/daily-summary fact refreshes must preserve the narrative layered on top",
+  );
+  assert.match(
+    dailySummarySource,
+    /function sanitizeNarrative/,
+    "/inbox/daily-summary must validate client-submitted narratives before storing",
+  );
+  assert.match(
+    dailySummarySource,
+    /NARRATIVE_MAX_STORED_CHARS/,
+    "/inbox/daily-summary must bound stored narrative length",
+  );
 }
 
 // CHAT-D5-02: cancelling a streaming response (Esc/Stop) must persist an

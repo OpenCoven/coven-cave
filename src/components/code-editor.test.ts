@@ -27,6 +27,30 @@ assert.match(
 );
 assert.match(editor, /key: "Escape", run: \(\) => \{ onCancel\(\); return true; \}/, "Escape cancels from inside the editor");
 
+// Syntax colors come from the SAME palette as read mode (Shiki mood-c-dark).
+// Without an explicit HighlightStyle, CodeMirror falls back to its default
+// syntax palette, which is designed for LIGHT backgrounds (#a11 strings,
+// #940 comments) — unreadable on the dark --code-surface.
+assert.ok(pkg.dependencies["@codemirror/language"], "@codemirror/language dep present for HighlightStyle");
+assert.ok(pkg.dependencies["@lezer/highlight"], "@lezer/highlight dep present for lezer tags");
+assert.match(
+  editor,
+  /import \{ HighlightStyle, syntaxHighlighting \} from "@codemirror\/language"/,
+  "editor imports HighlightStyle/syntaxHighlighting",
+);
+assert.match(
+  editor,
+  /import moodCTheme from "@\/styles\/shiki\/mood-c-dark\.json"/,
+  "syntax palette single source of truth is the shiki mood-c-dark theme json",
+);
+assert.match(editor, /const moodHighlight = HighlightStyle\.define\(/, "a HighlightStyle maps lezer tags to the mood-c palette");
+assert.match(editor, /syntaxHighlighting\(moodHighlight\)/, "the highlight style is installed as an editor extension");
+// The code surface stays dark in EVERY app theme (light modes included), so
+// editor text/gutter inks must be fixed mood-c inks, not theme text tokens
+// (--text-primary is a dark ink in light themes → dark-on-dark).
+assert.doesNotMatch(editor, /color: "var\(--text-primary\)"/, "editor ink must not ride theme text tokens on the fixed-dark code surface");
+assert.doesNotMatch(editor, /color: "var\(--text-muted\)"/, "gutter ink must not ride theme text tokens on the fixed-dark code surface");
+
 // Editor chrome is themed to the app's CSS tokens (not the generic dark theme).
 assert.match(editor, /const appTheme = EditorView\.theme\(/, "a CodeMirror theme is defined from app tokens");
 assert.match(editor, /backgroundColor: "var\(--code-surface\)"/, "editor background matches the read code surface via --code-surface");

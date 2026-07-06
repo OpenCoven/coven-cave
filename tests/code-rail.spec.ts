@@ -33,6 +33,10 @@ async function base(page: Page, sessions: unknown[]) {
     window.localStorage.setItem("cave:onboarding:dismissed", "1");
     // Keep the rail unpinned so its default open/collapse behaviour is exercised.
     window.localStorage.setItem("cave:code-rail:pinned:v1", "false");
+    // Nav is minimized-by-default; keep it expanded so the code rail keeps its
+    // room (a rail-width nav narrows the multi-pane chat layout).
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3", "1");
+    window.localStorage.setItem("cave:shell:min-applied:cave.shell.widths.v3.two-pane", "1");
   });
   await page.route("**/api/familiars**", (route) =>
     route.fulfill({ json: { ok: true, familiars: [{ id: "nova", display_name: "Nova", role: "Orchestrator", status: "active", icon: "ph:sparkle-fill" }] } }),

@@ -26,6 +26,20 @@ assert.match(news, /buildDigestCards\(\{ items: \[\], sessions: \[\], rssItems: 
   "news reuses buildDigestCards with empty inbox/sessions");
 assert.match(news, /openExternalUrl/, "headlines open externally");
 
+// News stays opt-out via Settings → General (carried over from the carousel).
+assert.match(news, /const newsEnabled = useHomeNewsEnabled\(\)/,
+  "news visibility comes from the persistent user setting");
+assert.match(news, /!newsEnabled \|\| !ready \|\| cards\.length === 0/,
+  "disabling news hides the column");
+const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+assert.match(settings, /import \{ useHomeNewsEnabled, writeHomeNewsEnabled \} from "@\/lib\/home-news-pref"/,
+  "settings imports the shared news pref");
+assert.match(
+  settings,
+  /label="News headlines"[\s\S]*?role="switch"[\s\S]*?aria-checked=\{newsEnabled\}[\s\S]*?writeHomeNewsEnabled\(!newsEnabled\)/,
+  "General settings exposes the News headlines switch backed by the pref",
+);
+
 // The marquee is fully retired.
 assert.doesNotMatch(css, /home-digest/, "digest CSS removed");
 assert.doesNotMatch(css, /marquee/, "marquee animation removed");

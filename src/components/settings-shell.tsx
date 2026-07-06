@@ -19,10 +19,12 @@ import { OpenCovenToolsUpdate } from "@/components/open-coven-tools-update";
 import { THEME_IDS, THEME_META, getSwatches, type ThemeId } from "@/lib/theme-palettes";
 import { COVEN_THEME_KEY, COVEN_MODE_KEY, COVEN_CUSTOM_THEME_KEY, LEGACY_THEME_RENAME, type Mode, type ModePref } from "@/lib/theme-storage";
 import { ModeToggle } from "@/components/mode-toggle";
-import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
+import { FamiliarStudioProvider, useFamiliarStudio, type FamiliarStudioTab } from "@/lib/familiar-studio-context";
+import { CreateFamiliarDialog } from "@/components/create-familiar-dialog";
 import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
@@ -125,6 +127,9 @@ export function SettingsShell() {
   // ── Search across settings ────────────────────────────────────────────────
   const [query, setQuery] = useState("");
   const [scrollTarget, setScrollTarget] = useState<string | null>(null);
+  // One-shot studio-tab target for search results that point inside the
+  // Familiars panel (see SettingsIndexEntry.familiarTab).
+  const [familiarsTabTarget, setFamiliarsTabTarget] = useState<FamiliarStudioTab | null>(null);
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -135,6 +140,14 @@ export function SettingsShell() {
   function goToSetting(entry: SettingsIndexEntry) {
     openSection(entry.section);
     setQuery("");
+    if (entry.familiarTab) {
+      // The Familiars panel isn't a SettingsGroup — the entry targets one of
+      // its studio tabs instead, activated below the provider by
+      // FamiliarsSection once the roster has loaded.
+      setFamiliarsTabTarget(entry.familiarTab);
+      setScrollTarget(null);
+      return;
+    }
     setScrollTarget(entry.group ? settingsGroupId(entry.group) : null);
   }
 
@@ -326,7 +339,12 @@ export function SettingsShell() {
         >
           {section === "general" && <GeneralSection />}
           {section === "daemon"   && <DaemonSection />}
-          {section === "familiars" && <FamiliarsSection />}
+          {section === "familiars" && (
+            <FamiliarsSection
+              tabTarget={familiarsTabTarget}
+              onTabTargetConsumed={() => setFamiliarsTabTarget(null)}
+            />
+          )}
           {section === "mobile"   && <MobileSection />}
           {section === "appearance" && <AppearanceSection />}
           {section === "about"    && <AboutSection />}
@@ -350,11 +368,41 @@ function GeneralSection() {
           <WorkspacePathField />
         </SettingsRow>
       </SettingsGroup>
+      <SettingsGroup label="Home">
+        <HomeNewsToggle />
+      </SettingsGroup>
       <SettingsGroup label="Startup">
         <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
         <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
       </SettingsGroup>
     </SettingsPage>
+  );
+}
+
+// News on Home is opt-out here rather than dismissible inline — the carousel
+// row carries no X, so this switch is the one place the choice lives (and it
+// persists across visits, unlike the old per-mount dismiss).
+function HomeNewsToggle() {
+  const newsEnabled = useHomeNewsEnabled();
+  return (
+    <SettingsRow
+      label="News headlines"
+      description="Show the News carousel on the Home screen's daily summary."
+    >
+      <button
+        type="button"
+        role="switch"
+        aria-checked={newsEnabled}
+        onClick={() => writeHomeNewsEnabled(!newsEnabled)}
+        className={`settings-mobile-switch rounded-full border px-3 py-1.5 text-[12px] transition-colors ${
+          newsEnabled
+            ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+            : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
+        }`}
+      >
+        {newsEnabled ? "On" : "Off"}
+      </button>
+    </SettingsRow>
   );
 }
 
@@ -691,50 +739,183 @@ function DaemonSection() {
 
 // ─── Section: Familiars ───────────────────────────────────────────────────────
 
-function FamiliarsSection() {
+function FamiliarsSection({
+  tabTarget,
+  onTabTargetConsumed,
+}: {
+  /** Studio tab a search result asked to open; consumed once activated. */
+  tabTarget?: FamiliarStudioTab | null;
+  onTabTargetConsumed?: () => void;
+}) {
   // Settings is a standalone route with no workspace context, so this panel
   // sources its own familiar roster and resolves cave overrides locally.
   const [rawFamiliars, setRawFamiliars] = useState<Familiar[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // The roster endpoint 503s when the daemon is down — that means "unknown",
+  // not "no familiars"; the two must never share an empty state.
+  const [daemonDown, setDaemonDown] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const familiars = useResolvedFamiliars(rawFamiliars);
+  // This renders below FamiliarStudioProvider (the shell mounts it), so the
+  // studio tab state is reachable here even though the shell body can't.
+  const { setActiveTab, openFamiliarStudio } = useFamiliarStudio();
+
+  // A search result can target a specific studio tab (e.g. "voice" → Brain).
+  // Activate it once the roster has settled so the tab strip exists, move
+  // focus to the tab button (the panel has no SettingsGroup to flash), and
+  // hand the one-shot target back to the shell.
+  useEffect(() => {
+    if (!tabTarget || !loaded) return;
+    setActiveTab(tabTarget);
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(`familiar-studio-inline-tab-${tabTarget}`);
+      if (el) {
+        el.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+        el.focus({ preventScroll: true });
+      }
+      onTabTargetConsumed?.();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [tabTarget, loaded, setActiveTab, onTabTargetConsumed]);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const res = await fetch("/api/familiars", { cache: "no-store", signal });
+      const json = await res.json().catch(() => null);
+      if (signal?.aborted) return;
+      if (json?.ok) {
+        setRawFamiliars((json.familiars ?? []) as Familiar[]);
+        setDaemonDown(false);
+      } else if (res.status === 503) {
+        setDaemonDown(true);
+      }
+    } catch {
+      /* transient (or aborted) — keep last good list */
+    } finally {
+      if (!signal?.aborted) setLoaded(true);
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    const loadFamiliars = async () => {
-      try {
-        const res = await fetch("/api/familiars", { cache: "no-store" });
-        const json = await res.json();
-        if (cancelled) return;
-        if (json.ok) {
-          setRawFamiliars((json.familiars ?? []) as Familiar[]);
-        }
-      } catch {
-        /* transient — keep last good list */
-      } finally {
-        if (!cancelled) setLoaded(true);
+    const ctrl = new AbortController();
+    void load(ctrl.signal);
+    return () => ctrl.abort();
+  }, [load]);
+
+  const startDaemon = useCallback(async () => {
+    setStarting(true);
+    setStartError(null);
+    try {
+      const res = await fetch("/api/daemon/start", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.ok === false) {
+        throw new Error(json?.error || json?.stderr || "daemon did not start");
       }
-    };
-    void loadFamiliars();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      await load();
+    } catch (err) {
+      setStartError(err instanceof Error ? err.message : "daemon did not start");
+    } finally {
+      setStarting(false);
+    }
+  }, [load]);
 
   // Hold the panel until the first fetch settles so the "No familiars
   // configured" empty state never flashes before the roster loads.
   if (!loaded) {
     return (
-      <div className="settings-familiars-panel" role="status" aria-busy="true">
+      <div className="settings-familiars-panel" role="status" aria-busy="true" aria-label="Loading familiars">
         <SkeletonRows count={4} />
       </div>
     );
   }
 
-  return (
-    <FamiliarStudioInlinePanel
-      familiars={rawFamiliars}
-      resolved={familiars}
+  const createDialog = (
+    <CreateFamiliarDialog
+      open={createOpen}
+      onClose={() => setCreateOpen(false)}
+      existingIds={rawFamiliars.map((f) => f.id)}
+      defaultHarness={rawFamiliars.find((f) => f.defaultHarness)?.defaultHarness}
+      onCreated={(id) => {
+        // Select the freshly created familiar (not the first in the roster);
+        // the shared studio context drives the inline panel's detail pane.
+        openFamiliarStudio(id);
+        void load();
+      }}
     />
+  );
+
+  if (daemonDown) {
+    return (
+      <div className="settings-familiars-panel">
+        <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
+          <p className="text-[13px] text-[var(--text-secondary)]">
+            <Icon name="ph:warning-circle" width={13} aria-hidden className="mr-1.5 inline-block align-[-2px]" />
+            The daemon is offline, so the familiar roster can&apos;t be read. Start it to manage
+            familiars.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void startDaemon()}
+              disabled={starting}
+              className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90 disabled:opacity-60"
+              title="coven daemon start"
+            >
+              <Icon name="ph:rocket-launch-bold" width={12} />
+              {starting ? "Starting..." : "Start daemon"}
+            </button>
+            {startError ? (
+              <span role="alert" className="text-[11px] text-[var(--color-danger)]">
+                {startError}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (familiars.length === 0) {
+    return (
+      <div className="settings-familiars-panel">
+        <div className="flex flex-col items-start gap-3 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)] px-4 py-4">
+          <p className="text-[13px] text-[var(--text-secondary)]">
+            No familiars configured yet. Create one to get started.
+          </p>
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[11px] font-medium text-[var(--accent-presence-foreground)] hover:opacity-90"
+          >
+            <Icon name="ph:plus-bold" width={12} />
+            Create familiar
+          </button>
+        </div>
+        {createDialog}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="mb-3 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="settings-touch-action focus-ring inline-flex items-center gap-1.5 rounded-md border border-[var(--border-hairline)] px-3 py-1.5 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-raised)] hover:text-[var(--text-primary)]"
+        >
+          <Icon name="ph:plus-bold" width={12} />
+          New familiar
+        </button>
+      </div>
+      <FamiliarStudioInlinePanel
+        familiars={rawFamiliars}
+        resolved={familiars}
+      />
+      {createDialog}
+    </>
   );
 }
 
@@ -1146,6 +1327,10 @@ function AppearanceSection() {
   const [activeTheme, setActiveTheme] = useState<ActiveTheme>("coven");
   const [mode, setMode] = useState<ModePref>("dark");
   const [customData, setCustomData] = useState<CustomThemeData | null>(null);
+  // Below the shell's FamiliarStudioProvider — lets the pin-order hint open
+  // Familiars directly on the Lifecycle tab (the app-wide roster order lives
+  // there, distinct from the avatar-strip pin order set here).
+  const { setActiveTab: setStudioTab } = useFamiliarStudio();
 
   // Mirror the active theme + resolved tokens to the daemon on change (and mount)
   // so cross-device clients can read it. Best-effort; failures are swallowed.
@@ -1532,6 +1717,18 @@ function AppearanceSection() {
                 </div>
                 <div className="text-[11px] text-[var(--text-muted)]">
                   Drag to set the order pinned familiars appear in the avatar strip.
+                  The app-wide roster order is separate —{" "}
+                  <button
+                    type="button"
+                    className="focus-ring underline underline-offset-2 hover:text-[var(--text-primary)]"
+                    onClick={() => {
+                      setStudioTab("lifecycle");
+                      window.location.hash = "familiars";
+                    }}
+                  >
+                    set it in Familiars › Lifecycle
+                  </button>
+                  .
                 </div>
               </div>
               <FamiliarPinOrder />

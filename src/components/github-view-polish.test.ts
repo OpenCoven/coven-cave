@@ -27,17 +27,24 @@ assert.match(
   "refresh button tooltip includes ⌘R",
 );
 
-// Footer is no longer gated on `activity` — it always renders.
+// Footer hint bar retired (§8 chrome diet): the keyboard bindings are
+// documented in the ⌘/ Shortcuts sheet; only the low-rate warning still
+// summons a footer.
 assert.doesNotMatch(
   source,
   /\{activity && \(\s*<footer/,
   "footer is no longer conditionally rendered on `activity`",
 );
-assert.match(
+assert.doesNotMatch(
   source,
   /↑↓ navigate · Enter opens on GitHub · ⌘R refresh/,
-  "footer carries the keyboard-nav hint",
+  "the permanent keyboard-hints footer is retired",
 );
+{
+  const shortcuts = readFileSync(new URL("../lib/keyboard-shortcuts.ts", import.meta.url), "utf8");
+  assert.match(shortcuts, /GitHub: open the selected item/, "the Shortcuts sheet documents Enter-to-open");
+  assert.match(shortcuts, /GitHub: refresh activity/, "the Shortcuts sheet documents ⌘R refresh");
+}
 
 // ⌘R keydown handler wired.
 assert.match(
@@ -61,8 +68,9 @@ assert.match(
   "keydown handler skips when an input/textarea is focused",
 );
 
-// When a PAT is connected the button is icon-only (no text label); it keeps an
-// aria-label for accessibility and only shows "Add PAT" text when not connected.
+// PAT chrome (§8): while unconnected, a visible "Add PAT" setup CTA renders;
+// once connected, PAT management is an occasional verb and lives in the
+// header overflow menu.
 assert.doesNotMatch(
   source,
   /PAT connected</,
@@ -70,13 +78,13 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /aria-label=\{patStatus\?\.hasPat \? "GitHub PAT connected — manage" : "Connect GitHub PAT"\}/,
-  "connected PAT IconButton has aria-label",
+  /\{!patStatus\?\.hasPat \? \(\s*<Button[\s\S]{0,300}?Add PAT/,
+  "disconnected state keeps the visible Add PAT setup CTA",
 );
 assert.match(
   source,
-  /\{patStatus\?\.hasPat \? null : "Add PAT"\}/,
-  "disconnected PAT Button still shows the 'Add PAT' label",
+  /\{patStatus\?\.hasPat \? \(\s*<>\s*<PopoverSeparator \/>\s*<PopoverItem icon="ph:key" onSelect=\{\(\) => setShowPatModal\(true\)\}>/,
+  "connected state moves PAT management into the overflow menu",
 );
 
 assert.match(
@@ -91,8 +99,8 @@ assert.match(
 );
 assert.match(
   source,
-  /className=\{`gh-row\$\{selectedItem\?\.id === item\.id \? " is-selected" : ""\}`\}/,
-  "GitHub rows expose selected state",
+  /className=\{`gh-row reveal-scope\$\{selectedItem\?\.id === item\.id \? " is-selected" : ""\}`\}/,
+  "GitHub rows expose selected state (and act as the reveal scope for row actions)",
 );
 assert.match(
   source,
@@ -151,13 +159,13 @@ assert.doesNotMatch(
 );
 assert.match(
   boardCss,
-  /@media \(min-width: 1041px\) \{[\s\S]*?\.gh-glass-panel:not\(\.gh-glass-panel--empty\) \{[\s\S]*?height:100%;/,
-  "GitHub detail sidepanel keeps a stable container height while async detail content loads",
+  /\.gh-workspace--split \.gh-detail-holder \{ height:100%; \}[\s\S]*?\.gh-workspace--split \.gh-glass-panel \{[\s\S]*?flex:1 1 auto;/,
+  "GitHub detail sidepanel keeps a stable container height while async detail content loads (fills its split pane)",
 );
 assert.match(
   boardCss,
-  /@media \(max-width: 1040px\) \{[\s\S]*?\.gh-glass-panel:not\(\.gh-glass-panel--empty\) \{[\s\S]*?height:min\(460px,52dvh\);/,
-  "GitHub detail sidepanel stays height-constrained in the single-column layout so hover cannot scroll-jump it",
+  /\.gh-workspace--stacked \.gh-glass-panel:not\(\.gh-glass-panel--empty\) \{[\s\S]*?height:min\(460px,52dvh\);/,
+  "GitHub detail sidepanel stays height-constrained in the stacked layout so hover cannot scroll-jump it",
 );
 assert.doesNotMatch(
   source,
@@ -182,10 +190,12 @@ assert.match(
   /\(\["none", "org", "repo"\] as GroupBy\[\]\)\.map/,
   "grouping renders as a none/org/repo toggle",
 );
+// Grouping moved into the overflow menu (§8): PopoverItem's checked prop
+// renders menuitemradio semantics (aria-checked + trailing check glyph).
 assert.match(
   source,
-  /aria-pressed=\{isActive\}/,
-  "grouping toggle buttons expose pressed state",
+  /<PopoverItem key=\{g\} checked=\{groupBy === g\} onSelect=\{\(\) => setGroupBy\(g\)\}>/,
+  "grouping options are exclusive menu radios in the overflow",
 );
 assert.doesNotMatch(
   source,
@@ -426,6 +436,80 @@ assert.doesNotMatch(
   source,
   /w-full rounded-lg border border-\[var\(--border-hairline\)\] bg-\[var\(--bg-base\)\]/,
   "PAT modal inputs use .gh-input class, not inline Tailwind",
+);
+
+// ── Workspace split: resizable + collapsible + measured-width responsive ──────
+// The detail sidepanel is a react-resizable-panels Panel behind a drag
+// separator; its width persists per-group and its collapse is its own pref.
+assert.match(
+  source,
+  /const GH_WORKSPACE_GROUP_ID = "cave\.github\.workspace\.v1";/,
+  "workspace split widths persist under a versioned group id",
+);
+assert.match(
+  source,
+  /useDefaultLayout\(\{\s*id: GH_WORKSPACE_GROUP_ID,\s*panelIds: \["gh-list", "gh-detail"\],\s*storage: ghWorkspaceStorage,/,
+  "split layout restores through the guarded storage wrapper (shell.tsx pattern)",
+);
+assert.match(
+  source,
+  /const anyCollapsed = values\.some\(\(v\) => v >= 0 && v <= 6\);/,
+  "storage guard drops rail-width saves so a stale collapse can't restore as a crushed panel",
+);
+assert.match(
+  source,
+  /collapsible\s+collapsedSize=\{GH_DETAIL_RAIL_PX\}/,
+  "detail panel collapses to the expand rail, not to nothing",
+);
+assert.match(
+  source,
+  /<Separator className="shell-separator gh-workspace-separator">\s*<SeparatorHandle orientation="col" \/>/,
+  "list ⇄ detail separator uses the shared drag handle (role=separator a11y)",
+);
+assert.match(
+  source,
+  /const GH_DETAIL_COLLAPSED_KEY = "cave:github:details-collapsed:v1";/,
+  "collapse state persists in its own pref, independent of saved widths",
+);
+assert.match(
+  source,
+  /aria-label="Collapse details panel"[\s\S]{0,200}aria-expanded/,
+  "collapse control is a labelled disclosure button",
+);
+assert.match(
+  source,
+  /aria-label="Expand details panel"/,
+  "collapsed rail keeps a labelled expand control on-screen",
+);
+assert.match(
+  source,
+  /new ResizeObserver\(\(entries\) => \{\s*const next = entries\[0\]\?\.contentRect\.width/,
+  "split-vs-stacked tracks the workspace's own measured width (drag-to-split panes), not the viewport",
+);
+assert.match(
+  source,
+  /width === null \? !isMobile : width >= GH_SPLIT_MIN_PX/,
+  "first paint falls back to the viewport heuristic until the ResizeObserver lands",
+);
+assert.match(
+  source,
+  /if \(!collapsedRef\.current\) onLayoutChanged\(/,
+  "collapsed rail widths are never persisted as the saved layout",
+);
+assert.match(
+  boardCss,
+  /\.gh-detail-toggle-bar \{[\s\S]*?border:1px dashed /,
+  "stacked collapsed state renders the dashed show-details invitation",
+);
+assert.match(
+  boardCss,
+  /\.gh-detail-rail \{[\s\S]*?height:100%;/,
+  "collapsed split state renders the full-height expand rail",
+);
+assert.doesNotMatch(
+  boardCss,
+  /grid-template-columns:minmax\(0,1fr\) minmax\(340px,420px\)/,
+  "fixed-width detail column is gone — the split is user-resizable",
 );
 
 console.log("github-view-polish.test.ts OK");

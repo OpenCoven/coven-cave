@@ -12,6 +12,11 @@ import { CommandPalette, type PaletteIntent } from "@/components/command-palette
 import { JournalView } from "@/components/journal/journal-view";
 import type { CalendarDeadline } from "@/components/calendar-view";
 import { OnboardingOverlay } from "@/components/onboarding-overlay";
+import {
+  COVEN_CODE_SKIP_KEY,
+  shouldAutoOpenOnboarding,
+  type OnboardingStatusPayload,
+} from "@/lib/onboarding-gate";
 import { InboxEscalationsView } from "@/components/inbox-escalations-view";
 import { NewReminderModal, draftFromSlashArgs } from "@/components/new-reminder-modal";
 import { InboxToastStack, toastFromItem, type Toast } from "@/components/inbox-toast";
@@ -56,10 +61,20 @@ import { nativeNotify } from "@/lib/native-notify";
 import type { InboxItem, LinkRef } from "@/lib/cave-inbox";
 import type { InboxPrefs } from "@/lib/cave-inbox-prefs";
 import {
-  buildDailySummaryNotification,
   dailySummaryAutoKey,
+  dateSlug,
   ensureDailySummaryNotification,
 } from "@/lib/daily-summary-notifications";
+import {
+  DAILY_REFRESH_POLL_MS,
+  dailySummarySignature,
+  shouldRefreshDailySummary,
+} from "@/lib/daily-summary-refresh";
+import {
+  NARRATIVE_RETRY_MS,
+  generateDailyNarrative,
+  shouldRegenerateNarrative,
+} from "@/lib/daily-narrative";
 import type { Familiar, SessionRow } from "@/lib/types";
 import type { InitialCommandControls } from "@/lib/command-controls";
 import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
@@ -346,7 +361,15 @@ export function Workspace() {
   // often; the listener should not resubscribe on either.
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
+  // Daily-summary refresh state: the day key whose cycle we're in, the input
+  // signature and time of the last POST attempt, and an in-flight latch. All
+  // reset when the day key rolls over (midnight).
   const dailySummaryRequestedRef = useRef<string | null>(null);
+  const dailySummarySignatureRef = useRef<string | null>(null);
+  const dailySummaryAttemptAtRef = useRef(0);
+  const dailySummaryInFlightRef = useRef(false);
+  const narrativeInFlightRef = useRef(false);
+  const narrativeAttemptAtRef = useRef(0);
   const sessionsLoadedRef = useRef(sessionsLoaded);
   sessionsLoadedRef.current = sessionsLoaded;
   const modeRef = useRef(mode);
@@ -808,18 +831,116 @@ export function Workspace() {
     return () => es.close();
   }, []);
 
+  // Keep today's report live: create it on first activity, then refresh it in
+  // place whenever its inputs change (throttled server-writes; the report
+  // freezes for good once the day key rolls over).
+  const refreshDailySummary = useCallback(
+    (force: boolean) => {
+      if (!sessionsLoaded || dailySummaryInFlightRef.current) return;
+      const now = new Date();
+      const key = dailySummaryAutoKey(now);
+      if (dailySummaryRequestedRef.current !== key) {
+        // New day (or first run) — start a fresh refresh cycle.
+        dailySummaryRequestedRef.current = key;
+        dailySummarySignatureRef.current = null;
+        dailySummaryAttemptAtRef.current = 0;
+      }
+      const signature = dailySummarySignature({ items: inboxItems, sessions, now });
+      const hasItem = inboxItems.some((item) => item.auto === key);
+      const refresh = shouldRefreshDailySummary({
+        hasItem,
+        signature,
+        lastSignature: dailySummarySignatureRef.current,
+        lastAttemptAt: dailySummaryAttemptAtRef.current,
+        now,
+        force,
+      });
+      if (!refresh) return;
+      dailySummarySignatureRef.current = signature;
+      dailySummaryAttemptAtRef.current = now.getTime();
+      dailySummaryInFlightRef.current = true;
+      void ensureDailySummaryNotification({ items: inboxItems, sessions, now })
+        .then((result) => {
+          if (result === "failed") {
+            // Retry on the next input change once the min interval passes.
+            dailySummarySignatureRef.current = null;
+          } else if (result === "skipped" && !hasItem) {
+            // Empty day — nothing was posted; keep the create path immediate
+            // for when the first activity lands.
+            dailySummarySignatureRef.current = null;
+            dailySummaryAttemptAtRef.current = 0;
+          }
+        })
+        .finally(() => {
+          dailySummaryInFlightRef.current = false;
+        });
+    },
+    [inboxItems, sessions, sessionsLoaded],
+  );
   useEffect(() => {
-    if (!sessionsLoaded) return;
+    refreshDailySummary(false);
+  }, [refreshDailySummary]);
+  // Fallback tick: forces an attempt even with an unchanged signature, and
+  // rolls the refresh cycle past midnight for an app that stays open.
+  usePausablePoll(() => refreshDailySummary(true), DAILY_REFRESH_POLL_MS, {
+    enabled: sessionsLoaded,
+  });
+
+  // Layer a familiar-written narrative on today's report once its facts
+  // exist. One-shot generation through the chat bridge; every failure path is
+  // silent — the deterministic count-line body simply remains the summary.
+  useEffect(() => {
+    if (!sessionsLoaded || daemonOffline || narrativeInFlightRef.current) return;
     const now = new Date();
-    const key = dailySummaryAutoKey(now);
-    if (dailySummaryRequestedRef.current === key) return;
-    const draft = buildDailySummaryNotification({ items: inboxItems, sessions, now });
-    if (!draft) return;
-    dailySummaryRequestedRef.current = key;
-    void ensureDailySummaryNotification({ items: inboxItems, sessions, now }).then((result) => {
-      if (result === "failed") dailySummaryRequestedRef.current = null;
-    });
-  }, [inboxItems, sessions, sessionsLoaded]);
+    const item = inboxItems.find((it) => it.auto === dailySummaryAutoKey(now));
+    const report = item?.media?.report;
+    const stats = item?.media?.stats;
+    if (!report?.factsHash || !stats) return;
+    if (
+      !shouldRegenerateNarrative({
+        narrative: item.media?.narrative,
+        factsHash: report.factsHash,
+        now,
+      })
+    ) {
+      return;
+    }
+    if (now.getTime() - narrativeAttemptAtRef.current < NARRATIVE_RETRY_MS) return;
+    const familiar = familiars.find((f) => f.id === activeId) ?? familiars[0];
+    if (!familiar) return;
+    narrativeAttemptAtRef.current = now.getTime();
+    narrativeInFlightRef.current = true;
+    void (async () => {
+      try {
+        const dayLabel = new Intl.DateTimeFormat([], { month: "short", day: "numeric" }).format(
+          now,
+        );
+        const { text, error } = await generateDailyNarrative({
+          familiarId: familiar.id,
+          report,
+          stats,
+          dayLabel,
+        });
+        if (error || !text) return;
+        await fetch("/api/inbox/daily-summary", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sessions: sessionsRef.current,
+            date: dateSlug(now),
+            narrative: {
+              text,
+              familiarId: familiar.id,
+              familiarName: familiar.display_name || familiar.name,
+              factsHash: report.factsHash,
+            },
+          }),
+        }).catch(() => undefined);
+      } finally {
+        narrativeInFlightRef.current = false;
+      }
+    })();
+  }, [inboxItems, sessionsLoaded, daemonOffline, familiars, activeId]);
 
   const openOnboarding = useCallback(() => setOnboardingOpen(true), []);
   const closeOnboarding = useCallback(() => {
@@ -828,14 +949,12 @@ export function Workspace() {
   }, [loadFamiliars]);
 
   // First-run: auto-open onboarding if setup is missing and the user hasn't
-  // explicitly skipped or finished it. Keyed on the STRUCTURAL steps (CLI,
-  // Coven home, runtime adapters) — not on bare `complete` — because a
-  // stopped daemon flips `complete` false (daemon/familiars/binding all
-  // report not-ok while it's down), and that would relaunch the full wizard
-  // for an already-set-up machine on every visit. Daemon-down on a set-up
-  // machine belongs to the offline banner below, not the first-run flow.
-  // When the daemon IS reachable, any remaining incompleteness (no familiar
-  // yet, no binding) is genuine setup work, so the wizard still opens.
+  // explicitly skipped or finished it. The decision lives in the shared
+  // shouldAutoOpenOnboarding gate so it can't diverge from the wizard's
+  // finish-state again (cave-219): server `complete` ignores Coven Code
+  // (client-side tools[] check + skip choice), so bare `complete` must not
+  // short-circuit the gate. See onboarding-gate.ts for the structural-steps
+  // vs daemon-down rationale.
   useEffect(() => {
     let cancelled = false;
     const skipped =
@@ -845,16 +964,9 @@ export function Workspace() {
       try {
         const res = await fetch("/api/onboarding/status", { cache: "no-store" });
         if (!res.ok || cancelled) return;
-        const json = (await res.json()) as {
-          complete?: boolean;
-          steps?: Record<string, { ok?: boolean }>;
-        };
-        if (json.complete) return;
-        const step = (key: string) => json.steps?.[key]?.ok === true;
-        const structuralMissing =
-          !step("covenCli") || !step("covenHome") || !step("adapters");
-        const daemonUpButUnfinished = step("daemon");
-        if (structuralMissing || daemonUpButUnfinished) setOnboardingOpen(true);
+        const json = (await res.json()) as OnboardingStatusPayload;
+        const covenCodeSkipped = window.localStorage.getItem(COVEN_CODE_SKIP_KEY) === "1";
+        if (shouldAutoOpenOnboarding(json, covenCodeSkipped)) setOnboardingOpen(true);
       } catch {
         /* ignore — the daemon-offline banner surfaces transport issues */
       }

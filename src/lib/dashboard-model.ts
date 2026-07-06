@@ -9,6 +9,7 @@
 // client action-inbox island and the strip-types tests can import it safely.
 
 import type { InboxItem } from "./cave-inbox";
+import type { DailyReportPayload } from "./daily-report-facts";
 import {
   breakdownForDay,
   dateSlug,
@@ -38,6 +39,10 @@ export type TodaySummary = {
   generatedAt: string | null;
   /** Read-only session names recovered from the frozen summary body. */
   recentSessions: string[];
+  /** Structured day-in-review facts — null on items generated before Phase B. */
+  report: DailyReportPayload | null;
+  /** Familiar-written narrative for today, or null before one generates. */
+  narrative: { text: string; familiarName?: string; generatedAt: string } | null;
 };
 
 export type DashboardModel = {
@@ -77,8 +82,10 @@ export function buildDashboardModel(items: InboxItem[], now: Date): DashboardMod
         body: todayItem.body ?? "",
         imageUrl: todayItem.media?.imageUrl ?? null,
         alt: todayItem.media?.alt ?? "",
-        generatedAt: todayItem.firedAt ?? todayItem.updatedAt ?? null,
+        generatedAt: todayItem.media?.generatedAt ?? todayItem.firedAt ?? todayItem.updatedAt ?? null,
         recentSessions: parseRecentSessions(todayItem.body),
+        report: todayItem.media?.report ?? null,
+        narrative: todayItem.media?.narrative ?? null,
       }
     : null;
 

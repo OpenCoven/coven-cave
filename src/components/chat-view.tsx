@@ -9,6 +9,7 @@ import { ChatArtifactViewer } from "@/components/chat-artifact-viewer";
 import { buildSketchPrompt, extractArtifactBlocks, titleFromPrompt } from "@/lib/canvas-artifacts";
 import { segmentTurn } from "@/lib/turn-segments";
 import { isLiveSnapshotActive } from "@/lib/live-chat-snapshot";
+import { createLiveGenerationRegistry, type LiveGenerationSnapshot } from "@/lib/live-chat-generations";
 import { buildQuotedPrompt, buildReplySnippet, type ReplyTarget } from "@/lib/chat-reply";
 import { canonicalize, formatHelp, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { Icon, type IconName } from "@/lib/icon";
@@ -16,11 +17,9 @@ import { useCopy } from "@/lib/use-copy";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useKeySymbols } from "@/lib/platform-keys";
 import { useVisualViewport } from "@/lib/use-viewport";
-import { useGlyphOverrides } from "@/lib/cave-glyph-overrides";
-import { useFamiliarImages } from "@/lib/cave-familiar-images";
-import { useFamiliarOverrides } from "@/lib/cave-familiar-overrides";
-import { resolveFamiliar } from "@/lib/familiar-resolve";
-import { FamiliarAvatar } from "@/components/familiar-avatar";
+import { FamiliarIcon } from "@/components/familiar-icon";
+import { ChatEmptyState } from "@/components/chat-empty-state";
+import { useAnnouncer } from "@/components/ui/live-region";
 import { FamiliarInlineCard } from "@/components/familiar-inline-card";
 import { ArtifactComments } from "@/components/artifact-comments";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
@@ -191,17 +190,7 @@ type Turn = {
 // value is a pure function of the turn, so sharing across instances is safe.
 const replyableTurnCache = new WeakMap<Turn, boolean>();
 
-type LiveChatGenerationSnapshot = {
-  sessionId: string;
-  turns: Turn[];
-  activeLeafId: string;
-  controller: AbortController;
-  updatedAt: number;
-};
-type LiveChatGenerationListener = (snapshot: LiveChatGenerationSnapshot | null) => void;
-
-const liveChatGenerations = new Map<string, LiveChatGenerationSnapshot>();
-const liveChatGenerationListeners = new Map<string, Set<LiveChatGenerationListener>>();
+type LiveChatGenerationSnapshot = LiveGenerationSnapshot<Turn>;
 
 function cloneLiveTurn(turn: Turn): Turn {
   return {
@@ -212,38 +201,31 @@ function cloneLiveTurn(turn: Turn): Turn {
   };
 }
 
-function notifyLiveChatGeneration(sessionId: string, snapshot: LiveChatGenerationSnapshot | null) {
-  const listeners = liveChatGenerationListeners.get(sessionId);
-  if (!listeners?.size) return;
-  for (const listener of listeners) listener(snapshot);
-}
+// Module-scope so a generation outlives the ChatView instance that started
+// it (thread switches AND full surface unmounts — cave-0er). All streaming
+// mutations must go through the registry (see updateLiveTurns), never only
+// through component setState: React silently drops setState on an unmounted
+// instance, which used to freeze the snapshot mid-generation and lose the
+// response. See src/lib/live-chat-generations.ts.
+const liveChatRegistry = createLiveGenerationRegistry<Turn>(cloneLiveTurn);
 
 function readLiveChatGeneration(sessionId: string): LiveChatGenerationSnapshot | null {
-  return liveChatGenerations.get(sessionId) ?? null;
+  return liveChatRegistry.read(sessionId);
 }
 
-function recordLiveChatGeneration(snapshot: LiveChatGenerationSnapshot) {
-  const next = {
-    ...snapshot,
-    turns: snapshot.turns.map(cloneLiveTurn),
-  };
-  liveChatGenerations.set(snapshot.sessionId, next);
-  queueMicrotask(() => notifyLiveChatGeneration(snapshot.sessionId, next));
+function recordLiveChatGeneration(snapshot: LiveChatGenerationSnapshot): LiveChatGenerationSnapshot {
+  return liveChatRegistry.record(snapshot);
 }
 
 function clearLiveChatGeneration(sessionId: string | null | undefined) {
-  if (!sessionId || !liveChatGenerations.delete(sessionId)) return;
-  queueMicrotask(() => notifyLiveChatGeneration(sessionId, null));
+  liveChatRegistry.clear(sessionId);
 }
 
-function subscribeLiveChatGeneration(sessionId: string, listener: LiveChatGenerationListener) {
-  const listeners = liveChatGenerationListeners.get(sessionId) ?? new Set<LiveChatGenerationListener>();
-  listeners.add(listener);
-  liveChatGenerationListeners.set(sessionId, listeners);
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0) liveChatGenerationListeners.delete(sessionId);
-  };
+function subscribeLiveChatGeneration(
+  sessionId: string,
+  listener: (snapshot: LiveChatGenerationSnapshot | null) => void,
+) {
+  return liveChatRegistry.subscribe(sessionId, listener);
 }
 
 // `isLiveSnapshotActive` lives in @/lib/live-chat-snapshot so the staleness rule
@@ -271,6 +253,9 @@ type Props = {
   openFindQuery?: string;
   openFindNonce?: number;
   daemonRunning?: boolean;
+  /** Workspace-owned session list; the starting page's "Continue" row reads it
+   *  so no extra fetch rides on every new chat. */
+  sessions?: SessionRow[];
   onSessionStarted?: (sessionId: string) => void;
   onSessionsChanged?: () => void;
   onBack?: () => void;
@@ -785,110 +770,9 @@ function splitReasoning(text: string): { visible: string; reasoning: string } {
 }
 
 // ── ChatEmptyState ────────────────────────────────────────────────────────────
-// Shown when a chat session has no turns yet. Gives the user clear affordance
-// to start a conversation rather than staring at a blank pane.
-
-const STARTER_PROMPTS = [
-  "Review my recent changes",
-  "Plan a feature and break it into board cards",
-  "Summarise what I worked on today",
-];
-
-function ChatEmptyState({
-  familiar,
-  onPrompt,
-  projectId,
-  onProjectChange,
-  projects,
-  createProject,
-  fileMentions = false,
-}: {
-  familiar: Familiar;
-  onPrompt?: (text: string) => void;
-  /** Selected predetermined project for the chat runtime root. */
-  projectId?: string | null;
-  /** Updates the project used for the next send. */
-  onProjectChange?: (value: string) => void;
-  projects: CaveProject[];
-  /** From useProjects() — enables the picker's "Add project…" row. */
-  createProject?: (name: string, root: string) => Promise<CaveProject | null>;
-  /** True when the chat knows a project root, so `@` opens the file picker (CHAT-D1-04). */
-  fileMentions?: boolean;
-}) {
-  const project =
-    projectId === NO_PROJECT_ID
-      ? null
-      : (projectId ? chatProjectById(projectId, projects) ?? projects[0] : projects[0]) ?? null;
-  // App-contextual starters; the last is project-aware when a root is known.
-  const prompts = [
-    ...STARTER_PROMPTS,
-    project ? `Start a task in ${project.name}` : "Start a focused task",
-  ];
-
-  return (
-    <div className="cave-chat-empty select-none">
-      <div className="cave-chat-empty-shell">
-        <div className="cave-chat-empty-familiar">
-          <div className="cave-chat-empty-mark">
-            <FamiliarIcon familiar={familiar} size="lg" />
-          </div>
-          <div className="cave-chat-empty-familiar-copy">
-            <h2 className="cave-chat-empty-title">
-              {familiar.display_name}
-            </h2>
-            <p className="cave-chat-empty-meta">
-              <span>{familiar.harness}</span>
-              {fileMentions ? <span>project files ready</span> : null}
-            </p>
-          </div>
-        </div>
-
-        {onProjectChange && (
-          <div className="cave-chat-empty-project">
-            <span className="cave-chat-empty-project-head">
-              <Icon name="ph:folder-open" width={14} aria-hidden />
-              <span className="cave-chat-empty-project-label">Project</span>
-              <ProjectPicker
-                projects={projects}
-                value={projectId ?? null}
-                onChange={onProjectChange}
-                allowNoProject
-                familiarId={familiar.id}
-                createProject={createProject}
-                ariaLabel="Project for this chat"
-              />
-            </span>
-            {project ? (
-              <span className="cave-chat-empty-project-root">
-                {project.root}
-              </span>
-            ) : null}
-          </div>
-        )}
-
-        {onPrompt && (
-          <div className="cave-chat-empty-prompts" aria-label="Starter prompts">
-            {prompts.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => onPrompt(p)}
-                className="cave-chat-empty-prompt"
-              >
-                <span>{p}</span>
-                <Icon name="ph:arrow-right-bold" width={13} aria-hidden />
-              </button>
-            ))}
-          </div>
-        )}
-
-        <p className="cave-chat-empty-hint">
-          Ready for the next thread.
-        </p>
-      </div>
-    </div>
-  );
-}
+// The familiar's task-aware starting page lives in chat-empty-state.tsx; this
+// view arms/executes its "Start a task" card-follows-chat flow (see
+// handleEvent's "session" case).
 
 /** Codex/ChatGPT-style overflow menu. Collapses the session's secondary
  *  controls — project switch, voice call, debug — into a single kebab so the
@@ -2086,7 +1970,7 @@ async function chatBridgeFailureMessage(res: Response): Promise<string> {
 // ── ChatView ──────────────────────────────────────────────────────────────────
 
 export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
-  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
+  { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, sessions, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -2217,6 +2101,22 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const [historyRetryKey, setHistoryRetryKey] = useState(0);
   const retryHistory = useCallback(() => setHistoryRetryKey((k) => k + 1), []);
   const [linkedContext, setLinkedContext] = useState<ChatLinkedContext | null>(null);
+  const { announce } = useAnnouncer();
+  // "Start a task" (card-follows-chat): the starting page arms this, and the
+  // stream's "session" event — where the session id is born — creates the
+  // linked board card from the first prompt. State renders the armed chip; the
+  // ref is what handleEvent reads mid-stream (one-shot, cleared on fire).
+  const [taskArmed, setTaskArmed] = useState(false);
+  const taskArmedRef = useRef(false);
+  const armTask = () => {
+    taskArmedRef.current = true;
+    setTaskArmed(true);
+    inputRef.current?.focus();
+  };
+  const disarmTask = () => {
+    taskArmedRef.current = false;
+    setTaskArmed(false);
+  };
   // In-chat "final nudge" — surfaces when the linked task hits `completed`
   // lifecycle. Dismiss is persisted per-session in localStorage so the banner
   // doesn't reappear on every reload after the user waved it off.
@@ -2479,6 +2379,19 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   const activeSlashOptionRef = useRef<HTMLButtonElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const initialPromptSentRef = useRef(false);
+  /** True while THIS instance's sendRaw reader loop is running. The owner
+   *  applies stream events itself (handleEvent), so it never needs the
+   *  settle-refetch below; an instance that merely ADOPTED a live snapshot
+   *  (remounted mid-generation) does. */
+  const streamOwnerRef = useRef(false);
+  /** Session whose settle (registry clear) should trigger a disk refetch:
+   *  set when this non-owner view adopts a live snapshot, or when it evicts
+   *  a stale one while the orphaned stream may still be running (cave-0er). */
+  const refetchOnSettleRef = useRef<string | null>(null);
+  /** Count of registry null-notifications to swallow: evicting a stale
+   *  snapshot emits one, and that self-inflicted settle must not refetch a
+   *  conversation the history effect is already loading. */
+  const skipSettleNotifyRef = useRef(0);
   const keys = useKeySymbols();
 
   function persistLiveTurns(
@@ -2504,23 +2417,34 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     controller: AbortController | null = abortRef.current,
     targetSessionId: string | null = currentSessionRef.current,
   ) {
-    // Background stream: the user navigated to a DIFFERENT thread while this
-    // session is still generating. Update that session's OWN registry snapshot
-    // (its turns, its controller) — calling setTurns here would splice the
-    // streaming session's messages into the thread now on screen AND persist
-    // the on-screen thread's turns back into the streaming session's snapshot
-    // (returning to it then shows the wrong conversation, stuck "Streaming…").
-    if (targetSessionId && targetSessionId !== currentSessionRef.current) {
-      const snap = readLiveChatGeneration(targetSessionId);
-      if (!snap) return; // stream already settled / snapshot evicted
-      recordLiveChatGeneration({
-        ...snap,
-        turns: updater(snap.turns),
-        activeLeafId: nextActiveLeafId,
-        updatedAt: Date.now(),
-      });
-      return;
+    // Registry-first (cave-0er): while a generation has a registry snapshot,
+    // the registry is the accumulating source of truth — it lives at module
+    // scope, so chunks keep landing even after this component instance
+    // unmounts (navigating to another surface). Routing accumulation through
+    // setTurns instead silently dropped every post-unmount update (React
+    // ignores setState on unmounted instances), freezing the snapshot and
+    // losing the response.
+    if (targetSessionId) {
+      const stored = liveChatRegistry.advance(targetSessionId, updater, nextActiveLeafId);
+      if (stored) {
+        // Mirror synchronously into THIS view's state when it is showing the
+        // streaming session. Reusing the stored array means the microtask
+        // notification delivers the same reference — setTurns bails, no
+        // double render. A view on a different thread ignores the update; an
+        // unmounted view's setTurns is a harmless no-op (the registry
+        // already has the data and a remount adopts it).
+        if (targetSessionId === currentSessionRef.current) {
+          turnsRef.current = stored.turns;
+          setTurns(stored.turns);
+        }
+        return;
+      }
+      // Stream already settled / snapshot evicted: drop background updates
+      // aimed at a thread that is not on screen.
+      if (targetSessionId !== currentSessionRef.current) return;
     }
+    // No registry snapshot (e.g. a brand-new chat before its "session" event
+    // assigns an id): plain component state, exactly as before.
     setTurns((prev) => {
       const next = updater(prev);
       turnsRef.current = next;
@@ -2539,10 +2463,28 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         abortRef.current = live.controller;
         setHistoryState("loaded");
         setBusy(true);
+        // Adopted someone else's stream (this instance mounted mid-
+        // generation): reconcile from disk when it settles, because this
+        // view never sees the stream's "done" event and the optimistic
+        // snapshot lacks the persisted turn ids/usage.
+        if (!streamOwnerRef.current) refetchOnSettleRef.current = sessionId;
         return;
       }
       abortRef.current = null;
       setBusy(false);
+      if (!live && skipSettleNotifyRef.current > 0) {
+        skipSettleNotifyRef.current -= 1;
+        return;
+      }
+      // Settle (registry cleared) for a generation this view adopted but
+      // does not own: the server has now persisted the full exchange (or a
+      // cancel marker) — reload the conversation from disk so the completed
+      // response actually appears (cave-0er). The owner skips this: its own
+      // handleEvent already applied the final state.
+      if (!live && refetchOnSettleRef.current === sessionId && !streamOwnerRef.current) {
+        refetchOnSettleRef.current = null;
+        setHistoryRetryKey((k) => k + 1);
+      }
     });
   }, [sessionId]);
 
@@ -3000,6 +2942,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     }
     currentSessionRef.current = sessionId;
     liveSessionIdRef.current = null;
+    // Reset the settle-refetch marker on every (re)load; the live-snapshot
+    // branches below re-arm it when there is actually an adopted or possibly-
+    // orphaned stream to reconcile. A marker left armed after a normal disk
+    // load would fire a spurious reload after the NEXT send settles.
+    refetchOnSettleRef.current = null;
     // Thread switch: release streaming state owned by the PREVIOUS thread so its
     // busy lock / Esc-cancel don't bleed onto this one. A background stream
     // keeps running via its registry snapshot + controller; the live-snapshot
@@ -3007,6 +2954,9 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     setBusy(false);
     abortRef.current = null;
     setLinkedContext(null);
+    // An armed "Start a task" belongs to the thread it was armed on.
+    taskArmedRef.current = false;
+    setTaskArmed(false);
     setFlowTranscriptFallback(null);
     if (!sessionId) {
       setTurns([]);
@@ -3023,13 +2973,23 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
       abortRef.current = live.controller;
       setHistoryState("loaded");
       setBusy(true);
+      // Adopting a stream this instance did not start (remount mid-
+      // generation): reconcile from disk when it settles — this view never
+      // sees the stream's "done" event (cave-0er).
+      if (!streamOwnerRef.current) refetchOnSettleRef.current = sessionId;
       return;
     }
     if (live) {
       // Stale/aborted snapshot whose cleanup never ran — evict it so neither
       // this view nor the subscription re-adopts a dead "Streaming…" state,
-      // then fall through to loading the conversation from disk.
+      // then fall through to loading the conversation from disk. The evict
+      // emits a null notification; swallow it (we are about to load from
+      // disk anyway). If the orphaned stream is in fact still running, its
+      // own clear on settle fires a SECOND notification — arm the settle
+      // refetch so the finished response gets picked up then (cave-0er).
+      skipSettleNotifyRef.current += 1;
       clearLiveChatGeneration(sessionId);
+      if (!live.controller.signal.aborted) refetchOnSettleRef.current = sessionId;
     }
     let cancelled = false;
     void (async () => {
@@ -3470,6 +3430,8 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const controller = new AbortController();
     const liveGeneration = { sessionId: initialLiveSessionId, controller };
     abortRef.current = controller;
+    streamOwnerRef.current = true;
+    refetchOnSettleRef.current = null;
     const nextTurns = [...turnsRef.current, userTurn, assistantTurn];
     appendTurn([userTurn, assistantTurn]);
     turnsRef.current = nextTurns;
@@ -3627,6 +3589,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         raiseDebugError({ turnId: assistantId });
       }
     } finally {
+      streamOwnerRef.current = false;
       clearLiveChatGeneration(liveGeneration.sessionId);
       abortRef.current = null;
       setBusy(false);
@@ -3876,6 +3839,49 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     inputRef.current?.focus();
   };
 
+  // "Start a task" tail end: the first send's "session" event hands over the
+  // session id, and the card follows the chat. Fire-and-forget — a failed card
+  // create must never disturb the running stream.
+  const createLinkedTaskCard = async (forSessionId: string, promptText: string) => {
+    const firstLine = promptText.split("\n")[0]?.trim() ?? "";
+    const title = (firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine) || "New task";
+    try {
+      const res = await fetch("/api/board", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title,
+          familiarId: familiar.id,
+          projectId: resolvedProjectId !== NO_PROJECT_ID ? resolvedProjectId : null,
+          cwd: activeProjectRoot || null,
+          sessionId: forSessionId,
+          status: "running",
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok || !json.card) throw new Error(json.error ?? "failed to create task card");
+      const card = json.card as Card;
+      const task = {
+        id: card.id,
+        title: card.title,
+        status: card.status,
+        priority: card.priority,
+        lifecycle: card.lifecycle,
+        labels: card.labels,
+        cwd: card.cwd,
+        projectId: card.projectId ?? null,
+        notes: card.notes?.trim() || null,
+      };
+      // Optimistic: the Task chip appears now; the conversation reload keeps it.
+      setLinkedContext((prev) =>
+        prev?.task ? prev : { task, tasks: [task, ...(prev?.tasks ?? [])], github: prev?.github ?? [] },
+      );
+      announce("Task card created and linked to this chat.");
+    } catch {
+      announce("Could not create the task card — the chat continues unlinked.", "assertive");
+    }
+  };
+
   const handleEvent = (
     ev: StreamEvent,
     assistantId: string,
@@ -3890,6 +3896,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
           currentSessionRef.current = ev.sessionId;
           setHistoryState("loaded");
           onSessionStarted?.(ev.sessionId);
+        }
+        if (taskArmedRef.current) {
+          // One-shot: clear before the async create so a second session event
+          // (or a retried send) can't double-create the card.
+          taskArmedRef.current = false;
+          setTaskArmed(false);
+          void createLinkedTaskCard(ev.sessionId, request.text);
         }
         persistLiveTurns(turnsRef.current, assistantId, liveGeneration.controller, liveGeneration.sessionId);
         return;
@@ -4569,6 +4582,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                 projects={projects}
                 createProject={createProject}
                 fileMentions={Boolean(mentionRoot)}
+                sessionId={sessionId}
+                sessions={sessions}
+                linkedContext={linkedContext}
+                daemonRunning={daemonRunning}
+                modelId={
+                  modelState?.effectiveModel && modelState.effectiveModel !== "unknown"
+                    ? modelState.effectiveModel
+                    : familiar.model ?? null
+                }
+                taskArmed={taskArmed}
+                onArmTask={armTask}
+                onDisarmTask={disarmTask}
               />
             )
           ) : null}
@@ -4725,7 +4750,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
             title={newTurnsCount ? `${newTurnsCount} new message${newTurnsCount !== 1 ? "s" : ""}` : undefined}
           >
             <Icon name="ph:caret-down-bold" width={12} />
-            {newTurnsCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[10px] font-semibold text-white">{newTurnsCount}</span>}
+            {newTurnsCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-presence)] text-[10px] font-semibold text-[var(--accent-presence-foreground)]">{newTurnsCount}</span>}
           </button>
         )}
       </div>
@@ -5173,7 +5198,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                       type="button"
                       onClick={() => void send()}
                       disabled={!input.trim() && attachments.length === 0}
-                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-white transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
+                      className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)] transition-colors hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-40"
                       title={`Send message (${keys.enter})`}
                       aria-label="Send message"
                     >
@@ -5208,19 +5233,6 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 });
 
 // ── TurnRow ────────────────────────────────────────────────────────────────────
-
-function FamiliarIcon({ familiar, size = "sm" }: { familiar: Familiar; size?: "sm" | "md" | "lg" | "xl" }) {
-  const overrides = useGlyphOverrides();
-  const images = useFamiliarImages();
-  const familiarOverrides = useFamiliarOverrides();
-  const resolved = resolveFamiliar(familiar, {
-    override: familiarOverrides[familiar.id],
-    image: images[familiar.id],
-    glyphOverride: overrides[familiar.id],
-    archived: false,
-  });
-  return <FamiliarAvatar familiar={resolved} size={size} />;
-}
 
 // Split a prose run into ordered segments, replacing every complete renderable
 // HTML/React fenced block with an inline ChatArtifactViewer. Text on either
@@ -5800,24 +5812,43 @@ function ToolGroup({ tools }: { tools: ToolEvent[] }) {
 // five ToolBlock/ToolGroup render sites.
 const ToolProjectRootContext = createContext<string | null>(null);
 
-// Review + Undo actions for the Codex-style inline edit card. Review opens the
-// comux diff (unchanged behavior); Undo reverts the edited file to its last
-// committed state via `/api/changes` (which auto-snapshots the tree to a
-// checkpoint first, so the revert is itself recoverable). Undo requires a
-// two-step arm→confirm to avoid an accidental one-click revert, and is only
-// offered when the target resolves to a repo-relative path under the project
-// root.
-function EditCardActions({ targetFile }: { targetFile: string }) {
+// Review + Undo actions for the Codex-style inline edit card. Review adapts to
+// where the edit can actually be reviewed: a file under the session's project
+// root jumps to its diff in the code rail's Changes panel (cumulative diff +
+// checkpoint/undo tools); anything else — familiar-workspace docs, repo-less
+// sessions, relative paths — opens an in-chat modal with this edit's diff, so
+// the button never lands on an empty Changes list or silently does nothing.
+// Undo reverts the edited file to its last committed state via `/api/changes`
+// (which auto-snapshots the tree to a checkpoint first, so the revert is
+// itself recoverable). Undo requires a two-step arm→confirm to avoid an
+// accidental one-click revert, and is only offered when the target resolves to
+// a repo-relative path under the project root.
+function EditCardActions({
+  targetFile,
+  diff,
+  displayPath,
+}: {
+  targetFile: string | null;
+  diff: string;
+  displayPath: string;
+}) {
   const projectRoot = useContext(ToolProjectRootContext);
   const relPath =
-    projectRoot && targetFile.startsWith(projectRoot)
+    projectRoot && targetFile && targetFile.startsWith(projectRoot)
       ? targetFile.slice(projectRoot.length).replace(/^\/+/, "")
       : null;
   const [state, setState] = useState<"idle" | "armed" | "reverting" | "reverted" | "error">("idle");
   const [err, setErr] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const base = displayPath.split("/").pop() || displayPath;
 
-  const review = () =>
-    window.dispatchEvent(new CustomEvent("cave:open-file-diff", { detail: { path: targetFile } }));
+  const review = () => {
+    if (relPath && targetFile) {
+      window.dispatchEvent(new CustomEvent("cave:open-file-diff", { detail: { path: targetFile } }));
+    } else {
+      setReviewOpen(true);
+    }
+  };
 
   const doUndo = async () => {
     if (!projectRoot || !relPath) return;
@@ -5842,9 +5873,31 @@ function EditCardActions({ targetFile }: { targetFile: string }) {
   return (
     <span className="cave-edit-card__actions" onClick={(e) => e.stopPropagation()}>
       {err ? <span className="cave-edit-card__error" title={err}>{err}</span> : null}
-      <button type="button" className="cave-edit-card__review focus-ring" onClick={review}>
+      <button
+        type="button"
+        className="cave-edit-card__review focus-ring"
+        onClick={review}
+        title={
+          relPath
+            ? "Review this file's pending diff in the Changes panel"
+            : "Review this edit's diff"
+        }
+      >
         Review
       </button>
+      <Modal
+        open={reviewOpen}
+        onClose={() => setReviewOpen(false)}
+        breadcrumb={["Review", base]}
+        wide
+      >
+        <div className="cave-review-modal">
+          <p className="cave-review-modal__path" title={displayPath}>
+            {displayPath}
+          </p>
+          <SyntaxBlock text={diff} lang="diff" />
+        </div>
+      </Modal>
       {relPath ? (
         state === "reverted" ? (
           <span className="cave-edit-card__reverted">Reverted</span>
@@ -5932,7 +5985,7 @@ function ToolBlock({ tool }: { tool: ToolEvent }) {
             {tool.status}
           </span>
           <DurationText durationMs={tool.durationMs} />
-          {targetFile ? <EditCardActions targetFile={targetFile} /> : null}
+          <EditCardActions targetFile={targetFile} diff={inputDiff ?? ""} displayPath={displayPath} />
         </summary>
         <div className="cave-tool-io mt-2">
           <div className="cave-tool-io-label">Code changes</div>

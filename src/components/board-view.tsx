@@ -1008,7 +1008,7 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               <button
                 type="button"
                 onClick={() => { setModalDefaultStatus("backlog"); setModalOpen(true); }}
-                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-white transition-opacity hover:opacity-85"
+                className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-presence)] px-3 text-[12px] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-85"
               >
                 <Icon name="ph:plus-bold" width={12} />
                 New task
