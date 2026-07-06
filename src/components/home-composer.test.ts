@@ -37,22 +37,12 @@ assert.match(
   "HomeComposer headline should reflect the selected project name",
 );
 
-assert.match(
+// Project picker was moved out of the toolbar (no longer rendered inline in
+// the composer card). Project context is preserved in the headline and enhancer.
+assert.doesNotMatch(
   source,
-  /<ProjectPicker[\s\S]*?value=\{selectedProjectId \|\| null\}[\s\S]*?ariaLabel="Choose project"/,
-  "HomeComposer should render the shared custom project selector",
-);
-
-assert.match(
-  source,
-  /<ProjectPicker[\s\S]*?allowNoProject/,
-  "HomeComposer should offer an explicit No-project choice, matching chat semantics",
-);
-
-assert.match(
-  source,
-  /<ProjectPicker[\s\S]*?createProject=\{createProject\}/,
-  "The Add-project row should come from the shared register+grant picker flow",
+  /className="hc-project-selector"/,
+  "ProjectPicker selector is removed from the home composer toolbar",
 );
 
 assert.match(
@@ -217,11 +207,7 @@ assert.match(
   "HomeComposer should render a thinking effort select with an accessible label",
 );
 
-assert.match(
-  source,
-  /"Choose response speed"/,
-  "HomeComposer should render a response speed select with an accessible label",
-);
+// Speed control removed from toolbar (response speed passed via initialControls default).
 
 assert.match(
   css,
@@ -349,42 +335,32 @@ assert.match(source, /command === "\/skill" \|\| command === "\/skills"/, "HomeC
 assert.match(source, /role="listbox" aria-label="Skills"/, "HomeComposer renders a Skills picker listbox");
 assert.match(source, /buildSkillPrompt\(skill\)/, "HomeComposer invokes a skill by starting a chat with the skill prompt");
 
-// ── Destination pills are an accessible single-select radiogroup ─────────────
-assert.match(
-  source,
-  /className="hc-dest-pills"\s+role="radiogroup"\s+aria-label="Send to"\s+ref=\{destGroupRef\}\s+onKeyDown=\{handleDestKeyDown\}/,
-  "Destination pills form a labelled radiogroup with keyboard navigation",
-);
-assert.match(
-  source,
-  /role="radio"\s+aria-checked=\{destination === d\.id\}\s+tabIndex=\{destination === d\.id \? 0 : -1\}/,
-  "Each destination pill is a radio that announces its checked state and roves the tab stop",
-);
+// ── Destination state is preserved for task-vs-chat routing (even without visible pills) ──────
+// The mode strip was removed from the composer; destination defaults to "chat".
+// The keyboard handler and nav array remain for potential future re-exposure.
 assert.match(
   source,
   /const nav = \["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"\];/,
-  "The radiogroup supports arrow/Home/End keyboard selection per the ARIA radio pattern",
+  "The destination nav array is retained for the handleDestKeyDown callback",
 );
 
-// ── Chat/Task lead the card as a mode strip above the textarea ───────────────
-assert.match(
+// ── Single-row toolbar replaces mode strip + run rail ───────────────────────
+// The mode strip (Chat/Task pills) and the separate run rail were removed.
+// Controls are now in one action bar: [+] [access chip] · [●] [model] [think] [🎤] [↑]
+assert.doesNotMatch(
   source,
-  /hc-mode-strip[\s\S]*?className="hc-dest-pills"[\s\S]*?className="hc-textarea"/,
-  "The Chat/Task switch renders in a mode strip above the textarea, not in the action bar",
+  /className="hc-mode-strip"/,
+  "The mode strip is removed from the composer card",
+);
+assert.doesNotMatch(
+  source,
+  /className="hc-run-rail"/,
+  "The secondary run-settings rail is removed from the composer card",
 );
 assert.match(
-  css,
-  /\.hc-mode-strip\s*\{/,
-  "HomeComposer CSS should define the mode strip that seats the Chat/Task switch atop the card",
-);
-
-// ── Chat-only send config collapses when Task is the destination ─────────────
-// Runtime/model, Think, and Speed configure a chat send and are meaningless for
-// creating a board task, so they render only while the Chat mode is selected.
-assert.match(
   source,
-  /destination === "chat" \? \(\s*<div className="hc-run-rail" aria-label="Run settings">[\s\S]*?Choose runtime and model[\s\S]*?Choose thinking effort[\s\S]*?Choose response speed[\s\S]*?<\/div>\s*\) : null/,
-  "Runtime/model, Think, and Speed controls collapse out of the composer when Task is selected",
+  /hc-control-group--who[\s\S]*?ph:plus-bold[\s\S]*?ph:warning-circle[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip[\s\S]*?hc-control-group--run[\s\S]*?hc-status-dot[\s\S]*?ariaLabel="Choose runtime and model"[\s\S]*?ariaLabel="Choose thinking effort"[\s\S]*?hc-mic-btn[\s\S]*?aria-label="Send"/,
+  "The action bar toolbar has: attach/access-chip left, status/model/thinking/mic/send right",
 );
 
 // ── Model selection moved to the /model slash command ────────────────────────
@@ -463,11 +439,11 @@ assert.match(
   "home prompt history is persisted when it changes",
 );
 
-// ── Attachments + Enhance (added to the home composer) ──────────────────────
+// ── Attachments ─────────────────────────────────────────────────────────────
 assert.match(
   source,
-  /className="hc-add-btn"[\s\S]*?onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?ph:paperclip/,
-  "the + launcher is now a paperclip that opens the file picker",
+  /className="hc-add-btn"[\s\S]*?onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?ph:plus-bold/,
+  "the + launcher uses a plus-bold icon that opens the file picker",
 );
 assert.match(
   source,
@@ -485,11 +461,7 @@ assert.match(
   /initialAttachments: outgoing/,
   "staged attachments are threaded into the started chat",
 );
-assert.match(
-  source,
-  /className=\{`hc-enhance-btn[\s\S]*?onClick=\{\(\) => void enhancePrompt\(\)\}/,
-  "an Enhance button invokes prompt enhancement",
-);
+// Enhance button removed from toolbar; logic stays for potential future use.
 assert.match(
   source,
   /import \{ buildPromptEnhancement \} from "@\/lib\/prompt-enhancer"/,
@@ -510,11 +482,7 @@ assert.match(
   /selectedFiles: attachments\.map\(\(attachment\) => attachment\.name\)/,
   "Enhance should include staged attachment names as file context",
 );
-assert.match(
-  source,
-  /enhanceOriginal != null &&[\s\S]*?onClick=\{revertEnhance\}/,
-  "a one-tap Undo reverts an enhancement",
-);
+// Enhance undo UI removed from toolbar; revertEnhance callback remains in code.
 
 // ── Drag-and-drop attachments ───────────────────────────────────────────────
 assert.match(

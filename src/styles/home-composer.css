@@ -164,15 +164,14 @@
 }
 
 /* ── Action bar ──────────────────────────────────────────────────────────────
- *   The main shell carries immediate composition controls: attach,
- *   familiar/project, prompt enhancement, and send. Runtime config lives in the
- *   tucked rail below so it stays available without crowding the textarea. */
+ *   Single-row toolbar: [+] [access chip] · · · [●] [model] [think] [🎤] [↑]
+ *   Left cluster = context; right cluster = run controls + send. */
 .hc-action-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 14px;
-  padding: 10px 14px 14px;
+  gap: 6px 10px;
+  padding: 8px 12px 12px;
 }
 
 /* Groups never split internally — a cluster wraps as a whole unit (so Speed and
@@ -866,19 +865,67 @@
   }
 }
 
-/* ── Send button (circular, icon-only — matches the Codex-style composer) ──── */
+/* ── Access chip — familiar selector in warning/amber ───────────────────── */
+.hc-access-chip.hc-familiar-selector,
+.hc-access-chip.hc-home-select-trigger {
+  background: color-mix(in oklch, var(--color-warning) 10%, var(--bg-base));
+  border-color: color-mix(in oklch, var(--color-warning) 28%, transparent);
+}
+.hc-access-chip.hc-familiar-selector:hover:not(:disabled),
+.hc-access-chip.hc-home-select-trigger:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--color-warning) 16%, var(--bg-base));
+  border-color: color-mix(in oklch, var(--color-warning) 38%, transparent);
+}
+.hc-access-chip .hc-familiar-glyph,
+.hc-access-chip .hc-home-select-value {
+  color: var(--color-warning);
+}
+
+/* ── Status dot — presence indicator before the model selector ──────────── */
+.hc-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in oklch, var(--text-muted) 55%, transparent);
+  background: transparent;
+  flex-shrink: 0;
+}
+
+/* ── Mic button ──────────────────────────────────────────────────────────── */
+.hc-mic-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.hc-mic-btn:hover:not(:disabled) {
+  background: var(--bg-base);
+  border-color: var(--border-hairline);
+  color: var(--text-secondary);
+}
+.hc-mic-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Send button — dark pill, icon-only ─────────────────────────────────── */
 .hc-send-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   padding: 0;
-  border-radius: var(--radius-control);
+  border-radius: 999px;
   border: none;
-  background: var(--accent-presence);
-  color: #fff;
+  background: color-mix(in oklch, var(--text-primary) 80%, var(--bg-raised));
+  color: var(--bg-base);
   cursor: pointer;
   margin-left: auto;
   flex-shrink: 0;
@@ -886,20 +933,19 @@
 }
 
 .hc-control-group--run .hc-send-btn {
-  margin-left: 0;
+  margin-left: 2px;
 }
 
 .hc-send-btn:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent-presence) 85%, #000);
+  background: var(--text-primary);
   transform: scale(1.05);
 }
 
-/* Empty/disabled reads as a neutral grey disc (no green) until there's a prompt
- * to send — mirrors the screenshot's idle send affordance. */
+/* Empty/disabled reads as a neutral grey pill until there's a prompt to send */
 .hc-send-btn.empty,
 .hc-send-btn:disabled {
-  background: color-mix(in oklch, var(--text-muted) 24%, var(--bg-base));
-  color: var(--text-muted);
+  background: color-mix(in oklch, var(--text-muted) 30%, var(--bg-raised));
+  color: color-mix(in oklch, var(--bg-base) 70%, var(--text-muted));
   cursor: default;
   transform: none;
 }

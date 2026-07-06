@@ -324,12 +324,14 @@ assert.match(
   /\(controlsOverride\?\.runtimeHost \?\? runtimeHost\)/,
   "an explicit host pick (or the home composer's initial pick) rides the send body; auto stays absent",
 );
-// Home composer parity: the same chip, threading the pick into the opened chat.
+// Home composer: host pick is threaded into the opened chat via initialControls.
+// The ComposerHostChip was removed from the home toolbar (run-rail removed); runtimeHost
+// state persists so future sessions pick up the correct host via initialControls.
 const homeComposer = readFileSync(new URL("./home-composer.tsx", import.meta.url), "utf8");
 assert.match(
   homeComposer,
-  /<ComposerHostChip[\s\S]{0,200}onPick=\{\(id\) => setRuntimeHost\(id === LOCAL_HOST_ID \? null : id\)\}/,
-  "the home composer renders the shared host chip (local pick = auto)",
+  /const \[runtimeHost, setRuntimeHost\] = useState<string \| null>\(null\)/,
+  "the home composer still tracks runtimeHost for threading into initialControls",
 );
 assert.match(
   homeComposer,
