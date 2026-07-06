@@ -518,6 +518,9 @@ function startListening(attempt: number = 0): void {
     if (err.code === "EADDRINUSE" && attempt < maxAttempts) {
       console.warn(`Port ${currentPort} in use, trying ${currentPort + 1}...`);
       server.removeAllListeners("error");
+      // listen() attached its callback via once('listening') before the failed
+      // bind — clear it too, or every stale callback fires on the winning port.
+      server.removeAllListeners("listening");
       startListening(attempt + 1);
     } else {
       console.error(err);
