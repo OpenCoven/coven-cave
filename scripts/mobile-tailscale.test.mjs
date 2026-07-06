@@ -27,7 +27,7 @@ test("mobile tailscale app mode serves the native client with no token", () => {
   // The tokenless native-app path must mint/load NO access or sidecar token and
   // unset both (plus COVEN_CAVE_BUNDLE) when starting the server.
   assert.match(script, /CAVE_MOBILE_APP/);
-  assert.match(script, /app\) app_command ;;/);
+  assert.match(script, /app\) resolve_active_port; maybe_fallback_port; app_command ;;/);
   assert.match(
     script,
     /unset COVEN_CAVE_ACCESS_TOKEN COVEN_CAVE_AUTH_TOKEN COVEN_CAVE_BUNDLE/,
