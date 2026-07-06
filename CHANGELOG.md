@@ -7,6 +7,9 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+### Docs
+- **Add `CONTRIBUTORS.md`** to credit community contributions. Records the fixes and improvements from Chris Thomas ([@Aimplemented](https://github.com/Aimplemented)) whose original PRs were re-landed through internal branches during merge — group-chat parallel first-pass replies (#2206), tokenless native iOS Serve route (#2404), installer links via the system handler (#2381, #2414), and the current-session-id flag (#1989).
+
 ## [0.0.140] - 2026-07-05
 
 Docs release on top of v0.0.139. Adds the approved design spec for the
