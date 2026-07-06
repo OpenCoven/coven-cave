@@ -799,7 +799,7 @@ function FamiliarsSection({
   // configured" empty state never flashes before the roster loads.
   if (!loaded) {
     return (
-      <div className="settings-familiars-panel" role="status" aria-busy="true">
+      <div className="settings-familiars-panel" role="status" aria-busy="true" aria-label="Loading familiars">
         <SkeletonRows count={4} />
       </div>
     );

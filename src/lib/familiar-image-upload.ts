@@ -6,6 +6,7 @@ import {
   setFamiliarImage,
   clearFamiliarImage,
 } from "@/lib/cave-familiar-images";
+import { useAnnouncer } from "@/components/ui/live-region";
 
 export type PreparedFamiliarImage = {
   dataUrl: string;
@@ -104,6 +105,9 @@ const blobToDataUrl = fileToDataUrl;
  */
 export function useFamiliarImageUpload(familiarId: string) {
   const [toast, setToast] = useState<string | null>(null);
+  // The toast is visual-only; mirror outcomes through the shared live region
+  // so screen readers hear them too (success included — it never had a toast).
+  const { announce } = useAnnouncer();
 
   const onFile = useCallback(
     async (file: File) => {
@@ -113,14 +117,22 @@ export function useFamiliarImageUpload(familiarId: string) {
         const res = await setFamiliarImage(familiarId, prepared);
         if (!res.ok) {
           setToast(res.reason);
+          announce(res.reason, "assertive");
           return;
         }
-        if (prepared.downsized) setToast("Image was downsized for Cave.");
+        if (prepared.downsized) {
+          setToast("Image was downsized for Cave.");
+          announce("Avatar updated. Image was downsized for Cave.");
+        } else {
+          announce("Avatar updated.");
+        }
       } catch (err) {
-        setToast(err instanceof Error ? err.message : "Could not read image.");
+        const message = err instanceof Error ? err.message : "Could not read image.";
+        setToast(message);
+        announce(message, "assertive");
       }
     },
-    [familiarId],
+    [familiarId, announce],
   );
 
   const clear = useCallback(() => void clearFamiliarImage(familiarId), [familiarId]);

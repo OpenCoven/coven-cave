@@ -26,4 +26,12 @@ assert.match(
   "user gets feedback when a large image is compressed successfully",
 );
 
+// ── Upload outcomes reach assistive tech (2026-07-06) ───────────────────────
+// The toast is visual-only; every outcome (success included, which never had
+// a toast) mirrors through the shared live region.
+assert.match(source, /useAnnouncer/, "the upload hook announces outcomes");
+assert.match(source, /announce\(res\.reason, "assertive"\)/, "store rejections announce assertively");
+assert.match(source, /announce\("Avatar updated\."\)/, "plain successes are announced");
+assert.match(source, /announce\(message, "assertive"\)/, "read/resize failures announce assertively");
+
 console.log("familiar-image-upload.test.ts: ok");
