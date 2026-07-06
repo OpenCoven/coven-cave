@@ -179,9 +179,9 @@ export function ChatArtifactViewer({ initialCode, kind: initialKind, title, fami
     >
       <div className="chat-artifact__head">
         <span className="chat-artifact__dots" aria-hidden>
-          <i style={{ background: "#e0666b" }} />
-          <i style={{ background: "#e0a44e" }} />
-          <i style={{ background: "#5bbb6b" }} />
+          <i className="chat-artifact__dot chat-artifact__dot--danger" />
+          <i className="chat-artifact__dot chat-artifact__dot--warning" />
+          <i className="chat-artifact__dot chat-artifact__dot--success" />
         </span>
         <Tabs
           variant="segment"
