@@ -777,7 +777,7 @@ function KanbanCard({ card, familiarById, sessionById, todayMs, isDragging, isSe
             background: isSelected ? "var(--accent-presence)" : "transparent",
           }}
         >
-          {isSelected && <Icon name="ph:check-bold" width={12} className="text-white" />}
+          {isSelected && <Icon name="ph:check-bold" width={12} className="text-[var(--accent-presence-foreground)]" />}
         </span>
       )}
       <div className="board-kanban-card-top">

@@ -286,7 +286,7 @@ function FamiliarPicker({
         type="button"
         onClick={() => void handleSubmit()}
         disabled={!selected || busy}
-        className="mt-1 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+        className="mt-1 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-[var(--accent-presence-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
       >
         {busy
           ? "Working…"
