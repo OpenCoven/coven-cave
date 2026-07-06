@@ -22,6 +22,10 @@ export async function streamFamiliarText(opts: {
   /** Called with the accumulated assistant text after each streamed chunk,
    *  so callers can render the reply incrementally as it arrives. */
   onText?: (text: string) => void;
+  /** Called the moment the bridge announces the backing session id — before
+   *  the stream completes — so callers can keep the thread resumable even if
+   *  the run is aborted mid-stream. */
+  onSession?: (sessionId: string) => void;
 }): Promise<{ text: string; error: string | null; sessionId?: string }> {
   let res: Response;
   try {
@@ -50,27 +54,38 @@ export async function streamFamiliarText(opts: {
   let text = "";
   let error: string | null = null;
   let sessionId: string | undefined;
+
+  const noteSession = (id: string | undefined) => {
+    if (!id) return;
+    sessionId = id;
+    opts.onSession?.(id);
+  };
+  const handleFrame = (frame: string) => {
+    const ev = parseSseFrame(frame);
+    if (!ev) return;
+    if (ev.kind === "assistant_chunk") {
+      text += ev.text ?? "";
+      opts.onText?.(text);
+    } else if (ev.kind === "session") noteSession(ev.sessionId);
+    else if (ev.kind === "done") {
+      noteSession(ev.sessionId);
+      if (ev.isError) error = error ?? "the familiar reported an error";
+    } else if (ev.kind === "error") error = ev.message ?? "generation error";
+  };
+
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     let idx;
     while ((idx = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, idx);
+      handleFrame(buffer.slice(0, idx));
       buffer = buffer.slice(idx + 2);
-      const ev = parseSseFrame(frame);
-      if (!ev) continue;
-      if (ev.kind === "assistant_chunk") {
-        text += ev.text ?? "";
-        opts.onText?.(text);
-      }
-      else if (ev.kind === "session") sessionId = ev.sessionId;
-      else if (ev.kind === "done") {
-        if (ev.sessionId) sessionId = ev.sessionId;
-        if (ev.isError) error = error ?? "the familiar reported an error";
-      }
-      else if (ev.kind === "error") error = ev.message ?? "generation error";
     }
   }
+  // Flush the decoder (a multi-byte character can straddle the final chunk)
+  // and process a last frame that arrived without its trailing blank line.
+  buffer += decoder.decode();
+  if (buffer.trim()) handleFrame(buffer);
   return { text, error, sessionId };
 }
