@@ -4521,11 +4521,80 @@ details[open] > .cave-tool-summary::before {
   color: var(--text-secondary);
 }
 
+/* Edit / Save / Cancel / Copy affordances, pushed to the right edge of the
+   preview header. Sans (not the header's mono) so the labels read as chrome. */
+.workspace-rail__preview-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  font-family: var(--font-sans, inherit);
+}
+
+.workspace-rail__preview-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  font-size: 10px;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.workspace-rail__preview-action:hover {
+  background-color: var(--bg-raised);
+  color: var(--text-secondary);
+}
+
+.workspace-rail__preview-action:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.workspace-rail__preview-action--primary {
+  color: var(--accent-presence);
+}
+
+.workspace-rail__preview-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-family: var(--font-sans, inherit);
+  color: var(--color-success, #34d399);
+}
+
+.workspace-rail__preview-saveerr {
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-family: var(--font-sans, inherit);
+  color: var(--color-danger, #f87171);
+}
+
 .workspace-rail__preview-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: 10px;
+}
+
+/* Editing swaps the padded, scrollable reader for a flush editor that fills the
+   pane and scrolls internally (CodeMirror owns its own scroll). */
+.workspace-rail__preview-body--edit {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-rail__preview-editor {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .workspace-rail__preview-skeleton {

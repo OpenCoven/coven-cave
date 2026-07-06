@@ -26,14 +26,21 @@ assert.match(panel, /id="workspace-rail-files-diffs"[\s\S]*?defaultSize="340px"[
 assert.match(panel, /if \(!projectRoot\)/, "handles the null-projectRoot state");
 assert.match(panel, /No project linked/, "renders a muted no-project state");
 
-// ─── rail-file-preview.tsx (read-only) ───────────────────────────────────────
+// ─── rail-file-preview.tsx (view + inline edit) ──────────────────────────────
 assert.match(preview, /export function RailFilePreview\(/, "exports RailFilePreview");
 assert.match(preview, /\/api\/project-file/, "fetches the project-file route");
 assert.match(preview, /Select a file/, "muted empty state when no file selected");
 assert.match(preview, /SyntaxBlock/, "renders text via SyntaxBlock");
 assert.match(preview, /MarkdownBlock/, "renders markdown via MarkdownBlock");
 assert.match(preview, /kind === "image"/, "handles image files");
-assert.doesNotMatch(preview, /CodeEditor/, "read-only: no editor");
-assert.doesNotMatch(preview, /onSave|saveEdit/, "read-only: no save path");
+
+// Inline editing: text files (except .env) can be edited and saved back.
+assert.match(preview, /import \{ CodeEditor \} from "@\/components\/code-editor"/, "uses the shared CodeMirror editor");
+assert.match(preview, /const saveEdit = useCallback/, "has a saveEdit callback");
+assert.match(preview, /method: "POST"/, "writes back to the project-file route");
+assert.match(preview, /const editable = file\?\.kind === "text" && !fileName\(path \?\? ""\)\.startsWith\("\.env"\)/, "guards .env and non-text from editing");
+assert.match(preview, /savingRef/, "in-flight guard blocks concurrent saves (Cmd-S vs button)");
+assert.match(preview, /onClick=\{startEditing\}/, "exposes an Edit affordance");
+assert.match(preview, /useAnnouncer/, "announces save success/failure to assistive tech");
 
 console.log("rail-files-panel.test.ts OK");
