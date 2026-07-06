@@ -68,6 +68,16 @@ export const COMPATIBILITY_ADAPTERS: CompatibilityAdapter[] = [
     source: "bundled",
   },
   {
+    id: "opencode",
+    label: "OpenCode",
+    binary: "opencode",
+    chatSupported: true,
+    versionArgs: ["--version"],
+    installHint:
+      "Install OpenCode with `curl -fsSL https://opencode.ai/install | bash`, then ensure `opencode` is on PATH.",
+    source: "bundled",
+  },
+  {
     id: "hermes",
     label: "Hermes",
     binary: "hermes",
@@ -215,7 +225,7 @@ export function mergeAdapterReports(
 
   return [...merged.values()].sort((a, b) => {
     const rank = (id: string) =>
-      id === "codex" ? 0 : id === "claude" ? 1 : id === "hermes" ? 2 : id === "openclaw" ? 3 : 4;
+      id === "codex" ? 0 : id === "claude" ? 1 : id === "opencode" ? 2 : id === "hermes" ? 3 : id === "openclaw" ? 4 : 5;
     return rank(a.id) - rank(b.id) || a.label.localeCompare(b.label);
   });
 }
