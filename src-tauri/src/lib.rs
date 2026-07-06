@@ -118,6 +118,27 @@ fn show_quick_chat_window(app: &tauri::AppHandle, quick_chat_url: &Url) {
     }
 }
 
+#[cfg(all(desktop, target_os = "linux"))]
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(message) = payload.downcast_ref::<String>() {
+        return message.clone();
+    }
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        return message.to_string();
+    }
+    "unknown panic".to_string()
+}
+
+#[cfg(all(desktop, target_os = "linux"))]
+fn log_linux_tray_unavailable(reason: &str) {
+    let guidance = "CovenCave will continue without tray shortcuts. For tray support, install a compatible AppIndicator runtime, for example `libayatana-appindicator3-1` on Ubuntu/Debian or `libappindicator-gtk3` on Arch.";
+    log::warn!("[cave] Linux tray disabled: {}. {}", reason, guidance);
+    eprintln!(
+        "[cave] Linux tray disabled: {}\n[cave] {}",
+        reason, guidance
+    );
+}
+
 /// Surface a fatal startup error to the user. Platform-specific: macOS uses
 /// osascript (Cocoa alert), Windows writes to a temp file and opens Notepad,
 /// Linux tries zenity/kdialog. Best-effort; ignored on failure.
@@ -1267,6 +1288,26 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             let tray_builder = tray_builder.icon_as_template(true);
 
+            #[cfg(target_os = "linux")]
+            {
+                let previous_hook = std::panic::take_hook();
+                std::panic::set_hook(Box::new(|_| {}));
+                let tray_result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        tray_builder.build(app)
+                    }));
+                std::panic::set_hook(previous_hook);
+
+                match tray_result {
+                    Ok(Ok(_tray)) => {}
+                    Ok(Err(e)) => log_linux_tray_unavailable(&e.to_string()),
+                    Err(payload) => {
+                        log_linux_tray_unavailable(&panic_payload_message(payload.as_ref()))
+                    }
+                }
+            }
+
+            #[cfg(not(target_os = "linux"))]
             let _tray = tray_builder.build(app)?;
 
             let app_handle = app.handle().clone();

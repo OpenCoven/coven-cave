@@ -473,6 +473,20 @@
   max-width: 172px;
 }
 
+.hc-run-rail .hc-runtime-model-selector {
+  flex: 1 1 240px;
+  max-width: 320px;
+}
+
+.hc-run-rail .hc-command-select {
+  flex: 0 1 148px;
+}
+
+.hc-run-rail .cave-composer-host-chip {
+  flex: 0 1 230px;
+  min-width: 0;
+}
+
 .hc-command-select .hc-command-select-label {
   flex-shrink: 0;
   font-size: 11px;

@@ -2764,25 +2764,35 @@ details[open] > .cave-tool-summary::before {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 5px;
-  min-height: 22px;
+  gap: 4px;
+  min-height: 20px;
   overflow-x: auto;
   scrollbar-width: none;
   white-space: nowrap;
 }
 
 .cave-chat-linked-chip {
-  min-height: 22px;
-  max-width: min(36vw, 360px);
-  gap: 5px;
-  padding: 0 7px;
-  border-radius: 7px;
+  min-height: 20px;
+  max-width: min(30vw, 300px);
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 6px;
   font-size: 10.5px;
   line-height: 1;
 }
 
+.cave-chat-linked-chip--task {
+  max-width: min(32vw, 320px);
+}
+
+.cave-chat-linked-chip--link-task {
+  width: 20px;
+  min-width: 20px;
+  padding: 0;
+}
+
 .cave-chat-linked-chip--github {
-  max-width: min(26vw, 280px);
+  max-width: min(18vw, 180px);
 }
 
 .cave-chat-linked-context::-webkit-scrollbar {

@@ -647,6 +647,7 @@ export const SUITES = {
     "src/app/api/launch/route.test.ts",
     "scripts/sidecar-bundle.test.mjs",
     "scripts/sidecar-bundle-deps.test.mjs",
+    "scripts/tray-icon.test.mjs",
     "src/app/api/sessions/[id]/events/route.test.ts",
     "src/app/api/sessions/prune/prune-response.test.ts",
     "src/lib/server/familiar-contract-files.test.ts",
