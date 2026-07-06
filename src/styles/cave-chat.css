@@ -4522,15 +4522,12 @@ details[open] > .cave-tool-summary::before {
   background: var(--bg-surface, var(--background));
 }
 
-/* Fullscreen fills its CONTAINING BLOCK via inset alone — no width/height.
-   .cave-mode-fade retains a transform after its entrance animation
-   (animation-fill-mode: both), so every mode wrapper is the containing block
-   for fixed descendants: the rail's origin sits AFTER the shell's icon rail.
-   With width:100vw stacked on that offset, the far-right diffs pane hung past
-   the window edge (clipped stat chips / cut "Diff" header). inset:0 sizes to
-   the containing block exactly — today the mode area (shell nav stays
-   reachable), and still correct if the retained transform ever goes away
-   (falls back to true viewport). Root cause tracked as bead cave-cco. */
+/* Fullscreen fills via inset alone — never width:100vw/height:100vh. The mode
+   wrapper's entrance animation briefly applies a transform (containing block
+   for the first 120ms; permanent before cave-cco), and inset-only sizing is
+   correct under both regimes: it fills whatever the containing block is —
+   normally the true viewport — where a 100vw stacked on a containing-block
+   offset once hung the far-right diffs pane past the window edge (#2526). */
 .workspace-rail--fullscreen {
   position: fixed;
   inset: 0;

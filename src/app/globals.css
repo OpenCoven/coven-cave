@@ -3397,12 +3397,26 @@ textarea.required-inputs-control {
 }
 
 /* ── UX-004: Mode transition crossfade ──────────────────────────────────── */
+/* fill-mode is `backwards`, NOT `both`/`forwards`, and the `to` frame has no
+   transform. A forwards fill keeps every animated property actively applied at
+   its final value forever — and because transform is animated (from-frame),
+   Chromium holds an IDENTITY transform on the wrapper for the life of the
+   surface (verified: omitting transform from `to` alone still computes
+   matrix(1,0,0,1,0,0) under `both`). Any applied transform, even identity,
+   makes the mode wrapper the containing block for position:fixed descendants:
+   fixed overlays inside surfaces resolved against the mode area (origin after
+   the shell rail / below the top bar) instead of the viewport — the bug behind
+   the #537 / #1984 / github hover-card portal workarounds and the #2526
+   fullscreen code-rail clip. With `backwards` the animation releases on
+   finish (end state equals base state, so nothing jumps) and the containing
+   block exists only during the 120ms entrance. Pinned in
+   rail-files-panel.test.ts. */
 @keyframes cave-mode-in {
   from { opacity: 0; transform: translateY(4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; }
 }
 .cave-mode-fade {
-  animation: cave-mode-in 120ms ease-out both;
+  animation: cave-mode-in 120ms ease-out backwards;
 }
 
 /* Left nav collapsed strip -- mirrors the agent tab on the right */

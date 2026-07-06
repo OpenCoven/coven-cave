@@ -70,16 +70,44 @@ assert.match(preview, /onClick=\{\(\) => onOpenPath\(f\.path\)\}/, "each changed
 assert.match(preview, /if \(path \|\| !projectRoot \|\| !onOpenPath\) return/, "the status fetch only runs for an empty, openable preview");
 
 // ─── cave-chat.css: fullscreen sizes to its containing block ─────────────────
-// .cave-mode-fade retains a transform (animation-fill-mode: both), so the mode
-// wrapper — not the viewport — is the containing block for the fixed rail.
-// width:100vw on top of that offset pushed the diffs pane off-screen; the rule
-// must size via inset alone. Root cause tracked as bead cave-cco.
+// The mode wrapper's entrance animation applies a transform for 120ms (it used
+// to retain it forever — cave-cco), making it the containing block for fixed
+// descendants in that window. inset-only sizing is correct under both regimes;
+// width:100vw stacked on a containing-block offset once pushed the diffs pane
+// off-screen (#2526).
 const css = readFileSync(new URL("../styles/cave-chat.css", import.meta.url), "utf8");
 const fullscreenBlock = css.slice(
   css.indexOf(".workspace-rail--fullscreen {"),
   css.indexOf("}", css.indexOf(".workspace-rail--fullscreen {")),
 );
 assert.match(fullscreenBlock, /inset: 0/, "fullscreen fills via inset");
+
+// ─── globals.css: the mode-fade animation must RELEASE its transform ─────────
+// cave-cco: a forwards fill (`both`/`forwards`) keeps every animated property
+// actively applied at its final value forever — transform is animated in the
+// from-frame, so Chromium holds an identity transform on the wrapper for the
+// life of the surface, turning every mode wrapper into a position:fixed
+// containing block (forced the #537/#1984/github-card portal workarounds and
+// the #2526 rail clip). Verified empirically: an opacity-only `to` frame under
+// `both` STILL computes matrix(1,0,0,1,0,0). The fill must stay `backwards`
+// and the to-frame transform-free.
+const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const modeInKeyframes = globals.slice(
+  globals.indexOf("@keyframes cave-mode-in"),
+  globals.indexOf("}", globals.indexOf("to", globals.indexOf("@keyframes cave-mode-in"))) + 1,
+);
+assert.match(modeInKeyframes, /from \{ opacity: 0; transform: translateY\(4px\); \}/, "the entrance still slides from 4px");
+assert.match(modeInKeyframes, /to\s*\{ opacity: 1; \}/, "the final frame is opacity-only");
+assert.doesNotMatch(
+  modeInKeyframes.slice(modeInKeyframes.indexOf("to")),
+  /transform/,
+  "no transform in the to-frame",
+);
+const fadeRule = globals.slice(
+  globals.indexOf(".cave-mode-fade {"),
+  globals.indexOf("}", globals.indexOf(".cave-mode-fade {")) + 1,
+);
+assert.match(fadeRule, /animation: cave-mode-in 120ms ease-out backwards;/, "fill-mode backwards — the animation releases; both/forwards would hold an identity transform and re-create the fixed containing block");
 assert.doesNotMatch(fullscreenBlock, /100vw|100vh/, "fullscreen never sizes to the viewport (containing-block offset would clip the right pane)");
 
 console.log("rail-files-panel.test.ts OK");
