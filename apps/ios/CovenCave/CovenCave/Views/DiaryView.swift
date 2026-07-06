@@ -39,6 +39,10 @@ struct DiaryView: View {
     /// buffer won't grow anymore.
     @State private var revealedReply = ""
     @State private var pendingReply: [Character] = []
+    /// The reply as streamed, pre-sanitization; `fedCount` tracks how much of
+    /// its enchanted (protocol-stripped) form has entered the reveal buffer.
+    @State private var rawReply = ""
+    @State private var fedCount = 0
     @State private var streamFinished = false
     @State private var replyIsError = false
     /// Fades the finished reply out when the user starts the next message.
@@ -254,7 +258,9 @@ struct DiaryView: View {
         penLiftTask?.cancel()
         guard !drawing.strokes.isEmpty else { return }
         penLiftTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1500))
+            // Long enough to finish a whole sentence — natural pauses between
+            // words and strokes must not submit a half-written message.
+            try? await Task.sleep(for: .milliseconds(3500))
             guard !Task.isCancelled, phase == .idle, !drawing.strokes.isEmpty else { return }
             await submit()
         }
@@ -266,6 +272,13 @@ struct DiaryView: View {
     private func submit() async {
         guard let client = app.client, let familiar = currentFamiliar else {
             showHint("The diary is not connected.")
+            return
+        }
+        // A stray dot or hairline (an accidental tap) isn't a message — clear
+        // it quietly instead of running recognition and nagging with a hint.
+        let bounds = drawing.bounds
+        if bounds.width < 14 && bounds.height < 14 {
+            drawing = PKDrawing()
             return
         }
         phase = .recognizing
@@ -310,10 +323,29 @@ struct DiaryView: View {
     private func prompt(for text: String) -> String {
         guard sessionId == nil else { return text }
         return """
-        You are the spirit answering inside an enchanted diary. Reply in 1–3 short \
-        sentences of plain prose — no markdown, no code, no lists. Someone has just \
-        written on your page: \(text)
+        You are the spirit dwelling inside an enchanted diary. Answer in a short \
+        paragraph or two of flowing prose — four to six sentences — as if written \
+        by hand in ink: warm, curious, a little mysterious. Never use markdown, \
+        code, lists, or headings, and never offer next steps, options, or menus. \
+        Someone has just written on your page: \(text)
         """
+    }
+
+    /// Protocol chrome (e.g. `<coven:next-paths>` option blocks) must never
+    /// reach the page — the diary answers in prose alone. Cuts the reply at the
+    /// first protocol tag, including one still streaming in mid-chunk.
+    private static func enchant(_ raw: String) -> String {
+        if let tag = raw.range(of: "<coven:") {
+            return String(raw[..<tag.lowerBound])
+        }
+        // The tag may be arriving mid-stream: hold back a trailing partial
+        // "<coven:" prefix until the next chunk settles what it is.
+        for length in stride(from: 6, through: 1, by: -1) {
+            if raw.hasSuffix(String("<coven:".prefix(length))) {
+                return String(raw.dropLast(length))
+            }
+        }
+        return raw
     }
 
     private func stream(prompt text: String, familiar: Familiar, client: CaveClient) {
@@ -331,8 +363,13 @@ struct DiaryView: View {
                     case .session(let sid):
                         if !sid.isEmpty { sessionId = sid }
                     case .assistantChunk(let chunk):
-                        pendingReply.append(contentsOf: chunk)
-                        startRevealLoop()
+                        rawReply += chunk
+                        let clean = Self.enchant(rawReply)
+                        if clean.count > fedCount {
+                            pendingReply.append(contentsOf: clean.dropFirst(fedCount))
+                            fedCount = clean.count
+                            startRevealLoop()
+                        }
                     case .done(let isError, let sid):
                         if let sid, !sid.isEmpty { sessionId = sid }
                         if isError { replyIsError = true }
@@ -395,6 +432,8 @@ struct DiaryView: View {
         revealTask = nil
         revealedReply = ""
         pendingReply = []
+        rawReply = ""
+        fedCount = 0
         replyOpacity = 1
         replyIsError = false
     }

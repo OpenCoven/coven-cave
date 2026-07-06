@@ -68,8 +68,23 @@ assert.match(
 );
 assert.match(
   diary,
-  /case \.assistantChunk\(let chunk\):[\s\S]*?pendingReply\.append/,
-  "streamed chunks land in the reveal buffer, not directly on screen",
+  /case \.assistantChunk\(let chunk\):[\s\S]*?enchant\(rawReply\)[\s\S]*?pendingReply\.append/,
+  "streamed chunks are sanitized (protocol tags stripped) before entering the reveal buffer",
+);
+assert.match(
+  diary,
+  /range\(of: "<coven:"\)/,
+  "coven protocol blocks (next-paths option menus) never reach the page",
+);
+assert.match(
+  diary,
+  /never offer next steps, options, or menus/,
+  "the framing forbids next-step option menus — the diary answers in prose alone",
+);
+assert.match(
+  diary,
+  /\.milliseconds\(3500\)/,
+  "the pen-lift window is long enough to finish a sentence, not just a word",
 );
 assert.match(
   diary,
