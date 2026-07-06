@@ -34,4 +34,26 @@ assert.match(shell, /No settings match/, "search shows a no-match message");
 // Highlight style ships.
 assert.match(css, /\.settings-group--found/, "globals styles the search highlight");
 
+// ── Search reaches inside the Familiars studio panel (2026-07-06) ────────────
+// Each studio tab is indexed with a familiarTab target, so "voice" or
+// "archive" lands on the right tab instead of just the section.
+assert.match(
+  sections,
+  /familiarTab\?: FamiliarStudioTab/,
+  "index entries can target a Familiars studio tab",
+);
+for (const tab of ["identity", "look", "brain", "lifecycle", "memory", "projects", "vault"]) {
+  assert.match(
+    sections,
+    new RegExp(`familiarTab: "${tab}"`),
+    `the ${tab} studio tab is indexed for search`,
+  );
+}
+// Picking a familiars entry activates the studio tab below the provider
+// instead of scrolling to a SettingsGroup (the panel has none).
+assert.match(shell, /if \(entry\.familiarTab\) \{[\s\S]*?setFamiliarsTabTarget\(entry\.familiarTab\)/, "goToSetting branches familiars entries to the tab target");
+assert.match(shell, /setActiveTab\(tabTarget\)/, "FamiliarsSection activates the targeted studio tab");
+assert.match(shell, /familiar-studio-inline-tab-\$\{tabTarget\}/, "the targeted tab button receives focus");
+assert.match(shell, /onTabTargetConsumed\?\.\(\)/, "the one-shot tab target is handed back to the shell");
+
 console.log("settings-search.test.ts OK");
