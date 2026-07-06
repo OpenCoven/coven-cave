@@ -364,6 +364,33 @@ function sse(event: StreamEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+// SSE comment frame + cadence keeping quiet streams alive: NATs, proxies, and
+// client idle timeouts can drop a connection that goes silent for the length
+// of a long tool run. Comments are invisible to every consumer — the web
+// readers and the iOS app all skip frames that don't start with `data:`.
+const SSE_HEARTBEAT = new TextEncoder().encode(": hb\n\n");
+const SSE_HEARTBEAT_INTERVAL_MS = 20_000;
+
+// Emit `: hb` comments until the stream closes/aborts; self-cleaning, but
+// callers also clear it from close() so a finished turn stops immediately.
+function startSseHeartbeat(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  isDone: () => boolean,
+): NodeJS.Timeout {
+  const heartbeat = setInterval(() => {
+    if (isDone()) {
+      clearInterval(heartbeat);
+      return;
+    }
+    try {
+      controller.enqueue(SSE_HEARTBEAT);
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, SSE_HEARTBEAT_INTERVAL_MS);
+  return heartbeat;
+}
+
 async function maybeQueueOfflineChat(args: {
   body: SendBody;
   config: CaveConfig;
@@ -646,9 +673,11 @@ function openClawChatResponse(args: {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
+      const heartbeat = startSseHeartbeat(controller, () => closed || args.req.signal.aborted);
       const close = () => {
         if (closed) return;
         closed = true;
+        clearInterval(heartbeat);
         try {
           controller.close();
         } catch {
@@ -1252,9 +1281,11 @@ export async function POST(req: Request) {
           ...(detail ? { detail } : {}),
           ...(durationMs != null ? { durationMs } : {}),
         });
+      const heartbeat = startSseHeartbeat(controller, () => closed || req.signal.aborted);
       const close = () => {
         if (closed) return;
         closed = true;
+        clearInterval(heartbeat);
         try {
           controller.close();
         } catch {

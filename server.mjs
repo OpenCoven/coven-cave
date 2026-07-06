@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -23,7 +24,10 @@ const LEGACY_ACCESS_COOKIE = "coven_access_token";
 const ACCESS_QUERY_PARAM = "coven_access_token";
 const sessions = /* @__PURE__ */ new Map();
 const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
-const DETACH_GRACE_MS = 6e4;
+const DETACH_GRACE_MS = (() => {
+  const env = Number.parseInt(process.env.COVEN_CAVE_PTY_DETACH_GRACE_MS ?? "", 10);
+  return Number.isFinite(env) && env > 0 ? env : 3e5;
+})();
 function appendScrollback(session, data) {
   session.scrollback.push(data);
   session.scrollbackBytes += data.length;
@@ -54,7 +58,18 @@ function timingSafeEqualString(a, b) {
   return diff === 0;
 }
 function isExpectedToken(value) {
-  return Boolean(ACCESS_TOKEN && value && timingSafeEqualString(value, ACCESS_TOKEN));
+  if (!ACCESS_TOKEN || !value) return false;
+  if (timingSafeEqualString(value, ACCESS_TOKEN)) return true;
+  return isValidSignedAccessToken(value, ACCESS_TOKEN);
+}
+function isValidSignedAccessToken(value, secret) {
+  const parts = value.split(".");
+  if (parts.length !== 4 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+  if (!parts[2] || !parts[3]) return false;
+  const expected = createHmac("sha256", secret).update(`v1.${parts[1]}.${parts[2]}`).digest("base64url");
+  return timingSafeEqualString(parts[3], expected);
 }
 function bearerToken(req) {
   const auth = req.headers.authorization ?? "";
@@ -325,6 +340,8 @@ server.on("upgrade", (req, socket, head) => {
     handlePtyConnection(ws, threadId, cols, rows, cwd);
   });
 });
+server.keepAliveTimeout = 75e3;
+server.headersTimeout = 8e4;
 server.listen(port, hostname, () => {
   console.log(`> Ready on http://${hostname}:${port}`);
 });

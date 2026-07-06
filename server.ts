@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
@@ -55,8 +56,14 @@ const SCROLLBACK_LIMIT_BYTES = 256 * 1024;
 // drag-reorganize, tab switch) or the page reloads; killing the shell the
 // instant the old socket closes turned every one of those into a dead/blank
 // pane with a brand-new shell. Detach instead of kill, and let the timer reap
-// only genuinely-abandoned shells.
-const DETACH_GRACE_MS = 60_000;
+// only genuinely-abandoned shells. The default is sized for the iOS app too:
+// backgrounding the phone kills its socket, and a 60s window meant stepping
+// away for two minutes came back to a dead shell — 5 minutes keeps a quick
+// app-switch/lock survivable while still bounding abandoned shells.
+const DETACH_GRACE_MS = (() => {
+  const env = Number.parseInt(process.env.COVEN_CAVE_PTY_DETACH_GRACE_MS ?? "", 10);
+  return Number.isFinite(env) && env > 0 ? env : 300_000;
+})();
 
 function appendScrollback(session: PtySession, data: Buffer): void {
   session.scrollback.push(data);
@@ -95,7 +102,26 @@ function timingSafeEqualString(a: string, b: string): boolean {
 }
 
 function isExpectedToken(value: string | undefined | null): boolean {
-  return Boolean(ACCESS_TOKEN && value && timingSafeEqualString(value, ACCESS_TOKEN));
+  if (!ACCESS_TOKEN || !value) return false;
+  if (timingSafeEqualString(value, ACCESS_TOKEN)) return true;
+  return isValidSignedAccessToken(value, ACCESS_TOKEN);
+}
+
+// Mirrors src/lib/mobile-access-token.ts (server.mjs is transpiled standalone,
+// so it can't import from src/): `v1.<expiresAtMs>.<nonce>.<sig>` where
+// sig = base64url(HMAC-SHA256(secret, "v1.<expiresAtMs>.<nonce>")). Paired
+// phones and QR-paired browsers hold these SIGNED tokens — not the raw secret
+// — so the PTY upgrade must honour them or every paired terminal 401s.
+function isValidSignedAccessToken(value: string, secret: string): boolean {
+  const parts = value.split(".");
+  if (parts.length !== 4 || parts[0] !== "v1") return false;
+  const expiresAt = Number(parts[1]);
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return false;
+  if (!parts[2] || !parts[3]) return false;
+  const expected = createHmac("sha256", secret)
+    .update(`v1.${parts[1]}.${parts[2]}`)
+    .digest("base64url");
+  return timingSafeEqualString(parts[3], expected);
 }
 
 function bearerToken(req: IncomingMessage): string | null {
@@ -466,6 +492,15 @@ server.on("upgrade", (req, socket, head) => {
     handlePtyConnection(ws, threadId, cols, rows, cwd);
   });
 });
+
+// Keep idle HTTP/1.1 connections open longer than clients hold them for
+// reuse. Node's 5s default races connection pooling in URLSession (the iOS
+// app) and `tailscale serve`'s upstream proxying — the server closes an idle
+// socket just as the client reuses it, surfacing as sporadic "network
+// connection lost" errors. headersTimeout must exceed keepAliveTimeout so a
+// reused socket isn't reaped while request headers are mid-flight.
+server.keepAliveTimeout = 75_000;
+server.headersTimeout = 80_000;
 
 server.listen(port, hostname, () => {
   console.log(`> Ready on http://${hostname}:${port}`);

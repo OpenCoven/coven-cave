@@ -305,6 +305,31 @@ for (const contract of contracts) {
     /if \(cancelledByUser\) \{\s*\n\s*if \(!assistantText\.trim\(\)\) assistantText = "\(cancelled\)";\s*\n\s*isError = false;/,
     "/chat/send: a user cancel must never be recorded as a harness error (openclaw path)",
   );
+
+  // SSE heartbeats: a long tool run can stream nothing for minutes, and a
+  // silent connection gets dropped by NATs/proxies and client idle timeouts
+  // (the iOS app most of all). Both adapter paths must emit comment frames
+  // — which every consumer skips (frames not starting with "data:") — and
+  // clear the interval when the stream closes.
+  assert.match(
+    sendSource,
+    /const SSE_HEARTBEAT = new TextEncoder\(\)\.encode\(": hb\\n\\n"\)/,
+    "/chat/send: heartbeat is an SSE comment frame, invisible to data: parsers",
+  );
+  const heartbeatStarts = [...sendSource.matchAll(/const heartbeat = startSseHeartbeat\(controller,/g)];
+  assert.equal(
+    heartbeatStarts.length,
+    2,
+    "/chat/send: both adapter paths must start the SSE heartbeat",
+  );
+  const heartbeatClears = [
+    ...sendSource.matchAll(/closed = true;\s*\n\s*clearInterval\(heartbeat\);/g),
+  ];
+  assert.equal(
+    heartbeatClears.length,
+    2,
+    "/chat/send: both adapter paths must clear the heartbeat when the stream closes",
+  );
 }
 
 {

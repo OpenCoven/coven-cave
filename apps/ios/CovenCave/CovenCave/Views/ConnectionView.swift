@@ -57,6 +57,20 @@ struct ConnectionView: View {
                 }
                 .ignoresSafeArea()
             }
+            // While this screen shows "unreachable", quietly re-probe so a
+            // desktop that comes back (rebooted, woke from sleep) reconnects
+            // on its own — no tapping Connect again. Quiet mode keeps the
+            // state at .unreachable during each probe, so the screen doesn't
+            // bounce; pairing (.needsAuth) stays manual — only the user can
+            // fix that. Keyed on scenePhase so backgrounding stops the timer.
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(10))
+                    guard !busy, case .unreachable = app.connectionState else { continue }
+                    await app.refreshConnection(reloadLoadedSurfaces: true, quiet: true)
+                }
+            }
         }
     }
 

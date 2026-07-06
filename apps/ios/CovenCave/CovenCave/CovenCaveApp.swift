@@ -34,11 +34,16 @@ struct CovenCaveApp: App {
                 // Returning to the foreground after the desktop was unreachable
                 // (locked the phone, desktop blipped/restarted) should recover on
                 // its own — retry unless we're already connected or mid-check.
+                // A state that *says* connected can be stale after a suspension,
+                // so it gets one cheap validation probe instead of blind trust.
                 .onChange(of: scenePhase) { _, phase in
-                    guard phase == .active, app.connection != nil,
-                          app.connectionState != .connected,
-                          app.connectionState != .checking else { return }
-                    Task { await app.connectWithRetry() }
+                    guard phase == .active, app.connection != nil else { return }
+                    if app.connectionState != .connected,
+                       app.connectionState != .checking {
+                        Task { await app.connectWithRetry() }
+                    } else if app.connectionState == .connected {
+                        Task { await app.validateConnectionOnForeground() }
+                    }
                 }
                 // Deep links from the home-screen widget (covencave://…) route to
                 // the matching tab/sheet. Handled even before connect — the tab is
