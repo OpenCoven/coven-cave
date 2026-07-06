@@ -88,6 +88,7 @@ type LinkedTask = NonNullable<ChatLinkedContext["tasks"]>[number];
 export function ChatEmptyState({
   familiar,
   onPrompt,
+  onOpenPromptSnippets,
   projectId,
   onProjectChange,
   projects,
@@ -104,6 +105,8 @@ export function ChatEmptyState({
 }: {
   familiar: Familiar;
   onPrompt?: (text: string) => void;
+  /** Opens the Prompt snippets modal (templates dropped into the composer). */
+  onOpenPromptSnippets?: () => void;
   /** Selected predetermined project for the chat runtime root. */
   projectId?: string | null;
   /** Updates the project used for the next send. */
@@ -357,9 +360,9 @@ export function ChatEmptyState({
           )
         ) : null}
 
-        {onPrompt && suggestions.length > 0 && (
+        {((onPrompt && suggestions.length > 0) || onOpenPromptSnippets) && (
           <div className="cave-chat-empty-prompts" aria-label="Starter prompts">
-            {suggestions.map((suggestion) => (
+            {onPrompt && suggestions.map((suggestion) => (
               <button
                 key={suggestion.id}
                 type="button"
@@ -370,6 +373,16 @@ export function ChatEmptyState({
                 <Icon name="ph:arrow-right-bold" width={13} aria-hidden />
               </button>
             ))}
+            {onOpenPromptSnippets && (
+              <button
+                type="button"
+                onClick={onOpenPromptSnippets}
+                className="cave-chat-empty-prompt"
+              >
+                <Icon name="ph:chat-centered-text" width={13} aria-hidden />
+                <span>Prompt snippets</span>
+              </button>
+            )}
           </div>
         )}
 
