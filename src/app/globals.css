@@ -11920,13 +11920,33 @@ details[open] > .cave-edit-card__summary::before {
   background: var(--bg-base);
 }
 .skill-browser__rail {
-  flex: 0 0 190px;
+  flex: 0 0 224px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 12px;
   padding: 12px 10px;
   overflow-y: auto;
   border-right: 1px solid var(--border-hairline);
+}
+/* Each filter panel (categories, browse, topics, rank, agents) is one labeled
+   group in the rail; hairlines keep the groups reading as separate panels. */
+.skill-browser__rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.skill-browser__rail-group + .skill-browser__rail-group {
+  border-top: 1px solid var(--border-hairline);
+  padding-top: 12px;
+}
+.skill-browser__rail-label {
+  margin: 0;
+  padding: 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 .skill-browser__cat {
   display: flex;
@@ -12480,8 +12500,8 @@ details[open] > .cave-edit-card__summary::before {
 @media (max-width: 900px) {
   /* Narrow panes: the rail becomes a horizontal strip spanning the top and
      the browser re-lays as a grid (strip / list · detail). The rail is the
-     ONLY category control — hiding it stranded 681-900px panes with whatever
-     category was last picked and no way to change it. */
+     ONLY filter control — hiding it stranded 681-900px panes with whatever
+     filters were last picked and no way to change them. */
   .skill-browser {
     display: grid;
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
@@ -12490,13 +12510,25 @@ details[open] > .cave-edit-card__summary::before {
   .skill-browser__rail {
     grid-column: 1 / -1;
     flex-direction: row;
-    gap: 4px;
-    overflow-x: auto;
-    overflow-y: hidden;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    overflow: visible;
     padding: 8px 10px;
     border-right: 0;
     border-bottom: 1px solid var(--border-hairline);
   }
+  /* Groups flow inline (label then chips) and wrap as the pane narrows. */
+  .skill-browser__rail-group {
+    flex: 0 1 auto;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .skill-browser__rail-group + .skill-browser__rail-group {
+    border-top: 0;
+    padding-top: 0;
+  }
+  .skill-browser__rail-label { flex: 0 0 auto; }
   .skill-browser__cat {
     flex: 0 0 auto;
     padding: 5px 9px;
@@ -12511,6 +12543,15 @@ details[open] > .cave-edit-card__summary::before {
     grid-template-rows: auto minmax(0, 1.2fr) minmax(0, 1fr);
   }
   .skill-browser__rail { grid-column: 1; }
+  /* Phone widths: one full-width row per group; the group owns the sideways
+     scroll (the categories group has no inner chip container). */
+  .skill-browser__rail-group {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
   .skill-browser__list {
     border-right: 0;
     border-bottom: 1px solid var(--border-hairline);
@@ -12523,8 +12564,6 @@ details[open] > .cave-edit-card__summary::before {
   .skill-browser__modes,
   .skill-browser__agents {
     flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 2px;
   }
   .skill-browser__browse-btn,
   .skill-browser__topic,
