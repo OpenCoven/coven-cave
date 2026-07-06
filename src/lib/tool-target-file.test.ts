@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const { toolTargetFile } = await import("./tool-input-diff.ts");
+const { toolTargetFile, toolTargetPath } = await import("./tool-input-diff.ts");
 
 // ── toolTargetFile: openable absolute path for file tools, else null ─────────
 {
@@ -19,6 +19,11 @@ const { toolTargetFile } = await import("./tool-input-diff.ts");
   );
   // Case-insensitive tool name.
   assert.equal(toolTargetFile("edit", JSON.stringify({ path: "/repo/d.ts" })), "/repo/d.ts");
+  assert.equal(
+    toolTargetPath("Edit", JSON.stringify({ file_path: "src/rel.ts", old_string: "x", new_string: "y" })),
+    "src/rel.ts",
+    "relative mutation paths remain displayable in chat even though they are not openable",
+  );
 
   // Non-file tools → null.
   assert.equal(toolTargetFile("Bash", JSON.stringify({ command: "ls" })), null);
