@@ -332,9 +332,11 @@ jobs:
           echo "✅ $APPIMAGE repacked without bundled GLib"
           rm -rf squashfs-root /tmp/appimagetool
 
-          # ── 4. Re-sign the updater artifact ──
+          # ── 4. Re-upload and re-sign the updater artifact ──
           # tauri-action and the sign step above signed the original AppImage.
-          # After repacking, the signature is invalid. Re-sign and re-upload.
+          # After repacking, the release asset and signature must both be
+          # replaced with the stripped AppImage outputs.
+          gh release upload "$RELEASE_TAG" "$APPIMAGE" --clobber
           if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
             echo "Re-signing ${APPIMAGE} after GLib strip"
             pnpm exec tauri signer sign "$APPIMAGE"

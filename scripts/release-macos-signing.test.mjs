@@ -97,11 +97,17 @@ test("Linux AppImage strips bundled GLib so host GLib is used at runtime", () =>
   assert.match(releaseWorkflow, /name: Strip bundled GLib from AppImage/);
   assert.match(releaseWorkflow, /libglib-2\.0\*/);
   assert.match(releaseWorkflow, /appimagetool squashfs-root/);
+  assert.match(releaseWorkflow, /gh release upload "\$RELEASE_TAG" "\$APPIMAGE" --clobber/);
   assert.match(releaseWorkflow, /pnpm exec tauri signer sign/);
   assert(
     releaseWorkflow.indexOf("name: Sign Linux/Windows updater artifact") <
       releaseWorkflow.indexOf("name: Strip bundled GLib from AppImage"),
     "GLib strip must run after initial signing so the repacked artifact is the final signed version",
+  );
+  assert(
+    releaseWorkflow.indexOf('gh release upload "$RELEASE_TAG" "$APPIMAGE" --clobber') <
+      releaseWorkflow.indexOf('gh release upload "$RELEASE_TAG" "${APPIMAGE}.sig" --clobber'),
+    "the repacked AppImage itself must be uploaded before its regenerated signature",
   );
 });
 

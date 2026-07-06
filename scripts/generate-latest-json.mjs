@@ -16,6 +16,10 @@ import { join } from "node:path";
 
 const gh = (args) => execFileSync("gh", args, { encoding: "utf8" });
 
+export function selectSignedArtifact(assets, predicate, hasSignature) {
+  return assets.find((n) => !n.endsWith(".sig") && predicate(n) && hasSignature(n)) ?? null;
+}
+
 export async function main(argv = process.argv.slice(2)) {
   const [tag, versionArg] = argv;
   if (!tag) {
@@ -46,7 +50,7 @@ export async function main(argv = process.argv.slice(2)) {
 
   const platforms = {};
   const add = (key, predicate) => {
-    const artifact = assets.find((n) => !n.endsWith(".sig") && predicate(n) && sigFor(n));
+    const artifact = selectSignedArtifact(assets, predicate, (name) => Boolean(sigFor(name)));
     if (!artifact) {
       console.error(`skip ${key}: no signed artifact found`);
       return;
