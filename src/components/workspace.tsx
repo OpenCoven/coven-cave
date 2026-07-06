@@ -1879,9 +1879,18 @@ export function Workspace() {
     startFamiliarChat(activeId, projectRoot);
   }, [activeId, startFamiliarChat]);
 
+  // Page modes currently open as split tiles — the sidebar marks their rows
+  // "open in split" so the active highlight stays honest after drag-to-split
+  // (dropping opens the page beside the primary WITHOUT changing `mode`).
+  const splitPageModes = useMemo(
+    () => splitTargets.filter((t): t is Extract<SplitTarget, { kind: "page" }> => t.kind === "page").map((t) => t.mode),
+    [splitTargets],
+  );
+
   const sidebar = (
     <SidebarMinimal
       mode={mode}
+      splitPageModes={splitPageModes}
       sessions={sessions}
       activeSessionId={routerRef.current?.currentSessionId() ?? null}
       onNewChat={() => {
@@ -2179,7 +2188,7 @@ export function Workspace() {
               sessions={sessions}
               responseNeeded={responseNeeded}
               taskCount={boardTaskCount}
-              inboxCount={inboxBadgeCount}
+              scheduleNeedsCount={scheduleNeedsCount}
               onOpenSearch={() => setPaletteOpen(true)}
               searchQuery={topSearchQuery}
               onSearchQueryChange={(query) => {
@@ -2191,7 +2200,7 @@ export function Workspace() {
               onEnrichTasks={handleEnrichTasks}
               enrichingTasks={enrichingTasks}
               enrichProgress={enrichProgress}
-              onViewInbox={() => setMode("inbox")}
+              onViewSchedules={() => setMode("inbox")}
               onOpenQuickChat={() => setQuickChatOpen(true)}
             />
             <TopBar

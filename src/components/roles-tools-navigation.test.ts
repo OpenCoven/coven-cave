@@ -62,10 +62,18 @@ assert.doesNotMatch(
 );
 assert.doesNotMatch(sidebar, /addons\?\.roles/, "The roles add-on gate is retired from the sidebar");
 assert.doesNotMatch(palette, /addons\?\.roles/, "The roles add-on gate is retired from the command palette");
+// The roles/capabilities → marketplace aliasing moved into the pure row-state
+// helper (lib/sidebar-nav-state) that the sidebar derives every row from.
+const sidebarNavState = await readFile(new URL("../lib/sidebar-nav-state.ts", import.meta.url), "utf8");
+assert.match(
+  sidebarNavState,
+  /roles: "marketplace",\s*\n\s*capabilities: "marketplace",/,
+  "The Marketplace entry stays lit while a deep-linked roles/capabilities mode is active",
+);
 assert.match(
   sidebar,
-  /fm\.id === "marketplace" && \(mode === "roles" \|\| mode === "capabilities"\)/,
-  "The Marketplace entry stays lit while a deep-linked roles/capabilities mode is active",
+  /state=\{sidebarRowState\(fm\.id, mode, props\.splitPageModes\)\}/,
+  "Sidebar rows derive their highlight (including the marketplace aliasing) from sidebarRowState",
 );
 
 // Settings: no separate plugins section, and the roles add-on toggle is gone

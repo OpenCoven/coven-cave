@@ -18,6 +18,7 @@ import {
   emitPageDragEnd,
   isSplittablePage,
 } from "@/lib/page-drag";
+import { sidebarRowState, type SidebarRowState } from "@/lib/sidebar-nav-state";
 import { RecentActivityRollup } from "@/components/recent-activity-rollup";
 import { APP_VERSION } from "@/lib/app-version";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
@@ -44,6 +45,10 @@ export type FolderMode =
 
 export type SidebarMinimalProps = {
   mode: string;
+  /** Page modes currently open as secondary split tiles (drag-to-split).
+   *  Their rows get a lighter "open in split" wash instead of the active fill,
+   *  so the highlight stays honest when a page renders beside the primary. */
+  splitPageModes?: readonly string[];
   sessions: SessionRow[];
   activeSessionId?: string | null;
   onNewChat: () => void;
@@ -120,7 +125,7 @@ function FolderRow({
   id,
   label,
   iconName,
-  active,
+  state,
   badge,
   kbd,
   description,
@@ -131,7 +136,7 @@ function FolderRow({
   id: string;
   label: string;
   iconName: Parameters<typeof Icon>[0]["name"];
-  active: boolean;
+  state: SidebarRowState;
   badge?: string;
   kbd?: string;
   description?: string;
@@ -141,6 +146,8 @@ function FolderRow({
   quietLead?: boolean;
   onClick: () => void;
 }) {
+  const active = state === "active";
+  const split = state === "split";
   // Splittable pages can be dragged into the main area to open beside the
   // current surface (desktop snap-to-split). Non-clickable drags don't fire the
   // onClick, so navigation by click is unaffected.
@@ -148,15 +155,16 @@ function FolderRow({
   // Native title doubles as a desktop hover tooltip and a touch long-press
   // hint, and is exposed to AT as the button's accessible description.
   const dragHint = draggable ? " · drag into the page to split" : "";
+  const splitHint = split ? " · open in split" : "";
   const title = description
     ? kbd
-      ? `${label} — ${description} (${kbd})${dragHint}`
-      : `${label} — ${description}${dragHint}`
+      ? `${label} — ${description} (${kbd})${dragHint}${splitHint}`
+      : `${label} — ${description}${dragHint}${splitHint}`
     : undefined;
   return (
     <button
       type="button"
-      className={`sidebar-folder-row${active ? " sidebar-folder-row--active" : ""}${quiet ? " sidebar-folder-row--quiet" : ""}${quietLead ? " sidebar-folder-row--quiet-lead" : ""}`}
+      className={`sidebar-folder-row${active ? " sidebar-folder-row--active" : ""}${split ? " sidebar-folder-row--split" : ""}${quiet ? " sidebar-folder-row--quiet" : ""}${quietLead ? " sidebar-folder-row--quiet-lead" : ""}`}
       aria-current={active ? "page" : undefined}
       title={title}
       draggable={draggable || undefined}
@@ -238,9 +246,10 @@ export function SidebarMinimal(props: SidebarMinimalProps) {
             id={fm.id}
             label={fm.label}
             iconName={fm.iconName}
-            // Roles and Capabilities are sections of the Marketplace hub, so keep
-            // the Marketplace entry lit when those modes are active.
-            active={mode === fm.id || (fm.id === "marketplace" && (mode === "roles" || mode === "capabilities"))}
+            // Active follows the primary mode (Roles/Capabilities keep the
+            // Marketplace hub lit); pages open as split tiles get a lighter
+            // "open in split" state instead. Derivation in lib/sidebar-nav-state.
+            state={sidebarRowState(fm.id, mode, props.splitPageModes)}
             badge={fm.badge?.(props)}
             kbd={fm.kbd}
             description={fm.description}

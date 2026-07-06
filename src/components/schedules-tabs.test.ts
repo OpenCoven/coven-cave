@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const automations = readFileSync(new URL("./automations-view.tsx", import.meta.url), "utf8");
+const menuBar = readFileSync(new URL("./familiar-menu-bar.tsx", import.meta.url), "utf8");
 const sidebar = readFileSync(new URL("./sidebar-minimal.tsx", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 const mobileTabs = readFileSync(new URL("./mobile-bottom-tabs.tsx", import.meta.url), "utf8");
@@ -32,6 +33,24 @@ assert.match(
   notificationBell,
   /Open Schedules/,
   "Notification bell routes users to the renamed Schedules surface",
+);
+// The desktop menu bar button that opens this surface (mode "inbox") says
+// Schedules — an "Inbox" label would be dishonest since the slim surface has
+// no inbox tab and inbox items live in the notification bell instead.
+assert.match(
+  menuBar,
+  /<Icon name="ph:calendar-check"[\s\S]{0,120}<span>Schedules<\/span>/,
+  "Desktop menu bar names the surface Schedules with the calendar-check icon",
+);
+assert.doesNotMatch(
+  menuBar,
+  /<span>Inbox<\/span>|"View inbox"/,
+  "Desktop menu bar no longer advertises a nonexistent Inbox surface",
+);
+assert.match(
+  workspace,
+  /onViewSchedules=\{\(\) => setMode\("inbox"\)\}/,
+  "Menu-bar Schedules button routes to the Schedules surface (mode id 'inbox')",
 );
 assert.match(
   slashCommands,
