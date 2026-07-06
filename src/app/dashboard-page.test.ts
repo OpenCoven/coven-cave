@@ -21,14 +21,16 @@ assert.match(cockpit, /TodaySummary/, "cockpit folds in today's daily summary");
 assert.match(cockpit, /RecentReports/, "cockpit keeps recent daily reports");
 // …and pulls the full set of live data sources for a power cockpit.
 assert.match(cockpit, /\/api\/board/, "cockpit pulls the board snapshot");
-assert.match(cockpit, /\/api\/familiars/, "cockpit pulls the agent roster");
+assert.match(cockpit, /\/api\/familiars/, "cockpit pulls the familiar roster");
 assert.match(cockpit, /\/api\/github/, "cockpit pulls GitHub activity");
+assert.match(cockpit, /\/api\/sessions\/list/, "cockpit pulls sessions for usage analytics");
+assert.match(cockpit, /\/api\/coven-memory/, "cockpit pulls coven memory so confidence/freshness are real");
 assert.doesNotMatch(cockpit, /\/api\/library\/reading/, "integrated cockpit should not pull the feature-branch Library queue");
-assert.match(cockpit, /cockpit-kpis/, "cockpit renders the KPI rail");
+assert.match(cockpit, /cockpit-kpis/, "cockpit renders the vitals KPI rail");
 
 // World-class additions
 assert.match(cockpit, /DonutChart/, "board status uses a donut chart");
-assert.match(cockpit, /familiarMiniProfiles/, "agents panel shows per-familiar trends");
+assert.match(cockpit, /familiarMiniProfiles/, "familiars panel shows per-familiar trends");
 assert.match(cockpit, /familiarLoadSeries/, "renders a familiar-load trend panel");
 assert.match(cockpit, /usePausablePoll/, "cockpit polls for live updates");
 assert.doesNotMatch(cockpit, /\?view=evals/, "dead ?view=evals link removed");
@@ -36,14 +38,37 @@ assert.doesNotMatch(cockpit, /\?view=evals/, "dead ?view=evals link removed");
 // Predictive signals strip + confidence heatmap (deferred from #2098).
 assert.match(cockpit, /dashboardSignals/, "cockpit derives predictive signals");
 assert.match(cockpit, /case "signals"/, "a Signals panel is wired into the layout switch");
-assert.match(cockpit, /case "confidence"/, "a Confidence panel is wired into the layout switch");
+assert.match(cockpit, /case "confidence"/, "a Confidence/performance panel is wired into the layout switch");
 assert.match(cockpit, /Heatmap/, "confidence renders the visx heatmap primitive");
 assert.match(cockpit, /deriveConfidenceScore/, "confidence reuses the shared scoring helper");
 assert.match(cockpit, /deriveGrowthReport/, "confidence composes the growth report for scoring");
 assert.match(cockpit, /\/api\/retro-runs/, "confidence pulls the shared retro-runs snapshot");
-assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(f\.id\)\}\/contract/, "confidence pulls each familiar's contract");
+assert.match(cockpit, /\/api\/familiars\/\$\{encodeURIComponent\(id\)\}\/contract/, "confidence pulls each familiar's contract");
 
-// ── Minimal-yet-powerful pass: truthful freshness + drill-throughs everywhere ──
+// ── Insights reframe: the dashboard leads with coven-wide analytics ──
+
+// Plain-language coven read + coven-wide aggregations (pure, unit-tested).
+assert.match(cockpit, /deriveCovenVitals/, "cockpit rolls per-familiar rows into coven vitals");
+assert.match(cockpit, /deriveCovenInsight/, "cockpit derives the plain-language coven insight");
+assert.match(cockpit, /covenSessionsSeries/, "cockpit builds the coven usage-over-time series");
+assert.match(cockpit, /CovenInsightBanner/, "the coven insight is rendered as a banner");
+assert.match(cockpit, /buildFamiliarCardStats/, "per-familiar activity stats feed the insight rows");
+
+// The centerpiece: a scannable per-familiar insights table (confidence, health,
+// usage, contract) — beginners scan it; power users drill each row through.
+assert.match(cockpit, /FamiliarInsightsTable/, "renders the familiar insights table");
+assert.match(cockpit, /cockpit-fam/, "the insights table has its own layout class");
+assert.match(cockpit, /case "usage"/, "a usage-over-time panel is wired into the layout switch");
+
+// Vitals KPIs are analytics figures, not just workload queues.
+assert.match(cockpit, /Coven confidence/, "a coven-confidence vital is surfaced");
+assert.match(cockpit, /Active familiars/, "an active-familiars vital is surfaced");
+assert.match(cockpit, /Sessions · 7d/, "a weekly-sessions usage vital is surfaced");
+assert.match(cockpit, /Retro accept rate/, "a retro accept-rate performance vital is surfaced");
+assert.match(cockpit, /Contract health/, "a contract-health performance vital is surfaced");
+assert.match(cockpit, /Needs you/, "the attention vital is kept");
+
+// ── Truthful freshness + drill-throughs everywhere ──
 
 // The "Updated…" pill reflects when fetched data actually LANDED (not render
 // time), ticks between polls, and doubles as a manual refresh.
@@ -56,24 +81,29 @@ assert.doesNotMatch(cockpit, /Updated \{relativeTime\(now\.toISOString\(\)/, "th
 // Dead links are gone: KPI tiles, panels, and quick links all deep-link to the
 // surface that owns the number (`/?mode=<WorkspaceMode>` is the SPA deep link).
 assert.doesNotMatch(cockpit, /href: "\/#card-"/, "KPI tiles no longer point at the dead bare /#card- hash");
-assert.match(cockpit, /href: "\/\?mode=board"/, "board KPIs drill into the board");
-assert.match(cockpit, /href: "\/\?mode=github"/, "the PRs KPI drills into GitHub");
 assert.doesNotMatch(cockpit, /href: "\/\?mode=library"/, "integrated cockpit should not route to the feature-branch Library");
+assert.match(cockpit, /href: "\/dashboard\/familiars\/growth"/, "performance vitals drill into the growth page");
+assert.match(cockpit, /href: "\/\?mode=agents"/, "usage vitals drill into the familiars roster");
+assert.match(cockpit, /href="\/\?mode=board"/, "the board panel drills into the board");
+assert.match(cockpit, /href="\/\?mode=github"/, "the GitHub panel drills into GitHub");
 assert.match(cockpit, /href="\/\?mode=calendar"/, "the agenda panel drills into the calendar");
-assert.match(cockpit, /href="\/\?mode=agents"/, "the agents panel drills into the familiars roster");
+assert.match(cockpit, /href="\/\?mode=agents"/, "the familiars panel drills into the roster");
 assert.match(cockpit, /href="\/dashboard\/familiars\/growth"/, "load/confidence drill into the growth page");
 assert.doesNotMatch(cockpit, /QuickLink href="\/" icon="ph:calendar-bold"/, "the Calendar quick link no longer dead-ends at /");
 assert.doesNotMatch(cockpit, /icon="ph:books-bold" label="Library"/, "Library quick link is isolated to feature/library");
 
 // Rows are destinations, not dead ends.
-assert.match(cockpit, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(f\.id\)\}\/analytics`\}/, "agent rows open the familiar's analytics");
-assert.match(cockpit, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(r\.id\)\}\/analytics`\}/, "confidence rows open the familiar's analytics");
+assert.match(cockpit, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(f\.id\)\}\/analytics`\}/, "familiar rows open the familiar's analytics");
+assert.match(cockpit, /href=\{`\/dashboard\/familiars\/\$\{encodeURIComponent\(r\.id\)\}\/analytics`\}/, "insight/confidence rows open the familiar's analytics");
 assert.match(cockpit, /s\.href \?/, "actionable signals render as links");
 assert.match(cockpit, /openExternalUrl\(s\.href!\)/, "external signal links route through the external-URL helper");
 
-// KPI deltas carry meaning, not just direction (all metrics are workload
-// queues — rising is load, falling is relief).
-assert.match(cockpit, /cockpit-kpi__delta--\$\{delta > 0 \? "up" : "down"\}/, "delta direction is a semantic class");
+// KPI deltas carry meaning, not just direction: each vital declares the
+// direction that reads as "good", so a rise in confidence is colored as
+// progress while a rise in "Needs you" is colored as load.
+assert.match(cockpit, /good: "up"/, "vitals declare their beneficial direction");
+assert.match(cockpit, /good: "down"/, "the attention vital's beneficial direction is down");
+assert.match(cockpit, /cockpit-kpi__delta--\$\{beneficial \? "good" : "bad"\}/, "delta color reflects benefit, not raw direction");
 
 // Action inbox supports bulk triage: select several items → done/dismiss/snooze together.
 const inboxUrl = new URL("../components/dashboard/action-inbox.tsx", import.meta.url);
