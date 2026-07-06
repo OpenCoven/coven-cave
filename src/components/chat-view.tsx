@@ -51,9 +51,8 @@ import {
 } from "@/lib/file-mention";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
-import { StandardSelect } from "@/components/ui/select";
 import { LOCAL_HOST_ID, parseConversationRuntime } from "@/lib/chat-hosts";
-import { ComposerHostChip } from "@/components/composer-host-chip";
+import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { ThinkingIndicator } from "@/components/ui/thinking-indicator";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { DebugPane } from "@/components/debug-pane";
@@ -665,46 +664,6 @@ function UsageText({ usage, costUsd }: { usage?: TurnUsage; costUsd?: number }) 
     >
       {summary}
     </span>
-  );
-}
-
-function ComposerControlSelect<T extends string>({
-  label,
-  icon,
-  value,
-  options,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  icon: IconName;
-  value: T;
-  options: Array<{ value: T; label: string }>;
-  disabled?: boolean;
-  onChange: (value: T) => void;
-}) {
-  const selected = options.find((option) => option.value === value)?.label ?? value;
-  return (
-    <StandardSelect<T>
-      label={label}
-      title={`${label}: ${selected}`}
-      value={value}
-      disabled={disabled}
-      onChange={onChange}
-      className="cave-composer-select"
-      options={options}
-      showCaret={false}
-      renderValue={() => (
-        <>
-          <Icon name={icon} width={13} aria-hidden />
-          <span className="cave-composer-select__label">{label}</span>
-          <span className="cave-composer-select__value" aria-hidden>
-            {selected}
-          </span>
-          <Icon name="ph:caret-down-bold" width={10} aria-hidden className="cave-composer-select__chevron" />
-        </>
-      )}
-    />
   );
 }
 
@@ -5131,42 +5090,47 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   >
                     <Icon name="ph:microphone" width={15} aria-hidden />
                   </button>
-                  <ComposerHostChip value={composerHostValue} disabled={busy} onPick={setRuntimeHost} />
-                </div>
-                <div className="cave-composer-settings-row" aria-label="Chat response controls">
-                  <ComposerControlSelect
-                    label="Access"
-                    icon="ph:shield-warning"
-                    value={permissionMode}
-                    options={PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label }))}
+                  <ComposerOptionsMenu
+                    hostValue={composerHostValue}
+                    onHostPick={setRuntimeHost}
                     disabled={busy}
-                    onChange={setPermissionMode}
-                  />
-                  {composerModelOptions.length > 0 ? (
-                    <ComposerControlSelect
-                      label="Model"
-                      icon="ph:lightning-bold"
-                      value={composerModelValue}
-                      options={composerModelOptions.map((m) => ({ value: m.id, label: m.label }))}
-                      disabled={busy}
-                      onChange={(id) => handleSelectModel(id)}
-                    />
-                  ) : null}
-                  <ComposerControlSelect
-                    label="Thinking"
-                    icon="ph:sparkle-bold"
-                    value={thinkingEffort}
-                    options={THINKING_OPTIONS}
-                    disabled={busy}
-                    onChange={setThinkingEffort}
-                  />
-                  <ComposerControlSelect
-                    label="Speed"
-                    icon="ph:lightning-bold"
-                    value={responseSpeed}
-                    options={SPEED_OPTIONS}
-                    disabled={busy}
-                    onChange={setResponseSpeed}
+                    indicator={
+                      permissionMode !== DEFAULT_PERMISSION_MODE ||
+                      thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||
+                      responseSpeed !== COMMAND_CONTROL_DEFAULTS.responseSpeed
+                    }
+                    sections={[
+                      {
+                        id: "access",
+                        label: "Access",
+                        value: permissionMode,
+                        options: PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label })),
+                        onChange: (v: string) => setPermissionMode(v as CommandPermissionMode),
+                      } satisfies ComposerOptionSection,
+                      ...(composerModelOptions.length > 0
+                        ? [{
+                            id: "model",
+                            label: "Model",
+                            value: composerModelValue,
+                            options: composerModelOptions.map((m) => ({ value: m.id, label: m.label })),
+                            onChange: (id: string) => handleSelectModel(id),
+                          } satisfies ComposerOptionSection]
+                        : []),
+                      {
+                        id: "thinking",
+                        label: "Thinking",
+                        value: thinkingEffort,
+                        options: THINKING_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+                        onChange: (v: string) => setThinkingEffort(v as ComposerThinkingEffort),
+                      } satisfies ComposerOptionSection,
+                      {
+                        id: "speed",
+                        label: "Speed",
+                        value: responseSpeed,
+                        options: SPEED_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+                        onChange: (v: string) => setResponseSpeed(v as ComposerResponseSpeed),
+                      } satisfies ComposerOptionSection,
+                    ]}
                   />
                 </div>
                 <div className="cave-composer-submit-row">

@@ -275,27 +275,29 @@ assert.doesNotMatch(
 assert.match(
   source,
   /PERMISSION_MODES|permissionMode/,
-  "composer has a permission-mode chip",
+  "composer exposes the permission-mode (Access) control",
+);
+// The five response controls (Host · Access · Model · Thinking · Speed) collapse
+// into ONE icon-only Options menu instead of a row of inline pills.
+assert.match(
+  source,
+  /<ComposerOptionsMenu[\s\S]*hostValue=\{composerHostValue\}[\s\S]*onHostPick=\{setRuntimeHost\}/,
+  "composer collapses host + response controls into the ComposerOptionsMenu",
 );
 assert.match(
   source,
-  /label="Model"/,
-  "composer has a model chip",
+  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*aria-label="Voice"[\s\S]*<ComposerOptionsMenu/,
+  "composer utility row keeps attach + voice, then the collapsed Options menu",
 );
 assert.match(
   source,
-  /<ComposerHostChip value=\{composerHostValue\} disabled=\{busy\} onPick=\{setRuntimeHost\} \/>/,
-  "composer has a host chip (remote execution picker, shared with the home composer)",
+  /sections=\{\[[\s\S]*label: "Access"[\s\S]*label: "Model"[\s\S]*label: "Thinking"[\s\S]*label: "Speed"/,
+  "the Options menu carries Access, Model, Thinking, Speed sections in order",
 );
-assert.match(
+assert.doesNotMatch(
   source,
-  /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*aria-label="Voice"[\s\S]*<ComposerHostChip value=\{composerHostValue\} disabled=\{busy\} onPick=\{setRuntimeHost\} \/>/,
-  "composer utility row should keep attach, voice, and Host together before response controls",
-);
-assert.match(
-  source,
-  /<div className="cave-composer-settings-row" aria-label="Chat response controls">[\s\S]*label="Access"[\s\S]*label="Model"[\s\S]*label="Thinking"[\s\S]*label="Speed"/,
-  "composer response controls should render below the input in Access, Model, Thinking, Speed order",
+  /cave-composer-settings-row/,
+  "the inline settings-row of control pills is gone (collapsed into the Options menu)",
 );
 assert.match(
   source,
@@ -309,9 +311,15 @@ assert.doesNotMatch(
 );
 assert.match(
   styles,
-  /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;/,
-  "composer footer should lay out utility, ordered response controls, and submit actions in one row below the input",
+  /\.cave-composer-control-row\s*\{[\s\S]*display:\s*grid;[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;/,
+  "composer footer lays out the utility cluster and submit actions in one minimal row",
 );
+// The Options menu renders each control inline (no nested popover) and keeps the
+// connect-host dialog as a popover sibling so it survives the panel closing.
+const optionsMenu = readFileSync(new URL("./composer-options-menu.tsx", import.meta.url), "utf8");
+assert.match(optionsMenu, /role="radiogroup"/, "each control is an inline radiogroup");
+assert.match(optionsMenu, /ComposerHostChoices/, "host renders inline via the shared choices (no nested popover)");
+assert.match(optionsMenu, /ConnectHostDialog/, "connect-host dialog is rendered as a popover sibling");
 // The chip internals moved to the shared module — pin them there.
 const hostChip = readFileSync(new URL("./composer-host-chip.tsx", import.meta.url), "utf8");
 assert.match(
