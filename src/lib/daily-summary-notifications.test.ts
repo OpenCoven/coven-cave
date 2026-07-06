@@ -141,6 +141,11 @@ assert.equal(
   "markdown syntax should be stripped, not rendered as literal characters",
 );
 assert.equal(reportSessionTitle({ title: "   " }), "Untitled session");
+assert.equal(
+  reportSessionTitle({ title: '<covenroster> You are in a group chat ("coven") with these…' }),
+  "Untitled session",
+  "angle-tag prompt-preamble leaks should fall back to a neutral title",
+);
 const longTitle = "Refactor the entire inbox scheduler pipeline to support recurrence windows and quiet hours";
 assert.ok(
   reportSessionTitle({ title: longTitle }).length <= 64,
@@ -194,5 +199,49 @@ assert.equal(
   "the Recent line should cap at 6 deduped sessions",
 );
 assert.doesNotMatch(recentLine, /Harden avatar storage/, "sessions past the cap are dropped");
+
+{
+  const zeroDiff = buildDailySummaryContent({
+    now,
+    items: [],
+    sessions: [{ ...sessionAt("z1", "Quiet session", 1), diff: { additions: 0, deletions: 0 } }],
+  });
+  assert.doesNotMatch(zeroDiff.body, /\(\+0 -0\)/, "zero/zero diffs are noise, not signal");
+}
+
+// Day-in-review extras (Phase B): additive body lines, stats, and media.report.
+const report = {
+  prsMerged: [
+    { repo: "OpenCoven/coven-cave", number: 42, title: "feat: picker", url: "https://x/42", mergedAt: "2026-06-18T18:00:00.000Z" },
+    { repo: "OpenCoven/coven-cave", number: 43, title: "fix: leak", url: "https://x/43", mergedAt: "2026-06-18T19:00:00.000Z" },
+  ],
+  cardsCompleted: [{ id: "c1", title: "Ship it", completedAt: "2026-06-18T17:00:00.000Z" }],
+  sessionGroups: [],
+  factsHash: "abc123",
+  refreshedAt: "2026-06-18T21:15:00.000Z",
+};
+const enriched = buildDailySummaryContent({
+  now,
+  items: [baseItem],
+  sessions: [],
+  extras: { report },
+});
+assert.ok(enriched);
+assert.match(enriched.body, /2 PRs merged/, "PR line appears when the source resolved");
+assert.match(enriched.body, /1 card completed/, "card line appears when the source resolved");
+assert.match(enriched.body, /1 reminder fired/, "base four lines keep their exact wording");
+assert.equal(enriched.media.stats.prsMerged, 2);
+assert.equal(enriched.media.stats.cardsCompleted, 1);
+assert.equal(enriched.media.report?.factsHash, "abc123", "the payload freezes into media.report");
+
+// Without extras the new lines and keys are absent entirely (absence ≠ zero).
+const plain = buildDailySummaryContent({ now, items: [baseItem], sessions: [] });
+assert.doesNotMatch(plain.body, /PRs? merged|cards? completed/);
+assert.ok(!("prsMerged" in plain.media.stats), "no PR key without a resolved source");
+assert.ok(!("report" in plain.media), "no report payload without extras");
+
+// A PR-only day (no inbox items, no sessions) still produces a report.
+const prOnly = buildDailySummaryContent({ now, items: [], sessions: [], extras: { report } });
+assert.ok(prOnly, "a day with only merged PRs is not an empty day");
 
 console.log("daily-summary-notifications.test.ts: ok");

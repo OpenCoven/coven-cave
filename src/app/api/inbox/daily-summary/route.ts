@@ -11,6 +11,15 @@ import {
   dailySummaryAutoKey,
   dateSlug,
 } from "@/lib/daily-summary-notifications";
+import {
+  buildSessionGroups,
+  completedCardsForDay,
+  dailyFactsHash,
+  unionMergedPrs,
+  type DailyReportPayload,
+} from "@/lib/daily-report-facts";
+import { fetchMergedPrsForDay } from "@/lib/server/github-merged";
+import { loadBoard } from "@/lib/cave-board";
 import type { SessionRow } from "@/lib/types";
 import { isLocalOrigin } from "@/lib/server/local-origin";
 
@@ -37,12 +46,32 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, created: false, updated: false, dateMismatch: true });
   }
 
+  // Day-in-review facts, gathered outside the lock (network + board I/O).
+  // Every source degrades to null/absent — a missing PAT or unreadable board
+  // must never block the report itself.
+  const sessions = Array.isArray(body.sessions) ? body.sessions : [];
+  const [githubPrs, board] = await Promise.all([
+    fetchMergedPrsForDay(now).catch(() => null),
+    loadBoard().catch(() => null),
+  ]);
+  const prsMerged = unionMergedPrs(githubPrs, sessions, now);
+  const cardsCompleted = board ? completedCardsForDay(board.cards, now) : null;
+  const sessionGroups = buildSessionGroups(sessions, now);
+  const report: DailyReportPayload = {
+    ...(prsMerged ? { prsMerged } : {}),
+    ...(cardsCompleted ? { cardsCompleted } : {}),
+    ...(sessionGroups.length > 0 ? { sessionGroups } : {}),
+    factsHash: dailyFactsHash({ prsMerged, cardsCompleted, sessionGroups }),
+    refreshedAt: now.toISOString(),
+  };
+
   const result = await withInboxLock(async () => {
     const file = await loadInbox();
     const draft = buildDailySummaryContent({
       items: file.items,
-      sessions: Array.isArray(body.sessions) ? body.sessions : [],
+      sessions,
       now,
+      extras: { report },
     });
     if (!draft) return null;
 
@@ -55,7 +84,9 @@ export async function POST(req: Request) {
         title: draft.title,
         body: draft.body,
         link: draft.link,
-        media: { ...draft.media },
+        // A fact-only refresh must not discard the familiar-written narrative;
+        // its staleness is judged separately via factsHash (Phase C).
+        media: { ...draft.media, narrative: existing.media?.narrative ?? null },
         updatedAt: now.toISOString(),
       };
       file.items = file.items.map((item) => (item.id === existing.id ? refreshed : item));

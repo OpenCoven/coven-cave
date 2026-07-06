@@ -1,5 +1,6 @@
 import type { InboxItem, InboxMedia, ItemKind, ItemStatus, LinkRef, Recurrence } from "./cave-inbox";
 import { sanitizeSessionTitle } from "./cave-chat-titles.ts";
+import type { DailyReportPayload } from "./daily-report-facts";
 import type { SessionRow } from "./types";
 
 export type DailySummaryDraft = {
@@ -51,6 +52,9 @@ const REPORT_TITLE_MAX = 64;
 const MD_HEADING_RE = /^#{1,6}\s+/;
 const MD_EMPHASIS_RE = /(\*\*|__|[*_`])/g;
 const PRIOR_CONVERSATION_LEAK_RE = /^prior conversation\b/i;
+// Titles opening with an XML-ish tag ("<covenroster> You are in a group
+// chat…") are prompt-preamble leaks, not names.
+const ANGLE_TAG_LEAK_RE = /^<[a-z][\w-]*>/i;
 
 /** Session title as it should appear in the daily report: sanitized of
  *  harness-preamble leaks (via sanitizeSessionTitle), stripped of markdown
@@ -58,7 +62,7 @@ const PRIOR_CONVERSATION_LEAK_RE = /^prior conversation\b/i;
  *  session" when nothing survives. */
 export function reportSessionTitle(session: Pick<SessionRow, "title">): string {
   const sanitized = sanitizeSessionTitle(session.title);
-  if (!sanitized) return "Untitled session";
+  if (!sanitized || ANGLE_TAG_LEAK_RE.test(sanitized)) return "Untitled session";
   const stripped = sanitized
     .replace(MD_HEADING_RE, "")
     .replace(MD_EMPHASIS_RE, "")
@@ -70,7 +74,9 @@ export function reportSessionTitle(session: Pick<SessionRow, "title">): string {
 }
 
 function sessionSummaryLine(session: SessionRow): string {
-  const diff = session.diff ? ` (+${session.diff.additions} -${session.diff.deletions})` : "";
+  // A zero/zero diff is daemon boilerplate, not signal — suppress the suffix.
+  const hasDiff = Boolean(session.diff && (session.diff.additions || session.diff.deletions));
+  const diff = hasDiff ? ` (+${session.diff!.additions} -${session.diff!.deletions})` : "";
   return `${reportSessionTitle(session)}${diff}`;
 }
 
@@ -102,9 +108,13 @@ export function shouldCreateDailySummary(items: InboxItem[], now = new Date()): 
   return !items.some((item) => item.auto === key);
 }
 
-/** Server-side enrichments threaded into the builder. Phase B fills this in
- *  (merged PRs, completed board cards); Phase A only reserves the seam. */
-export type DailySummaryExtras = Record<string, never>;
+/** Server-side enrichments threaded into the builder: the day-in-review
+ *  payload assembled by the daily-summary route (merged PRs, session groups,
+ *  completed board cards). Type-only dependency — the runtime import direction
+ *  is daily-report-facts → this module (reportSessionTitle), never back. */
+export type DailySummaryExtras = {
+  report?: DailyReportPayload | null;
+};
 
 type BuildContentInput = BuildInput & { extras?: DailySummaryExtras };
 
@@ -115,6 +125,7 @@ export function buildDailySummaryContent({
   items,
   sessions,
   now = new Date(),
+  extras,
 }: BuildContentInput): DailySummaryDraft | null {
   const todayReminders = items.filter(
     (item) =>
@@ -138,21 +149,32 @@ export function buildDailySummaryContent({
     .filter((session) => !session.archived_at && isSameLocalDay(session.updated_at, now))
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
+  const report = extras?.report ?? null;
+  const prsMerged = report?.prsMerged;
+  const cardsCompleted = report?.cardsCompleted;
+
   if (
     todayReminders.length === 0 &&
     waitingResponses.length === 0 &&
     agentNotifications.length === 0 &&
-    todaySessions.length === 0
+    todaySessions.length === 0 &&
+    !prsMerged?.length &&
+    !cardsCompleted?.length
   ) {
     return null;
   }
 
+  // The base four lines keep their exact wording — parseStatsFromBody and the
+  // toast surfaces regex them. The day-in-review lines are additive and appear
+  // only when the section's data source resolved (absence ≠ zero).
   const lines = [
     plural(todayReminders.length, "reminder", "reminders") + " fired",
     plural(waitingResponses.length, "response", "responses") + " waiting",
     plural(agentNotifications.length, "familiar update", "familiar updates"),
     plural(todaySessions.length, "session", "sessions") + " updated",
   ];
+  if (prsMerged) lines.push(plural(prsMerged.length, "PR") + " merged");
+  if (cardsCompleted) lines.push(plural(cardsCompleted.length, "card") + " completed");
   // Dedupe repeated titles (retried/refreshed runs share one) case-insensitively,
   // keeping the most recent occurrence — the list is already sorted newest-first.
   const seenTitles = new Set<string>();
@@ -167,13 +189,31 @@ export function buildDailySummaryContent({
   if (topSessions.length > 0) lines.push(`Recent: ${topSessions.join(" · ")}`);
 
   const sentAt = now.toISOString();
-  const stats = {
+  const stats: InboxMedia["stats"] = {
     reminders: todayReminders.length,
     responses: waitingResponses.length,
     familiars: agentNotifications.length,
     sessions: todaySessions.length,
+    ...(prsMerged ? { prsMerged: prsMerged.length } : {}),
+    ...(cardsCompleted ? { cardsCompleted: cardsCompleted.length } : {}),
   };
   const day = dayLabel(now);
+  // SVG v2 leads with the day's real output (sessions / PRs / cards) when the
+  // day-in-review payload resolved; without it the legacy four-count row keeps
+  // historical parity.
+  const svgColumns = report
+    ? [
+        { value: stats.sessions, label: stats.sessions === 1 ? "session" : "sessions" },
+        { value: prsMerged?.length ?? 0, label: "PRs merged" },
+        { value: cardsCompleted?.length ?? 0, label: "cards done" },
+        { value: stats.reminders + stats.responses + stats.familiars, label: "inbox events" },
+      ]
+    : [
+        { value: stats.reminders, label: "reminders" },
+        { value: stats.responses, label: "responses" },
+        { value: stats.familiars, label: "familiars" },
+        { value: stats.sessions, label: "sessions" },
+      ];
   const svg = `
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
   <defs>
@@ -193,16 +233,17 @@ export function buildDailySummaryContent({
   <text x="64" y="176" fill="#ffffff" font-family="Inter, system-ui, sans-serif" font-size="72" font-weight="800">${xmlEscape(day)}</text>
   <text x="64" y="232" fill="#b9b0c8" font-family="Inter, system-ui, sans-serif" font-size="28">A generated snapshot of today's cave activity.</text>
   <g font-family="Inter, system-ui, sans-serif" font-weight="800">
-    <text x="92" y="362" fill="#ffffff" font-size="58">${stats.reminders}</text>
-    <text x="300" y="362" fill="#ffffff" font-size="58">${stats.responses}</text>
-    <text x="508" y="362" fill="#ffffff" font-size="58">${stats.familiars}</text>
-    <text x="716" y="362" fill="#ffffff" font-size="58">${stats.sessions}</text>
+${svgColumns
+  .map(
+    (col, i) =>
+      `    <text x="${92 + i * 208}" y="362" fill="#ffffff" font-size="58">${col.value}</text>`,
+  )
+  .join("\n")}
   </g>
   <g fill="#b9b0c8" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="700">
-    <text x="92" y="410">reminders</text>
-    <text x="300" y="410">responses</text>
-    <text x="508" y="410">familiars</text>
-    <text x="716" y="410">sessions</text>
+${svgColumns
+  .map((col, i) => `    <text x="${92 + i * 208}" y="410">${xmlEscape(col.label)}</text>`)
+  .join("\n")}
   </g>
 </svg>`.trim();
 
@@ -220,6 +261,7 @@ export function buildDailySummaryContent({
       alt: `Daily summary generated image for ${day}`,
       stats,
       generatedAt: sentAt,
+      ...(report ? { report } : {}),
     },
     fireAt: sentAt,
     firedAt: sentAt,

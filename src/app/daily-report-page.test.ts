@@ -23,4 +23,17 @@ assert.match(page, /ItemRow/, "report should render deep-linkable item rows");
 assert.match(page, /href="\/dashboard"/, "report should link back to the dashboard");
 assert.match(page, /dr-page/, "report should use the shared daily-report surface styling");
 
+// Day-in-review sections (Phase B): every access to the frozen payload is
+// guarded — historical reports without media.report must render unchanged.
+assert.match(page, /media\?\.report/, "report payload access must be optional-chained");
+assert.match(page, /Merged pull requests/, "report should render the merged-PRs section when frozen");
+assert.match(page, /Sessions by project/, "report should render grouped sessions when frozen");
+assert.match(page, /Cards completed/, "report should render completed board cards when frozen");
+assert.match(page, /\/#card-\$\{card\.id\}/, "completed cards should deep-link into the board");
+assert.match(
+  page,
+  /report\?\.sessionGroups\?\.length[\s\S]*?recentSessions\.length > 0/,
+  "grouped sessions must fall back to the body-recovered flat list for old reports",
+);
+
 console.log("daily-report-page.test.ts: ok");

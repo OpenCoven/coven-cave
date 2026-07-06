@@ -82,8 +82,36 @@ function summary(slug) {
   assert.ok(model.todaySummary, "today summary present when today's report exists");
   assert.equal(model.todaySummary.imageUrl, "img.png");
   assert.deepEqual(model.todaySummary.recentSessions, ["alpha", "beta"], "recovers session names from body");
+  assert.equal(model.todaySummary.report, null, "no day-in-review payload on pre-Phase-B reports");
   assert.equal(model.metricsLive, false, "metrics are frozen when today's report exists");
   assert.deepEqual(model.metrics, { reminders: 1, responses: 2, familiars: 4, sessions: 3 });
+}
+
+// the frozen day-in-review payload (media.report) rides along when present
+{
+  const payload = {
+    prsMerged: [{ repo: "o/r", number: 1, title: "t", url: "u", mergedAt: ISO }],
+    factsHash: "h",
+    refreshedAt: ISO,
+  };
+  const today = item({
+    id: "s-2026-06-20b",
+    kind: "daily-summary",
+    title: "Report 2026-06-20",
+    body: "1 reminder fired",
+    auto: "daily-summary:2026-06-20",
+    media: {
+      kind: "summary-card",
+      imageUrl: "img.png",
+      alt: "card",
+      stats: { reminders: 1, responses: 0, familiars: 0, sessions: 0, prsMerged: 1 },
+      generatedAt: ISO,
+      report: payload,
+    },
+  });
+  const model = buildDashboardModel([today], now);
+  assert.deepEqual(model.todaySummary.report, payload, "media.report surfaces on TodaySummary");
+  assert.equal(model.metrics.prsMerged, 1, "extended frozen stats ride along");
 }
 
 // before today's report exists, metrics fall back to the live snapshot

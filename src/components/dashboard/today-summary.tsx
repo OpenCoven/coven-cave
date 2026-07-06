@@ -46,7 +46,48 @@ export function TodaySummary({
               Today&apos;s summary is still taking shape — it fills in as activity lands.
             </p>
           )}
-          {summary.recentSessions.length > 0 ? (
+          {summary.report?.prsMerged?.length ? (
+            <div className="dash-today__sessions" aria-label="Merged pull requests">
+              <span className="dash-today__sessions-label">
+                <Icon name="ph:git-merge" aria-hidden />
+                Merged today
+              </span>
+              <div className="dash-today__chips">
+                {summary.report.prsMerged.map((pr) => (
+                  <a
+                    key={`${pr.repo}#${pr.number}`}
+                    className="dash-today__chip dr-pr-chip"
+                    href={pr.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {pr.repo.split("/").pop()}#{pr.number}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {summary.report?.sessionGroups?.length ? (
+            <div className="dash-today__sessions" aria-label="Sessions by project">
+              <span className="dash-today__sessions-label">
+                <Icon name="ph:code-bold" aria-hidden />
+                By project
+              </span>
+              <div className="dash-today__chips">
+                {summary.report.sessionGroups.map((group) => (
+                  <span key={group.key} className="dash-today__chip">
+                    {group.label}
+                    {group.additions || group.deletions ? (
+                      <span className="dr-diffstat">
+                        <span className="dr-diffstat__add">+{group.additions}</span>
+                        <span className="dr-diffstat__del">−{group.deletions}</span>
+                      </span>
+                    ) : null}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : summary.recentSessions.length > 0 ? (
             <div className="dash-today__sessions" aria-label="Recent sessions">
               <span className="dash-today__sessions-label">
                 <Icon name="ph:code-bold" aria-hidden />

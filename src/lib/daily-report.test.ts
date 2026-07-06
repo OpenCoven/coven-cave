@@ -171,6 +171,17 @@ function item(overrides) {
     }),
   ]);
   assert.equal(reports[0].stats.sessions, 5, "stats recovered from body when media.stats absent");
+
+  // Day-in-review lines (Phase B) parse into optional keys — and stay absent
+  // (not zero) for bodies that predate them.
+  const enriched = parseStatsFromBody(
+    "1 reminder fired\n0 responses waiting\n0 familiar updates\n2 sessions updated\n3 PRs merged\n1 card completed",
+  );
+  assert.equal(enriched.prsMerged, 3);
+  assert.equal(enriched.cardsCompleted, 1);
+  const legacy = parseStatsFromBody("1 reminder fired\n2 sessions updated");
+  assert.ok(!("prsMerged" in legacy), "old bodies keep their shape — no fabricated zero");
+  assert.ok(!("cardsCompleted" in legacy));
 }
 
 console.log("daily-report.test.ts: ok");
