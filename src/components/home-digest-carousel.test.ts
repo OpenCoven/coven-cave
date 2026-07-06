@@ -28,12 +28,12 @@ assert.match(view, /home-digest__track--media/, "media headlines render on their
 assert.match(view, /c\.kind === "summary" \|\| c\.kind === "session"/, "chats row = summary + session cards");
 assert.match(view, /c\.kind === "rss"/, "media row = the rss headline cards");
 
-// ── News carousel can be dismissed from a hover/focus close affordance ────────
+// ── News carousel can be dismissed only from its explicit close affordance ────
 assert.match(view, /const \[mediaDismissed, setMediaDismissed\] = useState\(false\)/, "tracks dismissed state for the news/media carousel");
 assert.match(view, /mediaCards\.length > 0 && !mediaDismissed/, "dismissing media leaves the chat digest row intact");
 assert.match(view, /aria-label="Close news carousel"/, "news carousel exposes an accessible close button");
 assert.match(view, /onClick=\{\(\) => setMediaDismissed\(true\)\}/, "close button hides the news carousel");
-assert.match(view, /onMouseEnter=\{\(\) => setMediaDismissed\(true\)\}/, "hovering the close affordance hides the news carousel");
+assert.doesNotMatch(view, /onMouseEnter=\{\(\) => setMediaDismissed\(true\)\}/, "hovering the close affordance must not hide the news carousel");
 assert.match(view, /home-digest__media-close/, "close button has a stable styling hook");
 
 // ── Media cards support an image thumbnail (with icon fallback on error) ───────
@@ -66,9 +66,10 @@ assert.match(css, /\.home-digest__track--media[\s\S]*?animation-direction: rever
 assert.match(css, /\.home-digest__thumb[\s\S]*?object-fit: cover/, "media thumbnail is a cover-fit image");
 assert.match(css, /\.home-digest__thumb[\s\S]*?width: 46px/, "media thumbnail is enlarged for the image-forward row");
 assert.match(css, /\.home-digest__card--media[\s\S]*?padding-left/, "media cards are image-forward (thumbnail hugs the leading edge)");
-assert.match(css, /\.home-digest__media-close[\s\S]*?opacity: 0/, "news close button is hidden until interaction");
-assert.match(css, /\.home-digest__media:hover \.home-digest__media-close[\s\S]*?opacity: 1/, "news close button appears on hover");
-assert.match(css, /\.home-digest__media:focus-within \.home-digest__media-close[\s\S]*?opacity: 1/, "news close button appears when focused");
+assert.match(css, /\.home-digest__media[\s\S]*?position: relative/, "media row anchors the close button");
+assert.match(css, /\.home-digest__media-close[\s\S]*?position: absolute[\s\S]*?top: 0[\s\S]*?right: 0/, "news close button sits at the media row's top-right corner");
+assert.match(css, /\.home-digest__media-close\s*\{[^}]*pointer-events: auto/, "news close button is always directly clickable");
+assert.doesNotMatch(css, /\.home-digest__media-close\s*\{[^}]*opacity: 0/, "news close button must not be hidden behind hover-only reveal");
 
 // ── Wired into the home composer below "Jump back in" ─────────────────────────
 assert.match(composer, /import \{ HomeDigestCarousel \}/, "home composer imports the carousel");

@@ -1142,8 +1142,8 @@
 .home-digest__media-close {
   position: absolute;
   z-index: 2;
-  top: 16px;
-  right: 8%;
+  top: 0;
+  right: 0;
   display: grid;
   place-items: center;
   width: 28px;
@@ -1153,14 +1153,8 @@
   background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
   color: var(--text-secondary);
   box-shadow: var(--shadow-elevated);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.14s, background 0.14s, color 0.14s, border-color 0.14s;
-}
-.home-digest__media:hover .home-digest__media-close,
-.home-digest__media:focus-within .home-digest__media-close {
-  opacity: 1;
   pointer-events: auto;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
 }
 .home-digest__media-close:hover,
 .home-digest__media-close:focus-visible {
