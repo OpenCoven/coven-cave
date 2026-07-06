@@ -15,13 +15,33 @@ struct CaveClient {
         }
     }
 
-    private var session: URLSession {
+    /// One shared session for REST calls. A `URLSession` is never deallocated
+    /// once created, so building one per request (the old computed property)
+    /// leaked sessions and re-negotiated TLS on every call; a single shared
+    /// instance keeps connections pooled and warm.
+    private static let restSession: URLSession = {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 20
-        config.timeoutIntervalForResource = 60
+        config.timeoutIntervalForResource = 300
         config.waitsForConnectivity = true
         return URLSession(configuration: config)
-    }
+    }()
+
+    /// Dedicated session for chat SSE streams. `timeoutIntervalForResource`
+    /// bounds the WHOLE transfer (the per-request `timeoutInterval` only
+    /// resets the idle clock), so sharing the REST session's cap silently
+    /// killed any reply that streamed longer than it — long agentic turns
+    /// died mid-stream at the old 60s cap. Streams get a day-long resource
+    /// window; the idle timeout still catches a genuinely dead connection.
+    private static let streamSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 600
+        config.timeoutIntervalForResource = 24 * 3600
+        config.waitsForConnectivity = true
+        return URLSession(configuration: config)
+    }()
+
+    private var session: URLSession { Self.restSession }
 
     func data(for req: URLRequest) async throws -> (Data, URLResponse) {
         let method = (req.httpMethod ?? "GET").uppercased()
@@ -323,7 +343,7 @@ struct CaveClient {
                     req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     req.timeoutInterval = 600
 
-                    let (bytes, resp) = try await session.bytes(for: req)
+                    let (bytes, resp) = try await Self.streamSession.bytes(for: req)
                     try Self.check(resp)
 
                     var dataLines: [String] = []

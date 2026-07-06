@@ -214,13 +214,48 @@ final class ChatThread: Identifiable, Hashable {
             }
             mutate(messageId) { $0.streaming = false }
         } catch {
-            mutate(messageId) {
-                if $0.text.isEmpty { $0.text = error.localizedDescription }
-                $0.isError = true; $0.streaming = false
+            // Transport interruption (network handoff, backgrounding, desktop
+            // blip). The server persists the turn — including a partial reply
+            // — even when the stream dies, so recover its copy before
+            // surfacing a raw connection error.
+            let recovered = await resyncInterruptedTurn(familiarId: familiarId, prompt: prompt,
+                                                        into: messageId, client: client)
+            if !recovered {
+                mutate(messageId) {
+                    if $0.text.isEmpty { $0.text = error.localizedDescription }
+                    $0.isError = true; $0.streaming = false
+                }
             }
         }
         updatedAt = Date()
         onChange()
+    }
+
+    /// After a transport failure mid-stream, pull the persisted conversation
+    /// and adopt the server's copy of the interrupted reply. Anchors on the
+    /// prompt: the reply must be an assistant turn AFTER a final user turn
+    /// carrying exactly what we sent, and must extend what already streamed
+    /// into the bubble. Anything else means the reply never persisted (or
+    /// belongs to an older exchange) and the caller falls back to the error
+    /// path. Returns true when the bubble recovered.
+    private func resyncInterruptedTurn(familiarId: String, prompt: String, into messageId: String,
+                                       client: CaveClient) async -> Bool {
+        guard let sessionId = sessionIds[familiarId], !sessionId.isEmpty else { return false }
+        // Give the server a beat to flush the transcript after the drop.
+        try? await Task.sleep(for: .milliseconds(600))
+        guard let convo = try? await client.conversation(sessionId: sessionId),
+              let lastUser = convo.turns.lastIndex(where: { $0.role == "user" }),
+              convo.turns[lastUser].text == prompt,
+              let reply = convo.turns[(lastUser + 1)...].last(where: { $0.role == "assistant" })
+        else { return false }
+        let streamed = messages.first(where: { $0.id == messageId })?.text ?? ""
+        guard !reply.text.isEmpty, reply.text.hasPrefix(streamed) else { return false }
+        mutate(messageId) {
+            $0.text = reply.text
+            $0.isError = reply.isError ?? false
+            $0.streaming = false
+        }
+        return true
     }
 
     private func mutate(_ messageId: String, _ body: (inout DisplayMessage) -> Void) {

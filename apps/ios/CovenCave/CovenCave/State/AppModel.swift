@@ -656,8 +656,43 @@ final class AppModel {
     private func handleSurfaceError(_ error: Error) -> String {
         if CaveError.isAuthFailure(error) {
             connectionState = .needsAuth(pairingMessage())
+        } else if connectionState == .connected {
+            scheduleAutoRecover()
         }
         return error.localizedDescription
+    }
+
+    /// Last time a failed surface load triggered an automatic reconnect —
+    /// bounds the recovery loop so cascading failures fold into one probe.
+    private var lastAutoRecoverAt: Date = .distantPast
+
+    /// A surface load failed while the state says connected — the desktop may
+    /// have restarted or moved ports without a network-path change, which
+    /// NWPathMonitor can't see. Re-run discovery in the background, at most
+    /// once per cooldown, so the app heals itself instead of sitting on a
+    /// stale "connected" with every surface erroring.
+    private func scheduleAutoRecover() {
+        let cooldown: TimeInterval = 10
+        guard Date().timeIntervalSince(lastAutoRecoverAt) > cooldown else { return }
+        lastAutoRecoverAt = Date()
+        Task { [weak self] in await self?.recoverConnectionInBackground() }
+    }
+
+    /// The connected state can be stale after a long suspension: the desktop
+    /// may have restarted or relocated while iOS had the app frozen, with no
+    /// path change for the supervisor to see. Revalidate with one cheap probe
+    /// on foreground — the common case (still reachable) costs a single
+    /// request and repaints nothing; a dead endpoint falls into the usual
+    /// retry/discovery path. A successful probe also gives the rolling token
+    /// renewal a chance to run for long-foregrounded devices.
+    func validateConnectionOnForeground() async {
+        guard connection != nil, connectionState == .connected else { return }
+        if let client, await client.ping() {
+            await refreshAccessTokenIfNeeded()
+            return
+        }
+        guard connectionState == .connected else { return }
+        await connectWithRetry()
     }
 
     private func refreshLoadedSurfaces() async {
@@ -670,9 +705,13 @@ final class AppModel {
         await loadTheme()
     }
 
-    func refreshConnection(reloadLoadedSurfaces: Bool = false) async {
+    /// `quiet` probes without first flipping the state to `.checking`, so a
+    /// background retry (e.g. the unreachable screen's auto-retry ticker)
+    /// doesn't bounce the UI through intermediate states — the state only
+    /// changes when the probe has an outcome.
+    func refreshConnection(reloadLoadedSurfaces: Bool = false, quiet: Bool = false) async {
         guard let connection else { connectionState = .unconfigured; return }
-        connectionState = .checking
+        if !quiet { connectionState = .checking }
 
         // Try the configured endpoint first, then auto-relocate to a working
         // port (e.g. the user typed a `.ts.net` host without `:8443`).
@@ -680,8 +719,13 @@ final class AppModel {
         switch await Self.discoverBaseURL(connection.candidateBaseURLs) {
         case .found(let working):
             if working != configured {
-                // Relocate: persist the working URL so future launches connect directly.
-                let relocated = CaveConnection(host: working.absoluteString)
+                // Relocate: persist the working endpoint so future launches
+                // connect directly. Stored as bare `host:port` when the
+                // default scheme derivation reproduces the URL — a bare host
+                // keeps future discovery able to probe alternate ports if the
+                // desktop moves again, while a full URL is treated as
+                // user-explicit and would pin the connection forever.
+                let relocated = CaveConnection(host: Self.canonicalHost(for: working))
                 self.connection = relocated
                 relocated.save()
                 if let port = working.port {
@@ -750,24 +794,56 @@ final class AppModel {
         case none
     }
 
-    /// Probe candidate base URLs in order; adopt the first that answers as a
-    /// real Cave server. A 401/403 is TERMINAL, not a cue to keep walking:
-    /// it's a live Cave token gate talking, and the fix is pairing. Probing
-    /// past it can silently adopt a different instance on a sibling port
-    /// (e.g. a dev server on :3000) — the user thinks they're talking to the
-    /// desktop they paired with, but they aren't.
+    /// Probe every candidate base URL concurrently, then adjudicate strictly
+    /// in candidate order so the semantics match a sequential walk: the first
+    /// `.ok` in order wins, and a 401/403 earlier in the order is TERMINAL —
+    /// it's a live Cave token gate talking, and the fix is pairing. Adopting
+    /// a later candidate past it could silently connect to a different
+    /// instance on a sibling port (e.g. a dev server on :3000) — the user
+    /// thinks they're talking to the desktop they paired with, but they
+    /// aren't. Concurrency only changes the wall clock: one probe's timeout
+    /// (~6s) instead of the sum across candidates (30s+ on a cold launch).
     static func discoverBaseURL(_ candidates: [URL]) async -> DiscoveryOutcome {
-        for base in candidates {
-            switch await probe(base) {
-            case .ok: return .found(base)
+        guard !candidates.isEmpty else { return .none }
+        let results = await withTaskGroup(of: (Int, ProbeResult).self) { group in
+            for (index, base) in candidates.enumerated() {
+                group.addTask { (index, await Self.probe(base)) }
+            }
+            var collected = [ProbeResult?](repeating: nil, count: candidates.count)
+            for await (index, result) in group { collected[index] = result }
+            return collected
+        }
+        for (index, result) in results.enumerated() {
+            switch result {
+            case .ok: return .found(candidates[index])
             case .unauthorized: return .unauthorized
-            case .failed: continue
+            default: continue
             }
         }
         return .none
     }
 
+    /// Persist a relocated endpoint as `host:port` when the default scheme
+    /// derivation reproduces it (see the relocation comment in
+    /// `refreshConnection`); otherwise fall back to the explicit URL.
+    static func canonicalHost(for url: URL) -> String {
+        guard let host = url.host else { return url.absoluteString }
+        let compact = url.port.map { "\(host):\($0)" } ?? host
+        return CaveConnection(host: compact).baseURL == url ? compact : url.absoluteString
+    }
+
     private enum ProbeResult { case ok, unauthorized, failed }
+
+    /// Shared session for discovery probes — ephemeral (no cache/cookie
+    /// carry-over) and never recreated, so repeated discovery rounds don't
+    /// leak URLSessions the way per-probe construction did.
+    private static let probeSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 6
+        config.timeoutIntervalForResource = 10
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
 
     /// Reachability check that requires a *real* Cave API response — a 2xx whose
     /// body decodes as the familiars payload. A bare status check would accept
@@ -777,16 +853,13 @@ final class AppModel {
     /// adopt an actual Cave server. Sends the paired credential when one exists
     /// and reports a 401/403 distinctly — that's a Cave token gate talking.
     private static func probe(_ base: URL) async -> ProbeResult {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 6
-        config.waitsForConnectivity = false
         var req = URLRequest(url: base.appendingPathComponent("api/familiars"))
         req.timeoutInterval = 6
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token = CaveConnection.accessToken {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
-        guard let (data, resp) = try? await URLSession(configuration: config).data(for: req),
+        guard let (data, resp) = try? await probeSession.data(for: req),
               let http = resp as? HTTPURLResponse
         else { return .failed }
         if http.statusCode == 401 || http.statusCode == 403 { return .unauthorized }
