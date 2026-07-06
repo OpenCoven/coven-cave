@@ -261,7 +261,7 @@ function DetailPanel({
           size="xs"
           onClick={onClose}
           aria-label="Close"
-          className="rounded-[var(--radius-control)] p-1 text-[var(--text-muted)] transition-colors hover:bg-white/5"
+          className="rounded-[var(--radius-control)] p-1 text-[var(--text-muted)] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
           leadingIcon="ph:x"
         />
       </div>
@@ -345,7 +345,7 @@ function DetailPanel({
               size="xs"
               leadingIcon="ph:link"
               onClick={() => item.link && onOpenLink?.(item.link)}
-              className="max-w-full rounded-[var(--radius-control)] px-2.5 py-1 text-[11px] transition-colors hover:bg-white/5"
+              className="max-w-full rounded-[var(--radius-control)] px-2.5 py-1 text-[11px] transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
               style={{ background: "var(--bg-base)", border: "1px solid var(--border-hairline)", color: "var(--text-secondary)" }}
             >
               <span className="truncate">{linkLabel(item.link)}</span>
@@ -363,7 +363,7 @@ function DetailPanel({
             fullWidth
             disabled={busy}
             onClick={() => onEdit(item)}
-            className="justify-center rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
+            className="justify-center rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
             style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
             leadingIcon="ph:pencil-simple"
           >
@@ -386,7 +386,7 @@ function DetailPanel({
               fullWidth
               disabled={busy}
               onClick={() => togglePaused(item)}
-              className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
+              className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
               style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
             >
               {paused ? "Resume" : "Pause"}
@@ -399,7 +399,7 @@ function DetailPanel({
             fullWidth
             disabled={busy}
             onClick={() => stopRecurrence(item.id)}
-            className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
+            className="rounded-[var(--radius-control)] py-2 text-[12px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
             style={{ borderColor: "var(--border-hairline)", color: "var(--text-secondary)" }}
           >
             Stop repeating
@@ -442,7 +442,7 @@ function RowActionButton({ icon, label, text, onClick }: { icon: IconName; label
       size="xs"
       aria-label={label}
       onClick={onClick}
-      className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10"
+      className="shrink-0 rounded-[var(--radius-control)] px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
       style={{ color: "var(--text-secondary)" }}
       leadingIcon={icon}
     >
@@ -522,7 +522,7 @@ function ReminderTaskRow({
               background: checked ? "var(--accent-presence)" : "transparent",
             }}
           >
-            {checked && <Icon name="ph:check-bold" width={12} className="text-white" />}
+            {checked && <Icon name="ph:check-bold" width={12} className="text-[var(--accent-presence-foreground)]" />}
           </span>
         ) : (
           <StatusIcon item={item} />
@@ -812,7 +812,7 @@ function CodexDetailPanel({
               size="xs"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-white/5"
+              className="rounded-[var(--radius-control)] text-[var(--text-muted)] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
               leadingIcon="ph:x"
             />
           </div>
@@ -1020,7 +1020,7 @@ function CodexDetailPanel({
                     aria-expanded={openRunId === r.id}
                     aria-controls={`automation-run-log-${r.id}`}
                     aria-label={`${r.status} run ${relTime(r.startedAt)}${r.summary ? ` — ${r.summary}` : ""}, ${openRunId === r.id ? "hide" : "show"} log`}
-                    className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[12px] hover:bg-white/5"
+                    className="w-full justify-start rounded-[var(--radius-control)] px-2 py-1 text-left text-[12px] hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
                   >
                     <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ background: runStatusColor(r.status) }} />
                     <span style={{ color: "var(--text-secondary)" }} title={r.startedAt ? formatTimestamp(r.startedAt, readDateTimePrefs()) : undefined}>{relTime(r.startedAt)}</span>
@@ -1119,7 +1119,7 @@ function AutomationScheduleRow({
         type="button"
         onClick={() => onSelect(auto)}
         aria-current={selected ? "true" : undefined}
-        className={`focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-white/5" : "hover:bg-white/5"}`}
+        className={`focus-ring-inset automation-list-row group flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]" : "hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"}`}
       >
         {/* Status dot */}
         {isActive ? (
@@ -1290,7 +1290,7 @@ function InboxFeedRow({
         type="button"
         onClick={() => onSelect(item)}
         aria-current={selected ? "true" : undefined}
-        className={`focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-white/5" : "hover:bg-white/5"}`}
+        className={`focus-ring-inset automation-list-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${selected ? "bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]" : "hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"}`}
       >
         <StatusIcon item={item} />
         <span className="flex-1 min-w-0 flex items-center gap-2">
@@ -1411,7 +1411,7 @@ function NewMenuItem({
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
-      className="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-white/5 disabled:opacity-40"
+      className="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)] disabled:opacity-40"
     >
       <span
         className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
@@ -1483,7 +1483,7 @@ function AutomationEntryRow({
   const nextFire = entry.state === "active" && entry.nextFireAt ? relTime(entry.nextFireAt) : null;
   return (
     <div
-      className="automation-list-row flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
+      className="automation-list-row flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
       style={{ border: "1px solid var(--border-hairline)" }}
     >
       <AutomationTypeChip type={entry.type} />
@@ -1515,7 +1515,7 @@ function AutomationEntryRow({
             disabled={busy}
             onClick={() => onRun(entry)}
             aria-label={`Run ${entry.name} now`}
-            className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
+            className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
             style={{ color: "var(--text-secondary)" }}
           >
             <Icon name="ph:play" width={11} aria-hidden />
@@ -1527,7 +1527,7 @@ function AutomationEntryRow({
               disabled={busy}
               onClick={() => onTogglePause(entry)}
               aria-label={`${entryPaused ? "Resume" : "Pause"} ${entry.name}`}
-              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
+              className="focus-ring inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
               style={{ color: "var(--text-secondary)" }}
             >
               <Icon name={entryPaused ? "ph:play" : "ph:pause"} width={11} aria-hidden />
@@ -1597,7 +1597,7 @@ function ManagedAutomationRow({
 }) {
   return (
     <div
-      className="automation-list-row flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-white/5"
+      className="automation-list-row flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_6%,transparent)]"
       style={{ border: "1px solid var(--border-hairline)" }}
     >
       <AutomationTypeChip type={type} />
@@ -1610,7 +1610,7 @@ function ManagedAutomationRow({
             disabled={busy}
             onClick={onRun}
             aria-label={`Run ${name} now`}
-            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
+            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
             style={{ color: "var(--text-secondary)" }}
           >
             <Icon name="ph:play" width={11} aria-hidden />
@@ -1622,7 +1622,7 @@ function ManagedAutomationRow({
               disabled={busy}
               onClick={onTogglePause}
               aria-label={`${paused ? "Resume" : "Pause"} ${name}`}
-              className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10 disabled:opacity-50"
+              className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)] disabled:opacity-50"
               style={{ color: "var(--text-secondary)" }}
             >
               <Icon name={paused ? "ph:play" : "ph:pause"} width={11} aria-hidden />
@@ -1632,7 +1632,7 @@ function ManagedAutomationRow({
           <button
             type="button"
             onClick={onOpen}
-            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-white/10"
+            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
             style={{ color: "var(--text-secondary)" }}
           >
             <Icon name="ph:arrow-square-out" width={11} aria-hidden />
@@ -2368,7 +2368,7 @@ export function AutomationsView({ familiars, onOpenSession, onNewReminder, onEdi
             <button
               type="button"
               onClick={() => void load()}
-              className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-white/10"
+              className="shrink-0 rounded px-1.5 py-0.5 font-medium hover:bg-[color-mix(in_oklch,var(--foreground)_10%,transparent)]"
             >
               Retry
             </button>
