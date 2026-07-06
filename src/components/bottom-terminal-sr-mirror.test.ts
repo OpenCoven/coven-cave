@@ -60,8 +60,10 @@ assert.match(source, /async function createXterm\(/, "shared xterm builder helpe
 assert.equal((source.match(/new Terminal\(\{/g) ?? []).length, 1, "Terminal is constructed in exactly one place");
 assert.equal((source.match(/attachCustomKeyEventHandler/g) ?? []).length, 1, "the ⌘F handler is wired once, in the helper");
 assert.match(source, /const \{ term, fit, search \} = await createXterm\(wrap, \{/, "both transports build the terminal via createXterm");
-// Search decoration colors are a module constant, not rebuilt each render.
-assert.match(source, /^const SEARCH_DECORATIONS = \{/m, "SEARCH_DECORATIONS is hoisted to module scope");
+// Search decoration colors are resolved by a module-scope helper, not rebuilt
+// during render.
+assert.match(source, /^function searchDecorations\(\)/m, "searchDecorations is hoisted to module scope");
+assert.match(source, /decorations:\s*searchDecorations\(\)/, "search decorations are resolved when search runs");
 
 // The mirror must not re-render while the pane is backgrounded/hidden — a busy
 // background stream otherwise re-renders the 50-line mirror every 250ms
