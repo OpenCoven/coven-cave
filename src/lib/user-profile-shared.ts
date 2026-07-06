@@ -71,32 +71,36 @@ function normText(
   return { ok: true, value: trimmed === "" ? null : trimmed };
 }
 
-export function normalizeUserProfilePatch(body: Record<string, unknown>): NormalizeResult {
-  for (const key of Object.keys(body)) {
+export function normalizeUserProfilePatch(body: unknown): NormalizeResult {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { ok: false, error: "body must be an object" };
+  }
+  const obj = body as Record<string, unknown>;
+  for (const key of Object.keys(obj)) {
     if (!PATCH_KEYS.has(key)) return { ok: false, error: `unknown field: ${key}` };
   }
   const patch: UserProfilePatch = {};
   for (const field of ["name", "pronouns", "bio"] as const) {
-    if (field in body) {
-      const res = normText(body[field], field);
+    if (field in obj) {
+      const res = normText(obj[field], field);
       if (!res.ok) return res;
       patch[field] = res.value;
     }
   }
-  if ("timezone" in body) {
-    if (typeof body.timezone !== "string") return { ok: false, error: "timezone must be a string" };
-    const tz = body.timezone.trim();
+  if ("timezone" in obj) {
+    if (typeof obj.timezone !== "string") return { ok: false, error: "timezone must be a string" };
+    const tz = obj.timezone.trim();
     if (tz === "") patch.timezone = null;
     else if (!isValidTimezone(tz)) return { ok: false, error: `unknown timezone: ${tz}` };
     else patch.timezone = tz;
   }
-  if ("links" in body) {
-    if (!Array.isArray(body.links)) return { ok: false, error: "links must be an array" };
-    if (body.links.length > PROFILE_LIMITS.links) {
+  if ("links" in obj) {
+    if (!Array.isArray(obj.links)) return { ok: false, error: "links must be an array" };
+    if (obj.links.length > PROFILE_LIMITS.links) {
       return { ok: false, error: `too many links (max ${PROFILE_LIMITS.links})` };
     }
     const links: ProfileLink[] = [];
-    for (const raw of body.links) {
+    for (const raw of obj.links) {
       const label = typeof (raw as ProfileLink)?.label === "string" ? (raw as ProfileLink).label.trim() : "";
       const url = typeof (raw as ProfileLink)?.url === "string" ? (raw as ProfileLink).url.trim() : "";
       if (!label || label.length > PROFILE_LIMITS.linkLabel) return { ok: false, error: "link label is required (max 32 characters)" };
