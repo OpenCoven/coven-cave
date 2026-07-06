@@ -810,29 +810,6 @@
 .home-digest__track--media {
   animation-direction: reverse;
 }
-.home-digest__media-close {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-control);
-  border: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
-  color: var(--text-secondary);
-  pointer-events: auto;
-  transition: background 0.14s, color 0.14s, border-color 0.14s;
-}
-.home-digest__media-close:hover,
-.home-digest__media-close:focus-visible {
-  border-color: var(--border-strong);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-.home-digest__media-close:focus-visible {
-  outline: var(--ring-width) solid var(--ring-focus);
-  outline-offset: 2px;
-}
 .home-digest:hover .home-digest__track,
 .home-digest:focus-within .home-digest__track {
   animation-play-state: paused;

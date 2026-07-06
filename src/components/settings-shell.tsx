@@ -23,6 +23,7 @@ import { FamiliarStudioProvider } from "@/lib/familiar-studio-context";
 import { APP_VERSION } from "@/lib/app-version";
 import { UpdateSettingsRow } from "@/components/update-available";
 import { useIsMobile } from "@/lib/use-viewport";
+import { useHomeNewsEnabled, writeHomeNewsEnabled } from "@/lib/home-news-pref";
 import { ThemeColorEditor } from "@/components/theme-color-editor";
 import { rgbaBytesToHex } from "@/lib/theme-token-hex";
 import { FontSettings } from "./settings-fonts";
@@ -350,11 +351,41 @@ function GeneralSection() {
           <WorkspacePathField />
         </SettingsRow>
       </SettingsGroup>
+      <SettingsGroup label="Home">
+        <HomeNewsToggle />
+      </SettingsGroup>
       <SettingsGroup label="Startup">
         <SettingsRow label="Launch at login" description="Start CovenCave when you log in." comingSoon />
         <SettingsRow label="Open to" description="Which view to show on launch." comingSoon />
       </SettingsGroup>
     </SettingsPage>
+  );
+}
+
+// News on Home is opt-out here rather than dismissible inline — the carousel
+// row carries no X, so this switch is the one place the choice lives (and it
+// persists across visits, unlike the old per-mount dismiss).
+function HomeNewsToggle() {
+  const newsEnabled = useHomeNewsEnabled();
+  return (
+    <SettingsRow
+      label="News headlines"
+      description="Show the News carousel on the Home screen's daily summary."
+    >
+      <button
+        type="button"
+        role="switch"
+        aria-checked={newsEnabled}
+        onClick={() => writeHomeNewsEnabled(!newsEnabled)}
+        className={`settings-mobile-switch rounded-full border px-3 py-1.5 text-[12px] transition-colors ${
+          newsEnabled
+            ? "border-[var(--accent-presence)] bg-[var(--accent-presence)] text-[var(--accent-presence-foreground)]"
+            : "border-[var(--border-hairline)] bg-[var(--bg-base)] text-[var(--text-secondary)]"
+        }`}
+      >
+        {newsEnabled ? "On" : "Off"}
+      </button>
+    </SettingsRow>
   );
 }
 

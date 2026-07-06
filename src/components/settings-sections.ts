@@ -35,6 +35,7 @@ export const SECTION_HIGHLIGHTS: Record<Section, string[]> = {
 
 export const SETTINGS_INDEX: SettingsIndexEntry[] = [
   { section: "general", group: "Workspace", keywords: "workspace directory root folder project path" },
+  { section: "general", group: "Home", keywords: "news headlines rss carousel media home digest daily summary" },
   { section: "general", group: "Startup", keywords: "startup launch autostart open boot" },
   { section: "daemon", group: "Status", keywords: "daemon status running start stop restart hub server executor private network tailscale" },
   { section: "daemon", group: "Connection", keywords: "daemon hub server executor private network tailscale remote multihost multi host" },

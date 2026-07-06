@@ -28,19 +28,17 @@ assert.match(view, /home-digest__track--media/, "media headlines render on their
 assert.match(view, /c\.kind === "summary" \|\| c\.kind === "session"/, "chats row = summary + session cards");
 assert.match(view, /c\.kind === "rss"/, "media row = the rss headline cards");
 
-// ── News carousel can be dismissed only from its explicit close affordance ────
-assert.match(view, /const \[mediaDismissed, setMediaDismissed\] = useState\(false\)/, "tracks dismissed state for the news/media carousel");
-assert.match(view, /mediaCards\.length > 0 && !mediaDismissed/, "dismissing media leaves the chat digest row intact");
-assert.match(view, /aria-label="Close news carousel"/, "news carousel exposes an accessible close button");
-assert.match(view, /onClick=\{\(\) => setMediaDismissed\(true\)\}/, "close button hides the news carousel");
-assert.doesNotMatch(view, /onMouseEnter=\{\(\) => setMediaDismissed\(true\)\}/, "hovering the close affordance must not hide the news carousel");
-assert.match(view, /home-digest__media-close/, "close button has a stable styling hook");
+// ── News is opt-out in Settings → General — no inline dismiss on the row ──────
+assert.match(view, /const newsEnabled = useHomeNewsEnabled\(\)/, "news visibility comes from the persistent user setting");
+assert.match(view, /mediaCards\.length > 0 && newsEnabled/, "disabling news leaves the chat digest row intact");
+assert.doesNotMatch(view, /mediaDismissed|setMediaDismissed/, "the per-mount dismissed state is retired (setting is the one source of truth)");
+assert.doesNotMatch(view, /aria-label="Close news carousel"/, "the inline X close button is removed");
+assert.doesNotMatch(view, /home-digest__media-close/, "no close-button markup remains");
 assert.match(
   view,
-  /className="home-digest__media-chrome"[\s\S]*className="home-digest__media-label"[\s\S]*News[\s\S]*className="home-digest__media-close"[\s\S]*home-digest__track home-digest__track--media/,
-  "news row chrome labels the media lane and keeps the close button outside the moving track",
+  /className="home-digest__media-chrome"[\s\S]*className="home-digest__media-label"[\s\S]*News[\s\S]*home-digest__track home-digest__track--media/,
+  "news row chrome still labels the media lane outside the moving track",
 );
-assert.doesNotMatch(view, /title="Close news carousel"/, "news close uses aria-label only, avoiding native tooltip overlap");
 
 // ── Media cards support an image thumbnail (with icon fallback on error) ───────
 assert.match(view, /home-digest__thumb/, "media card renders an image thumbnail when available");
@@ -74,9 +72,16 @@ assert.match(css, /\.home-digest__thumb[\s\S]*?width: 46px/, "media thumbnail is
 assert.match(css, /\.home-digest__card--media[\s\S]*?padding-left/, "media cards are image-forward (thumbnail hugs the leading edge)");
 assert.match(css, /\.home-digest__media[\s\S]*?position: relative/, "media row anchors the close button");
 assert.match(css, /\.home-digest__media-chrome\s*\{[\s\S]*?display: flex[\s\S]*?justify-content: space-between/, "news row has static chrome outside the marquee track");
-assert.doesNotMatch(css, /\.home-digest__media-close[\s\S]*?position: absolute/, "news close button must not overlay the moving headline cards");
-assert.match(css, /\.home-digest__media-close\s*\{[^}]*pointer-events: auto/, "news close button is always directly clickable");
-assert.doesNotMatch(css, /\.home-digest__media-close\s*\{[^}]*opacity: 0/, "news close button must not be hidden behind hover-only reveal");
+assert.doesNotMatch(css, /home-digest__media-close/, "dead close-button CSS is removed with the inline dismiss");
+
+// ── Settings owns the opt-out: General section renders the switch ─────────────
+const settings = await readFile(new URL("./settings-shell.tsx", import.meta.url), "utf8");
+assert.match(settings, /import \{ useHomeNewsEnabled, writeHomeNewsEnabled \} from "@\/lib\/home-news-pref"/, "settings imports the shared news pref");
+assert.match(
+  settings,
+  /label="News headlines"[\s\S]*?role="switch"[\s\S]*?aria-checked=\{newsEnabled\}[\s\S]*?writeHomeNewsEnabled\(!newsEnabled\)/,
+  "General settings exposes the News headlines switch backed by the pref",
+);
 
 // ── Wired into the home composer below "Jump back in" ─────────────────────────
 assert.match(composer, /import \{ HomeDigestCarousel \}/, "home composer imports the carousel");

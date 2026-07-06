@@ -19,6 +19,7 @@ import type { InboxItem } from "@/lib/cave-inbox";
 import type { FeedItem } from "@/lib/rss";
 import { openExternalUrl } from "@/lib/open-external";
 import { usePausablePoll } from "@/lib/use-pausable-poll";
+import { useHomeNewsEnabled } from "@/lib/home-news-pref";
 import { buildDigestCards, type DigestCard, type DigestRssCard } from "@/lib/home-digest";
 
 type Props = {
@@ -32,7 +33,8 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
   const [rss, setRss] = useState<FeedItem[]>([]);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [ready, setReady] = useState(false);
-  const [mediaDismissed, setMediaDismissed] = useState(false);
+  // News is opt-out in Settings → General (no inline dismiss on the row).
+  const newsEnabled = useHomeNewsEnabled();
 
   // Re-derives the digest from the latest inbox + RSS and re-stamps `nowMs` so
   // the count chips and "Nm ago" labels stay current instead of freezing at
@@ -84,21 +86,13 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
           <DigestRow cards={chatCards} onOpenSession={onOpenSession} duplicate />
         </div>
       ) : null}
-      {mediaCards.length > 0 && !mediaDismissed ? (
+      {mediaCards.length > 0 && newsEnabled ? (
         <div className="home-digest__media">
           <div className="home-digest__media-chrome">
             <span className="home-digest__media-label">
               <Icon name="ph:newspaper" width={12} aria-hidden />
               <span>News</span>
             </span>
-            <button
-              type="button"
-              className="home-digest__media-close"
-              aria-label="Close news carousel"
-              onClick={() => setMediaDismissed(true)}
-            >
-              <Icon name="ph:x-bold" width={11} aria-hidden />
-            </button>
           </div>
           <div className="home-digest__track home-digest__track--media" aria-label="Media headlines">
             <DigestRow cards={mediaCards} onOpenSession={onOpenSession} />
