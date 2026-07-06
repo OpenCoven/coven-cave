@@ -35,6 +35,12 @@ assert.match(view, /aria-label="Close news carousel"/, "news carousel exposes an
 assert.match(view, /onClick=\{\(\) => setMediaDismissed\(true\)\}/, "close button hides the news carousel");
 assert.doesNotMatch(view, /onMouseEnter=\{\(\) => setMediaDismissed\(true\)\}/, "hovering the close affordance must not hide the news carousel");
 assert.match(view, /home-digest__media-close/, "close button has a stable styling hook");
+assert.match(
+  view,
+  /className="home-digest__media-chrome"[\s\S]*className="home-digest__media-label"[\s\S]*News[\s\S]*className="home-digest__media-close"[\s\S]*home-digest__track home-digest__track--media/,
+  "news row chrome labels the media lane and keeps the close button outside the moving track",
+);
+assert.doesNotMatch(view, /title="Close news carousel"/, "news close uses aria-label only, avoiding native tooltip overlap");
 
 // ── Media cards support an image thumbnail (with icon fallback on error) ───────
 assert.match(view, /home-digest__thumb/, "media card renders an image thumbnail when available");
@@ -67,7 +73,8 @@ assert.match(css, /\.home-digest__thumb[\s\S]*?object-fit: cover/, "media thumbn
 assert.match(css, /\.home-digest__thumb[\s\S]*?width: 46px/, "media thumbnail is enlarged for the image-forward row");
 assert.match(css, /\.home-digest__card--media[\s\S]*?padding-left/, "media cards are image-forward (thumbnail hugs the leading edge)");
 assert.match(css, /\.home-digest__media[\s\S]*?position: relative/, "media row anchors the close button");
-assert.match(css, /\.home-digest__media-close[\s\S]*?position: absolute[\s\S]*?top: 0[\s\S]*?right: 0/, "news close button sits at the media row's top-right corner");
+assert.match(css, /\.home-digest__media-chrome\s*\{[\s\S]*?display: flex[\s\S]*?justify-content: space-between/, "news row has static chrome outside the marquee track");
+assert.doesNotMatch(css, /\.home-digest__media-close[\s\S]*?position: absolute/, "news close button must not overlay the moving headline cards");
 assert.match(css, /\.home-digest__media-close\s*\{[^}]*pointer-events: auto/, "news close button is always directly clickable");
 assert.doesNotMatch(css, /\.home-digest__media-close\s*\{[^}]*opacity: 0/, "news close button must not be hidden behind hover-only reveal");
 

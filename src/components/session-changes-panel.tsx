@@ -1077,7 +1077,13 @@ export function SessionChangesInner({
 
 /** Resolves the active session's project root the same way DebugPane resolves
  *  its session context: via the chat debug store bridge from ChatView. */
-export function SessionChangesPanel() {
+export function SessionChangesPanel({
+  focusPath,
+  focusNonce,
+}: {
+  focusPath?: string | null;
+  focusNonce?: number;
+} = {}) {
   const snapshot = useChatDebugSnapshot();
   const projectRoot = snapshot.session?.project_root ?? null;
   if (!projectRoot) {
@@ -1093,6 +1099,8 @@ export function SessionChangesPanel() {
       key={projectRoot}
       projectRoot={projectRoot}
       running={snapshot.session?.status === "running"}
+      focusPath={focusPath}
+      focusNonce={focusNonce}
     />
   );
 }

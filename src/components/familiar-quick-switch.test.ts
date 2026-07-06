@@ -74,6 +74,8 @@ assert.match(
   /\.familiar-quickswitch__strip \{[\s\S]*overflow-x: auto;/,
   "strip scrolls horizontally rather than wrapping/clipping",
 );
-assert.match(globals, /\.familiar-quickswitch__btn\.is-active \{/, "active familiar is ringed in the strip");
+const activeButtonRule = globals.match(/\.familiar-quickswitch__btn\.is-active \{([\s\S]*?)\}/)?.[1] ?? "";
+assert.match(activeButtonRule, /border:\s*2px solid var\(--familiar-accent, var\(--accent-presence\)\);/, "active familiar uses one accent border ring");
+assert.doesNotMatch(activeButtonRule, /box-shadow:/, "active familiar must not stack additional shadow rings around the avatar");
 
 console.log("familiar-quick-switch component: all assertions passed");

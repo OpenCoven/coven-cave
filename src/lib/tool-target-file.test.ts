@@ -33,10 +33,11 @@ const { toolTargetFile } = await import("./tool-input-diff.ts");
   assert.equal(toolTargetFile("Edit", null), null);
 }
 
-// ── wiring: chat dispatches, comux handles, workspace falls back ─────────────
+// ── wiring: chat dispatches, code rail handles, workspace bridges ────────────
 const chatView = await readFile(new URL("../components/chat-view.tsx", import.meta.url), "utf8");
 const comux = await readFile(new URL("../components/comux-view.tsx", import.meta.url), "utf8");
 const workspace = await readFile(new URL("../components/workspace.tsx", import.meta.url), "utf8");
+const chatSurface = await readFile(new URL("../components/chat-surface.tsx", import.meta.url), "utf8");
 
 assert.match(
   chatView,
@@ -64,8 +65,13 @@ assert.match(
 
 assert.match(
   workspace,
-  /Click-to-open a file from chat stays on the unified chat\/code workspace[\s\S]*?setMode\("chat"\)/,
-  "workspace keeps file-open events in the unified chat/code workspace",
+  /File\/diff links target ChatSurface's code rail[\s\S]*?setPendingCodeRailOpen\([\s\S]*?setMode\("chat"\)/,
+  "workspace preserves file-open event detail while switching into chat",
+);
+assert.match(
+  chatSurface,
+  /addEventListener\("cave:open-project-file"[\s\S]*addEventListener\("cave:open-file-diff"[\s\S]*openCodeRailTarget/,
+  "chat surface routes file and diff open events into the code rail",
 );
 
 console.log("tool-target-file.test.ts: ok");

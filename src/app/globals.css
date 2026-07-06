@@ -5918,9 +5918,7 @@ button:active > .edge-rail-chip {
 }
 
 .familiar-quickswitch__btn.is-active {
-  border-color: var(--familiar-accent, var(--accent-presence));
-  box-shadow: 0 0 0 2px var(--bg-base),
-              0 0 0 3px var(--familiar-accent, var(--accent-presence));
+  border: 2px solid var(--familiar-accent, var(--accent-presence));
 }
 
 .familiar-quickswitch__avatar {

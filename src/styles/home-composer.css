@@ -1248,25 +1248,39 @@
    direction, so the two streams read as clearly separate. */
 .home-digest__media {
   position: relative;
+  margin-top: 10px;
+}
+.home-digest__media-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-inline: max(24px, 7%);
+  margin-bottom: 6px;
+}
+.home-digest__media-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .home-digest__track--media {
-  margin-top: 10px;
   animation-direction: reverse;
 }
 .home-digest__media-close {
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  right: 0;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
   border-radius: var(--radius-control);
   border: 1px solid var(--border-hairline);
-  background: color-mix(in oklch, var(--bg-raised) 92%, transparent);
+  background: color-mix(in oklch, var(--bg-raised) 72%, transparent);
   color: var(--text-secondary);
-  box-shadow: var(--shadow-elevated);
   pointer-events: auto;
   transition: background 0.14s, color 0.14s, border-color 0.14s;
 }
