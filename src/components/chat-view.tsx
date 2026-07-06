@@ -971,7 +971,7 @@ function SessionOverflowMenu({
       <button
         ref={triggerRef}
         type="button"
-        className="focus-ring"
+        className="focus-ring cave-chat-actions-kebab"
         aria-label="Session options"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -1419,6 +1419,16 @@ function visibleModelId(model: string | null | undefined, harness: string | null
   return trimmed;
 }
 
+/** Header display label for a model id: drop a leading vendor segment
+ *  ("anthropic/…") and a "claude-" prefix so the meta line reads "opus-4-8"
+ *  instead of "anthropic/claude-opus-4-8". The full id still rides in the meta
+ *  line's title tooltip for provenance. Non-Claude / bare ids pass through
+ *  unchanged ("openai/gpt-5.5" → "gpt-5.5", "gpt-5.5" → "gpt-5.5"). */
+function shortModelLabel(model: string): string {
+  const afterVendor = model.includes("/") ? model.slice(model.lastIndexOf("/") + 1) : model;
+  return afterVendor.replace(/^claude-/i, "") || afterVendor;
+}
+
 function responseMetadataModel(metadata?: ChatResponseMetadata): string | null {
   const confirmed = metadata?.confirmedModel?.trim();
   const requested = metadata?.model?.trim();
@@ -1466,11 +1476,11 @@ function metaLineSegments(args: {
   if (args.state === "offline") {
     segs.push("daemon offline · check Coven");
   } else if (args.state === "failed") {
-    if (args.model) segs.push(args.model);
+    if (args.model) segs.push(shortModelLabel(args.model));
     if (runtime) segs.push({ dir: runtime });
     segs.push("failed");
   } else if (args.state === "streaming") {
-    if (args.model) segs.push(args.model);
+    if (args.model) segs.push(shortModelLabel(args.model));
     if (runtime) segs.push({ dir: runtime });
     segs.push(args.lifecycle === "tooling" ? "using tools…" : args.lifecycle === "connecting" || args.lifecycle === "queued" ? "connecting…" : "writing…");
     // CHAT-D3-06: the "· 14s" ticker + esc hint tail is rendered by MetaLine
@@ -1479,7 +1489,7 @@ function metaLineSegments(args: {
   } else {
     // Lead with the model (ChatGPT idiom) — the harness name is redundant with
     // it, so it only appears as a fallback when no model id is resolved.
-    if (args.model) segs.push(args.model);
+    if (args.model) segs.push(shortModelLabel(args.model));
     else if (args.harness) segs.push(args.harness);
     if (runtime) segs.push({ dir: runtime });
     const dur = fmtDuration(args.durationMs);
@@ -1678,6 +1688,10 @@ function ContextMeterChip({ usage, model }: { usage?: TurnUsage; model?: string 
 }
 
 function UsagePlanChip({ usagePlan }: { usagePlan: ChatUsagePlanSnapshot | null }) {
+  // Ultra-minimal header: an "unconfigured" plan is the common, uninformative
+  // case — suppress the "No plan limits" chip entirely and only surface the
+  // plan when there's an actual limit/usage (or a degraded "unavailable").
+  if (!usagePlan || usagePlan.availability === "unconfigured") return null;
   const summary = formatChatUsagePlanSummary(usagePlan);
   if (!summary) return null;
   return (
@@ -1769,7 +1783,7 @@ function MetaLine({
           onSessionsChanged={onSessionsChanged}
         />
       ) : null}
-      <span className="cave-chat-meta-line__meta">
+      <span className="cave-chat-meta-line__meta" title={metaModel ?? undefined}>
         {segments.map((seg, i) => (
           <Fragment key={i}>
             {i > 0 ? " · " : null}

@@ -428,6 +428,35 @@ assert.match(
   /\.cave-chat-icon-button\s*\{[\s\S]*border:\s*1px solid transparent;[\s\S]*background:\s*transparent;/,
   "Open chat header icon buttons should be chromeless until hover/focus",
 );
+
+// Ultra-minimal header: at rest only the ⋮ kebab shows; the quick actions
+// collapse and reveal on hover / keyboard focus (touch devices show them).
+assert.match(
+  source,
+  /className="focus-ring cave-chat-actions-kebab"/,
+  "The overflow kebab is tagged so it stays visible while sibling actions collapse",
+);
+assert.match(
+  styles,
+  /@media \(hover: hover\) and \(pointer: fine\)\s*\{[\s\S]*\.cave-chat-session-actions > \.focus-ring:not\(\.cave-chat-actions-kebab\):not\(\.cave-chat-find\)[\s\S]*opacity:\s*0;/,
+  "Quick header actions are hidden at rest on pointer devices",
+);
+assert.match(
+  styles,
+  /\.cave-chat-linear-header:hover \.cave-chat-session-actions > \.focus-ring[\s\S]*opacity:\s*1;/,
+  "Quick header actions reveal on header hover",
+);
+// "No plan limits" is suppressed — the plan chip only shows a real limit.
+assert.match(
+  source,
+  /availability === "unconfigured"\) return null;/,
+  "UsagePlanChip suppresses the uninformative 'No plan limits' chip",
+);
+assert.match(
+  source,
+  /function shortModelLabel\(/,
+  "Model id is shortened for the header (vendor/claude- prefix dropped)",
+);
 assert.match(
   source,
   /<MetaLine\b/,
