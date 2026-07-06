@@ -19,6 +19,11 @@ type Loaded =
   | { kind: "text"; content: string; size: number }
   | { kind: "image"; dataUrl: string; mimeType: string; size: number };
 
+type ChangedFile = { path: string; status: string; insertions?: number; deletions?: number };
+
+/** How many changed files the empty-state launchpad lists. */
+const LAUNCHPAD_CAP = 6;
+
 const MARKDOWN_EXTS = new Set(["md", "mdx", "markdown"]);
 
 function isMarkdownPath(path: string): boolean {
@@ -52,10 +57,14 @@ export function RailFilePreview({
   path,
   projectRoot,
   familiarId,
+  onOpenPath,
 }: {
   path: string | null;
   projectRoot: string | null;
   familiarId?: string | null;
+  /** Open a file from the empty state's changed-file launchpad (repo-relative
+   *  paths are resolved by the owner, same as focusPath events). */
+  onOpenPath?: (path: string) => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +77,27 @@ export function RailFilePreview({
   const [justSaved, setJustSaved] = useState(false);
   const [copied, setCopied] = useState(false);
   const { announce } = useAnnouncer();
+
+  // Empty-state launchpad: with nothing selected, the (otherwise dead) main
+  // pane offers the working tree's changed files as one-click opens. Fetched
+  // once each time the preview returns to empty — the same status endpoint the
+  // changes badge polls, so this adds no new backend surface.
+  const [changed, setChanged] = useState<ChangedFile[]>([]);
+  useEffect(() => {
+    if (path || !projectRoot || !onOpenPath) return;
+    let cancelled = false;
+    void fetch(`/api/changes?projectRoot=${encodeURIComponent(projectRoot)}`, { cache: "no-store" })
+      .then(async (res) => {
+        const json = (await res.json()) as { ok?: boolean; files?: ChangedFile[] };
+        if (cancelled || !json.ok || !Array.isArray(json.files)) return;
+        // Deleted files have nothing to preview — opening one would just 404.
+        setChanged(json.files.filter((f) => f.status !== "deleted").slice(0, LAUNCHPAD_CAP));
+      })
+      .catch(() => {
+        /* status is a garnish here — the plain hint still renders */
+      });
+    return () => { cancelled = true; };
+  }, [path, projectRoot, onOpenPath]);
 
   useEffect(() => {
     if (!path) {
@@ -184,7 +214,35 @@ export function RailFilePreview({
     return (
       <div className="workspace-rail__files-empty">
         <Icon name="ph:file" width={22} aria-hidden />
-        <p>Select a file to preview it here.</p>
+        <p>Select a file from the tree to preview it here.</p>
+        {onOpenPath && changed.length > 0 ? (
+          <div className="workspace-rail__empty-changes">
+            <p className="workspace-rail__empty-changes-title">Or pick up where the work is:</p>
+            <ul className="workspace-rail__empty-changes-list">
+              {changed.map((f) => (
+                <li key={f.path}>
+                  <button
+                    type="button"
+                    className="focus-ring workspace-rail__empty-change"
+                    onClick={() => onOpenPath(f.path)}
+                    title={f.path}
+                  >
+                    <Icon name="ph:git-diff" width={11} aria-hidden />
+                    <span className="workspace-rail__empty-change-name">{fileName(f.path)}</span>
+                    <span className="workspace-rail__empty-change-dir">
+                      {f.path.includes("/") ? f.path.slice(0, f.path.lastIndexOf("/")) : ""}
+                    </span>
+                    {typeof f.insertions === "number" || typeof f.deletions === "number" ? (
+                      <span className="workspace-rail__empty-change-stat">
+                        +{f.insertions ?? 0} −{f.deletions ?? 0}
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </div>
     );
   }
