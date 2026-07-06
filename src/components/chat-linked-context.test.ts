@@ -78,14 +78,31 @@ assert.match(
 
 assert.match(
   chatView,
-  /function LinkedContextRow[\s\S]*const task = linkedContext\?\.task[\s\S]*const github = linkedContext\?\.github[\s\S]*github\.map[\s\S]*Open on GitHub/,
+  /function LinkedContextRow[\s\S]*const task = linkedContext\?\.task[\s\S]*const github = linkedContext\?\.github[\s\S]*github\.map[\s\S]*compactGitHubContextLabel\(item\)/,
   "ChatView should render task and GitHub context chips in the chat header",
+);
+
+assert.match(
+  chatView,
+  /function compactGitHubContextLabel\(item: ChatLinkedContext\["github"\]\[number\]\)[\s\S]*repoName\(item\.repo\)[\s\S]*item\.number \? `\$\{repo\} #\$\{item\.number\}` : repo/,
+  "GitHub header chips should show compact repo names instead of repeating full owner/repo labels",
+);
+
+assert.match(
+  chatView,
+  /aria-label="Link a task to this chat"[\s\S]*className="cave-chat-linked-chip cave-chat-linked-chip--link-task/,
+  "The header link-task affordance should be an icon button with accessible text, not another wide text chip",
 );
 
 assert.match(
   chatView,
   /onClick=\{\(\) => onOpenTask\(task\.id\)\}/,
   "Clicking the linked task chip should emit the task id",
+);
+assert.match(
+  chatView,
+  /const accessibleLabel = \[task\.title, task\.status, task\.priority\][\s\S]*aria-label=\{accessibleLabel\}/,
+  "Linked task chip should keep a stable accessible name for E2E and screen-reader navigation",
 );
 
 assert.match(

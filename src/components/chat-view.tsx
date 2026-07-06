@@ -741,6 +741,11 @@ function githubLabel(kind: string): string {
   return "GitHub";
 }
 
+function compactGitHubContextLabel(item: ChatLinkedContext["github"][number]): string {
+  const repo = repoName(item.repo) || item.repo;
+  return item.number ? `${repo} #${item.number}` : repo;
+}
+
 function githubIcon(kind: string): IconName {
   if (kind === "issue") return "ph:bug-bold";
   if (kind === "discussion") return "ph:chats";
@@ -1796,19 +1801,20 @@ function TaskChip({
   onOpenTask?: (cardId: string) => void;
 }) {
   const base =
-    "cave-chat-linked-chip cave-chat-linked-chip--task inline-flex min-w-0 max-w-[24rem] items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_12%,transparent)] px-2 py-1 text-[11px] text-[var(--text-secondary)]";
+    "cave-chat-linked-chip cave-chat-linked-chip--task inline-flex min-w-0 items-center border border-[color-mix(in_oklch,var(--accent-presence)_30%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_9%,transparent)] text-[var(--text-secondary)]";
+  const statusLine = [task.status, task.priority].filter(Boolean).join(" · ");
+  const accessibleLabel = [task.title, task.status, task.priority].filter(Boolean).join(" ");
   const body = (
     <>
       <Icon name="ph:kanban" width={12} className="shrink-0 text-[var(--accent-presence)]" />
-      <span className="shrink-0 font-medium">Task</span>
       <span className="min-w-0 truncate">{task.title}</span>
-      <span className="shrink-0 text-[var(--text-muted)]">{task.status}</span>
-      <span className="shrink-0 text-[var(--text-muted)]">{task.priority}</span>
+      {statusLine ? <span className="shrink-0 text-[var(--text-muted)]">{statusLine}</span> : null}
     </>
   );
   return onOpenTask ? (
     <button
       type="button"
+      aria-label={accessibleLabel}
       onClick={() => onOpenTask(task.id)}
       title={`Open task: ${task.title}`}
       className={`${base} focus-ring transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_55%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_18%,transparent)] hover:text-[var(--text-primary)]`}
@@ -1873,10 +1879,10 @@ function LinkedContextRow({
             type="button"
             onClick={() => setPickerOpen((open) => !open)}
             title="Link a task to this chat"
-            className="cave-chat-linked-chip focus-ring inline-flex items-center gap-1 rounded-md border border-dashed border-[var(--border-strong)] bg-transparent px-2 py-1 text-[11px] text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:text-[var(--text-primary)]"
+            aria-label="Link a task to this chat"
+            className="cave-chat-linked-chip cave-chat-linked-chip--link-task focus-ring inline-flex items-center justify-center border border-dashed border-[var(--border-strong)] bg-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--accent-presence)] hover:text-[var(--text-primary)]"
           >
             <Icon name="ph:plus" width={11} className="shrink-0" />
-            <span>Link task</span>
           </button>
           {pickerOpen && sessionId ? (
             <TaskLinkPicker
@@ -1888,23 +1894,25 @@ function LinkedContextRow({
           ) : null}
         </span>
       ) : null}
-      {github.map((item) => (
-        <a
-          key={item.id}
-          href={item.url}
-          title={`Open on GitHub: ${item.title}`}
-          className="cave-chat-linked-chip cave-chat-linked-chip--github inline-flex min-w-0 max-w-[18rem] items-center gap-1.5 rounded-md border border-[var(--border-hairline)] bg-[var(--bg-raised)]/35 px-2 py-1 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
-          onClick={(event) => {
-            event.preventDefault();
-            openExternalUrl(item.url);
-          }}
-        >
-          <Icon name={githubIcon(item.kind)} width={12} className="shrink-0 text-[var(--text-muted)]" />
-          <span className="shrink-0">{githubLabel(item.kind)}</span>
-          <span className="min-w-0 truncate">{item.repo}{item.number ? ` #${item.number}` : ""}</span>
-          {item.state ? <span className="shrink-0 text-[var(--text-muted)]">{item.state}</span> : null}
-        </a>
-      ))}
+      {github.map((item) => {
+        const compactLabel = compactGitHubContextLabel(item);
+        return (
+          <a
+            key={item.id}
+            href={item.url}
+            title={`Open ${githubLabel(item.kind)} on GitHub: ${item.title}`}
+            className="cave-chat-linked-chip cave-chat-linked-chip--github inline-flex min-w-0 items-center border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 text-[var(--text-secondary)] transition-colors hover:border-[var(--border-strong)] hover:text-[var(--text-primary)]"
+            onClick={(event) => {
+              event.preventDefault();
+              openExternalUrl(item.url);
+            }}
+          >
+            <Icon name={githubIcon(item.kind)} width={12} className="shrink-0 text-[var(--text-muted)]" />
+            <span className="min-w-0 truncate">{compactLabel}</span>
+            {item.state ? <span className="shrink-0 text-[var(--text-muted)]">{item.state}</span> : null}
+          </a>
+        );
+      })}
     </div>
   );
 }

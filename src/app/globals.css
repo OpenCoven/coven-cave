@@ -2189,6 +2189,23 @@ textarea.required-inputs-control {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+.mode-toggle__option[aria-pressed="true"] {
+  background: color-mix(in oklch, var(--accent-presence) 20%, var(--bg-raised)) !important;
+  border-color: color-mix(in oklch, var(--accent-presence) 44%, var(--border-strong)) !important;
+  color: var(--text-primary) !important;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--accent-presence) 22%, transparent) inset,
+    0 8px 18px color-mix(in oklch, var(--accent-presence) 12%, transparent) !important;
+}
+
+.mode-toggle__option[aria-pressed="true"] .ui-btn-icon-slot {
+  color: var(--accent-presence) !important;
+}
+
+.mode-toggle__option[aria-pressed="true"]:hover {
+  background: color-mix(in oklch, var(--accent-presence) 24%, var(--bg-raised)) !important;
+}
 .ui-btn--danger {
   background: var(--color-danger);
   border-color: var(--color-danger);
