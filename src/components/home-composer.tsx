@@ -27,7 +27,6 @@ import {
   type SkillOption,
 } from "@/lib/slash-skill";
 import { SkillDetailPreview } from "@/components/skill-detail-preview";
-import type { ChatModelState } from "@/lib/chat-model-state";
 import { readComposerHistory, writeComposerHistory } from "@/lib/composer-history";
 import { canonicalize, matchSlash, type SlashCommand } from "@/lib/slash-commands";
 import { useArchivedFamiliars } from "@/lib/cave-familiar-archive";
@@ -36,13 +35,17 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { ProjectPicker } from "@/components/project-picker";
-import { StandardSelect, type StandardSelectGroup, type StandardSelectOption } from "@/components/ui/select";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
-import { catalogForRuntime, defaultModelForRuntime } from "@/lib/runtime-models";
+import { catalogForRuntime } from "@/lib/runtime-models";
 import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
-import { HomeDigestCarousel } from "@/components/home/home-digest-carousel";
+import { HomeContinueColumn } from "@/components/home/home-continue-column";
+import { HomeNewsColumn } from "@/components/home/home-news-column";
+import { HomeSuggestions } from "@/components/home/home-suggestions";
+import { HomeSelect, type HomeSelectGroup } from "@/components/home/home-select";
+import { HomeSlashMenu } from "@/components/home/home-slash-menu";
+import { useHomeModelState } from "@/components/home/use-home-model-state";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
@@ -74,71 +77,6 @@ const PLACEHOLDERS: Record<Destination, string> = {
   board: "Describe a new task…",
 };
 
-type HomeSelectOption = StandardSelectOption<string>;
-
-type HomeSelectGroup = {
-  label?: string;
-  options: HomeSelectOption[];
-};
-
-function HomeSelect({
-  label,
-  icon,
-  value,
-  onChange,
-  groups,
-  ariaLabel,
-  disabled = false,
-  className,
-}: {
-  label?: string;
-  icon: IconName;
-  value: string;
-  onChange: (value: string) => void;
-  groups: HomeSelectGroup[];
-  ariaLabel: string;
-  disabled?: boolean;
-  className?: string;
-}) {
-  const selected = groups.flatMap((group) => group.options).find((option) => option.value === value);
-  const selectGroups: StandardSelectGroup<string>[] = groups.map((group) => ({
-    label: group.label ?? "",
-    options: group.options,
-  }));
-
-  return (
-    <StandardSelect
-      label={ariaLabel}
-      value={value}
-      onChange={onChange}
-      options={selectGroups}
-      className={["hc-familiar-selector", "hc-home-select-trigger", className ?? ""]
-        .filter(Boolean)
-        .join(" ")}
-      disabled={disabled}
-      title={selected?.detail ?? selected?.label ?? ariaLabel}
-      popoverClassName="hc-home-select-popover"
-      groupClassName="hc-home-select-group"
-      showCaret={false}
-      renderValue={(selectedOption) => (
-        <>
-          {selectedOption?.leading ?? (
-            <Icon
-              name={selectedOption?.icon ?? icon}
-              width={13}
-              className="hc-familiar-glyph"
-              aria-hidden
-            />
-          )}
-          {label ? <span className="hc-command-select-label">{label}</span> : null}
-          <span className="hc-home-select-value">{selectedOption?.label ?? "None"}</span>
-          <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-        </>
-      )}
-    />
-  );
-}
-
 type Props = {
   familiars: Familiar[];
   activeFamiliarId: string | null;
@@ -162,7 +100,7 @@ type Props = {
   /** Submit a slash command. Mirrors the chat composer's escape hatch so
    *  `/inbox`, `/board`, `/remind …` etc. work from the home screen too. */
   onSlash?: (command: string, args: string) => void;
-  /** Resume a recent chat from the daily-summary carousel's session cards. */
+  /** Resume a recent chat from the Continue column's session cards. */
   onOpenSession?: (sessionId: string, familiarId: string | null) => void;
 };
 
@@ -264,7 +202,8 @@ export function HomeComposer({
     () => new Map(resolvedFamiliars.map((familiar) => [familiar.id, familiar])),
     [resolvedFamiliars],
   );
-  const [modelState, setModelState] = useState<ChatModelState | null>(null);
+  const { modelState, selectModel: handleSelectModel, selectRuntime: handleSelectRuntime } =
+    useHomeModelState(selectedFamiliarId);
   const { projects, createProject } = useProjects({ familiarId: selectedFamiliarId || null });
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [thinkingEffort, setThinkingEffort] = useState<CommandThinkingEffort>(
@@ -337,109 +276,6 @@ export function HomeComposer({
     if (selectedProjectId && projects.some((project) => project.id === selectedProjectId)) return;
     setSelectedProjectId(projects[0]?.id ?? "");
   }, [projects, selectedProjectId]);
-
-  // Show the selected familiar's effective model on the home composer. No session
-  // exists here, so GET keys on familiarId only. The `cancelled` flag drops any
-  // out-of-order response when the selection changes mid-flight.
-  useEffect(() => {
-    if (!selectedFamiliarId) {
-      setModelState(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/chat/model-state?familiarId=${encodeURIComponent(selectedFamiliarId)}`,
-          { cache: "no-store" },
-        );
-        const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
-        if (cancelled) return;
-        setModelState(json.ok && json.state ? json.state : null);
-      } catch {
-        if (!cancelled) setModelState(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedFamiliarId]);
-
-  // A pick at home is sticky per familiar: PATCH familiar-default (the in-chat
-  // picker's no-session path). The new chat inherits it at send time.
-  const handleSelectModel = useCallback(
-    (modelId: string) => {
-      if (!selectedFamiliarId) return;
-      void (async () => {
-        try {
-          const res = await fetch("/api/chat/model-state", {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              familiarId: selectedFamiliarId,
-              model: modelId,
-              scope: "familiar-default",
-            }),
-          });
-          const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
-          if (json.ok && json.state) setModelState(json.state);
-        } catch {
-          /* keep prior state; the effect refetches when the familiar changes */
-        }
-      })();
-    },
-    [selectedFamiliarId],
-  );
-
-  const refetchModelState = useCallback(() => {
-    if (!selectedFamiliarId) return;
-    void (async () => {
-      try {
-        const res = await fetch(
-          `/api/chat/model-state?familiarId=${encodeURIComponent(selectedFamiliarId)}`,
-          { cache: "no-store" },
-        );
-        const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
-        if (json.ok && json.state) setModelState(json.state);
-      } catch {
-        /* keep the optimistic value */
-      }
-    })();
-  }, [selectedFamiliarId]);
-
-  const handleSelectRuntime = useCallback(
-    (runtime: string, selectedModel?: string) => {
-      if (!selectedFamiliarId) return;
-      const nextModel = selectedModel || defaultModelForRuntime(runtime);
-      setModelState((current) => ({
-        familiarId: selectedFamiliarId,
-        runtime: current?.runtime ?? null,
-        harness: runtime,
-        effectiveModel: nextModel,
-        source: "familiar-default",
-        applicationState: "saved",
-        reason: "Selected from the home composer.",
-      }));
-      void (async () => {
-        try {
-          const res = await fetch("/api/config", {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              familiars: {
-                [selectedFamiliarId]: { harness: runtime, model: nextModel },
-              },
-            }),
-          });
-          const json = (await res.json().catch(() => ({ ok: false }))) as { ok?: boolean };
-          if (json.ok) refetchModelState();
-        } catch {
-          refetchModelState();
-        }
-      })();
-    },
-    [refetchModelState, selectedFamiliarId],
-  );
 
   // Mirror the chat composer's matching rule: surface only while the user is
   // still typing the command token (no whitespace yet).
@@ -522,7 +358,7 @@ export function HomeComposer({
     }, 80);
   }, []);
 
-  // Maps a familiar id to its display name for the daily-summary carousel.
+  // Maps a familiar id to its display name for the Continue column.
   const familiarNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const f of familiars) m.set(f.id, f.display_name);
@@ -602,6 +438,14 @@ export function HomeComposer({
       return null;
     });
   }, [autoGrow]);
+
+  // A suggestion pill inserts its prompt (never auto-sends) and returns focus
+  // so the user can edit before sending.
+  const insertPrompt = useCallback((prompt: string) => {
+    setText(prompt);
+    setEnhanceOriginal(null);
+    setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
 
   // Destination pills behave as a single-select radiogroup: arrow/Home/End
   // move the selection and the roving focus, matching the ARIA radio pattern.
@@ -894,95 +738,56 @@ export function HomeComposer({
         {/* Slash suggestion popover — anchored above the card so it doesn't
             push the rest of the layout when it opens. */}
         {modelMenuActive && modelOptions ? (
-          <div className="hc-slash-menu">
-            <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Models">
-              {modelOptions.map((m, i) => {
-                const active = i === slashIdx;
-                return (
-                  <li key={m.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onMouseEnter={() => setSlashIdx(i)}
-                      onClick={() => {
-                        handleSelectModel(m.id);
-                        onToast(`Model set to ${m.id}.`);
-                        setText("");
-                        textareaRef.current?.focus();
-                      }}
-                      className={`hc-slash-row${active ? " active" : ""}`}
-                    >
-                      <span className="hc-slash-name">{m.label}</span>
-                      <span className="hc-slash-desc">{m.id}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="hc-slash-footer">↑↓ navigate · Enter switch · Esc cancel</div>
-          </div>
+          <HomeSlashMenu
+            listboxId={slashListboxId}
+            ariaLabel="Models"
+            items={modelOptions.map((m) => ({ key: m.id, name: m.label, desc: m.id }))}
+            activeIndex={slashIdx}
+            footer="↑↓ navigate · Enter switch · Esc cancel"
+            onHover={setSlashIdx}
+            onPick={(i) => {
+              const m = modelOptions[i];
+              if (!m) return;
+              handleSelectModel(m.id);
+              onToast(`Model set to ${m.id}.`);
+              setText("");
+              textareaRef.current?.focus();
+            }}
+          />
         ) : skillMenuActive && skillOptions ? (
-          <div className="hc-slash-menu">
-            <div className="hc-slash-body">
-              <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Skills">
-                {skillOptions.map((s, i) => {
-                  const active = i === slashIdx;
-                  return (
-                    <li key={s.id} role="option" id={`${slashListboxId}-opt-${i}`} aria-selected={active}>
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        onMouseEnter={() => setSlashIdx(i)}
-                        onClick={() => invokeSkill(s)}
-                        className={`hc-slash-row${active ? " active" : ""}`}
-                      >
-                        <span className="hc-slash-name">{s.name}</span>
-                        <span className="hc-slash-desc">{s.description || s.id}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-              <SkillDetailPreview skill={skillOptions[slashIdx] ?? skillOptions[0] ?? null} />
-            </div>
-            <div className="hc-slash-footer">↑↓ navigate · Enter run · Tab complete · Esc cancel</div>
-          </div>
+          <HomeSlashMenu
+            listboxId={slashListboxId}
+            ariaLabel="Skills"
+            items={skillOptions.map((s) => ({ key: s.id, name: s.name, desc: s.description || s.id }))}
+            activeIndex={slashIdx}
+            footer="↑↓ navigate · Enter run · Tab complete · Esc cancel"
+            onHover={setSlashIdx}
+            onPick={(i) => {
+              const s = skillOptions[i];
+              if (s) invokeSkill(s);
+            }}
+            preview={<SkillDetailPreview skill={skillOptions[slashIdx] ?? skillOptions[0] ?? null} />}
+          />
         ) : !slashDismissed && slashSuggestions.length > 0 ? (
-          <div className="hc-slash-menu">
-            <ul className="hc-slash-list" id={slashListboxId} role="listbox" aria-label="Slash commands">
-              {slashSuggestions.map((cmd, i) => {
-                const active = i === slashIdx;
-                return (
-                  <li
-                    key={cmd.name}
-                    role="option"
-                    id={`${slashListboxId}-opt-${i}`}
-                    aria-selected={active}
-                  >
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      onMouseEnter={() => setSlashIdx(i)}
-                      onClick={() => {
-                        setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
-                        textareaRef.current?.focus();
-                      }}
-                      className={`hc-slash-row${active ? " active" : ""}`}
-                    >
-                      <span className="hc-slash-name">{cmd.name}</span>
-                      <span className="hc-slash-desc">{cmd.description}</span>
-                      {cmd.argPlaceholder ? (
-                        <span className="hc-slash-arg">{cmd.argPlaceholder}</span>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="hc-slash-footer">
-              ↑↓ navigate · Enter run · Tab complete · type space to dismiss
-            </div>
-          </div>
+          <HomeSlashMenu
+            listboxId={slashListboxId}
+            ariaLabel="Slash commands"
+            items={slashSuggestions.map((cmd) => ({
+              key: cmd.name,
+              name: cmd.name,
+              desc: cmd.description,
+              arg: cmd.argPlaceholder || undefined,
+            }))}
+            activeIndex={slashIdx}
+            footer="↑↓ navigate · Enter run · Tab complete · type space to dismiss"
+            onHover={setSlashIdx}
+            onPick={(i) => {
+              const cmd = slashSuggestions[i];
+              if (!cmd) return;
+              setText(cmd.name + (cmd.argPlaceholder ? " " : ""));
+              textareaRef.current?.focus();
+            }}
+          />
         ) : null}
 
         <div
@@ -1272,13 +1077,21 @@ export function HomeComposer({
         </div>
       </div>
 
-      {/* Daily summary — an ambient auto-scrolling digest of today's activity
-          and the freshest headlines; pauses on hover so a card can be read. */}
-      <HomeDigestCarousel
-        sessions={sessions}
-        familiarNameById={familiarNameById}
-        onOpenSession={onOpenSession}
+      <HomeSuggestions
+        projectName={selectedProject?.name ?? null}
+        onPick={insertPrompt}
       />
+
+      {/* Two-column footer — resume-first recent chats + freshest headlines.
+          Static lists (no marquee): scannable, unclipped, keyboard-friendly. */}
+      <div className="home-columns">
+        <HomeContinueColumn
+          sessions={sessions}
+          familiarNameById={familiarNameById}
+          onOpenSession={onOpenSession}
+        />
+        <HomeNewsColumn />
+      </div>
     </div>
   );
 }

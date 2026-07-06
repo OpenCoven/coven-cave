@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const homeSelect = await readFile(new URL("./home/home-select.tsx", import.meta.url), "utf8");
 
 // ───────── Task 1: Destination-aware placeholder + drop subtitle ─────────
 assert.match(
@@ -69,9 +70,10 @@ assert.doesNotMatch(
   /className="hc-run-rail"/,
   "the secondary run-settings rail is removed from the home composer",
 );
-assert.match(source, /import \{ StandardSelect/, "home composer selectors should delegate to StandardSelect");
-assert.match(source, /<StandardSelect[\s\S]*?popoverClassName="hc-home-select-popover"/, "home composer custom selectors should use the shared select popover");
+assert.match(homeSelect, /import \{ StandardSelect/, "home select should delegate to StandardSelect");
+assert.match(homeSelect, /<StandardSelect[\s\S]*?popoverClassName="hc-home-select-popover"/, "home select should use the shared select popover");
 assert.doesNotMatch(source, /PopoverBody|PopoverItem|PopoverLabel/, "home composer should not maintain a local dropdown implementation");
+assert.doesNotMatch(homeSelect, /PopoverBody|PopoverItem|PopoverLabel/, "home select should not maintain a local dropdown implementation");
 assert.match(
   source,
   /className=\{`home-composer-card cave-composer-panel\$\{dropActive \? " is-drop-active" : ""\}`\}/,
@@ -122,14 +124,14 @@ assert.match(
 
 // ── "Jump back in" recent-chats strip REMOVED ──
 // The standalone recents strip was dropped from the home surface; resume now
-// lives only in the Daily-summary carousel's session cards.
-assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler (used by the digest)");
+// lives only in the two-column footer's Continue column.
+assert.match(source, /onOpenSession\?: \(sessionId: string, familiarId: string \| null\) => void/, "HomeComposer still accepts a resume handler (used by the Continue column)");
 assert.doesNotMatch(source, /const recentSessions = useMemo/, "the recents memo is gone");
 assert.doesNotMatch(source, /Jump back in/, "the recents strip label is gone");
 assert.doesNotMatch(source, /className="home-recent/, "the recents strip markup is gone");
 assert.doesNotMatch(css, /\.home-recent\b/, "the recents strip CSS is removed");
-// Resume still reaches the digest carousel.
-assert.match(source, /<HomeDigestCarousel/, "HomeComposer renders the daily-summary carousel");
-assert.match(source, /onOpenSession=\{onOpenSession\}/, "the carousel receives the resume handler");
+// Resume still reaches the Continue column.
+assert.match(source, /<HomeContinueColumn/, "HomeComposer renders the Continue column");
+assert.match(source, /onOpenSession=\{onOpenSession\}/, "the Continue column receives the resume handler");
 
 console.log("home-composer-polish.test.ts: ok");
