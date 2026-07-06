@@ -522,6 +522,15 @@ struct ChatView: View {
             pendingImages = []
             replyingTo = nil
             Haptics.tap()
+            // Offline compose: park the message on the thread instead of
+            // dead-ending in a transport error — it sends automatically on
+            // the next reconnect (AppModel.flushQueuedMessages).
+            if app.connectionState != .connected {
+                thread.enqueue(outgoing, attachments: attachments)
+                app.touch(thread)
+                app.showToast("Queued — sends when reconnected", systemImage: "clock")
+                return
+            }
             thread.send(outgoing, attachments: attachments, client: client) { app.touch(thread) }
         }
     }
@@ -529,6 +538,12 @@ struct ChatView: View {
     /// Tap a follow-up suggestion chip → send it as the next message.
     private func sendSuggestion(_ text: String) {
         guard let client = app.client else { return }
+        if app.connectionState != .connected {
+            thread.enqueue(text)
+            app.touch(thread)
+            app.showToast("Queued — sends when reconnected", systemImage: "clock")
+            return
+        }
         thread.send(text, client: client) { app.touch(thread) }
     }
 

@@ -232,6 +232,16 @@ struct MessageBubble: View {
                     .accessibilityLabel("Retry sending this message")
                 }
 
+                // Composed offline: a quiet clock chip, not an error — the
+                // message sends itself on the next reconnect.
+                if isUser, message.isQueued {
+                    Label("Queued — sends when reconnected", systemImage: "clock")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.trailing, 6)
+                        .accessibilityLabel("Queued. Sends when the desktop is reachable again.")
+                }
+
                 if !message.streaming {
                     Text(timestampText)
                         .font(.caption2)
