@@ -428,6 +428,37 @@ select {
   outline-offset: calc(-1 * var(--ring-width));
 }
 
+/* ============================================================
+   Progressive disclosure — reveal-on-hover (design language §8)
+   ============================================================
+   Secondary controls earn visibility instead of holding it. Mark the
+   hover surface `.reveal-scope` and the quiet control `.reveal-on-hover`:
+
+     <div class="reveal-scope">…<button class="reveal-on-hover">…</button></div>
+
+   Contract (the reason this is a shared utility, not ad-hoc opacity):
+   - opacity-hide, never display/visibility — the control stays in the
+     a11y tree and remains tabbable at all times.
+   - keyboard parity: revealed by :focus-within on the scope, so tabbing
+     into the row shows the whole control cluster, not just the focused
+     button.
+   - touch parity: coarse-pointer devices can't hover — controls are
+     permanently visible there (same media guard as .touch-always-visible).
+   - motion: token duration only; collapses under reduced-motion via the
+     global duration override. */
+.reveal-on-hover {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+.reveal-scope:hover .reveal-on-hover,
+.reveal-scope:focus-within .reveal-on-hover,
+.reveal-on-hover:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) and (pointer: coarse) {
+  .reveal-on-hover { opacity: 1; }
+}
+
 /* Settings search: flash a ring on the group a result jumped to. */
 .settings-group--found > div:last-child {
   outline: 2px solid var(--ring-focus);
