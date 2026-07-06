@@ -5054,6 +5054,243 @@
           "**Don't reach for it for a single static single-line width** (use `ctx.measureText` directly) or for true CSS inline formatting (nested spans, `vertical-align`, ruby, bidi x-reconstruction)."
         ]
       }
+    },
+    {
+      "name": "brand-voice-generator",
+      "displayName": "Brand & Voice Generator",
+      "version": "0.1.0",
+      "description": "Generate brand-system and tone-of-voice files — colors, typography, assets, and writing voice — that power the PPTX Generator and other brand-aware skills.",
+      "category": "Design",
+      "keywords": [
+        "brand",
+        "voice",
+        "tone-of-voice",
+        "design-system",
+        "identity",
+        "content"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/coleam00/second-brain-skills",
+        "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/brand-voice-generator"
+      ],
+      "trust": "reference-local",
+      "skill": {
+        "managed": "manual",
+        "description": "Use when defining a brand identity or writing voice for content generation. Walks through brand basics, a ten-color system, typography, assets, voice discovery (five example voice templates from Technical Educator to Contrarian Thinker), and design philosophy, then generates brand.json, config.json, brand-system.md, and tone-of-voice.md — the source-of-truth files consumed by pptx-generator and other brand-aware skills.",
+        "useCases": [
+          "Setting up a brand for presentations or LinkedIn carousels before running pptx-generator.",
+          "Documenting a writing voice — personality, vocabulary, sentence patterns — so generated content sounds consistent everywhere.",
+          "Refreshing an existing brand system's colors, fonts, assets, or design philosophy in one pass."
+        ],
+        "guardrails": [
+          "Interview first, generate second — collect brand basics, colors, typography, and voice answers before writing any file, a few questions at a time.",
+          "Write the four canonical files (brand.json, config.json, brand-system.md, tone-of-voice.md) into the pptx-generator brands/{name}/ directory so downstream skills can discover them.",
+          "Treat the generated brand files as the single source of truth — edit them rather than restating brand rules inline in prompts."
+        ]
+      }
+    },
+    {
+      "name": "mcp-client",
+      "displayName": "Universal MCP Client",
+      "version": "0.1.0",
+      "description": "Connect to any MCP server (Zapier, GitHub, Sequential Thinking, …) with progressive disclosure — tool schemas load on demand instead of bloating the context window.",
+      "category": "Core MCP",
+      "keywords": [
+        "mcp",
+        "client",
+        "zapier",
+        "tools",
+        "progressive-disclosure",
+        "integrations"
+      ],
+      "capabilities": [
+        "shell",
+        "network",
+        "mcp"
+      ],
+      "sourceRefs": [
+        "https://github.com/coleam00/second-brain-skills",
+        "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/mcp-client",
+        "https://modelcontextprotocol.io"
+      ],
+      "trust": "reference-local",
+      "skill": {
+        "managed": "manual",
+        "description": "Use when interacting with external MCP servers — listing configured servers, discovering tools, reading one tool's schema, or executing a call — through a bundled Python client script instead of registering a server's full tool surface in context. Supports stdio (command + args), SSE, streamable HTTP, and Bearer-auth remote servers via a Claude-Desktop-compatible mcp-config.json.",
+        "useCases": [
+          "Calling a Zapier, GitHub, or filesystem MCP action without loading thousands of tokens of tool definitions upfront.",
+          "Listing a server's available tools, then fetching a single tool's schema on demand before executing it.",
+          "Wiring up a new MCP server by copying references/example-mcp-config.json and filling in url + api_key or command + args."
+        ],
+        "guardrails": [
+          "Keep real API keys in a local mcp-config.json copied from the example — never commit credentials or echo them into the transcript.",
+          "Fetch a tool's schema before calling it; don't guess parameter shapes.",
+          "State-changing MCP actions (send, create, delete) require explicit user approval before execution."
+        ]
+      }
+    },
+    {
+      "name": "pptx-generator",
+      "displayName": "PPTX Generator",
+      "version": "0.1.0",
+      "description": "Generate and edit on-brand presentation slides and LinkedIn carousels as PPTX/PDF with python-pptx and a reusable layout cookbook.",
+      "category": "Media & Creative",
+      "keywords": [
+        "pptx",
+        "presentations",
+        "slides",
+        "carousel",
+        "linkedin",
+        "python-pptx",
+        "branding"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/coleam00/second-brain-skills",
+        "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/pptx-generator",
+        "https://python-pptx.readthedocs.io"
+      ],
+      "trust": "reference-local",
+      "skill": {
+        "managed": "manual",
+        "description": "Use when creating or editing presentation slides, LinkedIn carousels, or reusable slide layouts. Generates .pptx files compatible with PowerPoint, Google Slides, and Keynote (plus square 1:1 PDF carousels for LinkedIn) by composing layouts from a cookbook of python-pptx templates — title, two-column, stats, chart, code, quote, floating-cards, and more — styled by per-brand config under brands/{name}/ created with brand-voice-generator.",
+        "useCases": [
+          "Creating a slide deck or LinkedIn carousel for a brand defined under brands/ (set up via brand-voice-generator).",
+          "Editing an existing .pptx — updating copy, swapping layouts, or restyling slides to match the brand.",
+          "Adding a new reusable layout template to the cookbook or improving an existing one."
+        ],
+        "guardrails": [
+          "Resolve the brand first — read brands/{name}/brand.json and config.json; if the brand doesn't exist yet, run brand-voice-generator (or copy brands/template/) before generating slides.",
+          "Compose slides from cookbook layouts instead of hand-positioning shapes; recurring layout ideas belong in the cookbook as new templates.",
+          "Keep output portable — .pptx must open cleanly in PowerPoint, Google Slides, and Keynote, and LinkedIn carousels export as square 1:1 PDF."
+        ]
+      }
+    },
+    {
+      "name": "remotion",
+      "displayName": "Remotion Video",
+      "version": "0.1.0",
+      "description": "Create and edit programmatic videos in React with Remotion — compositions, animations, sequencing, audio, and captions backed by a 30-topic rules library.",
+      "category": "Media & Creative",
+      "keywords": [
+        "remotion",
+        "video",
+        "react",
+        "animation",
+        "composition",
+        "captions"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/coleam00/second-brain-skills",
+        "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/remotion",
+        "https://www.remotion.dev/docs"
+      ],
+      "trust": "reference-local",
+      "skill": {
+        "managed": "manual",
+        "description": "Use before writing any Remotion code — creating or editing compositions, animations, sequences, transitions, audio, captions, charts, or 3D scenes in a React video project (remotion.config.ts, remotion-videos/*). A rules/ library carries topic-specific guidance for ~30 areas — timing and interpolation curves, sequencing and trimming, assets and fonts, Mediabunny media probing, TikTok-style captions, Lottie, Mapbox maps, TailwindCSS — plus ready-made typewriter and word-highlight text-animation components.",
+        "useCases": [
+          "Building a new video composition, animation, or transition sequence in a Remotion project.",
+          "Adding assets — images, video, audio, GIFs, fonts, or .srt captions — to compositions.",
+          "Diagnosing timing, duration, dimension, or decode problems in a render (calculate-metadata, can-decode, extract-frames rules)."
+        ],
+        "guardrails": [
+          "Read the matching rules/*.md topic file before writing code for that area — the rules encode Remotion-specific APIs that differ from plain React.",
+          "Drive all motion from the frame clock (useCurrentFrame + interpolate/spring), never CSS transitions or wall-clock timers.",
+          "Probe media with the Mediabunny helpers (duration, dimensions, decodability) instead of hardcoding metadata into compositions."
+        ]
+      }
+    },
+    {
+      "name": "skill-creator",
+      "displayName": "Skill Creator",
+      "version": "0.1.0",
+      "description": "Create and update skills that extend agents with specialized knowledge, workflows, and tools — init, author, validate, and package with bundled scripts.",
+      "category": "Agents & Harnesses",
+      "keywords": [
+        "skills",
+        "authoring",
+        "skill-creation",
+        "progressive-disclosure",
+        "packaging",
+        "agents"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files",
+        "shell"
+      ],
+      "sourceRefs": [
+        "https://github.com/coleam00/second-brain-skills",
+        "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/skill-creator",
+        "https://agentskills.io"
+      ],
+      "trust": "reference-local",
+      "skill": {
+        "managed": "manual",
+        "description": "Use when creating a new skill or updating an existing one. Guides the full process — understand the skill through concrete usage examples, plan reusable contents (scripts for deterministic work, references for documentation, assets for output files), initialize with scripts/init_skill.py, author a concise SKILL.md with trigger-rich frontmatter, then validate and package with the bundled scripts. Built on the progressive-disclosure principle: SKILL.md stays lean and detailed material moves to references/ loaded only when needed.",
+        "useCases": [
+          "Creating a new skill from concrete usage examples and packaging it for distribution.",
+          "Restructuring an existing skill — moving detail out of SKILL.md into references/, scripts/, and assets/.",
+          "Writing frontmatter descriptions that actually trigger — naming the concrete user phrases the skill should respond to."
+        ],
+        "guardrails": [
+          "Keep SKILL.md concise and move depth into references/ — the context window is shared with everything else the agent is doing.",
+          "Use scripts for deterministic, repeated operations instead of regenerating the same code in every session.",
+          "Follow the process in order — examples, plan, init, author, package — skipping a step only with a clear reason."
+        ]
+      }
+    },
+    {
+      "name": "sop-creator",
+      "displayName": "SOP & Runbook Creator",
+      "version": "0.1.0",
+      "description": "Create runbooks, playbooks, and technical documentation that people actually follow — scannable, actionable, specific, testable, and maintained.",
+      "category": "Knowledge & Docs",
+      "keywords": [
+        "sop",
+        "runbook",
+        "playbook",
+        "documentation",
+        "process",
+        "operations"
+      ],
+      "capabilities": [
+        "read_files",
+        "write_files"
+      ],
+      "sourceRefs": [
+        "https://github.com/coleam00/second-brain-skills",
+        "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/sop-creator"
+      ],
+      "trust": "reference-local",
+      "skill": {
+        "managed": "manual",
+        "description": "Use when documenting a repeatable technical or operational process — runbooks for incidents and on-call, deployment playbooks, troubleshooting guides, process SOPs, checklists, decision trees, and onboarding guides. Ships reference templates for each format plus writing rules that keep docs scannable and unambiguous: action-first numbered steps, exact names and thresholds instead of 'as needed', and a Definition of Done checklist near the top.",
+        "useCases": [
+          "Documenting a repeatable technical procedure as a runbook or standard SOP.",
+          "Formalizing an incident-response or deployment playbook with clear triggers and verification steps.",
+          "Restructuring an existing doc nobody follows into scannable, action-first steps with success criteria."
+        ],
+        "guardrails": [
+          "Pick the right format first — runbook, SOP, how-to, checklist, decision tree, or onboarding guide — from the references/ templates.",
+          "Every step is something you DO, with exact commands, names, owners, and thresholds — never 'as appropriate', 'regularly', or 'soon'.",
+          "Every doc ships with a Definition of Done checklist near the top plus an owner, last-updated date, and review schedule."
+        ]
+      }
     }
   ]
 }

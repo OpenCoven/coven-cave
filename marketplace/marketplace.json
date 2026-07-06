@@ -1670,6 +1670,96 @@
       },
       "trust": "official-local",
       "roleAffinity": []
+    },
+    {
+      "name": "brand-voice-generator",
+      "displayName": "Brand & Voice Generator",
+      "category": "Design",
+      "source": {
+        "source": "local",
+        "path": "./plugins/brand-voice-generator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "mcp-client",
+      "displayName": "Universal MCP Client",
+      "category": "Core MCP",
+      "source": {
+        "source": "local",
+        "path": "./plugins/mcp-client"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "pptx-generator",
+      "displayName": "PPTX Generator",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/pptx-generator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "remotion",
+      "displayName": "Remotion Video",
+      "category": "Media & Creative",
+      "source": {
+        "source": "local",
+        "path": "./plugins/remotion"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "skill-creator",
+      "displayName": "Skill Creator",
+      "category": "Agents & Harnesses",
+      "source": {
+        "source": "local",
+        "path": "./plugins/skill-creator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
+    },
+    {
+      "name": "sop-creator",
+      "displayName": "SOP & Runbook Creator",
+      "category": "Knowledge & Docs",
+      "source": {
+        "source": "local",
+        "path": "./plugins/sop-creator"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "trust": "reference-local",
+      "roleAffinity": []
     }
   ]
 }

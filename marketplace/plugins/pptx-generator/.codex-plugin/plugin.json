@@ -1,0 +1,26 @@
+{
+  "name": "pptx-generator",
+  "version": "0.1.0",
+  "description": "Generate and edit on-brand presentation slides and LinkedIn carousels as PPTX/PDF with python-pptx and a reusable layout cookbook.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "PPTX Generator",
+    "shortDescription": "Generate and edit on-brand presentation slides and LinkedIn carousels as PPTX/PDF with python-pptx and a reusable layout cookbook.",
+    "longDescription": "Use when creating or editing presentation slides, LinkedIn carousels, or reusable slide layouts. Generates .pptx files compatible with PowerPoint, Google Slides, and Keynote (plus square 1:1 PDF carousels for LinkedIn) by composing layouts from a cookbook of python-pptx templates \u2014 title, two-column, stats, chart, code, quote, floating-cards, and more \u2014 styled by per-brand config under brands/{name}/ created with brand-voice-generator.",
+    "developerName": "OpenCoven",
+    "category": "Media & Creative",
+    "capabilities": [
+      "pptx",
+      "presentations",
+      "slides",
+      "carousel",
+      "linkedin",
+      "python-pptx",
+      "branding"
+    ],
+    "defaultPrompt": "Help me use PPTX Generator safely."
+  }
+}

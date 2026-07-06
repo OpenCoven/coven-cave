@@ -1,0 +1,43 @@
+{
+  "name": "mcp-client",
+  "version": "0.1.0",
+  "description": "Connect to any MCP server (Zapier, GitHub, Sequential Thinking, \u2026) with progressive disclosure \u2014 tool schemas load on demand instead of bloating the context window.",
+  "author": {
+    "name": "OpenCoven"
+  },
+  "homepage": "https://opencoven.ai",
+  "repository": "https://github.com/OpenCoven/coven-cave",
+  "license": "GPL-3.0",
+  "keywords": [
+    "mcp",
+    "client",
+    "zapier",
+    "tools",
+    "progressive-disclosure",
+    "integrations"
+  ],
+  "capabilities": [
+    "shell",
+    "network",
+    "mcp"
+  ],
+  "marketplaceId": "opencoven/mcp-client",
+  "x-coven": {
+    "displayName": "Universal MCP Client",
+    "category": "Core MCP",
+    "trust": "reference-local",
+    "sourceRefs": [
+      "https://github.com/coleam00/second-brain-skills",
+      "https://github.com/coleam00/second-brain-skills/tree/main/.claude/skills/mcp-client",
+      "https://modelcontextprotocol.io"
+    ],
+    "roleAffinity": [],
+    "compatibility": {
+      "covenCave": true,
+      "covenCode": true,
+      "codex": true,
+      "mcp": false,
+      "rolePatch": false
+    }
+  }
+}
