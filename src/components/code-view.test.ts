@@ -44,8 +44,8 @@ assert.match(
 );
 assert.match(
   workspace,
-  /Click-to-open a file from chat stays on the unified chat\/code workspace[\s\S]*?setMode\("chat"\)/,
-  "file-open events should stay in the unified Chat workspace after Code mode retirement",
+  /File\/diff links target ChatSurface's code rail[\s\S]*?setPendingCodeRailOpen\([\s\S]*?setMode\("chat"\)/,
+  "file-open events should stay in the unified Chat workspace and preserve their code-rail target after Code mode retirement",
 );
 assert.match(
   workspace,

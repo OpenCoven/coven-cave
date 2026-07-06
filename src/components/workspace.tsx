@@ -70,6 +70,7 @@ import { TopBar } from "@/components/top-bar";
 import { QuickChatOverlay } from "@/components/quick-chat-overlay";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
+import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { ChatAttachment } from "@/lib/chat-attachments";
 import {
   OPEN_IN_APP_BROWSER_EVENT,
@@ -277,6 +278,7 @@ export function Workspace() {
   }, []);
   const [pendingProjectChatRoot, setPendingProjectChatRoot] = useState<string | null>(null);
   const [pendingChatAction, setPendingChatAction] = useState<PendingChatAction>(null);
+  const [pendingCodeRailOpen, setPendingCodeRailOpen] = useState<PendingCodeRailOpen | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const [escalationsUnresolved, setEscalationsUnresolved] = useState(0);
@@ -503,16 +505,28 @@ export function Workspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Click-to-open a file from chat stays on the unified chat/code workspace.
-  // The code rail owns Files/Changes; there is no standalone Terminal page to
-  // switch into as a side effect of a file link.
+  // File/diff links target ChatSurface's code rail. ChatSurface only mounts in
+  // chat mode, so preserve event detail from non-chat surfaces until it mounts.
   useEffect(() => {
-    const onOpenFile = (e: Event) => {
-      void (e as CustomEvent).detail;
+    const enqueue = (kind: PendingCodeRailOpen["kind"], e: Event) => {
+      if (modeRef.current === "chat") return;
+      const detail = (e as CustomEvent<{ path?: string; line?: number }>).detail;
+      if (!detail?.path) return;
+      setPendingCodeRailOpen(
+        kind === "files"
+          ? { kind, path: detail.path, line: detail.line, nonce: Date.now() }
+          : { kind, path: detail.path, nonce: Date.now() },
+      );
       setMode("chat");
     };
-    window.addEventListener("cave:open-project-file", onOpenFile as EventListener);
-    return () => window.removeEventListener("cave:open-project-file", onOpenFile as EventListener);
+    const onOpenProjectFile = (e: Event) => enqueue("files", e);
+    const onOpenFileDiff = (e: Event) => enqueue("changes", e);
+    window.addEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
+    window.addEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
+    return () => {
+      window.removeEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
+      window.removeEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
+    };
   }, []);
 
   // Daemon status poll (previously lived on DaemonBar before chrome consolidation)
@@ -1824,11 +1838,13 @@ export function Workspace() {
         rightPanel={rightPanel}
         pendingProjectRoot={pendingProjectChatRoot}
         pendingChatAction={pendingChatAction}
+        pendingCodeRailOpen={pendingCodeRailOpen}
         onSetInspectorOpen={setInspectorOpen}
         onSetRightPanel={setRightPanel}
         onSetActiveFamiliar={setActiveId}
         onClearPendingProjectRoot={() => setPendingProjectChatRoot(null)}
         onPendingChatActionHandled={() => setPendingChatAction(null)}
+        onPendingCodeRailOpenHandled={() => setPendingCodeRailOpen(null)}
         onSessionStarted={loadSessions}
         onSlashFromChat={handleSlashIntent}
         onOpenOnboarding={openOnboarding}

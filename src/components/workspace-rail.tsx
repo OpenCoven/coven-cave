@@ -5,6 +5,7 @@ import { SessionChangesPanel } from "@/components/session-changes-panel";
 import { RailFilesPanel } from "@/components/rail-files-panel";
 import { RailTerminalPanel } from "@/components/rail-terminal-panel";
 import type { CodeRailTab } from "@/lib/code-rail";
+import type { PendingCodeRailOpen as CodeRailFocus } from "@/lib/pending-code-rail-open";
 
 const TAB_TITLE: Record<CodeRailTab, string> = {
   changes: "Changes",
@@ -19,6 +20,7 @@ export function WorkspaceRail({
   projectRoot,
   familiarId,
   sessionId,
+  focus,
   hidePin = false,
   onSelectTab,
   onTogglePin,
@@ -30,6 +32,7 @@ export function WorkspaceRail({
   projectRoot: string | null;
   familiarId?: string | null;
   sessionId: string | null;
+  focus?: CodeRailFocus | null;
   /** Hide the pin toggle (e.g. when hosted in a mobile sheet, where pinning a
    *  transient overlay open is meaningless). Defaults to false — desktop keeps
    *  the pin control. */
@@ -132,9 +135,19 @@ export function WorkspaceRail({
           {activeTab !== "terminal" ? (
             <div className="workspace-rail__panel" key={activeTab}>
               {activeTab === "changes" ? (
-                <SessionChangesPanel />
+                <SessionChangesPanel
+                  focusPath={focus?.kind === "changes" ? focus.path : null}
+                  focusNonce={focus?.kind === "changes" ? focus.nonce : undefined}
+                />
               ) : (
-                <RailFilesPanel projectRoot={projectRoot} familiarId={familiarId} isFullscreen={isFullscreen} />
+                <RailFilesPanel
+                  projectRoot={projectRoot}
+                  familiarId={familiarId}
+                  isFullscreen={isFullscreen}
+                  focusPath={focus?.kind === "files" ? focus.path : null}
+                  focusLine={focus?.kind === "files" ? focus.line : undefined}
+                  focusNonce={focus?.kind === "files" ? focus.nonce : undefined}
+                />
               )}
             </div>
           ) : null}

@@ -19,10 +19,16 @@ export function RailFilesPanel({
   projectRoot,
   familiarId,
   isFullscreen = false,
+  focusPath,
+  focusLine,
+  focusNonce,
 }: {
   projectRoot: string | null;
   familiarId?: string | null;
   isFullscreen?: boolean;
+  focusPath?: string | null;
+  focusLine?: number;
+  focusNonce?: number;
 }) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
 
@@ -31,6 +37,16 @@ export function RailFilesPanel({
   useEffect(() => {
     setSelectedPath(null);
   }, [projectRoot]);
+
+  useEffect(() => {
+    if (!focusPath) return;
+    const nextPath = focusPath.startsWith("/")
+      ? focusPath
+      : projectRoot
+        ? `${projectRoot.replace(/\/$/, "")}/${focusPath.replace(/^\.?\//, "")}`
+        : focusPath;
+    setSelectedPath(nextPath);
+  }, [focusLine, focusNonce, focusPath, projectRoot]);
 
   if (!projectRoot) {
     return (

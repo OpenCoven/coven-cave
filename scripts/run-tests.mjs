@@ -474,6 +474,7 @@ export const SUITES = {
 	    "src/components/ui/color-picker.test.ts",
 	    "src/components/ui/button.test.ts",
 	    "src/components/ui/popover.test.ts",
+    "src/components/ui/select.test.ts",
     "src/components/ui/context-menu.test.ts",
     "src/components/ui/undo-toast.test.ts",
     "src/components/ui/search-input.test.ts",

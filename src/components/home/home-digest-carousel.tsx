@@ -86,15 +86,20 @@ export function HomeDigestCarousel({ sessions, familiarNameById, onOpenSession }
       ) : null}
       {mediaCards.length > 0 && !mediaDismissed ? (
         <div className="home-digest__media">
-          <button
-            type="button"
-            className="home-digest__media-close"
-            aria-label="Close news carousel"
-            title="Close news carousel"
-            onClick={() => setMediaDismissed(true)}
-          >
-            <Icon name="ph:x-bold" width={11} aria-hidden />
-          </button>
+          <div className="home-digest__media-chrome">
+            <span className="home-digest__media-label">
+              <Icon name="ph:newspaper" width={12} aria-hidden />
+              <span>News</span>
+            </span>
+            <button
+              type="button"
+              className="home-digest__media-close"
+              aria-label="Close news carousel"
+              onClick={() => setMediaDismissed(true)}
+            >
+              <Icon name="ph:x-bold" width={11} aria-hidden />
+            </button>
+          </div>
           <div className="home-digest__track home-digest__track--media" aria-label="Media headlines">
             <DigestRow cards={mediaCards} onOpenSession={onOpenSession} />
             <DigestRow cards={mediaCards} onOpenSession={onOpenSession} duplicate />

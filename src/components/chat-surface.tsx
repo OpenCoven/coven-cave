@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Group, Panel, Separator, useDefaultLayout } from "react-resizable-panels";
 import { ChatRouter, type ChatRouterHandle } from "@/components/chat-router";
 import { FamiliarsMemoryView } from "@/components/familiars-memory-view";
@@ -21,6 +21,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import type { InboxItem } from "@/lib/cave-inbox";
 import type { Familiar, SessionOrigin, SessionRow } from "@/lib/types";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
+import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
 import type { InitialCommandControls } from "@/lib/command-controls";
 
 // ── Layout persistence ─────────────────────────────────────────────────────────
@@ -70,11 +71,13 @@ type Props = {
   rightPanel?: RightPanelKind | null;
   pendingProjectRoot: string | null;
   pendingChatAction?: PendingChatAction;
+  pendingCodeRailOpen?: PendingCodeRailOpen | null;
   onSetInspectorOpen: (open: boolean) => void;
   onSetRightPanel?: (panel: RightPanelKind | null) => void;
   onSetActiveFamiliar: (id: string | null) => void;
   onClearPendingProjectRoot: () => void;
   onPendingChatActionHandled: () => void;
+  onPendingCodeRailOpenHandled: () => void;
   onSessionStarted: () => void;
   onSlashFromChat: (command: string, args: string) => boolean;
   onOpenOnboarding: () => void;
@@ -193,11 +196,13 @@ export function ChatSurface({
   rightPanel: rightPanelProp,
   pendingProjectRoot,
   pendingChatAction,
+  pendingCodeRailOpen,
   onSetInspectorOpen,
   onSetRightPanel,
   onSetActiveFamiliar,
   onClearPendingProjectRoot,
   onPendingChatActionHandled,
+  onPendingCodeRailOpenHandled,
   onSessionStarted,
   onSlashFromChat,
   onOpenOnboarding,
@@ -307,6 +312,7 @@ export function ChatSurface({
   // yank the running pty. Flips false→true once; never resets → no render loop.
   const [terminalOpened, setTerminalOpened] = useState(false);
   const rail = useCodeRail({ projectRoot: railProjectRoot, changeCount, terminalActive: terminalOpened });
+  const [codeRailFocus, setCodeRailFocus] = useState<PendingCodeRailOpen | null>(null);
   useEffect(() => {
     if (rail.activeTab === "terminal" && rail.open) setTerminalOpened(true);
   }, [rail.activeTab, rail.open]);
@@ -362,6 +368,36 @@ export function ChatSurface({
   useEffect(() => {
     if (rightPanel !== null) setMobileRailOpen(false);
   }, [rightPanel]);
+
+  const openCodeRailTarget = useCallback((target: PendingCodeRailOpen) => {
+    setScope("conversation");
+    rail.reopen();
+    rail.setActiveTab(target.kind === "changes" ? "changes" : "files");
+    setCodeRailFocus(target);
+    if (isMobile || paneNarrow) {
+      onSetRightPanel?.(null);
+      setMobileRailOpen(true);
+    }
+  }, [isMobile, onSetRightPanel, paneNarrow, rail]);
+
+  useEffect(() => {
+    const onOpenProjectFile = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string; line?: number }>).detail;
+      if (!detail?.path) return;
+      openCodeRailTarget({ kind: "files", path: detail.path, line: detail.line, nonce: Date.now() });
+    };
+    const onOpenFileDiff = (event: Event) => {
+      const detail = (event as CustomEvent<{ path?: string }>).detail;
+      if (!detail?.path) return;
+      openCodeRailTarget({ kind: "changes", path: detail.path, nonce: Date.now() });
+    };
+    window.addEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
+    window.addEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
+    return () => {
+      window.removeEventListener("cave:open-project-file", onOpenProjectFile as EventListener);
+      window.removeEventListener("cave:open-file-diff", onOpenFileDiff as EventListener);
+    };
+  }, [openCodeRailTarget]);
 
   // Announce code-rail visibility to the shell so it can soft-collapse the left
   // nav to its icon rail while the rail is open (keeps chat centered). Directional
@@ -487,6 +523,12 @@ export function ChatSurface({
     window.setTimeout(() => routerRef.current?.goToList(), 0);
     onPendingChatActionHandled();
   }, [onPendingChatActionHandled, onSetActiveFamiliar, pendingChatAction, routerRef]);
+
+  useEffect(() => {
+    if (!pendingCodeRailOpen) return;
+    openCodeRailTarget(pendingCodeRailOpen);
+    onPendingCodeRailOpenHandled();
+  }, [onPendingCodeRailOpenHandled, openCodeRailTarget, pendingCodeRailOpen]);
 
   function startProjectChat(projectRoot: string) {
     setScope("conversation");
@@ -640,6 +682,7 @@ export function ChatSurface({
                     projectRoot={railProjectRoot}
                     familiarId={snapshot.familiar?.id ?? null}
                     sessionId={snapshot.sessionId ?? null}
+                    focus={codeRailFocus}
                     onSelectTab={rail.setActiveTab}
                     onTogglePin={rail.togglePin}
                     onCollapse={rail.collapse}
@@ -731,6 +774,7 @@ export function ChatSurface({
               projectRoot={railProjectRoot}
               familiarId={snapshot.familiar?.id ?? null}
               sessionId={snapshot.sessionId ?? null}
+              focus={codeRailFocus}
               hidePin
               onSelectTab={rail.setActiveTab}
               onTogglePin={rail.togglePin}
