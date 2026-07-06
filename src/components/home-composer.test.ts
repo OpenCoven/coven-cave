@@ -37,12 +37,13 @@ assert.match(
   "HomeComposer headline should reflect the selected project name",
 );
 
-// Project picker was moved out of the toolbar (no longer rendered inline in
-// the composer card). Project context is preserved in the headline and enhancer.
-assert.doesNotMatch(
+// Project selector lives in the composer toolbar so the user can choose which
+// project a new chat runs in (mirrors the chat composer). It's a standalone
+// ProjectPicker — its own search popover, so it can't nest in the ⚙ menu.
+assert.match(
   source,
-  /className="hc-project-selector"/,
-  "ProjectPicker selector is removed from the home composer toolbar",
+  /<ProjectPicker[\s\S]*value=\{selectedProjectId \|\| null\}[\s\S]*onChange=\{setSelectedProjectId\}[\s\S]*className="hc-project-selector"/,
+  "ProjectPicker is rendered in the home composer toolbar, wired to selectedProjectId",
 );
 
 assert.match(

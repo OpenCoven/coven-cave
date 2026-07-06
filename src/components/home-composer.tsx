@@ -35,6 +35,7 @@ import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
+import { ProjectPicker } from "@/components/project-picker";
 import { StandardSelect, type StandardSelectGroup, type StandardSelectOption } from "@/components/ui/select";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
@@ -1224,6 +1225,20 @@ export function HomeComposer({
                 ariaLabel="Choose chat agent"
                 disabled={visibleFamiliars.length === 0 || sending}
                 className="hc-access-chip"
+              />
+              {/* Project selector — picks which project the new chat runs in
+                  (mirrors the chat composer). Its own search popover, so it sits
+                  alongside the familiar select rather than inside the ⚙ menu. */}
+              <ProjectPicker
+                projects={projects}
+                value={selectedProjectId || null}
+                onChange={setSelectedProjectId}
+                allowNoProject
+                familiarId={selectedFamiliarId || null}
+                createProject={createProject}
+                disabled={sending}
+                ariaLabel="Choose project"
+                className="hc-project-selector"
               />
             </div>
             <div className="cave-composer-submit-row">
