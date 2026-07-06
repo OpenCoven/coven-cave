@@ -112,6 +112,13 @@
     font-size: 13px;
   }
 
+  /* The overflow '⋯' trigger is a tap-only control on phones — grow it to
+     the minimum touch target (WCAG 2.5.5). */
+  .board-header-controls .ui-icon-btn {
+    min-width: var(--touch-target);
+    min-height: var(--touch-target);
+  }
+
   .board-toolbar-btn {
     flex: 1 1 auto;
     justify-content: center;

@@ -15,6 +15,8 @@ import { applyCardOps, hasCardOps, type CardPatch } from "@/lib/board-card-ops";
 import { useAnnouncer } from "@/components/ui/live-region";
 import { useMultiSelect } from "@/lib/use-multi-select";
 import { SelectionToolbar } from "@/components/ui/selection-toolbar";
+import { OverflowMenu } from "@/components/ui/overflow-menu";
+import { PopoverItem } from "@/components/ui/popover";
 import { UndoToast } from "@/components/ui/undo-toast";
 import { useUndoDelete } from "@/lib/use-undo-delete";
 import { familiarInScope } from "@/lib/familiar-multiselect";
@@ -748,18 +750,10 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             </button>
           </div>
 
-          {!isMobile && (viewMode === "kanban" || viewMode === "table") && filtered.length > 0 && !cardSelect.selectMode && (
-            <button
-              type="button"
-              className="board-toolbar-btn"
-              onClick={() => cardSelect.setSelectMode(true)}
-              title="Select multiple tasks"
-            >
-              <Icon name="ph:check-square" width={13} />
-              Select
-            </button>
-          )}
-
+          {/* Chrome budget (§8): Select-multiple and Clear-done are occasional
+              verbs — they live in the overflow menu. The destructive clear
+              still routes through the inline confirm group, which temporarily
+              replaces the menu while deciding. */}
           {clearConfirm ? (
             <div className="board-clear-confirm" role="group" aria-label="Confirm clear done tasks">
               <button
@@ -779,16 +773,26 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              className="board-toolbar-btn"
-              onClick={() => setClearConfirm(true)}
-              disabled={doneCards.length === 0}
-              title="Remove all done tasks in view"
-            >
-              <Icon name="ph:trash" width={13} />
-              Clear done
-            </button>
+            <OverflowMenu ariaLabel="More task actions">
+              {!isMobile && (viewMode === "kanban" || viewMode === "table") && filtered.length > 0 && !cardSelect.selectMode ? (
+                <PopoverItem
+                  icon="ph:check-square"
+                  onSelect={() => cardSelect.setSelectMode(true)}
+                  title="Select multiple tasks"
+                >
+                  Select multiple
+                </PopoverItem>
+              ) : null}
+              <PopoverItem
+                icon="ph:trash"
+                danger
+                disabled={doneCards.length === 0}
+                onSelect={() => setClearConfirm(true)}
+                title="Remove all done tasks in view"
+              >
+                Clear done
+              </PopoverItem>
+            </OverflowMenu>
           )}
 
           <button

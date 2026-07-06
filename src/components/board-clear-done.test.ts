@@ -11,8 +11,15 @@ assert.match(
   "doneCards memo filters the current-scope `filtered` list by status done",
 );
 
-// Toolbar control + gating + inline confirm.
+// Toolbar control + gating + inline confirm. Clear-done is an occasional
+// destructive verb, so it lives in the shared overflow menu (§8 chrome
+// budget); the confirm group replaces the menu inline while deciding.
 assert.match(source, /Clear done/, "Clear done control label present");
+assert.match(
+  source,
+  /<PopoverItem\s*icon="ph:trash"\s*danger\s*disabled=\{doneCards\.length === 0\}\s*onSelect=\{\(\) => setClearConfirm\(true\)\}/,
+  "Clear done is a danger overflow-menu item, gated on done-card count",
+);
 assert.match(source, /disabled=\{doneCards\.length === 0\}/, "Clear done gated on done-card count");
 assert.match(source, /setClearConfirm\(true\)/, "clicking the control opens an inline confirm");
 assert.match(source, /Clear \{doneCards\.length\} done/, "confirm names the count");
