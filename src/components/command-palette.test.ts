@@ -138,7 +138,7 @@ assert.match(
 );
 assert.doesNotMatch(
   source,
-  /addons\?\.github|addons\?\.browser|addons\?\.flow|addons\?\.groupchat|addons\?\.journal|addons\?: AddonsConfig/,
+  /addons\?\.github|addons\?\.browser|addons\?\.flow|addons\?\.journal|addons\?: AddonsConfig/,
   "surface rows are no longer hidden behind add-on config",
 );
 assert.match(

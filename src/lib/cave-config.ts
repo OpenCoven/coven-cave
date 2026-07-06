@@ -22,7 +22,6 @@ const DEFAULT_CONFIG: CaveConfig = {
     browser: false,
     flow: false,
     roles: false,
-    groupchat: false,
     journal: false,
     docs: false,
   },
@@ -160,7 +159,6 @@ export type CaveConfig = {
     browser?: boolean;
     flow?: boolean;
     roles?: boolean;
-    groupchat?: boolean;
     journal?: boolean;
     docs?: boolean;
   };
@@ -202,7 +200,6 @@ export async function loadConfig(): Promise<CaveConfig> {
         browser: parsed.addons?.browser ?? false,
         flow: parsed.addons?.flow ?? false,
         roles: parsed.addons?.roles ?? false,
-        groupchat: parsed.addons?.groupchat ?? false,
         journal: parsed.addons?.journal ?? false,
         docs: parsed.addons?.docs ?? false,
       },

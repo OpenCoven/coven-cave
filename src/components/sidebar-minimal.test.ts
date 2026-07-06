@@ -270,7 +270,7 @@ assert.doesNotMatch(
 
 assert.doesNotMatch(
   source,
-  /addons\?\.github|addons\?\.browser|addons\?\.groupchat|addons\?\.journal|AddonsConfig|addons\?:/,
+  /addons\?\.github|addons\?\.browser|addons\?\.journal|AddonsConfig|addons\?:/,
   "Sidebar should not hide surfaces behind add-on config",
 );
 
