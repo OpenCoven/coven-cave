@@ -228,6 +228,8 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   } | null>(null);
   const contractFams = data.familiars.slice(0, CONTRACT_FETCH_CAP);
   const contractKey = contractFams.map((f) => f.id).join(",");
+  const contractFetchedCount = contractFams.length;
+  const contractFetchPartial = data.familiars.length > contractFetchedCount;
   useEffect(() => {
     if (!contractKey) { setConfidenceRaw(null); return; }
     let alive = true;
@@ -309,7 +311,10 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
     }),
     [insightRows, data.sessions, confidenceRaw, nowMs],
   );
-  const covenInsight = useMemo(() => deriveCovenInsight({ vitals, rows: insightRows }), [vitals, insightRows]);
+  const covenInsight = useMemo(
+    () => deriveCovenInsight({ vitals, rows: insightRows, familiarsLoaded: ready.has("familiars") }),
+    [vitals, insightRows, ready],
+  );
   const covenSeries = useMemo(() => covenSessionsSeries(data.sessions, nowMs, 14), [data.sessions, nowMs]);
 
   // ── Vitals KPI specs. Every tile is a live analytics figure with a 7-day
@@ -317,12 +322,14 @@ export function DashboardCockpit({ model }: { model: DashboardModel }) {
   //    colored by meaning, and drills into the surface that owns the number. ──
   const contractPct = vitals.contractTotal ? Math.round((vitals.contractPass / vitals.contractTotal) * 100) : null;
   const acceptPct = vitals.retroAcceptRate != null ? Math.round(vitals.retroAcceptRate * 100) : null;
+  const scoredCoverageSub = coverageSub(vitals.confidenceTier ?? "no scores yet", contractFetchedCount, data.familiars.length, "scored");
+  const contractCoverageSub = coverageSub(contractSub(vitals), contractFetchedCount, data.familiars.length, "checked");
   const kpis: KpiSpec[] = [
-    { icon: "ph:seal-check", value: vitals.avgConfidence, label: "Coven confidence", sub: vitals.confidenceTier ?? "no scores yet", accent: "teal", metric: "confidence", good: "up", href: "/dashboard/familiars/growth" },
+    { icon: "ph:seal-check", value: vitals.avgConfidence, label: "Coven confidence", sub: contractFetchPartial ? scoredCoverageSub : vitals.confidenceTier ?? "no scores yet", accent: "teal", metric: "confidence", good: "up", href: "/dashboard/familiars/growth" },
     { icon: "ph:sparkle", value: vitals.activeFamiliars, label: "Active familiars", sub: `${vitals.familiarCount} in coven`, accent: "green", metric: "active", good: "up", src: "familiars", href: "/?mode=agents" },
     { icon: "ph:heartbeat", value: vitals.sessions7d, label: "Sessions · 7d", sub: wowSub(vitals.sessionsWowDelta), accent: "lavender", metric: "sessions", good: "up", src: "sessions", href: "/?mode=agents" },
     { icon: "ph:flag-checkered", value: acceptPct, suffix: "%", label: "Retro accept rate", sub: retroSub(vitals), accent: "blue", metric: "accept", good: "up", href: "/dashboard/familiars/growth" },
-    { icon: "ph:list-checks-bold", value: contractPct, suffix: "%", label: "Contract health", sub: contractSub(vitals), accent: "amber", metric: "contract", good: "up", href: "/dashboard/familiars/growth" },
+    { icon: "ph:list-checks-bold", value: contractPct, suffix: "%", label: "Contract health", sub: contractFetchPartial ? contractCoverageSub : contractSub(vitals), accent: "amber", metric: "contract", good: "up", href: "/dashboard/familiars/growth" },
     { icon: "ph:warning-circle", value: model.needsAttention.length, label: "Needs you", sub: model.caughtUp ? "all clear" : "open items", accent: "rose", metric: "needs", good: "down" },
   ];
 
@@ -647,6 +654,10 @@ function retroSub(v: CovenVitals): string {
 function contractSub(v: CovenVitals): string {
   if (v.contractTotal === 0) return "no contracts";
   return `${v.contractPass}/${v.contractTotal} passing`;
+}
+function coverageSub(base: string, fetched: number, total: number, verb: "scored" | "checked"): string {
+  if (total <= fetched) return base;
+  return `${base} · first ${fetched}/${total} ${verb}`;
 }
 
 // ─── Familiar insights table (centerpiece) ────────────────────────────────────────

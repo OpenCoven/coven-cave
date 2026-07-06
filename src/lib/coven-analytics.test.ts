@@ -97,6 +97,14 @@ assert.equal(confidenceTier(0), "Low");
   assert.equal(insight.tone, "warn");
 }
 
+// ── deriveCovenInsight: loading roster should not read as empty coven ───────
+{
+  const vitals = deriveCovenVitals({ rows: [], sessions: [], retro: null, nowMs: NOW });
+  const insight = deriveCovenInsight({ vitals, rows: [], familiarsLoaded: false });
+  assert.match(insight.headline, /Loading familiars/i);
+  assert.doesNotMatch(insight.headline, /No familiars/i);
+}
+
 // ── deriveCovenInsight: healthy coven reads "good" and names the leader ──────
 {
   const sessions = [sess("a", "f1", 0), sess("b", "f1", 1), sess("c", "f2", 0)];

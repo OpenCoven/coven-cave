@@ -23,6 +23,10 @@ export type FamiliarCardStats = {
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60_000;
 const FIVE_MINUTES_MS = 5 * 60_000;
 
+function sessionStartAt(session: SessionRow): string | null {
+  return session.created_at ?? session.updated_at ?? null;
+}
+
 export function buildFamiliarCardStats(args: {
   familiars: Familiar[];
   sessions: SessionRow[];
@@ -35,6 +39,7 @@ export function buildFamiliarCardStats(args: {
 
   const sessionsByFamiliar = new Map<string, SessionRow[]>();
   for (const session of args.sessions) {
+    if (session.archived_at) continue;
     const fid = session.familiarId;
     if (!fid) continue;
     const bucket = sessionsByFamiliar.get(fid) ?? [];
@@ -59,11 +64,13 @@ export function buildFamiliarCardStats(args: {
     let sessionsLast7d = 0;
     let hasActiveSession = false;
     for (const session of sessions) {
-      const ms = Date.parse(session.updated_at);
+      const startedAt = sessionStartAt(session);
+      if (!startedAt) continue;
+      const ms = Date.parse(startedAt);
       if (!Number.isFinite(ms)) continue;
       if (ms > lastSessionMs) {
         lastSessionMs = ms;
-        lastSessionAt = session.updated_at;
+        lastSessionAt = startedAt;
       }
       if (ms > sevenCutoff) sessionsLast7d += 1;
       if (ms > activeCutoff) hasActiveSession = true;
