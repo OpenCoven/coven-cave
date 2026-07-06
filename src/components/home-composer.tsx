@@ -36,7 +36,6 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { useProjects } from "@/lib/use-projects";
 import { NO_PROJECT_ID } from "@/lib/chat-projects";
 import { ProjectPicker } from "@/components/project-picker";
-import { StandardSelect, type StandardSelectGroup, type StandardSelectOption } from "@/components/ui/select";
 import { ComposerOptionsMenu, type ComposerOptionSection } from "@/components/composer-options-menu";
 import { LOCAL_HOST_ID } from "@/lib/chat-hosts";
 import { useKeySymbols } from "@/lib/platform-keys";
@@ -45,6 +44,7 @@ import { COMPATIBILITY_ADAPTERS } from "@/lib/harness-adapters";
 import { HomeContinueColumn } from "@/components/home/home-continue-column";
 import { HomeNewsColumn } from "@/components/home/home-news-column";
 import { HomeSuggestions } from "@/components/home/home-suggestions";
+import { HomeSelect, type HomeSelectGroup } from "@/components/home/home-select";
 import { useAnnouncer } from "@/components/ui/live-region";
 import {
   attachmentIcon,
@@ -75,71 +75,6 @@ const PLACEHOLDERS: Record<Destination, string> = {
   chat: "Summon something magical",
   board: "Describe a new task…",
 };
-
-type HomeSelectOption = StandardSelectOption<string>;
-
-type HomeSelectGroup = {
-  label?: string;
-  options: HomeSelectOption[];
-};
-
-function HomeSelect({
-  label,
-  icon,
-  value,
-  onChange,
-  groups,
-  ariaLabel,
-  disabled = false,
-  className,
-}: {
-  label?: string;
-  icon: IconName;
-  value: string;
-  onChange: (value: string) => void;
-  groups: HomeSelectGroup[];
-  ariaLabel: string;
-  disabled?: boolean;
-  className?: string;
-}) {
-  const selected = groups.flatMap((group) => group.options).find((option) => option.value === value);
-  const selectGroups: StandardSelectGroup<string>[] = groups.map((group) => ({
-    label: group.label ?? "",
-    options: group.options,
-  }));
-
-  return (
-    <StandardSelect
-      label={ariaLabel}
-      value={value}
-      onChange={onChange}
-      options={selectGroups}
-      className={["hc-familiar-selector", "hc-home-select-trigger", className ?? ""]
-        .filter(Boolean)
-        .join(" ")}
-      disabled={disabled}
-      title={selected?.detail ?? selected?.label ?? ariaLabel}
-      popoverClassName="hc-home-select-popover"
-      groupClassName="hc-home-select-group"
-      showCaret={false}
-      renderValue={(selectedOption) => (
-        <>
-          {selectedOption?.leading ?? (
-            <Icon
-              name={selectedOption?.icon ?? icon}
-              width={13}
-              className="hc-familiar-glyph"
-              aria-hidden
-            />
-          )}
-          {label ? <span className="hc-command-select-label">{label}</span> : null}
-          <span className="hc-home-select-value">{selectedOption?.label ?? "None"}</span>
-          <Icon name="ph:caret-up-down-bold" width={10} className="hc-select-caret" aria-hidden />
-        </>
-      )}
-    />
-  );
-}
 
 type Props = {
   familiars: Familiar[];

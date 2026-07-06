@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const homeSelect = await readFile(new URL("./home/home-select.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../styles/home-composer.css", import.meta.url), "utf8");
 const destinations = source.match(/const DESTINATIONS:[\s\S]*?\n\];/)?.[0] ?? "";
 const handleKeyDownBlock = source.match(/const handleKeyDown = useCallback\([\s\S]*?\n  \);/)?.[0] ?? "";
@@ -197,7 +198,7 @@ assert.match(
 );
 
 assert.match(
-  source,
+  homeSelect,
   /function HomeSelect\([\s\S]*?<StandardSelect[\s\S]*?label=\{ariaLabel\}[\s\S]*?popoverClassName="hc-home-select-popover"[\s\S]*?groupClassName="hc-home-select-group"[\s\S]*?renderValue=/,
   "HomeComposer compact command select should delegate option rendering to StandardSelect with the supplied aria label and selected value",
 );

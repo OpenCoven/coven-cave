@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const source = await readFile(new URL("./home-composer.tsx", import.meta.url), "utf8");
+const homeSelect = await readFile(new URL("./home/home-select.tsx", import.meta.url), "utf8");
 
 // ───────── Task 1: Destination-aware placeholder + drop subtitle ─────────
 assert.match(
@@ -69,9 +70,10 @@ assert.doesNotMatch(
   /className="hc-run-rail"/,
   "the secondary run-settings rail is removed from the home composer",
 );
-assert.match(source, /import \{ StandardSelect/, "home composer selectors should delegate to StandardSelect");
-assert.match(source, /<StandardSelect[\s\S]*?popoverClassName="hc-home-select-popover"/, "home composer custom selectors should use the shared select popover");
+assert.match(homeSelect, /import \{ StandardSelect/, "home select should delegate to StandardSelect");
+assert.match(homeSelect, /<StandardSelect[\s\S]*?popoverClassName="hc-home-select-popover"/, "home select should use the shared select popover");
 assert.doesNotMatch(source, /PopoverBody|PopoverItem|PopoverLabel/, "home composer should not maintain a local dropdown implementation");
+assert.doesNotMatch(homeSelect, /PopoverBody|PopoverItem|PopoverLabel/, "home select should not maintain a local dropdown implementation");
 assert.match(
   source,
   /className=\{`home-composer-card cave-composer-panel\$\{dropActive \? " is-drop-active" : ""\}`\}/,
