@@ -71,14 +71,20 @@ assert.doesNotMatch(
 
 assert.match(
   source,
-  /<HomeSelect[\s\S]*?value=\{selectedRuntimeModelValue\}[\s\S]*?ariaLabel="Choose runtime and model"/,
-  "HomeComposer should expose one combined custom runtime/model selector for the selected familiar",
+  /<ComposerOptionsMenu[\s\S]*?hostValue=\{runtimeHost \?\? LOCAL_HOST_ID\}[\s\S]*?onHostPick=\{setRuntimeHost\}/,
+  "HomeComposer collapses response controls into the chat composer's Options menu, with the Host picker wired to runtimeHost",
 );
 
 assert.match(
   source,
-  /runtimeModelSelectGroups[\s\S]*?label: adapter\.label,[\s\S]*?models\.map/,
-  "HomeComposer should group model choices under their runtime",
+  /id: "runtime",[\s\S]*?value: selectedRuntime,[\s\S]*?options: runtimeSectionOptions,[\s\S]*?handleSelectRuntime\(id\)/,
+  "the Options menu exposes a Runtime section that persists runtime picks",
+);
+
+assert.match(
+  source,
+  /\.\.\.\(runtimeModelOptions\.length > 0[\s\S]*?id: "model",[\s\S]*?options: runtimeModelOptions\.map\(\(m\) => \(\{ value: m\.id, label: m\.label \}\)\),[\s\S]*?handleSelectModel\(id\)/,
+  "the Options menu Model section lists the selected runtime's catalog and is omitted for runtime-managed runtimes",
 );
 
 assert.match(
@@ -197,28 +203,22 @@ assert.match(
 
 assert.match(
   source,
-  /"Choose thinking effort"/,
-  "HomeComposer should render a thinking effort select with an accessible label",
+  /id: "thinking",[\s\S]*?label: "Thinking",[\s\S]*?COMMAND_THINKING_OPTIONS/,
+  "the Options menu exposes the shared thinking-effort options",
+);
+
+assert.match(
+  source,
+  /id: "speed",[\s\S]*?label: "Speed",[\s\S]*?COMMAND_RESPONSE_SPEED_OPTIONS/,
+  "the Options menu exposes the shared response-speed options",
 );
 
 // Speed control removed from toolbar (response speed passed via initialControls default).
 
 assert.match(
-  css,
-  /\.hc-control-group\b/,
-  "HomeComposer CSS should define grouped command controls",
-);
-
-assert.match(
-  css,
-  /\.hc-control-group\s*\{[\s\S]*?flex-wrap: nowrap;[\s\S]*?gap: 6px;/,
-  "HomeComposer command clusters should stay together with compact internal spacing",
-);
-
-assert.match(
-  css,
-  /\.hc-control-group--who\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?\.hc-control-group--run\s*\{[\s\S]*?flex: 0 1 auto;[\s\S]*?margin-left: auto;/,
-  "HomeComposer action bar should keep the who cluster content-sized and pin the run cluster to the right edge",
+  source,
+  /className="cave-composer-controls"[\s\S]*?className="cave-composer-control-row"[\s\S]*?className="cave-composer-utility-row"[\s\S]*?className="cave-composer-submit-row"/,
+  "HomeComposer reuses the chat composer's footer row structure",
 );
 
 assert.match(
@@ -347,8 +347,9 @@ assert.match(
 );
 
 // ── Single-row toolbar replaces mode strip + run rail ───────────────────────
-// The top mode strip and the separate run rail were removed.
-// Controls are now in one action bar: [+] [Chat/Task] [access chip] · [●] [model] [think] [mic] [send]
+// The top mode strip and the separate run rail were removed. The footer is the
+// chat composer's: attach/voice/Options + Chat-Task pills + agent chip on the
+// left, enhance + send on the right.
 assert.doesNotMatch(
   source,
   /className="hc-mode-strip"/,
@@ -361,8 +362,8 @@ assert.doesNotMatch(
 );
 assert.match(
   source,
-  /hc-control-group--who[\s\S]*?ph:plus-bold[\s\S]*?hc-dest-pills[\s\S]*?ph:warning-circle[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip[\s\S]*?hc-control-group--run[\s\S]*?hc-status-dot[\s\S]*?ariaLabel="Choose runtime and model"[\s\S]*?ariaLabel="Choose thinking effort"[\s\S]*?hc-mic-btn[\s\S]*?aria-label="Send"/,
-  "The action bar toolbar has: attach/destination/access-chip left, status/model/thinking/mic/send right",
+  /cave-composer-utility-row[\s\S]*?ph:paperclip[\s\S]*?ph:microphone[\s\S]*?<ComposerOptionsMenu[\s\S]*?hc-dest-pills[\s\S]*?ariaLabel="Choose chat agent"[\s\S]*?hc-access-chip[\s\S]*?cave-composer-submit-row[\s\S]*?ph:sparkle[\s\S]*?aria-label="Send"/,
+  "The footer has attach/voice/Options + Chat/Task destination + access chip left; enhance + send right",
 );
 
 // ── Model selection moved to the /model slash command ────────────────────────
@@ -444,8 +445,8 @@ assert.match(
 // ── Attachments ─────────────────────────────────────────────────────────────
 assert.match(
   source,
-  /className="hc-add-btn"[\s\S]*?onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?ph:plus-bold/,
-  "the + launcher uses a plus-bold icon that opens the file picker",
+  /aria-label="Attach images, videos, or files"[\s\S]*?onClick=\{\(\) => fileInputRef\.current\?\.click\(\)\}[\s\S]*?ph:paperclip/,
+  "the paperclip button opens the file picker (chat-composer parity)",
 );
 assert.match(
   source,
