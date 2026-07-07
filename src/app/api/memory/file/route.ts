@@ -17,6 +17,19 @@ export async function GET(req: Request) {
   if (!allowedPath) {
     return NextResponse.json({ ok: false, error: "path not allowed" }, { status: 403 });
   }
+  // Cheap change-detection mode for live-follow polling: stat only, no file
+  // read and no redaction pass.
+  if (url.searchParams.get("stat") === "1") {
+    try {
+      const s = await stat(/* turbopackIgnore: true */ allowedPath);
+      return NextResponse.json({ ok: true, path: target, mtimeMs: s.mtimeMs, size: s.size });
+    } catch (err) {
+      return NextResponse.json(
+        { ok: false, error: err instanceof Error ? err.message : "stat failed" },
+        { status: 404 },
+      );
+    }
+  }
   let raw: string;
   let mtimeMs: number | null = null;
   try {
