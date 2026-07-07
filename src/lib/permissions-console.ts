@@ -220,13 +220,13 @@ export function auditReasonLabel(reason: AuditReason): string {
   }
 }
 
-export function grantSourceMeta(source: GrantSource | undefined): {
+export function grantSourceMeta(source: GrantSource | undefined, displayName = "You"): {
   label: string;
   title: string;
 } {
   return source === "bootstrap"
     ? { label: "Auto", title: "Granted automatically when the project was registered" }
-    : { label: "You", title: "Granted by you" };
+    : { label: displayName, title: displayName === "You" ? "Granted by you" : `Granted by ${displayName}` };
 }
 
 /**

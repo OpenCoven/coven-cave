@@ -213,7 +213,7 @@ assert.match(
 
 assert.match(
   turnRow,
-  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-content--with-avatar[\s\S]*<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" \/>[\s\S]*cave-linear-turn-name[\s\S]*You[\s\S]*cave-linear-turn-badge cave-linear-turn-badge--op[\s\S]*cave-linear-turn-recency/,
+  /formatChatRecency\(turn\.createdAt, dtPrefs\)[\s\S]*cave-linear-turn-content--with-avatar[\s\S]*<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human" \/>[\s\S]*cave-linear-turn-name[\s\S]*operatorDisplayName[\s\S]*cave-linear-turn-badge cave-linear-turn-badge--op[\s\S]*cave-linear-turn-recency/,
   "User turns should render a Discord-like avatar/name/badge/recency header",
 );
 assert.match(
@@ -248,8 +248,8 @@ assert.doesNotMatch(
 
 assert.match(
   turnRow,
-  /\{turn\.role === "user" \? "You" : "System"\}/,
-  "User and system turns should identify the speaker in the avatar row header",
+  /\{turn\.role === "user" \? operatorDisplayName : "System"\}/,
+  "User and system turns should identify the speaker in the avatar row header, using the operator profile name",
 );
 
 assert.doesNotMatch(

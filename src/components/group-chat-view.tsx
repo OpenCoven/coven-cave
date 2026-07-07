@@ -30,6 +30,7 @@ import { FamiliarAvatar } from "@/components/familiar-avatar";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
 import { formatChatRecency, useDateTimePrefs } from "@/lib/datetime-format";
+import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
 import {
   applyGroupEvent,
@@ -76,6 +77,8 @@ function nowIso(): string {
 }
 
 export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props) {
+  const profileSnapshot = useUserProfile();
+  const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
   const [groups, setGroups] = useState<CovenGroup[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<GroupTurn[]>([]);
@@ -387,7 +390,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
           role: byId.get(id)?.role ?? "",
           kind: "familiar" as const,
         })),
-        { id: "__human__", name: "You", role: "", kind: "human" as const },
+        { id: "__human__", name: operatorDisplayName, role: "", kind: "human" as const },
       ];
       const at = nowIso();
       const userTurn: GroupUserTurn = {
@@ -444,7 +447,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         announce(`${total - failed} of ${total} familiars replied; ${failed} failed.`, "assertive");
       }
     },
-    [busy, streamOne, byId, announce],
+    [busy, streamOne, byId, announce, operatorDisplayName],
   );
 
   // The composer and "click a next-path suggestion to send" chips both go
@@ -472,7 +475,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
           role: byId.get(id)?.role ?? "",
           kind: "familiar" as const,
         })),
-        { id: "__human__", name: "You", role: "", kind: "human" as const },
+        { id: "__human__", name: operatorDisplayName, role: "", kind: "human" as const },
       ];
       // Reset the failed bubble in place so it re-enters the streaming state.
       const fresh: GroupReply = {
@@ -506,7 +509,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
         settled.status === "error" ? "assertive" : "polite",
       );
     },
-    [busy, byId, updateReply, streamOne, announce],
+    [busy, byId, updateReply, streamOne, announce, operatorDisplayName],
   );
 
   // --- @mention autocomplete ----------------------------------------------
@@ -785,7 +788,7 @@ export function GroupChatView({ familiars, onSessionStarted, onOpenUrl }: Props)
                         <UserChatAvatar className="cave-group-chat-avatar cave-group-chat-avatar--human" />
                         <div className="cave-group-chat-message">
                           <div className="cave-group-chat-meta">
-                            <span className="cave-group-chat-name">You</span>
+                            <span className="cave-group-chat-name">{operatorDisplayName}</span>
                             <span className="cave-group-chat-badge cave-group-chat-badge--op">OP</span>
                             <time className="cave-group-chat-recency" dateTime={user.createdAt}>
                               {formatChatRecency(user.createdAt, dtPrefs)}

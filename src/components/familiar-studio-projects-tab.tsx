@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { SettingsGroup } from "@/components/ui/settings-group";
 import type { ResolvedFamiliar } from "@/lib/familiar-resolve";
+import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import {
   auditDecisionMeta,
   auditReasonLabel,
@@ -80,6 +81,7 @@ function MetaChip({ children, title }: { children: ReactNode; title?: string }) 
  * the target familiar + project (the route rejects relayed approvals).
  */
 export function FamiliarStudioProjectsTab({ familiar }: Props) {
+  const profileSnapshot = useUserProfile();
   const [projects, setProjects] = useState<ConsoleProject[]>([]);
   const [granted, setGranted] = useState<Set<string>>(new Set());
   const [grantMeta, setGrantMeta] = useState<Map<string, ConsoleGrant>>(new Map());
@@ -258,7 +260,7 @@ export function FamiliarStudioProjectsTab({ familiar }: Props) {
             const on = granted.has(key);
             const busy = pending.has(key);
             const meta = grantMeta.get(key);
-            const source = on && meta ? grantSourceMeta(meta.source) : null;
+            const source = on && meta ? grantSourceMeta(meta.source, userDisplayName(profileSnapshot?.profile)) : null;
             return (
               <div key={project.id} className="flex items-center justify-between gap-4 px-4 py-3">
                 <div className="flex min-w-0 items-center gap-3">

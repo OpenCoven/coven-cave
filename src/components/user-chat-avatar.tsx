@@ -1,57 +1,41 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect } from "react";
 import { Icon } from "@/lib/icon";
-import { setUserAvatarImage, useUserAvatarImage } from "@/lib/user-avatar-image";
-import { FAMILIAR_IMAGE_ACCEPT, prepareFamiliarImage } from "@/lib/familiar-image-upload";
+import { runUserAvatarMigration } from "@/lib/user-avatar-migrate";
+import { useUserProfile, userAvatarUrl, userDisplayName } from "@/lib/user-profile";
 
 type Props = {
   className?: string;
   ariaLabel?: string;
 };
 
+/** Operator avatar — displays the server-stored profile image. Editing moved
+ *  to Settings → Profile; clicking navigates there. */
 export function UserChatAvatar({ className, ariaLabel }: Props) {
-  const avatar = useUserAvatarImage();
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const title = status ?? (avatar ? "Change your chat avatar" : "Set your chat avatar");
+  const snapshot = useUserProfile();
+  const src = userAvatarUrl(snapshot);
+  const name = userDisplayName(snapshot?.profile);
+
+  useEffect(() => {
+    void runUserAvatarMigration();
+  }, []);
 
   return (
-    <>
-      <button
-        type="button"
-        className={`cave-user-chat-avatar ${className ?? ""}`.trim()}
-        aria-label={ariaLabel ?? "Set your chat avatar"}
-        title={title}
-        onClick={() => inputRef.current?.click()}
-      >
-        {avatar ? (
-          <img src={avatar.dataUrl} alt="" className="cave-user-chat-avatar__image" aria-hidden="true" />
-        ) : (
-          <Icon name="ph:user" width={24} height={24} aria-hidden />
-        )}
-      </button>
-      <input
-        ref={inputRef}
-        type="file"
-        accept={FAMILIAR_IMAGE_ACCEPT}
-        className="sr-only"
-        tabIndex={-1}
-        onChange={(event) => {
-          const file = event.currentTarget.files?.[0];
-          event.currentTarget.value = "";
-          if (!file) return;
-          setStatus(null);
-          void prepareFamiliarImage(file)
-            .then(async (prepared) => {
-              const res = await setUserAvatarImage(prepared);
-              setStatus(res.ok ? (prepared.downsized ? "Image was downsized for Cave." : "Chat avatar updated.") : res.reason);
-            })
-            .catch((err) => {
-              setStatus(err instanceof Error ? err.message : "Could not read image.");
-            });
-        }}
-      />
-    </>
+    <button
+      type="button"
+      className={`cave-user-chat-avatar ${className ?? ""}`.trim()}
+      aria-label={ariaLabel ?? "Open profile settings"}
+      title="Profile settings"
+      onClick={() => window.location.assign("/settings#profile")}
+    >
+      {src ? (
+        <img src={src} alt="" className="cave-user-chat-avatar__image" aria-hidden="true" />
+      ) : name !== "You" ? (
+        <span aria-hidden="true">{name.slice(0, 1).toUpperCase()}</span>
+      ) : (
+        <Icon name="ph:user" width={24} height={24} aria-hidden />
+      )}
+    </button>
   );
 }

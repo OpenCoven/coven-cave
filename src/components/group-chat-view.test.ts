@@ -68,8 +68,8 @@ test("Group chat transcript uses avatar author rows with recency", () => {
   );
   assert.match(
     view,
-    /className="cave-group-chat-turn cave-group-chat-turn--user"[\s\S]*cave-group-chat-avatar cave-group-chat-avatar--human[\s\S]*cave-group-chat-name[\s\S]*You[\s\S]*cave-group-chat-badge cave-group-chat-badge--op[\s\S]*formatChatRecency\(user\.createdAt, dtPrefs\)/,
-    "group user turns render a Discord-like avatar/name/OP/recency header",
+    /className="cave-group-chat-turn cave-group-chat-turn--user"[\s\S]*cave-group-chat-avatar cave-group-chat-avatar--human[\s\S]*cave-group-chat-name[\s\S]*operatorDisplayName[\s\S]*cave-group-chat-badge cave-group-chat-badge--op[\s\S]*formatChatRecency\(user\.createdAt, dtPrefs\)/,
+    "group user turns render a Discord-like avatar/profile-name/OP/recency header",
   );
   assert.match(
     view,

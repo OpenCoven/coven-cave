@@ -6,12 +6,13 @@ const component = readFileSync(new URL("./user-chat-avatar.tsx", import.meta.url
 const chat = readFileSync(new URL("./chat-view.tsx", import.meta.url), "utf8");
 const group = readFileSync(new URL("./group-chat-view.tsx", import.meta.url), "utf8");
 
-assert.match(component, /useUserAvatarImage/, "component subscribes to the user avatar image store");
-assert.match(component, /prepareFamiliarImage/, "component reuses the existing avatar preparation/downsize path");
-assert.match(component, /type="file"[\s\S]*FAMILIAR_IMAGE_ACCEPT/, "clicking the avatar opens an image file picker");
-assert.match(component, /setUserAvatarImage\(prepared\)/, "prepared image is persisted as the user avatar");
-assert.match(component, /<img[\s\S]*avatar\.dataUrl/, "stored image renders inside the chat avatar");
-assert.match(component, /aria-label=\{ariaLabel \?\? "Set your chat avatar"\}/, "button exposes upload intent");
+assert.match(component, /useUserProfile\(/, "component subscribes to the server profile store");
+assert.match(component, /userAvatarUrl\(snapshot\)/, "server avatar URL renders from the profile snapshot");
+assert.match(component, /<img[\s\S]*src=\{src\}/, "server image renders inside the chat avatar");
+assert.doesNotMatch(component, /type="file"|<input|prepareFamiliarImage|setUserAvatarImage/, "avatar no longer owns inline upload UI");
+assert.match(component, /window\.location\.assign\("\/settings#profile"\)/, "click opens Settings at the Profile section via the existing hash deep-link route");
+assert.match(component, /runUserAvatarMigration\(/, "component kicks off the one-time legacy avatar migration");
+assert.match(component, /name\.slice\(0, 1\)\.toUpperCase\(\)/, "named profiles can fall back to an initial when no server avatar exists");
 
 assert.match(chat, /import \{ UserChatAvatar \} from "@\/components\/user-chat-avatar"/, "Chat imports the user avatar component");
 assert.match(chat, /<UserChatAvatar className="cave-linear-turn-avatar cave-linear-turn-avatar--human"/, "Chat user turns render the clickable user avatar");

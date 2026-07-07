@@ -79,6 +79,7 @@ import { Popover, PopoverBody, PopoverItem, PopoverLabel, PopoverSeparator } fro
 import { VoiceCallOverlay } from "./voice-call-overlay";
 import { ThreadSignalCard } from "@/components/thread-signal-card";
 import { UserChatAvatar } from "@/components/user-chat-avatar";
+import { useUserProfile, userDisplayName } from "@/lib/user-profile";
 import { usageBreakdown, usageSummary, type TurnUsage } from "@/lib/usage-format";
 import {
   chatUsagePlanTooltip,
@@ -1983,6 +1984,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   { familiar, sessionId, session, projectRoot, initialPrompt, initialAttachments, initialControls, origin, openFindQuery, openFindNonce, daemonRunning, sessions, onSessionStarted, onSessionsChanged, onBack, onSlashCommand, onOpenOnboarding, onOpenTask, onOpenUrl, onProjectRootChange },
   ref,
 ) {
+  const profileSnapshot = useUserProfile();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [activeLeafId, setActiveLeafId] = useState<string>("");
   // Branching: undefined = no pending branch; null = branch at the ROOT (the
@@ -3826,7 +3828,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
   // only the visible prose (not hidden reasoning); the draft is never touched.
   function replyToTurn(turn: Turn) {
     const author =
-      turn.role === "assistant" ? familiar.display_name : turn.role === "system" ? "System" : "You";
+      turn.role === "assistant"
+        ? familiar.display_name
+        : turn.role === "system"
+          ? "System"
+          : userDisplayName(profileSnapshot?.profile);
     const source = turn.role === "assistant" ? extractNextPaths(splitReasoning(turn.text).visible).visible : turn.text;
     const snippet = buildReplySnippet(source);
     if (!snippet) return;
@@ -5562,6 +5568,8 @@ function TurnRowImpl({
   /** Branch navigator: shown when this turn has siblings (alternate branches). */
   branchNav?: { index: number; total: number; onPrev: () => void; onNext: () => void };
 }) {
+  const profileSnapshot = useUserProfile();
+  const operatorDisplayName = userDisplayName(profileSnapshot?.profile);
   // Tool activity renders inline while a turn streams (watching tools run IS the
   // live feedback). Once the turn settles, the prose is shown uninterrupted and
   // every tool call is collected into one designated, collapsed "Tool activity"
@@ -5621,7 +5629,7 @@ function TurnRowImpl({
           )}
           <div className="cave-linear-turn-right">
             <div className="cave-linear-turn-meta cave-linear-turn-meta--identity">
-              <span className="cave-linear-turn-name">{turn.role === "user" ? "You" : "System"}</span>
+              <span className="cave-linear-turn-name">{turn.role === "user" ? operatorDisplayName : "System"}</span>
               {turn.role === "user" ? (
                 <span className="cave-linear-turn-badge cave-linear-turn-badge--op">OP</span>
               ) : null}
