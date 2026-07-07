@@ -1023,7 +1023,7 @@ function PersonChip({ person, prefix }: { person: GitHubPerson; prefix?: string 
   );
 }
 
-// ── Comments + review threads (read · resolve · tag a familiar) ───────────────
+// ── Comments + review threads (read · resolve · reply) ───────────────────────
 
 type GhReaction = { content: string; count: number };
 
@@ -1206,17 +1206,15 @@ function ReviewEntry({ review, repo }: { review: GhReview; repo: string }) {
 
 /**
  * Reads the conversation timeline + inline PR review threads, resolves threads
- * (PAT only), and posts a reply with optional `@familiar` tagging. The whole
- * surface is reused verbatim by the native iOS app via the same API routes.
+ * (PAT only), and posts a reply. The whole surface is reused verbatim by the
+ * native iOS app via the same API routes.
  */
 function GitHubComments({
   item,
   detail,
-  familiars,
 }: {
   item: GitHubItem;
   detail: ItemDetail | null;
-  familiars: Familiar[];
 }) {
   const [state, setState] = useState<CommentsState>({ status: "idle" });
   const [tick, setTick] = useState(0);
@@ -1225,7 +1223,6 @@ function GitHubComments({
   const { announce } = useAnnouncer();
   const [postError, setPostError] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
-  const [familiarPickerOpen, setFamiliarPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const repo = item.repo;
@@ -1236,7 +1233,6 @@ function GitHubComments({
   useEffect(() => {
     setDraft("");
     setPostError(null);
-    setFamiliarPickerOpen(false);
   }, [repo, number]);
 
   useEffect(() => {
@@ -1311,29 +1307,6 @@ function GitHubComments({
       // Revert by refetching the authoritative state.
       setTick((n) => n + 1);
     }
-  }
-
-  function insertMention(familiar: Familiar) {
-    const handle = (familiar.name ?? familiar.display_name).replace(/\s+/g, "-");
-    const mention = `@${handle}`;
-    const el = textareaRef.current;
-    if (!el) {
-      setDraft((d) => (d ? `${d} ${mention} ` : `${mention} `));
-    } else {
-      const start = el.selectionStart ?? draft.length;
-      const end = el.selectionEnd ?? draft.length;
-      const before = draft.slice(0, start);
-      const after = draft.slice(end);
-      const spacer = before && !before.endsWith(" ") ? " " : "";
-      const next = `${before}${spacer}${mention} ${after}`;
-      setDraft(next);
-      requestAnimationFrame(() => {
-        el.focus();
-        const pos = before.length + spacer.length + mention.length + 1;
-        el.setSelectionRange(pos, pos);
-      });
-    }
-    setFamiliarPickerOpen(false);
   }
 
   async function postComment() {
@@ -1474,7 +1447,7 @@ function GitHubComments({
                 className="gh-composer-input"
                 aria-label="Reply to this thread"
                 aria-keyshortcuts="Meta+Enter Control+Enter"
-                placeholder="Reply… use @ to tag a familiar (⌘↵ to send)"
+                placeholder="Reply… (⌘↵ to send)"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -1487,39 +1460,6 @@ function GitHubComments({
               />
               {postError && <p className="gh-composer-error" role="alert">{postError}</p>}
               <div className="gh-composer-actions">
-                <div className="gh-composer-tag">
-                  <button
-                    type="button"
-                    className="gh-composer-tag-btn"
-                    onClick={() => setFamiliarPickerOpen((v) => !v)}
-                    aria-expanded={familiarPickerOpen}
-                    title="Tag a familiar"
-                    disabled={familiars.length === 0}
-                  >
-                    <Icon name="ph:at" width={12} />
-                    Tag familiar
-                  </button>
-                  {familiarPickerOpen && (
-                    <div className="gh-composer-tag-menu" role="menu">
-                      {familiars.map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          role="menuitem"
-                          className="gh-composer-tag-item"
-                          onClick={() => insertMention(f)}
-                        >
-                          <span
-                            className="gh-task-chip-dot"
-                            style={{ background: f.color ?? "var(--accent-presence)" }}
-                            aria-hidden
-                          />
-                          {f.display_name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
                 <Button
                   size="sm"
                   variant="primary"
@@ -2158,7 +2098,7 @@ function GitHubItemGlassPanel({
 
         <GitHubChecks item={item} />
 
-        <GitHubComments item={item} detail={detail} familiars={familiars} />
+        <GitHubComments item={item} detail={detail} />
 
         <div className="gh-glass-section">
           <div className="gh-glass-section-title">Linked work</div>
