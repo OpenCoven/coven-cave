@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 const shell = await readFile(new URL("./md-editor.tsx", import.meta.url), "utf8");
 const visual = await readFile(new URL("./md-editor-visual.tsx", import.meta.url), "utf8");
 const memory = await readFile(new URL("./memory-md-editor.tsx", import.meta.url), "utf8");
+const grimoire = await readFile(new URL("../grimoire-view.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../../styles/md-editor.css", import.meta.url), "utf8");
 const globals = await readFile(new URL("../../app/globals.css", import.meta.url), "utf8");
 
@@ -50,6 +51,33 @@ assert.match(memory, /expectedMtimeMs/, "saves carry the mtime conflict baseline
 assert.match(memory, /res\.status === 409/, "conflicts get a dedicated message");
 assert.match(memory, /<MdEditor\s/, "memory editor renders the shared MdEditor");
 assert.match(memory, /key=\{path\}/, "editor remounts per document path");
+
+// ── Autosave: idempotent surfaces only (cave-b2v) ────────────────────────────
+
+assert.match(shell, /autoSave = false/, "autoSave is opt-in, off by default");
+assert.match(
+  shell,
+  /if \(!autoSave \|\| readOnly \|\| saving \|\| !dirty \|\| !raw\.trim\(\)\) return/,
+  "autosave skips when off, read-only, mid-save, clean, or empty",
+);
+assert.match(
+  shell,
+  /setTimeout\(\(\) => void saveRef\.current\(\), AUTOSAVE_DEBOUNCE_MS\)/,
+  "autosave is debounced and routes through the shared save path",
+);
+assert.match(shell, /clearTimeout\(timer\)/, "a pending autosave is cancelled on change/unmount");
+// Idempotent surfaces opt in; the mtime-guarded memory editor must NOT.
+assert.match(grimoire, /showHeader=\{false\}[\s\S]*?autoSave\b/, "the journal editor autosaves");
+assert.match(
+  grimoire,
+  /autoSave=\{entry != null\}/,
+  "knowledge autosaves only once the entry exists (a new entry's first save remounts)",
+);
+assert.doesNotMatch(
+  memory,
+  /autoSave/,
+  "memory files stay explicit-save — agents write those roots concurrently (mtime conflicts)",
+);
 
 // ── Theme: crepe vars ride the Cave tokens ───────────────────────────────────
 

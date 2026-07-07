@@ -185,6 +185,10 @@ function KnowledgeMdEditor({
       sourceLabel="Knowledge vault"
       onSave={save}
       onCancel={onCancel}
+      // A new entry materializes on its first (manual) save, which re-keys and
+      // remounts this editor; only autosave once it exists so typing isn't
+      // interrupted mid-keystroke by that remount.
+      autoSave={entry != null}
     />
   );
 }
@@ -251,6 +255,7 @@ function JournalMdEditor({ date, onSaved }: { date: string; onSaved?: () => void
       showHeader={false}
       sourceLabel={`Journal · ${date}`}
       onSave={save}
+      autoSave
     />
   );
 }

@@ -21,7 +21,10 @@
  */
 
 import dynamic from "next/dynamic";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+/** Trailing debounce before an autosave fires once typing pauses. */
+const AUTOSAVE_DEBOUNCE_MS = 1200;
 import { Icon } from "@/lib/icon";
 import { CodeEditor } from "@/components/code-editor";
 import {
@@ -77,6 +80,14 @@ export type MdEditorProps = {
   onCancel?: () => void;
   /** Observe every raw-document change (e.g. to mirror into caller state). */
   onChange?: (raw: string) => void;
+  /**
+   * Persist edits automatically a short while after typing stops, in addition
+   * to the explicit Save button. Only safe for **idempotent** surfaces whose
+   * `onSave` has no disruptive side effects (no editor remount/close) —
+   * knowledge and journal docs. Memory files stay explicit-save (agents write
+   * those roots concurrently; a silent autosave would race an mtime conflict).
+   */
+  autoSave?: boolean;
 };
 
 export function MdEditor({
@@ -87,6 +98,7 @@ export function MdEditor({
   onSave,
   onCancel,
   onChange,
+  autoSave = false,
 }: MdEditorProps) {
   const [raw, setRaw] = useState(value);
   const [baseline, setBaseline] = useState(value);
@@ -161,6 +173,21 @@ export function MdEditor({
       setSaving(false);
     }
   }, [onSave, readOnly, saving]);
+
+  // Autosave: persist a short while after typing stops (idempotent surfaces
+  // only — see the `autoSave` prop doc). A ref keeps the effect from
+  // re-subscribing on every `save` identity change; guarding on `saving` means
+  // we never stack a second request on an in-flight one, and because `saving`
+  // is a dependency the effect re-runs when a save settles and reschedules if
+  // the doc advanced meanwhile. Empty docs are skipped — the save handlers
+  // reject them, so autosaving one would just flash an error.
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    if (!autoSave || readOnly || saving || !dirty || !raw.trim()) return;
+    const timer = window.setTimeout(() => void saveRef.current(), AUTOSAVE_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [autoSave, readOnly, saving, dirty, raw]);
 
   const addTagsFromDraft = useCallback(() => {
     const additions = normalizeMdTags(tagDraft);
@@ -325,8 +352,13 @@ export function MdEditor({
               <Icon name="ph:check" width={11} aria-hidden />
               Saved
             </span>
+          ) : saving ? (
+            <span className="inline-flex items-center gap-1">
+              <Icon name="ph:floppy-disk-bold" width={11} aria-hidden />
+              Saving…
+            </span>
           ) : dirty && !readOnly ? (
-            <span>Unsaved changes</span>
+            <span>{autoSave ? "Autosaving…" : "Unsaved changes"}</span>
           ) : null}
         </div>
         <span className="shrink-0 font-mono">{formatMdDocStats(stats)}</span>
