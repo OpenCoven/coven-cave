@@ -5,7 +5,12 @@ import { constants as fsConstants } from "node:fs";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { stripAnsi } from "@/lib/ansi";
-import { covenBin, covenSpawnEnv, refreshCovenSpawnEnv } from "@/lib/coven-bin";
+import {
+  covenBin,
+  covenSpawnEnv,
+  pickWindowsLauncher,
+  refreshCovenSpawnEnv,
+} from "@/lib/coven-bin";
 import { callDaemon } from "@/lib/coven-daemon";
 
 export const dynamic = "force-dynamic";
@@ -98,7 +103,13 @@ async function commandPath(
         env,
         timeout: 1500,
       });
-      return { path: stdout.trim().split(/\r?\n/)[0] || null };
+      const lines = stdout.split(/\r?\n/);
+      return {
+        path:
+          process.platform === "win32"
+            ? pickWindowsLauncher(lines)
+            : lines.map((l) => l.trim()).find(Boolean) ?? null,
+      };
     } catch (err) {
       const code = (err as { code?: unknown }).code;
       if (code === 1) return { path: null };

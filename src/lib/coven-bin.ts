@@ -99,6 +99,22 @@ function candidateBinNames(): string[] {
   return process.platform === "win32" ? ["coven.cmd", "coven.exe", "coven"] : ["coven"];
 }
 
+/**
+ * Pick the spawnable launcher from `where` output. npm's global installs
+ * write three launchers per package (an extensionless POSIX script, a .cmd
+ * shim, and a .ps1), and `where` lists the extensionless one first — but a
+ * bare Windows spawn() can only execute .exe/.com, and a .cmd needs
+ * covenLaunchCommandForBinary() to convert it into a direct `node <script>`
+ * spawn. So prefer .exe/.com, then .cmd/.bat, and only then the first line
+ * (callers that merely display the path still get something).
+ */
+export function pickWindowsLauncher(lines: string[]): string | null {
+  const candidates = lines.map((line) => line.trim()).filter(Boolean);
+  const byExt = (...exts: string[]) =>
+    candidates.find((line) => exts.some((ext) => line.toLowerCase().endsWith(ext)));
+  return byExt(".exe", ".com") ?? byExt(".cmd", ".bat") ?? candidates[0] ?? null;
+}
+
 function loginShellPath(): string | null {
   // Read SHELL through a deliberately opaque accessor so Turbopack's static
   // analysis can't union the value with a string literal like "/bin/zsh"
@@ -207,6 +223,29 @@ export function covenBin(): string {
       } catch {
         /* not here; keep looking */
       }
+    }
+  }
+
+  // Nothing in the well-known dirs. On Windows, resolve through PATH with
+  // `where` before falling back to the literal name: npm installs the CLI
+  // as coven.cmd (plus an unspawnable extensionless POSIX script), and a
+  // bare spawn("coven") only resolves .exe/.com — so the literal fallback
+  // ENOENTs even when the CLI is plainly on PATH (scoop/winget node,
+  // cave-observed on Windows 11).
+  if (process.platform === "win32") {
+    try {
+      const out = execFileSync("where", ["coven"], {
+        encoding: "utf-8",
+        timeout: 1500,
+        env: covenSpawnEnv(),
+      });
+      const picked = pickWindowsLauncher(out.split(/\r?\n/));
+      if (picked) {
+        cachedBin = picked;
+        return cachedBin;
+      }
+    } catch {
+      /* not on PATH either — fall through to the literal fallback */
     }
   }
 

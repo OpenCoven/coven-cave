@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { covenLaunchCommandForBinary, windowsPathFromRegQuery } from "./coven-bin.ts";
+import { covenLaunchCommandForBinary, pickWindowsLauncher, windowsPathFromRegQuery } from "./coven-bin.ts";
 
 const source = await readFile(new URL("./coven-bin.ts", import.meta.url), "utf8");
 
@@ -138,6 +138,41 @@ assert.equal(
   ),
   null,
   "missing Path value yields null so the other hive still contributes",
+);
+
+// `where` lists npm's extensionless POSIX launcher before the .cmd shim, and
+// a bare Windows spawn can only execute .exe/.com — so the picker must
+// prefer real launchers or spawn("coven") ENOENTs with the CLI on PATH.
+assert.equal(
+  pickWindowsLauncher(["C:\\node\\coven", "C:\\node\\coven.cmd", "C:\\shims\\coven.exe"]),
+  "C:\\shims\\coven.exe",
+  "a real .exe wins over shims and POSIX launchers",
+);
+
+assert.equal(
+  pickWindowsLauncher(["C:\\node\\coven", "C:\\node\\coven.cmd"]),
+  "C:\\node\\coven.cmd",
+  "npm's .cmd shim wins over the unspawnable extensionless launcher",
+);
+
+assert.equal(
+  pickWindowsLauncher(["C:\\node\\coven.CMD"]),
+  "C:\\node\\coven.CMD",
+  "extension matching is case-insensitive",
+);
+
+assert.equal(
+  pickWindowsLauncher(["", "  ", "C:\\node\\coven", ""]),
+  "C:\\node\\coven",
+  "falls back to the first non-blank entry when nothing spawnable exists",
+);
+
+assert.equal(pickWindowsLauncher([]), null, "empty `where` output yields null");
+
+assert.match(
+  source,
+  /execFileSync\("where", \["coven"\][\s\S]*pickWindowsLauncher/,
+  "covenBin falls back to `where` + launcher picking before the literal name on Windows",
 );
 
 console.log("coven-bin.test.ts: ok");
