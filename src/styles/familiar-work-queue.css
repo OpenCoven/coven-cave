@@ -291,12 +291,6 @@
   font-size: 13px;
 }
 
-.fwq-composer-input:focus-visible {
-  outline: var(--ring-width, 2px) solid var(--ring-focus);
-  outline-offset: 1px;
-  border-color: transparent;
-}
-
 .fwq-composer-actions {
   display: flex;
   justify-content: flex-end;

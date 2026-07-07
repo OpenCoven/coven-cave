@@ -130,11 +130,11 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
   );
 
   const runAction = useCallback(
-    async (item: WorkQueueItem, action: "claim" | "close" | "comment", comment?: string) => {
+    async (item: WorkQueueItem, action: "claim" | "close" | "comment", comment?: string): Promise<boolean> => {
       const id = item.bead?.id;
-      if (!id) return;
+      if (!id) return false;
       const text = comment?.trim();
-      if (action === "comment" && !text) return; // never post an empty handoff note
+      if (action === "comment" && !text) return false; // never post an empty handoff note
       setBusyId(item.key);
       try {
         const body: Record<string, string> = { action, id };
@@ -155,8 +155,10 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
               : `Comment added to ${id}.`,
         );
         await load({ quiet: true });
+        return true;
       } catch (err) {
         announce(err instanceof Error ? err.message : `Could not ${action} ${id}`, "assertive");
+        return false;
       } finally {
         setBusyId(null);
       }
@@ -290,7 +292,7 @@ export function FamiliarWorkQueueView({ familiars = [], onOpenUrl }: Props) {
                     onOpenUrl={onOpenUrl}
                     onClaim={() => void runAction(item, "claim")}
                     onClose={() => void runAction(item, "close")}
-                    onComment={(text) => void runAction(item, "comment", text)}
+                    onComment={(text) => runAction(item, "comment", text)}
                   />
                 ))}
               </ul>
@@ -317,7 +319,7 @@ function WorkQueueCard({
   onOpenUrl?: (url: string) => void;
   onClaim: () => void;
   onClose: () => void;
-  onComment: (text: string) => void;
+  onComment: (text: string) => Promise<boolean>;
 }) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [draft, setDraft] = useState("");
@@ -329,10 +331,11 @@ function WorkQueueCard({
   // never offers a bare close without proof the work landed (cave-hlv.2).
   const evidence = closeEvidence(item);
 
-  const submitComment = () => {
+  const submitComment = async () => {
     const text = draft.trim();
     if (!text) return;
-    onComment(text);
+    const ok = await onComment(text);
+    if (!ok) return;
     setDraft("");
     setComposerOpen(false);
   };
@@ -420,7 +423,7 @@ function WorkQueueCard({
           }}
         >
           <textarea
-            className="fwq-composer-input"
+            className="fwq-composer-input focus-ring"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder={`Handoff note for ${beadId}…`}
