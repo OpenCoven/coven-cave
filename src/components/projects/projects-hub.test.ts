@@ -67,7 +67,7 @@ assert.match(detail, /aria-pressed=\{!project\.color\}/, "the auto swatch report
 assert.match(detail, /import \{ OverflowMenu \} from "@\/components\/ui\/overflow-menu"/, "secondary actions live in the shared OverflowMenu");
 assert.match(detail, /OverflowMenu ariaLabel=\{`More actions for \$\{project\.name\}`\}/, "the overflow trigger is named per project");
 for (const item of ["Rename", "Change folder…", "Copy path", "Browse files", "Delete project…"]) {
-  assert.match(detail, new RegExp(item.replace("…", "…")), `overflow offers ${item}`);
+  assert.match(detail, new RegExp(item), `overflow offers ${item}`);
 }
 // cave-z44: "Browse files" drills into the project's tree via the code rail by
 // dispatching a cross-surface event workspace.tsx bridges to chat mode. It
