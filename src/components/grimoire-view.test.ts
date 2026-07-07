@@ -68,4 +68,20 @@ assert.match(view, /replaceTab\(key, \{ kind: "knowledge", id: saved\.id \}\)/, 
 assert.match(view, /const evictIndex = tabs\.findIndex/, "over-cap opens evict the oldest non-active tab");
 assert.match(view, /fromHash/, "a #grimoire: deep link merges into (and activates within) the restored tab set");
 
+// ── cave-xr0 slice 2: outgoing [[wiki-link]] chips ──────────────────────────
+// The open doc's resolved wiki-links render as a chip row below the editor,
+// resolved against the loaded doc lists (no server index); resolved chips
+// navigate via openDoc, unresolved ones render dashed + inert.
+assert.match(view, /from "@\/lib\/wiki-link-resolve"/, "grimoire-view uses the wiki-link resolver engine");
+assert.match(view, /function GrimoireDocLinks\(/, "there is a doc-links chip component");
+assert.match(view, /resolveOutgoingLinks\(markdown, docIndex\)/, "chips come from resolving the open doc's markdown against the index");
+assert.match(
+  view,
+  /docIndex = useMemo<WikiDocIndex>\([\s\S]{0,220}memory:[\s\S]{0,40}m\.fullPath/,
+  "the doc index maps memory entries by fullPath (the same path openDoc navigates to)",
+);
+assert.match(view, /onClick=\{\(\) => onOpen\(ref\)\}/, "a resolved chip navigates to its doc");
+assert.match(view, /title="No matching Grimoire doc"[\s\S]{0,160}border-dashed/, "an unresolved link renders dashed + inert with a hint");
+assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,160}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
+
 console.log("grimoire-view.test: ok");

@@ -29,6 +29,8 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMemoryFile } from "@/lib/use-memory-file";
+import { resolveOutgoingLinks, type WikiDocIndex } from "@/lib/wiki-link-resolve";
 
 // ── Navigator model ──────────────────────────────────────────────────────────
 
@@ -354,6 +356,103 @@ function NavRow({
   );
 }
 
+// ── Wiki-link chips ──────────────────────────────────────────────────────────
+
+/** The open doc's outgoing [[wiki-links]], resolved against the loaded docs and
+ *  shown as a chip row below the editor. Resolved chips navigate; unresolved
+ *  ones (no matching doc) render dashed + inert. Mounted only for the active
+ *  doc, so exactly one doc's content is read at a time. */
+function GrimoireDocLinks({
+  selection,
+  knowledge,
+  docIndex,
+  onOpen,
+}: {
+  selection: GrimoireSelection;
+  knowledge: KnowledgeEntry[];
+  docIndex: WikiDocIndex;
+  onOpen: (sel: GrimoireSelection) => void;
+}) {
+  // useMemoryFile is a hook, so it's always called; a null path is a no-op.
+  const memoryPath = selection.kind === "memory" ? selection.path : null;
+  const memFile = useMemoryFile(memoryPath, { reveal: true });
+
+  const [journalMd, setJournalMd] = useState<string | null>(null);
+  useEffect(() => {
+    if (selection.kind !== "journal") {
+      setJournalMd(null);
+      return;
+    }
+    let cancelled = false;
+    setJournalMd(null);
+    void (async () => {
+      try {
+        const res = await fetch(`/api/journal?date=${encodeURIComponent(selection.date)}`, { cache: "no-store" });
+        const json = await res.json();
+        if (!cancelled) setJournalMd(json.ok ? (json.entry?.reflection ?? "") : "");
+      } catch {
+        if (!cancelled) setJournalMd("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selection]);
+
+  const markdown =
+    selection.kind === "knowledge"
+      ? knowledge.find((k) => k.id === selection.id)?.body ?? ""
+      : selection.kind === "memory"
+        ? memFile.text ?? ""
+        : selection.kind === "journal"
+          ? journalMd ?? ""
+          : "";
+
+  const links = useMemo(() => {
+    const seen = new Set<string>();
+    const out: ReturnType<typeof resolveOutgoingLinks> = [];
+    for (const link of resolveOutgoingLinks(markdown, docIndex)) {
+      const key = link.target.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(link);
+    }
+    return out;
+  }, [markdown, docIndex]);
+
+  if (links.length === 0) return null;
+
+  return (
+    <div className="grimoire-doc-links flex shrink-0 flex-wrap items-center gap-1.5 border-t border-[var(--border-hairline)] px-3 py-2">
+      <span className="inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-muted)]">
+        <Icon name="ph:link" width={11} aria-hidden />
+        Links
+      </span>
+      {links.map((link, i) => {
+        const { ref, display } = link;
+        return ref ? (
+          <button
+            key={i}
+            type="button"
+            onClick={() => onOpen(ref)}
+            className="focus-ring rounded-full border border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)] transition-colors hover:border-[color-mix(in_oklch,var(--accent-presence)_50%,var(--border-hairline))] hover:text-[var(--text-primary)]"
+          >
+            {display}
+          </button>
+        ) : (
+          <span
+            key={i}
+            title="No matching Grimoire doc"
+            className="rounded-full border border-dashed border-[var(--border-hairline)] px-2 py-0.5 text-[11px] text-[var(--text-muted)]"
+          >
+            {display}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Surface ──────────────────────────────────────────────────────────────────
 
 export function GrimoireView() {
@@ -536,6 +635,16 @@ export function GrimoireView() {
   const loading = knowledge === null || memory === null || journal === null;
   const selectedKey = selection ? selectionKey(selection) : null;
 
+  // Index of every loaded doc, used to resolve a doc's outgoing [[wiki-links]].
+  const docIndex = useMemo<WikiDocIndex>(
+    () => ({
+      knowledge: (knowledge ?? []).map((k) => ({ id: k.id, title: k.title })),
+      memory: (memory ?? []).map((m) => ({ path: m.fullPath })),
+      journal: (journal ?? []).map((j) => ({ date: j.date })),
+    }),
+    [knowledge, memory, journal],
+  );
+
   /** Human tab label for a selection (falls back to ids/paths). */
   const tabTitle = useCallback(
     (sel: GrimoireSelection): string => {
@@ -645,6 +754,15 @@ export function GrimoireView() {
             </div>
           ) : null}
         </div>
+        {selection && selection.kind !== "knowledge-new" ? (
+          <GrimoireDocLinks
+            key={selectedKey ?? ""}
+            selection={selection}
+            knowledge={knowledge ?? []}
+            docIndex={docIndex}
+            onOpen={openDoc}
+          />
+        ) : null}
       </div>
     );
 
