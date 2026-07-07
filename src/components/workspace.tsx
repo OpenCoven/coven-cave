@@ -84,7 +84,6 @@ import { normalizeGitHubTasks, type GitHubTask } from "@/lib/github-tasks";
 import { useResolvedFamiliars } from "@/lib/familiar-resolve";
 import { useShellBanners } from "@/lib/shell-banners";
 import { TopBar } from "@/components/top-bar";
-import { QuickChatOverlay } from "@/components/quick-chat-overlay";
 import { FamiliarMenuBar } from "@/components/familiar-menu-bar";
 import type { PendingChatAction } from "@/lib/pending-chat-action";
 import type { PendingCodeRailOpen } from "@/lib/pending-code-rail-open";
@@ -242,6 +241,10 @@ export function Workspace() {
   const nextRouter = useRouter();
   const routerRef = useRef<ChatRouterHandle | null>(null);
   const shellRef = useRef<ShellHandle | null>(null);
+  // ⌘J quick-chat launcher (cave-xsq.6): a ref so the global keydown effect
+  // (declared above startFamiliarChat) can call it without a TDZ, and without
+  // workspace self-dispatching a chat-nav event. Assigned in an effect below.
+  const quickChatLaunchRef = useRef<() => void>(() => {});
   // Multiselect familiar scope. Empty set = "All familiars". `activeId` is the
   // derived single "primary" — the lone scoped id, or null when 0 or ≥2 are
   // selected — so all the existing single-familiar chrome/per-familiar state
@@ -349,7 +352,6 @@ export function Workspace() {
   const [glyphPickerFor, setGlyphPickerFor] = useState<Familiar | null>(null);
   const [addChooserOpen, setAddChooserOpen] = useState(false);
   const [mobileHandoffOpen, setMobileHandoffOpen] = useState(false);
-  const [quickChatOpen, setQuickChatOpen] = useState(false);
   const [mobileModeEnabled, setMobileModeEnabledState] = useState(readMobileModeEnabled);
   const [mobileModeHost, setMobileModeHost] = useState<string | null>(null);
   const [mobileModeError, setMobileModeError] = useState<string | null>(null);
@@ -1019,10 +1021,14 @@ export function Workspace() {
           setPaletteOpen(true);
           return;
         }
-        // ⌘J (Ctrl+J off-Mac) → toggle the quick-chat dropdown, from anywhere.
+        // ⌘J (Ctrl+J off-Mac) → jump straight into a fresh chat with the active
+        // familiar, from anywhere. cave-xsq.6 retired the parallel quick-chat
+        // overlay in favor of the real (now ChatGPT-clean) chat surface; this
+        // reuses the tested new-chat plumbing (workspace handles it off-chat,
+        // ChatSurface handles it in-chat — see the cave:agents-new-chat wiring).
         if (k === "j") {
           e.preventDefault();
-          setQuickChatOpen((open) => !open);
+          quickChatLaunchRef.current();
           return;
         }
         // ⌘/ (Ctrl+/ off-Mac) → keyboard shortcuts sheet, from anywhere.
@@ -1363,6 +1369,13 @@ export function Workspace() {
     });
     setMode("chat");
   }, []);
+
+  // Keep the ⌘J quick-chat launcher pointed at "new chat with the active
+  // familiar" — startFamiliarChat handles both the off-chat (switch + new
+  // thread) and in-chat (new thread) cases (cave-xsq.6).
+  useEffect(() => {
+    quickChatLaunchRef.current = () => startFamiliarChat(activeId);
+  }, [startFamiliarChat, activeId]);
 
   // Bridge `cave:agents-new-chat` from surfaces that aren't the chat view.
   // ChatSurface owns this event, but it only mounts when mode === "chat", so a
@@ -2229,7 +2242,7 @@ export function Workspace() {
               enrichingTasks={enrichingTasks}
               enrichProgress={enrichProgress}
               onViewSchedules={() => setMode("inbox")}
-              onOpenQuickChat={() => setQuickChatOpen(true)}
+              onOpenQuickChat={() => startFamiliarChat(activeId)}
             />
             <TopBar
               onOpenPalette={() => setPaletteOpen(true)}
@@ -2241,7 +2254,7 @@ export function Workspace() {
               onOpenInbox={() => setMode("inbox")}
               onOpenSettings={() => nextRouter.push("/settings")}
               onOpenMobileHandoff={() => setMobileHandoffOpen(true)}
-              onOpenQuickChat={() => setQuickChatOpen(true)}
+              onOpenQuickChat={() => startFamiliarChat(activeId)}
               inboxItems={inboxItemsWithEphemeral}
               familiars={familiars}
               activeFamiliar={resolvedFamiliars.find((f) => f.id === activeId) ?? null}
@@ -2398,16 +2411,6 @@ export function Workspace() {
         nativeHost={mobileModeHost}
         mobileModeError={mobileModeError}
         onMobileModeChange={setMobileModeEnabled}
-      />
-
-      <QuickChatOverlay
-        open={quickChatOpen}
-        onClose={() => setQuickChatOpen(false)}
-        activeFamiliarId={activeId}
-        onOpenFullSession={(sid, fid) => {
-          setQuickChatOpen(false);
-          openFamiliarSession(sid, fid);
-        }}
       />
 
       {chatDeepLinkPending && (
