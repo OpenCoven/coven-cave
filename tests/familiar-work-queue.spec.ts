@@ -83,8 +83,12 @@ test.describe("familiar work queue (PR control tower)", () => {
     await expect(fwq.getByRole("region", { name: "No open PR" })).toBeVisible();
     await expect(fwq.getByRole("region", { name: "Post-merge cleanup" })).toBeVisible();
 
-    // PR + bead identity surfaces truthfully.
-    await expect(fwq.getByText("#101")).toBeVisible();
+    // PR + bead identity surfaces truthfully. Scope #101 to its lane: a stale PR
+    // also appears in the "Needs attention" strip, so a bare getByText matches
+    // two elements and trips Playwright's strict mode.
+    await expect(
+      fwq.getByRole("region", { name: "Checks failing" }).getByText("#101"),
+    ).toBeVisible();
     await expect(fwq.getByText("cave-aa1", { exact: true })).toBeVisible();
     // Stale PR (40h) is flagged.
     await expect(fwq.getByText("stale", { exact: true }).first()).toBeVisible();
