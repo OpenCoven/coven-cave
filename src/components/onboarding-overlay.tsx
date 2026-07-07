@@ -12,6 +12,7 @@ import {
 import type { IconName } from "@/lib/icon";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useAnnouncer } from "@/components/ui/live-region";
+import { Button } from "@/components/ui/button";
 import { useFamiliarStudio } from "@/lib/familiar-studio-context";
 import { SalemPathfinderEntry } from "@/components/salem/salem-pathfinder-entry";
 import type { SalemPathfinderRequest } from "@/lib/salem/pathfinder-types";
@@ -1562,16 +1563,17 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                               One click creates the folders; nothing outside
                               them is touched.
                             </p>
-                            <button
+                            <Button
+                              variant="primary"
+                              leadingIcon="ph:folder-open-bold"
                               onClick={scaffoldOnly}
                               disabled={picking !== null}
-                              className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                              className="w-fit"
                             >
-                              <Icon name="ph:folder-open-bold" />
                               {picking === "scaffold"
                                 ? "Creating…"
                                 : "Create Coven home"}
-                            </button>
+                            </Button>
                           </div>
                         ) : step.key === "adapters" ? (
                           <StepRuntimes
@@ -1729,21 +1731,21 @@ export function OnboardingOverlay({ open, onDismiss }: Props) {
                               </code>
                             </p>
                             <div className="flex flex-wrap items-center gap-2">
-                              <button
+                              <Button
+                                variant="primary"
+                                leadingIcon="ph:rocket-launch-bold"
                                 onClick={startDaemon}
                                 disabled={
                                   startingDaemon || !status?.steps.covenCli.ok
                                 }
-                                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
                                 title={
                                   !status?.steps.covenCli.ok
                                     ? "Install coven CLI first (step 1)"
                                     : "Start local daemon (coven daemon start)"
                                 }
                               >
-                                <Icon name="ph:rocket-launch-bold" />
                                 {startingDaemon ? "Starting…" : "Start local daemon"}
-                              </button>
+                              </Button>
                               {!status?.steps.covenCli.ok ? (
                                 <span className="text-[11px] text-[var(--text-muted)]">
                                   Needs step 1 first — the daemon ships with the
@@ -2007,22 +2009,18 @@ function StepCovenCli({
         copy the command to run it yourself.
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
+          variant="primary"
+          loading={busy || covenCodeJobRunning}
+          leadingIcon="ph:arrow-down-bold"
           onClick={() => {
             onInstall("coven-cli");
             onInstall("coven-code");
           }}
           disabled={busy || covenCodeJobRunning}
-          aria-busy={busy || covenCodeJobRunning}
-          className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
         >
-          {busy || covenCodeJobRunning ? (
-            <Icon name="ph:circle-notch-bold" className="animate-spin" />
-          ) : (
-            <Icon name="ph:arrow-down-bold" />
-          )}
           {busy || covenCodeJobRunning ? "Installing…" : "Install both tools"}
-        </button>
+        </Button>
         <span className="text-[11px] text-[var(--text-muted)]">
           or run it yourself:
         </span>
@@ -2287,21 +2285,19 @@ function StepRuntimes({
                 <div className="mt-2 flex flex-col gap-2">
                   {oneClick ? (
                     <>
-                      <button
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        loading={busy}
+                        leadingIcon="ph:arrow-down-bold"
                         onClick={() => onInstall(oneClick.target)}
                         disabled={busy || (NPM_INSTALL_TARGETS.includes(oneClick.target) && npmJobRunning)}
-                        aria-busy={busy}
-                        className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-[var(--accent-presence)] px-3 py-1.5 text-[12px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
+                        className="w-fit"
                       >
-                        {busy ? (
-                          <Icon name="ph:circle-notch-bold" className="animate-spin" />
-                        ) : (
-                          <Icon name="ph:arrow-down-bold" />
-                        )}
                         {busy && job
                           ? `Installing… ${formatElapsed(job.elapsedMs)}`
                           : `Install ${adapter.label}`}
-                      </button>
+                      </Button>
                       <CommandRow
                         command={
                           platform === "windows" && oneClick.windowsCommand
@@ -2912,7 +2908,9 @@ function StepFamiliar(props: {
 
           <div className="flex flex-wrap items-center gap-3">
             {selectedHarnessId ? (
-              <button
+              <Button
+                variant="primary"
+                leadingIcon="ph:terminal-window"
                 onClick={props.onCreateLocal}
                 disabled={
                   !daemonReady ||
@@ -2920,11 +2918,9 @@ function StepFamiliar(props: {
                   !confirmCreateNewFamiliar ||
                   (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
                 }
-                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
               >
-                <Icon name="ph:terminal-window" />
                 {picking === "local" ? "Creating…" : "Create new Coven familiar"}
-              </button>
+              </Button>
             ) : null}
             {!selectedHarnessId && selectedAgentId ? (
               <button
@@ -2945,7 +2941,9 @@ function StepFamiliar(props: {
               </button>
             ) : null}
             {selectedAgentId ? (
-              <button
+              <Button
+                variant="primary"
+                leadingIcon="ph:git-fork"
                 onClick={props.onConnectAgent}
                 disabled={
                   !daemonReady ||
@@ -2953,15 +2951,13 @@ function StepFamiliar(props: {
                   familiarName.trim().length === 0 ||
                   (familiarGlyph.trim() !== "" && !familiarGlyph.trim().startsWith("ph:"))
                 }
-                className="focus-ring inline-flex items-center gap-2 rounded-md bg-[var(--accent-presence)] px-4 py-2 text-[13px] font-medium text-[var(--accent-presence-foreground)] hover:bg-[color-mix(in_oklch,var(--accent-presence)_85%,#000)] disabled:opacity-50"
               >
-                <Icon name="ph:git-fork" />
                 {picking === "familiar"
                   ? "Connecting…"
                   : selectedOpenClawAgent
                     ? `Connect ${selectedOpenClawAgent.displayName}`
                     : "Connect OpenClaw agent"}
-              </button>
+              </Button>
             ) : null}
           </div>
         </>
