@@ -7,6 +7,23 @@ breaking config changes; patch releases stay additive.
 
 ## [Unreleased]
 
+## [0.0.147] - 2026-07-07
+
+> ⚡ **Faster and steadier** — memory inventory gets a 130x speedup, the markdown editor picks up debounced autosave for knowledge & journal docs, and the Work Queue surfaces a "Needs attention" strip for stale and unlinked PRs. Plus a round of session-changes and automations button refactors onto shared primitives.
+
+Feature release on top of v0.0.146.
+
+### Features
+- **Work Queue: "Needs attention" strip** (#2568, cave-x1j). Surfaces stale and unlinked PRs at a glance.
+- **Markdown editor: debounced autosave** (#2574, cave-b2v). Knowledge and journal docs now save automatically as you type.
+
+### Performance
+- **Memory inventory: 130x faster** (#2570, cave-od4). Head reads, pooled I/O, and an mtime cache slash inventory time.
+
+### Refactors
+- **Session changes: shared button primitives** (#2571, #2572, cave-4op). Commit/PR footer buttons standardize on the shared `Button`, and icon-only buttons normalize to the borderless `IconButton`.
+- **Automations: shared row actions** (#2573, cave-4op). The remaining Schedules row actions route through the shared `RowActionButton`.
+
 ## [0.0.146] - 2026-07-07
 
 > 📝 **Write where you think** — a new OpenKnowledge-style markdown editor lands across memory, knowledge, and journal, and the marketplace folds its Skills filter rail and leaderboard into one panel. Plus a Gantt scroll fix, cleaner GitHub comments, and a calendar controls refactor onto shared primitives.
