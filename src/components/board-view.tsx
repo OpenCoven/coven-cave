@@ -814,14 +814,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
             <Icon name="ph:warning-circle" width={13} className="shrink-0" aria-hidden />
             <span className="min-w-0 truncate">{error}</span>
           </span>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--color-danger)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            <Icon name="ph:arrow-clockwise" width={12} aria-hidden />
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-clockwise" onClick={() => void load()}>
             Retry
-          </button>
+          </Button>
         </div>
       )}
       {chatLinkError && (
@@ -844,14 +839,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               Cleared {clearedBanner.snapshot.length} done task{clearedBanner.snapshot.length === 1 ? "" : "s"}
             </span>
           </span>
-          <button
-            type="button"
-            onClick={() => void handleUndoClear()}
-            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--text-muted)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            <Icon name="ph:arrow-counter-clockwise" width={12} aria-hidden />
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-counter-clockwise" onClick={() => void handleUndoClear()}>
             Undo
-          </button>
+          </Button>
         </div>
       )}
       {rescheduleUndo && (
@@ -865,14 +855,9 @@ export function BoardView({ familiars, sessions, activeFamiliarId, scopeFamiliar
               Rescheduled “{rescheduleUndo.title}”
             </span>
           </span>
-          <button
-            type="button"
-            onClick={handleUndoReschedule}
-            className="focus-ring inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[color-mix(in_oklch,var(--text-muted)_38%,transparent)] bg-[var(--bg-base)]/35 px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--bg-raised)]"
-          >
-            <Icon name="ph:arrow-counter-clockwise" width={12} aria-hidden />
+          <Button variant="secondary" size="xs" leadingIcon="ph:arrow-counter-clockwise" onClick={handleUndoReschedule}>
             Undo
-          </button>
+          </Button>
         </div>
       )}
       {actionError && (
