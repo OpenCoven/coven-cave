@@ -8,7 +8,7 @@ const globals = readFileSync(new URL("../app/globals.css", import.meta.url), "ut
 const menuBarSwitcherRule = globals.match(/\.menu-bar__group--chat \.familiar-switcher__trigger\s*\{([\s\S]*?)\}/)?.[1] ?? "";
 
 // The bar provides desktop top chrome: chat with familiars, global
-// context-aware search, and view tasks/inbox. It is a labelled landmark so
+// context-aware search, and view tasks/schedules. It is a labelled landmark so
 // screen readers can find it.
 assert.match(
   source,
@@ -95,8 +95,8 @@ assert.doesNotMatch(
   "desktop menu-bar familiar selector must not use content-width sizing after the label/caret were removed",
 );
 
-// Right group — tasks. A Tasks button (board) and an Inbox button, each with a
-// live count badge that is hidden at zero.
+// Right group — tasks. A Tasks button (board) and a Schedules button, each
+// with a live count badge that is hidden at zero.
 assert.match(
   source,
   /className="menu-bar__task focus-ring"[\s\S]*onClick=\{onViewTasks\}/,
@@ -107,15 +107,34 @@ assert.match(
   /taskCount > 0 \? <span className="menu-bar__badge">\{fmtBadge\(taskCount\)\}<\/span> : null/,
   "the Tasks badge shows the open-task count and hides at zero",
 );
+// The old "Inbox" button was dishonest: workspace mode "inbox" IS the
+// Schedules surface (calendar + crons) and no dedicated inbox surface exists
+// (inbox items live in the notification bell). The button now says what it
+// does: Schedules, calendar icon, schedule needs-you badge.
 assert.match(
   source,
-  /onClick=\{onViewInbox\}/,
-  "the Inbox button jumps to the inbox",
+  /onClick=\{onViewSchedules\}/,
+  "the Schedules button jumps to the Schedules surface",
 );
 assert.match(
   source,
-  /inboxCount > 0 \? \(\s*<span className="menu-bar__badge menu-bar__badge--alert">/,
-  "the Inbox badge shows the attention count and hides at zero",
+  /aria-label=\{scheduleNeedsCount > 0 \? `View schedules — \$\{scheduleNeedsCount\} need attention` : "View schedules"\}/,
+  "the Schedules button is announced as schedules, not inbox",
+);
+assert.match(
+  source,
+  /<Icon name="ph:calendar-check"[\s\S]{0,120}<span>Schedules<\/span>/,
+  "the Schedules button matches the sidebar's Schedules label + icon",
+);
+assert.doesNotMatch(
+  source,
+  /"View inbox"|<span>Inbox<\/span>|ph:tray/,
+  "no top-bar control claims to be an Inbox — there is no inbox surface to land on",
+);
+assert.match(
+  source,
+  /scheduleNeedsCount > 0 \? \(\s*<span className="menu-bar__badge menu-bar__badge--alert">/,
+  "the Schedules badge shows the needs-you count and hides at zero",
 );
 
 // Wiring in the workspace: the bar mounts in the Shell topBar slot with the
@@ -127,13 +146,13 @@ assert.match(
 );
 assert.match(
   workspace,
-  /onViewInbox=\{\(\) => setMode\("inbox"\)\}/,
-  "View inbox switches to the inbox surface",
+  /onViewSchedules=\{\(\) => setMode\("inbox"\)\}/,
+  "View schedules switches to the Schedules surface (workspace mode id 'inbox')",
 );
 assert.match(
   workspace,
-  /taskCount=\{boardTaskCount\}[\s\S]*inboxCount=\{inboxBadgeCount\}/,
-  "the bar is fed the live board task count and inbox badge count",
+  /taskCount=\{boardTaskCount\}[\s\S]*scheduleNeedsCount=\{scheduleNeedsCount\}/,
+  "the bar is fed the live board task count and the schedule needs-you count (same source as the sidebar Schedules badge)",
 );
 assert.match(
   workspace,
