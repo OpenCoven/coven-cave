@@ -10,6 +10,7 @@ const {
   resolveDaemonSocketPath,
   daemonTargetForConfig,
   callDaemonTarget,
+  isTransientDaemonFailure,
   normalizeHubUrl,
 } = await import("./coven-daemon.ts");
 
@@ -272,6 +273,70 @@ const {
   });
   assert.equal(target.mode, "unconfigured-hub");
   assert.equal(target.error, "server hub URL is not configured");
+}
+
+// ── Transient-failure classification (cave-4po) ──
+{
+  assert.equal(isTransientDaemonFailure({ ok: false, status: 0, data: null, error: "daemon timeout" }), true, "timeout is transient");
+  assert.equal(isTransientDaemonFailure({ ok: false, status: 0, data: null, error: "daemon offline" }), true, "offline (mid-restart) is transient");
+  assert.equal(isTransientDaemonFailure({ ok: true, status: 200, data: null }), false, "success is not transient");
+  assert.equal(isTransientDaemonFailure({ ok: false, status: 500, data: null }), false, "a real daemon HTTP error is not transient");
+  assert.equal(isTransientDaemonFailure({ ok: false, status: 0, data: null, error: "socket exists but not readable" }), false, "permission errors are not transient");
+}
+
+// ── retryTransient: one stalled GET recovers on the second attempt ──
+{
+  let hits = 0;
+  const server = createServer((req, res) => {
+    hits += 1;
+    const reply = () => {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ ok: true }));
+    };
+    if (hits === 1) setTimeout(reply, 1000); // stall the first attempt past its timeout
+    else reply();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  const target = { mode: "hub", label: "Server hub", url: `http://127.0.0.1:${address.port}` };
+  try {
+    const flaky = await callDaemonTarget(target, { path: "/api/v1/familiars", timeoutMs: 300, retryTransient: true });
+    assert.equal(flaky.ok, true, "a transient stall recovers via the single retry");
+    assert.equal(hits, 2, "exactly one retry fired");
+
+    hits = 0; // next request pair: without the flag, no retry
+    const plain = await callDaemonTarget(target, { path: "/api/v1/familiars", timeoutMs: 300 });
+    assert.equal(plain.ok, false, "without retryTransient the stall still fails");
+    assert.equal(plain.error, "daemon timeout");
+    assert.equal(hits, 1, "no retry without the opt-in");
+
+    hits = 0; // POSTs never retry even when asked — non-idempotent
+    const post = await callDaemonTarget(target, { method: "POST", path: "/api/v1/familiars", body: {}, timeoutMs: 300, retryTransient: true });
+    assert.equal(post.ok, false, "POST does not retry");
+    assert.equal(hits, 1, "non-idempotent methods fire exactly once");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+// ── retryTransient does not mask real daemon errors ──
+{
+  const server = createServer((req, res) => {
+    res.statusCode = 500;
+    res.end(JSON.stringify({ error: "boom" }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  try {
+    const res = await callDaemonTarget(
+      { mode: "hub", label: "Server hub", url: `http://127.0.0.1:${address.port}` },
+      { path: "/api/v1/familiars", timeoutMs: 300, retryTransient: true },
+    );
+    assert.equal(res.ok, false, "HTTP 500 still fails");
+    assert.equal(res.status, 500, "real daemon status codes pass through unretried");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 console.log("coven-daemon.test.ts: ok");

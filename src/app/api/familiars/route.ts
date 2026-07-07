@@ -32,6 +32,9 @@ export async function GET() {
   const [res, config] = await Promise.all([
     callDaemon<(DaemonFamiliar & { emoji?: string; icon?: string })[]>({
       path: "/api/v1/familiars",
+      // One transient daemon flake (stalled status probe / mid-restart) must
+      // not 503 every surface keyed on the roster — retry once (cave-4po).
+      retryTransient: true,
     }),
     loadConfig(),
   ]);

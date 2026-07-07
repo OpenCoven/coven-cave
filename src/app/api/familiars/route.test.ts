@@ -4,6 +4,14 @@ import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
 
+// One transient daemon flake (stalled probe / mid-restart) must not 503 the
+// roster — the GET opts into the single transient retry (cave-4po).
+assert.match(
+  source,
+  /retryTransient: true/,
+  "Familiars GET should retry once on a transient daemon failure",
+);
+
 assert.match(
   source,
   /const configEntry = config\.familiars\[f\.id\] \?\? \{\}/,

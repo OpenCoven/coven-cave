@@ -151,6 +151,11 @@ export type DaemonRequest = {
   path: string;
   body?: unknown;
   timeoutMs?: number;
+  /** Retry once (short backoff, capped timeout) when the failure is transient
+   *  — a timed-out probe or a daemon mid-restart. Only honored for GETs:
+   *  non-idempotent methods must never fire twice. Off by default so no
+   *  existing call site changes behavior. */
+  retryTransient?: boolean;
 };
 
 export type DaemonResponse<T = unknown> = {
@@ -165,12 +170,42 @@ export async function callDaemon<T = unknown>({
   path: reqPath,
   body,
   timeoutMs = 4000,
+  retryTransient = false,
 }: DaemonRequest): Promise<DaemonResponse<T>> {
   const target = await loadDaemonTarget();
-  return callDaemonTarget<T>(target, { method, path: reqPath, body, timeoutMs });
+  return callDaemonTarget<T>(target, { method, path: reqPath, body, timeoutMs, retryTransient });
 }
 
+/** True when a failed daemon response looks transient — the socket call never
+ *  produced an HTTP status (timeout, or the offline shapes a daemon restart
+ *  passes through). A real daemon HTTP error (4xx/5xx) is NOT transient. */
+export function isTransientDaemonFailure(res: DaemonResponse<unknown>): boolean {
+  return !res.ok && res.status === 0 && (res.error === "daemon timeout" || res.error === "daemon offline");
+}
+
+/** Cap for the second attempt: a healthy daemon answers in milliseconds, so
+ *  the retry never needs the full first-attempt budget. */
+const RETRY_TIMEOUT_CAP_MS = 2000;
+const RETRY_BACKOFF_MS = 200;
+
 export async function callDaemonTarget<T = unknown>(
+  target: DaemonTarget,
+  request: DaemonRequest,
+): Promise<DaemonResponse<T>> {
+  const { method = "GET", timeoutMs = 4000, retryTransient = false } = request;
+  const first = await callDaemonTargetOnce<T>(target, request);
+  if (!retryTransient || method !== "GET" || !isTransientDaemonFailure(first)) return first;
+  // One transient flake (a stalled status probe, a daemon mid-restart) should
+  // not surface as a 503 to every panel keyed on this route. Give the daemon a
+  // beat, then re-ask once with a capped budget.
+  await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
+  return callDaemonTargetOnce<T>(target, {
+    ...request,
+    timeoutMs: Math.min(timeoutMs, RETRY_TIMEOUT_CAP_MS),
+  });
+}
+
+async function callDaemonTargetOnce<T = unknown>(
   target: DaemonTarget,
   {
     method = "GET",
