@@ -615,9 +615,37 @@ export function SkillBrowser({
 
   return (
     <div className="skill-browser" role="group" aria-label="Skill browser">
-      {/* ── Filter rail — every filter panel lives here, grouped under a
-             labeled section, so the list column is just the leaderboard. ── */}
-      <nav className="skill-browser__rail" aria-label="Skill filters">
+      {/* ── Merged panel — leaderboard header, then the filter strip, then
+             the ranked list. One panel owns discovery end-to-end; the detail
+             pane sits beside it. ── */}
+      <div className="skill-browser__list">
+        <div className="skill-browser__leaderboard">
+          <div>
+            <p className="skill-browser__leaderboard-kicker">Skills Leaderboard</p>
+            <p className="skill-browser__leaderboard-title">{formatCount(skills.reduce((sum, skill) => sum + (skill.installsAllTime ?? 0), 0))} installs tracked</p>
+          </div>
+          <div className="skill-browser__ecosystem">
+            <div className="skill-browser__ecosystem-command">
+              {/* The command tracks the selection — say so, or a generic
+                  "Try it now" silently changes meaning three columns over. */}
+              <span>{selected ? `Install ${selected.name}` : "Try it now"}</span>
+              <code title={ecosystemCommand}>{ecosystemCommand}</code>
+            </div>
+            <div className="skill-browser__agent-strip" aria-label="Available for these agents">
+              {FEATURED_AGENT_LABELS.map((name) => (
+                <span key={name}>{name}</span>
+              ))}
+            </div>
+            <nav className="skill-browser__directory-links" aria-label="Skills directory links">
+              {SKILLS_DIRECTORY_LINKS.map((link) => (
+                <a key={link.href} href={link.href} target="_blank" rel="noreferrer">
+                  {link.label}
+                </a>
+              ))}
+            </nav>
+          </div>
+        </div>
+        <nav className="skill-browser__rail" aria-label="Skill filters">
         <div className="skill-browser__rail-group" role="group" aria-label="Skill categories">
           <p className="skill-browser__rail-label">Categories</p>
           {RAIL.map((cat) => {
@@ -722,36 +750,7 @@ export function SkillBrowser({
             </div>
           </div>
         ) : null}
-      </nav>
-
-      {/* ── Card list ────────────────────────────────────────────────── */}
-      <div className="skill-browser__list">
-        <div className="skill-browser__leaderboard">
-          <div>
-            <p className="skill-browser__leaderboard-kicker">Skills Leaderboard</p>
-            <p className="skill-browser__leaderboard-title">{formatCount(skills.reduce((sum, skill) => sum + (skill.installsAllTime ?? 0), 0))} installs tracked</p>
-          </div>
-          <div className="skill-browser__ecosystem">
-            <div className="skill-browser__ecosystem-command">
-              {/* The command tracks the selection — say so, or a generic
-                  "Try it now" silently changes meaning three columns over. */}
-              <span>{selected ? `Install ${selected.name}` : "Try it now"}</span>
-              <code title={ecosystemCommand}>{ecosystemCommand}</code>
-            </div>
-            <div className="skill-browser__agent-strip" aria-label="Available for these agents">
-              {FEATURED_AGENT_LABELS.map((name) => (
-                <span key={name}>{name}</span>
-              ))}
-            </div>
-            <nav className="skill-browser__directory-links" aria-label="Skills directory links">
-              {SKILLS_DIRECTORY_LINKS.map((link) => (
-                <a key={link.href} href={link.href} target="_blank" rel="noreferrer">
-                  {link.label}
-                </a>
-              ))}
-            </nav>
-          </div>
-        </div>
+        </nav>
         {!loaded ? (
           <div className="skill-browser__note" role="status">
             Loading skills…
