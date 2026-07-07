@@ -3958,8 +3958,18 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const outgoingText = buildQuotedPrompt(replyTarget, text);
     setReplyTarget(null);
     setInput("");
+    // Clear the persisted draft synchronously. The debounced writer (250ms) is
+    // cancelled if ChatView unmounts right after a send (navigating to another
+    // surface), which would leave the pre-send text in storage to reappear as an
+    // unsent draft on return.
+    writeComposerDraft("");
     setAttachments([]);
     setMentionedFiles([]);
+    // The enhance "Prompt improved / Revert" strip belongs to the draft just
+    // sent — reset it so it doesn't linger over the now-empty composer and let
+    // Revert repopulate the composer with the message the user already sent.
+    setEnhanceStatus("idle");
+    setEnhanceOriginal(null);
     // Branching: consume a pending branch parent set by editTurnInComposer.
     // Read-and-clear atomically so it only applies to THIS send.
     const branchParent = pendingBranchParent;
@@ -4359,6 +4369,13 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         }
         return;
       }
+      // Esc dismisses the picker (its footer advertises "esc cancel"); without
+      // this, Esc fell through to the busy branch and cancelled a live stream.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashDismissed(true);
+        return;
+      }
     }
     if (skillMenuActive && skillOptions) {
       const opts = skillOptions;
@@ -4384,6 +4401,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         if (s) invokeSkillOption(s);
         return;
       }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashDismissed(true);
+        return;
+      }
     }
     if (promptMenuActive && promptOptions) {
       const opts = promptOptions;
@@ -4407,6 +4429,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         e.preventDefault();
         const p = opts[slashIdx];
         if (p) insertPrompt(p);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashDismissed(true);
         return;
       }
     }

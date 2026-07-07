@@ -1011,7 +1011,7 @@ assert.match(
 );
 assert.match(
   mentionSource,
-  /setInput\(""\);\s*\n\s*setAttachments\(\[\]\);\s*\n\s*setMentionedFiles\(\[\]\);/,
+  /setInput\(""\);[\s\S]{0,400}?setAttachments\(\[\]\);\s*\n\s*setMentionedFiles\(\[\]\);/,
   "Sending must clear staged mentions with the composer",
 );
 
@@ -1120,3 +1120,19 @@ assert.match(source, /ToolProjectRootContext/, "edit card resolves project root 
 assert.match(source, /"\/api\/changes"/, "Undo posts to the changes revert API");
 assert.match(source, /cave:changes-refresh/, "Undo notifies the changes panel to refresh");
 assert.match(globalsSrc, /\.cave-edit-card__undo/, "Undo button styling exists");
+
+// cave-zvr: composer send hygiene + picker Escape.
+// (3) send() clears the persisted draft synchronously — the 250ms debounced
+//     writer is cancelled if ChatView unmounts right after send, else the
+//     pre-send text reappears as a draft on return.
+assert.match(source, /setInput\(""\);\s*\n\s*\/\/[\s\S]*?writeComposerDraft\(""\);/, "send clears the persisted composer draft synchronously");
+// (2) send() resets the enhance strip so it doesn't linger over an empty
+//     composer and let Revert repopulate the already-sent message.
+assert.match(source, /writeComposerDraft\(""\);[\s\S]{0,400}?setEnhanceStatus\("idle"\);\s*\n\s*setEnhanceOriginal\(null\);/, "send resets the enhance (Prompt improved / Revert) state");
+// (1) the /model, /skill and /prompt inline pickers each dismiss on Escape
+//     (their footers advertise "esc cancel"); previously Esc fell through and
+//     cancelled a live stream. Together with the slash-menu branch that's 4.
+{
+  const escDismiss = source.match(/if \(e\.key === "Escape"\) \{\s*\n\s*e\.preventDefault\(\);\s*\n\s*setSlashDismissed\(true\);\s*\n\s*return;\s*\n\s*\}/g);
+  assert.ok(escDismiss && escDismiss.length >= 4, "the slash, model, skill and prompt pickers all dismiss on Escape (setSlashDismissed)");
+}
