@@ -1,12 +1,13 @@
 "use client";
 
 // Marketplace hub — the store and your familiars' setup merged into one
-// surface. A single slim header row holds the section tabs (Browse · Roles ·
-// Skills · Capabilities, with live counts) and the scoped search — no hero.
+// surface. A single slim header row holds the section tabs (Browse · Skills ·
+// Capabilities, with live counts) and the scoped search — no hero.
 // Browse is the plugin store (collections, categories, cards);
-// Roles/Skills/Capabilities are the "what my familiars can do" views that used
+// Skills/Capabilities are the "what my familiars can do" views that used
 // to live on the separate Roles page. Deep links via WorkspaceMode still work —
-// the "roles" and "capabilities" modes open the matching section here.
+// the "capabilities" mode opens its section here; "roles" lands on Browse
+// while the Roles section is hidden.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "@/lib/icon";
@@ -20,7 +21,6 @@ import { MarketplaceCard } from "@/components/marketplace/marketplace-card";
 import { MarketplaceDetail } from "@/components/marketplace/marketplace-detail";
 import { MarketplaceConfigure } from "@/components/marketplace/marketplace-configure";
 import { CollectionStrip } from "@/components/marketplace/collection-strip";
-import { RolesSection, type RoleEntry } from "@/components/marketplace/roles-section";
 import { SkillBrowser, type SkillBrowserEntry } from "@/components/skill-browser";
 import {
   SkillDetailDrawer,
@@ -43,9 +43,11 @@ import {
 
 export type MarketplaceSection = "browse" | "roles" | "skills" | "capabilities";
 
+// Roles is hidden from the hub for now (kept in the MarketplaceSection type so
+// `mode === "roles"` deep links keep type-checking — they land on Browse).
+// The RolesSection component and /api/roles stay intact for re-enabling.
 const SECTIONS: ReadonlyArray<{ id: MarketplaceSection; label: string; icon: IconName }> = [
   { id: "browse", label: "Browse", icon: "ph:storefront-bold" },
-  { id: "roles", label: "Roles", icon: "ph:mask-happy" },
   { id: "skills", label: "Skills", icon: "ph:sparkle" },
   { id: "capabilities", label: "Capabilities", icon: "ph:lightning-bold" },
 ];
@@ -102,7 +104,8 @@ type Props = {
   activeHarness?: string | null;
   /** Familiars offered by the skill detail drawer's "try it" affordances. */
   familiars?: FamiliarForSkill[];
-  /** Opens a chat with the familiar that owns a role. */
+  /** Opens a chat with the familiar that owns a role. Unused while the Roles
+   *  section is hidden; kept so re-enabling Roles is a UI-only change. */
   onOpenChat?: (familiarId: string) => void;
 };
 
@@ -110,9 +113,11 @@ export function MarketplaceViewSurface({
   initialSection = "browse",
   activeHarness = null,
   familiars = [],
-  onOpenChat,
 }: Props = {}) {
-  const [section, setSection] = useState<MarketplaceSection>(initialSection);
+  // Roles is hidden for now: a "roles" deep link lands on Browse.
+  const [section, setSection] = useState<MarketplaceSection>(
+    initialSection === "roles" ? "browse" : initialSection,
+  );
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -141,11 +146,7 @@ export function MarketplaceViewSurface({
     setBusyIds(next);
   }, []);
 
-  // Setup state (Roles / Skills sections).
-  const [roles, setRoles] = useState<RoleEntry[]>([]);
-  const [rolesLoaded, setRolesLoaded] = useState(false);
-  const [rolesError, setRolesError] = useState<string | null>(null);
-  const [busyRoleKey, setBusyRoleKey] = useState<string | null>(null);
+  // Setup state (Skills section).
   const [skills, setSkills] = useState<SkillBrowserEntry[]>([]);
   const [skillsLoaded, setSkillsLoaded] = useState(false);
   const [skillsError, setSkillsError] = useState<string | null>(null);
@@ -155,7 +156,6 @@ export function MarketplaceViewSurface({
   // and clobber the list (the useProjects hygiene pattern). A superseded load
   // bails before touching state; only the winning load flips its loaded flag.
   const loadCtl = useRef<AbortController | null>(null);
-  const rolesCtl = useRef<AbortController | null>(null);
   const skillsCtl = useRef<AbortController | null>(null);
   // Install / remove / role-toggle / configure surface their outcome as
   // visual-only <p> banners (not toasts), so mirror success + errors to the
@@ -195,27 +195,6 @@ export function MarketplaceViewSurface({
     }
   }, []);
 
-  const loadRoles = useCallback(async () => {
-    rolesCtl.current?.abort();
-    const ctl = new AbortController();
-    rolesCtl.current = ctl;
-    setRolesLoaded(false);
-    try {
-      const res = await fetch("/api/roles", { cache: "no-store", signal: ctl.signal });
-      const json = (await res.json()) as { ok?: boolean; roles?: RoleEntry[]; error?: string };
-      if (ctl.signal.aborted) return;
-      if (!json.ok) throw new Error(json.error ?? `roles http ${res.status}`);
-      setRoles(json.roles ?? []);
-      setRolesError(null);
-    } catch (err) {
-      if (ctl.signal.aborted) return;
-      setRoles([]);
-      setRolesError(err instanceof Error ? err.message : "roles unavailable");
-    } finally {
-      if (!ctl.signal.aborted) setRolesLoaded(true);
-    }
-  }, []);
-
   const loadSkills = useCallback(async (search = "") => {
     skillsCtl.current?.abort();
     const ctl = new AbortController();
@@ -247,14 +226,12 @@ export function MarketplaceViewSurface({
 
   useEffect(() => {
     void load();
-    void loadRoles();
     void loadSkills();
     return () => {
       loadCtl.current?.abort();
-      rolesCtl.current?.abort();
       skillsCtl.current?.abort();
     };
-  }, [load, loadRoles, loadSkills]);
+  }, [load, loadSkills]);
 
   useEffect(() => {
     if (section !== "skills") return;
@@ -292,10 +269,6 @@ export function MarketplaceViewSurface({
     for (const p of plugins) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
     return counts;
   }, [plugins]);
-  const rolesSummary = useMemo(() => {
-    const activeRoles = roles.reduce((n, role) => n + (role.active ? 1 : 0), 0);
-    return { activeRoles, totalRoles: roles.length };
-  }, [roles]);
 
   // The slim header's tab items — label plus a live count per section. Counts
   // appear once their loader settles so the header never flashes a stale 0;
@@ -308,12 +281,11 @@ export function MarketplaceViewSurface({
         icon: s.icon,
         count:
           s.id === "browse" && loaded ? plugins.length
-          : s.id === "roles" && rolesLoaded ? roles.length
           : s.id === "skills" && skillsLoaded ? skills.length
           : undefined,
         title: SECTION_HINT[s.id],
       })),
-    [loaded, plugins.length, rolesLoaded, roles.length, skillsLoaded, skills.length],
+    [loaded, plugins.length, skillsLoaded, skills.length],
   );
 
   const activeCollection = useMemo(
@@ -396,66 +368,8 @@ export function MarketplaceViewSurface({
     }
   }, [markBusy, setInstalled, announce]);
 
-  const toggleRole = useCallback(async (role: RoleEntry) => {
-    const key = `${role.familiar}:${role.id}`;
-    const next = !role.active;
-    setBusyRoleKey(key);
-    setRoles((current) =>
-      current.map((item) => (item.id === role.id && item.familiar === role.familiar ? { ...item, active: next } : item)),
-    );
-    try {
-      const res = await fetch("/api/roles", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: role.id, familiar: role.familiar, active: next }),
-      });
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!res.ok || json.ok === false) throw new Error(json.error ?? `roles http ${res.status}`);
-      announce(next ? "Role enabled" : "Role disabled", "polite");
-    } catch (err) {
-      setRoles((current) =>
-        current.map((item) =>
-          item.id === role.id && item.familiar === role.familiar ? { ...item, active: role.active } : item,
-        ),
-      );
-      const msg = err instanceof Error ? err.message : "role update failed";
-      setRolesError(msg);
-      announce(msg, "assertive");
-    } finally {
-      setBusyRoleKey(null);
-    }
-  }, [announce]);
-
-  // A role-card skill chip opens that skill's detail drawer (resolving the
-  // chip's name against the scanned local skills). Unknown/not-yet-loaded
-  // skills fall back to the Skills section, pre-filtered to the name.
-  const openSkillByName = useCallback(
-    (name: string) => {
-      const q = name.toLowerCase();
-      const match = skills.find(
-        (s) =>
-          s.id === name ||
-          s.slug?.toLowerCase() === q ||
-          s.packageName?.toLowerCase() === q ||
-          (s.owner && s.repo
-            ? `${s.owner.toLowerCase()}/${s.repo.toLowerCase()}` === q
-            : false) ||
-          s.name.toLowerCase() === q ||
-          s.owner?.toLowerCase() === q,
-      );
-      if (match) {
-        setSelectedSkill(toSkillDetail(match));
-        return;
-      }
-      setSection("skills");
-      setQuery(name);
-    },
-    [skills],
-  );
-
   const activeError =
     section === "browse" ? error
-    : section === "roles" ? rolesError
     : section === "skills" ? skillsError
     : null;
 
@@ -559,12 +473,6 @@ export function MarketplaceViewSurface({
               Your setup
             </p>
             <nav className="flex flex-col gap-0.5" aria-label="Your setup">
-              <SetupRailLink
-                icon="ph:mask-happy"
-                label="Roles"
-                detail={rolesLoaded ? `${rolesSummary.activeRoles}/${rolesSummary.totalRoles}` : undefined}
-                onClick={() => selectSection("roles")}
-              />
               <SetupRailLink
                 icon="ph:sparkle"
                 label="Skills"
@@ -716,25 +624,6 @@ export function MarketplaceViewSurface({
               </div>
             )}
           </div>
-        </div>
-      ) : section === "roles" ? (
-        <div
-          role="tabpanel"
-          id="marketplace-panel-roles"
-          aria-labelledby="marketplace-tab-roles"
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-4 @min-[560px]/marketplace:px-6"
-        >
-          <RolesSection
-            roles={roles}
-            loaded={rolesLoaded}
-            query={query}
-            onClearQuery={() => setQuery("")}
-            busyRoleKey={busyRoleKey}
-            onToggleRole={(role) => void toggleRole(role)}
-            onOpenChat={onOpenChat}
-            onOpenSkill={openSkillByName}
-            onBrowseMarketplace={() => selectSection("browse")}
-          />
         </div>
       ) : section === "skills" ? (
         // Full-bleed 3-column browser that owns its own per-column scrolling.
