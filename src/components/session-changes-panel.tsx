@@ -7,6 +7,7 @@ import { formatTimestamp, readDateTimePrefs } from "@/lib/datetime-format";
 import { SyntaxBlock } from "@/components/message-bubble";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { useChatDebugSnapshot } from "@/lib/chat-debug-store";
 import { openExternalUrl } from "@/lib/open-external";
 import { useAnnouncer } from "@/components/ui/live-region";
@@ -200,16 +201,15 @@ function FileRow({
         <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono text-[10px] tabular-nums">{diffCounts}</td>
         <td className="px-2 py-1.5 text-right">
           {confirmRevert ? null : (
-            <button
-              type="button"
+            <IconButton
+              icon={untracked ? "ph:trash" : "ph:arrow-counter-clockwise"}
+              size="sm"
+              danger
               onClick={() => setConfirmRevert(true)}
               disabled={reverting}
               title={untracked ? `Delete ${file.path}` : `Revert ${file.path}`}
               aria-label={untracked ? `Delete untracked file ${file.path}` : `Revert ${file.path}`}
-              className="focus-ring inline-flex h-6 w-6 items-center justify-center rounded border border-[var(--border-hairline)] text-[var(--text-muted)] transition-all hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:bg-[color-mix(in_oklch,var(--color-danger)_14%,transparent)] hover:text-[var(--color-danger)] disabled:opacity-40"
-            >
-              <Icon name={untracked ? "ph:trash" : "ph:arrow-counter-clockwise"} width={11} aria-hidden />
-            </button>
+            />
           )}
         </td>
       </tr>
@@ -296,8 +296,6 @@ function CheckpointRow({
   // it's a single click.
   const [confirmRestore, setConfirmRestore] = useState(false);
   const label = checkpointLabel(cp.name);
-  const btn =
-    "focus-ring shrink-0 rounded border border-[var(--border-hairline)] px-1.5 py-0.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] disabled:opacity-40";
 
   return (
     <div className="flex items-center gap-2 rounded-md border border-[var(--border-hairline)] px-2 py-1.5">
@@ -332,26 +330,25 @@ function CheckpointRow({
         </span>
       ) : (
         <>
-          <button
-            type="button"
+          <IconButton
+            icon="ph:arrow-counter-clockwise"
+            size="sm"
+            className="shrink-0"
             disabled={busy}
             onClick={() => setConfirmRestore(true)}
             title={`Restore checkpoint ${label}`}
             aria-label={`Restore checkpoint ${label}`}
-            className={btn}
-          >
-            <Icon name="ph:arrow-counter-clockwise" width={11} aria-hidden />
-          </button>
-          <button
-            type="button"
+          />
+          <IconButton
+            icon="ph:trash"
+            size="sm"
+            danger
+            className="shrink-0"
             disabled={busy}
             onClick={onDelete}
             title={`Delete checkpoint ${label}`}
             aria-label={`Delete checkpoint ${label}`}
-            className={btn + " hover:border-[color-mix(in_oklch,var(--color-danger)_45%,transparent)] hover:text-[var(--color-danger)]"}
-          >
-            <Icon name="ph:trash" width={11} aria-hidden />
-          </button>
+          />
         </>
       )}
     </div>
@@ -804,17 +801,15 @@ export function SessionChangesInner({
             </p>
           </div>
           <span className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
+            <IconButton
+              icon="ph:archive"
+              size="sm"
+              className="shrink-0"
               onClick={() => void saveCheckpoint()}
               disabled={checkpointing || notARepo || !!error}
               title="Save patch checkpoint"
               aria-label="Save patch checkpoint"
-              className="focus-ring inline-flex h-6 w-6 shrink-0 items-center justify-center rounded border border-transparent text-[var(--text-muted)] transition-colors hover:border-[var(--border-hairline)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] disabled:opacity-40"
-            >
-              <Icon name="ph:archive" width={11} aria-hidden />
-              <span className="sr-only">{checkpointing ? "Saving checkpoint" : "Checkpoint"}</span>
-            </button>
+            />
             <button
               type="button"
               onClick={() => void load()}
@@ -857,14 +852,13 @@ export function SessionChangesInner({
         {checkpointMessage && (
           <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-[color-mix(in_oklch,var(--accent-presence)_35%,transparent)] bg-[color-mix(in_oklch,var(--accent-presence)_10%,transparent)] px-2 py-1.5 text-[11px] text-[var(--accent-presence)]">
             <span className="min-w-0 truncate" title={checkpointMessage}>{checkpointMessage}</span>
-            <button
-              type="button"
-              className="focus-ring shrink-0"
+            <IconButton
+              icon="ph:x-bold"
+              size="xs"
+              className="shrink-0"
               aria-label="Dismiss checkpoint message"
               onClick={() => setCheckpointMessage(null)}
-            >
-              <Icon name="ph:x-bold" width={10} aria-hidden />
-            </button>
+            />
           </div>
         )}
 
@@ -879,14 +873,13 @@ export function SessionChangesInner({
                 revert: {actionError}
               </span>
             </span>
-            <button
-              type="button"
-              className="focus-ring shrink-0"
+            <IconButton
+              icon="ph:x-bold"
+              size="xs"
+              className="shrink-0"
               aria-label="Dismiss revert error"
               onClick={() => setActionError(null)}
-            >
-              <Icon name="ph:x-bold" width={10} aria-hidden />
-            </button>
+            />
           </div>
         )}
 
@@ -984,14 +977,13 @@ export function SessionChangesInner({
                     {postCommit.sha} · {postCommit.branch}
                   </span>
                 </span>
-                <button
-                  type="button"
-                  className="focus-ring shrink-0"
+                <IconButton
+                  icon="ph:x-bold"
+                  size="xs"
+                  className="shrink-0"
                   aria-label="Dismiss commit result"
                   onClick={() => setPostCommit(null)}
-                >
-                  <Icon name="ph:x-bold" width={10} aria-hidden />
-                </button>
+                />
               </div>
               {!prOpen && !postCommit.onDefaultBranch ? (
                 <Button

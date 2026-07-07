@@ -4,10 +4,14 @@
 // use the shared Button primitive, so their radius / height / focus ring /
 // disabled treatment come from one place.
 //
+// The bordered / bare icon-only buttons are normalized to the borderless
+// IconButton (the app-wide convention): file-row revert/delete, checkpoint
+// restore/delete, header Save, and the three alert dismiss "×" icons. Refresh
+// stays a raw <button> — its inner-glyph animate-spin can't ride the primitive.
+//
 // Deliberately left bespoke (not standard controls): the file-row and
-// checkpoint disclosure toggles, the dense two-step revert/restore confirm
-// buttons, the bordered / spin-animated header icon actions, and the alert
-// dismiss "×" icons. A follow-up can take the icon-button family.
+// checkpoint disclosure toggles, and the dense two-step revert / restore
+// confirm buttons (tiny, custom danger-tinted, confirm-flow).
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
@@ -54,4 +58,34 @@ assert.doesNotMatch(
   "no hand-rolled accent-bg action buttons remain in the footer",
 );
 
-console.log("session-changes-panel.test.ts: cave-4op footer control primitives ok");
+// ── cave-4op: icon-only buttons use the borderless IconButton primitive ──────
+assert.match(
+  src,
+  /import \{ IconButton \} from "@\/components\/ui\/icon-button"/,
+  "session-changes-panel imports the shared IconButton primitive",
+);
+assert.match(
+  src,
+  /<IconButton[\s\S]{0,80}icon=\{untracked \? "ph:trash" : "ph:arrow-counter-clockwise"\}[\s\S]{0,60}danger/,
+  "file-row revert/delete is a danger IconButton",
+);
+assert.match(
+  src,
+  /<IconButton[\s\S]{0,120}icon="ph:archive"[\s\S]{0,220}saveCheckpoint\(\)/,
+  "header Save is an IconButton wired to saveCheckpoint()",
+);
+assert.equal(
+  (src.match(/<IconButton[\s\S]{0,60}icon="ph:x-bold"/g) ?? []).length,
+  3,
+  "all three alert dismiss × are IconButtons",
+);
+// The bordered icon-button recipe is gone (normalized to the borderless primitive).
+assert.doesNotMatch(src, /const btn =/, "the bordered icon-button recipe (const btn) is removed");
+// Refresh stays a raw <button> so its inner-glyph spin animation survives.
+assert.match(
+  src,
+  /ph:arrows-clockwise[\s\S]{0,60}animate-spin/,
+  "Refresh stays a raw button to keep its inner-glyph spin",
+);
+
+console.log("session-changes-panel.test.ts: cave-4op footer + icon-button control primitives ok");
