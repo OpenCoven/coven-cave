@@ -279,3 +279,18 @@ assert.match(
   /onAgentsNewChat[\s\S]*modeRef\.current === "chat"[\s\S]*return/,
   "Workspace skips the bridge when already in chat (ChatSurface owns it) to avoid double-open",
 );
+
+// cave-b63 (2): the change-count fetch dedupe is per effect-run (local), not a
+// cross-run ref — so a quick root switch's new fetch isn't blocked by the old
+// root's still-in-flight fetch (which left the badge showing a stale count), and
+// the count resets on a real root change.
+assert.match(
+  chatSurface,
+  /let inFlight = false;[\s\S]*?const load = async \(\) => \{\s*\n\s*if \(inFlight\) return;/,
+  "change-count fetch dedupe is scoped per effect-run, not a cross-run ref",
+);
+assert.match(
+  chatSurface,
+  /if \(changeCountRootRef\.current !== root\) \{\s*\n\s*setChangeCount\(0\);/,
+  "changeCount resets on a real root change so the badge doesn't show the previous project's count",
+);

@@ -2306,23 +2306,26 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     if (el) el.scrollTop = Math.max(0, el.scrollHeight - anchor);
   }, [historyExpanded]);
 
-  const refreshModelState = useCallback(async (): Promise<ChatModelState | null> => {
+  // `shouldApply` lets a caller (the effect below) veto the setState after the
+  // await — a fetch that resolves after a thread switch must not overwrite the
+  // new thread's model. Non-effect callers omit it and always apply.
+  const refreshModelState = useCallback(async (shouldApply: () => boolean = () => true): Promise<ChatModelState | null> => {
     const params = new URLSearchParams({ familiarId: familiar.id });
     if (sessionId) params.set("sessionId", sessionId);
     try {
       const res = await fetch(`/api/chat/model-state?${params.toString()}`, { cache: "no-store" });
       const json = (await res.json()) as { ok?: boolean; state?: ChatModelState };
       const next = json.ok && json.state ? json.state : null;
-      setModelState(next);
+      if (shouldApply()) setModelState(next);
       return next;
     } catch {
-      setModelState(null);
+      if (shouldApply()) setModelState(null);
       return null;
     }
   }, [familiar.id, sessionId]);
 
   const refreshUsagePlan = useCallback(
-    async (modelOverride?: string | null): Promise<ChatUsagePlanSnapshot | null> => {
+    async (modelOverride?: string | null, shouldApply: () => boolean = () => true): Promise<ChatUsagePlanSnapshot | null> => {
       const params = new URLSearchParams({ familiarId: familiar.id });
       if (sessionId) params.set("sessionId", sessionId);
       const model =
@@ -2335,10 +2338,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
         const res = await fetch(`/api/chat/usage?${params.toString()}`, { cache: "no-store" });
         const json = (await res.json()) as { ok?: boolean; snapshot?: ChatUsagePlanSnapshot };
         const next = json.ok && json.snapshot ? json.snapshot : null;
-        setUsagePlan(next);
+        if (shouldApply()) setUsagePlan(next);
         return next;
       } catch {
-        setUsagePlan(null);
+        if (shouldApply()) setUsagePlan(null);
         return null;
       }
     },
@@ -2347,12 +2350,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const next = await refreshModelState();
-      // refreshModelState already set state; guard only against a stale familiar
-      // swap landing after unmount/re-fetch.
-      if (cancelled && next) return;
-    })();
+    // Gate the setState on !cancelled so a fetch resolving after a thread switch
+    // (refreshModelState is memoized on [familiar.id, sessionId]) can't overwrite
+    // the new thread's model with the previous one's.
+    void refreshModelState(() => !cancelled);
     return () => {
       cancelled = true;
     };
@@ -2360,10 +2361,7 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
 
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const next = await refreshUsagePlan();
-      if (cancelled && next) return;
-    })();
+    void refreshUsagePlan(undefined, () => !cancelled);
     return () => {
       cancelled = true;
     };
@@ -3400,6 +3398,10 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
     const command = canonicalize(token) ?? token;
 
     if (command === "/clear") {
+      // Tear down any in-flight stream first (no-op when idle). Otherwise the
+      // live registry stays the source of truth and the next assistant_chunk
+      // mirrors the just-cleared turns back, while busy stays set.
+      cancelSend();
       liveSessionIdRef.current = null;
       setTurns([]);
       setActiveLeafId("");

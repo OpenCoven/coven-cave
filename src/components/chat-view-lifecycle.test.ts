@@ -570,4 +570,31 @@ assert.match(
   );
 }
 
+// cave-b63 (1): model-state / usage-plan refreshes gate their setState on a
+// caller predicate so a fetch resolving after a thread switch can't overwrite
+// the new thread's model/plan; the effects pass () => !cancelled.
+assert.match(
+  source,
+  /refreshModelState = useCallback\(async \(shouldApply: \(\) => boolean = \(\) => true\)[\s\S]*?if \(shouldApply\(\)\) setModelState\(next\);/,
+  "refreshModelState only applies its result when the caller's shouldApply() allows it",
+);
+assert.match(
+  source,
+  /void refreshModelState\(\(\) => !cancelled\);/,
+  "the model-state effect vetoes a stale apply via () => !cancelled",
+);
+assert.match(
+  source,
+  /void refreshUsagePlan\(undefined, \(\) => !cancelled\);/,
+  "the usage-plan effect vetoes a stale apply via () => !cancelled",
+);
+
+// cave-b63 (4): /clear tears down any in-flight stream first (cancelSend) so the
+// live registry doesn't mirror the cleared turns back on the next chunk.
+assert.match(
+  source,
+  /if \(command === "\/clear"\) \{\s*\n\s*\/\/[\s\S]*?cancelSend\(\);\s*\n\s*liveSessionIdRef\.current = null;\s*\n\s*setTurns\(\[\]\);/,
+  "/clear cancels an in-flight stream before clearing the transcript",
+);
+
 console.log("chat-view-lifecycle.test.ts: ok");

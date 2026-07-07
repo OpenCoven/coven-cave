@@ -1502,6 +1502,9 @@ export function Workspace() {
         }
         if (!sessionsLoadedRef.current) {
           pendingChatDeepLinkRef.current = sid;
+          // Show the "Opening chat…" takeover while sessions settle, matching the
+          // mount-restore path; the deep-link resolver clears it on found/stale.
+          setChatDeepLinkPending(true);
           return;
         }
         clearChatHash();

@@ -282,14 +282,25 @@ export function ChatSurface({
   // length), re-polled on the `cave:changes-refresh` edit signal and, while the
   // session is running, a light 5s interval gated on document visibility.
   const [changeCount, setChangeCount] = useState(0);
-  const changeFetchInFlight = useRef(false);
+  const changeCountRootRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!effectiveRailRoot) { setChangeCount(0); return; }
+    if (!effectiveRailRoot) { setChangeCount(0); changeCountRootRef.current = null; return; }
     const root = effectiveRailRoot;
+    // On a root switch, clear the previous root's count while we load this one —
+    // otherwise the badge lingers on the old project's number. (Only on a real
+    // root change, so a sessionRunning toggle on the same root doesn't flash.)
+    if (changeCountRootRef.current !== root) {
+      setChangeCount(0);
+      changeCountRootRef.current = root;
+    }
     let cancelled = false;
+    // Coalesce the initial load with refresh-event / interval loads for THIS
+    // root only. A previous cross-run ref wrongly blocked the new root's first
+    // load when the old root's fetch was still in flight, leaving a stale count.
+    let inFlight = false;
     const load = async () => {
-      if (changeFetchInFlight.current) return;
-      changeFetchInFlight.current = true;
+      if (inFlight) return;
+      inFlight = true;
       try {
         const res = await fetch(`/api/changes?projectRoot=${encodeURIComponent(root)}`, { cache: "no-store" });
         const json = (await res.json().catch(() => ({}))) as { ok?: boolean; files?: unknown[] };
@@ -298,7 +309,7 @@ export function ChatSurface({
       } catch {
         if (!cancelled) setChangeCount(0);
       } finally {
-        changeFetchInFlight.current = false;
+        inFlight = false;
       }
     };
     void load();

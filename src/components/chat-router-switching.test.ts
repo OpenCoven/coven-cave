@@ -363,4 +363,13 @@ assert.match(
   "cave-turn-found must disable its animation under prefers-reduced-motion (static tint instead)",
 );
 
+// cave-b63 (3): Back/Forward into a #chat-<id> before sessions load shows the
+// "Opening chat…" takeover (the popstate not-loaded branch arms the pending
+// flag, matching the mount-restore path).
+assert.match(
+  workspaceSource,
+  /pendingChatDeepLinkRef\.current = sid;\s*\n\s*\/\/[\s\S]*?setChatDeepLinkPending\(true\);/,
+  "the popstate deep-link-not-loaded branch shows the Opening chat… indicator",
+);
+
 console.log("chat-router-switching.test.ts: ok");
