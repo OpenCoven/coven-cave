@@ -123,4 +123,8 @@ assert.match(
   "a stale persisted last-surface of journal is not restored on familiar select",
 );
 
+const ghReview = read("./gh-review-actions.tsx");
+assert.doesNotMatch(ghReview, /cave:canvas:layer|mode: "canvas"/, "PR review export no longer jumps to the retired Canvas page");
+assert.match(ghReview, /openArtifactHtml\(artifact\.code\)/, "exported review artifacts open directly in a browser tab");
+
 console.log("familiar-studio-journal-tab.test.ts: ok");
