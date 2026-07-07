@@ -8,10 +8,10 @@ globalThis.window = {
 };
 
 // Map-backed fake IndexedDB driver with a write-failure toggle (simulates the
-// browser refusing a write — quota, private mode, etc.). All three stores are
+// browser refusing a write — quota, private mode, etc.). Both active stores are
 // present because importing the project store transitively hydrates the
 // familiar store (shared size-cap constant).
-const idb = { projectAvatars: new Map(), familiarImages: new Map(), userAvatar: new Map() };
+const idb = { projectAvatars: new Map(), familiarImages: new Map() };
 let denyWrites = false;
 const fakeDriver = {
   async getAll(store) {

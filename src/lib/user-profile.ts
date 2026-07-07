@@ -2,7 +2,7 @@
 
 /**
  * Client store for the server-side operator profile (GET/PATCH /api/profile).
- * Mirrors the module-store pattern of user-avatar-image.ts: in-memory snapshot,
+ * Module-store pattern: in-memory snapshot,
  * useSyncExternalStore subscription, BroadcastChannel cross-window sync.
  * Persist-first: the snapshot only updates after the server accepted a write.
  */

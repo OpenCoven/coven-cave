@@ -16,7 +16,7 @@ import {
   type UserProfileSnapshot,
 } from "@/lib/user-profile";
 import { PROFILE_LIMITS, type ProfileLink, type UserProfilePatch } from "@/lib/user-profile-shared";
-import { readUserAvatarImageSnapshot, whenUserAvatarHydrated } from "@/lib/user-avatar-image";
+import { hasLegacySvgUserAvatar } from "@/lib/legacy-svg-avatar-hint";
 
 const PROFILE_IMAGE_ACCEPT = FAMILIAR_IMAGE_ACCEPT
   .split(",")
@@ -79,8 +79,6 @@ export function ProfileSection() {
   const [linkHint, setLinkHint] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
-  // Spec §6: a legacy browser-local SVG avatar can't migrate (server rejects
-  // SVG) — surface a re-upload hint instead of letting it silently vanish.
   const [legacySvgAvatar, setLegacySvgAvatar] = useState(false);
   useEffect(() => {
     if (snapshot?.avatar.present) {
@@ -88,9 +86,8 @@ export function ProfileSection() {
       return;
     }
     let cancelled = false;
-    void whenUserAvatarHydrated().then(() => {
-      if (cancelled) return;
-      setLegacySvgAvatar(readUserAvatarImageSnapshot()?.mime === "image/svg+xml");
+    void hasLegacySvgUserAvatar().then((hasSvg) => {
+      if (!cancelled) setLegacySvgAvatar(hasSvg);
     });
     return () => { cancelled = true; };
   }, [snapshot?.avatar.present]);
