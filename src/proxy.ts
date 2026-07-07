@@ -12,7 +12,10 @@ import {
   isAllowedApiHost,
   sameOrigin,
   isAllowedRequestSource,
+  isAllowedRequestSourceAny,
+  expectedRequestOrigins,
   bearerFromReferer,
+  bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
   isHtmlNavigationRequest,
   accessGatePage,
@@ -167,8 +170,16 @@ export async function proxy(req: NextRequest) {
   // callers if the dev server were ever bound to anything other than
   // 127.0.0.1. The token equality check below is the only thing
   // legitimately optional in browser-dev mode.
-  const expectedOrigin = req.nextUrl.origin;
   const requestHost = req.headers.get("host");
+  // Accept the Origin/Referer against the configured-port origin (nextUrl,
+  // which the Serve/forwarded-host path relies on) AND the port the browser
+  // actually reached us on (from Host). The latter is what unbreaks a server
+  // that fell back to a free port — see expectedRequestOrigins (cave-5sg).
+  const expectedOrigins = expectedRequestOrigins(
+    req.nextUrl.origin,
+    req.nextUrl.protocol,
+    requestHost,
+  );
   const mobileAccessAuthenticated = mobileAccessToken
     ? Boolean(await mobileAccessVerification(req, mobileAccessToken))
     : false;
@@ -203,10 +214,10 @@ export async function proxy(req: NextRequest) {
   if (!headerCsrfTrusted) {
     const origin = req.headers.get("origin");
     const referer = req.headers.get("referer");
-    if (!isAllowedRequestSource(origin, expectedOrigin)) {
+    if (!isAllowedRequestSourceAny(origin, expectedOrigins)) {
       return jsonError(403, "forbidden origin");
     }
-    if (!isAllowedRequestSource(referer, expectedOrigin)) {
+    if (!isAllowedRequestSourceAny(referer, expectedOrigins)) {
       return jsonError(403, "forbidden referer");
     }
     // Production GET webhooks are intentionally state-changing: a matching
@@ -233,7 +244,7 @@ export async function proxy(req: NextRequest) {
   const suppliedToken =
     req.headers.get(TOKEN_HEADER) ??
     req.nextUrl.searchParams.get(TOKEN_PARAM) ??
-    bearerFromReferer(req.headers.get("referer"), expectedOrigin);
+    bearerFromRefererAny(req.headers.get("referer"), expectedOrigins);
   const sidecarAuthenticated = Boolean(sidecarToken) && suppliedToken === sidecarToken;
 
   if (!sidecarToken) {
