@@ -13,8 +13,13 @@ const ctx = read("../lib/familiar-studio-context.tsx");
 assert.match(ctx, /"journal"/, "FamiliarStudioTab union includes journal");
 assert.match(
   ctx,
-  /STUDIO_TABS[\s\S]*?"journal"/,
-  "the persisted-tab restore guard accepts journal",
+  /STUDIO_TABS: readonly FamiliarStudioTab\[\][\s\S]*?"journal"/,
+  "the canonical tab list includes journal",
+);
+assert.match(
+  ctx,
+  /\(STUDIO_TABS as readonly string\[\]\)\.includes\(stored \?\? ""\)/,
+  "the persisted-tab restore guard checks against STUDIO_TABS",
 );
 // One shared redirect helper: workspace surfaces and the redirecting provider
 // both route through it, so the tab/familiar handoff keys can't drift.
