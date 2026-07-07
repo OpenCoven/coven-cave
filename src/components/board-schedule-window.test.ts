@@ -161,6 +161,28 @@ assert.match(gantt, /const todayColLeftPx = todayX === null \? -9999 : todayX - 
 assert.match(gantt, /"--cg-weekend-shift" as string\]: `\$\{weekendShiftPx\}px`/, "weekend shift feeds the track via a CSS var");
 assert.match(gantt, /"--cg-today-x" as string\]: `\$\{todayColLeftPx\}px`/, "today column feeds the track via a CSS var");
 assert.match(styles, /\.cg-headstack/, "the header stacks the month band over the week ruler");
+
+// Scroll model (cave-hsh): the timeline is one bounded viewport that scrolls
+// BOTH axes, so the sticky header/left column stay put and neither scrollbar
+// drifts off-screen. The frame (.board-gantt) must NOT be the scroller — that
+// scrolled the whole chart as a block (header gone, h-bar below the fold).
+assert.match(
+  styles,
+  /\.board-gantt \{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*overflow:\s*hidden[^}]*\}/,
+  "the gantt frame is a non-scrolling flex column (controls · timeline · tray)",
+);
+assert.match(
+  styles,
+  /\.board-gantt__scroll \{\s*flex:\s*1;\s*min-height:\s*0;\s*overflow:\s*auto;\s*\}/,
+  "the timeline viewport is the single bounded both-axis scroller",
+);
+assert.doesNotMatch(
+  styles,
+  /\.board-gantt__scroll \{[^}]*overflow-y:\s*visible/,
+  "the viewport must not split the axes (overflow-y:visible broke the sticky header + hid the h-scrollbar)",
+);
+assert.match(styles, /\.cg-head \{[^}]*position:\s*sticky;\s*top:\s*0/, "the header sticks to the viewport top");
+assert.match(styles, /\.cg-left \{[^}]*position:\s*sticky;\s*left:\s*0/, "the task table sticks to the viewport left");
 assert.match(styles, /\.cg-month \{/, "month segments are styled");
 assert.match(styles, /var\(--cg-weekend-shift, 0px\) 0/, "weekend shading is offset by the CSS var");
 assert.match(styles, /var\(--cg-today-x, -9999px\)/, "the today column tint reads the CSS var");

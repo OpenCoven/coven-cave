@@ -1924,7 +1924,16 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
 .board-gantt {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  /* Frame, not the scroller: controls pinned at top, the timeline scroller
+     fills the middle, the unscheduled tray sits at the bottom. The timeline's
+     own bounded viewport (.board-gantt__scroll) owns BOTH scrollbars so the
+     sticky header/left-column stay put and the horizontal bar stays reachable
+     (cave-hsh). Previously .board-gantt scrolled the whole chart as one block,
+     which scrolled the header off-screen and parked the h-scrollbar below the
+     fold. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 14px;
 }
 .board-gantt--empty {
@@ -1973,7 +1982,15 @@ pre.gh-diff--md code { display:block; padding:6px 0; background:none; }
    Dense dark timeline: sticky left table (Group/Task · Owner · Start · End ·
    status dot) + a day/week grid with status-coloured bars, milestone diamonds,
    a red TODAY line, and a legend. Redefines .board-gantt-row__bar by category. */
-.board-gantt__scroll { overflow-x: auto; overflow-y: visible; }
+/* The single bounded scroll viewport for the whole timeline — both axes. As a
+   flex child it fills the frame's remaining height, so .cg-head (sticky top)
+   and .cg-left (sticky left) stay pinned while rows scroll under them and the
+   timeline pans, and both scrollbars stay on-screen (cave-hsh). */
+.board-gantt__scroll { flex: 1; min-height: 0; overflow: auto; }
+/* Controls (top) and the unscheduled tray (bottom) keep their natural height so
+   only the timeline viewport between them scrolls. */
+.board-gantt > .cg-controls,
+.board-gantt > .board-gantt-unscheduled { flex: 0 0 auto; }
 .cg {
   --cg-row-h: 26px;
   width: max-content;
