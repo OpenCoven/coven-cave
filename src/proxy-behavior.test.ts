@@ -19,7 +19,10 @@ import {
   isAllowedApiHost,
   sameOrigin,
   isAllowedRequestSource,
+  isAllowedRequestSourceAny,
+  expectedRequestOrigins,
   bearerFromReferer,
+  bearerFromRefererAny,
   shouldRequireMobileAccessCredential,
   timingSafeEqualString,
   isHtmlNavigationRequest,
@@ -194,6 +197,85 @@ assert.equal(
   true,
   "normal same-origin browser dev mode remains allowed",
 );
+
+// ─── expectedRequestOrigins / port-fallback CSRF (cave-5sg) ────────────────
+// server.ts constructs Next with the CONFIGURED port, then startListening()
+// falls back to the next free port when it's taken. req.nextUrl.origin stays
+// pinned to the configured port, so the real browser Origin (the fallback
+// port, carried by Host) must also be accepted or every /api request 403s.
+{
+  // Fell back 3457 -> 3458: nextUrl still says :3457, Host says :3458.
+  const origins = expectedRequestOrigins("http://127.0.0.1:3457", "http:", "127.0.0.1:3458");
+  assert.deepEqual(
+    origins,
+    ["http://127.0.0.1:3457", "http://127.0.0.1:3458"],
+    "both the configured-port origin and the real Host-derived origin are accepted",
+  );
+  assert.equal(
+    isAllowedRequestSourceAny("http://127.0.0.1:3458", origins),
+    true,
+    "the browser Origin on the real fallback port is now allowed (the bug)",
+  );
+  assert.equal(
+    isAllowedRequestSourceAny("http://127.0.0.1:3457", origins),
+    true,
+    "the stale configured-port origin still passes (Serve/forwarded-host path)",
+  );
+  assert.equal(
+    isAllowedRequestSourceAny("http://evil.example", origins),
+    false,
+    "a cross-site Origin matches neither and is rejected",
+  );
+  assert.equal(
+    isAllowedRequestSourceAny(null, origins),
+    true,
+    "an absent Origin/Referer still passes (matches sameOrigin null tolerance)",
+  );
+}
+{
+  // No Host header: fall back to nextUrl.origin alone, no phantom entries.
+  assert.deepEqual(
+    expectedRequestOrigins("http://127.0.0.1:3000", "http:", null),
+    ["http://127.0.0.1:3000"],
+  );
+  // Host equals the configured port: deduped to a single origin.
+  assert.deepEqual(
+    expectedRequestOrigins("http://127.0.0.1:3000", "http:", "127.0.0.1:3000"),
+    ["http://127.0.0.1:3000"],
+    "no duplicate when Host already matches nextUrl.origin",
+  );
+  // https preserved (never silently downgraded to http).
+  assert.deepEqual(
+    expectedRequestOrigins("https://cave.tailnet.example.ts.net", "https:", "cave.tailnet.example.ts.net"),
+    ["https://cave.tailnet.example.ts.net"],
+    "https scheme is preserved and deduped",
+  );
+  // Missing protocol defaults to http (loopback is never TLS on the socket).
+  assert.deepEqual(
+    expectedRequestOrigins("http://127.0.0.1:3457", null, "127.0.0.1:3458"),
+    ["http://127.0.0.1:3457", "http://127.0.0.1:3458"],
+    "absent protocol falls back to http:",
+  );
+}
+{
+  // A referer carrying the real fallback port still yields its token.
+  const origins = expectedRequestOrigins("http://127.0.0.1:3457", "http:", "127.0.0.1:3458");
+  assert.equal(
+    bearerFromRefererAny("http://127.0.0.1:3458/x?covenCaveToken=tok", origins),
+    "tok",
+    "token is extracted from a referer on the real fallback port",
+  );
+  assert.equal(
+    bearerFromRefererAny("http://127.0.0.1:3457/x?covenCaveToken=tok", origins),
+    "tok",
+    "token is still extracted from a configured-port referer",
+  );
+  assert.equal(
+    bearerFromRefererAny("http://evil.example/x?covenCaveToken=tok", origins),
+    null,
+    "a cross-origin referer never yields its token",
+  );
+}
 
 // ─── Native iOS app (tokenless, over Tailscale Serve) contract ─────────────
 // The native SwiftUI client (pnpm mobile:tailscale:app) is NOT a browser: it
