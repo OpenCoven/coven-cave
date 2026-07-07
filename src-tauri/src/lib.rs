@@ -941,6 +941,7 @@ pub fn run() {
             browser::browser_hide,
             browser::browser_hide_all_except,
             browser::browser_close,
+            browser::browser_close_all,
             browser::browser_reload,
             browser::browser_report_title,
             browser::browser_report_scroll,
