@@ -523,4 +523,29 @@ assert.match(
   "the history-load effect clears streaming state inherited from the previous thread",
 );
 
+// Thread-switch composer isolation (cave chat audit): ChatView is a single
+// instance reused across threads, so per-thread composer context must be reset
+// on session switch or it bleeds a reply-quote / attachments / branch-parent /
+// enhance-draft into the next conversation's next send.
+assert.match(
+  source,
+  /setMentionedFiles\(\[\]\);\s*\n\s*setRuntimeHost\(null\);[\s\S]{0,600}?setReplyTarget\(null\);\s*\n\s*setAttachments\(\[\]\);\s*\n\s*setPendingBranchParent\(undefined\);\s*\n\s*setEnhanceStatus\("idle"\);\s*\n\s*setEnhanceOriginal\(null\);/,
+  "the session-switch reset effect clears reply-target, attachments, pending branch parent, and enhance state so they don't leak across threads",
+);
+
+// Stream teardown must be ownership-scoped: a settling BACKGROUND stream must
+// not clobber a newer concurrent stream's abort/stop wiring or unlock the composer.
+assert.match(
+  source,
+  /if \(abortRef\.current === controller\) \{\s*\n\s*streamOwnerRef\.current = false;\s*\n\s*abortRef\.current = null;\s*\n\s*stopKeysRef\.current = \{ runId: null, sessionId: null \};\s*\n\s*setBusy\(false\);/,
+  "sendRaw's finally only tears down the shared stream wiring when it still owns the active controller",
+);
+
+// IME composition safety: the Enter that confirms a CJK/kana candidate must not send.
+assert.match(
+  source,
+  /e\.key === "Enter" && !e\.shiftKey && !e\.nativeEvent\.isComposing/,
+  "the composer's Enter-to-send is gated on !isComposing so IME candidate-confirm doesn't fire a half-composed message",
+);
+
 console.log("chat-view-lifecycle.test.ts: ok");
