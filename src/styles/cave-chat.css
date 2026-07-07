@@ -2413,6 +2413,25 @@ details[open] > .cave-tool-summary::before {
   padding: 4px;
 }
 
+/* Prompt-snippets action folded into the composer overflow (cave-xsq.4): a
+   full-width menu item at the top of the options panel, divided from the
+   settings sections below. */
+.composer-options__action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 6px;
+  border-radius: var(--radius-control);
+  border-bottom: 1px solid var(--border-hairline);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.composer-options__action:hover {
+  background: var(--bg-raised);
+  color: var(--text-primary);
+}
+
 .composer-options__section {
   display: flex;
   flex-direction: column;

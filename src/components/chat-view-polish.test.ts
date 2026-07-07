@@ -312,6 +312,19 @@ assert.match(
   /<div className="cave-composer-utility-row">[\s\S]*aria-label="Attach images, videos, or files"[\s\S]*<Icon name="ph:paperclip"[\s\S]*aria-label="Voice"[\s\S]*<ComposerOptionsMenu/,
   "composer utility row keeps attach + voice, then the collapsed Options menu",
 );
+// Composer core (cave-xsq.4): the dedicated Prompt-snippets button is folded
+// into the Options overflow, so the resting utility row is just attach · voice ·
+// overflow. Snippets are still reachable — the menu opens with the action.
+assert.doesNotMatch(
+  source,
+  /aria-label="Prompt snippets"/,
+  "the standalone Prompt-snippets utility button is gone (folded into the Options menu)",
+);
+assert.match(
+  source,
+  /<ComposerOptionsMenu[\s\S]*onOpenPromptSnippets=\{\(\) => setPromptSnippetsOpen\(true\)\}/,
+  "the Options menu opens Prompt snippets as an action (nothing lost)",
+);
 assert.match(
   source,
   /sections=\{\[[\s\S]*label: "Access"[\s\S]*label: "Model"[\s\S]*label: "Thinking"[\s\S]*label: "Speed"/,

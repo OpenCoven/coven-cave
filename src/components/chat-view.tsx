@@ -5413,19 +5413,11 @@ export const ChatView = forwardRef<ChatViewHandle, Props>(function ChatView(
                   >
                     <Icon name="ph:microphone" width={15} aria-hidden />
                   </button>
-                  <button
-                    type="button"
-                    className="cave-composer-icon-button focus-ring grid h-7 w-7 place-items-center rounded-md border border-[var(--border-hairline)] hover:bg-[var(--bg-raised)]"
-                    title="Prompt snippets"
-                    aria-label="Prompt snippets"
-                    onClick={() => setPromptSnippetsOpen(true)}
-                  >
-                    <Icon name="ph:chat-centered-text" width={14} aria-hidden />
-                  </button>
                   <ComposerOptionsMenu
                     hostValue={composerHostValue}
                     onHostPick={setRuntimeHost}
                     disabled={busy}
+                    onOpenPromptSnippets={() => setPromptSnippetsOpen(true)}
                     indicator={
                       permissionMode !== DEFAULT_PERMISSION_MODE ||
                       thinkingEffort !== COMMAND_CONTROL_DEFAULTS.thinkingEffort ||

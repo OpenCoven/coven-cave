@@ -86,6 +86,7 @@ export function ComposerOptionsMenu({
   sections,
   indicator,
   disabled,
+  onOpenPromptSnippets,
 }: {
   hostValue: string;
   onHostPick: (id: string) => void;
@@ -94,6 +95,10 @@ export function ComposerOptionsMenu({
   /** Show the "non-default" dot on the trigger (host-remote is added here). */
   indicator?: boolean;
   disabled?: boolean;
+  /** When set, the menu opens with a "Prompt snippets…" action at the top — the
+   *  composer's utility row folds its dedicated snippets button in here so the
+   *  resting row is just attach · voice · this overflow (cave-xsq.4). */
+  onOpenPromptSnippets?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
@@ -111,8 +116,8 @@ export function ComposerOptionsMenu({
         disabled={disabled}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label="Response settings"
-        title="Response settings"
+        aria-label="Composer options"
+        title="Composer options"
         onClick={() => {
           void load();
           setOpen((v) => !v);
@@ -127,10 +132,23 @@ export function ComposerOptionsMenu({
         anchorRef={anchorRef}
         placement="top-start"
         minWidth={288}
-        ariaLabel="Response settings"
+        ariaLabel="Composer options"
         className="composer-options__panel"
       >
-        <PopoverBody ariaLabel="Response settings">
+        <PopoverBody ariaLabel="Composer options">
+          {onOpenPromptSnippets ? (
+            <button
+              type="button"
+              className="composer-options__action focus-ring"
+              onClick={() => {
+                setOpen(false);
+                onOpenPromptSnippets();
+              }}
+            >
+              <Icon name="ph:chat-centered-text" width={14} aria-hidden />
+              Prompt snippets…
+            </button>
+          ) : null}
           <div className="composer-options__section">
             <span className="composer-options__label">Host</span>
             <ComposerHostChoices
