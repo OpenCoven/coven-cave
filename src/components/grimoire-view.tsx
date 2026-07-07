@@ -31,6 +31,21 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMemoryFile } from "@/lib/use-memory-file";
 import { resolveOutgoingLinks, type WikiDocIndex } from "@/lib/wiki-link-resolve";
+import { buildDocGraph } from "@/lib/grimoire-graph";
+import dynamic from "next/dynamic";
+
+// @xyflow is heavy — lazy-load the graph so the dep only lands when it's opened.
+const GrimoireGraphView = dynamic(
+  () => import("@/components/grimoire-graph-view").then((m) => m.GrimoireGraphView),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid h-full min-h-0 place-items-center text-[11px] text-[var(--text-muted)]">
+        Loading graph…
+      </div>
+    ),
+  },
+);
 
 // ── Navigator model ──────────────────────────────────────────────────────────
 
@@ -461,6 +476,7 @@ export function GrimoireView() {
   const [journal, setJournal] = useState<JournalSummary[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [showGraph, setShowGraph] = useState(false);
   const confirm = useConfirm();
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -645,6 +661,23 @@ export function GrimoireView() {
     [knowledge, memory, journal],
   );
 
+  // The link graph over the knowledge vault (bodies are already loaded, so no
+  // extra fetch/scan). Memory/journal-as-source edges are a follow-up (they need
+  // full server content); memory/journal referenced *from* knowledge still show
+  // up as leaf nodes.
+  const graph = useMemo(
+    () =>
+      buildDocGraph(
+        (knowledge ?? []).map((k) => ({
+          ref: { kind: "knowledge" as const, id: k.id },
+          title: k.title,
+          markdown: k.body,
+        })),
+        docIndex,
+      ),
+    [knowledge, docIndex],
+  );
+
   /** Human tab label for a selection (falls back to ids/paths). */
   const tabTitle = useCallback(
     (sel: GrimoireSelection): string => {
@@ -776,14 +809,26 @@ export function GrimoireView() {
         <div className="shrink-0 space-y-2 border-b border-[var(--border-hairline)] p-3">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-[13px] font-semibold text-[var(--text-primary)]">Grimoire</h2>
-            <button
-              type="button"
-              onClick={() => openDoc({ kind: "knowledge-new" })}
-              className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
-            >
-              <Icon name="ph:plus" width={11} aria-hidden />
-              New entry
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowGraph((v) => !v)}
+                aria-pressed={showGraph}
+                title={showGraph ? "Back to documents" : "View the [[wiki-link]] graph"}
+                className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:link" width={11} aria-hidden />
+                {showGraph ? "Docs" : "Graph"}
+              </button>
+              <button
+                type="button"
+                onClick={() => openDoc({ kind: "knowledge-new" })}
+                className="focus-ring inline-flex h-7 items-center gap-1 rounded-md border border-[var(--border-hairline)] px-2 text-[11px] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+              >
+                <Icon name="ph:plus" width={11} aria-hidden />
+                New entry
+              </button>
+            </div>
           </div>
           <input
             type="search"
@@ -887,10 +932,18 @@ export function GrimoireView() {
       </aside>
       <main
         className={`h-full min-h-0 min-w-0 flex-1 rounded-lg border border-[var(--border-hairline)] bg-[var(--bg-raised)]/30 ${
-          selection ? "" : "hidden @min-[880px]/grimoire:block"
+          selection || showGraph ? "" : "hidden @min-[880px]/grimoire:block"
         }`}
       >
-        {selection ? (
+        {showGraph ? (
+          <GrimoireGraphView
+            graph={graph}
+            onOpen={(ref) => {
+              openDoc(ref);
+              setShowGraph(false);
+            }}
+          />
+        ) : selection ? (
           <div className="flex h-full min-h-0 flex-col">
             <div
               className={`flex shrink-0 items-center gap-2 border-b border-[var(--border-hairline)] px-3 py-1.5 ${

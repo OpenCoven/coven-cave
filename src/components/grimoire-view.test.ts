@@ -84,4 +84,20 @@ assert.match(view, /onClick=\{\(\) => onOpen\(ref\)\}/, "a resolved chip navigat
 assert.match(view, /title="No matching Grimoire doc"[\s\S]{0,160}border-dashed/, "an unresolved link renders dashed + inert with a hint");
 assert.match(view, /<GrimoireDocLinks\b[\s\S]{0,160}onOpen=\{openDoc\}/, "the chip row is wired to openDoc for the active doc");
 
+// ── cave-xr0 slice 3: the [[wiki-link]] graph view ──────────────────────────
+// A "Graph" toggle swaps the detail pane for a lazy-loaded @xyflow graph built
+// from the knowledge vault (bodies already loaded — no server scan); clicking a
+// node opens that doc.
+assert.match(view, /from "@\/lib\/grimoire-graph"/, "grimoire-view builds the link graph via the graph lib");
+assert.match(view, /import\("@\/components\/grimoire-graph-view"\)/, "the @xyflow graph is lazy-loaded (dynamic import)");
+assert.match(view, /ssr: false/, "the graph view is client-only (no SSR)");
+assert.match(view, /const graph = useMemo\([\s\S]{0,200}buildDocGraph\(/, "the graph is memoized from buildDocGraph");
+assert.match(view, /markdown: k\.body/, "the knowledge graph reads each entry's body (already loaded)");
+assert.match(view, /setShowGraph\(\(v\) => !v\)/, "a header toggle flips between docs and the graph");
+assert.match(
+  view,
+  /showGraph \? \([\s\S]{0,220}<GrimoireGraphView[\s\S]{0,200}onOpen=\{\(ref\) => \{[\s\S]{0,80}openDoc\(ref\)/,
+  "the graph replaces the detail pane and opens the clicked doc",
+);
+
 console.log("grimoire-view.test: ok");
